@@ -220,7 +220,13 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     // — codegen-internal invariant, no author repair. See
     // `forge::provenance` for the eligibility scope.
     forge::provenance::validate_emission_provenance(&model, scxml_path)?;
-    resolve_source_path(&mut model, scxml_path);
+    // No provenance root: the library entry points record the path their
+    // caller named, which is the same default the CLI uses without
+    // `--source-root`. A caller that wants a different spelling controls
+    // it by choosing the string it passes here — the one thing the
+    // recorded path must never depend on is the process working
+    // directory. See [`header_source_path`].
+    resolve_source_path(&mut model, scxml_path, None);
     let preprocessor_deps = parser.preprocessor_deps().to_vec();
     Ok(ParsedSCXML {
         model,
@@ -301,17 +307,47 @@ pub fn apply_drift_headers_to_output(
     }
 }
 
-/// Resolve SCXML source path to project-relative path.
-pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
-    if let Ok(abs) = std::fs::canonicalize(scxml_path) {
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Ok(rel) = abs.strip_prefix(&cwd) {
-                model.scxml_source_path = rel.to_string_lossy().to_string();
-            } else {
-                model.scxml_source_path = abs.to_string_lossy().to_string();
-            }
-        }
+/// Spelling of the input document recorded in the `// From:` provenance
+/// line of every generated file.
+///
+/// Deterministic by construction: the answer is a function of its two
+/// arguments and nothing else. It deliberately does not consult the
+/// process working directory — a provenance line that varies with the
+/// directory a build happened to run from cannot be reproduced without
+/// also reproducing that directory, which no build system guarantees and
+/// which makes byte-comparing a committed artifact against a pinned
+/// generator impossible.
+///
+/// - With a `source_root`, the path is re-expressed relative to it. Both
+///   sides are canonicalized for the comparison so `..` segments and
+///   symlinked trees still resolve, while the emitted value stays the
+///   relative one — that is what stays meaningful on a machine that never
+///   ran the generator.
+/// - Without one, the path is emitted exactly as the caller named it.
+///   An input that has no relative spelling under the named root falls
+///   back to the same rule, rather than emitting a `../..` chain that
+///   only resolves where it was produced.
+pub fn header_source_path(scxml_path: &str, source_root: Option<&Path>) -> String {
+    let verbatim = || scxml_path.to_string();
+    let Some(root) = source_root else {
+        return verbatim();
+    };
+    let (Ok(abs), Ok(abs_root)) = (
+        std::fs::canonicalize(scxml_path),
+        std::fs::canonicalize(root),
+    ) else {
+        return verbatim();
+    };
+    match abs.strip_prefix(&abs_root) {
+        Ok(rel) => rel.to_string_lossy().into_owned(),
+        Err(_) => verbatim(),
     }
+}
+
+/// Record the `// From:` provenance path on `model`. Thin wrapper over
+/// [`header_source_path`]; see there for the determinism contract.
+pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str, source_root: Option<&Path>) {
+    model.scxml_source_path = header_source_path(scxml_path, source_root);
 }
 
 /// SCE Protocol-Synthesis RFC §5.2 — resolve every `<sce:driver

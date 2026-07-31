@@ -118,20 +118,48 @@ struct DriftContext {
 }
 
 impl DriftContext {
-    /// Best-effort compute: failures along the workspace-probe path
-    /// downgrade the corresponding axis to a zero hash and log a
+    /// Best-effort compute for the `template-hash` axis: failures along
+    /// the workspace-probe path downgrade it to a zero hash and log a
     /// stderr note instead of aborting codegen. The spec invariant
     /// is "every emitted file carries a header" — a zero-hash header
     /// still satisfies that, and `sce-codegen verify` reports the
     /// mismatch when invoked against the real workspace.
-    fn compute(input_root: &Path, deploy: Option<&Path>) -> Self {
-        let source_hash = drift::compute_source_hash(input_root, deploy).unwrap_or_else(|e| {
-            eprintln!(
-                "sce-codegen: source-hash compute failed for {} ({e}); embedding zero hash",
-                input_root.display(),
-            );
-            [0u8; 32]
+    ///
+    /// The `source-hash` axis does **not** get that latitude. Its fold is
+    /// total over the collected set, so a walk that resolved to nothing
+    /// still yields a well-formed sha256 (the empty-input digest) that
+    /// reads on the wire exactly like a successful hash — a header a
+    /// consumer cannot audit is worse than a refusal.
+    ///
+    /// `must_cover` names the document the root was **inferred** from, and
+    /// is what raises the bar from "the set is non-empty" to "the set
+    /// contains this document". Callers pass `None` when the root came
+    /// from `--input-root` or when the entry point is a batch with no
+    /// single named input: a root the caller declared is an assertion
+    /// about where the sources live, not an inference to second-guess,
+    /// and the fixture regen scripts legitimately generate from a staged
+    /// derivative while hashing against the tracked location it came
+    /// from. An empty set is refused either way — no declaration makes
+    /// the empty-input digest a truthful description of an input.
+    fn compute(input_root: &Path, deploy: Option<&Path>, must_cover: Option<&Path>) -> Self {
+        let sources = drift::SourceSet::collect(input_root, deploy).unwrap_or_else(|e| {
+            cli_exit(CliError::ReadInput {
+                path: format!("{}: source-hash compute failed: {e}", input_root.display()),
+                source: std::io::Error::other("drift compute"),
+            })
         });
+        let undescribed = match must_cover {
+            Some(input) => !sources.covers(input),
+            None => sources.is_empty(),
+        };
+        if undescribed {
+            cli_exit(CliError::SourceHashInputUncovered {
+                input: must_cover.unwrap_or(input_root).display().to_string(),
+                root: sources.root().display().to_string(),
+                hashed: sources.len(),
+            });
+        }
+        let source_hash = sources.digest();
         let explicit = current_workspace_root_override();
         let template_hash = match locate_workspace_root(explicit.as_deref()) {
             Some(ws) => {
@@ -304,6 +332,20 @@ fn current_error_format() -> ErrorFormat {
 /// [`locate_workspace_root`].
 static WORKSPACE_ROOT_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
+/// Root the `// From:` provenance path is expressed relative to, when the
+/// invocation has one. Claimed by `--source-root` in `main` if given,
+/// otherwise by [`find_project_root`] for the in-repo batch commands.
+/// Single-document `generate` / `orchestrate` runs leave it unset and emit
+/// the path as the caller named it — see
+/// [`sce_build::header_source_path`] for why neither shape consults the
+/// process working directory.
+static SOURCE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Read the installed provenance root, if any.
+fn current_source_root() -> Option<PathBuf> {
+    SOURCE_ROOT.get().cloned()
+}
+
 /// Read the installed override, if any. Callers pair this with
 /// [`locate_workspace_root`] to honour the global flag without
 /// having to plumb it through their signatures.
@@ -472,6 +514,19 @@ struct Cli {
     /// the zero fallback. Global — applies to every subcommand.
     #[arg(long, global = true, value_name = "PATH")]
     workspace_root: Option<PathBuf>,
+
+    /// Root the `// From:` provenance line in every generated file is
+    /// expressed relative to. Without it the path is emitted exactly as
+    /// named on the command line; with it, inputs under the root are
+    /// re-expressed relative to the root and inputs outside it fall back
+    /// to the path as given. Set this when generated output is committed
+    /// or compared byte-for-byte and you want provenance that resolves on
+    /// a machine that never ran the generator. Never relative to the
+    /// process working directory — an artifact that varies with the
+    /// invoking directory cannot be reproduced without reproducing that
+    /// directory. Global — applies to every subcommand.
+    #[arg(long, global = true, value_name = "PATH")]
+    source_root: Option<PathBuf>,
 
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
@@ -1036,6 +1091,11 @@ fn main() {
     if let Some(p) = cli.workspace_root {
         let _ = WORKSPACE_ROOT_OVERRIDE.set(p);
     }
+    // Claimed before any subcommand runs so an explicit flag outranks the
+    // repo root `find_project_root` would otherwise install.
+    if let Some(p) = cli.source_root {
+        let _ = SOURCE_ROOT.set(p);
+    }
     match cli.command {
         Commands::Generate(args) => cmd_generate(*args, error_format),
         Commands::Orchestrate {
@@ -1232,7 +1292,11 @@ fn cmd_orchestrate(
         .first()
         .and_then(|p| p.parent().map(|x| x.to_path_buf()))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let drift_ctx = DriftContext::compute(&drift_input_root, deploy_path.map(Path::new));
+    let drift_ctx = DriftContext::compute(
+        &drift_input_root,
+        deploy_path.map(Path::new),
+        scxml_path_bufs.first().map(|p| p.as_path()),
+    );
 
     for (basename, generated) in &outputs {
         for (file_name, code) in &generated.files {
@@ -1442,7 +1506,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::path::PathBuf::from(".")),
     };
-    let drift_ctx = DriftContext::compute(&drift_input_root, deploy_path.map(Path::new));
+    // Coverage is asserted only when the root was inferred above; an
+    // explicit `--input-root` is the caller declaring the source set.
+    let drift_ctx = DriftContext::compute(
+        &drift_input_root,
+        deploy_path.map(Path::new),
+        input_root_override.is_none().then(|| Path::new(scxml_path)),
+    );
 
     match sce_build::classify_document(&scxml_content) {
         sce_build::Pipeline::Forge => {
@@ -2537,14 +2607,24 @@ fn find_project_root() -> PathBuf {
     // Try CARGO_MANIFEST_DIR ancestor, then CWD
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let candidate = crate_dir.join("..");
-    if candidate.join("tests/CMakeLists.txt").exists() {
-        return fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.to_path_buf());
-    }
-    let cwd = std::env::current_dir().expect("Cannot get CWD");
-    if cwd.join("tests/CMakeLists.txt").exists() {
-        return cwd;
-    }
-    cli_exit(CliError::ProjectRootNotFound);
+    let root = if candidate.join("tests/CMakeLists.txt").exists() {
+        fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.to_path_buf())
+    } else {
+        let cwd = std::env::current_dir().expect("Cannot get CWD");
+        if !cwd.join("tests/CMakeLists.txt").exists() {
+            cli_exit(CliError::ProjectRootNotFound);
+        }
+        cwd
+    };
+    // Every in-repo batch command reaches its inputs through this root and
+    // records `// From:` provenance relative to it — that is what the
+    // committed trees carry, and the only spelling that stays meaningful
+    // on a machine that never ran the generator. Installing it here means
+    // a future batch entry point inherits the convention rather than
+    // having to remember it. `main` installs an explicit `--source-root`
+    // before any subcommand runs, so the flag still wins.
+    let _ = SOURCE_ROOT.set(root.clone());
+    root
 }
 
 /// Parse test registrations from CMakeLists.txt.
@@ -2952,7 +3032,7 @@ fn generate_w3c_unified(
     // Spec §synth-6.2.6 drift context — input root is the W3C resources
     // tree; one hash pair covers every emitted parent SM + child SM
     // + test harness across all 202 tests in this invocation.
-    let drift_ctx = DriftContext::compute(resources_dir, None);
+    let drift_ctx = DriftContext::compute(resources_dir, None, None);
 
     let cmake_tests = parse_cmake_tests(cmake_file);
     println!("C++ test registry: {} tests", cmake_tests.len());
@@ -4425,7 +4505,7 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
         .and_then(|p| p.parent())
         .map(|p| p.join("resources"))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let drift_ctx = DriftContext::compute(&drift_input_root, None);
+    let drift_ctx = DriftContext::compute(&drift_input_root, None, None);
     write_drift_aware(current_error_format(), &out_path, &rendered, &drift_ctx);
     println!("Generated conformance harness: {}", out_path.display());
 }
@@ -4873,9 +4953,16 @@ fn cmd_list_fixtures(
 
 // ── Utility functions ───────────────────────────────────────────
 
-/// Resolve SCXML source path to project-relative path (delegates to lib).
+/// Record the `// From:` provenance path against the invocation's
+/// [`SOURCE_ROOT`] (delegates to lib). Reading the root here rather than
+/// threading it keeps every emit site on one source of truth, matching how
+/// the error format and workspace-root override are already handled.
 fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &Path) {
-    sce_build::resolve_source_path(model, scxml_path.to_str().unwrap_or(""));
+    sce_build::resolve_source_path(
+        model,
+        scxml_path.to_str().unwrap_or(""),
+        current_source_root().as_deref(),
+    );
 }
 
 /// Create a C++ formatter if language is C++ and formatting is not disabled.

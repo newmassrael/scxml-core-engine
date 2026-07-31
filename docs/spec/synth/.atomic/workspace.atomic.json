@@ -4229,6 +4229,10 @@
         {
           "file": "scripts/regen_autoforward_event_fields_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/codegen_invocation_determinism.rs",
+          "kind": "references"
         }
       ]
     },
