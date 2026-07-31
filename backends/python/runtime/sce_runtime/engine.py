@@ -1128,6 +1128,7 @@ class Engine(Generic[S, E]):
                     event_name,
                     data=data,
                     invoke_id=invoke_id,
+                    origin=invoke.origin(),
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
                 )
             # W3C SCXML 6.3.1 — lift the child's terminal donedata onto
@@ -1170,7 +1171,10 @@ class Engine(Generic[S, E]):
         name = self._policy.get_event_name(evt.event)
         if not name:
             return
-        self._policy.forward_to_autoforward_children(name, evt.metadata.data, self)
+        # W3C SCXML 6.4 requires an exact copy, so the whole metadata goes
+        # with the name — the child must see the same `_event.data`,
+        # `_event.origin`, `_event.sendid` and `_event.invokeid` the parent saw.
+        self._policy.forward_to_autoforward_children(name, evt.metadata, self)
 
     # ── Hierarchy helpers ─────────────────────────────────────────
 

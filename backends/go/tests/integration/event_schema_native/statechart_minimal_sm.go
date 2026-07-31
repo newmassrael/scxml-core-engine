@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
-// template-hash: f160b18d725f2c0387242c0463da6808a5b8be392d0dc888f0d564e42c83db17
-// generated-at: 1785486446
+// template-hash: 7aab3b29aa8f5ef17f1c8730c3954aecc89c78aabf4a2226d70ddd8c24038efe
+// generated-at: 1785489708
 
 
 // SPDX-License-Identifier: MIT
@@ -321,7 +321,7 @@ func (p *StatechartMinimalPolicy) GetInitialOrHistoryChild(state StatechartMinim
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartMinimalPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartMinimalEvent], _ *sce.Engine[StatechartMinimalState, StatechartMinimalEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
-func (p *StatechartMinimalPolicy) ForwardToAutoforwardChildren(_ string, _ *sce.Engine[StatechartMinimalState, StatechartMinimalEvent]) {}
+func (p *StatechartMinimalPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[StatechartMinimalState, StatechartMinimalEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
 // Note: event name is set separately via setCurrentEvent(), not from metadata.

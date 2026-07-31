@@ -86,11 +86,17 @@ class Invoke(ABC, Generic[E]):
         the parent's external queue via `Engine.send_external_by_name`."""
 
     @abstractmethod
-    def forward_event(self, event_name: str, data: Any) -> None:
+    def forward_event(self, event_name: str, metadata: Any) -> None:
         """W3C SCXML 6.4.1 — deliver an autoforwarded event into the
         target. The descriptor matches the wire name (`done.foo`)
         rather than the parent's `Event` enum, so the implementation
-        is responsible for any local name→Event resolution."""
+        is responsible for any local name→Event resolution.
+
+        `metadata` is an `EventMetadata`. On the autoforward path it is
+        the source event's own metadata — §6.4 mandates an exact copy, so
+        the implementation preserves its fields. On the explicit
+        `<send target="#_<invokeid>">` path it is a freshly built envelope
+        carrying only what that `<send>` specified."""
 
     @abstractmethod
     def cancel(self) -> None:
@@ -104,6 +110,14 @@ class Invoke(ABC, Generic[E]):
         in the parent. Default `None` — subclasses with no donedata
         path keep the default."""
         return None
+
+    def origin(self) -> str:
+        """W3C SCXML 5.10.1 — `_event.origin` for the events this target
+        raises into the parent. An invoked session is an external entity
+        from the parent's point of view, so its parent-bound events carry
+        an origin identifying the session. Default empty for targets with
+        no session identity of their own."""
+        return ""
 
 
 class ScxmlInvoke(Invoke):
@@ -138,28 +152,38 @@ class ScxmlInvoke(Invoke):
     def is_done(self) -> bool:
         return self._child.reached_final
 
+    def origin(self) -> str:
+        # The child engine's policy owns the session id the parent uses to
+        # identify this invocation (W3C SCXML 5.10.1 `_event.origin`).
+        return getattr(self._child.policy, "_session_id", "") or ""
+
     def drain_events(self) -> Iterable[Tuple[str, Any]]:
         while self._parent_queue:
             yield self._parent_queue.pop(0)
 
-    def forward_event(self, event_name: str, data: Any) -> None:
+    def forward_event(self, event_name: str, metadata: Any) -> None:
         # The child policy's name→Event resolver lifts the string onto
         # the child's Event enum. Unknown names silently drop, matching
         # W3C 5.10.1 ("if no transition is enabled the event is lost").
         event = self._child.policy.get_event_from_name(event_name)
         if event is None:
             return
-        # W3C SCXML C.1: parent→child delivery rides the SCXML Event
-        # I/O Processor, so the child sees `_event.origintype` = SCXML
-        # processor URI (test253). Imported lazily to avoid a cycle.
+        # W3C SCXML 6.4: the copy is exact, so every field the parent saw
+        # travels with it. W3C SCXML C.1: parent→child delivery rides the
+        # SCXML Event I/O Processor, so `_event.origintype` is the SCXML
+        # processor URI (test253) when the source event carried none of its
+        # own. Imported lazily to avoid a cycle.
         from .engine import SCXML_EVENT_PROCESSOR_URI
         from .event import EventMetadata
         self._child.send_event(
             event,
             EventMetadata(
                 event_type="external",
-                data=data,
-                origin_type=SCXML_EVENT_PROCESSOR_URI,
+                data=metadata.data,
+                send_id=metadata.send_id,
+                origin=metadata.origin,
+                origin_type=metadata.origin_type or SCXML_EVENT_PROCESSOR_URI,
+                invoke_id=metadata.invoke_id,
             ),
         )
 

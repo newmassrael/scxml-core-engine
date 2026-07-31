@@ -200,7 +200,7 @@ type StatePolicy[S comparable, E comparable] interface {
 
 	// ForwardToAutoforwardChildren forwards external events to autoforward children
 	// (W3C SCXML 6.4.1).
-	ForwardToAutoforwardChildren(eventName string, engine *Engine[S, E])
+	ForwardToAutoforwardChildren(eventName string, metadata EventMetadata, engine *Engine[S, E])
 
 	// TickChildren ticks child state machines (W3C SCXML 6.4).
 	TickChildren(engine *Engine[S, E])

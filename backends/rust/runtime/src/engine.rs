@@ -920,6 +920,32 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
+    /// §scxml-6.4: Raise an autoforwarded external event, name-addressed but
+    /// carrying the source event's `_event` fields.
+    ///
+    /// The autoforward path is the one place an event must leave the machine
+    /// that owns its enum, so it crosses by name while the metadata travels
+    /// with it — §6.4 mandates an exact copy. Unknown names degrade silently:
+    /// a child is not required to declare every event its parent forwards.
+    pub fn raise_external_by_name_with_meta(&mut self, event_name: &str, metadata: &EventMetadata) {
+        let Some(event) = P::get_event_from_name(event_name) else {
+            sce_log_debug!(
+                "Engine::raise_external_by_name_with_meta: event '{}' not in enum, ignoring",
+                event_name
+            );
+            return;
+        };
+        // `target` stays default: the copy is delivered to this machine, never
+        // re-routed to the original event's target.
+        self.raise_external_with_meta(EventWithMetadata {
+            event,
+            payload: P::Payload::default(),
+            metadata: metadata.clone(),
+            #[cfg(not(feature = "no_std"))]
+            target: SceString::new(),
+        });
+    }
+
     /// §scxml-6.4.1: Raise an external event with full metadata (for child-to-parent).
     ///
     /// Matches C++ `raiseExternal(const EventWithMetadata&)`. Preserves `invokeid`
@@ -932,12 +958,20 @@ impl<P: StatePolicy> Engine<P> {
         // to `forward_to_autoforward_children(&str, ...)` without an
         // alloc-coupled `to_string()` round-trip — same observable behaviour
         // under std, compiles under no_std.
+        //
+        // §scxml-6.4 requires an exact copy, so the metadata rides along with
+        // the name. `target` is deliberately NOT forwarded: it is a routing
+        // decision owned by the `<send>` that produced the original event, and
+        // inheriting it would re-route the child's copy instead of delivering
+        // it. Cloning the metadata (rather than borrowing from `event`) keeps
+        // the borrow checker out of the `&mut self` reborrow below.
         if concepts::has_autoforward::<P>() {
             let name = P::get_event_name(event.event);
+            let metadata = event.metadata.clone();
             let policy_ptr: *mut P = &mut self.policy as *mut P;
             // SAFETY: see execute_on_entry.
             unsafe {
-                (*policy_ptr).forward_to_autoforward_children(name, self);
+                (*policy_ptr).forward_to_autoforward_children(name, &metadata, self);
             }
         }
 

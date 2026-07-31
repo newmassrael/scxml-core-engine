@@ -3050,6 +3050,31 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_
     }
     {% endfor %}
 }
+
+/* W3C SCXML 6.4: autoforward entry point. Same name→enum resolution as the
+   shim above, but the source event's `_event` fields ride along because §6.4
+   requires the copy be exact. Unknown names fall through silently: a child
+   need not declare every event its parent forwards. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd) {
+    if (sm == NULL || fwd == NULL) {
+        return;
+    }
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
+    memset(&evt, 0, sizeof(evt));
+    sce_copy_bounded_data(evt.data, fwd->data);
+    sce_copy_bounded_id(evt.origin, fwd->origin);
+    sce_copy_bounded_id(evt.send_id, fwd->send_id);
+    sce_copy_bounded_event_type(evt.type, fwd->type);
+    sce_copy_bounded_id(evt.origin_type, fwd->origin_type);
+    sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
+    {% for ev_name in model.events | sort %}
+    if (strcmp(fwd->name, "{{ ev_name }}") == 0) {
+        evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }};
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
+        return;
+    }
+    {% endfor %}
+}
 {% endif %}
 
 {% if model.needs_event_scheduler %}
@@ -3435,16 +3460,29 @@ static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name
    smaller event vocabulary than the parent is safely tolerated. */
 static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children({{ csym_prefix }}{{ model.name }}_t *sm,
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+    /* W3C SCXML 6.4: the copy handed to each child is exact, so the source
+       event's fields are packed into the transport-neutral carrier once and
+       reused across every autoforward child on this event. The per-event
+       switch below fills in the name. */
+    sce_forwarded_event_t fwd;
+    memset(&fwd, 0, sizeof(fwd));
+    sce_copy_bounded_data(fwd.data, evt->data);
+    sce_copy_bounded_id(fwd.origin, evt->origin);
+    sce_copy_bounded_id(fwd.send_id, evt->send_id);
+    sce_copy_bounded_event_type(fwd.type, evt->type);
+    sce_copy_bounded_id(fwd.origin_type, evt->origin_type);
+    sce_copy_bounded_id(fwd.invoke_id, evt->invoke_id);
     switch (evt->event) {
         {% for ev_name in model.events | sort %}
         {% if ev_name and ev_name != 'Wildcard' and not ev_name.startswith('done.') and not ev_name.startswith('error.') and ev_name != 'cancel.invoke' %}
         case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }}:
+            sce_copy_bounded_id(fwd.name, "{{ ev_name }}");
             {% for state_id, state in model.states | dictsort %}
             {% for invoke_info in state.invokes | scxml %}
             {% if invoke_info.autoforward and invoke_info.child_has_send_to_parent %}
             if (sm->child_{{ invoke_info.field_suffix }}_active) {
-                {{ csym_prefix }}{{ invoke_info.child_name }}_raise_external_by_name(
-                    &sm->child_{{ invoke_info.field_suffix }}, "{{ ev_name }}");
+                {{ csym_prefix }}{{ invoke_info.child_name }}_raise_external_forwarded(
+                    &sm->child_{{ invoke_info.field_suffix }}, &fwd);
             }
             {% endif %}
             {% endfor %}

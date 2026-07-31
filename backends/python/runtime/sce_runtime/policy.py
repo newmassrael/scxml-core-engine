@@ -293,11 +293,15 @@ class StatePolicy(ABC, Generic[S, E]):
         code emits one branch per invoke id. Default no-op."""
 
     def forward_to_autoforward_children(
-        self, event_name: str, data, engine: "Engine[S, E]"
+        self, event_name: str, metadata, engine: "Engine[S, E]"
     ) -> None:
         """W3C SCXML 6.4.1 — for every active child whose `<invoke>`
         declared `autoforward="true"`, deliver `event_name` into the
-        child via `Invoke.forward_event`. Default no-op."""
+        child via `Invoke.forward_event`. Default no-op.
+
+        `metadata` is the source event's whole `EventMetadata`: §6.4
+        requires the child receive an exact copy, so the name alone (or
+        the name plus payload) is not enough."""
 
     def execute_finalize_for_child_event(
         self, event_with_meta, engine: "Engine[S, E]"

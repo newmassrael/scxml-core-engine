@@ -287,6 +287,23 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 	e.RaiseExternal(event, eventData, "")
 }
 
+// RaiseExternalByNameWithMeta raises an autoforwarded external event that is
+// name-addressed but carries the source event's _event fields (W3C SCXML 6.4).
+//
+// Autoforward is the one path where an event leaves the machine owning its enum,
+// so it crosses by name while the metadata travels with it. Unknown names
+// degrade silently: a child need not declare every event its parent forwards.
+func (e *Engine[S, E]) RaiseExternalByNameWithMeta(eventName string, metadata EventMetadata) {
+	event, ok := e.policy.GetEventFromName(eventName)
+	if !ok {
+		log.Printf("[sce] Engine::RaiseExternalByNameWithMeta: event '%s' not in enum, ignoring", eventName)
+		return
+	}
+	// Target stays empty: the copy is delivered to this machine, never
+	// re-routed to the original event's target.
+	e.RaiseExternalWithMeta(EventWithMetadata[E]{Event: event, Metadata: metadata})
+}
+
 // RaiseExternalWithMeta raises an external event with full metadata (W3C SCXML
 // 6.4.1, for child-to-parent events).
 //
@@ -295,10 +312,13 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 	log.Printf("[sce] Engine::RaiseExternalWithMeta: enqueuing external event with metadata")
 
-	// W3C SCXML 6.4.1: Autoforward
+	// W3C SCXML 6.4.1: Autoforward. W3C 6.4 mandates an exact copy, so the
+	// source event's metadata rides along with the name. Target is not
+	// forwarded: it is a routing decision owned by the originating <send>,
+	// and inheriting it would re-route the child's copy.
 	if e.policy.HasAutoforward() {
 		name := e.policy.GetEventName(event.Event)
-		e.policy.ForwardToAutoforwardChildren(name, e)
+		e.policy.ForwardToAutoforwardChildren(name, event.Metadata, e)
 	}
 
 	e.externalQueue.Raise(event)

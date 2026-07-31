@@ -109,14 +109,59 @@
 #include <stddef.h>
 #include <string.h>
 
-SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) {
+SCE_C_UNUSED static inline void sce_copy_bounded_n(char *dst, const char *src, size_t cap) {
     const char *s = src != NULL ? src : "";
     size_t n = 0;
-    while (n < (size_t)SCE_MAX_ID_LEN - 1u && s[n] != '\0') {
+    if (cap == 0u) {
+        return;
+    }
+    while (n < cap - 1u && s[n] != '\0') {
         n++;
     }
     memcpy(dst, s, n);
     dst[n] = '\0';
 }
+
+SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) {
+    sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_ID_LEN);
+}
+
+/* §scxml-5.10: `_event.data` payload buffer (SCE_MAX_DATA_LEN). Separate
+   from the id-sized helper because the two caps differ; both delegate to
+   `sce_copy_bounded_n` so the scan/copy/NUL logic exists once. */
+SCE_C_UNUSED static inline void sce_copy_bounded_data(char *dst, const char *src) {
+    sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_DATA_LEN);
+}
+
+/* §scxml-5.10.1: `_event.type` ("internal" / "external" / "platform"). */
+SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const char *src) {
+    sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_EVENT_TYPE_LEN);
+}
+
+/* ── §scxml-6.4: Autoforward carrier ───────────────────────────── */
+/* W3C §6.4 requires the parent to forward an *exact copy* of every
+   external event to an `<invoke autoforward="true">` child. The child is a
+   different generated machine, so its `<sm>_event_with_meta_t` is an
+   unrelated type and the copy cannot cross as that struct; it crosses as
+   this transport-neutral record instead, addressed by event NAME (the only
+   identity the two machines share). `target` is deliberately absent: it is
+   a routing decision owned by the `<send>` that produced the original
+   event, and inheriting it would re-route the child's copy.
+
+   Lives in `types.h` rather than `invoke.h` for the same reason
+   `sce_copy_bounded_id` does: the *child* machine declares
+   `_raise_external_forwarded` while having no `<invoke>` of its own, so it
+   never includes `invoke.h` (and must not pull that header's `<stdio.h>`
+   surface into a freestanding MCU fixture). The C mirror of cpp
+   `SCE::Common::ForwardedEvent` / Rust `(&str, &EventMetadata)`. */
+typedef struct sce_forwarded_event_s {
+    char name[SCE_MAX_ID_LEN];
+    char data[SCE_MAX_DATA_LEN];
+    char origin[SCE_MAX_ID_LEN];
+    char send_id[SCE_MAX_ID_LEN];
+    char type[SCE_MAX_EVENT_TYPE_LEN];
+    char origin_type[SCE_MAX_ID_LEN];
+    char invoke_id[SCE_MAX_ID_LEN];
+} sce_forwarded_event_t;
 
 #endif  // SCE_TYPES_H
