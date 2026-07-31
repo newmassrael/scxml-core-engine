@@ -7286,6 +7286,11 @@
           "file": "backends/c/runtime/include/sce/invoke.h",
           "symbol": "sce_invoke_pending_push",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_with_meta",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

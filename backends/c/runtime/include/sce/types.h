@@ -126,19 +126,19 @@ SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) 
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_ID_LEN);
 }
 
-/* §scxml-5.10: `_event.data` payload buffer (SCE_MAX_DATA_LEN). Separate
+/* W3C SCXML 5.10 `_event.data` payload buffer (SCE_MAX_DATA_LEN). Separate
    from the id-sized helper because the two caps differ; both delegate to
    `sce_copy_bounded_n` so the scan/copy/NUL logic exists once. */
 SCE_C_UNUSED static inline void sce_copy_bounded_data(char *dst, const char *src) {
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_DATA_LEN);
 }
 
-/* §scxml-5.10.1: `_event.type` ("internal" / "external" / "platform"). */
+/* W3C SCXML 5.10.1 `_event.type` ("internal" / "external" / "platform"). */
 SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const char *src) {
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_EVENT_TYPE_LEN);
 }
 
-/* ── §scxml-6.4: Autoforward carrier ───────────────────────────── */
+/* ── W3C SCXML 6.4: Autoforward carrier ───────────────────────────── */
 /* W3C §6.4 requires the parent to forward an *exact copy* of every
    external event to an `<invoke autoforward="true">` child. The child is a
    different generated machine, so its `<sm>_event_with_meta_t` is an
