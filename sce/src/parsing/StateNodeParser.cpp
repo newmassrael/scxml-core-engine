@@ -42,7 +42,11 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         return nullptr;
     }
 
-    // Get state ID
+    // §scxml-3.3.1 / §scxml-3.4.1 / §scxml-3.7.1: 'id' is the attribute
+    // <state>, <parallel> and <final> share, optional in all three. The spec
+    // leaves an absent id unusable as a transition target rather than illegal,
+    // so one is synthesized to keep the node addressable internally.
+    // (<state>'s other attribute, 'initial', is read below.)
     std::string stateId;
     if (stateElement->hasAttribute("id")) {
         stateId = stateElement->getAttribute("id");
@@ -124,7 +128,12 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         }
     }
 
-    // Set initial state (for compound states)
+    // §scxml-3.3.1: 'initial' is meaningful on compound states only (the table
+    // forbids it in atomic states) and MUST NOT be combined with the <initial>
+    // element — the element is honoured first, so a document that violates the
+    // constraint takes its transition instead of merging the two. With neither
+    // present, §scxml-3.3 makes the first child state in document order the
+    // default, which is why getChildren() must be in document order.
     if (stateType == Type::COMPOUND && !stateNode->getChildren().empty()) {
         // Check for <initial> element
         auto initialElement = SCE::ParsingCommon::findFirstChildElement(stateElement, "initial");
@@ -208,20 +217,16 @@ void SCE::StateNodeParser::parseChildStates(const std::shared_ptr<IXMLElement> &
                                             const SCE::SCXMLContext &context) {
     SCE_LOG_DEBUG("Parsing child states");
 
-    // Search for child elements like state, parallel, final, history
-    std::vector<std::shared_ptr<IXMLElement>> childStateElements;
-
-    auto stateElements = SCE::ParsingCommon::findChildElements(stateElement, "state");
-    childStateElements.insert(childStateElements.end(), stateElements.begin(), stateElements.end());
-
-    auto parallelElements = SCE::ParsingCommon::findChildElements(stateElement, "parallel");
-    childStateElements.insert(childStateElements.end(), parallelElements.begin(), parallelElements.end());
-
-    auto finalElements = SCE::ParsingCommon::findChildElements(stateElement, "final");
-    childStateElements.insert(childStateElements.end(), finalElements.begin(), finalElements.end());
-
-    auto historyElements = SCE::ParsingCommon::findChildElements(stateElement, "history");
-    childStateElements.insert(childStateElements.end(), historyElements.begin(), historyElements.end());
+    // §scxml-3.3.2 / §scxml-3.4.2: the child states of a <state> or
+    // <parallel>, collected in document order. §scxml-3.3 makes the first
+    // child state in document order the default initial state and Appendix D
+    // enters <parallel> regions in `getChildStates` order, so the order of
+    // this list is observable behaviour, not an implementation detail.
+    // <history> is included because it is a legal child that transitions
+    // target by id; ConcurrentStateNode::addChild filters it out of the
+    // region set per §scxml-D-getChildStates.
+    auto childStateElements =
+        SCE::ParsingCommon::findChildElementsAnyOf(stateElement, {"state", "parallel", "final", "history"});
 
     // Recursively parse each discovered child state
     for (const auto &childElement : childStateElements) {
@@ -272,7 +277,9 @@ void SCE::StateNodeParser::parseHistoryType(const std::shared_ptr<IXMLElement> &
     // Default is shallow
     bool isDeep = false;
 
-    // Check type attribute
+    // §scxml-3.10.1: <history> carries 'id' (read by parseStateNode) and
+    // 'type', whose table default is "shallow" — so anything other than an
+    // explicit "deep" keeps the shallow default set above.
     if (historyElement->hasAttribute("type") && historyElement->getAttribute("type") == "deep") {
         isDeep = true;
     }
@@ -282,7 +289,9 @@ void SCE::StateNodeParser::parseHistoryType(const std::shared_ptr<IXMLElement> &
 
     SCE_LOG_DEBUG("History state {} type: {}", state->getId(), (isDeep ? "deep" : "shallow"));
 
-    // Parse default transition for history state
+    // §scxml-3.10.2: the single child <transition> of <history> specifies the
+    // default history configuration, taken when the history state is entered
+    // before its parent has ever been exited.
     if (transitionParser_) {
         parseTransitions(historyElement, state);
     }
@@ -296,7 +305,9 @@ void SCE::StateNodeParser::parseInitialElement(const std::shared_ptr<IXMLElement
 
     SCE_LOG_DEBUG("Parsing initial element for state: {}", state->getId());
 
-    // Find <transition> elements
+    // §scxml-3.6.2: <initial> holds exactly one <transition>, whose 'target'
+    // specifies the default initial state(s) — hence findFirstChildElement
+    // rather than a loop over all transition children.
     auto transitionElement = SCE::ParsingCommon::findFirstChildElement(initialElement, "transition");
     if (transitionElement) {
         // Parse transition - pass parent state together
@@ -331,6 +342,9 @@ void SCE::StateNodeParser::parseEntryExitActionNodes(const std::shared_ptr<IXMLE
     }
 
     // §scxml-3.8: Process onentry elements - each onentry is a separate block
+    // §scxml-3.8.2 / §scxml-3.9.2: the children of <onentry> and <onexit> are
+    // executable content, and each handler is its own §scxml-4.9 block — kept
+    // as separate vectors so an error in one does not abandon the others.
     auto onentryElements = SCE::ParsingCommon::findChildElements(parentElement, "onentry");
     for (const auto &onentryElement : onentryElements) {
         std::vector<std::shared_ptr<SCE::IActionNode>> actionBlock;

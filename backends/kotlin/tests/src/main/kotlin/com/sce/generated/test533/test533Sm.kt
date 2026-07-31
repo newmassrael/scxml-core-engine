@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/533/test533.scxml
@@ -112,15 +112,15 @@ class Test533StateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test533State): Int = when (state) {
-        is Test533State.Fail -> 5
-        is Test533State.P -> 6
-        is Test533State.Pass -> 4
-        is Test533State.Ps1 -> 7
-        is Test533State.Ps2 -> 8
+        is Test533State.Fail -> 8
+        is Test533State.P -> 1
+        is Test533State.Pass -> 7
+        is Test533State.Ps1 -> 2
+        is Test533State.Ps2 -> 3
         is Test533State.S1 -> 0
-        is Test533State.S2 -> 1
-        is Test533State.S3 -> 2
-        is Test533State.S4 -> 3
+        is Test533State.S2 -> 4
+        is Test533State.S3 -> 5
+        is Test533State.S4 -> 6
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -424,10 +424,10 @@ class Test533StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test533State, Int>>()
                 if (activeStateIds.contains("ps1")) {
-                    toExit.add(Test533State.Ps1 to 7)
+                    toExit.add(Test533State.Ps1 to 2)
                 }
                 if (activeStateIds.contains("ps2")) {
-                    toExit.add(Test533State.Ps2 to 8)
+                    toExit.add(Test533State.Ps2 to 3)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {
