@@ -9,6 +9,23 @@ integration layer described here is strictly additive.
 
 Only one such fixture exists today: `donedata_local_invoke`.
 
+A fixture placed under `integration_resources/` is a **five-backend
+commitment**, not merely a shared file: `sce-codegen generate-integration`
+enumerates every directory there and requires
+`scripts/regen_<stem>{,_kotlin,_go,_python}.sh` per stem, so
+`scripts/regen_all_committed_trees.sh` fails on a stem that has none. A
+fixture whose semantics only some backends implement therefore stays in its
+own backend's test tree until the parity gap closes — otherwise its committed
+trees advertise coverage that does not exist.
+
+One fixture is in that position at HEAD: the W3C §6.4 autoforward
+field-preservation machine at
+`tests/integration/fixtures/autoforward_event_fields.scxml`, exercised on both
+C++ channels (`tests/integration/AutoforwardEventFields{,Aot}Test.cpp`) by an
+explicit codegen rule in `tests/CMakeLists.txt`. The Rust and Go invoke
+templates still forward the event name alone, Python forwards name + data, and
+C11 has no autoforward path, so it is deliberately not fanned out yet.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the
