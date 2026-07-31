@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4 autoforward field preservation on the local-invoke path.
+
+     W3C §6.4 requires the parent to forward an exact copy of every
+     external event to an `<invoke autoforward="true">` child. The public
+     IRP suite checks only that the event *name* crosses (test229, whose
+     child signals success on receipt) or leaves the field comparison to a
+     human (test230 is a manual test — both machines print their `_event`
+     fields and the tester compares them). Neither shape fails when the
+     forwarded copy arrives stripped of its payload, so this fixture
+     closes that gap with a machine-checkable assertion.
+
+     The child sends `childToParent` carrying `<param name="value"/>` and
+     then waits for the parent to forward that same event back. Its
+     receiving transition conds on the three fields the copy must carry:
+
+       _event.data.value === 42   the payload survived the forward
+       _event.origin !== ''       the originating session id survived
+       _event.invokeid !== ''     the invoke correlation survived
+
+     The verdict rides back to the parent as `<donedata>` so a stripped
+     copy surfaces as an explicit `fail` state rather than a timeout.
+
+     The parent's `<transition event="childToParent"/>` is targetless on
+     purpose: per §6.4 autoforward is orthogonal to the parent's own
+     handling of the event, so the parent both consumes it and forwards it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="autoforward_event_fields">
+    <state id="phase">
+        <invoke type="scxml" id="inv_echo" autoforward="true">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="emit">
+                    <state id="emit">
+                        <onentry>
+                            <send target="#_parent" event="childToParent">
+                                <param name="value" expr="42"/>
+                            </send>
+                        </onentry>
+                        <transition event="childToParent"
+                                    cond="_event.data &amp;&amp; _event.data.value === 42
+                                          &amp;&amp; _event.origin !== ''
+                                          &amp;&amp; _event.invokeid !== ''"
+                                    target="fields_preserved"/>
+                        <transition event="childToParent" target="fields_stripped"/>
+                    </state>
+                    <final id="fields_preserved">
+                        <donedata>
+                            <param name="verdict" expr="'preserved'"/>
+                        </donedata>
+                    </final>
+                    <final id="fields_stripped">
+                        <donedata>
+                            <param name="verdict" expr="'stripped'"/>
+                        </donedata>
+                    </final>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="childToParent"/>
+        <transition event="done.invoke.inv_echo"
+                    cond="_event.data &amp;&amp; _event.data.verdict === 'preserved'"
+                    target="pass"/>
+        <transition event="done.invoke.inv_echo" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

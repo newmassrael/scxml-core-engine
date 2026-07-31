@@ -49,6 +49,9 @@
 {% endif %}
 {% if model.invokes | scxml or model.invokes | scxml_remote or model.invokes | hybrid %}
 #include "common/EventMetadataHelper.h"
+// W3C SCXML 6.4: `forwardToAutoforwardChildren` takes the source event's
+// name plus its `_event` fields so the child receives an exact copy.
+#include "common/ForwardedEvent.h"
 {% endif %}
 {% if model.invokes | scxml_remote %}
 // SCE_MESH.md §9.6 — remote `<invoke type="scxml">` lifecycle hooks
@@ -842,6 +845,15 @@ public:
     /// which raises `done.invoke.<id>` and retires the activeInvokes_ entry.
     void onInvokeDone(const ::SCE::Mesh::MeshEnvelope& env) {
         this->policy_.onInvokeDone(env, *this);
+    }
+
+    /// SCE_MESH.md §9.6.4 step 4 SM-side entry point. `MeshDispatch::
+    /// dispatchEnvelope` probes this method via SFINAE
+    /// (`HasActiveChildSessionHook`) before enqueueing a wire-16 ChildEvent,
+    /// so an event from a child whose invoke the parent has already left is
+    /// discarded instead of reaching transition selection.
+    bool hasActiveChildSession(const std::string& childSessionId) {
+        return this->policy_.hasActiveChildSession(childSessionId);
     }
 {% endif %}
 {% if _role_stats.has_nonroot %}

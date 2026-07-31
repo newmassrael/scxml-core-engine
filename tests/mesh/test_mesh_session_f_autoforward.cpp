@@ -62,7 +62,17 @@ int main() {
     // targetless `<transition event="trigger"/>` AND the autoforward
     // closure fires (W3C §6.4.1 — both run, autoforward does not consume
     // the event).
-    parent.raiseExternal(ParentEngine::EventWithMetadata(ParentEvent::Trigger));
+    //
+    // The event carries a payload and a sendid so the child can assert
+    // §9.6.5's "copied verbatim" clause: both have a wire-17 slot
+    // (envelope `data` / `reply_to`) and must survive the forward. A
+    // name-only forward drives the worker to `stripped`, whose donedata
+    // sends the parent to `fail` rather than letting the run time out.
+    parent.raiseExternal(ParentEngine::EventWithMetadata(ParentEvent::Trigger,
+                                                         /*data*/ R"({"value":42})",
+                                                         /*origin*/ std::string(),
+                                                         /*sendId*/ "trigger_send_1",
+                                                         /*type*/ "external"));
 
     const auto deadline = clock::now() + std::chrono::seconds(5);
     while (clock::now() < deadline) {

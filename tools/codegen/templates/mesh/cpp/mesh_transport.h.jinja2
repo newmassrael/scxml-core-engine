@@ -1131,8 +1131,18 @@ struct TransportRouter {
             if (!env.subject) return;
             auto it = sessions_.find(*env.subject);
             if (it == sessions_.end()) return;
-            std::string data(env.data.begin(), env.data.end());
-            (void)it->second->raiseExternal(env.type, data, std::string());
+            // SCE_MESH.md §9.6.5 — the parent forwards the event copied
+            // verbatim; wire-17 carries the two fields it has slots for.
+            // `_event.origin` / `_event.invokeid` are the child-side
+            // derivation §9.6.3 owns, and the processor identity is
+            // stamped by ChildSessionAdapter.
+            ::SCE::Common::ForwardedEvent forwarded;
+            forwarded.name = env.type;
+            forwarded.data.assign(env.data.begin(), env.data.end());
+            if (env.reply_to) {
+                forwarded.sendId = *env.reply_to;
+            }
+            (void)it->second->raiseExternal(forwarded);
         }
 
         void onWire19(const ::SCE::Mesh::MeshEnvelope& env) {
@@ -2189,11 +2199,11 @@ struct TransportRouter {
                     env.data.assign(data.begin(), data.end());
                     env.subject = invokeIdString;
                     if (!sendId.empty()) {
-                        // §9.6.3: sendId on the original event is preserved
-                        // only when present; the current forwarding path in
-                        // `forwardToAutoforwardChildren` passes an empty
-                        // string (parity with local invoke) so this branch
-                        // is typically skipped for now.
+                        // §9.6.5: the forwarded event is copied verbatim, so
+                        // the source event's sendid rides in `reply_to` —
+                        // the only wire-17 slot for it. Left unset when the
+                        // source event carried no sendid, which keeps the
+                        // envelope free of an empty optional.
                         env.reply_to = sendId;
                     }
                     env.routing_id = routing_id_;

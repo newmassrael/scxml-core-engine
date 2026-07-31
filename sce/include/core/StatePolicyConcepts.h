@@ -20,6 +20,8 @@
 #include <concepts>
 #endif
 
+#include "common/ForwardedEvent.h"
+
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -57,7 +59,8 @@ template <typename P, typename E, typename = void> struct HasAutoforwardTrait : 
 template <typename P, typename E>
 struct HasAutoforwardTrait<P, E,
                            std::void_t<decltype(std::declval<P>().forwardToAutoforwardChildren(
-                               std::declval<const std::string &>(), std::declval<E &>()))>> : std::true_type {};
+                               std::declval<const ::SCE::Common::ForwardedEvent &>(), std::declval<E &>()))>>
+    : std::true_type {};
 
 template <typename P, typename M, typename E, typename = void> struct HasFinalizeTrait : std::false_type {};
 

@@ -10,22 +10,30 @@
      `ParentEvent` on the `/sce_p2c_<parent>_<child>` channel.
 
      The worker's inbound pump (`pumpScxmlInvokeRequests`) dispatches
-     wire-17 through `WorkerSessionHost::onWire17`, calling the child
-     adapter's `raiseExternal(event_name, data, sendId)`. The child
-     transitions to `done` on the forwarded event; the next host tick
-     sees `isFinal()` and emits wire-18 `InvokeDone`, which the parent
-     observes as `done.invoke.remote_inv`. Reaching `pass` proves the
-     full autoforward round-trip. -->
+     wire-17 through `WorkerSessionHost::onWire17`, which hands the child
+     adapter a `ForwardedEvent`. The child asserts that §9.6.5's "copied
+     verbatim" held for the two fields wire-17 carries (payload and
+     sendid) and reports its verdict through `<donedata>` on wire-18.
+     Reaching `pass` proves both the lifecycle round-trip and that the
+     forward was not stripped down to the bare event name. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" initial="waiting" name="parent_session_f_autoforward">
+       version="1.0" datamodel="lua" initial="waiting" name="parent_session_f_autoforward">
     <state id="waiting">
         <invoke type="scxml" src="#worker_session_f_autoforward" id="remote_inv" autoforward="true"/>
         <!-- `trigger` must be in the parent's Event enum so the test driver
              can `raiseExternal(Event::Trigger)`. A targetless transition
-             enumerates the event without altering the parent's state. -->
+             enumerates the event without altering the parent's state, and
+             per §6.4 the parent's own handling is orthogonal to the
+             forward — both happen. -->
         <transition event="trigger"/>
-        <transition event="done.invoke" target="pass"/>
-        <transition event="done.invoke.remote_inv" target="pass"/>
+        <transition event="done.invoke"
+                    cond="_event.data ~= nil and _event.data.verdict == 'preserved'"
+                    target="pass"/>
+        <transition event="done.invoke.remote_inv"
+                    cond="_event.data ~= nil and _event.data.verdict == 'preserved'"
+                    target="pass"/>
+        <transition event="done.invoke" target="fail"/>
+        <transition event="done.invoke.remote_inv" target="fail"/>
         <transition event="error.execution" target="fail"/>
     </state>
     <final id="pass"/>

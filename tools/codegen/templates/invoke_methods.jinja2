@@ -343,8 +343,16 @@
     // Local invokes forward via `child_<suffix>_->raiseExternal`; remote
     // scxml invokes (SCE_MESH.md §9.6) forward via wire-17 `ParentEvent`
     // through the engine's registered callback.
+    //
+    // The parameter is the whole source event, not its name: §6.4 requires an
+    // exact copy, so `_event.data` / `origin` / `sendid` / `origintype` /
+    // `invokeid` travel with it (SCE_MESH.md §9.6.5 "the event copied
+    // verbatim"). The remote arm can only carry what wire-17 has fields for —
+    // name, payload and sendid — because §9.6.3 re-derives `_event.origin`
+    // and `_event.invokeid` at the child from the envelope's own identity.
     template <typename Engine>
-    void forwardToAutoforwardChildren([[maybe_unused]] const std::string& eventName, [[maybe_unused]] Engine& engine) {
+    void forwardToAutoforwardChildren([[maybe_unused]] const ::SCE::Common::ForwardedEvent& forwarded,
+                                      [[maybe_unused]] Engine& engine) {
 
         {% for state_id, state in model.states | dictsort %}
         {% if state.invokes | scxml %}
@@ -370,10 +378,11 @@
                           (child_{{ invoke_info.field_suffix }}_ != nullptr));
             }
             if (__sce_autoforward_active && child_{{ invoke_info.field_suffix }}_) {
-                AOT_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", eventName);
-                // W3C SCXML 6.4.1: Forward by event name string to child
-                // Child's raiseExternal(string) will convert to its Event enum and handle gracefully if not found
-                child_{{ invoke_info.field_suffix }}_->raiseExternal(eventName);
+                AOT_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", forwarded.name);
+                // W3C SCXML 6.4.1: Forward the whole event to the child. The
+                // child resolves the name against its own Event enum and
+                // degrades gracefully when it declares no such event.
+                child_{{ invoke_info.field_suffix }}_->raiseExternal(forwarded);
             }
         }
         {% endfor %}
@@ -404,9 +413,9 @@
                 (void)engine.performScxmlInvokeParentEvent(
                     "{{ invoke_info.remote_mesh_target }}",
                     "{{ invoke_info.invoke_id }}",
-                    eventName,
-                    /*data*/ std::string(),
-                    /*sendId*/ std::string());
+                    forwarded.name,
+                    forwarded.data,
+                    forwarded.sendId);
             }
         }
         {% endfor %}
@@ -480,6 +489,28 @@
 {% endif %}
 
 {% if model.invokes | scxml_remote %}
+    // SCE_MESH.md §9.6.4 step 4 — does a still-active `<invoke>` own this
+    // child session? `MeshDispatch::dispatchEnvelope` asks before enqueueing
+    // a wire-16 ChildEvent, so an event from a session the parent has
+    // already left never reaches transition selection. The entry is stamped
+    // by `onInvokeStarted` (wire-15) and erased by the invoking state's
+    // onexit — the same `sessionId == origin` key `executeFinalizeForChildEvent`
+    // matches on, so finalize and admission cannot disagree about which
+    // invoke an event belongs to.
+    bool hasActiveChildSession(const std::string& childSessionId) {
+        if (childSessionId.empty()) {
+            return false;
+        }
+        std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+        for (const auto& [invokeId, childSession] : activeInvokes_) {
+            (void)invokeId;
+            if (childSession.sessionId == childSessionId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // SCE_MESH.md §9.6.2 wire-15 consumer — parent stashes the child's
     // session URI (§9.6.3 L1463 `_event.origin` source). Matched by
     // env.subject against the compile-time invoke_id emitted at wire-14
