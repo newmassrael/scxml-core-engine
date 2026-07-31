@@ -29,6 +29,17 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# Pin the §synth-6.2.6 `generated-at` stamp (reproducible-builds
+# convention, honoured by `forge::drift::now_utc_seconds`). Without it the
+# stamp is wall-clock, so every regeneration rewrites all ~1100 committed
+# files whether or not anything semantic moved — churn that trains
+# reviewers to skim exactly the diffs a drift header exists to make
+# visible, and that makes "regenerate and expect no diff" unexpressible as
+# a gate. The stamp feeds neither hash, so pinning it costs no provenance.
+# `committed_trees_carry_a_pinned_generated_at` fails if a regeneration
+# lands without it.
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
+
 CODEGEN="target/release/sce-codegen"
 
 if [[ ! -x "$CODEGEN" ]]; then
