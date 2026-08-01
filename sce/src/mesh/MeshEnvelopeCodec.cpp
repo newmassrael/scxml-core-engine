@@ -307,6 +307,16 @@ bool isValidRpcStatus(uint64_t v) {
 }  // namespace
 
 std::vector<uint8_t> encodeEnvelope(const MeshEnvelope &env) {
+    // SCE_MESH.md §mesh-7.5 mesh-native serialization: this is the encode half
+    // of the single shared codec every byte-stream transport uses. The section
+    // pins one canonical wire format for SCE↔SCE traffic — a CBOR-encoded
+    // MeshEnvelope — so SOME/IP, Zenoh and custom_tcp call this directly and
+    // SHM calls it inside ShmChannel rather than each carrying its own format.
+    // Schema-free by design: the payload rides as opaque bytes, so no
+    // user-supplied schema is needed on either side (the schema-required half
+    // of §mesh-7.5 is external protocol adaptation, which is Forge codec work
+    // outside this file).
+    //
     // First pass on a stack buffer covers ~95% of envelopes (small JSON
     // payloads, no large strings). If it overflows, tinycbor reports the
     // exact extra bytes needed and we re-encode in a sized heap buffer.
@@ -354,6 +364,12 @@ std::vector<uint8_t> encodeEnvelope(const MeshEnvelope &env) {
 }
 
 bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
+    // SCE_MESH.md §mesh-7.5 mesh-native serialization: the decode half of the
+    // shared codec. Symmetry with encodeEnvelope() is what makes the wire
+    // format canonical rather than per-transport — a receiver reconstructs the
+    // envelope without knowing which transport carried it, which is the
+    // property the section relies on when it says both sides run SCE-generated
+    // code and the wire format is an internal concern.
     if (raw == nullptr || len == 0) {
         return false;
     }
