@@ -333,18 +333,35 @@ fn walk_filtered(
     out: &mut BTreeMap<PathBuf, [u8; 32]>,
     keep: &dyn Fn(&Path) -> bool,
 ) -> Result<(), DriftHashError> {
-    let mut visited: BTreeSet<PathBuf> = BTreeSet::new();
-    walk_filtered_recursive(anchor, root, out, keep, &mut visited)
+    // Seeded with the root so a link naming the root is recognised as a
+    // cycle by the same rule that catches one naming any other ancestor.
+    let mut descent: BTreeSet<PathBuf> = BTreeSet::new();
+    descent.insert(canonical_key(root));
+    walk_filtered_recursive(anchor, root, out, keep, &mut descent)
 }
 
-/// Recursive half of [`walk_filtered`]. `visited` carries the canonicalized
-/// directories already descended into so a symlink cycle terminates.
+/// Recursive half of [`walk_filtered`]. `descent` carries the canonicalized
+/// directories on the path currently being descended, so a directory link
+/// that resolves to one of its own ancestors terminates the walk.
+///
+/// The set is the *current path*, not every directory ever visited, and the
+/// distinction decides the digest. Two links can resolve to one directory
+/// without either being a cycle — neither lies on the other's descent path,
+/// and each names a distinct set of root-relative paths, which is what the
+/// source set is keyed by. Suppressing the second one instead makes the
+/// surviving name a function of `fs::read_dir` ordering, so the same tree
+/// hashes differently on two machines; it also drops the alias from drift
+/// detection, since removing it would leave the digest unchanged.
+///
+/// A link onto an ancestor is the opposite case: every file it reaches is
+/// one the walk is already collecting, reachable under unboundedly many
+/// spellings. Cutting there is what bounds the walk.
 fn walk_filtered_recursive(
     anchor: &Path,
     dir: &Path,
     out: &mut BTreeMap<PathBuf, [u8; 32]>,
     keep: &dyn Fn(&Path) -> bool,
-    visited: &mut BTreeSet<PathBuf>,
+    descent: &mut BTreeSet<PathBuf>,
 ) -> Result<(), DriftHashError> {
     let entries = fs::read_dir(dir).map_err(|e| DriftHashError::Io {
         path: dir.to_path_buf(),
@@ -381,13 +398,15 @@ fn walk_filtered_recursive(
         };
         if target_type.is_dir() {
             // Symlinked directories can form cycles. Key the guard on the
-            // canonical target so two links to the same directory are
-            // descended once, and a self-referential one terminates.
-            let key = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            if !visited.insert(key) {
+            // canonical target so a link onto a directory already being
+            // descended terminates instead of recursing.
+            let key = canonical_key(&path);
+            if !descent.insert(key.clone()) {
                 continue;
             }
-            walk_filtered_recursive(anchor, &path, out, keep, visited)?;
+            let descended = walk_filtered_recursive(anchor, &path, out, keep, descent);
+            descent.remove(&key);
+            descended?;
         } else if target_type.is_file() && keep(&path) {
             let bytes = fs::read(&path).map_err(|e| DriftHashError::Io {
                 path: path.clone(),
@@ -398,6 +417,15 @@ fn walk_filtered_recursive(
         }
     }
     Ok(())
+}
+
+/// Identity a directory is compared by when deciding whether the walk is
+/// already inside it. Falls back to the path as addressed when the real
+/// path cannot be resolved — a directory whose identity cannot be
+/// established is better treated as distinct than silently merged with
+/// another.
+fn canonical_key(dir: &Path) -> PathBuf {
+    fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())
 }
 
 fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
@@ -570,6 +598,95 @@ mod tests {
             h, flat,
             "a cyclic directory link must be descended once and contribute \
              nothing beyond the files already collected"
+        );
+    }
+
+    /// A link resolving to the root itself is the same class as the case
+    /// above — it names no file the walk is not already collecting, only a
+    /// second spelling of each, and unboundedly many of them. The cycle
+    /// guard has to be seeded with the root for the two to agree.
+    #[test]
+    fn source_hash_terminates_on_a_link_back_to_the_root() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "doc.scxml", b"<scxml/>");
+        std::os::unix::fs::symlink(root, root.join("self")).unwrap();
+
+        let set = SourceSet::collect(root, None).unwrap();
+        let keys: Vec<String> = set
+            .entries
+            .keys()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["doc.scxml".to_string()],
+            "a link to the root re-spells files already collected; it must \
+             not add entries"
+        );
+    }
+
+    /// Two links under one root may resolve to the same directory without
+    /// either being a cycle: neither is on the other's descent path, and
+    /// each names a distinct set of root-relative paths. The W3C tree does
+    /// exactly this — `resources/403a`, `403b` and `403c` all name
+    /// `resources/403`.
+    ///
+    /// Suppressing the second and later ones leaks `fs::read_dir` ordering
+    /// into the digest: whichever name the filesystem happens to yield
+    /// first is the one that keys the entries, so two machines hash the
+    /// same tree to different values. It also drops the alias from drift
+    /// detection — removing it would leave the digest unchanged.
+    #[test]
+    fn source_hash_counts_every_alias_of_one_directory() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "real/doc.scxml", b"<scxml/>");
+        std::os::unix::fs::symlink(root.join("real"), root.join("alias_a")).unwrap();
+        std::os::unix::fs::symlink(root.join("real"), root.join("alias_b")).unwrap();
+
+        let set = SourceSet::collect(root, None).unwrap();
+        let keys: Vec<String> = set
+            .entries
+            .keys()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                "alias_a/doc.scxml".to_string(),
+                "alias_b/doc.scxml".to_string(),
+                "real/doc.scxml".to_string(),
+            ],
+            "every root-relative path naming a .scxml keys its own entry"
+        );
+    }
+
+    /// The digest the aliases produce must not depend on which name the
+    /// filesystem yields first. Building the same logical tree with the
+    /// links created in the opposite order pins that: under a first-wins
+    /// guard the two trees agree only by luck of the two readdir orders.
+    #[test]
+    fn source_hash_of_aliased_directories_ignores_creation_order() {
+        let build = |a_first: bool| {
+            let dir = TempDir::new().unwrap();
+            let root = dir.path();
+            write_file(root, "real/doc.scxml", b"<scxml/>");
+            let names = if a_first {
+                ["alias_a", "alias_b"]
+            } else {
+                ["alias_b", "alias_a"]
+            };
+            for name in names {
+                std::os::unix::fs::symlink(root.join("real"), root.join(name)).unwrap();
+            }
+            compute_source_hash(root, None).unwrap()
+        };
+        assert_eq!(
+            build(true),
+            build(false),
+            "the source-hash must be a function of the tree, not of the \
+             order its entries were created in"
         );
     }
 
