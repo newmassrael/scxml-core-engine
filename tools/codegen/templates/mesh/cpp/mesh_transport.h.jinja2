@@ -39,6 +39,18 @@
    The session's config is the device's `transports.zenoh` block, so
    deploy.yaml remains the only source for it. #}
 
+{# §mesh-9.2: the child session id is assembled in exactly one place — the
+   `WorkerSessionHost::onWire14` line `session_id = env.source + ":" +
+   invoke_id_str` — and every later carrier (wire-15 `child_session_id`, the
+   `ChildSessionAdapter` that stamps it onto every outbound envelope) copies
+   that string rather than rebuilding it, so the two halves cannot disagree
+   about a session's identity. `env.source` on an inbound wire-14 is the
+   PARENT machine name, which is why the format needs no device component:
+   deploy.yaml rejects a machine name hosted by two devices, so the machine
+   name already resolves to one device and naming it again would duplicate
+   the topology inside every id. The suffix is the SCXML invoke id the parent
+   already keys `activeInvokes_` on, not a session-local counter. #}
+
 {# SCE Mesh — unified transport routing (per-target transport dispatch).
 
    Each target's transport type determines its send function and router field.
