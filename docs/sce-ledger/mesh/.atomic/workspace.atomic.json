@@ -344,6 +344,10 @@
           "file": "sce/include/mesh/OrderingBuffer.h",
           "symbol": "admit",
           "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
         }
       ]
     },
@@ -371,6 +375,10 @@
         {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "OrderingTimings",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
         }
       ]
@@ -1009,13 +1017,31 @@
       "title": "Key Expression Mapping",
       "parent_doc": "mesh",
       "parent_section": "mesh-15",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "build_transport_state",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "build_server_transport_state",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-15.2": {
       "title": "Session Management",
       "parent_doc": "mesh",
       "parent_section": "mesh-15",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-15.3": {
       "title": "QoS Configuration (deploy.yaml → Generated Code)",
@@ -2069,6 +2095,16 @@
           "file": "sce/include/mesh/CommunicationError.h",
           "symbol": "codec",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
+          "symbol": "encodeEnvelope",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
+          "symbol": "decodeEnvelope",
+          "kind": "implements"
         }
       ]
     },
@@ -2510,6 +2546,10 @@
         {
           "file": "sce-build/src/mesh/transport/zenoh.rs",
           "symbol": "p2c_and_c2p_are_distinct_for_same_pair",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
         }
       ]

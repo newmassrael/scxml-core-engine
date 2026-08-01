@@ -1263,6 +1263,15 @@ fn build_server_transport_state(
             })
         }
         "zenoh" => {
+            // SCE_MESH.md §mesh-15.1: the server-side counterpart of the
+            // per-target mapping. A machine that answers queries declares
+            // its queryable on the key expression its `server:` block
+            // names, so the same deploy.yaml-only rule holds in the
+            // receive direction — this is what lets the build tool derive
+            // a subscriber's key from the publisher's topology entry
+            // instead of requiring both sides to agree in prose. Absent
+            // `key:` is rejected rather than defaulted: a silent empty
+            // key would declare a queryable nobody can address.
             let key = server_cfg
                 .key
                 .clone()
@@ -2297,6 +2306,14 @@ fn build_transport_state(
             }
         }
         "zenoh" => {
+            // SCE_MESH.md §mesh-15.1 key expression mapping. The key
+            // expression for a `#target` comes from that binding's `key:`
+            // in deploy.yaml and from nowhere else — never from the SCXML
+            // document, which names only `#target`. Reading it here, at
+            // the single point where a binding becomes a typed
+            // `TransportState::Zenoh`, is what keeps location transparency
+            // structural rather than a convention: there is no path by
+            // which an authored SCXML string could reach the emitted key.
             let key = pt
                 .extra
                 .get("key")
