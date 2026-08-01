@@ -4285,6 +4285,30 @@
         {
           "file": "scripts/regen_nested_final_not_terminal_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_precedes_external_dequeue.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_precedes_external_dequeue_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_precedes_external_dequeue_kotlin.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_precedes_dequeue_midrun.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_precedes_dequeue_midrun_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_invoke_precedes_dequeue_midrun_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

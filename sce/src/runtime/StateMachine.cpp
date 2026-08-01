@@ -773,7 +773,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                        SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+                        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
                         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             SCE_LOG_DEBUG(
                                 "W3C SCXML 3.3: Processing queued internal event after parallel external transition");
@@ -1135,7 +1135,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                        SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+                        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
                         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             SCE_LOG_DEBUG("W3C SCXML 3.4: Processing done.state event after parallel completion");
                             return true;
@@ -1237,7 +1237,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                        SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+                        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
                         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             SCE_LOG_DEBUG(
                                 "W3C SCXML 3.3: Processing queued internal event after successful transition");
@@ -1278,7 +1278,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
             // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-            SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+            SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
             SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                 SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event");
                 return true;
@@ -4074,16 +4074,24 @@ void StateMachine::deferInvokeExecution(const std::string &stateId,
     std::lock_guard<std::recursive_mutex> lock(pendingInvokesMutex_);
     size_t beforeSize = pendingInvokes_.size();
 
-    // §scxml-6.4: Defer each invoke individually (matches AOT pattern)
+    // §scxml-6.4: Defer each invoke individually (matches AOT pattern) through
+    // the shared helper, so the Interpreter and the AOT engines schedule with
+    // one algorithm (ARCHITECTURE.md Zero Duplication) and both inherit
+    // §scxml-D-GlobalVariables' set semantics for `statesToInvoke`.
     for (size_t i = 0; i < invokes.size(); ++i) {
         const auto &invoke = invokes[i];
-        std::string invokeId = invoke ? (invoke->getId().empty() ? "(auto-generated)" : invoke->getId()) : "null";
+        // The helper's identity is (state, invokeId), so an anonymous
+        // `<invoke>` needs a placeholder that still separates it from its
+        // siblings — document order does that and reads better in the log than
+        // a bare "(auto-generated)" repeated per invoke.
+        std::string invokeId =
+            invoke ? (invoke->getId().empty() ? "(auto-generated#" + std::to_string(i) + ")" : invoke->getId())
+                   : "null";
         std::string invokeType = invoke ? invoke->getType() : "null";
         SCE_LOG_DEBUG("StateMachine: DETAILED DEBUG - Deferring invoke[{}]: id='{}', type='{}'", i, invokeId,
                       invokeType);
 
-        PendingInvoke pending{invokeId, stateId, invoke};
-        pendingInvokes_.push_back(pending);
+        SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_, PendingInvoke{invokeId, stateId, invoke});
     }
 
     SCE_LOG_DEBUG("StateMachine: DETAILED DEBUG - Pending invokes count: {} -> {}", beforeSize, pendingInvokes_.size());

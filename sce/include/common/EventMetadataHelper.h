@@ -192,7 +192,7 @@ public:
      *
      * @example
      * @code
-     * // In StaticExecutionEngine::processEventQueues()
+     * // In StaticExecutionEngine::processInternalQueue()
      * EventWithMetadata eventWithMeta = queue.pop();
      * EventMetadataHelper::populatePolicyFromMetadata(policy_, eventWithMeta);
      * // Now policy_ has all metadata fields set for _event binding

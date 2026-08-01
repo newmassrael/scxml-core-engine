@@ -66,12 +66,39 @@ public:
      * std::vector<PendingInvoke> pending;
      * InvokeHelper::deferInvoke(pending, {"invoke_1", 42});
      * @endcode
+     *
+     * Appendix D declares `statesToInvoke` a *set*, and `enterStates`
+     * schedules with `statesToInvoke.add(s)` — scheduling a state
+     * that is already scheduled is a no-op there. A plain container loses that,
+     * and one entry can reach this function more than once: an engine that
+     * signals entry through both an onentry hook and a dedicated invoke-defer
+     * hook calls it twice for the same atomic state. The duplicate then reaches
+     * `executeInvoke` twice and only survives because that layer refuses an
+     * already-active id — a defensive guard doing the set's job, and one that
+     * would equally hide a genuine double invocation. Keeping the container a
+     * set here is what makes that guard redundant rather than load-bearing.
+     *
+     * @return true if the invoke was newly scheduled, false if it was already
+     *         pending for the same state (identity is `state` + `invokeId`, so
+     *         callers must give sibling invokes in one state distinct ids)
      */
     template <typename PendingContainer, typename InvokeInfo>
-    static void deferInvoke(PendingContainer &pending, const InvokeInfo &invokeInfo) {
+    static bool deferInvoke(PendingContainer &pending, const InvokeInfo &invokeInfo) {
+        // §scxml-D-GlobalVariables: `statesToInvoke` is a set, so a repeated
+        // schedule for the same state is a no-op rather than a second entry.
+        const bool alreadyPending = std::any_of(pending.begin(), pending.end(), [&invokeInfo](const auto &p) {
+            return p.state == invokeInfo.state && p.invokeId == invokeInfo.invokeId;
+        });
+        if (alreadyPending) {
+            SCE_LOG_DEBUG("InvokeHelper: Invoke {} already pending for this state, not scheduling again",
+                          invokeInfo.invokeId);
+            return false;
+        }
+
         pending.push_back(invokeInfo);
         // Note: state logging omitted - enum (AOT) not fmt-formattable, string (Interpreter) handled separately
         SCE_LOG_DEBUG("InvokeHelper: Deferred invoke {}", invokeInfo.invokeId);
+        return true;
     }
 
     /**

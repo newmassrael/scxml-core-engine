@@ -595,30 +595,14 @@ impl<P: StatePolicy> Engine<P> {
         // §scxml-3.3: Resolve current_state to the deepest initial leaf
         self.resolve_current_state_to_leaf();
 
-        // §scxml-C-1: Macrostep completion loop — drain internal + eventless
-        // until a stable configuration is reached.
-        sce_log_debug!("Engine::initialize: entering macrostep completion loop");
-        loop {
-            self.check_eventless_transitions();
-            if !self.internal_queue.has_events() && !self.external_queue.has_events() {
-                break;
-            }
-            self.process_event_queues();
-        }
-        sce_log_debug!("Engine::initialize: macrostep completion loop finished");
-
-        // §scxml-6.4: Execute pending invokes once stable
-        if concepts::has_invoke_support::<P>() {
-            let policy_ptr: *mut P = &mut self.policy as *mut P;
-            // SAFETY: see execute_on_entry.
-            unsafe {
-                (*policy_ptr).execute_pending_invokes(self);
-            }
-            // Process done.invoke events raised by immediately-completed children
-            sce_log_debug!("Engine::initialize: processing events raised by completed invokes");
-            self.process_event_queues();
-            self.check_eventless_transitions();
-        }
+        // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
+        // completes on eventless transitions and internal events, then the
+        // invokes for the states just entered run, and only then is anything
+        // taken off the external queue — so an `autoforward` child is live for
+        // every event `<onentry>` queued on the way in.
+        sce_log_debug!("Engine::initialize: entering main event loop");
+        self.run_main_event_loop();
+        sce_log_debug!("Engine::initialize: main event loop settled");
 
         // §scxml-6.4: Fire completion callback if we reached a final state during init.
         // SCE Protocol-Synthesis RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
@@ -642,8 +626,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `StaticExecutionEngine::step()`. Used by parent SMs to
     /// explicitly drive children after sending them events (§scxml-6.4).
     pub fn step(&mut self) {
-        self.process_event_queues();
-        self.check_eventless_transitions();
+        self.run_main_event_loop();
 
         #[cfg(not(feature = "no_std"))]
         if self.is_in_final_state() && self.completion_callback.is_some() {
@@ -701,17 +684,10 @@ impl<P: StatePolicy> Engine<P> {
             }
         }
 
-        // Delegate to step() for queue drain + completion callback
+        // Delegate to step() for the main event loop + completion callback.
+        // §scxml-6.4's invokes are part of that loop and run there, ahead of
+        // the external dequeue rather than after it.
         self.step();
-
-        // §scxml-6.4: Execute pending invokes after macrostep
-        if concepts::has_invoke_support::<P>() {
-            let policy_ptr: *mut P = &mut self.policy as *mut P;
-            // SAFETY: see execute_on_entry.
-            unsafe {
-                (*policy_ptr).execute_pending_invokes(self);
-            }
-        }
     }
 
     /// Stop the engine. Subsequent `tick`/`process_event` calls become no-ops.
@@ -1139,11 +1115,75 @@ impl<P: StatePolicy> Engine<P> {
     // Internal: microstep + macrostep implementation
     // ════════════════════════════════════════
 
-    /// §scxml-D-mainEventLoop: Process both internal and external queues.
-    pub(crate) fn process_event_queues(&mut self) {
-        sce_log_debug!("Engine::process_event_queues: starting internal queue drain");
+    /// §scxml-D-mainEventLoop: the outer loop, and the only place the three
+    /// public entry points express macrostep semantics.
+    ///
+    /// Appendix D names the external queue exactly once per iteration and it
+    /// is *after* `invoke(inv)`:
+    ///
+    /// ```text
+    /// while running:
+    ///     while running and not macrostepDone:      # eventless + internal only
+    ///         ... selectEventlessTransitions() / internalQueue.dequeue() ...
+    ///     for state in statesToInvoke.sort(entryOrder):
+    ///         for inv in state.invoke.sort(documentOrder):
+    ///             invoke(inv)
+    ///     statesToInvoke.clear()
+    ///     if not internalQueue.isEmpty(): continue
+    ///     externalEvent = externalQueue.dequeue()
+    /// ```
+    ///
+    /// Folding the external drain into the macrostep-completion loop instead
+    /// is a different algorithm, not a shorter one. The invoked children do
+    /// not exist yet while that drain runs, so everything `<onentry>` queued
+    /// for this session on the way in is consumed with no `autoforward` child
+    /// to receive it — and there is no later point at which it is delivered.
+    /// One external event per iteration for the same reason: a state entered
+    /// by event N's transition must have its invokes started before N+1 comes
+    /// off the queue.
+    pub(crate) fn run_main_event_loop(&mut self) {
+        loop {
+            // §scxml-D-mainEventLoop: complete the macrostep on eventless
+            // transitions and internal events alone.
+            loop {
+                self.check_eventless_transitions();
+                if !self.internal_queue.has_events() {
+                    break;
+                }
+                self.process_internal_queue();
+            }
 
-        // §scxml-C-1: Internal queue first
+            if !self.is_running || self.is_in_final_state() {
+                break;
+            }
+
+            // §scxml-6.4: invokes for states entered during this macrostep.
+            if concepts::has_invoke_support::<P>() {
+                let policy_ptr: *mut P = &mut self.policy as *mut P;
+                // SAFETY: see execute_on_entry.
+                unsafe {
+                    (*policy_ptr).execute_pending_invokes(self);
+                }
+            }
+
+            // §scxml-D-mainEventLoop: invoking may have raised internal error
+            // events (and a child that completed synchronously may already
+            // have raised `done.invoke`); handle them before touching the
+            // external queue.
+            if self.internal_queue.has_events() {
+                continue;
+            }
+
+            if !self.process_next_external_event() {
+                break;
+            }
+        }
+    }
+
+    /// §scxml-C-1: Drain the internal queue (high priority).
+    pub(crate) fn process_internal_queue(&mut self) {
+        sce_log_debug!("Engine::process_internal_queue: starting internal queue drain");
+
         while let Some(event_with_meta) = self.internal_queue.pop() {
             // §scxml-5.4.1: Stop if top-level final state reached. Same
             // predicate as everything else that means "the machine is done" —
@@ -1151,7 +1191,7 @@ impl<P: StatePolicy> Engine<P> {
             // public one drift away from it.
             if self.is_in_final_state() {
                 sce_log_debug!(
-                    "Engine::process_event_queues: top-level final state reached, stopping"
+                    "Engine::process_internal_queue: top-level final state reached, stopping"
                 );
                 return;
             }
@@ -1165,9 +1205,20 @@ impl<P: StatePolicy> Engine<P> {
             self.execute_transition(event_with_meta.event);
             self.policy.clear_event_metadata();
         }
+    }
 
-        // §scxml-C-1: External queue second
-        while let Some(event_with_meta) = self.external_queue.pop() {
+    /// §scxml-D-mainEventLoop: take exactly one event off the external queue,
+    /// run the preliminary `<finalize>` / `autoforward` step against it, then
+    /// select transitions. Returns `false` when the queue was empty.
+    ///
+    /// One event, not a drain: Appendix D returns to the top of the outer loop
+    /// after each external event, so a state entered by this event's
+    /// transition gets its invokes started before the next one is dequeued.
+    pub(crate) fn process_next_external_event(&mut self) -> bool {
+        let Some(event_with_meta) = self.external_queue.pop() else {
+            return false;
+        };
+        {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
                 let policy_ptr: *mut P = &mut self.policy as *mut P;
@@ -1218,6 +1269,7 @@ impl<P: StatePolicy> Engine<P> {
             self.execute_transition(event_with_meta.event);
             self.policy.clear_event_metadata();
         }
+        true
     }
 
     /// §scxml-3.13: Check and execute eventless transitions until stable.

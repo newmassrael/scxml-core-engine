@@ -208,13 +208,12 @@ class Engine(Generic[S, E]):
         self._enter_initial_path(initial_leaf)
         if self._reached_final or not self._is_running:
             return
-        self._process_queues()
-        # W3C SCXML 6.4 — once the initialise macrostep is stable, any
-        # `<invoke>` deferred during onentry runs. Newly raised events
-        # (e.g. `done.invoke.<id>` from a child that completed during
-        # its own initialise) re-enter the macrostep loop so the parent
-        # observes them before returning.
-        self._start_pending_invokes()
+        # §scxml-D-mainEventLoop — hand over to the outer loop. The macrostep
+        # completes on eventless transitions and internal events, then any
+        # `<invoke>` deferred during onentry runs, and only then is anything
+        # taken off the external queue — so an autoforward child is live for
+        # every event `<onentry>` queued on the way in.
+        self._run_main_event_loop()
 
     def stop(self) -> None:
         self._is_running = False
@@ -292,7 +291,7 @@ class Engine(Generic[S, E]):
         self._external_queue.append(
             EventWithMetadata(event=event, metadata=metadata or EventMetadata())
         )
-        self._process_queues()
+        self._run_main_event_loop()
 
     def raise_internal(self, event: E, metadata: Optional[EventMetadata] = None) -> None:
         """W3C SCXML 4.4 `<raise>` — enqueue an internal event (drained
@@ -476,12 +475,8 @@ class Engine(Generic[S, E]):
         # macrostep must run whenever either produced an event so the
         # parent observes `done.invoke.<id>` and any child-raised
         # `<send target="#_parent">` on the same tick (test347, test236).
-        if (self._external_queue or self._internal_queue) and self._is_running and not self._reached_final:
-            self._process_queues()
-        # W3C SCXML 6.4 — pending invokes deferred during the macrostep
-        # land after the queue is drained; their initialise-time
-        # outputs feed back into the macrostep on the next iteration.
-        self._start_pending_invokes()
+        if self._is_running and not self._reached_final:
+            self._run_main_event_loop()
 
     @property
     def now_ms(self) -> int:
@@ -496,18 +491,84 @@ class Engine(Generic[S, E]):
 
     # ── Microstep / macrostep core ────────────────────────────────
 
-    def _process_queues(self) -> None:
-        """§scxml-D-selectEventlessTransitions macrostep loop: drain eventless first,
-        then consume one queued event (internal-first, then external),
-        repeat until stable or final reached."""
+    def _run_main_event_loop(self) -> None:
+        """§scxml-D-mainEventLoop — the outer loop, and the only place the
+        public entry points express macrostep semantics.
+
+        Appendix D names the external queue exactly once per iteration and
+        it is *after* ``invoke(inv)``::
+
+            while running:
+                while running and not macrostepDone:   # eventless + internal only
+                    ... selectEventlessTransitions() / internalQueue.dequeue() ...
+                for state in statesToInvoke.sort(entryOrder):
+                    for inv in state.invoke.sort(documentOrder):
+                        invoke(inv)
+                statesToInvoke.clear()
+                if not internalQueue.isEmpty(): continue
+                externalEvent = externalQueue.dequeue()
+
+        Folding the external drain into the macrostep-completion loop
+        instead is a different algorithm, not a shorter one. The invoked
+        children do not exist yet while that drain runs, so everything
+        ``<onentry>`` queued for this session on the way in is consumed with
+        no ``autoforward`` child to receive it — and there is no later point
+        at which it is delivered. One external event per iteration for the
+        same reason: a state entered by event N's transition must have its
+        invokes started before N+1 comes off the queue.
+        """
+        while True:
+            # §scxml-D-mainEventLoop: complete the macrostep on eventless
+            # transitions and internal events alone.
+            self._process_internal_queue()
+            if not self._is_running or self._reached_final:
+                return
+            # W3C SCXML 6.4: invokes for states entered during this macrostep.
+            self._start_pending_invokes()
+            # §scxml-D-mainEventLoop: invoking may have raised internal error
+            # events (and a child that completed during its own initialise may
+            # already have raised `done.invoke`); handle them before touching
+            # the external queue.
+            if self._internal_queue:
+                continue
+            if not self._external_queue:
+                return
+            self._process_next_external_event()
+
+    def _process_internal_queue(self) -> None:
+        """§scxml-D-selectEventlessTransitions — eventless transitions first,
+        then one internal event, until neither is available."""
         while self._is_running and not self._reached_final:
             self._drain_eventless()
             if self._reached_final or not self._is_running:
                 return
-            evt = self._dequeue()
-            if evt is None:
+            if not self._internal_queue:
                 return
-            self._dispatch(evt)
+            self._dispatch(self._internal_queue.popleft())
+
+    def _process_next_external_event(self) -> None:
+        """§scxml-D-mainEventLoop — take exactly one event off the external
+        queue, run the preliminary ``<finalize>`` / autoforward step against
+        it, then select transitions.
+
+        Both preliminary steps key off *which queue the event came from*, not
+        off the event's name or its ``_event.type`` classification: Appendix D
+        applies them to `externalQueue.dequeue()`'s result and to nothing
+        else, so expressing that as the caller is what makes it exact.
+        """
+        evt = self._external_queue.popleft()
+        # W3C SCXML 6.5 — `<finalize>` runs before transition selection for
+        # events originating from invoked children, so the finalize body can
+        # write child-derived values back into the parent datamodel that
+        # subsequent guards then read.
+        if evt.metadata.invoke_id:
+            self._policy.set_current_event(evt.event, evt.metadata)
+            self._policy.execute_finalize_for_child_event(evt, self)
+        # W3C SCXML 6.4.1 — autoforward into every active child marked
+        # `autoforward="true"`, before transition selection, so the child
+        # observes the event in the same iteration the parent does.
+        self._route_to_child(evt)
+        self._dispatch(evt)
 
     def _drain_eventless(self) -> None:
         """W3C SCXML 3.13: fire all enabled eventless transitions until none remain."""
@@ -518,13 +579,6 @@ class Engine(Generic[S, E]):
                 return
             self._take_transitions(transitions)
 
-    def _dequeue(self) -> Optional[EventWithMetadata[E]]:
-        if self._internal_queue:
-            return self._internal_queue.popleft()
-        if self._external_queue:
-            return self._external_queue.popleft()
-        return None
-
     def _dispatch(self, evt: EventWithMetadata[E]) -> None:
         # W3C SCXML 5.10 — bind `_event` into the datamodel before the
         # microstep so transition guards and action expressions can
@@ -534,17 +588,10 @@ class Engine(Generic[S, E]):
         # `_event` when the processor "selects an event for
         # processing".
         self._policy.set_current_event(evt.event, evt.metadata)
-        # W3C SCXML 6.5 — `<finalize>` runs before transition selection
-        # for events originating from invoked children, so the
-        # finalize body can write child-derived values back into the
-        # parent datamodel that subsequent guards then read.
-        if evt.metadata.invoke_id:
-            self._policy.execute_finalize_for_child_event(evt, self)
-        # W3C SCXML 6.4.1 — autoforward external events into every
-        # active child marked `autoforward="true"`. Done before
-        # transition selection so the child observes the event in the
-        # same iteration the parent does.
-        self._route_to_child(evt)
+        # W3C SCXML 6.5 / 6.4.1 — the `<finalize>` and autoforward
+        # preliminary steps belong to the external dequeue and run in
+        # `_process_next_external_event`, which is the only caller that
+        # can know the event came off that queue.
         transitions = self._select_transitions(evt.event)
         if not transitions:
             return
@@ -1089,18 +1136,13 @@ class Engine(Generic[S, E]):
         current macrostep. The policy hook walks `_pending_invokes`,
         clears it, and inserts the resulting `Invoke` instances into
         `_active_invokes`. Children that complete during their own
-        initialise re-enter the macrostep loop via the parent's
-        external queue so the parent observes `done.invoke.<id>` and
-        any child-raised `<send target="#_parent">` synchronously."""
+        initialise raise `done.invoke.<id>` and any child-side
+        `<send target="#_parent">` onto the parent's external queue;
+        `_run_main_event_loop` is the caller and picks them up on its
+        next iteration."""
         if not self._pending_invokes:
             return
         self._policy.execute_pending_invokes(self)
-        if (
-            (self._external_queue or self._internal_queue)
-            and self._is_running
-            and not self._reached_final
-        ):
-            self._process_queues()
 
     def _drive_active_children(self, ms: int) -> None:
         """W3C SCXML 6.4 — tick every active child, propagating the

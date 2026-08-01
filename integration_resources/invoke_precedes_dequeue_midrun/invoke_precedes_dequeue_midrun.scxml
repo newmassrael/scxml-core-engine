@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML Appendix D: the invoke-before-dequeue order holds mid-run too.
+
+     `mainEventLoop` is one loop, so the ordering it fixes is not a property of
+     start-up. Every iteration completes a macrostep, starts the invokes for
+     the states that macrostep entered, and only then dequeues:
+
+       while running:
+           while running and not macrostepDone: ...
+           for state in statesToInvoke.sort(entryOrder):
+               for inv in state.invoke.sort(documentOrder):
+                   invoke(inv)
+           statesToInvoke.clear()
+           if not internalQueue.isEmpty(): continue
+           externalEvent = externalQueue.dequeue()
+
+     `statesToInvoke` is filled by `enterStates`, which runs in `microstep` —
+     so a state entered by an *external event's* transition arms an invoke that
+     must start before the next event comes off the queue. An engine that
+     drains the external queue to exhaustion inside one step satisfies the
+     start-up ordering and still loses this one: it takes the transition into
+     the invoking state and then keeps draining, so what that state's
+     `<onentry>` queued is consumed while the invoke is still pending.
+
+     The sibling `invoke_precedes_external_dequeue` pins the same order at
+     initialization, where the invoking state is the initial configuration and
+     no transition is involved. This fixture reaches the invoking state through
+     `arm -> phase`, so only an engine that returns to the top of the loop after
+     *each* external event answers both.
+
+     Everything past that hop is the sibling's arrangement: `phase`'s onentry
+     queues `kick` for the parent itself (§6.2.4), the child opens the verdict
+     exchange with `ready` so no wall-clock delay is involved, and the parent
+     interrogates the child over the second channel `<send target="#_inv_watch">`.
+     The child reports which state `probe` found it in, and both verdicts are
+     top-level `<final>` states, so neither outcome depends on a timeout.
+
+     The parent's `kick` transition is targetless and empty on purpose: it
+     changes no state, and it is what puts `kick` in the parent's event enum,
+     which the AOT backends resolve a targetless `<send>` against.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="arm"
+       name="invoke_precedes_dequeue_midrun">
+    <state id="arm">
+        <onentry>
+            <!-- W3C SCXML 6.2.4: no target, so `go` lands on this session's own
+                 external queue and the machine reaches `phase` by dequeuing it
+                 rather than by being initialized there. -->
+            <send event="go"/>
+        </onentry>
+        <transition event="go" target="phase"/>
+    </state>
+    <state id="phase">
+        <onentry>
+            <send event="kick"/>
+        </onentry>
+        <invoke type="scxml" id="inv_watch" autoforward="true">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="waiting">
+                    <state id="waiting">
+                        <onentry>
+                            <send target="#_parent" event="ready"/>
+                        </onentry>
+                        <transition event="kick" target="saw"/>
+                        <transition event="probe" target="missed">
+                            <send target="#_parent" event="sawNoKick"/>
+                        </transition>
+                    </state>
+                    <state id="saw">
+                        <transition event="probe" target="ordered">
+                            <send target="#_parent" event="sawKick"/>
+                        </transition>
+                    </state>
+                    <final id="missed"/>
+                    <final id="ordered"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="kick"/>
+        <transition event="ready">
+            <send target="#_inv_watch" event="probe"/>
+        </transition>
+        <transition event="sawKick" target="pass"/>
+        <transition event="sawNoKick" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

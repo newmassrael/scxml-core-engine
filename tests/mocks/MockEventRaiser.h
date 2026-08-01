@@ -49,6 +49,8 @@ public:
     void processQueuedEvents() override;
     bool processNextQueuedEvent() override;
     bool hasQueuedEvents() const override;
+    bool processNextInternalEvent() override;
+    bool hasQueuedInternalEvents() const override;
 
     void getEventQueues(std::vector<EventSnapshot> &outInternal,
                         std::vector<EventSnapshot> &outExternal) const override;

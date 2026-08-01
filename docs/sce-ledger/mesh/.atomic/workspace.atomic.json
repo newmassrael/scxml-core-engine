@@ -2720,7 +2720,7 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
+          "symbol": "processNextExternalEvent",
           "kind": "implements"
         }
       ]
