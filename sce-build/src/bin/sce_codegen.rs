@@ -117,6 +117,31 @@ struct DriftContext {
     generated_at: u64,
 }
 
+/// Routes a §synth-6.2.6 hash-walk failure onto the diagnostic that names
+/// its repair.
+///
+/// The two failures repair differently and so must not share a code. An I/O
+/// error points at the filesystem — permissions, a vanished path. The
+/// descent ceiling points at the *layout* of the input: a directory link
+/// naming a sibling multiplies the paths beneath it, and the fix is where
+/// `--input-root` points, not what mode the files carry. Both used to
+/// collapse onto `cli/read-input`, which sent a repair agent hunting
+/// permissions for a tree whose only problem was aliasing.
+fn drift_hash_failure(walked: &Path, axis: &str, err: drift::DriftHashError) -> CliError {
+    match err {
+        drift::DriftHashError::WalkLimitExceeded { root, limit } => {
+            CliError::SourceHashWalkUnbounded {
+                root: root.display().to_string(),
+                limit,
+            }
+        }
+        other => CliError::ReadInput {
+            path: format!("{}: {axis} compute failed: {other}", walked.display()),
+            source: std::io::Error::other("drift compute"),
+        },
+    }
+}
+
 impl DriftContext {
     /// Best-effort compute for the `template-hash` axis: failures along
     /// the workspace-probe path downgrade it to a zero hash and log a
@@ -142,12 +167,8 @@ impl DriftContext {
     /// from. An empty set is refused either way — no declaration makes
     /// the empty-input digest a truthful description of an input.
     fn compute(input_root: &Path, deploy: Option<&Path>, must_cover: Option<&Path>) -> Self {
-        let sources = drift::SourceSet::collect(input_root, deploy).unwrap_or_else(|e| {
-            cli_exit(CliError::ReadInput {
-                path: format!("{}: source-hash compute failed: {e}", input_root.display()),
-                source: std::io::Error::other("drift compute"),
-            })
-        });
+        let sources = drift::SourceSet::collect(input_root, deploy)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_root, "source-hash", e)));
         let undescribed = match must_cover {
             Some(input) => !sources.covers(input),
             None => sources.is_empty(),
@@ -4607,21 +4628,11 @@ fn cmd_verify(
 
     let expected_source = match compute_source_hash(input_path, deploy_path) {
         Ok(h) => h,
-        Err(e) => {
-            cli_exit(CliError::ReadInput {
-                path: format!("{}: source-hash compute failed: {e}", input_path.display()),
-                source: std::io::Error::other("drift compute"),
-            });
-        }
+        Err(e) => cli_exit(drift_hash_failure(input_path, "source-hash", e)),
     };
     let expected_template = match compute_template_hash(&tpl_root, &lock_path) {
         Ok(h) => h,
-        Err(e) => {
-            cli_exit(CliError::ReadInput {
-                path: format!("{}: template-hash compute failed: {e}", tpl_root.display()),
-                source: std::io::Error::other("drift compute"),
-            });
-        }
+        Err(e) => cli_exit(drift_hash_failure(&tpl_root, "template-hash", e)),
     };
     let expected = DriftHashes {
         source_hash: expected_source,

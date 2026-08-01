@@ -127,6 +127,32 @@ pub enum CliError {
         root: String,
         hashed: usize,
     },
+
+    /// Spec §synth-6.2.6 source-set enumeration did not terminate within its
+    /// descent ceiling.
+    ///
+    /// A directory symlink naming a sibling contributes under every name
+    /// that reaches it, so nested levels of such links name a number of
+    /// root-relative paths exponential in the depth. Those paths are all
+    /// genuine inputs under the documented rule, which is why the walk
+    /// refuses rather than hashing whichever prefix it reached: a digest
+    /// over a subset is the same unauditable header the empty-set refusal
+    /// above exists to prevent.
+    ///
+    /// Distinct from `ReadInput` on purpose. Both used to surface as
+    /// `cli/read-input`, which routes a repair agent at file permissions;
+    /// the repair here is the input layout — re-point `--input-root` below
+    /// the link farm, or remove the aliasing.
+    ///
+    /// `limit` is the ceiling, never how far the traversal got. The latter
+    /// varies with directory iteration order, and a diagnostic that shifts
+    /// between machines for one tree is not a diagnostic.
+    #[error(
+        "{root}: §6.2.6 source set exceeds {limit} directories — a directory \
+         symlink reaching a sibling multiplies the paths under it; re-point \
+         --input-root at a tree without the aliasing, or remove it"
+    )]
+    SourceHashWalkUnbounded { root: String, limit: usize },
 }
 
 impl CliError {
@@ -267,6 +293,14 @@ impl SingleDiagnostic for CliError {
                 // between "root resolved to nothing" and "input lives
                 // elsewhere" without re-walking the tree itself.
                 Some(format!("root={root} hashed={hashed}")),
+                None,
+            ),
+            CliError::SourceHashWalkUnbounded { root, limit } => (
+                DiagnosticCode::ForgeSourceHashWalkUnbounded,
+                vec![root.clone()],
+                // `actual` states the ceiling rather than a traversal count
+                // so the record is identical for one tree on any machine.
+                Some(format!("root={root} descent-limit={limit}")),
                 None,
             ),
         };
