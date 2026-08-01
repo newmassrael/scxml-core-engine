@@ -4273,6 +4273,18 @@
         {
           "file": "scripts/regen_autoforward_dequeue_point_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_nested_final_not_terminal.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_nested_final_not_terminal_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_nested_final_not_terminal_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

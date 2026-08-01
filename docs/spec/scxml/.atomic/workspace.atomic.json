@@ -2243,11 +2243,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isGlobalFinalState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
           "kind": "implements"
@@ -2300,6 +2295,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "is_in_final_state",
           "kind": "implements"
         }
       ],
@@ -7322,6 +7322,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "process_event_queues",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "isInFinalState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9867,6 +9872,16 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "isInFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "is_in_final_state",
           "kind": "implements"
         }
       ],
