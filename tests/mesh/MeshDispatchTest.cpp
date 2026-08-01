@@ -16,10 +16,13 @@
 // request path was unreachable end-to-end); this suite locks in the fix.
 
 #include "mesh/MeshDispatch.h"
+#include "mesh/ChildSessionAdapter.h"
 #include "mesh/MeshEnvelope.h"
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <string>
@@ -94,6 +97,18 @@ struct RecordingEngine {
     void raiseExternal(EventWithMetadata meta) {
         events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId), std::move(meta.origin),
                           std::move(meta.originType), std::move(meta.sendId)});
+    }
+
+    // SCE_MESH.md §mesh-9.6.2 wire 18. A real parent's generated hook raises
+    // `done.invoke.<id>`, which is what eventually drives the invoking
+    // state's onexit and releases `activeInvokes_`. The double records the
+    // subject so a test can assert the completion arrived — without the hook
+    // the SFINAE probe reports false and wire-18 is silently dropped, which
+    // would make any §mesh-9.3 completion assertion vacuous.
+    std::vector<std::string> invokeDoneSubjects;
+
+    void onInvokeDone(const MeshEnvelope &env) {
+        invokeDoneSubjects.push_back(env.subject.value_or(std::string{}));
     }
 
     // SCE_MESH.md §9.6.4 step 4: the parent identifies the `<invoke>` a
@@ -387,6 +402,72 @@ TEST(MeshDispatchTest, ChildEventKeepsSessionUriOriginNotMeshUri) {
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     ASSERT_EQ(engine.events.size(), 1u);
     EXPECT_EQ(engine.events[0].origin, "dev_a:parent:remote_inv");
+}
+
+namespace {
+
+constexpr std::array<std::uint8_t, 16> kInitFailInvokeUuid{
+    0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0, 0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
+};
+
+}  // namespace
+
+TEST(MeshDispatchTest, ChildInitFailureReachesParentAsErrorExecution) {
+    // SCE_MESH.md §mesh-9.3, branch "Child fails during initialization":
+    // `error.execution with reason: INVOKE_CHILD_INIT_FAILED`. The worker
+    // cannot hand the parent an exception, so the failure crosses the wire as
+    // a wire-20 envelope and the parent turns it back into the raise an
+    // author already handles. Asserting through `dispatchEnvelope` rather
+    // than on the builder's fields is what makes this a contract test: it
+    // pins the pairing of the envelope the worker produces with the raise the
+    // parent derives.
+    RecordingEngine engine;
+    auto env = SCE::Mesh::makeInvokeChildInitFailedEnvelope("worker_machine", kInitFailInvokeUuid, "remote_inv",
+                                                            "dev_a:parent:remote_inv", "datamodel expr threw");
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].event, RecordingEngine::Event::ErrorExecution);
+    EXPECT_NE(engine.events[0].data.find("INVOKE_CHILD_INIT_FAILED"), std::string::npos)
+        << "the §9.3 reason code must survive to _event.data; got: " << engine.events[0].data;
+    // The originating detail rides along so a diagnosis does not require
+    // correlating worker logs by timestamp.
+    EXPECT_NE(engine.events[0].data.find("datamodel expr threw"), std::string::npos);
+    // The parent correlates on the invoke id it stamped when it sent wire-14.
+    EXPECT_EQ(engine.events[0].invokeId, "f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
+}
+
+TEST(MeshDispatchTest, ChildInitFailureAlsoCompletesTheInvoke) {
+    // §mesh-9.3 pins a second event on the same branch: `+ done.invoke.<id>
+    // (child never reached a stable state)`. It is not decoration — the
+    // parent's `onInvokeDone` is what raises `done.invoke.<id>`, and only
+    // that raise drives the invoking state's onexit, which is where
+    // `activeInvokes_` is erased. Reporting the error alone would park the
+    // parent in the invoking state forever, waiting on a child that no
+    // longer exists.
+    RecordingEngine engine;
+    auto env = SCE::Mesh::makeInvokeDoneEnvelope("worker_machine", kInitFailInvokeUuid, "remote_inv",
+                                                 "dev_a:parent:remote_inv", "");
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.invokeDoneSubjects.size(), 1u);
+    EXPECT_EQ(engine.invokeDoneSubjects[0], "remote_inv");
+    // A failed child has no donedata; the codec tag must say so rather than
+    // claiming an empty JSON body the parent would try to parse.
+    EXPECT_EQ(env.datacontenttype, SCE::Mesh::PayloadCodec::None);
+}
+
+TEST(MeshDispatchTest, InvokeDoneEnvelopeCarriesDonedataWhenPresent) {
+    // The success path shares the builder with the §mesh-9.3 failure path, so
+    // this locks the axis the failure test holds constant: donedata present
+    // ⇒ Json codec tag. Without it, a builder that hardcoded `None` would
+    // pass the failure test and silently strip every real donedata payload.
+    auto env = SCE::Mesh::makeInvokeDoneEnvelope("worker_machine", kInitFailInvokeUuid, "remote_inv",
+                                                 "dev_a:parent:remote_inv", R"({"x":1})");
+
+    EXPECT_EQ(env.datacontenttype, SCE::Mesh::PayloadCodec::Json);
+    EXPECT_EQ(std::string(env.data.begin(), env.data.end()), R"({"x":1})");
+    EXPECT_EQ(env.pattern, PatternKind::InvokeDone);
 }
 
 TEST(MeshDispatchTest, DispatchesFieldAccessInboundOnServerRole) {

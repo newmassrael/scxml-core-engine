@@ -30,6 +30,8 @@
 #include "mesh/IChildSession.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/PatternKind.h"
+#include "mesh/PayloadCodec.h"
+#include "mesh/RpcStatus.h"
 
 #include <array>
 #include <cstdint>
@@ -43,6 +45,68 @@ namespace SCE::Mesh {
 /// via the worker's transport router. Returns true on acceptance. Signature
 /// matches the shape WorkerSessionHost::makeWire16Publisher() binds.
 using ChildToParentPublisher = std::function<bool(const MeshEnvelope &env)>;
+
+/// Reason code a worker reports when a child session could not be brought
+/// up; see [makeInvokeChildInitFailedEnvelope].
+inline constexpr const char *kInvokeChildInitFailed = "INVOKE_CHILD_INIT_FAILED";
+
+/// Build the wire-18 `InvokeDone` envelope a worker publishes when a child
+/// session completes.
+inline MeshEnvelope makeInvokeDoneEnvelope(const std::string &host_machine_name,
+                                           const std::array<uint8_t, 16> &invoke_uuid,
+                                           const std::string &invoke_id_string, const std::string &child_session_id,
+                                           const std::string &donedata) {
+    // Taking `donedata` as a parameter rather than reading it off the session
+    // is what lets the SCE_MESH.md §mesh-9.3 failure path reuse this builder:
+    // a child that threw during instantiation has no session left to
+    // interrogate, but the parent still needs the completion that releases
+    // its invoking state.
+    MeshEnvelope done{};
+    done.id = SCE::uuid::v7();
+    done.source = host_machine_name;
+    done.type = "sce.invoke.done";
+    done.pattern = PatternKind::InvokeDone;
+    done.invoke_id = invoke_uuid;
+    done.subject = invoke_id_string;
+    done.child_session_id = child_session_id;
+    done.data.assign(donedata.begin(), donedata.end());
+    done.datacontenttype = donedata.empty() ? PayloadCodec::None : PayloadCodec::Json;
+    return done;
+}
+
+/// Build the wire-20 `InvokeError` envelope for a child that could not be
+/// instantiated.
+inline MeshEnvelope makeInvokeChildInitFailedEnvelope(const std::string &host_machine_name,
+                                                      const std::array<uint8_t, 16> &invoke_uuid,
+                                                      const std::string &invoke_id_string,
+                                                      const std::string &child_session_id, const std::string &detail) {
+    // SCE_MESH.md §mesh-9.3, branch "Child fails during initialization":
+    // the parent must observe `error.execution` with this reason. A worker
+    // cannot hand an exception across a device boundary, so the failure
+    // travels as this envelope and the parent's `dispatchEnvelope` turns it
+    // back into the raise an author already handles.
+    //
+    // The code rides in `rpc_error_message`, which that dispatch surfaces as
+    // `_event.data` — the same payload shape the transport-absent local
+    // setup fault produces for `INVOKE_SRC_NOT_FOUND`, so an author's
+    // `<transition event="error.execution">` reads one shape either way. The
+    // structured `_event.data` JSON of §mesh-10.7.1 is a separate landing;
+    // until then the code travels in the message text, prefixed rather than
+    // buried so a substring match on it is stable.
+    MeshEnvelope err{};
+    err.id = SCE::uuid::v7();
+    err.source = host_machine_name;
+    err.type = "sce.invoke.error";
+    err.pattern = PatternKind::InvokeError;
+    err.invoke_id = invoke_uuid;
+    err.subject = invoke_id_string;
+    err.child_session_id = child_session_id;
+    err.rpc_status = RpcStatus::Internal;
+    err.rpc_error_message = std::string(kInvokeChildInitFailed) + ": remote child '" + host_machine_name +
+                            "' failed to initialize for invoke '" + invoke_id_string + "'" +
+                            (detail.empty() ? std::string() : (" (" + detail + ")"));
+    return err;
+}
 
 template <typename Engine> class ChildSessionAdapter : public IChildSession {
 public:
