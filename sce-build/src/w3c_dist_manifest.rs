@@ -37,6 +37,11 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Distributable {
+    // SCE_MESH.md §mesh-16.8.2 label table, one variant per row. The
+    // section closes the set at these four and forbids a
+    // "conditional" fifth, so the CI report cannot conflate an
+    // analyzer-merged test with a genuinely distributed one; that
+    // closure is the reason this is an enum rather than a string.
     /// Author partition plan produces 2+ effective partitions. Runs
     /// N ≥ 2 OS processes. Counts toward the §16.8 acid-test bucket.
     Yes,
@@ -128,6 +133,13 @@ impl ManifestFile {
     /// must not declare `partitions:` because the harness never
     /// reads it for those classifications.
     fn validate(&self) -> Result<(), String> {
+        // SCE_MESH.md §mesh-16.8.2: the label decides whether the
+        // harness ever reads a partition plan, so the two directions
+        // are checked here rather than left to the driver. `yes`
+        // carries the section's "N >= 2 OS processes" premise and must
+        // supply the plan; the other three are single-process by
+        // definition, so a plan on them would be shape no reader
+        // consumes.
         for (test_id, entry) in &self.tests {
             match entry.distributable {
                 Distributable::Yes => {

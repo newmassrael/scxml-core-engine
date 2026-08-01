@@ -211,68 +211,46 @@ The AOT engine's core principle is "zero runtime overhead." Using virtual interf
 ```cpp
 // Tick-based: batch processing at fixed intervals
 template<typename S>
-concept TickScheduling = requires(S& s, InstanceBatch batch, EventBatch events) {
-    { s.tick(batch, events) };
-    { s.deadline() } -> std::convertible_to<Duration>;
+concept TickScheduling = requires { typename S::Duration; } && requires(S& s) {
+    { s.tick() };
+    { s.deadline() } -> std::convertible_to<typename S::Duration>;
 };
 
 // Event-driven: immediate dispatch on arrival
 template<typename S>
-concept EventDrivenScheduling = requires(S& s, Instance& inst, Event event) {
-    { s.onEvent(inst, event) };
+concept EventDrivenScheduling = requires { typename S::Event; } && requires(S& s, typename S::Event event) {
+    { s.onEvent(event) };
 };
 ```
 
-Concept names use the `-ing` suffix (`TickScheduling`, `EventDrivenScheduling`) to avoid collision with implementation class names (`GameLoopScheduler`, `EventDrivenScheduler`).
+The scheduler names its own associated types (`S::Duration`, `S::Event`) and reaches its own instances; neither operation takes an instance or event batch as a parameter. Passing batches in would make SCE the owner of the instance roster, and the roster is exactly the thing that differs between a game loop holding thousands of entities and an ECU holding one. A C++17 translation unit gets the same three predicates as `constexpr bool` traits (`HasTick`, `HasDeadline`, `HasOnEvent`) so `if constexpr` capability detection works without concepts.
 
-The scheduler is the only runtime component in `sce_mesh_common` — OS timing primitives (RTOS periodic tasks, epoll, game loop timers) cannot be resolved at build time. Generated transport and routing code is wired to the scheduler at the application level:
+SCE ships the contract, not the scheduler. OS timing primitives (RTOS periodic tasks, epoll, game loop timers) cannot be resolved at build time, and they are also the point where an integrator's existing main loop already lives — so the loop stays in the application and SCE supplies the two halves it drives:
 
 ```cpp
-// Generated mesh_main.h provides the wiring
-// Scheduler is the only template parameter — transport/routing are fully codegen'd
-template<typename Scheduler>
-void run_mesh(Scheduler& scheduler) {
-    // Generated: init transport connections (native API calls)
-    init_transports();
-
-    if constexpr (TickScheduling<Scheduler>) {
-        while (running_) {
-            // Generated: collect events from all configured transports
-            auto events = collect_transport_events();
-            scheduler.tick(instances_, events);
-        }
-    } else if constexpr (EventDrivenScheduling<Scheduler>) {
-        // Generated: register callbacks on each transport's native notification mechanism
-        register_transport_callbacks([&](Event e) {
-            scheduler.onEvent(resolve_instance(e.target), e);
-        });
-        scheduler.run();
-    }
+// Application-owned loop. Nothing here is generated; the two calls are.
+while (running_) {
+    router.pump...();   // generated TransportRouter: drain inbound envelopes
+    engine.step();      // generated state machine: run one macrostep
 }
-
-// Mismatched calls are compile errors, not runtime errors
 ```
 
-For the rare case where the scheduler type must be chosen at runtime (e.g., from a config file), a `std::variant`-based wrapper provides type erasure without vtable overhead:
+`TransportRouter` is emitted per machine by `mesh_transport.h.jinja2` and exposes the drain entry points; the generated state machine exposes `step()`. A tick scheduler calls both on its period; an event-driven scheduler calls the drain from the transport's own notification callback and `step()` after it. Because the application writes this loop, SCE never has to guess whether it may block, own a thread, or run to completion — the three things a shipped scheduler would have to assume.
 
-```cpp
-using AnyScheduler = std::variant<
-    GameLoopScheduler,       // satisfies TickScheduling
-    RealTimeScheduler,       // satisfies TickScheduling
-    EventDrivenScheduler,    // satisfies EventDrivenScheduling
-    CooperativeScheduler     // satisfies TickScheduling
->;
-// Dispatched via std::visit — no virtual call
-```
+The concepts above are therefore a **published contract for the integrator's scheduler**, not an interface SCE calls. They exist so an integrator writing generic code over its own scheduler types gets a compile error rather than a runtime surprise when a type is wired into the wrong loop shape. `sce/include/mesh/SchedulerConcepts.h` is header-only and definition-only; no SCE translation unit instantiates it, and `sce_mesh_common` carries the envelope codec rather than any scheduler.
 
-#### Implementations
+#### Integrator scheduler shapes
 
-| Scheduler | Concept | Behavior | Domain |
+These are the shapes the two concepts are meant to admit. SCE does not ship any of them — each is written by the integrator against its own OS or engine, because each needs a primitive (an RTOS periodic task, an epoll set, a frame timer) that belongs to the host system rather than to a state machine library.
+
+| Shape | Concept | Behavior | Domain |
 |-----------|---------|----------|--------|
-| `GameLoopScheduler` | `TickScheduling` | Fixed-rate tick (e.g. 60Hz), batch processing | MMORPG, simulation |
-| `RealTimeScheduler` | `TickScheduling` | RTOS periodic task, WCET guarantee, priority inheritance | Automotive ECU |
-| `EventDrivenScheduler` | `EventDrivenScheduling` | Process on event arrival (epoll/kqueue) | Cloud, microservices |
-| `CooperativeScheduler` | `TickScheduling` | Single-thread round-robin | Bare-metal MCU, AUTOSAR Runnable |
+| Game loop | `TickScheduling` | Fixed-rate tick (e.g. 60Hz), batch processing | MMORPG, simulation |
+| Real-time | `TickScheduling` | RTOS periodic task, WCET guarantee, priority inheritance | Automotive ECU |
+| Event-driven | `EventDrivenScheduling` | Process on event arrival (epoll/kqueue) | Cloud, microservices |
+| Cooperative | `TickScheduling` | Single-thread round-robin | Bare-metal MCU, AUTOSAR Runnable |
+
+Concept names take the `-ing` suffix so an integrator's own `GameLoopScheduler` or `EventDrivenScheduler` class name never collides with the predicate it satisfies.
 
 ### 3.2 Transport Codegen — How to Deliver
 
@@ -575,6 +553,10 @@ Receiver drops events where `seq <= last_seen_seq[source]`.
 **When disabled** (Static mode, single-path Scoped mode):
 
 No header overhead. Events are delivered as-is, matching the zero-overhead principle for safety-critical and resource-constrained environments.
+
+**Realization status.** The discovery-mode half of the trigger above is unreachable in the current tree: only §4.1 Static mode is built, §4.2 and §4.3 are deferred, and a `discovery:` block in deploy.yaml is rejected outright. So the "Dynamic mode with failover" path this section gates on cannot be entered.
+
+The transport half is built, and not here. A transport that can re-deliver is handled by §10.5 `DedupRouter`, which keys on `(source, envelope id)` rather than adding a counter — the envelope already carries a UUID v7 id, so a separate dedup header would be a second identity for the same message. A transport that can reorder is handled by §10.6 `OrderingBuffer`, whose admit path drops any envelope below the per-source next-expected sequence — the `seq <= last_seen_seq[source]` rule above, reached through the `ordering: required` binding flag instead of through a discovery mode. Both stamps are optional envelope fields, absent when no binding asks for them, which is the zero-overhead property this section requires when disabled.
 
 ### 4.5 Instance Lifecycle
 
@@ -1241,17 +1223,22 @@ Remote invoke requires globally unique session IDs to correlate parent-child rel
 ```
 Parent (Device A)                    Child (Device B)
   |                                    |
-  |-- invoke(session_id: "A:brake:1") -->|
+  |-- invoke(session_id:               -->|
+  |     "A:brake:<invoke_id>")          |
   |   type="scxml"                     |-- creates child SM
-  |   src="motor_control.scxml"        |   with session "A:brake:1"
+  |   src="motor_control.scxml"        |   with that same session id
   |                                    |
   |<-- events with session_id ---------| 
   |   (finalize can extract data)      |
   |                                    |
-  |<-- done.invoke.A:brake:1 ----------|  (child reaches final state)
+  |<-- done.invoke.<invoke_id> --------|  (child reaches final state)
 ```
 
-Session ID format: `<origin_device>:<parent_machine>:<counter>` — deterministic, no UUID overhead in Static mode.
+Session ID format: `<parent_machine>:<invoke_id>` — deterministic, no UUID overhead in Static mode. §9.6.1 states the same format alongside the wire that carries it; this section states only the requirement it serves.
+
+Two components, not three. **No device component**: deploy.yaml rejects a machine name that appears on more than one device (`DuplicateMachine`), so the machine name already identifies its device uniquely across the whole deployment. Naming the device as well would put a second copy of the topology in every session id, and a session id that disagreed with deploy.yaml about where a machine lives would be unresolvable at the receiver.
+
+**Invoke id, not a session-local counter**: the relationship already has an identity. The parent keys its live-invoke table on the SCXML invoke id (§scxml-6.4.1 `stateid.platformid.index`), `done.invoke.<invoke_id>` is named after it by W3C SCXML 6.4, and every wire-16/18 envelope carries it so the parent can match `<finalize>` and `autoforward`. Deriving the session id from it means the two can never disagree; a counter would be a second identity to keep in sync. Note the session id and the `done.invoke.*` suffix are therefore different strings — the event is named by the invoke id alone, while the session id qualifies it by parent machine so it stays unique across the mesh.
 
 ### 9.3 Remote Invoke Lifecycle
 
@@ -1425,7 +1412,7 @@ Parent P on device D_P                  Child template resolved on device D_C
   |                 namelist_snapshot } ->|
   |                                       |-- instantiate new child session C
   |                                       |   init datamodel from params + content + namelist
-  |                                       |   child session id = "<D_P>:<P.machine>:<invoke_id>"
+  |                                       |   child session id = "<P.machine>:<invoke_id>"
   |                                       |
   |<-- InvokeStarted { invoke_id,         |   (success) parent stashes child endpoint
   |                    session_id } ------|

@@ -1764,13 +1764,26 @@
           "file": "tests/w3c/dist/w3c_dist_partition_runner.cpp",
           "kind": "references"
         }
-      ]
+      ],
+      "coverage_expectation": "out_of_scope_here"
     },
     "mesh-16.8.2": {
       "title": "IRP distributable subset",
       "parent_doc": "mesh",
       "parent_section": "mesh-16.8",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/w3c_dist_manifest.rs",
+          "symbol": "validate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/w3c_dist_manifest.rs",
+          "symbol": "Distributable",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-16.8.3": {
       "title": "Transport selection for harness",
@@ -1819,7 +1832,8 @@
       "title": "Harness build integration",
       "parent_doc": "mesh",
       "parent_section": "mesh-16.8",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "mesh-16.9": {
       "title": "Incremental delivery: Sessions E1, E2, F",
@@ -1905,7 +1919,13 @@
       "title": "Scheduler — When to Execute",
       "parent_doc": "mesh",
       "parent_section": "mesh-3",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/mesh/SchedulerConcepts.h",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-3.2": {
       "title": "Transport Codegen — How to Deliver",
@@ -2007,7 +2027,8 @@
       "title": "Event Deduplication",
       "parent_doc": "mesh",
       "parent_section": "mesh-4",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "mesh-4.5": {
       "title": "Instance Lifecycle",
@@ -2262,7 +2283,13 @@
       "title": "Session ID Management",
       "parent_doc": "mesh",
       "parent_section": "mesh-9",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-9.3": {
       "title": "Remote Invoke Lifecycle",
