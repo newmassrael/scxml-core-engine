@@ -493,18 +493,21 @@ mod tests {
         );
     }
 
+    /// Two calls over one unchanged tree agree. That is idempotence, and it
+    /// is all this test shows — running the same computation twice cannot
+    /// establish that the result is independent of the order the filesystem
+    /// lists entries in, because both runs see the same order. The BTreeMap
+    /// normalises the order of the keys it is *given*; which keys it is given
+    /// is a separate question, and the one that has to be tested by varying
+    /// the input. `source_hash_counts_every_alias_of_one_directory` and
+    /// `source_hash_of_aliased_directories_ignores_creation_order` cover it.
     #[test]
-    fn source_hash_stable_under_insertion_order() {
+    fn source_hash_is_idempotent_over_an_unchanged_tree() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         write_file(root, "a.scxml", b"<scxml/>");
         write_file(root, "sub/b.scxml", b"<scxml/>");
         let h1 = compute_source_hash(root, None).unwrap();
-
-        // Reorder-on-disk is impossible since we re-read the tree; the
-        // sort invariant is enforced by BTreeMap, so successive calls
-        // over the same tree produce identical hashes regardless of
-        // filesystem readdir ordering.
         let h2 = compute_source_hash(root, None).unwrap();
         assert_eq!(h1, h2);
     }
