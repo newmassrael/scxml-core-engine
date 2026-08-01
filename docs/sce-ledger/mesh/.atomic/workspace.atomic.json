@@ -450,6 +450,11 @@
           "file": "sce/include/mesh/ShmChannel.h",
           "symbol": "ShmChannel",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "symbol": "makeInvokeChildInitFailedEnvelope",
+          "kind": "references"
         }
       ]
     },
@@ -2249,7 +2254,19 @@
       "title": "Remote Invoke Lifecycle",
       "parent_doc": "mesh",
       "parent_section": "mesh-9",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "symbol": "makeInvokeChildInitFailedEnvelope",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "symbol": "makeInvokeDoneEnvelope",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-9.4": {
       "title": "Limitations",

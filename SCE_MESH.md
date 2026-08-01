@@ -1284,13 +1284,16 @@ Child device receives INVOKE_REQUEST
             |   -> error.communication with reason: "INVOKE_CHILD_LOST"
             |
             +-- Transport failure during child operation
-                -> error.communication with reason: "INVOKE_TRANSPORT_FAILED"
+                -> error.communication with a §16.7 transport reason
+                   (TRANSPORT_UNAVAILABLE / SEND_FAILED / DELIVERY_EXHAUSTED)
                    (parent must decide whether to retry or transition to error state)
 ```
 
 Invoke-specific errors follow W3C SCXML error naming:
 - `error.execution` — invoke setup failures (src not found, init failed)
 - `error.communication` — transport/runtime failures after child is running
+
+`error.communication` reasons on this path are **not** owned by this section. §16.7 declares its reason catalogue closed ("new reasons require a spec revision") and requires every transport implementation to map native errors onto a catalogue entry, so an invoke-specific transport reason would be unreachable by construction: the transport layer that observes the fault has no way to know an invoke sits above it. `INVOKE_CHILD_LOST` is the one exception and it is a §16.7 entry (row 5), raised by the peer-down path rather than by a send failure. A transport fault during child operation therefore surfaces as row 1, 2, or 3 with `invoke_id` carried in the §10.7.1 baseline fields, which is what lets a parent correlate it back to the invoke.
 
 ### 9.4 Limitations
 
