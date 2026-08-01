@@ -14,6 +14,7 @@
 #include "mesh/SchedulerConcepts.h"
 #include "motor_sm.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -23,6 +24,63 @@
 
 // Verify EventQueueBridge compiles with a concrete event type
 static_assert(sizeof(SCE::Mesh::EventQueueBridge<int, 64>) > 0, "EventQueueBridge must be instantiable with int");
+
+// SCE_MESH.md §3.1 publishes TickScheduling / EventDrivenScheduling as a
+// contract for the integrator's own scheduler — SCE ships no scheduler and
+// calls none, so nothing else in the tree would notice a drift in either
+// predicate. Both directions are pinned: a conforming shape must satisfy
+// it, and a shape missing one required member must not. Without the
+// negative half, a predicate that accidentally accepted everything would
+// still pass.
+namespace {
+
+/// Minimal conforming tick scheduler: names its Duration, ticks, reports
+/// a deadline.
+struct ModelTickScheduler {
+    using Duration = std::chrono::milliseconds;
+
+    void tick() {}
+
+    Duration deadline() const {
+        return Duration{0};
+    }
+};
+
+/// Minimal conforming event-driven scheduler.
+struct ModelEventScheduler {
+    using Event = int;
+
+    void onEvent(Event) {}
+};
+
+/// Conforming except for `deadline()` — must NOT satisfy TickScheduling.
+struct TickSchedulerMissingDeadline {
+    using Duration = std::chrono::milliseconds;
+
+    void tick() {}
+};
+
+}  // namespace
+
+#if __cpp_concepts >= 202002L
+static_assert(SCE::Mesh::TickScheduling<ModelTickScheduler>,
+              "a tick+deadline+Duration shape must satisfy TickScheduling");
+static_assert(!SCE::Mesh::TickScheduling<TickSchedulerMissingDeadline>,
+              "TickScheduling must reject a scheduler with no deadline()");
+static_assert(SCE::Mesh::EventDrivenScheduling<ModelEventScheduler>,
+              "an onEvent+Event shape must satisfy EventDrivenScheduling");
+static_assert(!SCE::Mesh::EventDrivenScheduling<ModelTickScheduler>,
+              "EventDrivenScheduling must reject a tick-only scheduler");
+#endif
+
+// The C++17 fallback exposes the same three predicates as constexpr bool,
+// so `if constexpr` capability detection keeps working without concepts.
+static_assert(SCE::Mesh::HasTick<ModelTickScheduler>, "HasTick must detect tick()");
+static_assert(SCE::Mesh::HasDeadline<ModelTickScheduler>, "HasDeadline must detect deadline()");
+static_assert(!SCE::Mesh::HasOnEvent<ModelTickScheduler>, "HasOnEvent must not fire on a tick-only scheduler");
+static_assert(SCE::Mesh::HasOnEvent<ModelEventScheduler>, "HasOnEvent must detect onEvent()");
+static_assert(!SCE::Mesh::HasDeadline<TickSchedulerMissingDeadline>,
+              "HasDeadline must not fire when deadline() is absent");
 
 // Verify TransportRouter template is well-formed by instantiating
 // with a minimal mock engine that provides the getPolicy() API

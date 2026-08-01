@@ -132,6 +132,17 @@ severity = "warn"
 # Measured on enrollment, not assumed: the scan set moved from 84 files to 85,
 # §7.2 closed, and no other axis moved (citation_unbound / symbol_mismatch /
 # binding_unbacked stayed at 0 before and after).
+#
+# `sce-build/src/w3c_dist_manifest.rs` is enrolled on the same single-file rule:
+# it is the §16.8.2 classification parser, and its own module header named that
+# section before the file was scanned by anything. The label enum is `references`
+# (a serde DTO, per the kind convention above) and the cross-field validator is
+# `implements` — the closed four-value set is a structural claim, and what
+# enforces it at build time is the function.
+#
+# Its bare `(§16.8.2)` mentions inside `format!` diagnostics are NOT citations:
+# a `.rs` file has known comment syntax, so only comments are read. Those strings
+# ship to the operator and stay bare deliberately.
 [plugins.set_equality_validator]
 paths = [
     "sce/include/mesh",
@@ -141,6 +152,7 @@ paths = [
     "tests/w3c/dist",
     "sce-build/src/mesh",
     "sce-build/src/lib.rs",
+    "sce-build/src/w3c_dist_manifest.rs",
     "tools/codegen/templates/mesh",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be

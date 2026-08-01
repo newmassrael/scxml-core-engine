@@ -1,15 +1,30 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
+// SCE_MESH.md §mesh-3.1: this file is that section's SCE-side deliverable
+// in full. The section splits scheduling into two strategies and says SCE
+// publishes the contract while the integrator supplies the scheduler and
+// owns the loop; what SCE therefore owes is exactly these predicates, and
+// they live nowhere else. Each concept requires the scheduler to name its
+// own associated type (`Duration` / `Event`) and to reach its own
+// instances, so neither operation takes an instance or event batch —
+// taking batches would make SCE the owner of the instance roster, which
+// is the thing that differs most between a game loop holding thousands of
+// entities and an ECU holding one.
+//
 // SCE Mesh scheduler concepts — formalizes the two scheduling strategies
 // for multi-machine orchestration.
 //
 // TickScheduling:        Poll-based batch scheduler (game loop, fixed-step).
 // EventDrivenScheduling: Reactive scheduler (interrupt-driven, RTOS).
 //
-// Concept definitions only — consumers supply concrete schedulers
-// that satisfy these contracts (`tests/mesh/test_mesh_local.cpp`
-// exercises conforming implementations).
+// Concept definitions only. SCE ships no scheduler and calls none: the
+// application owns its loop and drives the two generated halves
+// (`TransportRouter` drain + engine `step()`) from it. These predicates
+// exist so an integrator writing generic code over its own scheduler
+// types gets a compile error instead of a runtime surprise when a type
+// is wired into the wrong loop shape. `tests/mesh/test_mesh_local.cpp`
+// pins both directions with `static_assert` against model schedulers.
 
 #pragma once
 

@@ -70,10 +70,12 @@ public:
     /// a parent may send wire-19 redundantly.
     virtual void cancel() = 0;
 
-    /// Child session URI (SCE_MESH.md §mesh-9.6.1 L1410:
-    /// `<parent_device>:<parent_machine>:<invoke_id>`). Stamped into every
-    /// wire-16 envelope's `child_session_id` field for finalize / autoforward
-    /// matching on the parent (§mesh-9.6.3 L1463).
+    /// Child session URI (SCE_MESH.md §mesh-9.6.1:
+    /// `<parent_machine>:<invoke_id>`). No device component — deploy.yaml
+    /// rejects a machine name hosted by two devices, so the machine name
+    /// already resolves to one device. Stamped into every wire-16 envelope's
+    /// `child_session_id` field for finalize / autoforward matching on the
+    /// parent (§mesh-9.6.3 L1463).
     virtual const std::string &sessionId() const = 0;
 
     /// Deploy.yaml machine name hosted by this session.
