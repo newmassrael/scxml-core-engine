@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.7: only a <final> whose parent is the <scxml> element ends
+     the session.
+
+     Appendix D `enterStates` splits the two cases in one branch:
+
+       if isFinalState(s):
+           if isSCXMLElement(s.parent):
+               running = false
+           else:
+               parent = s.parent
+               internalQueue.enqueue(new Event("done.state." + parent.id, s.donedata))
+
+     So `isFinalState(s)` — "s is a <final> element" — is a structural
+     question, and it is not by itself the machine-completion criterion. An
+     engine that answers "has this session ended?" with the bare structural
+     predicate reports completion the moment a compound state finishes, while
+     the machine is still live and still able to take transitions.
+
+     (Appendix D's separate `isInFinalState(s)` helper is a third thing again
+     — it asks whether a compound or parallel state has completed, for the
+     done.state computation. The name similarity is the whole trap.)
+
+     The machine has to *rest* in the nested final for the difference to be
+     observable: if something carries it onward inside the same macrostep,
+     both a right and a wrong completion predicate are only ever sampled at
+     the end. So nothing here consumes `done.state.phase` — `phase` is
+     finished and the machine simply waits, exactly as a compound state that
+     has completed its work and awaits its next external stimulus.
+
+       ends only on a top-level final   not complete after initialize;
+                                        `resume` still reaches `pass`
+       ends on any final                reports complete while resting in
+                                        phaseDone, with pass unreachable
+
+     Deliberately single-axis: no `<invoke>`, no autoforward, no `<parallel>`,
+     no delay. A regional `<final>` inside a `<parallel>` reaches the same
+     Appendix D branch, but mixing the two would let a parallel-completion
+     regression masquerade as this one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="nested_final_not_terminal">
+    <state id="phase" initial="running">
+        <state id="running">
+            <transition target="phaseDone"/>
+        </state>
+        <final id="phaseDone"/>
+        <transition event="resume" target="pass"/>
+    </state>
+    <final id="pass"/>
+</scxml>

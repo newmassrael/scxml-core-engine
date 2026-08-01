@@ -222,10 +222,23 @@ func (e *Engine[S, E]) GetActiveStates() []S {
 	return active
 }
 
-// isInFinalState returns whether the current state is a top-level final state
-// (W3C SCXML 3.3).
+// isInFinalState reports whether this session has ended — that is, whether the
+// current state is a <final> whose parent is the <scxml> element
+// (W3C SCXML 3.7).
+//
+// Appendix D enterStates sets running = false for a <final> only when
+// isSCXMLElement(s.parent); a nested one queues done.state.<parent> and the
+// machine carries on. So the structural question — "is this state a <final>
+// element" — is StatePolicy.IsFinalState, and it is not the completion
+// criterion on its own. Everything that means "the machine is done" keys on
+// this method: RunUntilCompletion, the completion callback, and the
+// done.invoke.<id> a parent emits for an invoked child.
 func (e *Engine[S, E]) isInFinalState() bool {
-	return e.policy.IsFinalState(e.currentState)
+	if !e.policy.IsFinalState(e.currentState) {
+		return false
+	}
+	_, hasParent := e.policy.GetParent(e.currentState)
+	return !hasParent
 }
 
 // IsInFinalState is the exported version for external callers.
@@ -475,12 +488,13 @@ func (e *Engine[S, E]) processEventQueues() {
 		if !ok {
 			break
 		}
-		// W3C SCXML 5.4.1: Stop if top-level final state reached
-		if e.policy.IsFinalState(e.currentState) {
-			if _, hasParent := e.policy.GetParent(e.currentState); !hasParent {
-				log.Printf("[sce] Engine::processEventQueues: top-level final state reached, stopping")
-				return
-			}
+		// W3C SCXML 5.4.1: Stop if top-level final state reached. Same
+		// predicate as everything else that means "the machine is done" —
+		// spelling the parent check out a second time here is what let the
+		// exported one drift away from it.
+		if e.isInFinalState() {
+			log.Printf("[sce] Engine::processEventQueues: top-level final state reached, stopping")
+			return
 		}
 		// W3C SCXML 5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)

@@ -54,7 +54,7 @@ public:
     virtual bool raiseExternal(const ::SCE::Common::ForwardedEvent &forwarded) = 0;
 
     /// Return true when the child has reached a top-level `<final>` state
-    /// (StaticExecutionEngine::isGlobalFinalState). WorkerSessionHost polls
+    /// (StaticExecutionEngine::isInFinalState). WorkerSessionHost polls
     /// this after each `tick()` and, on first true, emits a wire-18
     /// `InvokeDone` envelope and retires the session.
     virtual bool isFinal() const = 0;

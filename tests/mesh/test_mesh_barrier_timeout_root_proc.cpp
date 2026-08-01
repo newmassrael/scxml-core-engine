@@ -85,7 +85,7 @@ int main(int argc, char *argv[]) {
         // Canonical polling API. `tick()` pumps the base engine's
         // `PullScheduler` and dispatches any raised events through
         // the normal microstep. The short-circuit guard inside
-        // `tick()` is `isGlobalFinalState()` (top-level-final only),
+        // `tick()` is `isInFinalState()` (top-level-final only),
         // so a Root partition sitting in a `<parallel>` whose local
         // region has reached a regional `<final>` while the remote
         // sibling is still pending continues to pump — which is

@@ -491,11 +491,12 @@ private:
             },
             [this] { processEventQueues(); });
         // §scxml-6.4: Notify parent only when the machine has globally
-        // terminated. `isGlobalFinalState()` (parent-presence check on top
-        // of the leaf `isFinalState`) excludes regional `<final>` inside a
-        // `<parallel>`, whose sibling regions may still be running — the
-        // done.invoke contract in §scxml-6.4 fires at top-level-final only.
-        if (stateChanged && isGlobalFinalState() && completionCallback_) {
+        // terminated. `isInFinalState()` adds the parent-presence check to
+        // the structural `StatePolicy::isFinalState`, excluding a regional
+        // `<final>` inside a `<parallel>` whose sibling regions may still be
+        // running — the done.invoke contract in §scxml-6.4 fires at
+        // top-level-final only.
+        if (stateChanged && isInFinalState() && completionCallback_) {
             completionCallback_();
         }
     }
@@ -836,9 +837,9 @@ protected:
 
                 // §scxml-3.7: Stop processing events if TOP-LEVEL final state reached
                 // (Zero Duplication: same top-level-final predicate as tick() — encapsulated
-                // in isGlobalFinalState() to keep regional `<final>` inside a `<parallel>`
+                // in isInFinalState() to keep regional `<final>` inside a `<parallel>`
                 // from mis-terminating the queue drain.)
-                if (isGlobalFinalState()) {
+                if (isInFinalState()) {
                     SCE_LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
                                   static_cast<int>(currentState_));
                     return false;
@@ -1074,9 +1075,9 @@ public:
         // §scxml-6.4: Invoke completion callback if top-level final after initialization.
         // Child state machines may reach the machine-done state immediately (e.g.,
         // initial="subFinal") and must notify parent. Regional `<final>` inside a
-        // `<parallel>` is excluded by `isGlobalFinalState()` because the machine as a
+        // `<parallel>` is excluded by `isInFinalState()` because the machine as a
         // whole is still running while sibling regions are active.
-        if (isGlobalFinalState() && completionCallback_) {
+        if (isInFinalState() && completionCallback_) {
             SCE_LOG_DEBUG(
                 "AOT initialize: Reached top-level final state during initialization, invoking completion callback");
             // §scxml-3.9: Execute onexit actions for final state before notifying parent
@@ -1099,10 +1100,11 @@ public:
         checkEventlessTransitions();
 
         // §scxml-6.4: Invoke completion callback only at top-level final.
-        // Leaf `isInFinalState()` would mis-fire on a regional `<final>` inside
-        // a `<parallel>`; `isGlobalFinalState()` enforces the parent-presence
-        // check that distinguishes "machine done" from "one region done".
-        if (isGlobalFinalState() && completionCallback_) {
+        // The bare structural `StatePolicy::isFinalState` would mis-fire on a
+        // regional `<final>` inside a `<parallel>`; `isInFinalState()` carries
+        // the parent-presence check that distinguishes "machine done" from
+        // "one region done".
+        if (isInFinalState() && completionCallback_) {
             SCE_LOG_DEBUG("AOT step: Invoking completion callback for done.invoke");
             completionCallback_();
         }
@@ -1193,42 +1195,29 @@ public:
     }
 
     /**
-     * @brief Check if in a final state (§scxml-3.7)
+     * @brief Check whether this session has ended (§scxml-3.7 / §scxml-6.4)
      *
-     * Leaf semantics: returns true for **any** `<final>`, including a
-     * region-level `<final>` nested inside a `<parallel>` whose sibling
-     * regions are still running. Callers that need "machine has
-     * terminated" semantics (global-done detection, tick
-     * short-circuit, external `done.invoke` propagation) must use
-     * `isGlobalFinalState()` instead.
+     * True only when `currentState_` is a `<final>` **and** has no parent,
+     * i.e. its parent is the `<scxml>` element. §scxml-D-enterStates sets
+     * `running = false` for a `<final>` only when `isSCXMLElement(s.parent)`;
+     * a nested one queues `done.state.<parent>` and the machine carries on.
+     * The structural question — "is this state a `<final>` element" — is
+     * `StatePolicy::isFinalState`, and it is not the completion criterion on
+     * its own.
      *
-     * @return true if `currentState_` is any final state (leaf or root)
-     */
-    bool isInFinalState() const {
-        return StatePolicy::isFinalState(currentState_);
-    }
-
-    /**
-     * @brief Check if the state machine has reached its **top-level**
-     *        final (§scxml-3.7 / §6.4)
-     *
-     * Parallel-aware counterpart to `isInFinalState()`: returns true
-     * only when `currentState_` is a final state **and** has no parent
-     * (i.e. it is the machine's globally-terminating state, not a
-     * region-level `<final>` inside a `<parallel>`). This is the
-     * predicate that guards "machine is done" decisions — scheduler
-     * short-circuit in `tick()`, queue-processing bail-out in
-     * `processEventQueues()`, external `done.invoke` notification.
+     * Every "machine is done" decision keys on this predicate: the scheduler
+     * short-circuit in `tick()`, the queue-processing bail-out in
+     * `processEventQueues()`, `runUntilCompletion()`, and external
+     * `done.invoke` notification.
      *
      * See SCE_MESH.md §mesh-16.5 L3500 for the concrete case that motivated
-     * the split: a `<parallel>` whose local region has reached its
-     * regional `<final>` ahead of a remote sibling's wire-21 arrival
-     * still needs the scheduler pumped so the barrier-timeout event
-     * can fire.
+     * the parent check: a `<parallel>` whose local region has reached its
+     * regional `<final>` ahead of a remote sibling's wire-21 arrival still
+     * needs the scheduler pumped so the barrier-timeout event can fire.
      *
      * @return true if `currentState_` is a top-level `<final>`
      */
-    bool isGlobalFinalState() const {
+    bool isInFinalState() const {
         return StatePolicy::isFinalState(currentState_) && !StatePolicy::getParent(currentState_).has_value();
     }
 
@@ -1293,8 +1282,9 @@ public:
      * drive transitions.
      *
      * **Canonical polling API is `tick()`** — it is parallel-aware
-     * (short-circuits on `isGlobalFinalState()`, not the leaf-level
-     * `isInFinalState()`), calls this method internally, and then
+     * (short-circuits on `isInFinalState()`, which requires the final's
+     * parent to be absent, not on the bare structural
+     * `StatePolicy::isFinalState`), calls this method internally, and then
      * performs a full macrostep. Normal polling loops should call
      * `tick()`.
      *
@@ -1332,11 +1322,11 @@ public:
         // §scxml-6.4 — top-level final only: a regional `<final>`
         // inside a `<parallel>` is *not* a terminator for the machine
         // as a whole, so we must not short-circuit the scheduler pump
-        // when only a region has completed. `isGlobalFinalState()`
-        // encodes the parent-presence check that `isInFinalState()`
-        // (leaf semantics) deliberately omits; see SCE_MESH.md §mesh-16.5
-        // L3500 for the barrier-timeout case that surfaces this.
-        if (isGlobalFinalState()) {
+        // when only a region has completed. `isInFinalState()` encodes the
+        // parent-presence check that the structural `StatePolicy::isFinalState`
+        // deliberately omits; see SCE_MESH.md §mesh-16.5 L3500 for the
+        // barrier-timeout case that surfaces this.
+        if (isInFinalState()) {
             if (completionCallback_) {
                 SCE_LOG_DEBUG("AOT tick: Invoking completion callback for already-final state");
                 completionCallback_();

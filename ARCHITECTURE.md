@@ -394,18 +394,18 @@ Generated state machine policies come in two modes:
 **Detection**: Code generator automatically detects ECMAScript features:
 - `typeof` operator, `_event` system variable, `In()` predicate → triggers hybrid generation
 
-### AOT Polling Semantics — `tick()` vs `isInFinalState` / `isGlobalFinalState`
+### Final-State Predicates — structural vs. session-ended
 
-`StaticExecutionEngine` exposes two distinct "final" predicates that encode different W3C SCXML concepts; `tick()` (the canonical polling API) is parallel-aware because of the split.
+Two different W3C SCXML questions live at two different layers, and every backend draws the line in the same place.
 
-| Predicate | Returns true when... | W3C reference | Used by |
-|-----------|---------------------|---------------|---------|
-| `isInFinalState()` | `currentState_` is **any** `<final>` element — including a region-level `<final>` nested inside a `<parallel>` | §3.7 leaf semantics | External SCXML-level queries (tests, examples asking "did a final fire?") |
-| `isGlobalFinalState()` | `currentState_` is a `<final>` **and** has no parent (top-level terminator) | §3.7 / §6.4 "machine has terminated" | `tick()` short-circuit, `processEventQueues()` drain bail-out, `done.invoke` propagation |
+| Predicate | Layer | Returns true when... | W3C reference | Used by |
+|-----------|-------|---------------------|---------------|---------|
+| `StatePolicy::isFinalState(s)` | Policy (generated) | `s` is a `<final>` element — including a region-level `<final>` nested inside a `<parallel>` or a compound state | Appendix D `isFinalState` — a structural question | `done.state.<parent>` emission, parallel-region completion checks |
+| `isInFinalState()` | Engine | `currentState_` is a `<final>` **and** has no parent, i.e. its parent is the `<scxml>` element | §3.7 / §6.4 "this session has ended" | `tick()` short-circuit, `processEventQueues()` drain bail-out, `runUntilCompletion()`, `done.invoke` propagation |
 
-**Why the split is load-bearing.** When a `<parallel>` region reaches its regional `<final>` ahead of its siblings, `currentState_` transitions to that regional-final leaf while the `<parallel>` itself is still awaiting completion of other regions. A polling guard keyed on leaf semantics (`isInFinalState()`) would misread this as "machine done" and skip the scheduler pump — starving any `<send delay="…">` scheduled elsewhere in the still-running configuration, including the §16.5 L3500 barrier timer that arms on **first** region completion. `isGlobalFinalState()` adds the parent-presence check so the guard fires only at the true machine terminator.
+**Why the parent check is load-bearing.** Appendix D `enterStates` sets `running = false` for a `<final>` only when `isSCXMLElement(s.parent)`; a nested one queues `done.state.<parent>` and the machine carries on. So when a `<parallel>` region reaches its regional `<final>` ahead of its siblings, `currentState_` transitions to that regional-final leaf while the `<parallel>` itself is still awaiting the other regions. A polling guard keyed on the bare structural predicate would misread this as "machine done" and skip the scheduler pump — starving any `<send delay="…">` scheduled elsewhere in the still-running configuration, including the §16.5 L3500 barrier timer that arms on **first** region completion.
 
-**Zero Duplication consequence.** Both `tick()` and the internal `processEventQueues()` top-level-final drain bail-out go through the same `isGlobalFinalState()` helper — the inline `isFinalState && !parent.has_value()` pattern that used to live in two places is encapsulated once.
+**Do not add a second engine-level predicate.** The engine previously carried both `isInFinalState()` (structural) and `isGlobalFinalState()` (parent-checked). Nothing consumed the structural one — the policy already answers that question — while `runUntilCompletion()` bound to it by name and reported completion for a machine still resting in a nested `<final>`. The two names differed by a word that does not say which is which, and the Rust and Go engines reproduced the same defect by porting the name. One engine predicate, named `isInFinalState` across all six backends, meaning "this session has ended". Pinned by `integration_resources/nested_final_not_terminal/`.
 
 ### Static History States
 
