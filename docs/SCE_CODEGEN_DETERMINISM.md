@@ -130,7 +130,19 @@ Two consequences worth planning around:
 - **Symlinked inputs are followed.** Build sandboxes (Bazel execroot, Nix,
   staged CMake inputs) materialise declared inputs as links into the real
   tree; those are resolved and hashed as the files they point at.
-  Symlinked directories are followed too, with a cycle guard.
+  Symlinked directories are followed too.
+- **A directory reachable under several names contributes under each of
+  them.** The set is keyed by root-relative path, so two links naming one
+  directory are two sets of paths, not a duplicate to collapse. Removing
+  one of them therefore moves the hash — which is the point: it changed the
+  input set. This repository's own tree relies on it (`resources/403a`,
+  `403b` and `403c` all name `resources/403`).
+- **A link onto a directory already being descended contributes nothing.**
+  Every file it reaches is one the walk is already collecting, reachable
+  under unboundedly many spellings; cutting there is what terminates a
+  cycle. That is the only case in which a resolved directory is skipped,
+  and it is decided by the link's target, never by the order the
+  filesystem lists entries in.
 
 ### The empty-set refusal
 
@@ -164,7 +176,10 @@ Exit code 20; nothing is written. Two ways to trigger it:
 (`sce-build/tests/b9_drift_detection.rs`);
 `source_hash_follows_symlinked_scxml_file`,
 `source_hash_follows_symlinked_directory`,
-`source_hash_terminates_on_symlink_cycle`
+`source_hash_counts_every_alias_of_one_directory`,
+`source_hash_of_aliased_directories_ignores_creation_order`,
+`source_hash_terminates_on_symlink_cycle`,
+`source_hash_terminates_on_a_link_back_to_the_root`
 (`sce-build/src/forge/drift.rs`).
 
 ---
