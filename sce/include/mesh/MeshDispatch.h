@@ -250,7 +250,7 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
             return false;
         }
         // SCE_MESH.md §mesh-10.7 `_event` field wiring for distributed events.
-        // The section's table maps envelope fields onto the §scxml-5.10.2
+        // The section's table maps envelope fields onto the §scxml-5.10.1
         // `_event` surface, and its stated purpose is that a guard such as
         // `<transition cond="_event.origin == 'mesh://chassis'">` selects
         // identically whether the event arrived locally or over a transport.
