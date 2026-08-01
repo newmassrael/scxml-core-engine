@@ -143,6 +143,26 @@ public:
     virtual bool hasQueuedEvents() const = 0;
 
     /**
+     * @brief §scxml-D-mainEventLoop: Process only ONE *internal* event, leaving
+     *        external events queued
+     *
+     * The macrostep completes on eventless transitions and internal events
+     * alone; `invoke(inv)` then runs for the states it entered, and only after
+     * that does the algorithm reach `externalQueue.dequeue()`. A drain that
+     * cannot tell the two classes apart consumes an external event while the
+     * invokes are still pending, and an `autoforward` child never sees it.
+     *
+     * @return true if an internal event was processed, false if none was queued
+     */
+    virtual bool processNextInternalEvent() = 0;
+
+    /**
+     * @brief §scxml-3.13: Check whether an INTERNAL-priority event is queued
+     * @return true if the queue holds an internal event, false otherwise
+     */
+    virtual bool hasQueuedInternalEvents() const = 0;
+
+    /**
      * @brief Get snapshot of current event queues for visualization/debugging
      *
      * Retrieves current contents of internal and external event queues

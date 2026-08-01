@@ -23,8 +23,8 @@
 //
 // Execution trace:
 //   1. initialize() enters S0, runs onentry, internal queue = [Foo, Bar]
-//   2. process_event_queues: pop Foo → S0→S1 (hierarchical exit/entry at root)
-//   3. process_event_queues continues: pop Bar → S1→Pass
+//   2. process_next_external_event: pop Foo → S0→S1 (hierarchical exit/entry at root)
+//   3. run_main_event_loop continues: pop Bar → S1→Pass
 //   4. Pass is a top-level final state → is_in_final_state() == true
 
 use sce_rust_runtime::{Engine, EventWithMetadata, StatePolicy};

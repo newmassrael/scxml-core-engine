@@ -1126,11 +1126,6 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize",
           "kind": "implements"
         },
@@ -1279,6 +1274,21 @@
         {
           "file": "backends/rust/runtime/src/lib.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "runMainEventLoop",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processInternalQueue",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "hasQueuedInternalEvents",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2274,11 +2284,6 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "isInFinalState",
           "kind": "implements"
         },
@@ -2300,6 +2305,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "is_in_final_state",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processInternalQueue",
           "kind": "implements"
         }
       ],
@@ -4047,11 +4057,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_event_queues",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
@@ -4077,6 +4082,16 @@
         {
           "file": "backends/c/runtime/include/sce/types.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_internal_queue",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_next_external_event",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4835,7 +4850,7 @@
       "bindings": [
         {
           "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_event_queues",
+          "symbol": "process_internal_queue",
           "kind": "implements"
         }
       ],
@@ -7311,17 +7326,27 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_event_queues",
+          "symbol": "isInFinalState",
           "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isInFinalState",
+          "symbol": "runMainEventLoop",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processNextExternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "run_main_event_loop",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_next_external_event",
           "kind": "implements"
         }
       ],
@@ -7451,12 +7476,12 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
+          "symbol": "processNextExternalEvent",
           "kind": "implements"
         },
         {
           "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_event_queues",
+          "symbol": "process_next_external_event",
           "kind": "implements"
         }
       ],
@@ -7627,11 +7652,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "InvokeExecutor::captureInvokeState",
           "kind": "references"
@@ -7656,11 +7676,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_event_queues",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/invoke.rs",
           "symbol": "ChildSession",
           "kind": "implements"
@@ -7668,6 +7683,16 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processNextExternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_next_external_event",
           "kind": "implements"
         }
       ],
@@ -8992,11 +9017,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_event_queues",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/event_queue.rs",
           "kind": "references"
         },
@@ -9016,6 +9036,16 @@
         {
           "file": "backends/rust/runtime/src/helpers/io_processors.rs",
           "symbol": "scxml_location",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processInternalQueue",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_internal_queue",
           "kind": "implements"
         }
       ],
@@ -9612,6 +9642,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/InvokeHelper.h",
+          "symbol": "deferInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::deferInvokeExecution",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational",
       "normative_excerpt": {
         "excerpt": {
@@ -10250,11 +10292,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/engine.rs",
           "kind": "references"
         },
@@ -10266,6 +10303,46 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "runMainEventLoop",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processNextExternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "processNextInternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/InterpreterEventQueue.h",
+          "symbol": "InterpreterInternalEventQueue",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::raiseEventWithPriority",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processNextInternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "processNextInternalEvent",
           "kind": "implements"
         }
       ],

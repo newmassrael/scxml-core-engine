@@ -733,14 +733,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             ?: resolveLeafState(_currentState.value)
         flushPendingFinalState()
 
-        // W3C SCXML C.1: Macrostep completion loop
-        macrostepLoop()
-
-        // W3C SCXML 6.4: Execute pending invokes after macrostep completes
-        executePendingInvokes()
-
-        // C++ pattern: process events raised by completed invokes
-        macrostepLoop()
+        // W3C SCXML Appendix D: hand over to the outer loop. The macrostep
+        // completes on eventless transitions and internal events, then the
+        // invokes for the states just entered run, and only then is anything
+        // taken off the external queue — so an autoforward child is live for
+        // every event onentry queued on the way in.
+        runMainEventLoop()
     }
 
     /**
@@ -751,8 +749,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (isInFinalState) return
         pollScheduler()
         tickChildren()
-        macrostepLoop()
-        executePendingInvokes()
+        // W3C SCXML 6.4's invokes are part of the main event loop and run
+        // there, ahead of the external dequeue rather than after it.
+        runMainEventLoop()
         cleanupCompletedInvokes()
     }
 
@@ -816,23 +815,67 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * C++ initialize() macrostep loop: eventless + internal + external until stable.
-     * Matches: checkEventlessTransitions() → processEventQueues() → loop
+     * Matches: checkEventlessTransitions() → executePendingInvokes() → external dequeue → loop
      */
-    private fun macrostepLoop() {
-        while (!isInFinalState) {
+    /**
+     * W3C SCXML Appendix D `mainEventLoop` — the outer loop, and the only place
+     * the sync entry points ([initialize], [tick]) express macrostep semantics.
+     *
+     * Appendix D names the external queue exactly once per iteration and it is
+     * *after* `invoke(inv)`:
+     *
+     * ```
+     * while running:
+     *     while running and not macrostepDone:      # eventless + internal only
+     *         ... selectEventlessTransitions() / internalQueue.dequeue() ...
+     *     for state in statesToInvoke.sort(entryOrder):
+     *         for inv in state.invoke.sort(documentOrder):
+     *             invoke(inv)
+     *     statesToInvoke.clear()
+     *     if not internalQueue.isEmpty(): continue
+     *     externalEvent = externalQueue.dequeue()
+     * ```
+     *
+     * Folding the external drain into the macrostep-completion loop instead is
+     * a different algorithm, not a shorter one. The invoked children do not
+     * exist yet while that drain runs, so everything `<onentry>` queued for
+     * this session on the way in is consumed with no `autoforward` child to
+     * receive it — and there is no later point at which it is delivered. One
+     * external event per iteration for the same reason: a state entered by
+     * event N's transition must have its invokes started before N+1 comes off
+     * the queue.
+     */
+    private fun runMainEventLoop() {
+        while (true) {
+            // W3C SCXML Appendix D: complete the macrostep on eventless
+            // transitions and internal events alone.
             drainEventlessAndInternal()
+            if (isInFinalState) break
+            // W3C SCXML 6.4: invokes for states entered during this macrostep.
+            executePendingInvokes()
+            // W3C SCXML Appendix D: invoking may have raised internal error
+            // events (and a child that completed synchronously may already have
+            // raised done.invoke); handle them before touching the external
+            // queue.
+            if (internalEventQueue.isNotEmpty()) continue
             if (externalEventQueue.isEmpty()) break
-            // C++ processEventQueues: process external queue
-            while (externalEventQueue.isNotEmpty() && !isInFinalState) {
-                val queued = externalEventQueue.removeFirst()
-                currentEventMetadata = queued.metadata
-                populateTypedPayload(queued.metadata)
-                executeFinalizeForChildEvent(queued.event)
-                autoForwardEvent(queued.event, queued.metadata)
-                processOneEvent(queued.event)
-                flushPendingFinalState()
-            }
+            processNextExternalEvent()
         }
+    }
+
+    /**
+     * W3C SCXML Appendix D — take exactly one event off the external queue, run
+     * the preliminary `<finalize>` / autoforward step against it, then select
+     * transitions.
+     */
+    private fun processNextExternalEvent() {
+        val queued = externalEventQueue.removeFirst()
+        currentEventMetadata = queued.metadata
+        populateTypedPayload(queued.metadata)
+        executeFinalizeForChildEvent(queued.event)
+        autoForwardEvent(queued.event, queued.metadata)
+        processOneEvent(queued.event)
+        flushPendingFinalState()
     }
 
     /**
