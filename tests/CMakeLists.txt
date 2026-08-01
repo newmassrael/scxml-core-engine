@@ -1821,6 +1821,12 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     target_link_libraries(mesh_dispatch_test
         PRIVATE
             sce_mesh_common
+            # ChildSessionAdapter.h's §9.3 envelope builders stamp a UUID v7
+            # id, which lives in sce_base. sce_mesh_common deliberately does
+            # not pull sce_base in (it links only header-only sce_core plus
+            # tinycbor), so the dependency is declared here rather than
+            # widening the library's tier for one test.
+            sce_base
             GTest::gtest_main
             pthread
     )

@@ -1101,6 +1101,17 @@ struct TransportRouter {
             const std::array<uint8_t, 16> invoke_uuid = *env.invoke_id;
             std::string session_id = env.source + ":" + invoke_id_str;
 
+            // SCE_MESH.md §9.3 "Child fails during initialization": bringing a
+            // child up is the one step here that runs author-supplied content
+            // (datamodel init, `<onentry>` bodies, script-engine setup), so it
+            // is the one step that can throw. Without this guard the exception
+            // unwinds out of the transport pump: the worker loses every OTHER
+            // child session it hosts, and the parent — which stamped
+            // `activeInvokes_[id]` when it sent wire-14 — waits forever for a
+            // completion that can no longer arrive. The section's remedy is a
+            // reported failure, not a crash, so the whole bring-up runs inside
+            // the guard and the catch reports it over the wire.
+            try {
             auto adapter = std::make_unique<ChildAdapter>(
                 host_machine_name_,
                 session_id,
@@ -1146,6 +1157,30 @@ struct TransportRouter {
                 return;
             }
             sessions_.emplace(invoke_id_str, std::move(adapter));
+            } catch (const std::exception& __sce_child_init_ex) {
+                // §9.3 pins BOTH events at the parent: `error.execution` with
+                // reason INVOKE_CHILD_INIT_FAILED, and `done.invoke.<id>`
+                // "(child never reached a stable state)". They travel as
+                // wire-20 then wire-18, in that order, so the author's error
+                // handler observes the failure before the invoke completes.
+                //
+                // Sending the completion is not cosmetic: `onInvokeDone` is
+                // what raises `done.invoke.<id>`, and the invoking state's
+                // onexit is what erases `activeInvokes_`. Reporting only the
+                // error would leave the parent parked in the invoking state
+                // with a session that no longer exists.
+                //
+                // The ids come from the wire-14 envelope, not from `adapter` —
+                // the throw may have come from its own constructor, and the
+                // parent correlates on the ids it already holds either way.
+                (void)send_ctp(::SCE::Mesh::makeInvokeChildInitFailedEnvelope(
+                    host_machine_name_, invoke_uuid, invoke_id_str, session_id,
+                    __sce_child_init_ex.what()));
+                (void)send_ctp(::SCE::Mesh::makeInvokeDoneEnvelope(
+                    host_machine_name_, invoke_uuid, invoke_id_str, session_id, ""));
+                // The half-built session is deliberately not registered: a
+                // child that never initialized cannot be ticked or cancelled.
+            }
         }
 
         void onWire17(const ::SCE::Mesh::MeshEnvelope& env) {
@@ -1192,20 +1227,12 @@ struct TransportRouter {
     private:
         void emitWire18(::SCE::Mesh::IChildSession& s,
                         ::SCE::Mesh::ChildToParentPublisher& send_ctp) {
-            ::SCE::Mesh::MeshEnvelope done{};
-            done.id = SCE::uuid::v7();
-            done.source = host_machine_name_;
-            done.type = "sce.invoke.done";
-            done.pattern = ::SCE::Mesh::PatternKind::InvokeDone;
-            done.invoke_id = s.invokeUuid();
-            done.subject = s.invokeIdString();
-            done.child_session_id = s.sessionId();
-            std::string donedata = s.getDonedata();
-            done.data.assign(donedata.begin(), donedata.end());
-            done.datacontenttype = donedata.empty()
-                ? ::SCE::Mesh::PayloadCodec::None
-                : ::SCE::Mesh::PayloadCodec::Json;
-            (void)send_ctp(done);
+            // Envelope shape lives in ChildSessionAdapter.h so the §9.3
+            // failure path emits a byte-identical completion without a
+            // session to read it off (ARCHITECTURE.md Zero Duplication).
+            (void)send_ctp(::SCE::Mesh::makeInvokeDoneEnvelope(
+                host_machine_name_, s.invokeUuid(), s.invokeIdString(),
+                s.sessionId(), s.getDonedata()));
         }
 
         std::string host_machine_name_;
