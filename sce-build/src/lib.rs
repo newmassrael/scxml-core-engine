@@ -5644,6 +5644,31 @@ pub fn compile_mesh_transport(
     deploy_path: &Path,
     language: generator::Language,
 ) -> Result<MeshResult, mesh::error::MeshError> {
+    // SCE_MESH.md §mesh-7.2 build tool analysis. The section's step list is
+    // this function's stage sequence: step 3 (apply deployment map) is stage
+    // 1, step 2 (build topology map) is stage 2, step 4 (boundary analysis)
+    // is stage 2b, step 7 (build-time validation) is stages 1b/2b/2c/2d, and
+    // steps 5-6 (per-transport template selection, artifact emission) are
+    // stage 3. Composition is the substance here — each stage's analysis
+    // lives in `mesh::deploy` / `mesh::topology` / `mesh::codegen`, and the
+    // order between them is what this function owns.
+    //
+    // Two halves of the section are deliberately elsewhere. Step 1 (parse
+    // all SCXML documents) is shared with every non-mesh codegen path, so
+    // the caller parses and drives this once per document. Step 7's event
+    // coverage is split by what it can see: the per-sender direction is
+    // stage 2d below, while "every sent event has at least one receiver
+    // anywhere in the topology" needs all models at once and lives in
+    // `validate_mesh_event_coverage`.
+    //
+    // Step 7 is a pipeline stage here, not the check catalogue — that is
+    // §mesh-7.7, a separate section this function does not close. Of §7.2's
+    // own four bullets the stages below cover target resolution (2b),
+    // external entity resolution (1b), and event coverage (2d);
+    // request/response pair completeness holds structurally rather than by
+    // assertion, because stage 1d synthesises the response leg from the
+    // detected pair instead of validating that an author wrote it.
+
     // Stage 1: deploy.yaml parsing (typed session config validated by serde)
     let deploy_cfg = mesh::deploy::parse_deploy(deploy_path)?;
 
