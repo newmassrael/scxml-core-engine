@@ -4261,6 +4261,18 @@
         {
           "file": "scripts/regen_autoforward_internal_queue_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_dequeue_point.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_dequeue_point_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_dequeue_point_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

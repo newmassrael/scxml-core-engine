@@ -7312,6 +7312,16 @@
         {
           "file": "sce/include/common/ForwardedEvent.h",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventQueues",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_event_queues",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7436,6 +7446,16 @@
         {
           "file": "backends/c/runtime/include/sce/invoke.h",
           "symbol": "sce_invoke_format_id",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventQueues",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_event_queues",
           "kind": "implements"
         }
       ],

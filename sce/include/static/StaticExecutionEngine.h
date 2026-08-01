@@ -670,33 +670,6 @@ public:
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
-        // §scxml-6.4: Autoforward - forward external events to children with autoforward=true
-        // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
-        //
-        // SCE_MESH.md §mesh-9.6.5: this is the "parent runtime observes each
-        // external event" point the section names, and the copy handed to the
-        // policy is verbatim — §scxml-6.4 requires an exact copy, so the child
-        // must see the same `_event.data`, `_event.origin`, `_event.sendid`,
-        // `_event.origintype` and `_event.invokeid` the parent sees. Only
-        // `target` is withheld (a routing decision owned by the originating
-        // `<send>`; inheriting it would bounce the copy back onto the mesh
-        // instead of delivering it to the child) — see ForwardedEvent.h.
-        SCE_LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
-        if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
-            SCE_LOG_DEBUG("AOT raiseExternal: Policy has autoforward capability");
-            ::SCE::Common::ForwardedEvent forwarded;
-            forwarded.name = policy_.getEventName(eventWithMetadata.event);
-            forwarded.data = eventWithMetadata.data;
-            forwarded.origin = eventWithMetadata.origin;
-            forwarded.sendId = eventWithMetadata.sendId;
-            forwarded.type = eventWithMetadata.type;
-            forwarded.originType = eventWithMetadata.originType;
-            forwarded.invokeId = eventWithMetadata.invokeId;
-            policy_.forwardToAutoforwardChildren(forwarded, *this);
-        } else {
-            SCE_LOG_DEBUG("AOT raiseExternal: Policy does NOT have autoforward capability");
-        }
-
         externalQueue_.raise(eventWithMetadata);
 
         // §scxml-5.10.1: Mark next event as external for _event.type (test331)
@@ -891,6 +864,46 @@ protected:
             // §scxml-6.5: Execute finalize BEFORE processing child events
             if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, StaticExecutionEngine<StatePolicy>>) {
                 policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
+            }
+
+            // §scxml-D-mainEventLoop: autoforward belongs to the same
+            // preliminary step as `<finalize>` above — both run against the
+            // event this drain has just removed from the external queue, and
+            // both run before transition selection. §scxml-6.4.2 fixes the
+            // position in prose as well: the parent forwards "at the point at
+            // which it removes it from the external event queue".
+            //
+            // Forwarding where the event is *enqueued* instead is a different
+            // algorithm, not an earlier one. `raiseExternal` runs inside
+            // whatever executable content produced the event, so a transition
+            // body that queues two events hands the child both of them before
+            // the parent has processed either — the child runs a whole event
+            // ahead and the two sessions stop agreeing on what has happened.
+            // Run-to-completion is a property of this loop's shape, so the
+            // forward has to live in the loop.
+            //
+            // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
+            //
+            // SCE_MESH.md §mesh-9.6.5: this is the "parent runtime observes
+            // each external event" point the section names, and the copy
+            // handed to the policy is verbatim — §scxml-6.4 requires an exact
+            // copy, so the child must see the same `_event.data`,
+            // `_event.origin`, `_event.sendid`, `_event.origintype` and
+            // `_event.invokeid` the parent sees. Only `target` is withheld (a
+            // routing decision owned by the originating `<send>`; inheriting
+            // it would bounce the copy back onto the mesh instead of
+            // delivering it to the child) — see ForwardedEvent.h.
+            if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
+                ::SCE::Common::ForwardedEvent forwarded;
+                forwarded.name = policy_.getEventName(eventWithMeta.event);
+                forwarded.data = eventWithMeta.data;
+                forwarded.origin = eventWithMeta.origin;
+                forwarded.sendId = eventWithMeta.sendId;
+                forwarded.type = eventWithMeta.type;
+                forwarded.originType = eventWithMeta.originType;
+                forwarded.invokeId = eventWithMeta.invokeId;
+                SCE_LOG_DEBUG("AOT processEventQueues: Autoforwarding dequeued external event '{}'", forwarded.name);
+                policy_.forwardToAutoforwardChildren(forwarded, *this);
             }
 
             executeTransition(event);
