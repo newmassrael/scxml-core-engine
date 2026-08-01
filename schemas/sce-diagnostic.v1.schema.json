@@ -330,6 +330,7 @@
         "mesh/io",
         "forge/source-hash-mismatch",
         "forge/source-hash-input-uncovered",
+        "forge/source-hash-walk-unbounded",
         "traceability/scxml-line-range-missing",
         "traceability/state-id-collision",
         "traceability/symbol-name-exceeds-c-identifier-limit",

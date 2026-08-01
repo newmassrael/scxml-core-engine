@@ -75,7 +75,43 @@ pub enum DriftHashError {
         #[source]
         source: std::io::Error,
     },
+
+    /// The walk descended more directories than [`MAX_DIRECTORY_DESCENTS`].
+    ///
+    /// Reported rather than truncated. A partial walk folds to a
+    /// well-formed digest that describes a subset of the input, and a
+    /// header carrying one is unauditable in the same way the empty-input
+    /// digest was: nothing downstream can tell it apart from a complete
+    /// one.
+    #[error(
+        "{root}: §6.2.6 source set exceeds {limit} directories — a directory \
+         symlink reaching a sibling multiplies the paths under it; re-point \
+         --input-root at a tree without the aliasing, or remove it"
+    )]
+    WalkLimitExceeded { root: PathBuf, limit: usize },
 }
+
+/// Liveness ceiling on directory descents in one walk.
+///
+/// This is not a size policy — it is the bound that keeps a pathological
+/// input from running forever. Because a directory link naming a sibling
+/// contributes under each name that reaches it, a tree of such links has a
+/// number of root-relative paths exponential in its depth: n levels of k
+/// links each name k^n paths, all of them genuinely distinct inputs under
+/// the documented rule. Enumerating them is the honest answer and refusing
+/// is the honest failure; silently hashing a prefix of them is neither.
+///
+/// The value only has to sit above every real source tree and stay finite.
+/// The largest input root in this workspace holds 201 directories and the
+/// whole repository holds roughly 4,800, so a million is ~200x the widest
+/// tree here — reachable by link multiplication and by nothing else.
+pub const MAX_DIRECTORY_DESCENTS: usize = 1_000_000;
+
+/// Floor on the ceiling, checked when the crate compiles rather than when a
+/// test runs. Lowering the bound near real tree sizes would turn a liveness
+/// guard into a size policy and start refusing legitimate input, so the
+/// constraint belongs to the constant, not to a caller.
+const _: () = assert!(MAX_DIRECTORY_DESCENTS >= 100_000);
 
 /// The resolved §synth-6.2.6 source set behind a `source-hash`: every
 /// `**/*.scxml` under the input root, plus `deploy.yaml` when supplied,
@@ -99,10 +135,27 @@ impl SourceSet {
     /// provided, its raw bytes are included under the canonical key
     /// `"deploy.yaml"`.
     pub fn collect(input_root: &Path, deploy_yaml: Option<&Path>) -> Result<Self, DriftHashError> {
+        Self::collect_within(input_root, deploy_yaml, MAX_DIRECTORY_DESCENTS)
+    }
+
+    /// [`collect`](Self::collect) with the descent ceiling supplied rather
+    /// than taken from [`MAX_DIRECTORY_DESCENTS`]. Exists so the refusal
+    /// can be exercised against a tree small enough to build in a test —
+    /// reaching the production ceiling for real would need millions of
+    /// directories.
+    pub(crate) fn collect_within(
+        input_root: &Path,
+        deploy_yaml: Option<&Path>,
+        descent_limit: usize,
+    ) -> Result<Self, DriftHashError> {
         let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
-        walk_filtered(input_root, input_root, &mut entries, &|p| {
-            p.extension().is_some_and(|e| e == "scxml")
-        })?;
+        walk_filtered(
+            input_root,
+            input_root,
+            &mut entries,
+            &|p| p.extension().is_some_and(|e| e == "scxml"),
+            descent_limit,
+        )?;
         if let Some(deploy) = deploy_yaml {
             let bytes = fs::read(deploy).map_err(|e| DriftHashError::Io {
                 path: deploy.to_path_buf(),
@@ -177,7 +230,13 @@ pub fn compute_template_hash(
     cargo_lock: &Path,
 ) -> Result<[u8; 32], DriftHashError> {
     let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
-    walk_filtered(template_root, template_root, &mut entries, &|_| true)?;
+    walk_filtered(
+        template_root,
+        template_root,
+        &mut entries,
+        &|_| true,
+        MAX_DIRECTORY_DESCENTS,
+    )?;
     let lock_bytes = fs::read(cargo_lock).map_err(|e| DriftHashError::Io {
         path: cargo_lock.to_path_buf(),
         source: e,
@@ -332,12 +391,47 @@ fn walk_filtered(
     root: &Path,
     out: &mut BTreeMap<PathBuf, [u8; 32]>,
     keep: &dyn Fn(&Path) -> bool,
+    descent_limit: usize,
 ) -> Result<(), DriftHashError> {
     // Seeded with the root so a link naming the root is recognised as a
     // cycle by the same rule that catches one naming any other ancestor.
     let mut descent: BTreeSet<PathBuf> = BTreeSet::new();
     descent.insert(canonical_key(root));
-    walk_filtered_recursive(anchor, root, out, keep, &mut descent)
+    let mut budget = DescentBudget {
+        root: root.to_path_buf(),
+        remaining: descent_limit,
+        limit: descent_limit,
+    };
+    walk_filtered_recursive(anchor, root, out, keep, &mut descent, &mut budget)
+}
+
+/// Descent allowance for one walk, spent across the whole traversal rather
+/// than per branch — the cost being bounded is the total number of
+/// `read_dir` calls. Carries the root and the original ceiling so the
+/// refusal names both without the recursion threading them separately.
+struct DescentBudget {
+    root: PathBuf,
+    remaining: usize,
+    limit: usize,
+}
+
+impl DescentBudget {
+    /// Charges one descent. The error is a function of the root and the
+    /// ceiling only — never of how far this particular traversal happened
+    /// to get, which would vary with directory iteration order and make
+    /// the diagnostic unstable across machines.
+    fn charge(&mut self) -> Result<(), DriftHashError> {
+        match self.remaining.checked_sub(1) {
+            Some(left) => {
+                self.remaining = left;
+                Ok(())
+            }
+            None => Err(DriftHashError::WalkLimitExceeded {
+                root: self.root.clone(),
+                limit: self.limit,
+            }),
+        }
+    }
 }
 
 /// Recursive half of [`walk_filtered`]. `descent` carries the canonicalized
@@ -362,7 +456,9 @@ fn walk_filtered_recursive(
     out: &mut BTreeMap<PathBuf, [u8; 32]>,
     keep: &dyn Fn(&Path) -> bool,
     descent: &mut BTreeSet<PathBuf>,
+    budget: &mut DescentBudget,
 ) -> Result<(), DriftHashError> {
+    budget.charge()?;
     let entries = fs::read_dir(dir).map_err(|e| DriftHashError::Io {
         path: dir.to_path_buf(),
         source: e,
@@ -404,7 +500,7 @@ fn walk_filtered_recursive(
             if !descent.insert(key.clone()) {
                 continue;
             }
-            let descended = walk_filtered_recursive(anchor, &path, out, keep, descent);
+            let descended = walk_filtered_recursive(anchor, &path, out, keep, descent, budget);
             descent.remove(&key);
             descended?;
         } else if target_type.is_file() && keep(&path) {
@@ -662,6 +758,68 @@ mod tests {
                 "real/doc.scxml".to_string(),
             ],
             "every root-relative path naming a .scxml keys its own entry"
+        );
+    }
+
+    /// Aliases are what make the path count exponential in the depth of the
+    /// tree, so the walk needs a ceiling that turns a pathological input
+    /// into a bounded failure.
+    ///
+    /// Built as sibling levels linked forward: each of `l0`, `l1`, `l2`
+    /// holds three links to the *next* level, so `l3/doc.scxml` is named by
+    /// 3^3 root-relative paths out of five real directories. The links have
+    /// to point forward — a link naming its own parent is an ancestor, which
+    /// the cycle rule skips, so it would multiply nothing.
+    ///
+    /// The refusal must be an error, not a truncated set: a partial walk
+    /// folds to a digest describing a subset of the input, which is the
+    /// unauditable-header failure the empty-set refusal already rules out.
+    #[test]
+    fn source_hash_refuses_a_tree_that_exceeds_the_descent_ceiling() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "l3/doc.scxml", b"<scxml/>");
+        for level in ["l0", "l1", "l2"] {
+            fs::create_dir_all(root.join(level)).unwrap();
+        }
+        for (from, to) in [("l0", "l1"), ("l1", "l2"), ("l2", "l3")] {
+            for name in ["a", "b", "c"] {
+                std::os::unix::fs::symlink(
+                    root.join(to),
+                    root.join(from).join(format!("alias_{name}")),
+                )
+                .unwrap();
+            }
+        }
+
+        let err = SourceSet::collect_within(root, None, 8)
+            .expect_err("a tree past the ceiling must refuse, not truncate");
+        match err {
+            DriftHashError::WalkLimitExceeded { root: r, limit } => {
+                assert_eq!(r, root, "the refusal names the root it was given");
+                assert_eq!(
+                    limit, 8,
+                    "the refusal names the ceiling, not a partial count"
+                );
+            }
+            other => panic!("expected WalkLimitExceeded, got {other:?}"),
+        }
+    }
+
+    /// The ceiling must not fire on an ordinary tree — a liveness bound that
+    /// refuses legitimate input is a size policy. That the constant stays far
+    /// above real tree sizes is asserted where it is defined, at compile
+    /// time; what this covers is the production entry point actually running
+    /// under it rather than around it.
+    #[test]
+    fn the_descent_ceiling_does_not_fire_on_an_ordinary_tree() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "a.scxml", b"<scxml/>");
+        write_file(root, "sub/nested/b.scxml", b"<scxml/>");
+        assert!(
+            SourceSet::collect(root, None).is_ok(),
+            "an ordinary tree must not come near the ceiling"
         );
     }
 

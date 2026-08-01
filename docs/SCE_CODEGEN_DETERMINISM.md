@@ -170,6 +170,35 @@ Exit code 20; nothing is written. Two ways to trigger it:
   is allowed (this repository's fixture regen scripts rely on it). The
   empty-set floor still applies.
 
+### The enumeration ceiling
+
+Because a directory link naming a sibling contributes under every name that
+reaches it, nested levels of such links name a number of root-relative
+paths exponential in the depth — n levels of k links each name k^n paths.
+All of them are inputs under the rule above, so there is no subset the
+walk could legitimately settle for.
+
+The walk therefore carries a ceiling on directories descended and refuses
+when it is reached:
+
+```
+forge/source-hash-walk-unbounded
+src/scxml: §6.2.6 source set exceeds 1000000 directories — a directory
+symlink reaching a sibling multiplies the paths under it; re-point
+--input-root at a tree without the aliasing, or remove it
+```
+
+Exit code 20; nothing is written. This is a liveness bound, not a size
+policy: the ceiling only has to sit above every real source tree and stay
+finite, and it is reachable by link multiplication and by nothing else —
+the widest input root in this repository holds 201 directories. The message
+names the ceiling rather than how far the traversal got, so one tree
+produces one record on every machine.
+
+A link resolving to a directory already on the current descent path is a
+cycle, not aliasing: it is skipped without being descended, so it costs
+nothing against the ceiling and a cyclic layout never approaches the bound.
+
 *Tests:* `generate_refuses_when_the_source_set_is_empty`,
 `generate_allows_a_staged_derivative_under_a_declared_root`,
 `generate_hashes_a_symlinked_input_rather_than_the_empty_digest`
@@ -179,7 +208,9 @@ Exit code 20; nothing is written. Two ways to trigger it:
 `source_hash_counts_every_alias_of_one_directory`,
 `source_hash_of_aliased_directories_ignores_creation_order`,
 `source_hash_terminates_on_symlink_cycle`,
-`source_hash_terminates_on_a_link_back_to_the_root`
+`source_hash_terminates_on_a_link_back_to_the_root`,
+`source_hash_refuses_a_tree_that_exceeds_the_descent_ceiling`,
+`the_descent_ceiling_does_not_fire_on_an_ordinary_tree`
 (`sce-build/src/forge/drift.rs`).
 
 ---
