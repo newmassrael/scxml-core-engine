@@ -18,6 +18,27 @@
    the `//` comments below stay bare on purpose: those DO ship into generated
    code, and rewriting them to §-form is what this channel exists to avoid. #}
 
+{# §mesh-10.6.3: the sequence stamp the section describes is emitted by this
+   template and exists nowhere else. `setMeshSendCallback` carries one
+   `seq_counter_<target>_` member per target selected by `needs_ordering`
+   (`ordering: required` on a transport whose registry entry does not already
+   supply ordering), and stamps `env.sequence_no` from it immediately before
+   `route_send` — the placement the section names. The counter is plain
+   `uint64_t` rather than an atomic because the callback runs only on the
+   engine's step thread, and carries no wrap guard, both as the section
+   allows. The receiving half (`admitOrdered`, MISSING_SEQUENCE) is
+   §mesh-10.6.4 and is bound separately. #}
+
+{# §mesh-15.2: one Zenoh session per device, shared by every zenoh user on
+   it. `TransportRouter` declares a single `std::optional<zenoh::Session>
+   zenoh_session_` and opens it once in `init()`; per-target publishers,
+   subscribers, the queryable, the liveliness tokens, and the §mesh-9.6
+   invoke endpoints all borrow that one session rather than opening their
+   own. That is the resource/discovery-conflict argument the section gives,
+   realized structurally — there is no per-target session field to diverge.
+   The session's config is the device's `transports.zenoh` block, so
+   deploy.yaml remains the only source for it. #}
+
 {# SCE Mesh — unified transport routing (per-target transport dispatch).
 
    Each target's transport type determines its send function and router field.
