@@ -2079,7 +2079,14 @@
       "title": "Build Tool Analysis",
       "parent_doc": "mesh",
       "parent_section": "mesh-7",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_mesh_transport",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-7.3": {
       "title": "Outputs",
@@ -2139,7 +2146,14 @@
       "title": "Build-Time Verification",
       "parent_doc": "mesh",
       "parent_section": "mesh-7",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_mesh_transport",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-8": {
       "title": "Protocol Mapping",

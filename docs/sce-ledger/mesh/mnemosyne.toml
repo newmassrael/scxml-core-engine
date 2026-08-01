@@ -110,6 +110,28 @@ severity = "warn"
 # attribute them to the item they document — so those land as file-level
 # `references` and their sections stay uncovered until the cite moves into the
 # function body it describes.
+#
+# `sce-build/src/lib.rs` is enrolled as a single file, not a tree, because one
+# mesh seam lives in it: `compile_mesh_transport`, the §7.2 build pipeline. The
+# per-step analyses it sequences are already scanned under `sce-build/src/mesh`;
+# what exists only here is the order between them, which is that section's
+# substance. Same shape as `sce/include/common` and `sce/include/static` above —
+# general trees enrolled because a mesh seam sits inside them, not because the
+# mesh spec governs everything they hold.
+#
+# This file is where the migrator prohibition above stops being a convention and
+# becomes load-bearing. It carries 107 bare `§<n>` cites and, unlike the mesh
+# trees, most are not mesh at all: `§5.2` and `§5.E` are the SCE
+# Protocol-Synthesis RFC, `§2.6`/`§2.7` are docs/session-fsm.md. section_namespace
+# skips every bare token by the token itself, so they are inert to this gate —
+# but `migrate_citations.py --namespace mesh --apply` claims bare `§<n>` for the
+# mesh namespace and would mint `§mesh-5.2` over another document's text. Cites
+# here are hand-authored one at a time alongside their binding, as in the
+# template tree.
+#
+# Measured on enrollment, not assumed: the scan set moved from 84 files to 85,
+# §7.2 closed, and no other axis moved (citation_unbound / symbol_mismatch /
+# binding_unbacked stayed at 0 before and after).
 [plugins.set_equality_validator]
 paths = [
     "sce/include/mesh",
@@ -118,13 +140,14 @@ paths = [
     "sce/include/static",
     "tests/w3c/dist",
     "sce-build/src/mesh",
+    "sce-build/src/lib.rs",
     "tools/codegen/templates/mesh",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously. `sce-build/src/mesh` in `paths` above is the one Rust
-# tree this ledger scans; every other Rust source in the repo is declared out
-# here.
+# tree this ledger scans, plus the single file `sce-build/src/lib.rs`; every
+# other Rust source in the repo is declared out here.
 #
 # An entry here does not subtract from `paths` — the two lists are read
 # independently, and a prefix may appear in both. `sce-build/` is declared out
