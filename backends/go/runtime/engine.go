@@ -312,15 +312,6 @@ func (e *Engine[S, E]) RaiseExternalByNameWithMeta(eventName string, metadata Ev
 func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 	log.Printf("[sce] Engine::RaiseExternalWithMeta: enqueuing external event with metadata")
 
-	// W3C SCXML 6.4.1: Autoforward. W3C 6.4 mandates an exact copy, so the
-	// source event's metadata rides along with the name. Target is not
-	// forwarded: it is a routing decision owned by the originating <send>,
-	// and inheriting it would re-route the child's copy.
-	if e.policy.HasAutoforward() {
-		name := e.policy.GetEventName(event.Event)
-		e.policy.ForwardToAutoforwardChildren(name, event.Metadata, e)
-	}
-
 	e.externalQueue.Raise(event)
 
 	if e.policy.HasExternalEventFlag() {
@@ -506,6 +497,30 @@ func (e *Engine[S, E]) processEventQueues() {
 		// W3C SCXML 6.5: Execute finalize before parent's own transition matching
 		if e.policy.HasFinalize() {
 			e.policy.ExecuteFinalizeForChildEvent(&eventWithMeta, e)
+		}
+		// W3C SCXML Appendix D mainEventLoop: autoforward belongs to the same
+		// preliminary step as <finalize> above — both run against the event
+		// this drain has just popped off the external queue, and both run
+		// before transition selection. W3C SCXML 6.4.2 fixes the position in
+		// prose as well: the parent forwards "at the point at which it removes
+		// it from the external event queue".
+		//
+		// Forwarding where the event is enqueued instead is a different
+		// algorithm, not an earlier one. RaiseExternalWithMeta runs inside
+		// whatever executable content produced the event, so a transition body
+		// that queues two events hands the child both of them before the
+		// parent has processed either — the child runs a whole event ahead and
+		// the two sessions stop agreeing on what has happened.
+		// Run-to-completion is a property of this loop's shape, so the forward
+		// has to live in the loop.
+		//
+		// W3C SCXML 6.4 mandates an exact copy, so the source event's metadata
+		// rides along with the name. Target is not forwarded: it is a routing
+		// decision owned by the originating <send>, and inheriting it would
+		// re-route the child's copy.
+		if e.policy.HasAutoforward() {
+			name := e.policy.GetEventName(eventWithMeta.Event)
+			e.policy.ForwardToAutoforwardChildren(name, eventWithMeta.Metadata, e)
 		}
 		// W3C SCXML 5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)

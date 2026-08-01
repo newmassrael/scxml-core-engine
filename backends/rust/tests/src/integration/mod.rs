@@ -14,6 +14,7 @@
 //! never touches it and adding or dropping an integration fixture is
 //! a single-line edit here.
 
+pub mod autoforward_dequeue_point;
 pub mod autoforward_done_invoke;
 pub mod autoforward_event_fields;
 pub mod autoforward_internal_queue;
