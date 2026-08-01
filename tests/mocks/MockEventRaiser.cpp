@@ -106,6 +106,16 @@ bool MockEventRaiser::hasQueuedEvents() const {
     return false;
 }
 
+bool MockEventRaiser::processNextInternalEvent() {
+    // Mock implementation - no actual queue to process
+    return false;
+}
+
+bool MockEventRaiser::hasQueuedInternalEvents() const {
+    // Mock implementation - no actual queue
+    return false;
+}
+
 void MockEventRaiser::getEventQueues(std::vector<EventSnapshot> &outInternal,
                                      std::vector<EventSnapshot> &outExternal) const {
     // Mock implementation - no actual queue

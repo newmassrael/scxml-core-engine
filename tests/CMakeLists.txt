@@ -141,6 +141,7 @@ set(SCE_TEST_TARGETS
 add_executable(sce_scxml_tests
     simple_scxml_test.cpp
     core/TypeRegistryTest.cpp
+    core/InvokeHelperTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/UuidTest.cpp
@@ -462,6 +463,10 @@ add_executable(integration_tests
     integration/AutoforwardInternalQueueAotTest.cpp
     integration/AutoforwardDequeuePointTest.cpp
     integration/AutoforwardDequeuePointAotTest.cpp
+    integration/InvokePrecedesExternalDequeueTest.cpp
+    integration/InvokePrecedesExternalDequeueAotTest.cpp
+    integration/InvokePrecedesDequeueMidrunTest.cpp
+    integration/InvokePrecedesDequeueMidrunAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
     integration/NestedFinalNotTerminalAotTest.cpp
     integration/SCXMLEventTest.cpp
@@ -778,6 +783,25 @@ sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRA
 # with `<send target="#_inv_probe">` from inside a transition body.
 sce_generate_static_integration_test(autoforward_dequeue_point ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_probe
+)
+
+# W3C SCXML Appendix D: *when* the invokes start relative to the external
+# dequeue. `mainEventLoop` completes the macrostep on eventless and internal
+# transitions alone, runs `invoke(inv)`, and only then reaches
+# `externalQueue.dequeue()`. The fixture above cannot see this axis — its
+# child opens the exchange, so it is alive before anything is queued; here the
+# parent queues for itself in `<onentry>` and the child starts second.
+sce_generate_static_integration_test(invoke_precedes_external_dequeue ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_watch
+)
+
+# W3C SCXML Appendix D: the same order, reached mid-run. `statesToInvoke` is
+# filled by `enterStates` inside `microstep`, so a state entered by an external
+# event's transition arms an invoke that must start before the next event is
+# dequeued. The fixture above enters its invoking state at initialization and
+# cannot see an engine that drains the external queue to exhaustion per step.
+sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_watch
 )
 
 # W3C SCXML 3.7: a `<final>` nested inside a compound state completes that

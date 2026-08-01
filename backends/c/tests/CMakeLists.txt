@@ -515,6 +515,71 @@ set_tests_properties(c11_integration_autoforward_dequeue_point PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML Appendix D: *when* the invokes start relative to the external
+# dequeue. mainEventLoop completes the macrostep on eventless and internal
+# transitions alone, runs invoke(inv), and only then reaches
+# externalQueue.dequeue(). The fixture above cannot see this axis — its child
+# opens the exchange, so it is alive before anything is queued; here the
+# parent queues for itself in onentry and the child starts second.
+sce_generate_static_integration_c_test(invoke_precedes_external_dequeue "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_watch
+)
+
+add_executable(sce_c_integration_invoke_precedes_external_dequeue
+    integration/test_invoke_precedes_external_dequeue.c
+    ${INTEGRATION_C_TEST_invoke_precedes_external_dequeue_SOURCES}
+)
+target_link_libraries(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_invoke_precedes_external_dequeue PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_invoke_precedes_external_dequeue
+    COMMAND sce_c_integration_invoke_precedes_external_dequeue
+)
+set_tests_properties(c11_integration_invoke_precedes_external_dequeue PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
+# W3C SCXML Appendix D: the same order, reached mid-run. statesToInvoke is
+# filled by enterStates inside microstep, so a state entered by an external
+# event's transition arms an invoke that must start before the next event is
+# dequeued. The fixture above enters its invoking state at initialization and
+# cannot see an engine that drains the external queue to exhaustion per step.
+sce_generate_static_integration_c_test(invoke_precedes_dequeue_midrun "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_watch
+)
+
+add_executable(sce_c_integration_invoke_precedes_dequeue_midrun
+    integration/test_invoke_precedes_dequeue_midrun.c
+    ${INTEGRATION_C_TEST_invoke_precedes_dequeue_midrun_SOURCES}
+)
+target_link_libraries(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_invoke_precedes_dequeue_midrun PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_invoke_precedes_dequeue_midrun
+    COMMAND sce_c_integration_invoke_precedes_dequeue_midrun
+)
+set_tests_properties(c11_integration_invoke_precedes_dequeue_midrun PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # W3C SCXML 3.7: a <final> nested inside a compound state completes that
 # state, not the session — Appendix D enterStates ends the session only when
 # the final's parent is the <scxml> element. The fixture rests in the nested

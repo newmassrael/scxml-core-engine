@@ -265,7 +265,14 @@ public:
      *
      * @return true if queue has INTERNAL priority events, false otherwise
      */
-    bool hasQueuedInternalEvents() const;
+    bool hasQueuedInternalEvents() const override;
+
+    /**
+     * @brief §scxml-D-mainEventLoop: Process one INTERNAL event, leaving
+     *        external events queued for after the macrostep's invokes
+     * @return true if an internal event was processed, false if none was queued
+     */
+    bool processNextInternalEvent() override;
 
     /**
      * @brief Get snapshot of current event queues for visualization/debugging

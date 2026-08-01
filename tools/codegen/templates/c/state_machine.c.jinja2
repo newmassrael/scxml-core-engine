@@ -3504,7 +3504,7 @@ static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
 }
 {% endif %}
 
-static void SCE_SM_FN process_event_queues({{ csym_prefix }}{{ model.name }}_t *sm) {
+static void SCE_SM_FN process_internal_queue({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
@@ -3541,8 +3541,25 @@ static void SCE_SM_FN process_event_queues({{ csym_prefix }}{{ model.name }}_t *
            reference) fire while the binding still holds. */
         check_eventless_transitions(sm);
     }
+}
 
-    while (event_queue_pop(&sm->external_queue, &evt)) {
+/* W3C SCXML Appendix D `mainEventLoop`: take exactly one event off the
+   external queue, run the preliminary `<finalize>` / autoforward step
+   against it, then select transitions. Reports whether an event was
+   processed.
+
+   One event, not a drain: the algorithm returns to the top of the outer
+   loop after each external event, so a state entered by this event's
+   transition gets its `<invoke>` elements started before the next event is
+   dequeued. Draining to exhaustion here consumes what that state's
+   `<onentry>` queued while its invoke is still pending, and an autoforward
+   child never sees it. */
+static bool SCE_SM_FN process_next_external_event({{ csym_prefix }}{{ model.name }}_t *sm) {
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
+    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
+    uint8_t count;
+
+    if (event_queue_pop(&sm->external_queue, &evt)) {
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
         /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
@@ -3594,7 +3611,9 @@ static void SCE_SM_FN process_event_queues({{ csym_prefix }}{{ model.name }}_t *
         {% endif %}
 
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
-            return;
+            /* The event was removed from the queue, so report it consumed;
+               the caller's loop stops on the final-state check either way. */
+            return true;
         }
 
         {% set _has_finalize = namespace(any=false) %}
@@ -3655,7 +3674,9 @@ static void SCE_SM_FN process_event_queues({{ csym_prefix }}{{ model.name }}_t *
         }
 
         check_eventless_transitions(sm);
+        return true;
     }
+    return false;
 }
 
 /* W3C SCXML 6.2 (Appendix D, eventless microstep loop):
@@ -3681,25 +3702,73 @@ static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name
     }
 }
 
+/* W3C SCXML Appendix D `mainEventLoop` — the outer loop, and the only place
+   this machine's entry points (`_init`, `_step`, `_tick`) express macrostep
+   semantics.
+
+   Appendix D names the external queue exactly once per iteration and it is
+   after `invoke(inv)`:
+
+     while running:
+         while running and not macrostepDone:      # eventless + internal only
+             ... selectEventlessTransitions() / internalQueue.dequeue() ...
+         for state in statesToInvoke.sort(entryOrder):
+             for inv in state.invoke.sort(documentOrder):
+                 invoke(inv)
+         statesToInvoke.clear()
+         if not internalQueue.isEmpty(): continue
+         externalEvent = externalQueue.dequeue()
+
+   Folding the external drain into the macrostep-completion loop instead is a
+   different algorithm, not a shorter one. The invoked children do not exist
+   yet while that drain runs, so everything `<onentry>` queued for this
+   session on the way in is consumed with no autoforward child to receive it
+   — and there is no later point at which it is delivered. */
+static void SCE_SM_FN run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *sm) {
+    while (true) {
+        /* W3C SCXML Appendix D: complete the macrostep on eventless
+           transitions and internal events alone. */
+        while (true) {
+            check_eventless_transitions(sm);
+            if (sm->internal_queue.count == 0u) {
+                break;
+            }
+            process_internal_queue(sm);
+        }
+
+        if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+            break;
+        }
+
+        {% if (model.invokes | scxml_family) %}
+        /* W3C SCXML 6.4: execute the deferred `<invoke>` elements for states
+           entered-and-not-exited during this macrostep. Children that reach
+           their top-level <final> synchronously (test247 pattern: child has
+           only `<final>` as initial) raise `done.invoke` onto the external
+           queue here, which this loop's next iteration drains. */
+        {{ csym_prefix }}{{ model.name }}_execute_pending_invokes(sm);
+        /* W3C SCXML 6.4 (test192): drive active children so events the parent
+           enqueued onto a child's external queue earlier in this macrostep
+           (via `<send target="#_<invokeid>">`) get drained inside the same
+           loop. A child that reaches `<final>` here has its `done.invoke`
+           raised onto the parent's external queue for the next iteration. */
+        {{ csym_prefix }}{{ model.name }}_drive_active_children(sm);
+        {% endif %}
+
+        /* W3C SCXML Appendix D: invoking may have raised internal error
+           events; handle them before touching the external queue. */
+        if (sm->internal_queue.count != 0u) {
+            continue;
+        }
+
+        if (!process_next_external_event(sm)) {
+            break;
+        }
+    }
+}
+
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_step({{ csym_prefix }}{{ model.name }}_t *sm) {
-    process_event_queues(sm);
-    check_eventless_transitions(sm);
-    {% if (model.invokes | scxml_family) %}
-    /* W3C SCXML 6.4: at end of each macrostep, execute deferred
-       `<invoke>` elements for states entered-and-not-exited during the
-       step. Children that reach their top-level <final> synchronously
-       (test247 pattern: child has only `<final>` as initial) raise
-       `done.invoke` onto the external queue here so the next caller
-       loop iteration drains it. */
-    {{ csym_prefix }}{{ model.name }}_execute_pending_invokes(sm);
-    /* W3C SCXML 6.4 (test192): drive active children so events the
-       parent enqueued onto a child's external queue earlier in this
-       macrostep (via `<send target="#_<invokeid>">`) get drained on
-       the same `_step` call. A child that reaches `<final>` here has
-       its `done.invoke` raised onto the parent's external queue for
-       the next iteration. */
-    {{ csym_prefix }}{{ model.name }}_drive_active_children(sm);
-    {% endif %}
+    run_main_event_loop(sm);
     if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm) && sm->completion_callback != NULL) {
         sm->completion_callback(sm->completion_callback_user_data);
     }
@@ -3841,34 +3910,18 @@ static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ mode
        loop. The recursion handles compound, parallel, and leaf states
        uniformly. */
     enter_state_recursive(sm, {{ csym_prefix }}{{ model.name }}_initial_state());
-    /* W3C SCXML 6.4: Macrostep completion loop. Mirrors the cpp
-       StaticExecutionEngine::initialize tail: keep firing eventless
-       transitions and processing internal/external events until both
-       stabilise. Without this loop the first event raised in an
-       <onentry> block races ahead of the source state's eventless
-       <transition> because step() drains the queue before it checks
-       eventless transitions; the queued event then has no matching
-       transition in the entered state and is silently dropped
-       (test503/505/506 force this). Top-level fixtures only — child SMs
+    /* W3C SCXML Appendix D: hand over to the outer loop. It fires eventless
+       transitions and internal events to macrostep completion, executes the
+       deferred `<invoke>` elements, and only then dequeues one external
+       event — so the first event raised in an `<onentry>` block cannot race
+       ahead of the source state's eventless `<transition>` (test503/505/506
+       force this), and an autoforward child is live for every event
+       `<onentry>` queued on the way in. Top-level fixtures only — child SMs
        (which declare `<send target="#_parent">` and emit
        `_init_with_parent` instead) defer macrostep stabilisation to the
-       parent's invoke helper, which runs it after stamping
-       parent-routing fields and applying `<param>` / `namelist`
-       overrides. */
-    while (true) {
-        check_eventless_transitions(sm);
-        {% if (model.invokes | scxml_family) %}
-        /* W3C SCXML 6.4: deferred invokes execute at every macrostep
-           end during init's stabilisation — the first invocation may
-           feed `done.invoke` back into the external queue, which the
-           loop's next iteration must drain. */
-        {{ csym_prefix }}{{ model.name }}_execute_pending_invokes(sm);
-        {% endif %}
-        if (sm->internal_queue.count == 0u && sm->external_queue.count == 0u) {
-            break;
-        }
-        process_event_queues(sm);
-    }
+       parent's invoke helper, which runs it after stamping parent-routing
+       fields and applying `<param>` / `namelist` overrides. */
+    run_main_event_loop(sm);
 }
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {

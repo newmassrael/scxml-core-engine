@@ -246,7 +246,7 @@ private:
      * @brief Handle hierarchical exit and entry for state transition
      *
      * @details
-     * ARCHITECTURE.md: Extract duplicate code from processEventQueues
+     * ARCHITECTURE.md: Extract duplicate code from the event-queue drains
      * §scxml-3.13: Compute LCA and execute hierarchical exit/entry
      *
      * @param oldState State before transition
@@ -433,7 +433,7 @@ private:
      * - onParallelTransition: how parallel states handle exit/entry (queue path: executeMicrostep
      *   already handled; direct path: explicit executeOnExit/executeOnEntry)
      * - postTransition: work after hierarchical handling, before eventless check
-     *   (queue path: nothing; direct path: processEventQueues)
+     *   (queue path: nothing; direct path: runMainEventLoop)
      *
      * @tparam ParallelHandlerFn Callable(State oldState, vector<State> preStates) for parallel states
      * @tparam PostTransitionFn Callable() for post-hierarchical work
@@ -489,7 +489,7 @@ private:
                 executeOnExit(oldState, preTransitionStates);
                 executeOnEntry(currentState_);
             },
-            [this] { processEventQueues(); });
+            [this] { runMainEventLoop(); });
         // §scxml-6.4: Notify parent only when the machine has globally
         // terminated. `isInFinalState()` adds the parent-presence check to
         // the structural `StatePolicy::isFinalState`, excluding a regional
@@ -807,22 +807,78 @@ protected:
     }
 
     /**
-     * @brief Process both internal and external event queues (§scxml-D-mainEventLoop)
+     * @brief The §scxml-D-mainEventLoop outer loop
      *
-     * Processes all queued internal and external events in priority order.
-     * Internal events are processed first (high priority), then external events.
+     * The only place this engine's entry points (`initialize`, `step`, `tick`,
+     * `processEventImpl`) express macrostep semantics. Appendix D names the
+     * external queue exactly once per iteration and it is *after*
+     * `invoke(inv)`:
      *
-     * §scxml-3.13 (test189): Internal queue (#_internal target) has higher
-     * priority than external queue (no target or external targets).
+     * ```
+     * while running:
+     *     while running and not macrostepDone:      # eventless + internal only
+     *         ... selectEventlessTransitions() / internalQueue.dequeue() ...
+     *     for state in statesToInvoke.sort(entryOrder):
+     *         for inv in state.invoke.sort(documentOrder):
+     *             invoke(inv)
+     *     statesToInvoke.clear()
+     *     if not internalQueue.isEmpty(): continue
+     *     externalEvent = externalQueue.dequeue()
+     * ```
      *
-     * Uses shared EventProcessingAlgorithms for W3C-compliant processing.
-     * This ensures Interpreter and AOT engines use identical logic.
+     * Folding the external drain into the macrostep-completion loop instead is
+     * a different algorithm, not a shorter one. The invoked children do not
+     * exist yet while that drain runs, so everything `<onentry>` queued for
+     * this session on the way in is consumed with no `autoforward` child to
+     * receive it — and there is no later point at which it is delivered. One
+     * external event per iteration for the same reason: a state entered by
+     * event N's transition must have its invokes started before N+1 comes off
+     * the queue.
      *
-     * Supports both static (stateless) and non-static (stateful) policies.
-     * Static methods can also be called through an instance in C++.
+     * §scxml-3.13 (test189): the internal queue (`#_internal` target) keeps its
+     * priority over the external one — the inner loop drains it to exhaustion
+     * before the outer loop looks at an external event at all.
      */
-    void processEventQueues() {
-        SCE_LOG_DEBUG("AOT processEventQueues: Starting internal queue processing");
+    void runMainEventLoop() {
+        while (true) {
+            // §scxml-D-mainEventLoop: complete the macrostep on eventless
+            // transitions and internal events alone.
+            while (true) {
+                checkEventlessTransitions();
+                if (!internalQueue_.hasEvents()) {
+                    break;
+                }
+                processInternalQueue();
+            }
+
+            if (!isRunning_ || isInFinalState()) {
+                break;
+            }
+
+            // §scxml-6.4: invokes for states entered during this macrostep.
+            if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
+                policy_.executePendingInvokes(*this);
+            }
+
+            // §scxml-D-mainEventLoop: invoking may have raised internal error
+            // events (and a child that completed synchronously may already
+            // have raised `done.invoke`); handle them before touching the
+            // external queue.
+            if (internalQueue_.hasEvents()) {
+                continue;
+            }
+
+            if (!processNextExternalEvent()) {
+                break;
+            }
+        }
+    }
+
+    /**
+     * @brief Drain the internal event queue (§scxml-C-1, high priority)
+     */
+    void processInternalQueue() {
+        SCE_LOG_DEBUG("AOT processInternalQueue: Starting internal queue processing");
         // §scxml-3.13: Process internal queue first (high priority)
         SCE::Core::AOTEventQueue<EventWithMetadata> internalAdapter(internalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
@@ -832,7 +888,7 @@ protected:
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
-                SCE_LOG_DEBUG("AOT processEventQueues: Processing internal event, currentState={}",
+                SCE_LOG_DEBUG("AOT processInternalQueue: Processing internal event, currentState={}",
                               static_cast<int>(currentState_));
 
                 // §scxml-3.7: Stop processing events if TOP-LEVEL final state reached
@@ -840,12 +896,13 @@ protected:
                 // in isInFinalState() to keep regional `<final>` inside a `<parallel>`
                 // from mis-terminating the queue drain.)
                 if (isInFinalState()) {
-                    SCE_LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
-                                  static_cast<int>(currentState_));
+                    SCE_LOG_DEBUG(
+                        "AOT processInternalQueue: Top-level final state {} reached, stopping event processing",
+                        static_cast<int>(currentState_));
                     return false;
                 }
                 if (StatePolicy::isFinalState(currentState_)) {
-                    SCE_LOG_DEBUG("AOT processEventQueues: Non-top-level final state {} (inside parallel/compound), "
+                    SCE_LOG_DEBUG("AOT processInternalQueue: Non-top-level final state {} (inside parallel/compound), "
                                   "continue processing done.state events",
                                   static_cast<int>(currentState_));
                 }
@@ -853,11 +910,24 @@ protected:
                 executeTransition(event);
                 return true;  // Continue processing
             });
+    }
 
-        // §scxml-3.13: Process external queue second (low priority)
-        SCE::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
-        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(externalAdapter, [this](const EventWithMetadata
-                                                                                                    &eventWithMeta) {
+    /**
+     * @brief Take exactly one event off the external queue (§scxml-D-mainEventLoop)
+     *
+     * Runs the preliminary `<finalize>` / autoforward step against it, then
+     * selects transitions. Returns false when the queue was empty.
+     *
+     * One event, not a drain: Appendix D returns to the top of the outer loop
+     * after each external event, so a state entered by this event's transition
+     * gets its invokes started before the next one is dequeued.
+     */
+    bool processNextExternalEvent() {
+        if (!externalQueue_.hasEvents()) {
+            return false;
+        }
+        const EventWithMetadata eventWithMeta = externalQueue_.pop();
+        {
             Event event = eventWithMeta.event;
             currentEventInvokeId_ = eventWithMeta.invokeId;
             SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
@@ -903,13 +973,14 @@ protected:
                 forwarded.type = eventWithMeta.type;
                 forwarded.originType = eventWithMeta.originType;
                 forwarded.invokeId = eventWithMeta.invokeId;
-                SCE_LOG_DEBUG("AOT processEventQueues: Autoforwarding dequeued external event '{}'", forwarded.name);
+                SCE_LOG_DEBUG("AOT processNextExternalEvent: Autoforwarding dequeued external event '{}'",
+                              forwarded.name);
                 policy_.forwardToAutoforwardChildren(forwarded, *this);
             }
 
             executeTransition(event);
-            return true;  // Continue processing
-        });
+        }
+        return true;
     }
 
     /**
@@ -970,7 +1041,7 @@ protected:
                 }
             } else {
                 // §scxml-3.13: No eventless transition available - stable configuration reached
-                // Internal events will be processed by caller (processEventQueues or step)
+                // Internal events will be processed by caller (runMainEventLoop or step)
                 break;
             }
         }
@@ -1041,36 +1112,16 @@ public:
             executeOnEntry(state);
         }
 
-        // §scxml-3.13: Macrostep completion loop
-        // Process eventless transitions and internal events until stable configuration
-        SCE_LOG_DEBUG("AOT initialize: After entry actions, starting macrostep completion loop");
-        while (true) {
-            // Process eventless transitions until stable
-            checkEventlessTransitions();
-
-            // Check if there are internal events to process
-            if (!internalQueue_.hasEvents() && !externalQueue_.hasEvents()) {
-                // Truly stable - no eventless transitions and no events
-                break;
-            }
-
-            // Process internal/external events (may raise more events or cause transitions)
-            processEventQueues();
-        }
-        SCE_LOG_DEBUG("AOT initialize: Macrostep completion loop finished - stable configuration reached");
-
-        // §scxml-6.4: Execute pending invokes after macrostep completes (ARCHITECTURE.md Zero Duplication)
-        // Only invokes in entered-and-not-exited states execute (cancellation handled during state exits)
-        if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
-            policy_.executePendingInvokes(*this);
-
-            // §scxml-6.4: Process done.invoke events raised by immediately-completed children
-            // Child state machines may reach final state during initialization and raise done.invoke
-            // These events must be processed to allow parent transitions (e.g., s1 -> pass)
-            SCE_LOG_DEBUG("AOT initialize: Processing events raised by completed invokes");
-            processEventQueues();
-            checkEventlessTransitions();
-        }
+        // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
+        // completes on eventless transitions and internal events, then the
+        // invokes for the states just entered run (only those in
+        // entered-and-not-exited states; cancellation is handled during state
+        // exits), and only then is anything taken off the external queue — so
+        // an `autoforward` child is live for every event `<onentry>` queued on
+        // the way in.
+        SCE_LOG_DEBUG("AOT initialize: After entry actions, entering main event loop");
+        runMainEventLoop();
+        SCE_LOG_DEBUG("AOT initialize: Main event loop settled - stable configuration reached");
 
         // §scxml-6.4: Invoke completion callback if top-level final after initialization.
         // Child state machines may reach the machine-done state immediately (e.g.,
@@ -1096,8 +1147,7 @@ public:
      * This method processes all pending events in both internal and external queues.
      */
     void step() {
-        processEventQueues();
-        checkEventlessTransitions();
+        runMainEventLoop();
 
         // §scxml-6.4: Invoke completion callback only at top-level final.
         // The bare structural `StatePolicy::isFinalState` would mis-fire on a
@@ -1207,7 +1257,7 @@ public:
      *
      * Every "machine is done" decision keys on this predicate: the scheduler
      * short-circuit in `tick()`, the queue-processing bail-out in
-     * `processEventQueues()`, `runUntilCompletion()`, and external
+     * `runMainEventLoop()`, `runUntilCompletion()`, and external
      * `done.invoke` notification.
      *
      * See SCE_MESH.md §mesh-16.5 L3500 for the concrete case that motivated
@@ -1344,14 +1394,10 @@ public:
         }
 
         // Zero Duplication: Delegate event processing + completion callback to step()
-        // step() handles: processEventQueues() + checkEventlessTransitions() + completionCallback_
+        // step() handles: runMainEventLoop() + completionCallback_. §scxml-6.4's
+        // invokes are part of that loop and run there, ahead of the external
+        // dequeue rather than after it.
         step();
-
-        // §scxml-6.4: Execute pending invokes after stable configuration is reached
-        // Macrostep has completed - entered-and-not-exited states ready for invoke execution
-        if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
-            policy_.executePendingInvokes(*this);
-        }
     }
 
     /**

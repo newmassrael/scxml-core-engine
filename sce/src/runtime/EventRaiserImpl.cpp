@@ -272,8 +272,18 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 
     if (immediateMode_.load() && !isPlatform && !isSchedulerManual) {
         // §scxml-3.13: INTERNAL events always use immediate mode
-        // EXTERNAL events use immediate mode only when INTERNAL queue is empty
-        bool canProcessImmediately = isInternal || !hasInternalEvents;
+        //
+        // §scxml-D-mainEventLoop: an EXTERNAL event may skip the queue only
+        // when there is nothing it would jump ahead of. Testing the INTERNAL
+        // queue alone is not that condition — an EXTERNAL event already queued
+        // is equally entitled to be processed first, and letting a later
+        // arrival overtake it breaks the run-to-completion order the loop
+        // exists to impose. That is observable from a second session: a child
+        // started by `<invoke>` sends to `#_parent` while an event the parent
+        // queued for itself on the way in is still waiting, and the parent
+        // ends up acting on the child's report before it has forwarded the
+        // event the child was supposed to see.
+        bool canProcessImmediately = isInternal || !hasQueuedEvents();
 
         if (canProcessImmediately) {
             // Immediate processing allowed
@@ -596,6 +606,33 @@ bool EventRaiserImpl::hasQueuedInternalEvents() const {
     }
 
     return synchronousQueue_.top().priority == EventPriority::INTERNAL;
+}
+
+bool EventRaiserImpl::processNextInternalEvent() {
+    // §scxml-D-mainEventLoop: the macrostep completes on internal events
+    // alone. Popping an external event here would run it before the invokes
+    // that the macrostep just armed, and an `autoforward` child would never
+    // see it — so the pop is conditional on the head's class, not merely on
+    // the queue being non-empty.
+    QueuedEvent eventToProcess{"", "", EventPriority::EXTERNAL};
+
+    {
+        std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+
+        // QueuedEventComparator keeps INTERNAL (priority 0) ahead of EXTERNAL,
+        // so the head alone decides whether an internal event is available.
+        if (synchronousQueue_.empty() || synchronousQueue_.top().priority != EventPriority::INTERNAL) {
+            return false;
+        }
+
+        eventToProcess = synchronousQueue_.top();
+        synchronousQueue_.pop();
+
+        SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",
+                      eventToProcess.eventName, synchronousQueue_.size());
+    }
+
+    return executeEventCallback(eventToProcess);
 }
 
 void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,

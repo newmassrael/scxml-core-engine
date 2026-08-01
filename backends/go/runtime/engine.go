@@ -100,26 +100,14 @@ func (e *Engine[S, E]) Initialize() {
 	// W3C SCXML 3.3: Resolve currentState to the deepest initial leaf
 	e.resolveCurrentStateToLeaf()
 
-	// W3C SCXML C.1: Macrostep completion loop -- drain internal + eventless
-	// until a stable configuration is reached.
-	log.Printf("[sce] Engine::Initialize: entering macrostep completion loop")
-	for {
-		e.checkEventlessTransitions()
-		if !e.internalQueue.HasEvents() && !e.externalQueue.HasEvents() {
-			break
-		}
-		e.processEventQueues()
-	}
-	log.Printf("[sce] Engine::Initialize: macrostep completion loop finished")
-
-	// W3C SCXML 6.4: Execute pending invokes once stable
-	if e.policy.HasInvokeSupport() {
-		e.policy.ExecutePendingInvokes(e)
-		// Process done.invoke events raised by immediately-completed children
-		log.Printf("[sce] Engine::Initialize: processing events raised by completed invokes")
-		e.processEventQueues()
-		e.checkEventlessTransitions()
-	}
+	// W3C SCXML Appendix D: hand over to the outer loop. The macrostep
+	// completes on eventless transitions and internal events, then the invokes
+	// for the states just entered run, and only then is anything taken off the
+	// external queue — so an autoforward child is live for every event
+	// <onentry> queued on the way in.
+	log.Printf("[sce] Engine::Initialize: entering main event loop")
+	e.runMainEventLoop()
+	log.Printf("[sce] Engine::Initialize: main event loop settled")
 
 	// W3C SCXML 6.4: Fire completion callback if we reached a final state during init
 	if e.isInFinalState() && e.completionCallback != nil {
@@ -136,8 +124,7 @@ func (e *Engine[S, E]) Initialize() {
 // Matches Rust Engine::step. Used by parent SMs to explicitly drive children
 // after sending them events (W3C SCXML 6.4).
 func (e *Engine[S, E]) Step() {
-	e.processEventQueues()
-	e.checkEventlessTransitions()
+	e.runMainEventLoop()
 
 	if e.isInFinalState() && e.completionCallback != nil {
 		log.Printf("[sce] Engine::Step: invoking completion callback")
@@ -175,13 +162,10 @@ func (e *Engine[S, E]) Tick() {
 		e.policy.TickChildren(e)
 	}
 
-	// Delegate to Step() for queue drain + completion callback
+	// Delegate to Step() for the main event loop + completion callback.
+	// W3C SCXML 6.4's invokes are part of that loop and run there, ahead of
+	// the external dequeue rather than after it.
 	e.Step()
-
-	// W3C SCXML 6.4: Execute pending invokes after macrostep
-	if e.policy.HasInvokeSupport() {
-		e.policy.ExecutePendingInvokes(e)
-	}
 }
 
 // Stop stops the engine. Subsequent Tick/ProcessEvent calls become no-ops.
@@ -476,13 +460,71 @@ func (e *Engine[S, E]) RunUntilCompletion(timeout, pollInterval time.Duration) b
 // Internal: microstep + macrostep implementation
 // ================================================================
 
-// processEventQueues processes both internal and external queues (§scxml-D-mainEventLoop).
+// runMainEventLoop is the W3C SCXML Appendix D outer loop, and the only place
+// the three exported entry points express macrostep semantics.
 //
-// Matches Rust Engine::process_event_queues.
-func (e *Engine[S, E]) processEventQueues() {
-	log.Printf("[sce] Engine::processEventQueues: starting internal queue drain")
+// Appendix D names the external queue exactly once per iteration and it is
+// after invoke(inv):
+//
+//	while running:
+//	    while running and not macrostepDone:      # eventless + internal only
+//	        ... selectEventlessTransitions() / internalQueue.dequeue() ...
+//	    for state in statesToInvoke.sort(entryOrder):
+//	        for inv in state.invoke.sort(documentOrder):
+//	            invoke(inv)
+//	    statesToInvoke.clear()
+//	    if not internalQueue.isEmpty(): continue
+//	    externalEvent = externalQueue.dequeue()
+//
+// Folding the external drain into the macrostep-completion loop instead is a
+// different algorithm, not a shorter one. The invoked children do not exist
+// yet while that drain runs, so everything <onentry> queued for this session
+// on the way in is consumed with no autoforward child to receive it — and
+// there is no later point at which it is delivered. One external event per
+// iteration for the same reason: a state entered by event N's transition must
+// have its invokes started before N+1 comes off the queue.
+//
+// Matches Rust Engine::run_main_event_loop.
+func (e *Engine[S, E]) runMainEventLoop() {
+	for {
+		// W3C SCXML Appendix D: complete the macrostep on eventless
+		// transitions and internal events alone.
+		for {
+			e.checkEventlessTransitions()
+			if !e.internalQueue.HasEvents() {
+				break
+			}
+			e.processInternalQueue()
+		}
 
-	// W3C SCXML C.1: Internal queue first
+		if !e.isRunning || e.isInFinalState() {
+			break
+		}
+
+		// W3C SCXML 6.4: invokes for states entered during this macrostep.
+		if e.policy.HasInvokeSupport() {
+			e.policy.ExecutePendingInvokes(e)
+		}
+
+		// W3C SCXML Appendix D: invoking may have raised internal error events
+		// (and a child that completed synchronously may already have raised
+		// done.invoke); handle them before touching the external queue.
+		if e.internalQueue.HasEvents() {
+			continue
+		}
+
+		if !e.processNextExternalEvent() {
+			break
+		}
+	}
+}
+
+// processInternalQueue drains the internal queue (W3C SCXML C.1, high priority).
+//
+// Matches Rust Engine::process_internal_queue.
+func (e *Engine[S, E]) processInternalQueue() {
+	log.Printf("[sce] Engine::processInternalQueue: starting internal queue drain")
+
 	for {
 		eventWithMeta, ok := e.internalQueue.Pop()
 		if !ok {
@@ -493,7 +535,7 @@ func (e *Engine[S, E]) processEventQueues() {
 		// spelling the parent check out a second time here is what let the
 		// exported one drift away from it.
 		if e.isInFinalState() {
-			log.Printf("[sce] Engine::processEventQueues: top-level final state reached, stopping")
+			log.Printf("[sce] Engine::processInternalQueue: top-level final state reached, stopping")
 			return
 		}
 		// W3C SCXML 5.10: Populate policy metadata from event
@@ -501,13 +543,23 @@ func (e *Engine[S, E]) processEventQueues() {
 		e.executeTransition(eventWithMeta.Event)
 		e.policy.ClearEventMetadata()
 	}
+}
 
-	// W3C SCXML C.1: External queue second
-	for {
-		eventWithMeta, ok := e.externalQueue.Pop()
-		if !ok {
-			break
-		}
+// processNextExternalEvent takes exactly one event off the external queue, runs
+// the preliminary <finalize> / autoforward step against it, then selects
+// transitions. Reports whether an event was processed.
+//
+// One event, not a drain: Appendix D returns to the top of the outer loop after
+// each external event, so a state entered by this event's transition gets its
+// invokes started before the next one is dequeued.
+//
+// Matches Rust Engine::process_next_external_event.
+func (e *Engine[S, E]) processNextExternalEvent() bool {
+	eventWithMeta, ok := e.externalQueue.Pop()
+	if !ok {
+		return false
+	}
+	{
 		// W3C SCXML 6.5: Execute finalize before parent's own transition matching
 		if e.policy.HasFinalize() {
 			e.policy.ExecuteFinalizeForChildEvent(&eventWithMeta, e)
@@ -541,6 +593,7 @@ func (e *Engine[S, E]) processEventQueues() {
 		e.executeTransition(eventWithMeta.Event)
 		e.policy.ClearEventMetadata()
 	}
+	return true
 }
 
 // checkEventlessTransitions checks and executes eventless transitions until

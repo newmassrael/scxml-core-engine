@@ -62,4 +62,37 @@ private:
     std::shared_ptr<IEventRaiser> raiser_;
 };
 
+/**
+ * @brief EventQueueAdapter restricted to the INTERNAL queue (§scxml-D-mainEventLoop)
+ *
+ * Appendix D completes the macrostep on eventless transitions and internal
+ * events alone, runs `invoke(inv)` for the states that macrostep entered, and
+ * only then reaches `externalQueue.dequeue()`. `InterpreterEventQueue` above
+ * is priority-agnostic — it reports and pops whatever is at the head — so a
+ * drain built on it consumes an external event while the invokes are still
+ * pending, and an `autoforward` child never sees it. This adapter is the
+ * macrostep half of that split; the external half belongs after the invokes.
+ */
+class InterpreterInternalEventQueue {
+public:
+    explicit InterpreterInternalEventQueue(std::shared_ptr<IEventRaiser> raiser) : raiser_(raiser) {}
+
+    /**
+     * @brief Check whether an INTERNAL-priority event is queued
+     */
+    bool hasEvents() const {
+        return raiser_ && raiser_->hasQueuedInternalEvents();
+    }
+
+    /**
+     * @brief Process the next internal event, leaving external events queued
+     */
+    bool popNext() {
+        return raiser_ && raiser_->processNextInternalEvent();
+    }
+
+private:
+    std::shared_ptr<IEventRaiser> raiser_;
+};
+
 }  // namespace SCE::Core
