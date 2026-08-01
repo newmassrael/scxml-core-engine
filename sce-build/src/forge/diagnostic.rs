@@ -2330,6 +2330,18 @@ pub enum DiagnosticCode {
     #[serde(rename = "forge/source-hash-input-uncovered")]
     ForgeSourceHashInputUncovered,
 
+    // ── §synth-6.2.6 source-set enumeration did not terminate within
+    //    its descent ceiling. A directory symlink naming a sibling
+    //    contributes under every name that reaches it, so nested levels
+    //    of such links name a path count exponential in the depth.
+    //    Refused rather than truncated: a digest folded over the prefix
+    //    the walk happened to reach describes a subset of the input, and
+    //    a header carrying one is unauditable in the same way the
+    //    empty-input digest above was. Repair is the input layout —
+    //    re-point `--input-root` below the aliasing, or remove it. ─────
+    #[serde(rename = "forge/source-hash-walk-unbounded")]
+    ForgeSourceHashWalkUnbounded,
+
     // ── Traceability §synth-5-O IR provenance pre-emit guard
     //    (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290 verbatim:
     //    "XInclude / sce:template composition MUST track per-element
@@ -2884,6 +2896,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
         ForgeSourceHashMismatch,
         ForgeSourceHashInputUncovered,
+        ForgeSourceHashWalkUnbounded,
         // Traceability §synth-5-O — IR provenance pre-emit guard
         // (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290).
         TraceabilityScxmlLineRangeMissing,
@@ -3351,6 +3364,12 @@ impl DiagnosticCode {
             //    `source-hash` folds, which is the invariant this code
             //    guards at emit time rather than at verify time.
             ForgeSourceHashInputUncovered => Some("SCE Protocol-Synthesis RFC §6.2.6"),
+
+            // ── Same section, enumeration side rather than coverage
+            //    side: §6.2.6 defines the source set as every `*.scxml`
+            //    under the root, and this fires when that set cannot be
+            //    enumerated within the walk's descent ceiling. ──
+            ForgeSourceHashWalkUnbounded => Some("SCE Protocol-Synthesis RFC §6.2.6"),
 
             // ── §synth-5-O traceability IR provenance pre-emit
             //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
@@ -3976,6 +3995,7 @@ impl DiagnosticCode {
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
+            ForgeSourceHashWalkUnbounded => "forge/source-hash-walk-unbounded",
             TraceabilityScxmlLineRangeMissing => "traceability/scxml-line-range-missing",
             TraceabilityStateIdCollision => "traceability/state-id-collision",
             TraceabilitySymbolNameExceedsCIdentifierLimit => {
@@ -11572,6 +11592,20 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:af571002d7ff22bd","code":"forge/source-hash-input-uncovered","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"src/scxml/pdc_reset.scxml: §6.2.6 source-hash would not describe it — 0 file(s) collected from src/scxml; pass --input-root <DIR> containing the input","actual":"root=src/scxml hashed=0"}"#,
             ),
+            // ── §synth-6.2.6 source-set enumeration ceiling ──
+            //    The coverage guard above answers "does the set describe
+            //    the input"; this one answers "can the set be enumerated
+            //    at all". `actual` carries the ceiling rather than a
+            //    traversal count, so one tree produces one record on every
+            //    machine — a count would move with readdir ordering.
+            (
+                "forge/source-hash-walk-unbounded",
+                CliError::SourceHashWalkUnbounded {
+                    root: "src/scxml".into(),
+                    limit: 1_000_000,
+                },
+                r#"{"v":1,"id":"fnv1a:a692356602400fc9","code":"forge/source-hash-walk-unbounded","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"src/scxml: §6.2.6 source set exceeds 1000000 directories — a directory symlink reaching a sibling multiplies the paths under it; re-point --input-root at a tree without the aliasing, or remove it","actual":"root=src/scxml descent-limit=1000000"}"#,
+            ),
         ]
     }
 
@@ -12375,6 +12409,10 @@ mod tests {
             //    path — re-point `--input-root` at a directory that
             //    contains the input — so there is no candidate set. ──
             | ForgeSourceHashInputUncovered
+            // ── §synth-6.2.6 source-set enumeration ceiling. One repair
+            //    path — re-point `--input-root` below the directory-link
+            //    aliasing, or remove it — so there is no candidate set. ──
+            | ForgeSourceHashWalkUnbounded
             // ── §synth-5-O IR provenance guard. Codegen-internal
             //    invariant: an empty source_location means the parser
             //    site that produced this node failed to attach a
@@ -12969,6 +13007,8 @@ mod tests {
                 | ForgeSourceHashMismatch
                 // §synth-6.2.6 source-set coverage guard
                 | ForgeSourceHashInputUncovered
+                // §synth-6.2.6 source-set enumeration ceiling
+                | ForgeSourceHashWalkUnbounded
                 // §synth-5-O IR provenance pre-emit guard
                 | TraceabilityScxmlLineRangeMissing
                 // §synth-5-O symbol mangling + sourcemap contract
@@ -13016,9 +13056,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            325,
+            326,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 325 distinct variants to match the DiagnosticCode \
+             expected 326 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
