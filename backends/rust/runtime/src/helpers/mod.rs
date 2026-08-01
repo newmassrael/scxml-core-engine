@@ -32,7 +32,6 @@
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`send`]: Send action helpers (static-target subset)
 //! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
-//! - [`string_utils`]: Platform event detection
 //! - [`unique_id_generator`]: Session/send/invoke/event ID generation
 //! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
 //!
@@ -74,6 +73,5 @@ pub mod logger;
 pub mod scxml_constants;
 pub mod send;
 pub mod state_policy_concepts;
-pub mod string_utils;
 pub mod unique_id_generator;
 pub mod url_encoding;

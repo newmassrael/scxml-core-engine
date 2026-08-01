@@ -4289,10 +4289,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/string_utils.rs",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/unique_id_generator.rs",
           "kind": "references"
         },
