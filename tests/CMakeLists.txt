@@ -455,6 +455,8 @@ add_executable(integration_tests
     integration/ActionIntegrationTest.cpp
     integration/DonedataLocalInvokeTest.cpp
     integration/DonedataLocalInvokeAotTest.cpp
+    integration/DonedataLateCompletionTest.cpp
+    integration/DonedataLateCompletionAotTest.cpp
     integration/AutoforwardEventFieldsTest.cpp
     integration/AutoforwardEventFieldsAotTest.cpp
     integration/AutoforwardDoneInvokeTest.cpp
@@ -809,6 +811,15 @@ sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INT
 # the final's parent is the `<scxml>` element. The fixture rests in the nested
 # final so the completion predicate is sampled while the machine is still live.
 sce_generate_static_integration_test(nested_final_not_terminal ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.5 + 6.3.1: donedata rides `done.invoke.<id>` wherever the child
+# reaches its final state, not only where it finalises during start-up. The
+# `donedata_local_invoke` fixture pins the payload shapes on a child that is
+# already final at invoke time and is blind to this; here the child answers an
+# event first and reaches `<final>` two macrosteps in.
+sce_generate_static_integration_test(donedata_late_completion ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_late
+)
 
 # Wire the integration headers + include path into the integration_tests
 # target now that `sce_generate_static_integration_test` has populated
