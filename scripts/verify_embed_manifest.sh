@@ -44,18 +44,24 @@ SNAPSHOT="$(mktemp --suffix=.json)"
 trap 'rm -f "${SNAPSHOT}"' EXIT
 cp "${MANIFEST}" "${SNAPSHOT}"
 
-# Bootstrap: on a fresh checkout (CI, or a `git clean -fdx` developer
-# tree) embed/include/ does not exist yet because /embed/** is
-# gitignored except for MANIFEST.json. emit_embed_manifest.sh reads
-# embed/include/**/*.h to produce the manifest and would hard-error
-# here. Run package_embed.sh with --skip-manifest so embed/include/
-# materialises but MANIFEST.json stays absent — the emit step below
-# is then the sole writer of the comparison target, preserving this
-# verifier's "snapshot vs freshly emitted" semantics.
-if [[ ! -d "${INCLUDE_DIR}" ]]; then
-    echo "Bootstrapping ${INCLUDE_DIR} via package_embed.sh --skip-manifest..." >&2
-    "${SCRIPT_DIR}/package_embed.sh" --skip-manifest >/dev/null
-fi
+# Bootstrap: /embed/** is gitignored except for MANIFEST.json, so
+# embed/include/ is a derived copy of the public headers. Run
+# package_embed.sh with --skip-manifest so embed/include/ materialises
+# but MANIFEST.json stays absent — the emit step below is then the sole
+# writer of the comparison target, preserving this verifier's
+# "snapshot vs freshly emitted" semantics.
+#
+# Unconditionally, not just when the directory is missing. Bootstrapping
+# only on a fresh checkout makes this verifier report on whichever header
+# snapshot the developer's embed/include/ happens to hold: add a public
+# class, and a warm tree regenerates the manifest from the *old* copy, so
+# the fresh side matches the committed side and the check passes. CI
+# starts from an empty embed/ and therefore sees the real surface — the
+# guard passes exactly where drift is introduced and fails only after the
+# push. Re-materialising every run costs a couple of minutes and is what
+# makes a local pass mean the same thing as a CI pass.
+echo "Bootstrapping ${INCLUDE_DIR} via package_embed.sh --skip-manifest..." >&2
+"${SCRIPT_DIR}/package_embed.sh" --skip-manifest >/dev/null
 
 "${SCRIPT_DIR}/emit_embed_manifest.sh" >/dev/null
 
