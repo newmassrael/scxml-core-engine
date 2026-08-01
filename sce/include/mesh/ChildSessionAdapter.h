@@ -11,14 +11,14 @@
 //     <send target="#_parent"> and emits wire-16 `ChildEvent` envelopes.
 //   - Forwards tick() / cancel() / raiseExternal calls to the engine.
 //   - Advertises the child's top-level `<final>` condition via
-//     StaticExecutionEngine::isGlobalFinalState so WorkerSessionHost can
+//     StaticExecutionEngine::isInFinalState so WorkerSessionHost can
 //     emit wire-18 `InvokeDone` and retire the session.
 //
 // Engine requirements (satisfied by StaticExecutionEngine<Policy>):
 //   - Default-constructible. (Machines with non-default ctors — e.g. Hardware
 //     bindings — are not yet supported as invoke targets; a future Session F
 //     refinement will introduce a codegen hook for engine construction.)
-//   - Provides `initialize()`, `tick()`, `isGlobalFinalState()`,
+//   - Provides `initialize()`, `tick()`, `isInFinalState()`,
 //     `setMeshSendCallback(...)`, and `raiseExternal(const std::string&,
 //     const std::string&)`.
 
@@ -111,7 +111,7 @@ public:
     }
 
     bool isFinal() const override {
-        return engine_.isGlobalFinalState();
+        return engine_.isInFinalState();
     }
 
     std::string getDonedata() override {

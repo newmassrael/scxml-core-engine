@@ -762,9 +762,19 @@ impl<P: StatePolicy> Engine<P> {
         active
     }
 
-    /// §scxml-3.3: Whether the current state is a top-level final state.
+    /// §scxml-3.7: Whether this session has ended — that is, whether the
+    /// current state is a `<final>` whose parent is the `<scxml>` element.
+    ///
+    /// §scxml-D-enterStates sets `running = false` for a `<final>` only when
+    /// `isSCXMLElement(s.parent)`; a nested one queues `done.state.<parent>`
+    /// and the machine carries on. So the structural question — "is this
+    /// state a `<final>` element" — is [`StatePolicy::is_final_state`], and
+    /// it is not the completion criterion on its own. Everything that means
+    /// "the machine is done" keys on this method: `run_until_completion`, the
+    /// completion callback, and the `done.invoke.<id>` a parent emits for an
+    /// invoked child.
     pub fn is_in_final_state(&self) -> bool {
-        P::is_final_state(self.current_state)
+        P::is_final_state(self.current_state) && P::get_parent(self.current_state).is_none()
     }
 
     /// §scxml-5.5 + 6.3.1: Stash the donedata payload evaluated on a
@@ -1135,9 +1145,11 @@ impl<P: StatePolicy> Engine<P> {
 
         // §scxml-C-1: Internal queue first
         while let Some(event_with_meta) = self.internal_queue.pop() {
-            // §scxml-5.4.1: Stop if top-level final state reached
-            if P::is_final_state(self.current_state) && P::get_parent(self.current_state).is_none()
-            {
+            // §scxml-5.4.1: Stop if top-level final state reached. Same
+            // predicate as everything else that means "the machine is done" —
+            // spelling the parent check out a second time here is what let the
+            // public one drift away from it.
+            if self.is_in_final_state() {
                 sce_log_debug!(
                     "Engine::process_event_queues: top-level final state reached, stopping"
                 );

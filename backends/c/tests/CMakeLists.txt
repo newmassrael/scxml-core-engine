@@ -515,6 +515,35 @@ set_tests_properties(c11_integration_autoforward_dequeue_point PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML 3.7: a <final> nested inside a compound state completes that
+# state, not the session — Appendix D enterStates ends the session only when
+# the final's parent is the <scxml> element. The fixture rests in the nested
+# final so the completion predicate is sampled while the machine is still live.
+sce_generate_static_integration_c_test(nested_final_not_terminal "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+add_executable(sce_c_integration_nested_final_not_terminal
+    integration/test_nested_final_not_terminal.c
+    ${INTEGRATION_C_TEST_nested_final_not_terminal_SOURCES}
+)
+target_link_libraries(sce_c_integration_nested_final_not_terminal PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_nested_final_not_terminal PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_nested_final_not_terminal PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_nested_final_not_terminal
+    COMMAND sce_c_integration_nested_final_not_terminal
+)
+set_tests_properties(c11_integration_nested_final_not_terminal PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime

@@ -21,3 +21,4 @@ pub mod autoforward_internal_queue;
 pub mod donedata_local_invoke;
 pub mod event_schema_native;
 pub mod native_action;
+pub mod nested_final_not_terminal;

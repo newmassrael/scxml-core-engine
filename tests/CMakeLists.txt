@@ -462,6 +462,8 @@ add_executable(integration_tests
     integration/AutoforwardInternalQueueAotTest.cpp
     integration/AutoforwardDequeuePointTest.cpp
     integration/AutoforwardDequeuePointAotTest.cpp
+    integration/NestedFinalNotTerminalTest.cpp
+    integration/NestedFinalNotTerminalAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -777,6 +779,12 @@ sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRA
 sce_generate_static_integration_test(autoforward_dequeue_point ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_probe
 )
+
+# W3C SCXML 3.7: a `<final>` nested inside a compound state completes that
+# state, not the session — Appendix D `enterStates` ends the session only when
+# the final's parent is the `<scxml>` element. The fixture rests in the nested
+# final so the completion predicate is sampled while the machine is still live.
+sce_generate_static_integration_test(nested_final_not_terminal ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # Wire the integration headers + include path into the integration_tests
 # target now that `sce_generate_static_integration_test` has populated
