@@ -67,24 +67,33 @@ struct RecordingEngine {
         std::string sendId;
     };
 
+    // SCE_MESH.md §mesh-10.7 wires six `_event` fields from an inbound
+    // envelope, so the double records all of them. Recording only
+    // event/data/invokeId (the earlier shape) made the origin, origintype and
+    // sendid rows of that table unobservable — every assertion about them
+    // would have passed vacuously.
     struct Raised {
         Event event;
         std::string data;
         std::string invokeId;
+        std::string origin;
+        std::string originType;
+        std::string sendId;
     };
 
     std::vector<Raised> events;
 
     void raiseExternal(Event ev) {
-        events.push_back({ev, {}, {}});
+        events.push_back({ev, {}, {}, {}, {}, {}});
     }
 
     void raiseExternal(Event ev, const std::string &data) {
-        events.push_back({ev, data, {}});
+        events.push_back({ev, data, {}, {}, {}, {}});
     }
 
     void raiseExternal(EventWithMetadata meta) {
-        events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId)});
+        events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId), std::move(meta.origin),
+                          std::move(meta.originType), std::move(meta.sendId)});
     }
 
     // SCE_MESH.md §9.6.4 step 4: the parent identifies the `<invoke>` a
@@ -303,6 +312,81 @@ TEST(MeshDispatchTest, ChildEventFromRetiredInvokeIsDiscarded) {
         dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent("dev_a:parent:remote_inv"), engine)));
     EXPECT_TRUE(engine.events.empty()) << "a ChildEvent whose invoke is no longer active was enqueued on the "
                                           "parent — §9.6.4's late-event discard is not enforced";
+}
+
+TEST(MeshDispatchTest, InboundEnvelopeCarriesMeshOriginFromSource) {
+    // SCE_MESH.md §mesh-10.7: `_event.origin` = `mesh://<envelope.source>` for
+    // a distributed event. The section's whole point is surface compatibility
+    // — `<transition cond="_event.origin == 'mesh://chassis'">` must select
+    // the same way whether the event arrived locally or over any transport —
+    // so an empty origin is not a cosmetic gap: the guard silently never fires.
+    for (auto pattern : {PatternKind::FireForget, PatternKind::EventNotify, PatternKind::FieldNotify,
+                         PatternKind::RpcRequest, PatternKind::RpcReply}) {
+        RecordingEngine engine;
+        auto env = makeRequest("service.request.compute_force");
+        env.pattern = pattern;
+        env.source = "chassis";
+
+        EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+        ASSERT_EQ(engine.events.size(), 1u);
+        EXPECT_EQ(engine.events[0].origin, "mesh://chassis")
+            << "pattern " << static_cast<int>(pattern) << " delivered without the §10.7 origin URI";
+    }
+}
+
+TEST(MeshDispatchTest, InboundEnvelopeCarriesScxmlProcessorOriginType) {
+    // §mesh-10.7 pins `_event.origintype` to the W3C SCXML processor URI for
+    // inter-SCXML mesh traffic. Every envelope reaching dispatchEnvelope is
+    // SCE's own CBOR MeshEnvelope (§mesh-7.5), i.e. SCE↔SCE by construction —
+    // raw bus traffic never takes this path — so the URI is unconditional here.
+    RecordingEngine engine;
+    auto env = makeRequest("service.request.compute_force");
+    env.pattern = PatternKind::FireForget;
+    env.source = "chassis";
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].originType, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
+}
+
+TEST(MeshDispatchTest, InboundEnvelopeCarriesSubjectAsSendId) {
+    // §mesh-10.7: `_event.sendid` = envelope `subject`, "or unset if not
+    // <send>-originated". Both halves are asserted — an implementation that
+    // stamped a placeholder when subject is absent would break `<cancel>`
+    // matching against a sendid the author never issued.
+    RecordingEngine withSubject;
+    auto env = makeRequest("service.request.compute_force");
+    env.pattern = PatternKind::FireForget;
+    env.source = "chassis";
+    env.subject = "send_42";
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, withSubject)));
+    ASSERT_EQ(withSubject.events.size(), 1u);
+    EXPECT_EQ(withSubject.events[0].sendId, "send_42");
+
+    RecordingEngine withoutSubject;
+    auto bare = makeRequest("service.request.compute_force");
+    bare.pattern = PatternKind::FireForget;
+    bare.source = "chassis";
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(bare, withoutSubject)));
+    ASSERT_EQ(withoutSubject.events.size(), 1u);
+    EXPECT_TRUE(withoutSubject.events[0].sendId.empty());
+}
+
+TEST(MeshDispatchTest, ChildEventKeepsSessionUriOriginNotMeshUri) {
+    // §mesh-9.6.3 L1463-1466 governs the wire-16 ChildEvent arm and overrides
+    // the generic §mesh-10.7 row: the parent's `<finalize>`/autoforward match
+    // compares `activeInvokes_[id].sessionId == _event.origin`, and that
+    // sessionId is the §mesh-9.6.1 child session id. Rewriting this arm to
+    // `mesh://<source>` for table uniformity would silently stop every remote
+    // finalize from matching, so the divergence is locked in deliberately.
+    RecordingEngine engine;
+    engine.activeChildSessions.push_back("dev_a:parent:remote_inv");
+    auto env = makeChildEvent("dev_a:parent:remote_inv");
+    env.source = "child_machine";
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].origin, "dev_a:parent:remote_inv");
 }
 
 TEST(MeshDispatchTest, DispatchesFieldAccessInboundOnServerRole) {

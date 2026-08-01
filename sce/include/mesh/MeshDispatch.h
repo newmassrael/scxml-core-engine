@@ -73,6 +73,7 @@
 
 #pragma once
 
+#include "common/SCXMLConstants.h"
 #include "common/Uuid.h"
 #include "mesh/MeshEnvelope.h"
 
@@ -81,6 +82,26 @@
 #include <utility>
 
 namespace SCE::Mesh {
+
+/// URI scheme for `_event.origin` on a distributed event; see
+/// [meshOriginUri] for the form and its rationale. Declared once because
+/// this header is the single source of truth for envelope-to-engine
+/// delivery — a second literal elsewhere would be a wire form co-declared
+/// in two places, free to drift.
+inline constexpr const char *kMeshOriginScheme = "mesh://";
+
+/// Build the `_event.origin` value for an inbound envelope.
+inline std::string meshOriginUri(const std::string &source) {
+    // SCE_MESH.md §mesh-10.7 fixes the author-facing form as
+    // `mesh://<envelope.source>`, so a guard reads the same whether the
+    // event came off the local queue or any transport.
+    //
+    // `source` is the sender's stable machine name (`MeshEnvelope::source`),
+    // not its per-session `routing_id`: the section's example guard
+    // (`_event.origin == 'mesh://chassis'`) compares against a document
+    // identity an author can write down, which a per-session UUID is not.
+    return std::string(kMeshOriginScheme) + source;
+}
 
 namespace detail {
 
@@ -228,9 +249,35 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         if (!ev) {
             return false;
         }
+        // SCE_MESH.md §mesh-10.7 `_event` field wiring for distributed events.
+        // The section's table maps envelope fields onto the §scxml-5.10.2
+        // `_event` surface, and its stated purpose is that a guard such as
+        // `<transition cond="_event.origin == 'mesh://chassis'">` selects
+        // identically whether the event arrived locally or over a transport.
+        // Wiring it here rather than per-transport is what makes that true
+        // for every byte-stream substrate at once: this helper is the sole
+        // envelope-to-engine path (ShmChannel::drain, TransportRouter::
+        // onIncoming, and route_send's local branch all funnel through it).
+        //
+        // `_event.type` is deliberately not set: `raiseExternal` puts the
+        // event on the external queue, and the engine classifies queue
+        // membership as "external" per §scxml-5.10.1. Stamping the string
+        // here would duplicate that classification in a second place.
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
         meta.data = std::string(env.data.begin(), env.data.end());
+        meta.origin = meshOriginUri(env.source);
+        // Every envelope reaching this helper is SCE's own CBOR MeshEnvelope
+        // (§mesh-7.5), so the traffic is inter-SCXML by construction and takes
+        // the W3C processor URI. The section's "transport-specific URIs for
+        // bridged traffic" case does not arrive as a MeshEnvelope at all.
+        meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        // "envelope `subject` (or unset if not `<send>`-originated)" — left
+        // empty when absent rather than synthesized, so `<cancel sendid=…>`
+        // can never match an id no author issued.
+        if (env.subject) {
+            meta.sendId = *env.subject;
+        }
         if (env.invoke_id) {
             meta.invokeId = SCE::uuid::to_string(*env.invoke_id);
         }
@@ -274,7 +321,13 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         meta.event = *ev;
         meta.data = std::string(env.data.begin(), env.data.end());
         meta.type = "external";
-        meta.originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+        meta.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        // §mesh-9.6.3 L1463-1466 overrides the generic §mesh-10.7 origin row
+        // for this arm: the parent matches `<finalize>` and autoforward by
+        // comparing `activeInvokes_[id].sessionId == _event.origin`, and that
+        // sessionId is the §mesh-9.6.1 child session id wire-15 delivered.
+        // Rewriting this to `mesh://<source>` for table uniformity would stop
+        // every remote finalize from matching, so the divergence is intended.
         if (env.child_session_id) {
             meta.origin = *env.child_session_id;
         }
