@@ -1731,8 +1731,9 @@ static SCE_C_UNUSED SCE_SM_FN uint32_t config_enter_chain(uint32_t active, {{ cs
    "machine completion" criterion. Compound `<final>` states (those with
    a `state.parent`) are NOT terminal: their entry raises
    `done.state.<parent>` (W3C SCXML 3.7) and the surrounding compound
-   carries on. Mirrors cpp `static/StaticExecutionEngine.h::isInFinalState`
-   which checks only against `Policy::isInTopLevelFinalState`. */
+   carries on. Mirrors cpp `static/StaticExecutionEngine.h::isInFinalState`,
+   which pairs `StatePolicy::isFinalState` with a parent-presence check for
+   the same reason; this mask folds both into one compile-time constant. */
 #define {{ csym_prefix | upper }}{{ model.name | upper }}_FINAL_MASK ( \
     (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final and not state.parent %} \
     | ((uint32_t)1u << (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
