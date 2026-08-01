@@ -7,8 +7,12 @@ each fixture is regenerated to `test<N>.scxml` and consumed by the
 per-backend W3C harnesses) remains the spec-conformance baseline; the
 integration layer described here is strictly additive.
 
-Two such fixtures exist today: `donedata_local_invoke` and
-`autoforward_event_fields`.
+The stems under `integration_resources/` today are
+`autoforward_dequeue_point`, `autoforward_done_invoke`,
+`autoforward_event_fields`, `autoforward_internal_queue`,
+`donedata_late_completion`, `donedata_local_invoke`,
+`invoke_precedes_dequeue_midrun`, `invoke_precedes_external_dequeue` and
+`nested_final_not_terminal`.
 
 A fixture placed under `integration_resources/` is a **five-backend
 commitment**, not merely a shared file: `sce-codegen generate-integration`
@@ -31,6 +35,20 @@ verdict as its own event rather than as `<donedata>`, so a regression in the
 donedata lift cannot surface as an autoforward failure; `donedata_local_invoke`
 owns that axis. An earlier revision coupled the two and a C11 donedata gap
 masqueraded as an autoforward bug on that backend alone.
+
+The donedata axis is split the same way. `donedata_local_invoke` pins the
+payload *shapes* — a `<param>` table and a `<content>` scalar — on a child
+whose initial configuration is already its top-level `<final>`, so the lift
+and the `done.invoke.<id>` raise sit in the same call. `donedata_late_completion`
+pins the *timing*: the child answers an event first and reaches `<final>` two
+macrosteps in, which is a different completion-detection site in every AOT
+backend. It reuses the sibling's `<param name="result" expr="42"/>` payload
+verbatim so a shape the sibling already proves green cannot be what fails
+there. Deleting the late-completion lift from
+`tools/codegen/templates/c/invoke_methods.jinja2` reds
+`c11_integration_donedata_late_completion` while
+`c11_integration_donedata_local_invoke` stays green — the sibling is
+structurally blind to that site.
 
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in

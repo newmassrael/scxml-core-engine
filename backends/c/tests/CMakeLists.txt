@@ -609,6 +609,38 @@ set_tests_properties(c11_integration_nested_final_not_terminal PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML 5.5 + 6.3.1: donedata rides done.invoke.<id> wherever the child
+# reaches its final state, not only where it finalises during start-up. The
+# donedata_local_invoke fixture pins the payload shapes on a child that is
+# already final at invoke time and is blind to this; here the child answers
+# an event first and reaches <final> two macrosteps in.
+sce_generate_static_integration_c_test(donedata_late_completion "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_late
+)
+
+add_executable(sce_c_integration_donedata_late_completion
+    integration/test_donedata_late_completion.c
+    ${INTEGRATION_C_TEST_donedata_late_completion_SOURCES}
+)
+target_link_libraries(sce_c_integration_donedata_late_completion PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_donedata_late_completion PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_donedata_late_completion PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_donedata_late_completion
+    COMMAND sce_c_integration_donedata_late_completion
+)
+set_tests_properties(c11_integration_donedata_late_completion PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime
