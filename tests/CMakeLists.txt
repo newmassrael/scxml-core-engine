@@ -460,6 +460,8 @@ add_executable(integration_tests
     integration/AutoforwardDoneInvokeAotTest.cpp
     integration/AutoforwardInternalQueueTest.cpp
     integration/AutoforwardInternalQueueAotTest.cpp
+    integration/AutoforwardDequeuePointTest.cpp
+    integration/AutoforwardDequeuePointAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -764,6 +766,16 @@ sce_generate_static_integration_test(autoforward_done_invoke ${STATIC_INTEGRATIO
 # raised onto, not by a filter that recognises its name.
 sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_watch
+)
+
+# W3C SCXML 6.4: *where* in the loop the forward happens. Appendix D puts it
+# one statement after `externalQueue.dequeue()`, and §6.4.2 in prose "at the
+# point at which it removes it from the external event queue". The two
+# fixtures above are blind to this by construction — queue order alone cannot
+# tell the enqueue from the dequeue, so the parent marks the child directly
+# with `<send target="#_inv_probe">` from inside a transition body.
+sce_generate_static_integration_test(autoforward_dequeue_point ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_probe
 )
 
 # Wire the integration headers + include path into the integration_tests

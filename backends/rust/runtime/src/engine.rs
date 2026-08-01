@@ -953,28 +953,6 @@ impl<P: StatePolicy> Engine<P> {
     pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
-        // §scxml-6.4.1: Autoforward.
-        // `P::get_event_name` already returns `&'static str`; pass directly
-        // to `forward_to_autoforward_children(&str, ...)` without an
-        // alloc-coupled `to_string()` round-trip — same observable behaviour
-        // under std, compiles under no_std.
-        //
-        // §scxml-6.4 requires an exact copy, so the metadata rides along with
-        // the name. `target` is deliberately NOT forwarded: it is a routing
-        // decision owned by the `<send>` that produced the original event, and
-        // inheriting it would re-route the child's copy instead of delivering
-        // it. Cloning the metadata (rather than borrowing from `event`) keeps
-        // the borrow checker out of the `&mut self` reborrow below.
-        if concepts::has_autoforward::<P>() {
-            let name = P::get_event_name(event.event);
-            let metadata = event.metadata.clone();
-            let policy_ptr: *mut P = &mut self.policy as *mut P;
-            // SAFETY: see execute_on_entry.
-            unsafe {
-                (*policy_ptr).forward_to_autoforward_children(name, &metadata, self);
-            }
-        }
-
         self.external_queue.raise(event);
 
         if concepts::has_external_event_flag::<P>() {
@@ -1184,6 +1162,38 @@ impl<P: StatePolicy> Engine<P> {
                 // SAFETY: see execute_on_entry.
                 unsafe {
                     (*policy_ptr).execute_finalize_for_child_event(&event_with_meta, self);
+                }
+            }
+            // §scxml-D-mainEventLoop: autoforward belongs to the same
+            // preliminary step as `<finalize>` above — both run against the
+            // event this drain has just popped off the external queue, and
+            // both run before transition selection. §scxml-6.4.2 fixes the
+            // position in prose as well: the parent forwards "at the point at
+            // which it removes it from the external event queue".
+            //
+            // Forwarding where the event is *enqueued* instead is a different
+            // algorithm, not an earlier one. `raise_external_with_meta` runs
+            // inside whatever executable content produced the event, so a
+            // transition body that queues two events hands the child both of
+            // them before the parent has processed either — the child runs a
+            // whole event ahead and the two sessions stop agreeing on what has
+            // happened. Run-to-completion is a property of this loop's shape,
+            // so the forward has to live in the loop.
+            //
+            // §scxml-6.4 requires an exact copy, so the metadata rides along
+            // with the name. `get_event_name` already returns `&'static str`;
+            // pass it directly without an alloc-coupled `to_string()`
+            // round-trip, which keeps this compiling under no_std. `target` is
+            // deliberately not forwarded: it is a routing decision owned by
+            // the `<send>` that produced the original event, and inheriting it
+            // would re-route the child's copy instead of delivering it.
+            if concepts::has_autoforward::<P>() {
+                let name = P::get_event_name(event_with_meta.event);
+                let metadata = event_with_meta.metadata.clone();
+                let policy_ptr: *mut P = &mut self.policy as *mut P;
+                // SAFETY: see execute_on_entry.
+                unsafe {
+                    (*policy_ptr).forward_to_autoforward_children(name, &metadata, self);
                 }
             }
             // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
