@@ -4309,6 +4309,18 @@
         {
           "file": "scripts/regen_invoke_precedes_dequeue_midrun_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_donedata_late_completion.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_donedata_late_completion_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_donedata_late_completion_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

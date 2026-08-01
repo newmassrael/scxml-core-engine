@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 5.5 + 6.3.1: `<donedata>` survives a completion that happens
+     after the child was started.
+
+     The sibling `donedata_local_invoke` pins the payload shapes — a
+     `<param>` table and a `<content>` scalar — on a child whose initial
+     configuration is already its top-level `<final>`. That child is done
+     before its first macrostep, so everything the lift needs is in place at
+     the moment the invoke is started, and the whole contract is settled
+     inside one call. It cannot see a child that finishes later.
+
+     §6.3.1 does not scope the payload to that arrangement. The parent raises
+     `done.invoke.<id>` when the child "reaches a final state", wherever the
+     run happens to be, and §5.5 says the event data is whatever that final
+     state's `<donedata>` evaluates to. A backend that lifts the stash only
+     where the child finalises during start-up honours both sentences on the
+     sibling fixture and still hands the parent an empty `_event.data` on
+     every child that answers an event first — which is what an invoked
+     session normally does.
+
+     So this fixture moves the completion and changes nothing else. The
+     payload is `<param name="result" expr="42"/>` and the parent's guard is
+     `_event.data.result === 42`, both copied from the sibling's `inv_param`
+     phase, because a shape the sibling already proves green cannot be what
+     fails here. The one difference is when the child reaches `settled`:
+
+       inv_late's onentry sends `ready` to the parent
+         -> the parent answers over the second channel,
+            `<send target="#_inv_late" event="finish"/>`
+         -> the child takes `finish` into its top-level `<final>`, evaluates
+            `<donedata>` there, and the parent raises `done.invoke.inv_late`
+            for a child that was alive across two macrosteps
+
+     The child opens the exchange, so it is provably running before the
+     parent addresses it and no wall-clock delay is involved. `settled` is a
+     top-level `<final>`, not one nested in a compound state, so a regression
+     in what ends a session cannot show up here as a donedata failure. The
+     fall-through `done.invoke.inv_late` transition takes the run to `fail`,
+     making a lost payload a state mismatch rather than a timeout.
+
+     This fixture is the canonical source for all 6 backends — see
+     docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md for the per-backend test
+     locations and engine-channel coverage (Interpreter / AOT).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="donedata_late_completion">
+    <state id="phase">
+        <invoke type="scxml" id="inv_late">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="waiting">
+                    <state id="waiting">
+                        <onentry>
+                            <send target="#_parent" event="ready"/>
+                        </onentry>
+                        <transition event="finish" target="settled"/>
+                    </state>
+                    <final id="settled">
+                        <donedata>
+                            <param name="result" expr="42"/>
+                        </donedata>
+                    </final>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="ready">
+            <send target="#_inv_late" event="finish"/>
+        </transition>
+        <transition event="done.invoke.inv_late"
+                    cond="_event.data &amp;&amp; _event.data.result === 42"
+                    target="pass"/>
+        <transition event="done.invoke.inv_late" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

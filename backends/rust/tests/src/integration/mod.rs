@@ -18,6 +18,7 @@ pub mod autoforward_dequeue_point;
 pub mod autoforward_done_invoke;
 pub mod autoforward_event_fields;
 pub mod autoforward_internal_queue;
+pub mod donedata_late_completion;
 pub mod donedata_local_invoke;
 pub mod event_schema_native;
 pub mod invoke_precedes_dequeue_midrun;
