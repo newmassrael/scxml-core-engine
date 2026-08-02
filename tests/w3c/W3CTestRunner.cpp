@@ -333,7 +333,6 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
 }
 
 std::unique_ptr<ITestResultValidator> TestComponentFactory::createValidator() {
-    // Include implementation from TestResultValidator.cpp
     class TestResultValidator : public ITestResultValidator {
     public:
         ValidationResult validateResult(const TestExecutionContext &context) override {
@@ -389,7 +388,6 @@ std::unique_ptr<ITestResultValidator> TestComponentFactory::createValidator() {
 }
 
 std::unique_ptr<ITestSuite> TestComponentFactory::createTestSuite(const std::string &resourcePath) {
-    // Include implementation from W3CTestSuite.cpp
     class W3CTestSuite : public ITestSuite {
     private:
         std::string resourcePath_;
