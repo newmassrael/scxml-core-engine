@@ -199,24 +199,6 @@ bool SCE::DataModelItem::isXmlContent() const {
     return xmlContent_ != nullptr;
 }
 
-std::optional<std::string> SCE::DataModelItem::queryXPath(const std::string &xpath) const {
-    if (!xmlContent_) {
-        return std::nullopt;
-    }
-
-    // W3C SCXML XPath Support: Currently limited to basic queries
-    // pugixml: XPath support via custom implementation
-    // WASM: Basic pugixml XPath support (subset of XPath 1.0)
-    // TODO: Add IXMLElement::queryXPath() interface method for unified XPath support
-
-    SCE_LOG_WARN("XPath queries are currently limited. Full XPath support requires interface extension.");
-    SCE_LOG_DEBUG("XPath query requested: {}", xpath);
-
-    // For now, return nullopt as XPath is not exposed through IXMLElement interface
-    // Full implementation requires adding queryXPath() to IXMLElement interface
-    return std::nullopt;
-}
-
 bool SCE::DataModelItem::supportsDataModel(const std::string &dataModelType) const {
     // xpath and xml data models support XML processing (all platforms)
     if (dataModelType == "xpath" || dataModelType == "xml") {
