@@ -1546,7 +1546,7 @@ public:
      * peer. Returns false when no callback is installed — the document was
      * rendered without TransportRouter wiring for the remote peer; the caller
      * (codegen) falls through to the transport-absent local
-     * `error.execution` raise carrying SESSION_F_NOT_IMPLEMENTED per
+     * `error.execution` raise carrying SESSION_F_TRANSPORT_UNAVAILABLE per
      * SCE_MESH.md §mesh-9.6 line 1396.
      */
     bool performScxmlInvokeStart(const std::string &target, const std::string &invokeIdString,

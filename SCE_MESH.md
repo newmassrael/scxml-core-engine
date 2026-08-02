@@ -54,7 +54,7 @@ SCE Mesh is a **build-time + minimal-runtime** layer. It is explicitly **not**:
 Current realization state (see §8.3 and §13 for authoritative detail):
 
 - **Language coverage**: mesh runtime targets **C++ only**. The other five codegen backends (Kotlin, Rust, Python, Go, plus interpreter path) ship state-machine codegen without mesh. Per-language mesh expansion is evaluated case-by-case, not a parity obligation.
-- **Pattern coverage**: `service.fire_forget` is realized end-to-end across local/shm/someip/zenoh. `service.request` / `event.subscribe` / `field.get` pass build-time validation but degrade to FireForget shape at runtime until Phase 3.5 closes the Pattern Realization Gap (§8.3).
+- **Pattern coverage**: `service.fire_forget` is realized end-to-end across local/shm/someip/zenoh; `service.request` / `event.subscribe` / `field.get` are realized over someip and zenoh with wire-level correlation. A transport that does not implement a pattern is rejected at build time, never degraded at runtime (§8.3).
 - **Conformance scope**: distributed W3C SCXML conformance is a weak-equivalence claim with explicit deferrals; see §16 and `SCE_MESH_CONFORMANCE_MATRIX.md`.
 
 Claims in the rest of this document are contractual relative to this scope. Sections below add, not retract, from it.
@@ -1193,14 +1193,16 @@ Not all transports support all communication patterns. sce-build validates patte
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch.
 
-### 8.3 Realization Status (2026-04-13)
+### 8.3 Realization Status
 
-The capability matrix above reflects design intent. Current runtime realization is incomplete:
+The capability matrix above is enforced, not aspirational: a pattern a transport does not implement is a **hard build error**, so no deployment reaches runtime with a pattern that would silently degrade.
 
 - **`service.fire_forget`**: realized end-to-end across local/shm/someip/zenoh.
-- **All other patterns**: build-time validation passes, but the runtime degrades to FireForget shape (no correlation, no reply routing, no subscription lifecycle).
+- **`service.request`**: realized over someip (`create_response`) and zenoh (`Query::reply`) with wire-level correlation through the pending-RPC table; `local` replies in-process via `linkTo` → `dispatchToSession`.
+- **`event.subscribe`**: realized over someip eventgroups and zenoh pub/sub, including unsubscribe and subscriber-refresh lifecycle.
+- **`field.get` / `field.set`**: realized over someip and zenoh. `shm` advertises `[FireForget]` only — it is a unidirectional ring with no reply path, so `field.get` over `shm` is rejected at build time rather than advertised falsely.
 
-This is tracked as the **Pattern Realization Gap** and is closed by Phase 3.5 (Section 13). Until then, do not rely on `service.request`/`event.subscribe`/`field.get` semantics for production deployments — they are syntactically accepted but semantically incomplete.
+Enforcement lives in [`sce-build/src/mesh/topology.rs::validate_pattern_capability`], which returns `PatternViolation` for any pattern outside the target transport's advertised capabilities; `codegen.rs` additionally rejects a transport marked `implemented: false`.
 
 ---
 
@@ -1872,7 +1874,7 @@ Reason code catalog for `error.communication` is in §16.7. `error.execution` re
 | `INVOKE_SRC_NOT_FOUND` | `<invoke type="sce:mesh-rpc">` setup could not resolve its target to a live dispatch path: `src="#X"` references a machine not registered in deploy.yaml, or `srcexpr` evaluated to a name / shape the static topology does not cover (§9.5), or an `instance_from:` placeholder for a SOME/IP pool binding resolved to an instance outside the declared `instances: [...]` set (§14.4). No envelope reached the wire. |
 | `INVOKE_CHILD_INIT_FAILED` | remote child raised an error before reaching its first stable configuration |
 | `RESERVED_PARAM_CONFLICT` | build-time: `<param>` shadows a `_mesh_*` reserved name (build fails before runtime; reason surfaces only if an out-of-band document bypasses the build tool) |
-| `SESSION_F_NOT_IMPLEMENTED` | parser/model accepts full remote `<invoke type="scxml">` but runtime path is not yet implemented (Session E1/E2 transitional) |
+| `SESSION_F_TRANSPORT_UNAVAILABLE` | remote `<invoke type="scxml" src="#peer">` names a declared mesh machine, but the deployment attaches no transport binding between the two peers, so the parent raises locally without wire traffic (§9.6 L1396) |
 
 Foreign W3C SCXML 1.0 processors that do not implement SCE Mesh will raise `error.execution` with their own `_event.data` shape (if any). Documents that must be portable between foreign and SCE processors should guard on `_event.name == 'error.execution'` only, not on `_event.data.reason`. SCE's own error handlers may read `_event.data.reason` reliably for diagnostics and recovery logic.
 
@@ -2187,13 +2189,9 @@ enum class PatternKind : uint16_t {
     FieldWrite         = 8,
     FieldNotify        = 9,
     // 10-13 RESERVED for Stream* (wire-layer snapshot+delta optimization, §8.1) — DO NOT REASSIGN
-    // 14-20 RESERVED for full remote invoke lifecycle (§9.6.2, Session F).
-    //       Enum variants are declared NOW (Session E1) so wire values are
-    //       pinned before any Session E-or-later session can accidentally
-    //       grab them for an unrelated control pattern. Variants parse as
-    //       valid envelopes in E1/E2 but trigger error.execution with
-    //       SESSION_F_NOT_IMPLEMENTED if processed at runtime until F lands.
-    //       DO NOT REASSIGN any of 14-20 for any other purpose.
+    // 14-20 carry the full remote invoke lifecycle (§9.6.2). The wire
+    //       values are pinned; DO NOT REASSIGN any of 14-20 for any
+    //       other purpose.
     InvokeStart        = 14,
     InvokeStarted      = 15,
     ChildEvent         = 16,
