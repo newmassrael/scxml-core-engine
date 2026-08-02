@@ -2133,7 +2133,7 @@
               "type": "string"
             },
             "scxml_remote_inbound_peers": {
-              "description": "SCE_MESH.md §9.6.2 wire-14 inbound peers — deploy.yaml machine names of other machines whose SCXML issues a remote `<invoke type=\"scxml\" src=\"#<this>\">`, with `<this>` equal to the machine currently being codegen'd. Sorted by `.name`, deduplicated. The `transport:` field mirrors the parent's `bindings[\"#<this>\"]` entry (cross-device case) or `None` (same-device implicit shm); the symmetry is required so the worker-side codegen can emit the matching transport channel when Session 2 extends past shm. Codegen materializes one inbound `ScxmlInvokeChannel` per entry for receiving wire-14 `InvokeStart`, paired with an outbound `ScxmlInvokeChannel` for answering with wire-20 `InvokeError` carrying `SESSION_F_NOT_IMPLEMENTED` until the child-session runtime lands. Empty when no peer invokes this machine.",
+              "description": "SCE_MESH.md §9.6.2 wire-14 inbound peers — deploy.yaml machine names of other machines whose SCXML issues a remote `<invoke type=\"scxml\" src=\"#<this>\">`, with `<this>` equal to the machine currently being codegen'd. Sorted by `.name`, deduplicated. The `transport:` field mirrors the parent's `bindings[\"#<this>\"]` entry (cross-device case) or `None` (same-device implicit shm); the symmetry is required so the worker-side codegen can emit the matching transport channel when Session 2 extends past shm. Codegen materializes one inbound `ScxmlInvokeChannel` per entry for receiving wire-14 `InvokeStart`, paired with an outbound `ScxmlInvokeChannel` for answering with wire-15 `InvokeStarted` on success or wire-20 `InvokeError` when the child cannot start. Empty when no peer invokes this machine.",
               "items": {
                 "$ref": "#/definitions/ScxmlRemotePeerBinding"
               },
@@ -3763,7 +3763,7 @@
               "type": "array"
             },
             "remote_mesh_target": {
-              "description": "SCE_MESH.md §9.6 remote `<invoke type=\"scxml\">`. When `src` is of the form `#<name>` and `<name>` matches a distinct mesh machine declared in `deploy.yaml`, this carries that machine name (without the leading `#`). C++ codegen branches on this field to emit the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` scaffold until Session F lands the wire patterns 14-20 runtime. `None` for local W3C invokes (inline `<content>` or file-relative `src`) and for non-mesh builds — those flow through the existing local-invoke path unchanged. Populated by [`crate::inject_partition_context_for`] from the deploy topology.",
+              "description": "SCE_MESH.md §9.6 remote `<invoke type=\"scxml\">`. When `src` is of the form `#<name>` and `<name>` matches a distinct mesh machine declared in `deploy.yaml`, this carries that machine name (without the leading `#`). C++ codegen branches on this field to emit the §9.6.2 wire-14 `InvokeStart` dispatch, falling back to the §10.7.1 `SESSION_F_TRANSPORT_UNAVAILABLE` raise when the deployment attaches no transport binding to that peer. `None` for local W3C invokes (inline `<content>` or file-relative `src`) and for non-mesh builds — those flow through the existing local-invoke path unchanged. Populated by [`crate::inject_partition_context_for`] from the deploy topology.",
               "type": [
                 "string",
                 "null"

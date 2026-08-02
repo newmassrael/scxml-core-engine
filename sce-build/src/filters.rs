@@ -347,7 +347,7 @@ fn filter_invokes_by_kind(value: Value, want_kind: &str) -> Result<Value, miniji
 /// `filter_scxml_family` to exclude remote invokes from W3C local-session
 /// machinery (child session field, pending-invoke queue, finalize
 /// helper); `filter_scxml_remote` is the positive form used by the
-/// §10.7.1 `SESSION_F_NOT_IMPLEMENTED` raise site.
+/// §9.6.2 wire-14 dispatch site.
 fn invoke_is_remote_mesh(item: &Value) -> bool {
     match item.get_attr("remote_mesh_target") {
         Ok(v) => !v.is_none() && !v.is_undefined(),
@@ -378,9 +378,9 @@ fn filter_scxml(value: Value) -> Result<Value, minijinja::Error> {
 
 /// Keep only **remote mesh** `Invoke::Scxml` entries — i.e. `src="#peer"`
 /// referencing a distinct mesh machine per SCE_MESH.md §9.6. Consumed
-/// by the C++ entry-action template to emit the §10.7.1
-/// `SESSION_F_NOT_IMPLEMENTED` raise until Session F lands the wire
-/// patterns 14-20 runtime.
+/// by the C++ entry-action template to emit the §9.6.2 wire-14
+/// `InvokeStart` dispatch, which falls back to the §10.7.1
+/// `SESSION_F_TRANSPORT_UNAVAILABLE` raise when no transport binds the peer.
 fn filter_scxml_remote(value: Value) -> Result<Value, minijinja::Error> {
     let mut out: Vec<Value> = Vec::new();
     for item in value.try_iter()? {

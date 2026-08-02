@@ -5455,8 +5455,9 @@ fn collect_scxml_remote_peers(
 /// referencing a **distinct** mesh machine declared in `deploy.yaml` as a
 /// remote-mesh invoke. Sets
 /// [`model::ScxmlInvokeInfo::remote_mesh_target`]; consumed by C++ codegen
-/// to emit the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` raise until the Session
-/// F wire runtime (patterns 14-20 per §9.6.2) lands.
+/// to emit the wire runtime (patterns 14-20 per §9.6.2), which falls back to
+/// the §10.7.1 `SESSION_F_TRANSPORT_UNAVAILABLE` raise when no transport
+/// binds the peer.
 ///
 /// Left `None` for:
 /// - Local W3C invokes with `src="file:..."` or `src="<relative>.scxml"`
@@ -7441,7 +7442,7 @@ topology:
 
     /// Baseline: `<invoke type="scxml" src="#worker">` where `worker` is a
     /// distinct declared machine must be flagged as remote so C++ codegen
-    /// emits the §10.7.1 `SESSION_F_NOT_IMPLEMENTED` raise.
+    /// emits the §9.6.2 wire-14 dispatch rather than the local-invoke path.
     #[test]
     fn remote_mesh_invoke_flagged_when_src_references_declared_peer() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
