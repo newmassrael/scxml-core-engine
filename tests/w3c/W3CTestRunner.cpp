@@ -511,48 +511,6 @@ std::unique_ptr<ITestSuite> TestComponentFactory::createTestSuite(const std::str
             }
             return testDirectory + "/metadata.txt";
         }
-
-        std::vector<std::string> filterTests(const std::string &conformanceLevel,
-                                             const std::string &specSection) override {
-            auto allTests = discoverTests();
-            std::vector<std::string> filteredTests;
-
-            // Single Responsibility: Filter based on conformance level and spec section
-            for (const auto &testDir : allTests) {
-                try {
-                    std::string metadataPath = getMetadataPath(testDir);
-                    if (!std::filesystem::exists(metadataPath)) {
-                        continue;
-                    }
-
-                    std::ifstream metadataFile(metadataPath);
-                    std::string line;
-                    std::string testConformance, testSpec;
-
-                    while (std::getline(metadataFile, line)) {
-                        if (line.find("conformance=") == 0) {
-                            testConformance = line.substr(12);
-                        } else if (line.find("specnum=") == 0) {
-                            testSpec = line.substr(8);
-                        }
-                    }
-
-                    bool matchesConformance =
-                        conformanceLevel.empty() || testConformance.find(conformanceLevel) != std::string::npos;
-                    bool matchesSpec = specSection.empty() || testSpec.find(specSection) != std::string::npos;
-
-                    if (matchesConformance && matchesSpec) {
-                        filteredTests.push_back(testDir);
-                    }
-
-                } catch (const std::exception &) {
-                    // Skip tests with metadata parsing errors
-                    continue;
-                }
-            }
-
-            return filteredTests;
-        }
     };
 
     return std::make_unique<W3CTestSuite>(resourcePath);
@@ -1789,33 +1747,6 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
     }
 
     return matchingReports;
-}
-
-TestRunSummary W3CTestRunner::runFilteredTests(const std::string &conformanceLevel, const std::string &specSection) {
-    // Open/Closed Principle: Use existing test suite filtering capability
-    auto filteredTests = testSuite_->filterTests(conformanceLevel, specSection);
-
-    auto testSuiteInfo = testSuite_->getInfo();
-    reporter_->beginTestRun(testSuiteInfo.name + " (Filtered)");
-
-    std::vector<TestReport> reports;
-
-    for (const auto &testDir : filteredTests) {
-        try {
-            TestReport report = runSingleTest(testDir);
-            reports.push_back(report);
-            reporter_->reportTestResult(report);
-            cleanupBetweenTests();
-        } catch (const std::exception &e) {
-            SCE_LOG_ERROR("Failed to run filtered test in {}: {}", testDir, e.what());
-        }
-    }
-
-    TestRunSummary summary = calculateSummary(reports);
-    reporter_->generateSummary(summary);
-    reporter_->endTestRun();
-
-    return summary;
 }
 
 #ifndef __EMSCRIPTEN__

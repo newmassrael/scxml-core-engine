@@ -58,15 +58,6 @@ public:
      * @return Full path to metadata.txt file
      */
     virtual std::string getMetadataPath(const std::string &testDirectory) = 0;
-
-    /**
-     * @brief Filter tests based on criteria
-     * @param conformanceLevel Filter by conformance level (mandatory, optional, etc.)
-     * @param specSection Filter by spec section (e.g., "4.2")
-     * @return Filtered list of test directories
-     */
-    virtual std::vector<std::string> filterTests(const std::string &conformanceLevel = "",
-                                                 const std::string &specSection = "") = 0;
 };
 
 }  // namespace SCE::W3C
