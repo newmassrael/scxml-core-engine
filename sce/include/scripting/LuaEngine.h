@@ -6,7 +6,6 @@
 #include "EcmaScriptToLuaTransformer.h"
 #include "IScriptEngine.h"
 #include "ISessionManager.h"
-#include "runtime/ISessionObserver.h"
 #include <atomic>
 #include <climits>
 #include <functional>
@@ -90,8 +89,6 @@ public:
     bool hasSession(const std::string &sessionId) const override;
 
     // === ISessionManager ===
-    void addObserver(ISessionObserver *observer) override;
-    void removeObserver(ISessionObserver *observer) override;
     std::vector<std::string> getActiveSessions() const override;
     std::string getParentSessionId(const std::string &sessionId) const override;
 
@@ -160,10 +157,6 @@ private:
     // Session storage
     mutable std::mutex sessionMutex_;
     std::unordered_map<std::string, std::unique_ptr<LuaSessionContext>> sessions_;
-
-    // Observer pattern
-    mutable std::mutex observerMutex_;
-    std::vector<ISessionObserver *> observers_;
 
     // Global functions registered via registerGlobalFunction()
     std::mutex globalFuncMutex_;
