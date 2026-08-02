@@ -136,7 +136,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 
 **Contents**:
 - **Model**: `SCXMLModel`, `StateNode`, `TransitionNode`, `GuardNode`, `InvokeNode`
-- **Runtime**: `StateMachine`, `ActionExecutorImpl`, `StateMachineBuilder`, `SessionManagerImpl`
+- **Runtime**: `StateMachine`, `ActionExecutorImpl`, `StateMachineBuilder`
 - **Actions**: `ScriptAction`, `AssignAction`, `SendAction`, `IfAction`, `ForeachAction`, `CancelAction`
 - **Events**: `EventSchedulerImpl`, `EventDispatcherImpl`, `EventTargetFactoryImpl`, HTTP infrastructure
 - **States**: `ConcurrentStateNode`, `ParallelRegionOrchestrator`, `ConcurrentEventBroadcaster`
