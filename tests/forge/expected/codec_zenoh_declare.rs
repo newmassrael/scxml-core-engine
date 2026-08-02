@@ -210,43 +210,56 @@ impl<'a> CodecZenohDeclare<'a> {
     }
 }
 
-// ── Owned projection (portable native form) ───────────────────────────
+// ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohDeclare<'a>` above is a zero-copy view borrowing the decode
 // buffer. Consumers that persist a decoded value beyond the buffer's
 // lifetime — including the self-contained bounded-collection that stores
 // elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecZenohDeclareOwned`. The rkyv-style Archived(borrowed) ↔ native
 // (owned) split, both generated from the one SCXML source (SSOT).
-// `String` / `Bytes` fields project to the portable runtime newtypes
-// `SceString<N>` / `SceBytes<N>`: an unbounded `String` / `Vec<u8>` under
-// `alloc` (the on-wire protocol caps no payload, so the AP profile must
-// not either — `N` is advisory) and the heap-free `heapless::String<N>` /
-// `heapless::Vec<u8, N>` (the C11 `char[N]` analog) without it, where `N`
-// is the hard capacity. A leaf codec's owned form therefore still compiles
-// on a no-alloc MCU; only an unbounded owned `Vec` (list / embed / variant
-// body) keeps the `alloc` gate. `try_into_owned` stays the fallible
-// direction (one `?` per profile: the `alloc` copy cannot fail, the
-// no-alloc copy enforces `N`); `try_as_borrowed` re-borrows either
-// form infallibly via `.as_slice()` / `.as_str()`.
-#[cfg(feature = "alloc")]
+//
+// The owned form is parameterised by a storage profile rather than fixed at
+// build-configuration time: `CodecZenohDeclareOwned<Heap>` holds growable
+// containers with the declared capacities advisory, `CodecZenohDeclareOwned<Inline>`
+// holds every field inline at its declared capacity and never allocates, and
+// both exist in the same binary. `CodecZenohDeclareOwned` alone is the build's
+// default profile. Because the non-allocating profile is a *type*, this mirror
+// carries no `alloc` gate at all — a list- or embed-bearing codec has an owned
+// form on the heap-free tier too, and a heap-capable consumer can still pin a
+// value to storage that is guaranteed not to allocate.
+//
+// `try_into_owned` is the fallible direction (one `?` per profile: on the
+// growable profile the copy cannot fail, on the inline profile it enforces
+// each declared bound); `try_as_borrowed` re-borrows any profile back
+// into the single borrowed view that owns `encode`; `transcode_in` moves a
+// value between profiles as a checked projection rather than a re-decode.
+//
+// Decoding picks the profile from the call (`try_into_owned_in::<Inline>()`).
+// Hand-assembling one instead names it on the value or its binding —
+// `let v: CodecZenohDeclareOwned = CodecZenohDeclareOwned { .. };`
+// — because the fields reach the profile through its associated container
+// types, which cannot be run backwards to recover the profile from a value.
+// Naming it once is also what lets each field's declared capacity infer,
+// so no call site repeats a `sce:max-size` / `sce:max-count` constant.
 use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
-#[cfg(feature = "alloc")]
 use super::codec_zenoh_declaration::CodecZenohDeclarationOwned;
-#[cfg(feature = "alloc")]
+// Same pub-API policy as the borrowed view above: the owned mirror and its
+// projections are cross-crate surface, and which of them a given in-repo
+// fixture happens to call says nothing about their value.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohDeclareOwned {
+pub struct CodecZenohDeclareOwned<S: ::sce_forge_runtime::codec::CodecStorage = ::sce_forge_runtime::codec::DefaultStorage> {
     pub header: u8,
     pub interest_id: Option<u32>,
-    pub extensions: Option<Vec<CodecZenohExtEntryOwned>>,
-    pub declaration: CodecZenohDeclarationOwned,
+    pub extensions: Option<S::List<CodecZenohExtEntryOwned<S>, 16>>,
+    pub declaration: CodecZenohDeclarationOwned<S>,
 }
 
-#[cfg(feature = "alloc")]
 #[allow(dead_code)]
-impl CodecZenohDeclareOwned {
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclareOwned<S> {
     // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
-    // parity), so alloc consumers read `{Codec}Owned` with the same API as
+    // parity), so owned consumers read `{Codec}Owned` with the same API as
     // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
     // Read-only — write accessors belong with an owned-encode path, which
     // does not exist yet.
@@ -263,45 +276,64 @@ impl CodecZenohDeclareOwned {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[allow(dead_code)]
 impl<'a> CodecZenohDeclare<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
-    /// [`CodecZenohDeclareOwned`]. Call at a decode boundary when the
-    /// decoded value must outlive the input buffer — stored in a long-lived
-    /// enum, moved across an async task, or inserted by value into a
-    /// bounded-collection. `String` / `Bytes` fields copy into the portable
-    /// `SceString<N>` / `SceBytes<N>`: an unbounded heap copy under `alloc`
-    /// (`N` advisory), else a fixed `heapless` copy capped at `N`. The
-    /// method is fallible for profile uniformity — without `alloc` an
-    /// over-`N` view raises `CodecError::TooManyElements` (the same bound
-    /// and error decode enforces); under `alloc` the copy never fails. The
-    /// borrowed zero-copy path is unaffected.
-    pub fn try_into_owned(self) -> Result<CodecZenohDeclareOwned, CodecError> {
+    /// [`CodecZenohDeclareOwned`] held in the given storage profile. Call at
+    /// a decode boundary when the decoded value must outlive the input
+    /// buffer — stored in a long-lived enum, moved across an async task, or
+    /// inserted by value into a bounded-collection.
+    ///
+    /// Fallible for profile uniformity: on the inline profile a field longer
+    /// than its declared capacity raises `CodecError::TooManyElements` (the
+    /// same bound and error decode enforces), on the growable profile the
+    /// copy cannot fail. The borrowed zero-copy path is unaffected either
+    /// way.
+    pub fn try_into_owned_in<S: ::sce_forge_runtime::codec::CodecStorage>(self) -> Result<CodecZenohDeclareOwned<S>, CodecError> {
         Ok(CodecZenohDeclareOwned {
             header: self.header,
             interest_id: self.interest_id,
-            extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.try_into_owned()).collect::<Result<_, _>>()).transpose()?,
-            declaration: self.declaration.try_into_owned()?,
+            extensions: self.extensions.map(|_v| ::sce_forge_runtime::codec::try_collect_list(_v, |_e| _e.try_into_owned_in::<S>())).transpose()?,
+            declaration: self.declaration.try_into_owned_in::<S>()?,
         })
+    }
+
+    /// The same projection at the build's default storage profile — growable
+    /// where an allocator exists, inline on the heap-free tier.
+    pub fn try_into_owned(self) -> Result<CodecZenohDeclareOwned, CodecError> {
+        self.try_into_owned_in()
     }
 }
 
-#[cfg(feature = "alloc")]
-impl CodecZenohDeclareOwned {
+#[allow(dead_code)]
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclareOwned<S> {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
-    /// the inverse of `try_into_owned`. `encode` lives only on the borrowed
-    /// view (the owned form is read-only), so an owned consumer reaches it
-    /// via `try_as_borrowed` then `encode` / `encode_to_vec`. Each
-    /// field is projected by reference — a cheap re-borrow, not a copy.
-    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list whose
-    /// owned `Vec` holds more than its declared `N` raises
-    /// `CodecError::TooManyElements` — the same bound decode enforces.
+    /// the inverse of `try_into_owned_in`. `encode` lives only on the
+    /// borrowed view (the owned form is read-only), so an owned consumer
+    /// reaches it via `try_as_borrowed` then `encode` / `encode_to_vec`.
+    /// Each field is projected by reference — a cheap re-borrow, not a copy.
+    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list holding
+    /// more than its declared `N` raises `CodecError::TooManyElements` — the
+    /// same bound decode enforces. Only a growable profile can hold such a
+    /// list; on the inline profile the source is already within bounds.
     pub fn try_as_borrowed(&self) -> Result<CodecZenohDeclare<'_>, CodecError> {
         Ok(CodecZenohDeclare {
             header: self.header,
             interest_id: self.interest_id,
-            extensions: self.extensions.as_ref().map(|_l| sce_forge_runtime::codec::try_project_bounded(_l, |_e| Ok(_e.as_borrowed()))).transpose()?,
+            extensions: self.extensions.as_ref().map(|_l| ::sce_forge_runtime::codec::try_project_bounded(_l, |_e| Ok(_e.as_borrowed()))).transpose()?,
             declaration: self.declaration.as_borrowed(),
         })
+    }
+
+    /// Move this value to a different storage profile — growable to inline
+    /// when handing it to a path that must not allocate, or inline to
+    /// growable when it is leaving that path.
+    ///
+    /// A checked projection through the borrowed view, not a re-decode: the
+    /// bytes are copied once and every destination capacity is enforced, so
+    /// a value that cannot fit the target profile is rejected here rather
+    /// than truncated.
+    pub fn transcode_in<D: ::sce_forge_runtime::codec::CodecStorage>(&self) -> Result<CodecZenohDeclareOwned<D>, CodecError> {
+        self.try_as_borrowed()?.try_into_owned_in::<D>()
     }
 }

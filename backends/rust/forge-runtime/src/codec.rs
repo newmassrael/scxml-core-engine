@@ -85,124 +85,70 @@ pub enum CodecError {
     TooManyElements,
 }
 
-/// Project a borrowed slice of owned elements into the bounded inline
-/// list (`heapless::Vec<U, N>`) the borrowed codec view spells, applying
-/// `f` to each element by reference.
+/// Project an owned list into the bounded inline list
+/// (`heapless::Vec<U, N>`) the borrowed codec view spells, applying `f` to
+/// each element by reference.
 ///
 /// The owned mirror of a bounded list (`<sce:repeat>` / `<sce:tlv-chain>`)
-/// is an unbounded `Vec`, so the owned→borrowed projection
-/// (`{Codec}Owned::try_as_borrowed`) may carry more than `N` elements;
-/// this raises [`CodecError::TooManyElements`] — the same bound and error
-/// the decode path enforces, keeping the system invariant `<= N`
-/// end-to-end (encode must never emit wire its own decoder would reject).
+/// holds its elements in whatever container its storage profile chose, and a
+/// growable profile can hold more than `N` of them; the owned→borrowed
+/// projection (`{Codec}Owned::try_as_borrowed`) therefore raises
+/// [`CodecError::TooManyElements`] past the bound — the same bound and error
+/// the decode path enforces, keeping the system invariant `<= N` end-to-end
+/// (encode must never emit wire its own decoder would reject). On a
+/// fixed-capacity profile the source is already within `N`, so the check
+/// costs a comparison and cannot fire.
 ///
 /// SSOT for the owned→borrowed bounded-list step: every generated
 /// `try_as_borrowed` calls this rather than open-coding the capacity loop,
-/// so the bound semantics live in exactly one place. `f` is fallible so a
-/// nested fallible element projection (`_e.try_as_borrowed()`) threads its
-/// own error through; an infallible element projection passes
+/// so the bound semantics live in exactly one place. Taking the list itself
+/// (rather than a slice) keeps reading the profile's container here too, so
+/// the call site never names the container's read surface. `f` is fallible
+/// so a nested fallible element projection (`_e.try_as_borrowed()`) threads
+/// its own error through; an infallible element projection passes
 /// `|_e| Ok(...)`.
-pub fn try_project_bounded<'s, T, U, const N: usize>(
-    src: &'s [T],
+///
+/// The inverse direction (borrowed→owned) is
+/// [`crate::storage::try_collect_list`], whose destination container is the
+/// profile's rather than always inline.
+pub fn try_project_bounded<'s, L, T, U, const N: usize>(
+    src: &'s L,
     mut f: impl FnMut(&'s T) -> Result<U, CodecError>,
-) -> Result<crate::heapless::Vec<U, N>, CodecError> {
+) -> Result<crate::heapless::Vec<U, N>, CodecError>
+where
+    L: crate::storage::SceList<T>,
+    T: 's,
+{
     // `&'s T` (not a fresh higher-ranked `&T`) ties each element's borrow
-    // to the slice's lifetime, so a projected `U` that re-borrows the
+    // to the list's lifetime, so a projected `U` that re-borrows the
     // element (`_e.as_borrowed() -> Body<'s>`) is nameable — the HRTB form
     // cannot express "return type borrows the closure argument".
     let mut out = crate::heapless::Vec::new();
-    for item in src {
+    for item in src.as_slice() {
         out.push(f(item)?)
             .map_err(|_| CodecError::TooManyElements)?;
     }
     Ok(out)
 }
 
-// ── Portable owned scalar storage (the `{Codec}Owned` byte/string carrier) ──
+// ── Owned storage profiles ───────────────────────────────────────
 //
-// A codec's borrowed view decodes `bytes` / `string` fields as zero-copy
-// `&'a [u8]` / `&'a str`; its lifetime-free owned mirror needs a container
-// that holds those bytes by value, resolving to a growable `Vec` / `String`
-// under `alloc` or a fixed `heapless` form (the C11 `char[N]` analog) on the
-// heap-free MCU tier. `N` (the field's `sce:max-size`) rides on the type so
-// a hand-assembled `{Codec}Owned` builder infers the cap from the field
-// (`SceBytes::from_slice(&v)?`) rather than hardcoding it.
-//
-// `SceBytes<N>` is the SAME concept the statechart-emit runtime needs for
-// typed `_event.data` byte payloads, so it lives in the shared
-// `sce-portable-bytes` crate (one definition, both runtimes `pub use` it —
-// the construction logic cannot drift). Re-exported here as
-// `sce_forge_runtime::codec::SceBytes` so generated codec output spells the
-// path unchanged. Its `from_slice` raises the crate-neutral
-// [`sce_portable_bytes::CapacityExceeded`]; the `From` impl below maps that
-// into `CodecError::TooManyElements` so a generated `try_into_owned` keeps
-// threading one `?`. `SceString<N>` stays codec-local below — its emit-path
-// sibling uses a *global* cap (not per-field `N`), so there is no shared
-// definition to factor out.
-pub use sce_portable_bytes::SceBytes;
+// A codec's borrowed view decodes `bytes` / `string` / list fields as
+// zero-copy `&'a [u8]` / `&'a str` / `heapless::Vec<_, N>`; its lifetime-free
+// owned mirror needs containers that hold those by value. *Which* containers
+// is a policy the owner picks per value rather than a property of the build,
+// so the mirror is `{Codec}Owned<S>` over a [`crate::storage::CodecStorage`]
+// profile — see that module for why the profile is a type parameter and not a
+// second generated type. Re-exported here so generated codec output spells
+// one module path for the cursor, the sink and the storage policy alike.
+pub use crate::storage::*;
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
-    /// A no-alloc `SceBytes::from_slice` past its capacity is the same
+    /// A fixed-capacity `from_slice` past its bound is the same
     /// bounded-storage overflow the decode path reports — surface it as the
     /// existing typed variant so callers match one error.
     fn from(_: sce_portable_bytes::CapacityExceeded) -> Self {
         CodecError::TooManyElements
-    }
-}
-
-/// Portable owned storage for a `string` codec field. Wraps `String` under
-/// `alloc` (`N` advisory) or `heapless::String<N>` otherwise. `N` rides on
-/// the type for the same downstream-inference reason as [`SceBytes`].
-#[cfg(feature = "alloc")]
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct SceString<const N: usize>(alloc::string::String, core::marker::PhantomData<[u8; N]>);
-/// no-alloc variant of [`SceString`]: fixed-capacity inline storage capped at
-/// `N`, heap-free for the MCU tier.
-#[cfg(not(feature = "alloc"))]
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct SceString<const N: usize>(crate::heapless::String<N>);
-
-impl<const N: usize> SceString<N> {
-    /// Copy a borrowed `&str` decode view into the owned form. Profile
-    /// semantics mirror [`SceBytes::from_slice`].
-    #[cfg(feature = "alloc")]
-    pub fn from_view(s: &str) -> Result<Self, CodecError> {
-        Ok(Self(
-            alloc::string::String::from(s),
-            core::marker::PhantomData,
-        ))
-    }
-    /// no-alloc counterpart: fixed-capacity copy, fallible past `N`.
-    #[cfg(not(feature = "alloc"))]
-    pub fn from_view(s: &str) -> Result<Self, CodecError> {
-        crate::heapless::String::try_from(s)
-            .map(Self)
-            .map_err(|_| CodecError::TooManyElements)
-    }
-    /// Borrow the owned string back as `&str` — the projection
-    /// `{Codec}Owned::as_borrowed` reuses.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl<const N: usize> core::ops::Deref for SceString<N> {
-    type Target = str;
-    fn deref(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-// String-literal comparison parity with the wrapped `String` /
-// `heapless::String`, so `assert_eq!(owned.locator, "abc")` works without an
-// explicit `.as_str()` (consumed by the nested owned round-trip test). Only
-// the `&str` form is kept — string literals are `&str`; the unsized `str`
-// right-hand side has no consumer.
-impl<const N: usize> PartialEq<&str> for SceString<N> {
-    fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
     }
 }
 
@@ -464,8 +410,6 @@ impl<'a> SceSink for SliceSink<'a> {
 
 // ── Heap-backed sink (alloc-only) ────────────────────────────────
 
-#[cfg(feature = "alloc")]
-extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 

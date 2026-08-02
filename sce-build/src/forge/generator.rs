@@ -2823,43 +2823,72 @@ fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
     }
 }
 
-/// Owned-projection mapping for one codec field — the `{Codec}Owned`
-/// mirror (consumer-requested owned round; the rkyv-style
-/// Archived(borrowed) ↔ native(owned) split, both generated from the one
-/// SCXML SSOT). Returns `(owned_field_type, into_owned_expr)` where the
-/// expr deep-copies `self.<id>` (consumed by `into_owned(self)`).
+/// The storage-profile type parameter carried by every `{Codec}Owned`.
 ///
-/// Scalar `Bytes` / `String` fields project to the portable runtime newtype
-/// `SceBytes<N>` / `SceString<N>`, so a leaf codec's owned mirror compiles
-/// on both profiles (unbounded `Vec` / `String` under `alloc`, heap-free
-/// `heapless` capped at `N` without it). Only an *unbounded* owned `Vec`
-/// (list / embed / variant body) forces the whole mirror behind
-/// `#[cfg(feature = "alloc")]` (`owned_needs_alloc`); the borrowed no-alloc
-/// path is untouched either way. Rust-only. Borrowed-ness of nested /
-/// element / embed bodies is read from the enrichment-populated
-/// `ImportContext::codec_is_borrowed` flags (`import_codec_borrowed`) — a
-/// borrowed body has its own `{Body}Owned` mirror + `into_owned`; a
-/// non-borrowed body is already owned and moves through unchanged.
+/// A codec emits an owned mirror exactly when its borrowed view carries a
+/// lifetime (`emit_owned == codec_self_borrowed`), and a borrowed view
+/// carries a lifetime exactly when it holds text / bytes / a body that does —
+/// which is also exactly what makes the owned mirror's containers a storage
+/// choice. The two conditions cannot come apart, so the parameter is
+/// unconditional on the mirror rather than gated by a separate predicate.
+const STORAGE_PARAM: &str = "S";
+
+/// Module path the generated codec output resolves its runtime surface
+/// through — cursor, sink, storage policy and projectors alike.
+const RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
+
+/// Borrowed→owned projection at an explicit storage profile. Named after the
+/// standard library's allocator parameterisation (`Box::new_in`,
+/// `Vec::with_capacity_in`): the plain `try_into_owned` is the same
+/// projection at [`DefaultStorage`], and delegates here.
+const OWNED_IN_FN: &str = "try_into_owned_in";
+
+/// Owned-projection mapping for one codec field — the `{Codec}Owned<S>`
+/// mirror (the rkyv-style Archived(borrowed) ↔ native(owned) split, both
+/// generated from the one SCXML SSOT). Returns `(owned_field_type,
+/// into_owned_expr)` where the expr deep-copies `self.<id>` (consumed by
+/// `try_into_owned_in(self)`).
+///
+/// Every container the mirror owns is the storage profile's choice, so field
+/// types are written against the parameter: a scalar `Bytes` / `String`
+/// projects to `S::Bytes<N>` / `S::Str<N>` and a bounded list to
+/// `S::List<Body, N>`, with `N` the field's declared `sce:max-size` /
+/// `sce:max-count`. The mirror therefore needs no `alloc` gate at all — the
+/// non-allocating profile is a type, so a list- or embed-bearing codec has an
+/// owned form on the heap-free tier too, and a heap-capable consumer can
+/// still pin a value to non-allocating storage. Rust-only.
+///
+/// Borrowed-ness of nested / element / embed bodies is read from the
+/// enrichment-populated `ImportContext::codec_is_borrowed` flags
+/// (`import_codec_borrowed`) — a borrowed body has its own `{Body}Owned<S>`
+/// mirror and threads the parent's profile into it; a non-borrowed body is
+/// already owned and moves through unchanged.
 fn rust_owned_field_keys(
     f: &CodecField,
     codec_name: &str,
     imports: &[ImportContext],
     l: &LangCtx,
 ) -> Result<(String, String), ForgeError> {
-    // Fieldless → Copy, so `conv` survives the closure borrow + the
-    // later opt match without clones.
-    #[derive(Clone, Copy)]
+    // The element / body conversion a field needs. `List` and `Qualified`
+    // carry their spelled-out call site, so the later `opt` match splices one
+    // string instead of re-deriving the storage type.
+    #[derive(Clone)]
     enum Conv {
-        Move,           // value already owned (Copy scalar / non-borrowed body)
-        BytesPortable,  // &[u8] -> SceBytes<N>  (uniform-fallible; N infers)
-        StringPortable, // &str  -> SceString<N> (uniform-fallible; N infers)
-        IntoOwned,      // borrowed body -> {Body}Owned (fallible try_into_owned)
-        ListBorrowed,   // list of borrowed bodies -> Vec<{Body}Owned>
-        ListOwned,      // list of owned bodies     -> Vec<{Body}>
+        Move,         // value already owned (Copy scalar / non-borrowed body)
+        List(String), // per-element projection, as a closure or fn path
+        IntoOwned,    // borrowed body -> {Body}Owned<S> (fallible)
+        Qualified,    // single-call constructor spelled in `call_path`
     }
 
     let id = l.codec_field_id(&f.id);
     let opt = f.present_if.is_some();
+
+    // Single-call constructors are spelled fully qualified at the destination
+    // storage (`<S::Bytes<N> as SceByteBuf>::from_slice`) rather than left to
+    // inference: the profile is what the field's declared `sce:max-size` /
+    // `sce:max-count` selects, so naming it keeps the generated call honest
+    // about which container is being built.
+    let mut call_path: Option<String> = None;
 
     let (inner_ty, conv): (String, Conv) = if f.is_repeat() || f.is_tlv_chain() {
         let alias = if f.is_repeat() {
@@ -2869,10 +2898,21 @@ fn rust_owned_field_keys(
         }
         .expect("parser sets the body alias for every repeat / tlv-chain field");
         let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
+        let max_count = crate::forge::limits::resolve_max_count(f.max_count);
+        // A borrowed body has its own storage-generic mirror and threads the
+        // parent's profile into it; a non-borrowed body is already owned and
+        // moves through element-wise unchanged (`Ok` as the projection, not a
+        // closure — `clippy::redundant_closure`).
         if import_codec_borrowed(imports, alias) {
-            (format!("Vec<{body_type}Owned>"), Conv::ListBorrowed)
+            (
+                format!("{STORAGE_PARAM}::List<{body_type}Owned<{STORAGE_PARAM}>, {max_count}>"),
+                Conv::List(format!("|_e| _e.{OWNED_IN_FN}::<{STORAGE_PARAM}>()")),
+            )
         } else {
-            (format!("Vec<{body_type}>"), Conv::ListOwned)
+            (
+                format!("{STORAGE_PARAM}::List<{body_type}, {max_count}>"),
+                Conv::List("Ok".to_string()),
+            )
         }
     } else if f.is_embed() {
         let alias = f
@@ -2881,7 +2921,10 @@ fn rust_owned_field_keys(
             .expect("parser sets the embed body alias for every embed field");
         let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
         if import_codec_borrowed(imports, alias) {
-            (format!("{body_type}Owned"), Conv::IntoOwned)
+            (
+                format!("{body_type}Owned<{STORAGE_PARAM}>"),
+                Conv::IntoOwned,
+            )
         } else {
             (body_type, Conv::Move)
         }
@@ -2903,35 +2946,18 @@ fn rust_owned_field_keys(
         match f.sce_type {
             SceType::Bytes => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
-                (
-                    format!("::sce_forge_runtime::codec::SceBytes<{max}>"),
-                    Conv::BytesPortable,
-                )
+                let ty = format!("{STORAGE_PARAM}::Bytes<{max}>");
+                call_path = Some(format!("<{ty} as {RUNTIME_CODEC}::SceByteBuf>::from_slice"));
+                (ty, Conv::Qualified)
             }
             SceType::String => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
-                (
-                    format!("::sce_forge_runtime::codec::SceString<{max}>"),
-                    Conv::StringPortable,
-                )
+                let ty = format!("{STORAGE_PARAM}::Str<{max}>");
+                call_path = Some(format!("<{ty} as {RUNTIME_CODEC}::SceStr>::from_view"));
+                (ty, Conv::Qualified)
             }
             _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
         }
-    };
-
-    // Single-call portable conversions (bytes / string) expose a point-free
-    // constructor path. `N` is inferred from the destination field's type
-    // (the `SceBytes<N>` / `SceString<N>` newtype carries it), so no
-    // turbofish: the scalar case calls it (`F(v)?`) and the `Option` case
-    // maps it (`.map(F)`), never a redundant closure
-    // (`clippy::redundant_closure`). The path is spelled once here so both
-    // arms stay in lockstep.
-    let call_path: Option<String> = match conv {
-        Conv::BytesPortable => Some("::sce_forge_runtime::codec::SceBytes::from_slice".to_string()),
-        Conv::StringPortable => {
-            Some("::sce_forge_runtime::codec::SceString::from_view".to_string())
-        }
-        _ => None,
     };
 
     // Expression-template conversions (everything else): `apply(e)` splices
@@ -2941,16 +2967,21 @@ fn rust_owned_field_keys(
     // infallible `expr` is the value. The portable single-call convs go
     // through `call_path`, not here.
     let apply = |e: &str| -> (String, bool) {
-        match conv {
+        match &conv {
             Conv::Move => (e.to_string(), false),
-            Conv::IntoOwned => (format!("{e}.try_into_owned()"), true),
-            Conv::ListBorrowed => (
-                format!("{e}.into_iter().map(|_e| _e.try_into_owned()).collect::<Result<_, _>>()"),
+            Conv::IntoOwned => (format!("{e}.{OWNED_IN_FN}::<{STORAGE_PARAM}>()"), true),
+            // The destination list container is the storage profile's, so the
+            // collect goes through the runtime projector rather than
+            // `FromIterator` (which the profile's container is not required to
+            // implement). Uniformly fallible: on a fixed-capacity profile an
+            // over-long run is `TooManyElements`, on a growable one it cannot
+            // fail — one call shape, no per-profile branch.
+            Conv::List(elem) => (
+                format!("{RUNTIME_CODEC}::try_collect_list({e}, {elem})"),
                 true,
             ),
-            Conv::ListOwned => (format!("{e}.into_iter().collect()"), false),
-            Conv::BytesPortable | Conv::StringPortable => {
-                unreachable!("portable bytes/string convs project through call_path")
+            Conv::Qualified => {
+                unreachable!("single-call constructors project through call_path")
             }
         }
     };
@@ -2960,7 +2991,7 @@ fn rust_owned_field_keys(
         let expr = if let Some(path) = &call_path {
             format!("{self_ref}.map({path}).transpose()?")
         } else {
-            match conv {
+            match &conv {
                 // Option<Copy/owned scalar> moves wholesale — no per-element map.
                 Conv::Move => self_ref,
                 _ => {
@@ -3028,9 +3059,8 @@ fn rust_as_borrowed_field_keys(
         } else {
             "Ok(_e.as_borrowed())"
         };
-        let project = |slice: &str| {
-            format!("sce_forge_runtime::codec::try_project_bounded({slice}, |_e| {elem})")
-        };
+        let project =
+            |list: &str| format!("{RUNTIME_CODEC}::try_project_bounded({list}, |_e| {elem})");
         let expr = if opt {
             format!(
                 "{self_ref}.as_ref().map(|_l| {}).transpose()?",
@@ -3065,24 +3095,23 @@ fn rust_as_borrowed_field_keys(
         return Ok(expr);
     }
 
-    // Scalar. Bytes / String project to their borrowed `&` view; every
+    // Scalar. Bytes / String project to their borrowed `&` view through the
+    // storage container's read trait — the profile's container is opaque
+    // behind `S::Bytes<N>` / `S::Str<N>`, so the read goes through the trait
+    // that every profile implements rather than an inherent method. Every
     // other scalar (ints / float / bool / enum) is `Copy`, so reading the
     // field through `&self` yields a copy (`Option<Copy>` is itself Copy).
+    let read = |trait_name: &str, method: &str| {
+        let path = format!("{RUNTIME_CODEC}::{trait_name}::{method}");
+        if opt {
+            format!("{self_ref}.as_ref().map({path})")
+        } else {
+            format!("{path}(&{self_ref})")
+        }
+    };
     let expr = match f.sce_type {
-        SceType::Bytes => {
-            if opt {
-                format!("{self_ref}.as_deref()")
-            } else {
-                format!("{self_ref}.as_slice()")
-            }
-        }
-        SceType::String => {
-            if opt {
-                format!("{self_ref}.as_deref()")
-            } else {
-                format!("{self_ref}.as_str()")
-            }
-        }
+        SceType::Bytes => read("SceByteBuf", "as_slice"),
+        SceType::String => read("SceStr", "as_str"),
         _ => self_ref,
     };
     Ok(expr)
@@ -4668,17 +4697,17 @@ fn render_codec(
                 let mut obj = serde_json::Map::new();
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
-                // Owned-projection mirror (Rust, alloc-gated): the arm
-                // body's owned type + the match-arm deep-copy expr. A
-                // borrowed arm body reaches its `{Body}Owned` mirror via
-                // `.into_owned()`; a non-borrowed body is already owned
-                // and moves through unchanged.
+                // Owned-projection mirror (Rust): the arm body's owned
+                // type + the match-arm deep-copy expr. A borrowed arm body
+                // reaches its `{Body}Owned<S>` mirror at the parent's
+                // storage profile; a non-borrowed body is already owned and
+                // moves through unchanged.
                 if matches!(lang, crate::generator::Language::Rust) {
                     let (owned_body_type, owned_body_into) =
                         if import_codec_borrowed(imports, &arm.body_alias) {
                             (
-                                format!("{body_type}Owned"),
-                                "_b.try_into_owned()?".to_string(),
+                                format!("{body_type}Owned<{STORAGE_PARAM}>"),
+                                format!("_b.{OWNED_IN_FN}::<{STORAGE_PARAM}>()?"),
                             )
                         } else {
                             (body_type.clone(), "_b".to_string())
@@ -4820,8 +4849,8 @@ fn render_codec(
                     let (owned_body_type, owned_body_into) =
                         if import_codec_borrowed(imports, &d.body_alias) {
                             (
-                                format!("{body_type}Owned"),
-                                "body: body.try_into_owned()?".to_string(),
+                                format!("{body_type}Owned<{STORAGE_PARAM}>"),
+                                format!("body: body.{OWNED_IN_FN}::<{STORAGE_PARAM}>()?"),
                             )
                         } else {
                             (body_type.clone(), "body".to_string())
@@ -5286,39 +5315,94 @@ fn render_codec(
         // so its borrowed type IS its owned form — no mirror needed.
         ctx.insert("emit_owned".into(), self_borrowed.into());
         // Owned-mirror imports: each borrowed imported codec body
-        // (`{Type}<'a>`) has a `{Type}Owned` mirror that the
-        // `into_owned()` deep-copy references; bring it into scope
-        // alloc-gated. A non-borrowed codec imports no borrowed bodies
-        // (embedding one would make it borrowed), so this is empty there.
+        // (`{Type}<'a>`) has a `{Type}Owned<S>` mirror that the
+        // `try_into_owned_in()` deep-copy references; bring it into scope. A
+        // non-borrowed codec imports no borrowed bodies (embedding one would
+        // make it borrowed), so this is empty there.
         let owned_imports: Vec<serde_json::Value> = imports
             .iter()
             .filter(|i| i.kind == "codec" && i.codec_is_borrowed)
-            .map(|i| {
-                format!(
-                    "#[cfg(feature = \"alloc\")]\nuse super::{}::{}Owned;",
-                    i.namespace, i.type_name
-                )
-                .into()
-            })
+            .map(|i| format!("use super::{}::{}Owned;", i.namespace, i.type_name).into())
             .collect();
-        // A pure-scalar leaf codec's owned mirror is now fully no-alloc —
-        // bounded `String` / `Bytes` fields project to `heapless::String<N>`
-        // / `heapless::Vec<u8, N>` (RFC c7-wildcard W3), so the mirror needs
-        // no `alloc`. List / embed / variant codecs still carry an unbounded
-        // owned `Vec` (or pull in an alloc-gated body mirror), so their
-        // `{Codec}Owned` stays `#[cfg(feature = "alloc")]` until the bounded-
-        // inline projection is extended to those shapes. The bounded-string-
-        // element bounded-collection (the W3 consumer) stores exactly the
-        // no-alloc leaf form.
-        let owned_needs_alloc = m.has_repeat_fields()
-            || m.has_tlv_chain_fields()
-            || m.has_embed_fields()
-            || m.variant.is_some()
-            || !owned_imports.is_empty();
-        ctx.insert("owned_needs_alloc".into(), owned_needs_alloc.into());
         ctx.insert(
             "owned_imports".into(),
             serde_json::Value::Array(owned_imports),
+        );
+        // Storage-profile parameter for the owned mirror. Every container the
+        // mirror owns — text, bytes, bounded lists, nested body mirrors — is
+        // the profile's choice, so the mirror is declared once against the
+        // parameter and instantiated per use site. `_decl` carries the
+        // default so existing spellings of the bare `{Codec}Owned` keep
+        // resolving to the build's default profile; `_impl` is the same bound
+        // without a default (defaults are illegal on impl blocks); `_args`
+        // applies it. There is no `alloc` gate: the non-allocating profile is
+        // a type, so the mirror compiles on the heap-free tier too.
+        let storage_decl = format!(
+            "<{STORAGE_PARAM}: {RUNTIME_CODEC}::CodecStorage = {RUNTIME_CODEC}::DefaultStorage>"
+        );
+        let storage_impl = format!("<{STORAGE_PARAM}: {RUNTIME_CODEC}::CodecStorage>");
+        let storage_args = format!("<{STORAGE_PARAM}>");
+        ctx.insert("owned_generics_decl".into(), storage_decl.clone().into());
+        ctx.insert("owned_generics_impl".into(), storage_impl.clone().into());
+        ctx.insert("owned_generics_args".into(), storage_args.clone().into());
+        ctx.insert("owned_in_fn".into(), OWNED_IN_FN.into());
+        // The variant enum takes the parameter only when an arm body carries
+        // it — a variant over fixed-width bodies owns nothing the profile
+        // varies, and an unused parameter is a hard error (E0392). Same
+        // exactness rule as the `<'a>` inference above.
+        let variant_storage_generic = codec_variant_body_borrowed(m, imports);
+        ctx.insert(
+            "variant_owned_generics_decl".into(),
+            if variant_storage_generic {
+                storage_decl
+            } else {
+                String::new()
+            }
+            .into(),
+        );
+        ctx.insert(
+            "variant_owned_generics_impl".into(),
+            if variant_storage_generic {
+                storage_impl
+            } else {
+                String::new()
+            }
+            .into(),
+        );
+        ctx.insert(
+            "variant_owned_generics_args".into(),
+            if variant_storage_generic {
+                storage_args
+            } else {
+                String::new()
+            }
+            .into(),
+        );
+        // The variant enum's own projection: profile-taking when its arms
+        // carry the parameter, otherwise the plain method — and the struct's
+        // `body` field call site spelled to match, so the two can never
+        // disagree about whether a profile is being passed.
+        ctx.insert(
+            "variant_into_owned_fn".into(),
+            if variant_storage_generic {
+                OWNED_IN_FN
+            } else {
+                "try_into_owned"
+            }
+            .into(),
+        );
+        ctx.insert(
+            "variant_into_owned_call".into(),
+            if variant_storage_generic {
+                format!("{OWNED_IN_FN}::<{STORAGE_PARAM}>()?")
+            } else {
+                "try_into_owned()?".to_string()
+            }
+            .into(),
+        );
+        ctx.insert(
+            "codec_storage_path".into(),
+            format!("{RUNTIME_CODEC}::CodecStorage").into(),
         );
         // Owned→borrowed projection method shape (inverse of `into_owned`).
         // The struct's projection is fallible (`try_as_borrowed -> Result`)
@@ -5361,6 +5445,12 @@ fn render_codec(
         ctx.insert(
             "as_borrowed_ok_close".into(),
             if struct_fallible { ")" } else { "" }.into(),
+        );
+        // `transcode_in` composes the projection pair, so it threads the
+        // re-borrow's `?` only when that half is fallible.
+        ctx.insert(
+            "as_borrowed_try".into(),
+            if struct_fallible { "?" } else { "" }.into(),
         );
         // The struct's `body` field projection call onto the variant enum.
         ctx.insert(
@@ -13990,27 +14080,43 @@ fn render_bounded_collection_rust(
     // RFC c7-wildcard W3: a bounded-collection is an owned, self-contained,
     // no-alloc container, so it stores the element codec's owned mirror —
     // not the borrowed zero-copy view (whose `&'a str` / `&'a [u8]` would
-    // infect the whole collection with the decode buffer's lifetime). The
-    // owned mirror `{Element}Owned` is emitted only for a borrowed element
-    // (one carrying a `String` / `Bytes` field, now projected to a no-alloc
-    // `heapless::String<N>` / `heapless::Vec<u8, N>`); a lifetime-free
-    // element (scalars only, e.g. an interned `uint32` id) is already its
-    // own owned form and is stored directly. Borrowed-ness is read from the
-    // element-type field schema the orchestrator resolves (`is_borrowed`'s
-    // direct-scalar rule); this matches the codec's `emit_owned` gate so
-    // the referenced type always exists.
+    // infect the whole collection with the decode buffer's lifetime). A
+    // lifetime-free element (scalars only, e.g. an interned `uint32` id) is
+    // already its own owned form and is stored directly.
+    //
+    // Whether a mirror exists is read from the orchestrator-resolved
+    // `element_type_owned_mirrors`, which runs the SAME predicate as the
+    // codec's `emit_owned` gate, so the referenced type always exists. It
+    // cannot be re-derived from the element's field list here: a
+    // `<sce:repeat>` / `<sce:embed>` field carries a `bytes` sentinel whose
+    // real type is the body codec, so a list of fixed-width bodies would read
+    // as borrowed (naming a mirror that is never emitted) while a codec
+    // borrowed only through a variant arm would read as plain (naming a type
+    // that carries a lifetime). Both shapes are admissible elements.
+    //
+    // The mirror is stored at the NON-ALLOCATING profile, which is what makes
+    // the container's own contract true: a bounded collection promises fixed
+    // capacity and no allocation, and storing default-profile elements would
+    // honour that for the slot table while every element still reached the
+    // heap on an `alloc` build. Pinning `Inline` also means an element may be
+    // composite — embedded bodies and bounded lists included — because the
+    // profile resolves those to inline storage too.
     let element_borrowed = options
-        .element_type_field_schemas
+        .element_type_owned_mirrors
         .as_ref()
-        .and_then(|schemas| schemas.get(&element_snake))
-        .map(|schema| {
-            schema
-                .iter()
-                .any(|(_, ty, _)| matches!(ty, SceType::String | SceType::Bytes))
-        })
+        .and_then(|mirrors| mirrors.get(&element_snake))
+        .copied()
         .unwrap_or(false);
-    let element_stored = if element_borrowed {
+    // The name brought into scope (a `use` path cannot carry generic
+    // arguments) and the type written at every storage site — spelled apart
+    // so the profile appears in the type and never in the import.
+    let element_import = if element_borrowed {
         format!("{element_pascal}Owned")
+    } else {
+        element_pascal.clone()
+    };
+    let element_stored = if element_borrowed {
+        format!("{element_import}<{RUNTIME_CODEC}::Inline>")
     } else {
         element_pascal.clone()
     };
@@ -14021,6 +14127,7 @@ fn render_bounded_collection_rust(
         snake => snake,
         element_pascal => element_pascal,
         element_snake => element_snake,
+        element_import => element_import,
         element_stored => element_stored,
         element_borrowed => element_borrowed,
         capacity => inputs.capacity,
