@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-7.7
+//
 // SCE_MESH §7.7 "Circular dependency detection" — the build tool warns
 // when machines form a ring of cross-machine `<invoke>`s, because each
 // participant holds its invoking state until the next answers.

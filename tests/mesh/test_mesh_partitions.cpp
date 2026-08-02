@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-14
+//
 // SCE Mesh §14 — first-party `partitions:` ctest fixture.
 //
 // Until this fixture landed, every `partitions:` rule (rules 6-10 in

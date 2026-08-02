@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-9.6.5
+//
 // SCE Mesh §9.6.5 autoforward="true" verification (wire-17 ParentEvent).
 //
 // The parent declares `<invoke autoforward="true">` on the worker.

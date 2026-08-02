@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.10 mesh-10.4 mesh-10.4.1
+//
 // OutboundBuffer unit tests — SCE_MESH.md §10.10 + §16.7 rows 1, 2, 9.
 //
 // Sibling of DedupRouter / OrderingBuffer unit tests in Bucket 1

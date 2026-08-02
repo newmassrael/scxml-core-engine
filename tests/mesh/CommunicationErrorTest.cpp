@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.7.1
+//
 // Unit tests for SCE::Mesh::CommunicationError (SCE_MESH.md §10.7.1 + §16.7).
 //
 // Pins the JSON render shape the runtime uses to populate
