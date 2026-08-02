@@ -274,14 +274,6 @@ public:
     TestReport runAotTest(const std::string &testId);
 
     /**
-     * @brief Run filtered tests
-     * @param conformanceLevel Filter by conformance level
-     * @param specSection Filter by spec section
-     * @return Test run summary
-     */
-    TestRunSummary runFilteredTests(const std::string &conformanceLevel = "", const std::string &specSection = "");
-
-    /**
      * @brief Get test suite for accessing information
      * @return Pointer to test suite interface
      */
