@@ -237,7 +237,6 @@ if(SCE_HAS_SCRIPTING)
         # QuickJS engine (conditional)
         $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSEngine.cpp>
         $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSEngineImpl.cpp>
-        $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSExecutionEngineImpl.cpp>
         $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/PlatformExecutionHelper.cpp>
         $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/DOMBinding.cpp>
 

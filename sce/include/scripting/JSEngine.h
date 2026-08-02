@@ -9,7 +9,6 @@
 #include "ScriptResult.h"
 #include "events/IEventRaiserRegistry.h"
 #include "quickjs.h"
-#include "runtime/ISessionObserver.h"
 #include <atomic>
 #include <condition_variable>
 #include <future>
@@ -104,20 +103,6 @@ public:
      * @return true if session destroyed successfully
      */
     bool destroySession(const std::string &sessionId) override;
-
-    // === Observer Pattern Support (ISessionManager extension) ===
-
-    /**
-     * @brief Add observer for session lifecycle events
-     * @param observer Observer to be notified of session events
-     */
-    void addObserver(ISessionObserver *observer) override;
-
-    /**
-     * @brief Remove observer from session lifecycle events
-     * @param observer Observer to be removed
-     */
-    void removeObserver(ISessionObserver *observer) override;
 
     /**
      * @brief Check if a session exists
