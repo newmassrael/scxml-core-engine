@@ -89,6 +89,20 @@ pub enum DriftHashError {
          --input-root at a tree without the aliasing, or remove it"
     )]
     WalkLimitExceeded { root: PathBuf, limit: usize },
+
+    /// The tree kept changing while it was being read.
+    ///
+    /// Separated from [`Self::Io`] because the remedy is different in kind.
+    /// An `Io` failure says the root is wrong; this one says the root is
+    /// right but is somebody else's output directory. Reporting the latter
+    /// as "failed to read <some file>" sent readers looking for a missing
+    /// file that is, by then, present again.
+    #[error(
+        "{root}: §6.2.6 source set changed while it was being read ({attempts} \
+         attempt(s)) — the digest would describe no actual state of the tree; \
+         point --input-root at a directory the build does not write to"
+    )]
+    RootNotQuiescent { root: PathBuf, attempts: usize },
 }
 
 /// Liveness ceiling on directory descents in one walk.
@@ -382,10 +396,56 @@ pub fn parse_embedded_hashes(content: &str) -> Option<EmbeddedHashes> {
 
 // ── internal helpers ──────────────────────────────────────────────────
 
+/// What a file looked like when its bytes were taken. Re-stat-ing every
+/// witness after the walk is what makes the digest a snapshot rather than
+/// a sequence of unrelated reads.
+///
+/// `(len, mtime)` is the change signal every build system already trusts.
+/// `modified()` is not available on every filesystem, so the timestamp is
+/// optional and the comparison degrades to length alone rather than
+/// refusing to run.
+#[derive(Clone, PartialEq, Eq)]
+struct ReadWitness {
+    path: PathBuf,
+    len: u64,
+    mtime: Option<std::time::SystemTime>,
+}
+
+impl ReadWitness {
+    /// Observes `path` as it is right now. `None` when the file cannot be
+    /// stat-ed at all, which the caller reads as "changed" — a file that
+    /// vanished is exactly the case this exists to catch.
+    fn observe(path: &Path) -> Option<Self> {
+        let meta = fs::metadata(path).ok()?;
+        Some(Self {
+            path: path.to_path_buf(),
+            len: meta.len(),
+            mtime: meta.modified().ok(),
+        })
+    }
+}
+
+/// Re-reads of one source tree allowed before the walk gives up.
+///
+/// The walk reads files one at a time, so a tree being written while it is
+/// read yields bytes from no single state of that tree. Re-walking is how a
+/// coherent read is obtained without a filesystem snapshot primitive: read,
+/// verify nothing moved, and read again if something did.
+///
+/// The ceiling exists because a tree under continuous mutation never
+/// settles, and looping forever on it would be worse than saying so. Three
+/// is enough for the bursty writes a parallel build produces and small
+/// enough that a genuinely unstable root is reported promptly.
+const MAX_SNAPSHOT_ATTEMPTS: usize = 3;
+
 /// Walks `root` collecting every file whose path predicate returns true.
 /// Returns sorted `(rel_path_from_anchor, sha256)` pairs. `anchor` is the
 /// path canonicalization basis so the BTreeMap key stays stable across
 /// absolute/relative invocations.
+///
+/// The walk is retried until the files it read are still the files on disk,
+/// so the digest describes one state of the tree rather than a blend of
+/// several. See [`walk_filtered_coherent`].
 fn walk_filtered(
     anchor: &Path,
     root: &Path,
@@ -393,16 +453,91 @@ fn walk_filtered(
     keep: &dyn Fn(&Path) -> bool,
     descent_limit: usize,
 ) -> Result<(), DriftHashError> {
-    // Seeded with the root so a link naming the root is recognised as a
-    // cycle by the same rule that catches one naming any other ancestor.
-    let mut descent: BTreeSet<PathBuf> = BTreeSet::new();
-    descent.insert(canonical_key(root));
-    let mut budget = DescentBudget {
+    walk_filtered_coherent(
+        anchor,
+        root,
+        out,
+        keep,
+        descent_limit,
+        MAX_SNAPSHOT_ATTEMPTS,
+        &mut || {},
+    )
+}
+
+/// [`walk_filtered`] with the attempt ceiling supplied and a hook fired
+/// after each completed traversal.
+///
+/// Both extras exist for the tests: a concurrent writer cannot be scheduled
+/// deterministically from outside, so the hook is where a test mutates the
+/// tree at the one instant that matters — after the bytes were taken and
+/// before they are verified — and the ceiling lets the refusal be reached
+/// without looping three times to get there.
+pub(crate) fn walk_filtered_coherent(
+    anchor: &Path,
+    root: &Path,
+    out: &mut BTreeMap<PathBuf, [u8; 32]>,
+    keep: &dyn Fn(&Path) -> bool,
+    descent_limit: usize,
+    attempts: usize,
+    after_walk: &mut dyn FnMut(),
+) -> Result<(), DriftHashError> {
+    for _ in 0..attempts.max(1) {
+        // Seeded with the root so a link naming the root is recognised as a
+        // cycle by the same rule that catches one naming any other ancestor.
+        let mut descent: BTreeSet<PathBuf> = BTreeSet::new();
+        descent.insert(canonical_key(root));
+        let mut budget = DescentBudget {
+            root: root.to_path_buf(),
+            remaining: descent_limit,
+            limit: descent_limit,
+        };
+        let mut witnesses: Vec<ReadWitness> = Vec::new();
+
+        // Each attempt starts from an empty set: a retry must not inherit
+        // digests taken from the state that was already found to have moved.
+        out.clear();
+        match walk_filtered_recursive(
+            anchor,
+            root,
+            out,
+            keep,
+            &mut descent,
+            &mut budget,
+            &mut witnesses,
+        ) {
+            Ok(()) => {}
+            // An entry `read_dir` listed and `fs::read` could not find is the
+            // tree moving under the walk, not a broken root — retry it. The
+            // root itself going missing is a real failure and falls through.
+            Err(e) if is_vanished_entry(&e, root) => continue,
+            Err(e) => return Err(e),
+        }
+
+        after_walk();
+
+        if witnesses
+            .iter()
+            .all(|w| ReadWitness::observe(&w.path).as_ref() == Some(w))
+        {
+            return Ok(());
+        }
+    }
+
+    Err(DriftHashError::RootNotQuiescent {
         root: root.to_path_buf(),
-        remaining: descent_limit,
-        limit: descent_limit,
-    };
-    walk_filtered_recursive(anchor, root, out, keep, &mut descent, &mut budget)
+        attempts: attempts.max(1),
+    })
+}
+
+/// Did this error come from an entry disappearing mid-walk rather than from
+/// the root being wrong? Only the former is worth another attempt.
+fn is_vanished_entry(err: &DriftHashError, root: &Path) -> bool {
+    match err {
+        DriftHashError::Io { path, source } => {
+            source.kind() == std::io::ErrorKind::NotFound && path != root
+        }
+        _ => false,
+    }
 }
 
 /// Descent allowance for one walk, spent across the whole traversal rather
@@ -457,6 +592,7 @@ fn walk_filtered_recursive(
     keep: &dyn Fn(&Path) -> bool,
     descent: &mut BTreeSet<PathBuf>,
     budget: &mut DescentBudget,
+    witnesses: &mut Vec<ReadWitness>,
 ) -> Result<(), DriftHashError> {
     budget.charge()?;
     let entries = fs::read_dir(dir).map_err(|e| DriftHashError::Io {
@@ -500,16 +636,33 @@ fn walk_filtered_recursive(
             if !descent.insert(key.clone()) {
                 continue;
             }
-            let descended = walk_filtered_recursive(anchor, &path, out, keep, descent, budget);
+            let descended =
+                walk_filtered_recursive(anchor, &path, out, keep, descent, budget, witnesses);
             descent.remove(&key);
             descended?;
         } else if target_type.is_file() && keep(&path) {
+            // Witness before the read, not after. A file replaced *during*
+            // its own read leaves a post-read stat that matches the final
+            // one, so the swap would go unseen; a pre-read stat does not.
+            let before = ReadWitness::observe(&path);
             let bytes = fs::read(&path).map_err(|e| DriftHashError::Io {
                 path: path.clone(),
                 source: e,
             })?;
             let rel = path.strip_prefix(anchor).unwrap_or(&path).to_path_buf();
             out.insert(rel, sha256_bytes(&bytes));
+            match before {
+                Some(w) => witnesses.push(w),
+                // Read succeeded but the stat did not, so nothing can vouch
+                // for these bytes. Treat the attempt as incoherent rather
+                // than silently dropping the check for this one file.
+                None => {
+                    return Err(DriftHashError::Io {
+                        path: path.clone(),
+                        source: std::io::Error::from(std::io::ErrorKind::NotFound),
+                    })
+                }
+            }
         }
     }
     Ok(())
@@ -1083,5 +1236,175 @@ mod tests {
         // the consumer side will fail if this drifts to a hyphen.
         assert!(HEADER_BANNER.contains('\u{2014}'));
         assert_eq!(HEADER_BANNER, "SCE-GENERATED \u{2014} DO NOT EDIT");
+    }
+
+    // ── snapshot coherence ────────────────────────────────────────────
+    //
+    // The walk reads files one at a time. Without a coherence check a tree
+    // written while it is read yields a digest assembled from two different
+    // states of that tree — wrong, and silent. These tests drive the writer
+    // from the `after_walk` hook so the mutation lands at the one instant
+    // that matters: after the bytes were taken, before they are verified.
+    //
+    // Detection is exercised through file LENGTH changes and deletions, both
+    // of which are decided by the filesystem's own bookkeeping. Timestamp
+    // resolution never enters, so these do not become clock-dependent
+    // fixtures; mtime is the additional signal that also covers a
+    // same-length swap in production.
+
+    fn scxml_keep(p: &Path) -> bool {
+        p.extension().is_some_and(|e| e == "scxml")
+    }
+
+    /// Collect through the hooked entry point, running `mutate` once per
+    /// completed traversal.
+    fn walk_hooked(
+        root: &Path,
+        attempts: usize,
+        mutate: &mut dyn FnMut(),
+    ) -> Result<BTreeMap<PathBuf, [u8; 32]>, DriftHashError> {
+        let mut out = BTreeMap::new();
+        walk_filtered_coherent(
+            root,
+            root,
+            &mut out,
+            &scxml_keep,
+            MAX_DIRECTORY_DESCENTS,
+            attempts,
+            mutate,
+        )?;
+        Ok(out)
+    }
+
+    #[test]
+    fn quiescent_tree_is_read_in_a_single_attempt() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "a.scxml", b"<scxml/>");
+        write_file(root, "nested/b.scxml", b"<scxml id='b'/>");
+
+        let mut traversals = 0usize;
+        let out = walk_hooked(root, MAX_SNAPSHOT_ATTEMPTS, &mut || traversals += 1)
+            .expect("an untouched tree must not need a retry");
+
+        assert_eq!(out.len(), 2, "both documents contribute");
+        assert_eq!(
+            traversals, 1,
+            "a still tree costs exactly one traversal — the coherence check \
+             must not turn every hash into repeated reads"
+        );
+    }
+
+    #[test]
+    fn file_rewritten_after_the_read_is_refused_not_hashed() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "a.scxml", b"<scxml/>");
+        let victim = root.join("a.scxml");
+
+        // One attempt, so the first detection is also the verdict.
+        let err = walk_hooked(root, 1, &mut || {
+            write_file(root, "a.scxml", b"<scxml id='rewritten-and-longer'/>");
+        })
+        .expect_err("bytes that no longer match the file must not be hashed");
+
+        match err {
+            DriftHashError::RootNotQuiescent { root: r, attempts } => {
+                assert_eq!(r, root, "the refusal names the root it was given");
+                assert_eq!(attempts, 1, "the refusal names the ceiling it hit");
+            }
+            other => panic!("expected RootNotQuiescent, got {other:?}"),
+        }
+        assert!(victim.exists(), "the test mutated rather than removed");
+    }
+
+    #[test]
+    fn file_deleted_after_the_read_is_refused_not_hashed() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "a.scxml", b"<scxml/>");
+        write_file(root, "b.scxml", b"<scxml id='b'/>");
+
+        let err = walk_hooked(root, 1, &mut || {
+            fs::remove_file(root.join("b.scxml")).unwrap();
+        })
+        .expect_err("a digest covering a file that is gone describes nothing");
+
+        assert!(
+            matches!(err, DriftHashError::RootNotQuiescent { .. }),
+            "a vanished contributor is incoherence, not a generic IO fault: {err:?}"
+        );
+    }
+
+    #[test]
+    fn retry_rereads_and_reports_the_settled_state() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "a.scxml", b"<scxml/>");
+        let settled = b"<scxml id='settled-content'/>".to_vec();
+
+        // Mutate on the first traversal only, so the second one sees a still
+        // tree — the shape a bursty parallel build actually produces.
+        let mut traversals = 0usize;
+        let settled_for_hook = settled.clone();
+        let out = walk_hooked(root, 3, &mut || {
+            traversals += 1;
+            if traversals == 1 {
+                write_file(root, "a.scxml", &settled_for_hook);
+            }
+        })
+        .expect("a tree that settles must be readable");
+
+        assert_eq!(traversals, 2, "exactly one retry was needed");
+        assert_eq!(
+            out.get(Path::new("a.scxml")),
+            Some(&sha256_bytes(&settled)),
+            "the retry must re-read; carrying the first attempt's digest \
+             forward would report a state that no longer exists"
+        );
+        assert_eq!(
+            out.len(),
+            1,
+            "each attempt starts from an empty set — a retry must not \
+             accumulate entries from the state it rejected"
+        );
+    }
+
+    #[test]
+    fn vanished_entry_is_distinguished_from_a_wrong_root() {
+        let root = Path::new("/nonexistent-root");
+        let entry = root.join("child.scxml");
+        let not_found = || std::io::Error::from(std::io::ErrorKind::NotFound);
+
+        assert!(
+            is_vanished_entry(
+                &DriftHashError::Io {
+                    path: entry,
+                    source: not_found(),
+                },
+                root
+            ),
+            "an entry below the root going missing is the tree moving — retry"
+        );
+        assert!(
+            !is_vanished_entry(
+                &DriftHashError::Io {
+                    path: root.to_path_buf(),
+                    source: not_found(),
+                },
+                root
+            ),
+            "the root itself going missing is a wrong root — no retry can fix it"
+        );
+        assert!(
+            !is_vanished_entry(
+                &DriftHashError::Io {
+                    path: root.join("child.scxml"),
+                    source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                },
+                root
+            ),
+            "only NotFound is transient; a permission fault must surface"
+        );
     }
 }
