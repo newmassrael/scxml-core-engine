@@ -120,6 +120,17 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # 2. Auto-generate TestXXX.h from template if not exists
     sce_generate_aot_test_header(${TEST_NUM} "${_SWT_TYPE}")
 
+    # §synth-6.2.6 source-hash root. Every codegen call below passes
+    # `--input-root "${RESOURCE_DIR}"` because the inputs are STAGED into
+    # OUTPUT_DIR, and OUTPUT_DIR is shared by every registered test. Without
+    # the override the hash root defaults to the input file's parent — the
+    # shared output directory — which is wrong twice over: the digest then
+    # covers ~250 unrelated fixtures instead of this test's inputs, and the
+    # walk reads a directory that sibling targets are concurrently staging
+    # into, so `read_dir` can list a file that `fs::read` no longer finds and
+    # the build dies on a race. `resources/${TEST_NUM}/` is tracked and no
+    # build step writes to it, so the source set is quiescent by construction.
+    # Same pattern as SCEStaticIntegrationFixture.cmake's FIXTURE_ROOT.
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
@@ -162,7 +173,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         endif()
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
             ${_SUB_FORMAT_CMD}
             DEPENDS "${SUB_SCXML_FILE}" "${SCE_CODEGEN}"
             DEPFILE "${SUB_HEADER_FILE}.d"
@@ -267,7 +278,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     endif()
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --write-deps "${GENERATED_HEADER}.d"
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d"
         COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
         ${_PARENT_FORMAT_CMD}
         DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} "${SCE_CODEGEN}"
@@ -358,6 +369,17 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         set(W3C_C_AOT_TESTS_NEEDS_INVOKE ${W3C_C_AOT_TESTS_NEEDS_INVOKE} PARENT_SCOPE)
     endif()
 
+    # §synth-6.2.6 source-hash root. Every codegen call below passes
+    # `--input-root "${RESOURCE_DIR}"` because the inputs are STAGED into
+    # OUTPUT_DIR, and OUTPUT_DIR is shared by every registered test. Without
+    # the override the hash root defaults to the input file's parent — the
+    # shared output directory — which is wrong twice over: the digest then
+    # covers ~250 unrelated fixtures instead of this test's inputs, and the
+    # walk reads a directory that sibling targets are concurrently staging
+    # into, so `read_dir` can list a file that `fs::read` no longer finds and
+    # the build dies on a race. `resources/${TEST_NUM}/` is tracked and no
+    # build step writes to it, so the source set is quiescent by construction.
+    # Same pattern as SCEStaticIntegrationFixture.cmake's FIXTURE_ROOT.
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
@@ -389,7 +411,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_CHILD_HEADER}" "${_CHILD_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
             DEPENDS "${_CHILD_SCXML}" "${SCE_CODEGEN}"
             COMMENT "Generating C11 code: ${_CHILD_NAME}_sm.{h,c}"
             VERBATIM
@@ -422,7 +444,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_SUB_HEADER}" "${_SUB_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
             DEPENDS "${_SUB_SCXML}" "${SCE_CODEGEN}"
             COMMENT "Generating C11 code: ${_SUB_NAME}_sm.{h,c}"
             VERBATIM
@@ -461,7 +483,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
             DEPENDS "${_HYBRID_SCXML}" "${SCE_CODEGEN}"
             COMMENT "Generating C11 code: ${_HYBRID_NAME}_sm.{h,c}"
             VERBATIM
@@ -544,7 +566,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
 
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
         DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
         COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
         VERBATIM
