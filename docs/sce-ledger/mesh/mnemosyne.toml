@@ -176,10 +176,17 @@ severity_missing = "reject"
 # Path B curated: every §mesh-<n> cite is bound to a ratified
 # Section.implementations (file, symbol), so binding-class drift now fails.
 severity_binding = "reject"
-# Coverage stays advisory — a spec ledger has prose/design sections (80 of
-# 106 here) that legitimately carry no code citation; the R385 split keeps
-# binding enforced without a per-section non-code carve-out.
-severity_coverage = "warn"
+# Coverage is enforced as of the round that closed the last normative
+# section. Every one of the 106 sections is now either covered by an
+# `implements` binding or carries an explicit `coverage_expectation`
+# (`informational` for prose and design rationale, `out_of_scope_here` for
+# a feature this consumer defers) with a stored reason. Promotion is what
+# makes the classification load-bearing: while this was `warn`, a new
+# section could land uncovered and unclassified without failing anything,
+# and the counter drifting up would be the only signal. Adding a section
+# to SCE_MESH.md now fails the ledger until it is either implemented and
+# bound or classified with a reason.
+severity_coverage = "reject"
 comment_only = true
 section_namespace = "mesh"
 
