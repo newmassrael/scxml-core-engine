@@ -2430,17 +2430,16 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_session_f_not_implemented_verification
              COMMAND mesh_session_f_not_implemented_test)
 
-    # ── SCE_MESH §9.6 Session F wire round-trip (sub-item 2) ──────
+    # ── SCE_MESH §9.6 Session F wire round-trip ───────────────────
     # Exercises the transport-present half of the §9.6 line 1396
-    # contract: parent emits wire-14 InvokeStart via shm, worker's
-    # `pumpScxmlInvokeRequests` answers with wire-20 InvokeError
-    # carrying SESSION_F_NOT_IMPLEMENTED, MeshDispatch translates the
-    # reply into `error.execution` on the parent engine, and the
-    # parent's transition observes it. Single-process test — both
-    # routers share the host process so the shm segments exchange
-    # data without fork. Same observable shape as the A0 scaffold
-    # above; this test proves the wire path when a matching peer
-    # binding exists in deploy.yaml.
+    # contract: parent emits wire-14 InvokeStart via shm, the worker's
+    # `pumpScxmlInvokeRequests` routes it to `WorkerSessionHost`, which
+    # instantiates an AOT child and answers wire-15 InvokeStarted then
+    # wire-18 InvokeDone; the parent raises `done.invoke.*` and its
+    # transition observes it. Single-process test — both routers share
+    # the host process so the shm segments exchange data without fork.
+    # Complements the transport-absent test above, which takes the
+    # local SESSION_F_TRANSPORT_UNAVAILABLE raise instead.
     set(MESH_SESSION_F_WIRED_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_wired_generated")
 

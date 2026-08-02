@@ -701,9 +701,10 @@ pub struct ScxmlInvokeInfo {
     /// SCE_MESH.md §9.6 remote `<invoke type="scxml">`. When `src` is of the
     /// form `#<name>` and `<name>` matches a distinct mesh machine declared
     /// in `deploy.yaml`, this carries that machine name (without the leading
-    /// `#`). C++ codegen branches on this field to emit the §10.7.1
-    /// `SESSION_F_NOT_IMPLEMENTED` scaffold until Session F lands the
-    /// wire patterns 14-20 runtime. `None` for local W3C invokes (inline
+    /// `#`). C++ codegen branches on this field to emit the §9.6.2 wire-14
+    /// `InvokeStart` dispatch, falling back to the §10.7.1
+    /// `SESSION_F_TRANSPORT_UNAVAILABLE` raise when the deployment attaches
+    /// no transport binding to that peer. `None` for local W3C invokes (inline
     /// `<content>` or file-relative `src`) and for non-mesh builds — those
     /// flow through the existing local-invoke path unchanged. Populated
     /// by [`crate::inject_partition_context_for`] from the deploy topology.
@@ -1456,9 +1457,9 @@ pub struct SCXMLModel {
     /// matching transport channel when Session 2 extends past shm.
     /// Codegen materializes one inbound `ScxmlInvokeChannel` per entry
     /// for receiving wire-14 `InvokeStart`, paired with an outbound
-    /// `ScxmlInvokeChannel` for answering with wire-20 `InvokeError`
-    /// carrying `SESSION_F_NOT_IMPLEMENTED` until the child-session
-    /// runtime lands. Empty when no peer invokes this machine.
+    /// `ScxmlInvokeChannel` for answering with wire-15 `InvokeStarted` on
+    /// success or wire-20 `InvokeError` when the child cannot start.
+    /// Empty when no peer invokes this machine.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scxml_remote_inbound_peers: Vec<ScxmlRemotePeerBinding>,
 
