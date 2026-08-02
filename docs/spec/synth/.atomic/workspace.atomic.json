@@ -4321,6 +4321,10 @@
         {
           "file": "scripts/regen_donedata_late_completion_kotlin.sh",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/codegen_hash_root_gate.rs",
+          "kind": "references"
         }
       ]
     },
