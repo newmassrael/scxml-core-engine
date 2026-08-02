@@ -129,13 +129,6 @@ public:
      * @return true if XML format, false otherwise
      */
     virtual bool isXmlContent() const = 0;
-
-    /**
-     * @brief Check if content can be processed according to data model type
-     * @param dataModelType Data model type (e.g., "ecmascript", "xpath", "null")
-     * @return true if processing supported, false otherwise
-     */
-    virtual bool supportsDataModel(const std::string &dataModelType) const = 0;
 };
 
 }  // namespace SCE
