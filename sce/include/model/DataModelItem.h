@@ -5,7 +5,6 @@
 
 #include "IDataModelItem.h"
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -144,13 +143,6 @@ public:
      * @return true if XML format, false otherwise
      */
     virtual bool isXmlContent() const override;
-
-    /**
-     * @brief Execute XPath query (applies to XML content only)
-     * @param xpath XPath query string
-     * @return Query result string, empty optional if failed
-     */
-    virtual std::optional<std::string> queryXPath(const std::string &xpath) const override;
 
     /**
      * @brief Check if content can be processed according to data model type
