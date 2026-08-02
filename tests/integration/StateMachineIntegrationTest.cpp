@@ -9,7 +9,10 @@
 #include "scripting/ScriptEngineProvider.h"
 #include <chrono>
 #include <gtest/gtest.h>
+#include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace SCE {
 namespace Tests {
@@ -418,39 +421,35 @@ TEST_F(StateMachineIntegrationTest, InvokeSessionEventRaiserInitialization) {
 // ============================================================================
 
 TEST_F(StateMachineIntegrationTest, W3C_Test250_InvokeOnexitHandlers) {
-    // W3C SCXML Test 250: "test that the onexit handlers run in the invoked process if it is cancelled"
+    // W3C SCXML 6.4 (test 250): the onexit handlers run in the invoked process when
+    // it is cancelled. Cancelling an invoke stops the child machine, so stop() must
+    // exit every active state, not just the innermost one.
     //
-    // CRITICAL BUG VERIFICATION:
-    // - StateMachine::stop() currently only exits getCurrentState() (single atomic state)
-    // - Remaining active states cleared by reset() without onexit execution
-    // - This test verifies ALL active states execute onexit when invoke is cancelled
-    //
-    // Expected: Both sub01 AND sub0 onexit handlers execute
-    // Current Bug: Only sub01 onexit executes, sub0 onexit skipped
-    //
-    // Test Strategy:
-    // 1. Create nested state machine (sub0 -> sub01)
-    // 2. Start machine to enter both states
-    // 3. Call stop() to simulate invoke cancellation
-    // 4. Verify onexit executed for BOTH states via data model
+    // Oracle: stop() tears the datamodel session down, so a `<data>` flag written by
+    // onexit cannot be read afterwards. A registered global function records the exits
+    // into C++ state that outlives the session, which also captures the ORDER —
+    // W3C SCXML 3.9 exits states innermost-first, so sub01 must precede sub0.
+
+    std::mutex exitOrderMutex;
+    std::vector<std::string> exitOrder;
+    ASSERT_TRUE(engine_->registerGlobalFunction("recordExit", [&](const std::vector<ScriptValue> &args) {
+        if (!args.empty() && std::holds_alternative<std::string>(args[0])) {
+            std::lock_guard<std::mutex> lock(exitOrderMutex);
+            exitOrder.push_back(std::get<std::string>(args[0]));
+        }
+        return ScriptValue(true);
+    }));
 
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="sub0" datamodel="ecmascript">
-    <datamodel>
-        <data id="exitedSub0" expr="false"/>
-        <data id="exitedSub01" expr="false"/>
-    </datamodel>
-
     <state id="sub0" initial="sub01">
         <onexit>
-            <log expr="'W3C Test 250: Exiting sub0'"/>
-            <script>exitedSub0 = true;</script>
+            <script>recordExit('sub0');</script>
         </onexit>
 
         <state id="sub01">
             <onexit>
-                <log expr="'W3C Test 250: Exiting sub01'"/>
-                <script>exitedSub01 = true;</script>
+                <script>recordExit('sub01');</script>
             </onexit>
         </state>
     </state>
@@ -470,30 +469,19 @@ TEST_F(StateMachineIntegrationTest, W3C_Test250_InvokeOnexitHandlers) {
     EXPECT_TRUE(sm->isStateActive("sub0"));
     EXPECT_TRUE(sm->isStateActive("sub01"));
 
-    // Now stop the machine - this simulates invoke cancellation
-    // BUG: Currently only sub01's onexit executes, sub0's onexit is skipped
+    {
+        std::lock_guard<std::mutex> lock(exitOrderMutex);
+        ASSERT_TRUE(exitOrder.empty()) << "No state has been exited yet";
+    }
+
+    // Cancelling an invoke stops the child machine
     sm->stop();
 
-    // After stop(), machine should no longer be running
     EXPECT_FALSE(sm->isRunning());
 
-    // CRITICAL VERIFICATION:
-    // Both exitedSub0 and exitedSub01 should be true
-    // because StateMachine::stop() should execute onexit for ALL active states
-    //
-    // With current bug:
-    // - exitedSub01 = true  (getCurrentState() onexit executes)
-    // - exitedSub0  = false (parent state onexit skipped by reset())
-
-    // Since we cannot directly access the data model after stop(),
-    // we need to check before stop() completes
-    // For now, this test documents the expected behavior
-    // The real verification is in the LOGS - look for:
-    //   "W3C Test 250: Exiting sub01"
-    //   "W3C Test 250: Exiting sub0"  ← This will be MISSING with the bug
-
-    // TODO: Add data model inspection capability before stop() completes
-    // or capture log output programmatically
+    std::lock_guard<std::mutex> lock(exitOrderMutex);
+    EXPECT_EQ(exitOrder, (std::vector<std::string>{"sub01", "sub0"}))
+        << "stop() must run onexit for every active state, innermost-first";
 }
 
 TEST_F(StateMachineIntegrationTest, ChildSessionEventProcessingCapability) {
