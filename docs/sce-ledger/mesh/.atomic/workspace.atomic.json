@@ -63,6 +63,10 @@
           "file": "sce-build/src/mesh/error.rs",
           "symbol": "DeployError",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/OutboundBufferTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -84,7 +88,8 @@
           "symbol": "try_push",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-10.4": {
       "title": "Transport Contract",
@@ -95,6 +100,10 @@
         {
           "file": "sce/include/mesh/transports/CustomTcpTransport.h",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/OutboundBufferTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -118,6 +127,10 @@
           "file": "sce/include/mesh/OutboundBuffer.h",
           "symbol": "markNotReady",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/OutboundBufferTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -132,7 +145,8 @@
           "symbol": "TransportDescriptor",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-10.4.3": {
       "title": "Conformance Verification",
@@ -194,6 +208,14 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/DedupRouterTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_dedup_injection.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -265,6 +287,14 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/OrderingBufferTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_order_injection.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -299,7 +329,8 @@
           "symbol": "DeployError",
           "kind": "references"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-10.6.2": {
       "title": "Dispatch decision",
@@ -322,7 +353,8 @@
           "symbol": "TransportDescriptor",
           "kind": "references"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-10.6.3": {
       "title": "Sequence stamping",
@@ -348,6 +380,10 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -380,6 +416,10 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_order_injection.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -407,6 +447,10 @@
           "file": "sce/include/mesh/MeshDispatch.h",
           "symbol": "meshOriginUri",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/MeshDispatchTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -455,6 +499,10 @@
           "file": "sce/include/mesh/ChildSessionAdapter.h",
           "symbol": "makeInvokeChildInitFailedEnvelope",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/CommunicationErrorTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -494,6 +542,10 @@
           "file": "sce-build/src/mesh/error.rs",
           "symbol": "CodegenError",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -691,6 +743,10 @@
         {
           "file": "sce-build/src/mesh/vsomeip_config.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mesh_external_config.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -880,6 +936,10 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "only_shm_and_custom_tcp_support_inter_partition_ipc",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_partitions.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1012,6 +1072,10 @@
         {
           "file": "sce-build/src/mesh/transport/someip.rs",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_pool_compile.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1044,7 +1108,8 @@
           "symbol": "build_server_transport_state",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-15.2": {
       "title": "Session Management",
@@ -1056,7 +1121,8 @@
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-15.3": {
       "title": "QoS Configuration (deploy.yaml → Generated Code)",
@@ -1076,7 +1142,8 @@
           "symbol": "ZenohMode",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-15.5": {
       "title": "Zenoh SHM and `shm_transport` Template Relationship",
@@ -1190,7 +1257,8 @@
           "file": "sce-build/src/mesh/partitions.rs",
           "kind": "references"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-16.4": {
       "title": "Cross-region transition auto-merge",
@@ -1261,6 +1329,10 @@
           "file": "sce-build/src/mesh/transport/someip.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_region_liveness_zenoh.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1403,6 +1475,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "isInFinalState",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/ParallelCompletionTrackerTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1722,6 +1798,18 @@
           "file": "sce-build/src/mesh/transport/someip.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/AuthClassifierTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/ReasonCodeCatalogTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/RetryingDispatcherTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1783,7 +1871,8 @@
           "symbol": "Distributable",
           "kind": "references"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-16.8.3": {
       "title": "Transport selection for harness",
@@ -1825,6 +1914,10 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "only_shm_and_custom_tcp_support_inter_partition_ipc",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_custom_tcp_runtime.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1924,6 +2017,10 @@
         {
           "file": "sce/include/mesh/SchedulerConcepts.h",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/test_mesh_local.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -1938,7 +2035,8 @@
           "symbol": "TransportShape",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-3.3": {
       "title": "Discovery — Where to Find",
@@ -1981,7 +2079,8 @@
           "symbol": "validate_discovery_not_supported",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-4": {
       "title": "Discovery Modes and Conflict Resolution",
@@ -2000,7 +2099,8 @@
           "symbol": "build_resolved_targets",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-4.2": {
       "title": "Scoped Mode (Domain-Partitioned)",
@@ -2081,7 +2181,8 @@
           "symbol": "generate_cpp_mesh",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-7": {
       "title": "Build Pipeline",
@@ -2107,7 +2208,8 @@
           "symbol": "compile_mesh_transport",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-7.3": {
       "title": "Outputs",
@@ -2126,7 +2228,8 @@
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-7.5": {
       "title": "Generated Event Serialization",
@@ -2153,6 +2256,10 @@
           "file": "sce/include/mesh/MeshDispatch.h",
           "symbol": "dispatchEnvelope",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2182,6 +2289,10 @@
         {
           "file": "sce-build/src/mesh/topology.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/mesh_invoke_cycle.rs",
+          "kind": "verifies"
         }
       ]
     },
@@ -2216,6 +2327,10 @@
           "file": "sce-build/src/mesh/topology.rs",
           "symbol": "ServerBinding",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/MeshDispatchTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2234,7 +2349,8 @@
           "symbol": "validate_pattern_capability",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-8.3": {
       "title": "Realization Status (2026-04-13)",
@@ -2298,7 +2414,8 @@
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-9.3": {
       "title": "Remote Invoke Lifecycle",
@@ -2315,6 +2432,10 @@
           "file": "sce/include/mesh/ChildSessionAdapter.h",
           "symbol": "makeInvokeDoneEnvelope",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/MeshDispatchTest.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2479,6 +2600,18 @@
           "file": "sce-build/src/mesh/topology.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/InvokeCorrelationTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/MeshDeadlineSchedulerTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_invoke_rpc_runtime.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2633,6 +2766,10 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_session_f_wire_roundtrip.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2662,7 +2799,8 @@
           "symbol": "dispatchEnvelope",
           "kind": "references"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-9.6.2": {
       "title": "Envelope extensions for full remote invoke",
@@ -2786,6 +2924,10 @@
         {
           "file": "sce-build/src/mesh/transport/zenoh.rs",
           "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_session_f_eventful.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2818,6 +2960,10 @@
           "file": "sce/include/mesh/ChildSessionAdapter.h",
           "symbol": "raiseExternal",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/test_mesh_session_f_eventful.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2831,6 +2977,10 @@
           "file": "sce/include/mesh/MeshDispatch.h",
           "symbol": "dispatchEnvelope",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/test_mesh_session_f_eventful.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2849,6 +2999,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processNextExternalEvent",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/test_mesh_session_f_autoforward.cpp",
+          "kind": "verifies"
         }
       ]
     },
@@ -2887,6 +3041,10 @@
           "file": "sce-build/src/mesh/partitions.rs",
           "symbol": "partition_for_machine",
           "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/test_mesh_synth_invoke_override_e2e.cpp",
+          "kind": "verifies"
         }
       ]
     },

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
+// SCE-VERIFIES: mesh-9.5
+//
 // InvokeCorrelation unit tests — SCE Mesh §9.5 lifecycle bookkeeping.
 //
 // Covers the four outcome states a registered invoke can reach:

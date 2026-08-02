@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-9.6.6
+//
 // SCE Mesh §9.6.6 rule 3 — cross-partition inline <content> override,
 // wire-14/15/18 round-trip. Companion to the §9.6.2 author-declared
 // `mesh_session_f_wire_roundtrip`; this variant proves the same wire

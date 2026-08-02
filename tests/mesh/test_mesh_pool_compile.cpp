@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-14.4
+//
 // SCE Mesh §14.4 pool compile verification.
 //
 // Proves that both pool branches of tools/codegen/templates/mesh/cpp/

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-16.4
+//
 // SCE Mesh §16.4 / §16.7 row 13 — region-partition liveness runtime
 // E2E (Zenoh transport).
 //

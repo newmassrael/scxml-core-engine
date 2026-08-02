@@ -30,6 +30,13 @@ on:
       - 'tools/mnemosyne-adoption/**'
       - 'resources/**/metadata.txt'
       - 'docs/spec/scxml/.atomic/verifies-catalog.json'
+      # The mesh catalog's SSOT is a `SCE-VERIFIES:` marker inside the test
+      # files themselves, so a marker edit must reach this drift guard the
+      # same way a metadata.txt edit reaches the scxml one.
+      - 'tests/mesh/**'
+      - 'tests/w3c/dist/**'
+      - 'sce-build/tests/mesh_*.rs'
+      - 'docs/sce-ledger/mesh/.atomic/verifies-catalog.json'
       - '.github/workflows/spec-snapshot-drift.yml'
   pull_request:
     branches: [ main ]
@@ -37,6 +44,13 @@ on:
       - 'tools/mnemosyne-adoption/**'
       - 'resources/**/metadata.txt'
       - 'docs/spec/scxml/.atomic/verifies-catalog.json'
+      # The mesh catalog's SSOT is a `SCE-VERIFIES:` marker inside the test
+      # files themselves, so a marker edit must reach this drift guard the
+      # same way a metadata.txt edit reaches the scxml one.
+      - 'tests/mesh/**'
+      - 'tests/w3c/dist/**'
+      - 'sce-build/tests/mesh_*.rs'
+      - 'docs/sce-ledger/mesh/.atomic/verifies-catalog.json'
       - '.github/workflows/spec-snapshot-drift.yml'
   schedule:
     # Weekly upstream re-check (Mondays 04:17 UTC; off the hour to spread load).
@@ -60,6 +74,8 @@ jobs:
         run: python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity
       - name: Verifies-catalog up to date (generated artifact drift guard)
         run: python3 tools/mnemosyne-adoption/gen_verifies_catalog.py --check
+      - name: Mesh verifies-catalog up to date (same guard, marker SSOT)
+        run: python3 tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py --check
       - name: Tooling regression tests
         run: python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+//
+// SCE-VERIFIES: mesh-10.6.3 mesh-10.9 mesh-7.5
+//
 
 #include "mesh/MeshEnvelopeCodec.h"
 #include "mesh/MeshEnvelope.h"

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-16.7
+//
 // RetryingDispatcher unit tests — SCE Mesh §16.7 row 3 retry layer.
 //
 // Covers the contract pinned in `sce/include/mesh/RetryingDispatcher.h`:
