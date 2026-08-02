@@ -15,11 +15,15 @@
 
 #![no_std]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 pub mod codec;
 pub mod filter;
 pub mod interpolation;
 pub mod lookup;
 pub mod observer;
+pub mod storage;
 pub mod timer;
 
 // Re-export `heapless` so generated codec output can spell its bounded

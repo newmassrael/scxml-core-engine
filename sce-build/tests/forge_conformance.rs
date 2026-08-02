@@ -6157,6 +6157,71 @@ fn forge_rust_codec_nested_parent() {
     assert_standalone_forge_rust("codec_nested_parent", "codec_nested_parent.rs");
 }
 
+/// The owned mirror reaches the heap-free tier — including for a codec that
+/// owns embedded bodies and a bounded list, the shapes that previously had no
+/// owned form there at all.
+///
+/// `codec_nested_parent` holds a required embed, an optional embed and a
+/// `<sce:repeat>` of a borrowed body; every one of those containers is chosen
+/// by the storage profile, so naming `Inline` must resolve them to
+/// `heapless`-backed storage with no allocator in reach. The probe compiles
+/// `#![no_std]` with no `alloc` feature and no `#[global_allocator]`, so a
+/// single reachable `Vec` / `String` / `Box` in the emitted mirror is a hard
+/// error rather than a silent heap dependency.
+///
+/// The extra source is what makes this a real gate: it *instantiates* the
+/// mirror at the inline profile and exercises both projection directions.
+/// Compiling the module alone would only prove the generic code parses —
+/// monomorphisation is where a stray `alloc` container would surface.
+#[test]
+fn forge_rust_codec_owned_mirror_compiles_without_an_allocator() {
+    const PROBE: &str = r#"
+use crate::codec_nested_parent::{CodecNestedParent, CodecNestedParentOwned};
+use sce_forge_runtime::codec::{CodecError, Inline, SceCursor};
+
+/// Decode a frame and keep it past the buffer's lifetime, on a target with no
+/// allocator. Returns the owned value so the whole projection chain is
+/// monomorphised at `Inline` and cannot be optimised away as unreachable.
+pub fn decode_to_inline_owned(
+    buf: &[u8],
+) -> Result<CodecNestedParentOwned<Inline>, CodecError> {
+    let mut cursor = SceCursor::new(buf);
+    CodecNestedParent::decode(&mut cursor)?.try_into_owned_in::<Inline>()
+}
+
+/// The inverse projection, also at the inline profile: an owned value
+/// re-borrowed and written back through the caller-owned slice sink — the
+/// no-alloc encode path.
+pub fn reencode_inline_owned(
+    owned: &CodecNestedParentOwned<Inline>,
+    out: &mut [u8],
+) -> Result<usize, CodecError> {
+    use sce_forge_runtime::codec::{SceSink, SliceSink};
+    let mut sink = SliceSink::new(out);
+    owned.try_as_borrowed()?.encode(&mut sink)?;
+    Ok(SceSink::position(&sink))
+}
+"#;
+    rustc_run_codec_set(
+        &resource_dir(),
+        // The whole import closure, so the parent's `use super::` edges
+        // resolve inside the probe crate.
+        &[
+            "codec_zenoh_locator.scxml",
+            "codec_nested_body.scxml",
+            "codec_nested_parent.scxml",
+        ],
+        &[("inline_owned_probe.rs", PROBE)],
+        "codec_owned_no_alloc",
+        "build",
+        RustcProfile::NoAlloc,
+    )
+    .expect(
+        "the owned mirror must compile and monomorphise at the inline storage \
+         profile with no allocator available",
+    );
+}
+
 #[test]
 fn forge_rust_codec_zenoh_decl_kexpr() {
     assert_standalone_forge_rust("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.rs");
@@ -10981,7 +11046,14 @@ fn rustc_compile_codec_set(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
-    rustc_run_codec_set(dir, scxml_filenames, &[], test_id, "build")
+    rustc_run_codec_set(
+        dir,
+        scxml_filenames,
+        &[],
+        test_id,
+        "build",
+        RustcProfile::Alloc,
+    )
 }
 
 /// `<sce:test-vector>` round-trip runtime harness. Same setup as
@@ -10997,7 +11069,14 @@ fn rustc_test_codec_set(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
-    rustc_run_codec_set(dir, scxml_filenames, &[], test_id, "test")
+    rustc_run_codec_set(
+        dir,
+        scxml_filenames,
+        &[],
+        test_id,
+        "test",
+        RustcProfile::Alloc,
+    )
 }
 
 /// Variant of `rustc_test_codec_set` that injects extra hand-written
@@ -11018,7 +11097,28 @@ fn rustc_test_codec_set_with_extra(
     extra_sources: &[(&str, &str)],
     test_id: &str,
 ) -> Result<(), String> {
-    rustc_run_codec_set(dir, scxml_filenames, extra_sources, test_id, "test")
+    rustc_run_codec_set(
+        dir,
+        scxml_filenames,
+        extra_sources,
+        test_id,
+        "test",
+        RustcProfile::Alloc,
+    )
+}
+
+/// Which tier the generated codec set is compiled against.
+///
+/// The two are genuinely different compile targets, not a verbosity knob:
+/// `NoAlloc` has no allocator at all, so any reachable `alloc` symbol is a
+/// hard error. It is the only way to prove that an owned mirror holding
+/// lists / embedded bodies reaches the heap-free tier.
+#[derive(Clone, Copy, PartialEq)]
+enum RustcProfile {
+    /// std-class consumer: the `alloc` feature on, heap facade exercised.
+    Alloc,
+    /// MCU-class consumer: `#![no_std]`, no allocator, no `alloc` feature.
+    NoAlloc,
 }
 
 fn rustc_run_codec_set(
@@ -11027,6 +11127,7 @@ fn rustc_run_codec_set(
     extra_sources: &[(&str, &str)],
     test_id: &str,
     cargo_subcommand: &str,
+    profile: RustcProfile,
 ) -> Result<(), String> {
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -11081,6 +11182,24 @@ fn rustc_run_codec_set(
         .canonicalize()
         .map_err(|e| format!("canonicalize sce-portable-bytes: {e}"))?;
 
+    // Generated codec modules carry `#[cfg(feature = "alloc")]` guards around
+    // `VecSink` / `encode_to_vec` so MCU / no_std consumers see only the
+    // sink-based primary. The alloc profile opts the entire crate in so the
+    // heap facade is exercised in the rustc-check + sidecar round-trip tests;
+    // the no-alloc profile leaves every feature off, which is what makes a
+    // reachable `alloc` symbol a hard error rather than a silent dependency.
+    let (feature_block, dep_features) = match profile {
+        RustcProfile::Alloc => (
+            "default = [\"alloc\"]\nalloc = []",
+            r#", features = ["alloc"]"#,
+        ),
+        // The `alloc` feature stays *declared* so the generated
+        // `#[cfg(feature = "alloc")]` guards remain a known cfg (an
+        // undeclared one is `unexpected_cfgs`, i.e. a warning-as-error that
+        // would mask the allocator question). It is simply never enabled,
+        // here or on the runtime crates.
+        RustcProfile::NoAlloc => ("default = []\nalloc = []", ""),
+    };
     let cargo_toml = format!(
         r#"[package]
 name = "sce_rustc_check_{test_id}"
@@ -11091,18 +11210,11 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-# RFC §5.B: generated codec modules carry `#[cfg(feature = "alloc")]`
-# guards around `VecSink` / `encode_to_vec` so MCU / no_std consumers see
-# only the sink-based primary. The harness opts the entire crate into
-# `alloc` so the heap facade is exercised in the rustc-check + sidecar
-# round-trip tests. Default = ["alloc"] so a bare `cargo build` /
-# `cargo test` reproduces what a downstream consumer sees.
-default = ["alloc"]
-alloc = []
+{feature_block}
 
 [dependencies]
-sce-forge-runtime = {{ path = "{}", default-features = false, features = ["alloc"] }}
-sce-portable-bytes = {{ path = "{}", default-features = false, features = ["alloc"] }}
+sce-forge-runtime = {{ path = "{}", default-features = false{dep_features} }}
+sce-portable-bytes = {{ path = "{}", default-features = false{dep_features} }}
 
 [workspace]
 
@@ -11127,6 +11239,11 @@ warnings = "deny"
     // `pub mod` declarations unique. Non-`.rs` emits (e.g. test JSON
     // sidecars) are filtered out — they're not source modules.
     let mut lib_rs = String::new();
+    if profile == RustcProfile::NoAlloc {
+        // No `std`, and deliberately no `#[global_allocator]`: the bare-metal
+        // shape a generated codec must reach.
+        lib_rs.push_str("#![no_std]\n");
+    }
     let mut seen: HashSet<String> = HashSet::new();
     for (filename, content) in &all_files {
         let path = std::path::Path::new(filename);
@@ -12658,8 +12775,14 @@ mod tests {
         // Encode-side builder: assemble the owned struct by hand and build
         // the bytes field via the SSOT ctor. `N` infers from the field's
         // `SceBytes<32>` type — no `::<32>` turbofish, no duplicated cap.
+        //
+        // The binding names the storage profile (bare `CodecTailOwned` = the
+        // build's default). A hand-assembled value must: its fields reach the
+        // profile only through `S::Bytes<N>`, and an associated type cannot be
+        // run backwards to recover `S` from a value. Saying it once on the
+        // binding is what then lets `N` infer with no turbofish.
         let data = [0xCDu8; 50];
-        let owned = CodecTailOwned {
+        let owned: CodecTailOwned = CodecTailOwned {
             msg_id: 7,
             status: 9,
             payload: SceBytes::from_slice(&data).expect("alloc copy is unbounded"),

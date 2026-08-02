@@ -31,7 +31,7 @@
 {# Cross-doc element-type import (spec lines 2566-2567). The
    `collection/element-type-not-a-kind` validator guarantees this
    name resolves to a codec/procedure kind before reaching here. #}
-use super::{{ element_snake }}::{{ element_stored }};
+use super::{{ element_snake }}::{{ element_import }};
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per

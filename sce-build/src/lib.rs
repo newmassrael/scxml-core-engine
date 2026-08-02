@@ -1705,6 +1705,14 @@ pub struct ForgeCompileOptions {
     /// the arg falls through verbatim, exactly as before the projection
     /// existed.
     pub element_type_field_schemas: Option<std::collections::HashMap<String, ElementFieldSchema>>,
+
+    /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
+    /// keyed by the snake element name. Decided by the same predicate the
+    /// codec emit uses, so a bounded-collection storing the element names the
+    /// mirror exactly when one exists. `None` on a single-document compile
+    /// (no orchestrator pass ran, so no bounded-collection can resolve an
+    /// element either).
+    pub element_type_owned_mirrors: Option<std::collections::HashMap<String, bool>>,
 }
 
 /// RFC §synth-5-D + §synth-5-I cross-core worker placement entry. Populated
@@ -2054,6 +2062,12 @@ pub fn compile_scxml_with_imports(
         String,
         forge::model::ForgeDocument,
     > = std::collections::HashMap::new();
+    // Which element-type candidates emit a `{Codec}Owned` mirror, keyed by
+    // the snake element name a bounded-collection resolves against. Built
+    // beside `element_type_candidates` from the same parse so the two cannot
+    // disagree about a document.
+    let mut element_type_owned_mirrors: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
     let mut all_externs: Vec<forge::model::ExternDeclaration> = Vec::new();
     // Deploy-aware cross-doc link validators (`validate_links_cross_doc`,
     // `validate_links_burst_invariants`, `validate_reassembly_cross_doc`)
@@ -2176,6 +2190,33 @@ pub fn compile_scxml_with_imports(
                 // sharing a name collide there). `insert` is safe —
                 // duplicates are unreachable.
                 let key = doc.name().to_string();
+                // Whether this candidate emits an owned mirror, decided by
+                // the SAME predicate the codec emit uses
+                // (`emit_owned == codec_is_borrowed`). A bounded-collection
+                // storing this element must name the mirror when there is
+                // one and the plain type when there is not; deriving that
+                // from the element's field list instead would be a guess
+                // that disagrees with the emit for a list of fixed-width
+                // bodies (the repeat sentinel reads as `bytes`) and for a
+                // codec borrowed only through a variant arm. Computed here
+                // because this is the one place holding the document's own
+                // imports and directory — the file graph the transitive walk
+                // needs.
+                if let forge::model::ForgeDocument::Codec(codec) = &doc {
+                    let base_dir = forge_path
+                        .parent()
+                        .map_or_else(|| Path::new(".").to_path_buf(), |p| p.to_path_buf());
+                    let mut visited: HashSet<PathBuf> = HashSet::new();
+                    visited.insert(forge_path.to_path_buf());
+                    let borrowed = codec_is_borrowed_recursive(
+                        codec,
+                        &parsed.imports,
+                        &base_dir,
+                        &mut visited,
+                    );
+                    element_type_owned_mirrors
+                        .insert(filters::to_snake_case(key.clone()), borrowed);
+                }
                 element_type_candidates.insert(key, doc);
             }
             // EventSchema and Enum documents are deliberately NOT indexed
@@ -2577,7 +2618,8 @@ pub fn compile_scxml_with_imports(
         deploy.map(|_| listener_links.clone());
     let needs_override = !bc_resolutions.is_empty()
         || listener_links_override.is_some()
-        || !element_type_field_schemas.is_empty();
+        || !element_type_field_schemas.is_empty()
+        || !element_type_owned_mirrors.is_empty();
     let bc_options_override = if !needs_override {
         None
     } else {
@@ -2590,6 +2632,9 @@ pub fn compile_scxml_with_imports(
         }
         if !element_type_field_schemas.is_empty() {
             overridden.element_type_field_schemas = Some(element_type_field_schemas);
+        }
+        if !element_type_owned_mirrors.is_empty() {
+            overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);
         }
         Some(overridden)
     };
@@ -2916,47 +2961,6 @@ fn codec_is_borrowed_recursive(
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
 ) -> bool {
-    // Resolve a single import alias to its body codec's transitive
-    // borrowed-ness. `None` (missing / parse error / kind mismatch /
-    // cycle) contributes `false` — matches the conservative skip in
-    // `compute_codec_recursive_max_bytes::resolve_import_max`.
-    fn resolve_import_borrowed(
-        alias: &str,
-        imports: &[forge::model::ForgeImport],
-        base_dir: &Path,
-        visited: &mut HashSet<PathBuf>,
-    ) -> Option<bool> {
-        let imp = imports.iter().find(|i| i.alias == alias)?;
-        let imp_path = base_dir.join(&imp.src);
-        let visit_key = imp_path.clone();
-        if !visited.insert(visit_key.clone()) {
-            return None;
-        }
-        let result = (|| -> Option<bool> {
-            let content = std::fs::read_to_string(&imp_path).ok()?;
-            let stem = imp_path.file_stem()?.to_str()?;
-            let basename = imp_path.file_name()?.to_str()?;
-            let label = DocumentLabel {
-                identifier: stem,
-                diagnostic_label: basename,
-            };
-            let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
-            let inner_cm = match parsed.document {
-                forge::model::ForgeDocument::Codec(c) => c,
-                _ => return None,
-            };
-            let inner_base = imp_path.parent()?.to_path_buf();
-            Some(codec_is_borrowed_recursive(
-                &inner_cm,
-                &parsed.imports,
-                &inner_base,
-                visited,
-            ))
-        })();
-        visited.remove(&visit_key);
-        result
-    }
-
     // SSOT predicate (`CodecModel::is_borrowed_with`) over the file-graph
     // resolver: each embed/repeat/tlv/variant body alias is resolved by
     // re-parsing the import and recursing. The scalar-field rule and the
@@ -2964,8 +2968,82 @@ fn codec_is_borrowed_recursive(
     // (`generator.rs::codec_self_borrowed`) and this enrichment-time walk
     // can never diverge.
     cm.is_borrowed_with(|alias| {
-        resolve_import_borrowed(alias, imports, base_dir, visited).unwrap_or(false)
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
+            Some(codec_is_borrowed_recursive(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            ))
+        })
+        .unwrap_or(false)
     })
+}
+
+/// One import alias resolved to its parsed codec model, handed to a
+/// transitive-property walker.
+struct ResolvedImportCodec<'a> {
+    /// The imported file's parsed codec model.
+    model: &'a forge::model::CodecModel,
+    /// That file's own imports, for the next level of recursion.
+    imports: &'a [forge::model::ForgeImport],
+    /// Directory the inner imports resolve against.
+    base_dir: &'a Path,
+    /// Canonical path of the file being visited — a walker that needs to
+    /// start a *second*, independent traversal (e.g. the borrowed gate in
+    /// `codec_as_borrowed_fallible_recursive`) seeds its fresh `visited` set
+    /// with this so the new walk keeps the same cycle guard.
+    visit_key: &'a Path,
+    /// The in-progress cycle guard for the current traversal.
+    visited: &'a mut HashSet<PathBuf>,
+}
+
+/// Resolve one import alias to its codec model and hand it to `walk`.
+///
+/// SSOT for the file-graph half of every transitive codec property
+/// (borrowed-ness, `as_borrowed` fallibility, owned storage genericity): the
+/// alias lookup, the re-parse, the kind check and the `visited` cycle guard
+/// live here once, so a new property only supplies its recursion step. `None`
+/// (missing file / parse error / kind mismatch / cycle) is the conservative
+/// skip every caller collapses to the property's identity value — the same
+/// skip `compute_codec_recursive_max_bytes::resolve_import_max` makes.
+fn with_resolved_import_codec<T>(
+    alias: &str,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+    walk: impl FnOnce(ResolvedImportCodec<'_>) -> Option<T>,
+) -> Option<T> {
+    let imp = imports.iter().find(|i| i.alias == alias)?;
+    let imp_path = base_dir.join(&imp.src);
+    let visit_key = imp_path.clone();
+    if !visited.insert(visit_key.clone()) {
+        return None;
+    }
+    let result = (|| -> Option<T> {
+        let content = std::fs::read_to_string(&imp_path).ok()?;
+        let stem = imp_path.file_stem()?.to_str()?;
+        let basename = imp_path.file_name()?.to_str()?;
+        let label = DocumentLabel {
+            identifier: stem,
+            diagnostic_label: basename,
+        };
+        let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
+        let inner_cm = match parsed.document {
+            forge::model::ForgeDocument::Codec(c) => c,
+            _ => return None,
+        };
+        let inner_base = imp_path.parent()?.to_path_buf();
+        walk(ResolvedImportCodec {
+            model: &inner_cm,
+            imports: &parsed.imports,
+            base_dir: &inner_base,
+            visit_key: &visit_key,
+            visited,
+        })
+    })();
+    visited.remove(&visit_key);
+    result
 }
 
 /// Owned→borrowed projection round: transitive `as_borrowed`-fallibility
@@ -2984,62 +3062,33 @@ fn codec_as_borrowed_fallible_recursive(
     // A single import alias's *contribution* to the parent's projection
     // fallibility. A non-borrowed body is deep-cloned wholesale by the
     // projection (never fails), so it contributes only when it is itself
-    // borrowed AND its own projection is fallible. `None` (missing / parse
-    // error / kind mismatch / cycle) contributes `false` — the same
-    // conservative skip as the borrowed-ness and max-bytes resolvers.
-    fn resolve_import_fallible(
-        alias: &str,
-        imports: &[forge::model::ForgeImport],
-        base_dir: &Path,
-        visited: &mut HashSet<PathBuf>,
-    ) -> Option<bool> {
-        let imp = imports.iter().find(|i| i.alias == alias)?;
-        let imp_path = base_dir.join(&imp.src);
-        let visit_key = imp_path.clone();
-        if !visited.insert(visit_key.clone()) {
-            return None;
-        }
-        let result = (|| -> Option<bool> {
-            let content = std::fs::read_to_string(&imp_path).ok()?;
-            let stem = imp_path.file_stem()?.to_str()?;
-            let basename = imp_path.file_name()?.to_str()?;
-            let label = DocumentLabel {
-                identifier: stem,
-                diagnostic_label: basename,
-            };
-            let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
-            let inner_cm = match parsed.document {
-                forge::model::ForgeDocument::Codec(c) => c,
-                _ => return None,
-            };
-            let inner_base = imp_path.parent()?.to_path_buf();
+    // borrowed AND its own projection is fallible.
+    cm.is_as_borrowed_fallible_with(|alias| {
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
             // Borrowed gate: a non-borrowed body has no `as_borrowed`
             // projection (it is cloned), so it can never contribute
-            // fallibility regardless of its internal list fields.
+            // fallibility regardless of its internal list fields. The gate
+            // runs its own traversal, seeded with the file already being
+            // visited so the fresh walk keeps the same cycle guard.
             let mut borrow_visited: HashSet<PathBuf> = HashSet::new();
-            borrow_visited.insert(visit_key.clone());
+            borrow_visited.insert(inner.visit_key.to_path_buf());
             let borrowed = codec_is_borrowed_recursive(
-                &inner_cm,
-                &parsed.imports,
-                &inner_base,
+                inner.model,
+                inner.imports,
+                inner.base_dir,
                 &mut borrow_visited,
             );
             if !borrowed {
                 return Some(false);
             }
             Some(codec_as_borrowed_fallible_recursive(
-                &inner_cm,
-                &parsed.imports,
-                &inner_base,
-                visited,
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
             ))
-        })();
-        visited.remove(&visit_key);
-        result
-    }
-
-    cm.is_as_borrowed_fallible_with(|alias| {
-        resolve_import_fallible(alias, imports, base_dir, visited).unwrap_or(false)
+        })
+        .unwrap_or(false)
     })
 }
 
