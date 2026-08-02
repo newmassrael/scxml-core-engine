@@ -198,11 +198,6 @@ void LuaEngine::shutdown() {
         globalFunctions_.clear();
     }
 
-    {
-        std::lock_guard<std::mutex> lock(observerMutex_);
-        observers_.clear();
-    }
-
     // §scxml-B-2: Reset DOM binding state (mirrors JSEngine::shutdown behavior)
     LuaDOMBinding::resetClassId();
 
@@ -284,18 +279,6 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
     SCE_LOG_DEBUG("LuaEngine: Created session: {} (parent: {})", sessionId,
                   parentSessionId.empty() ? "none" : parentSessionId);
 
-    // Notify observers (copy list to avoid deadlock if observer re-enters LuaEngine)
-    {
-        std::vector<ISessionObserver *> observersCopy;
-        {
-            std::lock_guard<std::mutex> obsLock(observerMutex_);
-            observersCopy = observers_;
-        }
-        for (auto *obs : observersCopy) {
-            obs->onSessionCreated(sessionId);
-        }
-    }
-
     return true;
 }
 
@@ -335,18 +318,6 @@ bool LuaEngine::destroySession(const std::string &sessionId) {
 
     SCE_LOG_DEBUG("LuaEngine: Destroyed session: {}", sessionId);
 
-    // Notify observers (copy list to avoid deadlock if observer re-enters LuaEngine)
-    {
-        std::vector<ISessionObserver *> observersCopy;
-        {
-            std::lock_guard<std::mutex> obsLock(observerMutex_);
-            observersCopy = observers_;
-        }
-        for (auto *obs : observersCopy) {
-            obs->onSessionDestroyed(sessionId);
-        }
-    }
-
     return true;
 }
 
@@ -356,16 +327,6 @@ bool LuaEngine::hasSession(const std::string &sessionId) const {
 }
 
 // === ISessionManager ===
-
-void LuaEngine::addObserver(ISessionObserver *observer) {
-    std::lock_guard<std::mutex> lock(observerMutex_);
-    observers_.push_back(observer);
-}
-
-void LuaEngine::removeObserver(ISessionObserver *observer) {
-    std::lock_guard<std::mutex> lock(observerMutex_);
-    observers_.erase(std::remove(observers_.begin(), observers_.end(), observer), observers_.end());
-}
 
 std::vector<std::string> LuaEngine::getActiveSessions() const {
     std::lock_guard<std::mutex> lock(sessionMutex_);

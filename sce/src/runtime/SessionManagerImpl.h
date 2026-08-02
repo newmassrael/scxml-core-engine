@@ -3,19 +3,18 @@
 
 #pragma once
 
-#include "runtime/ISessionObserver.h"
+#include "common/IOProcessorHelper.h"
 #include "scripting/ISessionManager.h"
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace SCE {
 
 /**
- * @brief Concrete implementation of session management with observer support
+ * @brief Concrete implementation of session lifecycle management
  *
  * SOLID Architecture: Single Responsibility for session lifecycle management.
  * Separated from JavaScript execution concerns for better testability and maintainability.
@@ -49,25 +48,11 @@ public:
     bool createSession(const std::string &sessionId, const std::string &parentSessionId = "") override;
 
     /**
-     * @brief Destroy an existing session and notify observers
+     * @brief Destroy an existing session
      * @param sessionId Session identifier to destroy
      * @return true if session destroyed successfully
      */
     bool destroySession(const std::string &sessionId) override;
-
-    // === Observer Pattern Support ===
-
-    /**
-     * @brief Add observer for session lifecycle events
-     * @param observer Observer to be notified of session events
-     */
-    void addObserver(ISessionObserver *observer) override;
-
-    /**
-     * @brief Remove observer from session lifecycle events
-     * @param observer Observer to be removed
-     */
-    void removeObserver(ISessionObserver *observer) override;
 
     // === Extended Session Management ===
 
@@ -87,7 +72,7 @@ public:
     // === Session Information Management ===
 
     /**
-     * @brief Update session system variables and notify observers
+     * @brief Update session system variables
      * @param sessionId Target session
      * @param sessionName Human-readable session name
      * @param ioProcessors Entries to publish in `_ioprocessors`
@@ -128,33 +113,7 @@ private:
     mutable std::mutex sessionsMutex_;
     std::unordered_map<std::string, SessionInfo> sessions_;
 
-    // === Observer Management ===
-    mutable std::mutex observersMutex_;
-    std::unordered_set<ISessionObserver *> observers_;
-
     // === Internal Helper Methods ===
-
-    /**
-     * @brief Notify all observers of session creation
-     * @param sessionId Created session identifier
-     * @param parentSessionId Parent session identifier
-     */
-    void notifySessionCreated(const std::string &sessionId, const std::string &parentSessionId);
-
-    /**
-     * @brief Notify all observers of session destruction
-     * @param sessionId Destroyed session identifier
-     */
-    void notifySessionDestroyed(const std::string &sessionId);
-
-    /**
-     * @brief Notify all observers of system variables update
-     * @param sessionId Target session
-     * @param sessionName Session name
-     * @param ioProcessors I/O processors list
-     */
-    void notifySessionSystemVariablesUpdated(const std::string &sessionId, const std::string &sessionName,
-                                             const std::vector<IOProcessorDescriptor> &ioProcessors);
 
     /**
      * @brief Validate session ID format and constraints

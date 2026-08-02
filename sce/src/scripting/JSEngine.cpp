@@ -1127,20 +1127,6 @@ void JSEngine::clearEventRaiserRegistry() {
     }
 }
 
-// === Observer Pattern Support (Temporary implementation until Facade refactoring) ===
-
-void JSEngine::addObserver([[maybe_unused]] ISessionObserver *observer) {
-    // Temporary implementation - will be delegated to SessionManager after refactoring
-    SCE_LOG_DEBUG("JSEngine: Observer support not yet implemented in current architecture");
-    // TODO: Delegate to internal SessionManager after Facade pattern implementation
-}
-
-void JSEngine::removeObserver([[maybe_unused]] ISessionObserver *observer) {
-    // Temporary implementation - will be delegated to SessionManager after refactoring
-    SCE_LOG_DEBUG("JSEngine: Observer support not yet implemented in current architecture");
-    // TODO: Delegate to internal SessionManager after Facade pattern implementation
-}
-
 // JSEngine internal functions are implemented in JSEngineImpl.cpp
 
 }  // namespace SCE

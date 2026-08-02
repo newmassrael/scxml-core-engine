@@ -9,32 +9,15 @@
 
 namespace SCE {
 
-// Forward declaration
-class ISessionObserver;
-
 /**
- * @brief Extended session management with observer support
+ * @brief Extended session management with session query capabilities
  *
- * Extends ISessionLifecycle with observer pattern and session query capabilities.
- * Used by EventRaiserService for session validation.
+ * Extends ISessionLifecycle with the queries a session owner needs beyond
+ * create/destroy/has. Used by EventRaiserService for session validation.
  */
 class ISessionManager : public virtual ISessionLifecycle {
 public:
     virtual ~ISessionManager() = default;
-
-    // === Observer Pattern Support ===
-
-    /**
-     * @brief Add observer for session lifecycle events
-     * @param observer Observer to be notified of session events
-     */
-    virtual void addObserver(ISessionObserver *observer) = 0;
-
-    /**
-     * @brief Remove observer from session lifecycle events
-     * @param observer Observer to be removed
-     */
-    virtual void removeObserver(ISessionObserver *observer) = 0;
 
     // === Extended Session Management ===
 
