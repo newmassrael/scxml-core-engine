@@ -494,3 +494,328 @@ fn element_type_procedure_emits() {
         "expected typed find_by_index over &u64 (from procedure's internal field); got:\n{body}"
     );
 }
+
+// ─── Element storage profile ────────────────────────────────────────
+//
+// A bounded collection promises fixed capacity and no allocation. That
+// promise has to reach the *elements*, not just the slot table: storing
+// default-profile mirrors would leave every element's text, bytes and nested
+// lists on the heap in an `alloc` build, so the container would allocate per
+// insert while advertising that it does not. The emit therefore pins the
+// element's owned mirror to the non-allocating storage profile.
+//
+// Pinning that profile is also what admits a *composite* element — one whose
+// fields include embedded bodies or bounded lists — because the profile
+// resolves those containers inline too. Before the storage parameter existed
+// such a mirror was `#[cfg(feature = "alloc")]` and had no no-alloc form to
+// store at all.
+
+/// A body codec carrying a bounded string, so codecs that embed or list it
+/// are borrowed and get an owned mirror.
+fn borrowed_body_doc(name: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+  <datamodel>
+    <sce:field id="hop_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="hop" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="hop_len" sce:max-size="16"/>
+  </datamodel>
+</scxml>"##
+    )
+}
+
+/// A body codec with fixed-width fields only — no owned mirror is emitted for
+/// it, nor for a codec that merely lists it.
+fn fixed_body_doc(name: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+  <datamodel>
+    <sce:field id="metric" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"##
+    )
+}
+
+/// An element codec whose only complex field is a bounded list of `body`.
+fn list_element_doc(name: &str, body: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+  <sce:import src="{body}.scxml" kind="codec" as="{body}"/>
+  <datamodel>
+    <sce:field id="hop_count" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:repeat id="hops" type="{body}" sce:byte="1"
+                count="hop_count" max-count="4"/>
+  </datamodel>
+</scxml>"##
+    )
+}
+
+/// Compile an element codec, its body codec and a BC over the element,
+/// returning the BC's generated Rust source.
+fn compile_triple(body_xml: &str, element_xml: &str, bc_xml: &str) -> String {
+    let dir = tempdir().expect("tempdir");
+    let body = write_doc(dir.path(), "route_body.scxml", body_xml);
+    let element = write_doc(dir.path(), "route_entry.scxml", element_xml);
+    let bc = write_doc(dir.path(), "route_table.scxml", bc_xml);
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[body.as_path(), element.as_path(), bc.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &ForgeCompileOptions::default(),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+    outputs
+        .iter()
+        .find(|(name, _)| name == "route_table.scxml")
+        .expect("BC output present")
+        .1
+        .files
+        .iter()
+        .map(|(_, content)| content.clone())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// A composite element — its fields include a bounded list of a borrowed body
+/// — is stored as its owned mirror at the non-allocating profile. The `use`
+/// brings in the bare name (a path cannot carry generic arguments) while every
+/// storage site names the profile.
+#[test]
+fn composite_element_is_stored_as_the_inline_owned_mirror() {
+    let code = compile_triple(
+        &borrowed_body_doc("route_body"),
+        &list_element_doc("route_entry", "route_body"),
+        &bc_doc("route_table", "route_entry", 4, ""),
+    );
+    assert_parses("composite element BC", &code);
+    assert!(
+        code.contains("use super::route_entry::RouteEntryOwned;"),
+        "the mirror must be imported by bare name; got:\n{code}"
+    );
+    assert!(
+        code.contains("RouteEntryOwned<::sce_forge_runtime::codec::Inline>"),
+        "the element must be stored at the non-allocating profile; got:\n{code}"
+    );
+    assert!(
+        !code.contains("elem: RouteEntryOwned,"),
+        "no storage site may fall back to the build's default profile;\n{code}"
+    );
+}
+
+/// An element whose list holds *fixed-width* bodies is not borrowed, so no
+/// owned mirror is emitted for it and the element is stored directly.
+///
+/// This is the case a field-list guess gets wrong: a `<sce:repeat>` field
+/// carries a `bytes` sentinel (its real type is the body codec), so reading
+/// the element's field types would classify this as borrowed and name a mirror
+/// that is never emitted. The storage decision reads the same predicate the
+/// codec emit uses instead.
+#[test]
+fn list_of_fixed_width_bodies_is_stored_directly() {
+    let code = compile_triple(
+        &fixed_body_doc("route_body"),
+        &list_element_doc("route_entry", "route_body"),
+        &bc_doc("route_table", "route_entry", 4, ""),
+    );
+    assert_parses("fixed-body list BC", &code);
+    assert!(
+        code.contains("use super::route_entry::RouteEntry;"),
+        "a lifetime-free element is its own owned form; got:\n{code}"
+    );
+    assert!(
+        !code.contains("RouteEntryOwned"),
+        "no owned mirror is emitted for a non-borrowed element, so none may \
+         be referenced; got:\n{code}"
+    );
+}
+
+/// The same pinning applies to the flat bounded-string element the earlier
+/// bounded-collection work shipped: it was already stored as a mirror, but at
+/// the build's default profile, which allocates per element under `alloc`.
+#[test]
+fn bounded_string_element_is_stored_at_the_inline_profile() {
+    let codec = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="pattern_entry" version="1.0">
+  <datamodel>
+    <sce:field id="pattern_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="pattern" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="pattern_len" sce:max-size="32"/>
+  </datamodel>
+</scxml>"##;
+    let code = compile_pair(
+        &bc_doc("pattern_table", "pattern_entry", 8, ""),
+        codec,
+        "pattern_entry.scxml",
+        "pattern_table.scxml",
+    );
+    assert_parses("bounded-string element BC", &code);
+    assert!(
+        code.contains("PatternEntryOwned<::sce_forge_runtime::codec::Inline>"),
+        "a bounded collection must not hold heap-backed elements; got:\n{code}"
+    );
+}
+
+/// The consumer claim, on a real compiler: a bounded collection of *composite*
+/// elements builds with no allocator in reach.
+///
+/// Parsing the emit cannot show this — the question is whether the element's
+/// nested list and bounded string resolve to inline containers once
+/// monomorphised. The crate is built with default features, so neither the
+/// runtime nor the generated code has `alloc`, and a single reachable `Vec` /
+/// `String` is a hard error. Before the storage profile existed the mirror for
+/// such an element was `#[cfg(feature = "alloc")]`, so this crate had no
+/// element type to name at all.
+#[test]
+fn composite_element_bounded_collection_builds_without_an_allocator() {
+    let dir = tempdir().expect("tempdir");
+    let body = write_doc(
+        dir.path(),
+        "route_body.scxml",
+        &borrowed_body_doc("route_body"),
+    );
+    let element = write_doc(
+        dir.path(),
+        "route_entry.scxml",
+        &list_element_doc("route_entry", "route_body"),
+    );
+    let bc = write_doc(
+        dir.path(),
+        "route_table.scxml",
+        &bc_doc("route_table", "route_entry", 4, ""),
+    );
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[body.as_path(), element.as_path(), bc.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &ForgeCompileOptions::default(),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let crate_dir = dir.path().join("bc_no_alloc");
+    let src_dir = crate_dir.join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    let mut modules = Vec::new();
+    for (_doc, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            fs::write(src_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+            if let Some(stem) = filename.strip_suffix(".rs") {
+                if !stem.ends_with("_test") {
+                    modules.push(stem.to_string());
+                }
+            }
+        }
+    }
+    // Exercise the container so the element type is monomorphised rather than
+    // merely declared: inserting and reading back is where a stray heap
+    // container in the element would surface.
+    modules.push("probe".to_string());
+    fs::write(
+        src_dir.join("probe.rs"),
+        "use crate::route_table::RouteTable;\n\
+         use crate::route_entry::RouteEntryOwned;\n\
+         use sce_forge_runtime::codec::Inline;\n\
+         \n\
+         pub fn insert_and_read(\n    \
+             table: &mut RouteTable,\n    \
+             entry: RouteEntryOwned<Inline>,\n\
+         ) -> Option<u8> {\n    \
+             let handle = table.insert(entry).ok()?;\n    \
+             table.get(handle).map(|e| e.hop_count)\n\
+         }\n",
+    )
+    .expect("write probe.rs");
+    let lib_rs: String = std::iter::once("#![no_std]\n".to_string())
+        .chain(modules.iter().map(|m| format!("pub mod {m};\n")))
+        .collect();
+    fs::write(src_dir.join("lib.rs"), lib_rs).expect("write lib.rs");
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .to_path_buf();
+    let runtime_path = repo_root.join("backends/rust/forge-runtime");
+    // The BC template selects `heapless::Vec<Option<T>, CAPACITY>` as its
+    // backing under the `no_std` feature and names `::heapless` directly, so
+    // the probe crate carries the same pinned version the workspace does.
+    let heapless_version = workspace_heapless_version(&repo_root);
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        format!(
+            "[package]\n\
+             name = \"bc_no_alloc_gate\"\n\
+             version = \"0.0.0\"\n\
+             edition = \"2021\"\n\
+             \n\
+             [lib]\n\
+             path = \"src/lib.rs\"\n\
+             \n\
+             [features]\n\
+             default = [\"no_std\"]\n\
+             no_std = []\n\
+             \n\
+             [dependencies]\n\
+             sce-forge-runtime = {{ path = {runtime:?} }}\n\
+             heapless = {heapless:?}\n\
+             \n\
+             [workspace]\n",
+            runtime = runtime_path.to_string_lossy(),
+            heapless = heapless_version,
+        ),
+    )
+    .expect("write Cargo.toml");
+
+    let output = std::process::Command::new("cargo")
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(crate_dir.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", dir.path().join("target"))
+        .output()
+        .expect("run cargo build");
+    assert!(
+        output.status.success(),
+        "no-alloc build of a bounded collection over a composite element failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+/// The `heapless` version the workspace pins, read from the root manifest so
+/// the probe crate cannot drift onto a different one.
+fn workspace_heapless_version(repo_root: &Path) -> String {
+    let manifest = fs::read_to_string(repo_root.join("Cargo.toml")).expect("read root Cargo.toml");
+    manifest
+        .lines()
+        .find_map(|line| {
+            let rest = line.trim().strip_prefix("heapless")?;
+            let rest = rest.trim_start().strip_prefix('=')?;
+            let quoted = rest.trim();
+            // Either `heapless = "x.y"` or `heapless = { version = "x.y", .. }`.
+            let inner = quoted
+                .strip_prefix('{')
+                .and_then(|b| b.split("version").nth(1))
+                .and_then(|v| v.trim_start().strip_prefix('='))
+                .unwrap_or(quoted);
+            inner
+                .trim()
+                .trim_start_matches('"')
+                .split('"')
+                .next()
+                .map(str::to_string)
+        })
+        .expect("workspace pins a heapless version")
+}

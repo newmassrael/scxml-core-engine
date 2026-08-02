@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-// Owned->borrowed projection round-trip for the FALLIBLE path.
+// Owned->borrowed projection round-trip for the FALLIBLE path, and the
+// storage-profile contract of the owned mirror.
 //
 // The test-vector sidecar (`codec_*_test.rs`) rejects repeat /
 // tlv-chain / present-if codecs, so it can only round-trip the *infallible*
@@ -13,8 +14,14 @@
 // optional embed, list element), and asserts both the success round-trip and
 // the overflow rejection.
 //
-// Gated on `alloc` like `forge_default_round_trip.rs`: the codecs' owned
-// mirror + `encode_to_vec` live behind that feature. Run with
+// It also pins what the storage policy buys: the SAME generated mirror is
+// instantiated at both profiles inside this one binary, the two agree on the
+// wire, and moving a value between them is a checked projection. Those
+// assertions cannot hold for a `cfg`-switched container — under `alloc` such
+// a container is growable for everyone, so there is no second profile to name.
+//
+// Gated on `alloc` like `forge_default_round_trip.rs`: `encode_to_vec` and the
+// growable profile live behind that feature. Run with
 // `cargo test -p sce-forge-runtime --features alloc`.
 #![cfg(feature = "alloc")]
 
@@ -37,7 +44,7 @@ mod nested_codecs {
 use nested_codecs::codec_nested_body::{CodecNestedBody, CodecNestedBodyOwned};
 use nested_codecs::codec_nested_parent::{CodecNestedParent, CodecNestedParentOwned};
 use nested_codecs::codec_zenoh_locator::{CodecZenohLocator, CodecZenohLocatorOwned};
-use sce_forge_runtime::codec::{CodecError, SceCursor};
+use sce_forge_runtime::codec::{CodecError, Heap, HeapStr, Inline, SceCursor, SceList};
 use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 /// A borrowed body holding two locators (well under the max-count of 4).
@@ -56,21 +63,26 @@ fn body() -> CodecNestedBody<'static> {
     CodecNestedBody { n: 2, locs }
 }
 
+/// A borrowed parent referencing `body()` all three ways.
+fn parent() -> CodecNestedParent<'static> {
+    let mut body_list = HeaplessVec::new();
+    body_list.push(body()).unwrap();
+    CodecNestedParent {
+        hdr: 0x01, // has_opt = bit 0 set, kept in sync with optional_body
+        m: 1,      // count of body_list, kept in sync with its length
+        required_body: body(),
+        optional_body: Some(body()),
+        body_list,
+    }
+}
+
 /// All lists within bound: `owned.try_as_borrowed()` succeeds, re-encodes to
 /// the original wire, and a full wire round-trip lands the same owned value.
 /// This is the only in-repo execution of `try_project_bounded` /
 /// `try_as_borrowed` on a fallible body (embed + optional embed + list).
 #[test]
 fn nested_fallible_projection_round_trips() {
-    let mut body_list = HeaplessVec::new();
-    body_list.push(body()).unwrap();
-    let parent = CodecNestedParent {
-        hdr: 0x01, // has_opt = bit 0 set, kept in sync with optional_body
-        m: 1,      // count of body_list, kept in sync with its length
-        required_body: body(),
-        optional_body: Some(body()),
-        body_list,
-    };
+    let parent = parent();
     let wire = parent.encode_to_vec();
 
     // borrowed -> owned -> (fallible) borrowed -> re-encode == original wire.
@@ -99,6 +111,120 @@ fn nested_fallible_projection_round_trips() {
     );
 }
 
+/// The bare `try_into_owned` is the same projection at the build's default
+/// profile — not a second implementation that could drift from it.
+#[test]
+fn default_profile_is_the_growable_one_under_alloc() {
+    let explicit: CodecNestedParentOwned<Heap> = parent()
+        .try_into_owned_in::<Heap>()
+        .expect("within every bound");
+    let defaulted: CodecNestedParentOwned = parent().try_into_owned().expect("within every bound");
+    assert_eq!(
+        defaulted, explicit,
+        "the default-profile entry point must delegate to the explicit one",
+    );
+}
+
+/// The property the storage policy exists for: one generated mirror, two
+/// profiles, both live in the same binary and both describe the same wire
+/// value. A single `cfg`-switched container cannot express this — under
+/// `alloc` it is growable for every consumer, so a caller that must not
+/// allocate has no type to name.
+#[test]
+fn both_storage_profiles_coexist_and_agree_on_the_wire() {
+    let wire = parent().encode_to_vec();
+    let mut cursor = SceCursor::new(&wire);
+    let view = CodecNestedParent::decode(&mut cursor).expect("self-produced wire decodes");
+
+    // The SAME decoded value projected into both profiles.
+    let growable: CodecNestedParentOwned<Heap> = view
+        .clone()
+        .try_into_owned_in::<Heap>()
+        .expect("within every bound");
+    let inline: CodecNestedParentOwned<Inline> = view
+        .try_into_owned_in::<Inline>()
+        .expect("within every declared capacity");
+
+    // Distinct types — this must not compile down to one profile.
+    assert_ne!(
+        core::any::TypeId::of::<CodecNestedParentOwned<Heap>>(),
+        core::any::TypeId::of::<CodecNestedParentOwned<Inline>>(),
+        "the two profiles must be distinct types, not one aliased name",
+    );
+
+    // ...that nonetheless carry the same value back onto the wire.
+    assert_eq!(
+        growable
+            .try_as_borrowed()
+            .expect("within max-count")
+            .encode_to_vec(),
+        wire,
+        "the growable profile must re-encode to the original wire",
+    );
+    assert_eq!(
+        inline
+            .try_as_borrowed()
+            .expect("within max-count")
+            .encode_to_vec(),
+        wire,
+        "the non-allocating profile must re-encode to the identical wire",
+    );
+
+    // The inline profile really is the fixed-capacity container: its list
+    // reports the declared bound rather than a grown length.
+    assert_eq!(
+        SceList::as_slice(&inline.body_list).len(),
+        1,
+        "one body was encoded, so one must survive the inline projection",
+    );
+}
+
+/// Moving between profiles is a checked projection over the shared borrowed
+/// view — the bytes are copied once, not re-decoded, and the value survives a
+/// full there-and-back trip.
+#[test]
+fn transcode_between_profiles_preserves_the_value() {
+    let growable: CodecNestedParentOwned<Heap> =
+        parent().try_into_owned_in::<Heap>().expect("within bounds");
+
+    let pinned: CodecNestedParentOwned<Inline> = growable
+        .transcode_in::<Inline>()
+        .expect("every field fits its declared capacity");
+    let back: CodecNestedParentOwned<Heap> = pinned
+        .transcode_in::<Heap>()
+        .expect("the growable profile bounds nothing");
+
+    assert_eq!(
+        back, growable,
+        "profile round-trip must be lossless for a value within every bound",
+    );
+}
+
+/// A growable value that exceeds a declared capacity has no inline
+/// representation. The transcode must reject it with the same typed error the
+/// decoder raises — never truncate, never panic. This is the check a
+/// `cfg`-switched container silently skips in an `alloc` build.
+#[test]
+fn transcode_to_inline_rejects_a_value_past_its_declared_capacity() {
+    // `locator` declares `sce:max-size="128"`; the growable profile treats
+    // that as advisory, so this value is legal there and only there.
+    let oversized = "l".repeat(200);
+    let locs: Vec<CodecZenohLocatorOwned<Heap>> = vec![CodecZenohLocatorOwned {
+        locator_len: oversized.len() as u64,
+        locator: HeapStr::from_view(&oversized).expect("the growable profile has no ceiling"),
+    }];
+    let body = CodecNestedBodyOwned::<Heap> { n: 1, locs };
+
+    assert!(
+        matches!(
+            body.transcode_in::<Inline>(),
+            Err(CodecError::TooManyElements)
+        ),
+        "a 200-byte locator exceeds the declared max-size of 128, so the \
+         non-allocating profile must reject it at the boundary",
+    );
+}
+
 /// An owned `body_list` longer than the borrowed view's `max-count` (4) is a
 /// representable owned value with no legal wire form. `try_as_borrowed` must
 /// reject it with the same `TooManyElements` the decoder raises — never panic,
@@ -110,10 +236,10 @@ fn nested_projection_rejects_overflowing_list() {
             n: 1,
             locs: vec![CodecZenohLocatorOwned {
                 locator_len: 1,
-                // Owned `locator` is the portable `SceString<128>` — build it
-                // through the same SSOT ctor codegen emits. `N` infers from the
-                // field type (profile-agnostic: `String` under alloc,
-                // `heapless::String<128>` without it).
+                // Owned `locator` is the profile's text storage — build it
+                // through the same SSOT ctor codegen emits. `N` infers from
+                // the field type (`String` on the growable profile,
+                // `heapless::String<128>` on the inline one).
                 locator: sce_forge_runtime::codec::SceString::from_view("a").unwrap(),
             }],
         }
@@ -126,8 +252,8 @@ fn nested_projection_rejects_overflowing_list() {
         // 5 elements exceed the borrowed `heapless::Vec<_, 4>` capacity.
         body_list: (0..5).map(|_| owned_body()).collect(),
     };
-    // Owned `SceString<N>` compares against a `&str` literal directly (no
-    // `.as_str()`) — exercises the codec runtime's `SceString: PartialEq<&str>`.
+    // Owned text storage compares against a `&str` literal directly (no
+    // `.as_str()`) — exercises the runtime's `SceStr: PartialEq<&str>` parity.
     assert_eq!(owned.required_body.locs[0].locator, "a");
     assert!(
         matches!(owned.try_as_borrowed(), Err(CodecError::TooManyElements)),
