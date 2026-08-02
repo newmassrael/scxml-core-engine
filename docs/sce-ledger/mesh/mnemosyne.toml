@@ -187,8 +187,46 @@ severity_binding = "reject"
 # to SCE_MESH.md now fails the ledger until it is either implemented and
 # bound or classified with a reason.
 severity_coverage = "reject"
+# Verify axis: a Normative + Dedicated section with zero `verifies` bindings is
+# a VerificationMissing gap that fails CI. Sections are classified through
+# verification_expectation — `by_construction` for properties the build refuses
+# to violate (a rejected deploy.yaml, an absent field, a closed enum, a fixed
+# stage order), `dedicated` for the ones a test artifact witnesses. Per-section
+# counts come from report-coverage, not from a tally here.
+severity_verification = "reject"
 comment_only = true
 section_namespace = "mesh"
+
+# The catalog is what makes the verify axis mean something. A `verifies` binding
+# on its own is an unchecked claim that a test covers a section; the catalog is
+# the independent artifact it is checked against, so a binding to a section the
+# test does not itself declare fails the linkage gate.
+#
+# SSOT is the test's own header marker, read by
+# tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py:
+#
+#     // SCE-VERIFIES: mesh-10.5 mesh-10.6
+#
+# The scxml sibling reads W3C's `resources/<id>/metadata.txt specnum`, a
+# declaration this tree does not author. Mesh tests have no external metadata,
+# so the declaration lives with the test, moves with it, and is reviewed in the
+# same diff that changes what the test covers. The marker writes `mesh-10.5`
+# and NOT `§mesh-10.5` on purpose: a `§` token is a citation and would demand
+# its own paired binding, but this line declares intent, not implementation.
+#
+# Granularity is the FILE, and bindings match it. A mesh test file is one
+# scenario driven end to end, so the file is the unit that witnesses something;
+# per-symbol declarations would claim a precision the tests are not organised
+# around. Same rule the scxml generator set: binding granularity <= SSOT
+# granularity.
+#
+# `sha256` is the tamper/drift pin. Re-pin on every legitimate regen — the
+# generator prints the new hash, and `--check` fails when the committed catalog
+# is stale.
+[verifies_catalog]
+path = "docs/sce-ledger/mesh/.atomic/verifies-catalog.json"
+severity = "reject"
+sha256 = "f5b1d043510d6ef586646ffb57e5e84da79c134559752f36eb6748fce4272d10"
 
 # Path B symbol-binding resolver (Mnemosyne R382). lang_for_file maps C++
 # extensions (.h/.cpp/.cc/...) to the `cpp` key; the in-process

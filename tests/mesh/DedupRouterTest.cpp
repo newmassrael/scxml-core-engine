@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.5
+//
 // DedupRouter / DedupWindow unit tests — SCE_MESH.md §10.5.
 //
 // The window is a 256-entry ring of recently-observed UUIDs per sender.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-9.6.2 mesh-9.6.3 mesh-9.6.4
+//
 // SCE Mesh §9.6.2 wire-16 ChildEvent + §9.6.4 <finalize> lifecycle.
 //
 // The worker's `ChildSessionAdapter` engine enters `announce`, whose

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-16.7
+//
 // SCE Mesh §16.7 row 10 — AuthClassifier (header-only) unit tests.
 //
 // Pins the Q3-lock keyword set the row-10 classifier uses to

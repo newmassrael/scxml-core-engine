@@ -1,0 +1,170 @@
+{
+  "format": "verifies-catalog/v1",
+  "entries": [
+    {
+      "file": "sce-build/tests/mesh_external_config.rs",
+      "section_ids": [
+        "mesh-13"
+      ]
+    },
+    {
+      "file": "sce-build/tests/mesh_invoke_cycle.rs",
+      "section_ids": [
+        "mesh-7.7"
+      ]
+    },
+    {
+      "file": "tests/mesh/AuthClassifierTest.cpp",
+      "section_ids": [
+        "mesh-16.7"
+      ]
+    },
+    {
+      "file": "tests/mesh/CommunicationErrorTest.cpp",
+      "section_ids": [
+        "mesh-10.7.1"
+      ]
+    },
+    {
+      "file": "tests/mesh/DedupRouterTest.cpp",
+      "section_ids": [
+        "mesh-10.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/InvokeCorrelationTest.cpp",
+      "section_ids": [
+        "mesh-9.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/MeshDeadlineSchedulerTest.cpp",
+      "section_ids": [
+        "mesh-9.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/MeshDispatchTest.cpp",
+      "section_ids": [
+        "mesh-10.7",
+        "mesh-8.1",
+        "mesh-9.3"
+      ]
+    },
+    {
+      "file": "tests/mesh/MeshEnvelopeCodecTest.cpp",
+      "section_ids": [
+        "mesh-10.6.3",
+        "mesh-10.9",
+        "mesh-7.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/OrderingBufferTest.cpp",
+      "section_ids": [
+        "mesh-10.6"
+      ]
+    },
+    {
+      "file": "tests/mesh/OutboundBufferTest.cpp",
+      "section_ids": [
+        "mesh-10.10",
+        "mesh-10.4",
+        "mesh-10.4.1"
+      ]
+    },
+    {
+      "file": "tests/mesh/ParallelCompletionTrackerTest.cpp",
+      "section_ids": [
+        "mesh-16.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/ReasonCodeCatalogTest.cpp",
+      "section_ids": [
+        "mesh-16.7"
+      ]
+    },
+    {
+      "file": "tests/mesh/RetryingDispatcherTest.cpp",
+      "section_ids": [
+        "mesh-16.7"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_custom_tcp_runtime.cpp",
+      "section_ids": [
+        "mesh-16.8.3"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_dedup_injection.cpp",
+      "section_ids": [
+        "mesh-10.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_invoke_rpc_runtime.cpp",
+      "section_ids": [
+        "mesh-9.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_local.cpp",
+      "section_ids": [
+        "mesh-3.1"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_order_injection.cpp",
+      "section_ids": [
+        "mesh-10.6",
+        "mesh-10.6.4"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_partitions.cpp",
+      "section_ids": [
+        "mesh-14"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_pool_compile.cpp",
+      "section_ids": [
+        "mesh-14.4"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_region_liveness_zenoh.cpp",
+      "section_ids": [
+        "mesh-16.4"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_session_f_autoforward.cpp",
+      "section_ids": [
+        "mesh-9.6.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_session_f_eventful.cpp",
+      "section_ids": [
+        "mesh-9.6.2",
+        "mesh-9.6.3",
+        "mesh-9.6.4"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_session_f_wire_roundtrip.cpp",
+      "section_ids": [
+        "mesh-9.6"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_synth_invoke_override_e2e.cpp",
+      "section_ids": [
+        "mesh-9.6.6"
+      ]
+    }
+  ]
+}

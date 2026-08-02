@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.7 mesh-8.1 mesh-9.3
+//
 // MeshDispatch unit tests — SCE Mesh envelope-to-engine routing.
 //
 // Pure unit tests on dispatchEnvelope<Policy, Engine>() covering:

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.6
+//
 // Unit tests for SCE::Mesh::OrderingBuffer (SCE_MESH.md §10.6).
 //
 // Mutation guard: patching `admit` to release unconditionally (returning

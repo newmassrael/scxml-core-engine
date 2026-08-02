@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-9.5
+//
 // SCE_MESH.md §9.5 mesh-rpc round-trip runtime verification.
 //
 // Two routers host brake_invoke and motor_invoke in the same process.

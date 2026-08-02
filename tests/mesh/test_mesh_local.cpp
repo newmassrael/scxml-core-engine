@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
+// SCE-VERIFIES: mesh-3.1
+//
 // SCE Mesh local_transport compile verification test.
 //
 // Validates that generated mesh transport code compiles against
