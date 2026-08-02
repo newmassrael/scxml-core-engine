@@ -2295,6 +2295,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 for n in &result.subscription_lint_notices {
                     eprintln!("Lint: {n}");
                 }
+                // SCE_MESH.md §7.7 circular dependency detection. A ring
+                // is reported once per build, by its lexicographically
+                // smallest member, so repeating the machine name here
+                // would be misleading — the cycle text names every
+                // participant already.
+                for c in &result.invoke_wait_cycles {
+                    eprintln!("Warning: {c}");
+                }
                 // SCE_MESH.md §16.4 auto-merge notice stream: surfacing
                 // the merge events is what keeps permissive mode out of
                 // the silently-broken-hook pattern — an author who

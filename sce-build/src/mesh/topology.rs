@@ -2740,43 +2740,78 @@ pub fn load_receiver_models(
                 receiver: receiver.clone(),
             })?;
 
-        // Portability: absolute source paths break deploy descriptors across
-        // checkouts and build roots. Reject early with a distinct diagnostic.
-        if Path::new(&machine_cfg.source).is_absolute() {
-            return Err(TopologyError::AbsoluteSourcePath {
-                machine: receiver.clone(),
-                path: machine_cfg.source.clone(),
-            });
-        }
-
-        let source_path = deploy_dir.join(&machine_cfg.source);
-        let content = std::fs::read_to_string(&source_path).map_err(|e| {
-            TopologyError::ReceiverSourceRead {
-                machine: receiver.clone(),
-                path: source_path.display().to_string(),
-                source: e,
-            }
-        })?;
-
-        let mut parser = crate::parser::SCXMLParser::new();
-        let rx_model = parser.parse_string(&content, &receiver).map_err(|e| {
-            // Flatten the typed parser error into the mesh-topology
-            // diagnostic channel; adding a typed `source: ForgeError`
-            // field here would require a mesh::error shape change and
-            // is out of scope for the parser-typing refactor. The
-            // machine + path context already tells operators which
-            // receiver file to inspect.
-            TopologyError::ReceiverSourceParse {
-                machine: receiver.clone(),
-                path: source_path.display().to_string(),
-                reason: e.to_string(),
-            }
-        })?;
-
+        let rx_model = parse_machine_source(&receiver, machine_cfg, deploy_dir)?;
         out.push((receiver, rx_model));
     }
 
     Ok(out)
+}
+
+/// Read and parse one machine's SCXML source named by its deploy.yaml
+/// `source:` field.
+///
+/// Shared by the event-coverage loader and the §mesh-7.7 cycle walk so
+/// both reject an absolute `source:` the same way and surface the same
+/// read/parse diagnostics. The caller supplies `machine_cfg` because the
+/// two have different things to say when a machine is missing from the
+/// topology altogether.
+fn parse_machine_source(
+    machine: &str,
+    machine_cfg: &crate::mesh::deploy::MachineConfig,
+    deploy_dir: &Path,
+) -> Result<SCXMLModel, TopologyError> {
+    // Portability: absolute source paths break deploy descriptors across
+    // checkouts and build roots. Reject early with a distinct diagnostic.
+    if Path::new(&machine_cfg.source).is_absolute() {
+        return Err(TopologyError::AbsoluteSourcePath {
+            machine: machine.to_string(),
+            path: machine_cfg.source.clone(),
+        });
+    }
+
+    let source_path = deploy_dir.join(&machine_cfg.source);
+    let content =
+        std::fs::read_to_string(&source_path).map_err(|e| TopologyError::ReceiverSourceRead {
+            machine: machine.to_string(),
+            path: source_path.display().to_string(),
+            source: e,
+        })?;
+
+    let mut parser = crate::parser::SCXMLParser::new();
+    parser.parse_string(&content, machine).map_err(|e| {
+        // Flatten the typed parser error into the mesh-topology
+        // diagnostic channel; adding a typed `source: ForgeError`
+        // field here would require a mesh::error shape change and
+        // is out of scope for the parser-typing refactor. The
+        // machine + path context already tells operators which
+        // source file to inspect.
+        TopologyError::ReceiverSourceParse {
+            machine: machine.to_string(),
+            path: source_path.display().to_string(),
+            reason: e.to_string(),
+        }
+    })
+}
+
+/// Load a machine's model by deploy.yaml name.
+fn load_machine_model(
+    machine: &str,
+    deploy: &DeployConfig,
+    deploy_dir: &Path,
+) -> Result<SCXMLModel, TopologyError> {
+    let machine_cfg = deploy
+        .topology
+        .values()
+        .find_map(|d| d.machines.get(machine))
+        .ok_or_else(|| TopologyError::MachineNotFound {
+            machine: machine.to_string(),
+            available: deploy
+                .topology
+                .values()
+                .flat_map(|d| d.machines.keys().cloned())
+                .collect(),
+        })?;
+    parse_machine_source(machine, machine_cfg, deploy_dir)
 }
 
 /// Strict event coverage check for a single sender: every `<send event="Y"/>`
@@ -2871,6 +2906,177 @@ pub fn check_sender_event_coverage(
     });
 
     findings
+}
+
+// ── Circular dependency detection (SCE_MESH.md §mesh-7.7) ────────
+
+/// A cycle in the machine-to-machine `<invoke>` graph.
+///
+/// Machines are listed in cycle order; the edge from the last back to
+/// the first closes it. The first element is the lexicographically
+/// smallest member, which is also the only machine whose compilation
+/// reports this cycle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvokeWaitCycle {
+    /// Cycle members in order, smallest first.
+    pub machines: Vec<String>,
+}
+
+impl std::fmt::Display for InvokeWaitCycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "possible circular wait across mesh invokes: {} -> {}. \
+             Each machine holds its invoking state until the next answers, \
+             so if every leg is entered the ring cannot complete. This check \
+             is conservative (SCE_MESH.md §7.7) — a timeout, a guard, or a \
+             parallel region on any leg breaks the wait.",
+            self.machines.join(" -> "),
+            self.machines[0]
+        )
+    }
+}
+
+/// Statically-resolvable `<invoke>` targets of `model`, as deploy.yaml
+/// machine names.
+///
+/// Only literal `#<machine>` targets participate. `Invoke::Hybrid` and
+/// `MeshRpcTarget::SrcExpr` name their target through a datamodel
+/// expression evaluated at invoke time, so no build-time analysis can
+/// know where they point — skipping them is what keeps this check to
+/// cycles it can actually see rather than cycles it guesses at. A
+/// `#`-prefixed target that names no deploy.yaml machine is a plain
+/// child SCXML document, not a mesh peer, and carries no cross-machine
+/// wait.
+pub fn static_invoke_targets(
+    model: &SCXMLModel,
+    self_name: &str,
+    deploy: &DeployConfig,
+) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            let literal = match invoke {
+                Invoke::Scxml(info) => Some(info.src.as_str()),
+                Invoke::MeshRpc(info) => info.target.src_literal(),
+                Invoke::Hybrid(_) => None,
+            };
+            let Some(target) = literal.and_then(|s| s.strip_prefix('#')) else {
+                continue;
+            };
+            if target == self_name {
+                continue;
+            }
+            if deploy.device_for_machine(target).is_some() {
+                out.insert(target.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Upper bound on reported cycles per compiled machine. A deployment
+/// that trips this is already past the point where more witnesses help,
+/// and the caller says so rather than truncating in silence.
+const MAX_REPORTED_CYCLES: usize = 16;
+
+/// SCE_MESH.md §mesh-7.7 "Circular dependency detection": find rings in
+/// the cross-machine `<invoke>` graph that `start` participates in.
+///
+/// `<send>` is not an edge here. A send is fire-and-forget, so a mutual
+/// send pair (the normal shape of a request/response topology) is not a
+/// wait and flagging it would make the check noise. `<invoke>` is the
+/// construct that blocks: the invoking state stays active until the
+/// child completes, so a ring of invokes is a ring of waits.
+///
+/// Only cycles whose lexicographically smallest member is `start` are
+/// returned. Every machine in a deployment gets compiled, so without
+/// that rule an N-machine ring would be reported N times; with it, each
+/// ring is reported exactly once per build. The same rule prunes the
+/// search — a path is abandoned as soon as it reaches a machine smaller
+/// than `start`, because that ring belongs to the smaller machine.
+pub fn detect_invoke_wait_cycles(
+    start: &str,
+    start_model: &SCXMLModel,
+    deploy: &DeployConfig,
+    deploy_dir: &Path,
+) -> Result<(Vec<InvokeWaitCycle>, bool), TopologyError> {
+    // SCE_MESH.md §mesh-7.7 row "Circular dependency detection": this is
+    // the conservative over-approximation the section asks for. It errs
+    // toward reporting — a ring whose legs all carry deadlines still
+    // gets named — because the section's stated precision contract is
+    // "may flag safe cycles but will not miss real issues", and the
+    // build is only warned, never failed, on what it finds.
+    let mut adjacency: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    adjacency.insert(
+        start.to_string(),
+        static_invoke_targets(start_model, start, deploy),
+    );
+
+    // Adjacency is discovered lazily: only machines reachable from
+    // `start` through invoke edges are read and parsed, so a deployment
+    // whose machines never invoke each other costs nothing beyond the
+    // start model's own scan.
+    let mut frontier: Vec<String> = adjacency[start].iter().cloned().collect();
+    while let Some(machine) = frontier.pop() {
+        if adjacency.contains_key(&machine) {
+            continue;
+        }
+        let model = load_machine_model(&machine, deploy, deploy_dir)?;
+        let edges = static_invoke_targets(&model, &machine, deploy);
+        for next in &edges {
+            if !adjacency.contains_key(next) {
+                frontier.push(next.clone());
+            }
+        }
+        adjacency.insert(machine, edges);
+    }
+
+    let mut cycles = Vec::new();
+    let mut path = vec![start.to_string()];
+    let truncated = collect_cycles_through(start, start, &adjacency, &mut path, &mut cycles);
+    Ok((cycles, truncated))
+}
+
+/// Depth-first walk collecting simple cycles that return to `start`.
+/// Returns true when [`MAX_REPORTED_CYCLES`] cut the search short.
+fn collect_cycles_through(
+    current: &str,
+    start: &str,
+    adjacency: &BTreeMap<String, BTreeSet<String>>,
+    path: &mut Vec<String>,
+    out: &mut Vec<InvokeWaitCycle>,
+) -> bool {
+    let Some(edges) = adjacency.get(current) else {
+        return false;
+    };
+    for next in edges {
+        if out.len() >= MAX_REPORTED_CYCLES {
+            return true;
+        }
+        if next == start {
+            out.push(InvokeWaitCycle {
+                machines: path.clone(),
+            });
+            continue;
+        }
+        // A ring through a machine smaller than `start` is that
+        // machine's to report, so this path cannot produce a cycle
+        // this call is allowed to emit.
+        if next.as_str() < start {
+            continue;
+        }
+        if path.iter().any(|m| m == next) {
+            continue;
+        }
+        path.push(next.clone());
+        let truncated = collect_cycles_through(next, start, adjacency, path, out);
+        path.pop();
+        if truncated {
+            return true;
+        }
+    }
+    false
 }
 
 // ── Subscription auto-symmetry (SCE_MESH.md §mesh-13) ────────────

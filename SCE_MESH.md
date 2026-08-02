@@ -1135,10 +1135,14 @@ The build tool performs conservative static analysis across all SCXML documents.
 | Topology completeness | All `<send>` targets resolve in deploy.yaml | Exact | 2 |
 | Event coverage | Every sent event has at least one receiver | Exact — name matching only | 2 |
 | Interface match | Sender event names match receiver transition triggers | Exact — name matching only | 2 |
-| Cross-transport ordering | Warn when order-dependent events route through different transports to the same target | Conservative | 3 |
+| Cross-transport ordering | Structurally prevented, not checked — see below | n/a | — |
 | Pattern capability | SCXML communication pattern is supported by bound transport (see 8.2) | Exact | 3 |
 | Reachability | Every declared state is reachable via some event path | Exact for unconditional, conservative for guarded | 5 |
-| Circular dependency detection | Detect potential circular wait in cross-device send/invoke patterns | Conservative — may flag safe cycles | 5 |
+| Circular dependency detection | Detect potential circular wait in cross-machine `<invoke>` rings | Conservative — may flag safe cycles | 5 |
+
+**Cross-transport ordering** was specified as a warning and is instead ruled out by the schema: `bindings:` is keyed by target and each entry names exactly one `transport:`, with per-event configuration limited to method identity. Two events addressed to the same target therefore cannot take different transports, so there is no state for a check to report. A warning here would be unreachable code.
+
+**Circular dependency detection** takes `<invoke>` edges only. A `<send>` is fire-and-forget, so a mutual send pair — the ordinary request/response topology — carries no wait, and treating it as an edge would make the check noise rather than signal. `<invoke>` is the construct that blocks: the invoking state stays active until the child answers, so a ring of invokes is a ring of waits. Targets named by `srcexpr` or by a hybrid invoke are skipped, because a datamodel expression evaluated at invoke time cannot be resolved at build time. Each ring is reported once per build, by its lexicographically smallest member, since every machine in a deployment is compiled and the ring is visible from all of them.
 
 ---
 
