@@ -2173,6 +2173,15 @@
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_mesh_transport",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "detect_invoke_wait_cycles",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "references"
         }
       ]
     },

@@ -4687,6 +4687,11 @@ pub struct MeshResult {
     /// identifies sibling regions that read an ancestor data
     /// location another region writes. Build never fails on R3.
     pub distributability_snapshot_notices: Vec<mesh::distributability::SnapshotNotice>,
+    /// SCE_MESH.md §7.7 circular dependency detection — rings in the
+    /// cross-machine `<invoke>` graph this machine participates in.
+    /// Warnings, never errors: the section marks the check conservative,
+    /// and a timeout or guard on any leg breaks the wait.
+    pub invoke_wait_cycles: Vec<mesh::topology::InvokeWaitCycle>,
 }
 
 /// Generate mesh transport routing code for an SCXML model.
@@ -5866,6 +5871,29 @@ pub fn compile_mesh_transport(
     let has_scxml_remote_wire = !model.scxml_remote_outbound_peers.is_empty()
         || !model.scxml_remote_inbound_peers.is_empty();
 
+    // Stage 2b.1: circular dependency detection (SCE_MESH.md §mesh-7.7).
+    // Placed ahead of the no-transport early return below because the
+    // check is about `<invoke>` edges, not about whether this machine
+    // emits transport code — a machine can sit on a ring while owning
+    // no binding of its own, and that is exactly the machine whose
+    // silence would hide the ring. Warnings only: the section marks the
+    // check conservative, so a build is never failed on a cycle that a
+    // deadline or guard may break.
+    let (invoke_wait_cycles, cycles_truncated) = mesh::topology::detect_invoke_wait_cycles(
+        &effective_machine_name,
+        model,
+        &deploy_cfg,
+        deploy_dir,
+    )?;
+    if cycles_truncated {
+        // No silent caps: say so rather than let an operator read a
+        // bounded list as the complete one.
+        eprintln!(
+            "Warning: SCE_MESH.md §7.7 cycle search for '{effective_machine_name}' stopped at the \
+             report limit — more invoke rings may exist than are listed."
+        );
+    }
+
     if resolved.is_empty()
         && server_binding.is_none()
         && !has_custom_tcp_listen
@@ -5881,6 +5909,7 @@ pub fn compile_mesh_transport(
             subscription_lint_notices,
             distributability_merge_notices,
             distributability_snapshot_notices,
+            invoke_wait_cycles,
         });
     }
 
@@ -6028,6 +6057,7 @@ pub fn compile_mesh_transport(
         subscription_lint_notices,
         distributability_merge_notices,
         distributability_snapshot_notices,
+        invoke_wait_cycles,
     })
 }
 
