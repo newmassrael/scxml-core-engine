@@ -366,7 +366,6 @@ add_library(sce_runtime
     src/runtime/StateHierarchyManager.cpp
     src/runtime/EventRaiserImpl.cpp
     src/runtime/InvokeExecutor.cpp
-    src/runtime/SessionManagerImpl.cpp
     src/runtime/TransitionDomainCalculator.cpp
     src/runtime/DataModelInitializer.cpp
 
