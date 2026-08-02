@@ -198,23 +198,3 @@ const std::vector<std::string> &SCE::DataModelItem::getContentItems() const {
 bool SCE::DataModelItem::isXmlContent() const {
     return xmlContent_ != nullptr;
 }
-
-bool SCE::DataModelItem::supportsDataModel(const std::string &dataModelType) const {
-    // xpath and xml data models support XML processing (all platforms)
-    if (dataModelType == "xpath" || dataModelType == "xml") {
-        return true;
-    }
-
-    // ecmascript data model supports basic string processing
-    if (dataModelType == "ecmascript") {
-        return true;
-    }
-
-    // null data model has limited support
-    if (dataModelType == "null") {
-        return true;
-    }
-
-    // Other data models not supported
-    return false;
-}

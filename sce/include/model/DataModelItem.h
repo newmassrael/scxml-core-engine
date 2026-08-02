@@ -145,13 +145,6 @@ public:
     virtual bool isXmlContent() const override;
 
     /**
-     * @brief Check if content can be processed according to data model type
-     * @param dataModelType Data model type (e.g., "ecmascript", "xpath", "null")
-     * @return true if processing supported, false otherwise
-     */
-    virtual bool supportsDataModel(const std::string &dataModelType) const override;
-
-    /**
      * @brief Set XML content
      * @param content XML content string
      */
