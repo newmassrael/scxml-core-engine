@@ -83,13 +83,15 @@ pub mod scxml_semantic;
 /// so templates see a post-XInclude document. See [`template`]
 /// for the expansion semantics and error model.
 pub mod template;
+/// Compile-time registry of the Jinja2 template tree, derived from
+/// `tools/codegen/templates/` by `build.rs`. Serves callers with no
+/// filesystem (WASM) from the same tree the filesystem loader walks.
+pub mod template_registry;
 /// `<sce:unresolved>` placeholder
 /// detection — strict-mode build gate + NDJSON report. Drives
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
 pub mod unresolved_check;
 pub mod w3c_dist_manifest;
-#[cfg(feature = "wasm")]
-mod wasm;
 /// W3C XInclude preprocessing. Runs between XSD validation and
 /// roxmltree's document parse so the AOT code generator consumes
 /// the same post-expansion document as the C++ runtime. See
@@ -794,20 +796,10 @@ pub fn compile_scxml_lang(
 
 /// Locate template directory for a specific language.
 pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBuf {
-    let subdir = match language {
-        generator::Language::Rust => "rust",
-        generator::Language::Cpp => "", // C++ templates at root
-        generator::Language::Kotlin => "kotlin",
-        generator::Language::Go => "go",
-        generator::Language::Python => "python",
-        // RFC §synth-5-J-1: C11 statechart templates live at
-        // `<root>/c/state_machine.{h,c}.jinja2`, but every backend
-        // shares `license_header.jinja2` at the root. Returning the
-        // root (matching the C++ arm) lets `load_templates` walk both
-        // layers in one pass so `{% include 'license_header.jinja2' %}`
-        // resolves to the SSoT copy without duplicating it under c/.
-        generator::Language::C11 => "",
-    };
+    // Scoping is owned by `Language::template_subdir` so the filesystem
+    // source and the embedded registry cannot disagree about where a
+    // language's templates live.
+    let subdir = language.template_subdir();
     let base = find_template_base();
     if subdir.is_empty() {
         base

@@ -1,8 +1,0 @@
-{
-  "language": "python",
-  "version": "0.10.1",
-  "description": "`<send target=\"!…\">` (the SCXML test-suite's deliberate-invalid sentinel) lifts: dispatch fails with `error.execution` per W3C 6.2 and the action returns immediately so subsequent same-handler executable content is skipped (W3C 3.8). HTTP transports (`target=\"http://…\"`) and `targetexpr` remain reject-walled — that requires the BasicHTTPEventProcessor runtime, which is consumer-gated.",
-  "entry_template": "state_machine.py.jinja2",
-  "runtime_dependency": "sce-python-runtime",
-  "output_extension": ".py"
-}
