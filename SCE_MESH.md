@@ -1197,12 +1197,18 @@ If SCXML uses a pattern that the bound transport does not support, sce-build emi
 
 The capability matrix above is enforced, not aspirational: a pattern a transport does not implement is a **hard build error**, so no deployment reaches runtime with a pattern that would silently degrade.
 
-- **`service.fire_forget`**: realized end-to-end across local/shm/someip/zenoh.
-- **`service.request`**: realized over someip (`create_response`) and zenoh (`Query::reply`) with wire-level correlation through the pending-RPC table; `local` replies in-process via `linkTo` → `dispatchToSession`.
-- **`event.subscribe`**: realized over someip eventgroups and zenoh pub/sub, including unsubscribe and subscriber-refresh lifecycle.
-- **`field.get` / `field.set`**: realized over someip and zenoh. `shm` advertises `[FireForget]` only — it is a unidirectional ring with no reply path, so `field.get` over `shm` is rejected at build time rather than advertised falsely.
+- **`service.fire_forget`**: realized end-to-end across local/shm/someip/zenoh/custom_tcp.
+- **`service.request`**: realized over someip (`create_response`), zenoh (`Query::reply`) and custom_tcp (the reply is written on the stream the request arrived on, §10.4.4) with wire-level correlation through the pending-RPC table; `local` replies in-process via `linkTo` → `dispatchToSession`.
+- **`event.subscribe`**: realized over someip eventgroups, zenoh pub/sub and custom_tcp connection-held subscriptions (§10.4.4), including unsubscribe and subscriber-refresh lifecycle.
+- **`field.get` / `field.set`**: realized over someip, zenoh and custom_tcp. `shm` advertises `[FireForget]` only — it is a unidirectional ring with no reply path, so `field.get` over `shm` is rejected at build time rather than advertised falsely.
 
 Enforcement lives in [`sce-build/src/mesh/topology.rs::validate_pattern_capability`], which returns `PatternViolation` for any pattern outside the target transport's advertised capabilities; `codegen.rs` additionally rejects a transport marked `implemented: false`.
+
+**Server-side correlation.** A server role cannot answer from inside its inbound handler: the engine replies later, on its own step thread. Every server-capable transport therefore stashes the arriving request — the vsomeip message, the Zenoh `Query`, the duplex link — under a correlation id, and matches the engine's reply against it.
+
+The requester is **not** required to supply that id. A request issued by `<invoke type="sce:mesh-rpc">` carries one in `invoke_id`, and a SOME/IP client stamps `correlation_id`, but a plain `<send event="service.request.X">` carries neither: nothing in §8.1 obliges a requester to mint a correlation. The server therefore establishes one — reusing whichever the request already carried, and minting a fresh UUID v7 when it carried none.
+
+The established id is written onto **both** `correlation_id` and `invoke_id`. `correlation_id` is what the reply is looked up by; `invoke_id` has to carry the same value because it is the only envelope field that makes the round trip through the engine (§10.7). A server that stashes under a minted id without also seeding `invoke_id` strands every reply whose request had no invoke lifecycle: the reply reaches the correlation lookup with nothing to match, and — on a transport that also publishes notifications — leaks onto the publish path instead of returning to the requester.
 
 ---
 
@@ -1729,6 +1735,9 @@ A transport is verified against the §10.4 contract by:
 1. **Build-time (sce-build)**: Pattern capability check — `TransportDescriptor::capabilities` must include the pattern's required category. Violation is a hard build error.
 2. **Build-time (sce-build)**: Required binding fields — `TransportDescriptor::required_binding_fields` must all be present in deploy.yaml. Violation is `TopologyError::MissingBindingField`.
 3. **Runtime (mesh conformance suite, Session E2)**: The IRP distributed harness (§16.8) runs identical tests over single-process and distributed modes. A transport that drops, reorders, or duplicates events (without dedup suppression) will produce verdict mismatches, surfacing the conformance violation.
+4. **Runtime (seeded fault injection, Session E2)**: Disconnect the transport mid-test. The engine must receive `error.communication` within one macrostep. The test verifies event delivery, `reason` payload, and macrostep boundary compliance.
+
+**Status**: gates 1 and 2 are active. Gates 3 and 4 are Session E2 scope (§16.9) and not yet implemented. Today's runtime evidence for transport conformance is the 44 mesh ctest fixtures catalogued in [`docs/SCE_MESH_CONFORMANCE_MATRIX.md`](docs/SCE_MESH_CONFORMANCE_MATRIX.md) — per-sender FIFO is asserted wire-level by `mesh_custom_tcp_runtime_verification`, duplicate tolerance by the §10.5 fixtures, and fault-signal emission by the §16.7 liveness fixtures. These ctests verify the transport primitives that gate 3 will consume; they are not the gate 3 suite itself.
 
 #### 10.4.4 Connection-oriented pattern realization
 
@@ -1752,9 +1761,6 @@ Two consequences are normative, because they change what the transport guarantee
 2. **A subscription lives exactly as long as its connection.** The subscriber registry holds the connection, so a peer that hangs up is unsubscribed by that fact alone. There is no expiry timer, no liveness probe, and no retained-session negotiation; a dead subscriber is dropped on the next fan-out. Registration is keyed on the subscription axis — the event-name suffix shared by `event.subscribe.X`, `event.unsubscribe.X` and `event.notification.X` — so a peer subscribed to one axis is not woken by another. A key-scoped fabric cannot make that distinction and must publish to every subscriber on the key.
 
 A server on such a transport requires no address for its clients, and correspondingly no per-server binding field: it is addressed by the device's own `transports.<name>.listen:` endpoint, and it answers whoever connected. This is what lets it serve a peer that dialed from an ephemeral port.
-4. **Runtime (seeded fault injection, Session E2)**: Disconnect the transport mid-test. The engine must receive `error.communication` within one macrostep. The test verifies event delivery, `reason` payload, and macrostep boundary compliance.
-
-**Status**: gates 1 and 2 are active. Gates 3 and 4 are Session E2 scope (§16.9) and not yet implemented. Today's runtime evidence for transport conformance is the 44 mesh ctest fixtures catalogued in [`docs/SCE_MESH_CONFORMANCE_MATRIX.md`](docs/SCE_MESH_CONFORMANCE_MATRIX.md) — per-sender FIFO is asserted wire-level by `mesh_custom_tcp_runtime_verification`, duplicate tolerance by the §10.5 fixtures, and fault-signal emission by the §16.7 liveness fixtures. These ctests verify the transport primitives that gate 3 will consume; they are not the gate 3 suite itself.
 
 ### 10.5 Duplicate Suppression
 
@@ -1869,10 +1875,12 @@ W3C §5.10.2 defines the standard `_event` fields. SCE Mesh populates them deter
 | `sendid` | `<send>`'s id attribute or generated | envelope `subject` (or unset if not `<send>`-originated) |
 | `origin` | unset (internal) | `mesh://<envelope.source>` (URI form; portable target spec) |
 | `origintype` | unset (internal) | `"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"` for inter-SCXML mesh traffic; transport-specific URIs for bridged traffic (e.g., `"sce:mesh/someip"` for raw bus events) |
-| `invokeid` | unset | envelope `invoke_id` as hex string, or unset if no invoke context |
+| `invokeid` | unset | envelope `invoke_id` as hex string, or unset if the envelope carries none |
 | `data` | payload | deserialized per envelope `datacontenttype` |
 
 These fields are surface-compatible with local execution — an author's `<transition cond="_event.origin == 'mesh://chassis'">` works identically whether the event arrives locally or via any transport.
+
+`invokeid` is the only one of these fields that also makes the **return** trip. The engine re-emits it on a `<send>` executed while that event is being processed, mirroring §scxml-6.4.1's child-to-parent propagation, and mesh extends the same mechanism to replies: it is how a server's `service.response.X` is matched back to the request that caused it. On a server role the field therefore carries the correlation established per §8.3 — the requester's invoke id when the request came from `<invoke type="sce:mesh-rpc">`, and a server-minted id when it arrived as a plain `<send>`. Every other field in the table is inbound-only.
 
 #### 10.7.1 Structured `_event.data` for `error.*` events
 
