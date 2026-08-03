@@ -203,3 +203,10 @@ MODULE.bazel.lock
 # a file under a directory that is ignored as a whole.
 /embed/**
 !/embed/MANIFEST.json
+
+# Codegen WASM for the visualizer (build via:
+# ./scripts/build_visualizer_wasm.sh, or the Deploy Visualizer workflow).
+# Previously committed, which made the shipped generator independent of
+# the commit that produced it: the binary embedded a template list that
+# the template tree had outgrown, and nothing could rebuild it to notice.
+/web/visualizer/wasm/
