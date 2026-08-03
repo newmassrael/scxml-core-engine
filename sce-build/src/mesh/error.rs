@@ -427,6 +427,41 @@ pub enum DeployError {
         transport: String,
     },
 
+    /// A binding declares a `reply_from:` responder set wider than its
+    /// own target, but the binding's transport declares
+    /// `supports_cross_target_reply: false` in the registry
+    /// (SCE Mesh §mesh-14.6). On Zenoh the reply closure is bound to one
+    /// target's KeyExpr by `session.get`, so a wider set has no place to
+    /// arrive; transports without `RequestReply` have no reply path at
+    /// all. Rejected at parse time rather than generating a router whose
+    /// declared set can never be exercised.
+    #[error(
+        "machine '{machine}': binding '{binding}' on transport '{transport}' declares a \
+             `reply_from:` set wider than its own target, but this transport cannot carry \
+             a cross-target reply (supports_cross_target_reply = false). Either drop \
+             `reply_from:` to keep the same-target default, or move the binding to a \
+             transport that correlates replies through a lookup table (someip, local)."
+    )]
+    CrossTargetReplyNotSupported {
+        machine: String,
+        binding: String,
+        transport: String,
+    },
+
+    /// A binding's `reply_from:` list is structurally invalid — empty, or
+    /// naming a machine the topology does not declare (SCE Mesh
+    /// §mesh-14.6). Rejected at parse time so an unresolvable responder
+    /// name cannot silently widen (or narrow) the correlation gate.
+    #[error(
+        "machine '{machine}': binding '{binding}' has an invalid `reply_from:` list — \
+             {reason}. Omit the field entirely to keep the same-target default."
+    )]
+    InvalidReplyFrom {
+        machine: String,
+        binding: String,
+        reason: String,
+    },
+
     /// A SOME/IP binding uses a placeholder but does not declare the
     /// required `instances:` list (SCE Mesh §mesh-14.4). vsomeip's
     /// `request_service(SERVICE, ANY_INSTANCE)` is interpreted as
@@ -2516,6 +2551,33 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), binding.clone(), transport.clone()],
+        },
+        DeployError::CrossTargetReplyNotSupported {
+            machine,
+            binding,
+            transport,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployCrossTargetReplyNotSupported,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), binding.clone(), transport.clone()],
+        },
+        DeployError::InvalidReplyFrom {
+            machine,
+            binding,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidReplyFrom,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            expected: None,
+            // Same author-intent shape as InvalidOutboundBuffer: either
+            // fix the list or omit the field. Two equally-valid repairs,
+            // so no single Fix candidate is emitted.
+            fix: None,
+            key_fragments: vec![machine.clone(), binding.clone(), reason.clone()],
         },
         DeployError::PoolMissingInstanceList { machine, binding } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployPoolMissingInstanceList,

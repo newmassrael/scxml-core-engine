@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Target beta for the §14.6 same-target constraint adjudication.
+
+     Sibling of cross_target_alpha.scxml. Its RpcRequest binding is what
+     makes beta a live inbound RPC path on the client's router: the
+     generated client installs a response message handler for beta's
+     service, and that handler is the one the adjudication drives with a
+     reply carrying alpha's correlation_id. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="beta" initial="ready">
+    <state id="ready">
+        <transition event="service.request.other_call" target="answering"/>
+    </state>
+    <state id="answering">
+        <onentry>
+            <raise event="service.response.other_call"/>
+        </onentry>
+        <transition target="ready"/>
+    </state>
+</scxml>

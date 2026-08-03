@@ -115,7 +115,11 @@ int run_test() {
         env.correlation_id = cid;
         {
             std::lock_guard<std::mutex> lock(brake_router.correlation_mutex_);
-            brake_router.pending_rpcs_[BrakeRouterT::CorrelationKey{cid}] = "service.response.compute_force";
+            // §14.6: the pending entry now carries its responder set
+            // alongside the reply-event name. "motor" is the binding's
+            // own target — the same-target default.
+            brake_router.pending_rpcs_[BrakeRouterT::CorrelationKey{cid}] =
+                BrakeRouterT::PendingRpc{"service.response.compute_force", {"motor"}};
         }
 
         const bool sent = brake_router.route_send("#motor", env);

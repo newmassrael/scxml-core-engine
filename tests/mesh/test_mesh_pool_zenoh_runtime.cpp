@@ -104,7 +104,14 @@ int run_test() {
             SCE::Mesh::MeshEnvelope reply;
             reply.id = SCE::uuid::v7();
             reply.invoke_id = req.invoke_id;
-            reply.source = "gamer_pool_harness";
+            // The machine name a generated server would stamp
+            // (`env.source = "{{ machine_name }}"`). Under §14.6 the
+            // responder set for the `#gamer_pool` binding is that
+            // target, so a harness-invented name would be rejected —
+            // correctly, since no such machine exists in the topology.
+            // §14.4 pool instances share one deploy.yaml machine name,
+            // so every instance answers as `gamer_pool`.
+            reply.source = "gamer_pool";
             reply.type = "service.response.ping";
             reply.pattern = SCE::Mesh::PatternKind::RpcReply;
             reply.rpc_status = SCE::Mesh::RpcStatus::Ok;
