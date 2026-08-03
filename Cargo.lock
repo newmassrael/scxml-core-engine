@@ -1643,6 +1643,15 @@ dependencies = [
  "syn",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "sce-build-wasm"
+version = "0.1.0"
+dependencies = [
+ "roxmltree",
+ "sce-build",
+ "serde_json",
  "wasm-bindgen",
 ]
 

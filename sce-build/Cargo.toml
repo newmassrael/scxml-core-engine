@@ -26,10 +26,9 @@ roxmltree = "0.20"
 #
 # Optional, and ON by default via the `xsd` feature, because libxml2 is a
 # native C library that cannot cross-compile to wasm32 — its build script
-# panics looking for a target sysroot through pkg-config. While this was an
-# unconditional dependency the declared `wasm` feature could not build AT ALL,
-# on any host, so the committed web/visualizer wasm artifact was
-# unreproducible. Turning the feature off does not silently drop validation:
+# panics looking for a target sysroot through pkg-config. The browser
+# bindings in `sce-build-wasm` therefore take this crate with
+# `default-features = false`. That does not silently drop validation:
 # `xsd_validator::validate_or_skip` returns `NotValidated(FeatureDisabled)` and
 # the parser reports it.
 libxml = { version = "0.3", optional = true }
@@ -51,8 +50,6 @@ minijinja-contrib = { version = "2", features = ["pycompat"] }
 # `forge::drift` — computes `source-hash` over input SCXML + deploy.yaml
 # and `template-hash` over the codegen template tree + Cargo.lock.
 sha2 = { workspace = true }
-# WASM bindings (optional)
-wasm-bindgen = { version = "0.2", optional = true }
 # CLI argument parsing (for sce-codegen binary)
 clap = { version = "4", features = ["derive"], optional = true }
 
@@ -62,9 +59,6 @@ clap = { version = "4", features = ["derive"], optional = true }
 # success as a validating one.
 default = ["xsd"]
 xsd = ["libxml"]
-# wasm32 cannot link libxml2, so this feature is used with
-# --no-default-features (see the libxml note above).
-wasm = ["wasm-bindgen"]
 cli = ["clap"]
 
 # JSON Schema derivation for the conformance manifest. Dev-only so release

@@ -15,6 +15,7 @@ members = [
     "backends/rust/lua",
     "backends/rust/tests",
     "sce-build",
+    "sce-build-wasm",
     "backends/rust/forge-runtime",
     "backends/rust/link-runtime",
 ]
