@@ -1,0 +1,38 @@
+# SCE Mesh §16.8.3: custom_tcp multi-pattern verification.
+#
+# Sibling of deploy_zenoh_multi.yaml with the transport swapped, so a
+# difference in generated behaviour is attributable to custom_tcp alone.
+# brake (ecu1) is the pure client; motor (ecu2) owns the listen socket and
+# serves compute_force, the position field, and the status eventgroup.
+#
+# The port is templated (@SCE_TEST_TCP_MULTI_PORT@) — configure_file
+# substitutes the SCE_TEST_TCP_MULTI_PORT cache variable so a workstation
+# already holding the default can override it, and the test binary receives
+# the same value as a macro so the codegen-baked port and the harness agree.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_tcp_multi:
+        source: "@SCE_MESH_TEST_DIR_REL@/brake_tcp_multi.scxml"
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:@SCE_TEST_TCP_MULTI_PORT@"
+  ecu2:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:@SCE_TEST_TCP_MULTI_PORT@"
+    machines:
+      # deploy.yaml key "motor" matches the `#motor` send target; codegen
+      # resolves the document by `source:`, so the SCXML `name` may differ.
+      motor:
+        source: "@SCE_MESH_TEST_DIR_REL@/motor_tcp_multi.scxml"
+        server:
+          transport: custom_tcp
+          events:
+            # Spontaneous push (SCE_MESH.md §8.1). custom_tcp has no
+            # eventgroup concept — the event name's prefix is the
+            # declaration, as with Zenoh. The `status` axis pairs with the
+            # client's event.subscribe.status.
+            "event.notification.status": {}

@@ -146,7 +146,8 @@ int main() {
     // A4) relies on exporting this endpoint to the peer process at
     // runtime rather than baking a static port into codegen.
     {
-        SCE::Mesh::CustomTcp::Server ephem_server("127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &) {});
+        SCE::Mesh::CustomTcp::Server ephem_server(
+            "127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &, const SCE::Mesh::CustomTcp::PeerLink &) {});
         if (!ephem_server.valid()) {
             std::fprintf(stderr, "FAIL: ephemeral Server bind failed on 127.0.0.1:0\n");
             return 106;
@@ -208,7 +209,8 @@ int main() {
         }
     }
     {
-        SCE::Mesh::CustomTcp::Server target_server("127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &) {});
+        SCE::Mesh::CustomTcp::Server target_server(
+            "127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &, const SCE::Mesh::CustomTcp::PeerLink &) {});
         if (!target_server.valid()) {
             std::fprintf(stderr, "FAIL: override-target server bind failed\n");
             return 114;
@@ -306,7 +308,9 @@ int main() {
     // between send and receive sequences.
     OrderRecorder recorder;
     SCE::Mesh::CustomTcp::Server recording_server(
-        kTestEndpoint, [&recorder](const SCE::Mesh::MeshEnvelope &env) { recorder.push(env.type); });
+        kTestEndpoint, [&recorder](const SCE::Mesh::MeshEnvelope &env, const SCE::Mesh::CustomTcp::PeerLink &) {
+            recorder.push(env.type);
+        });
     if (!recording_server.valid()) {
         std::fprintf(stderr, "FAIL: recording server bind failed (port reuse race?)\n");
         return 4;

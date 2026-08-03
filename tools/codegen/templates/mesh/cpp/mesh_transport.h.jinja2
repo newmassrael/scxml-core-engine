@@ -331,6 +331,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% set has_server = server is defined and server %}
 {% set has_server_someip = has_server and server.transport_kind == "someip" %}
 {% set has_server_zenoh = has_server and server.transport_kind == "zenoh" %}
+{% set has_server_custom_tcp = has_server and server.transport_kind == "custom_tcp" %}
 
 {# SCE_MESH.md §14.4 (Gap 7): multi-instance server pool.
    `server.instance_pool` carries the Option<Vec<u16>> declared in
@@ -410,7 +411,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
-{% set needs_correlation_key = ("someip" in transport_types) or has_server_someip or has_server_zenoh %}
+{% set needs_correlation_key = ("someip" in transport_types) or ("custom_tcp" in transport_types) or has_server_someip or has_server_zenoh or has_server_custom_tcp %}
 
 {% if has_mesh_rpc.v or has_server %}
 #include <array>
@@ -1662,18 +1663,26 @@ struct TransportRouter {
     }
 
 {% endif %}
-{% if "someip" in transport_types %}
-    // Client SOME/IP RPC correlation: maps correlation_id → reply event name.
+{% if "someip" in transport_types or "custom_tcp" in transport_types %}
+    // Client RPC correlation: maps correlation_id → reply event name.
     std::mutex correlation_mutex_;
-    /// SCE_MESH.md §14.6: a pending SOME/IP RPC remembers both the
-    /// reply-event name to rewrite `env.type` to AND the responder set
-    /// allowed to retire it. Storing the set here (rather than
-    /// re-deriving it in the response handler) keeps the gate keyed on
-    /// the REQUEST's binding — the handler only knows which target it
-    /// is, not which target the request went to.
+    /// SCE_MESH.md §14.6: a pending RPC remembers both the reply-event
+    /// name to rewrite `env.type` to AND the responder set allowed to
+    /// retire it. Storing the set here (rather than re-deriving it in the
+    /// response handler) keeps the gate keyed on the REQUEST's binding —
+    /// the handler only knows which target it is, not which target the
+    /// request went to.
     struct PendingRpc {
         std::string reply_event;
         std::vector<std::string> responders;
+        /// SCE_MESH.md §mesh-10.4.4: for a connection-oriented transport,
+        /// the stream the request left on IS the responder's identity.
+        /// `custom_tcp` pins it here and admits a reply only from that
+        /// same stream, so a peer that forges `source` cannot retire this
+        /// entry even knowing its correlation id. 0 on transports that
+        /// route by address rather than by connection (SOME/IP), where
+        /// the `responders` name check is the gate instead.
+        std::uint64_t stream_id = 0;
     };
     std::unordered_map<CorrelationKey, PendingRpc, CorrelationKeyHash> pending_rpcs_;
 {% endif %}
@@ -1837,6 +1846,37 @@ struct TransportRouter {
     // dispatchToSession.
     std::optional<zenoh::Subscriber<void>> zenoh_server_put_sub_;
 {% endif %}
+{% elif has_server_custom_tcp %}
+    // Server custom_tcp pending request storage (SCE_MESH.md §mesh-10.4.4).
+    // A request is answered on the stream that carried it, so what has to
+    // survive between receive and reply is the peer link — not a message
+    // handle (SOME/IP) or a query object (Zenoh). Holding the link also
+    // keeps the connection's fd alive, so a reply can never be written to
+    // a descriptor the kernel has recycled; if the peer hangs up first the
+    // stored link simply reports itself closed and the send fails cleanly.
+    // `mutable` matches the sibling arms' convention for const accessors.
+    mutable std::mutex server_pending_mutex_;
+    std::unordered_map<CorrelationKey, SCE::Mesh::CustomTcp::PeerLink,
+                       CorrelationKeyHash> pending_server_links_;
+{% if server.has_eventgroup %}
+    // Brokerless subscription registry (SCE_MESH.md §mesh-8.1).
+    //
+    // There is no broker to hold subscription state and no retained
+    // session to expire, so the registry stores the subscriber's own
+    // connection. Two consequences worth naming:
+    //
+    //   * A subscriber that dies is unsubscribed by that fact alone —
+    //     the stored link reports itself invalid and the next fan-out
+    //     drops it. No expiry timer, no liveness probe, no clean-session
+    //     negotiation.
+    //   * Fan-out is per subscription axis, not per connection: a peer
+    //     subscribed to `status` is not woken by `position`. A key-scoped
+    //     fabric has to publish to every subscriber on the key and let
+    //     each one filter locally.
+    mutable std::mutex subscriber_mutex_;
+    std::unordered_map<std::string,
+                       std::vector<SCE::Mesh::CustomTcp::PeerLink>> subscribers_;
+{% endif %}
 {% endif %}
 
 {# ── (D3) Constructor ──
@@ -1893,7 +1933,7 @@ struct TransportRouter {
         path the same way SOME/IP and Zenoh do. session_idx is `0`:
         custom_tcp is client-only (no pool support), so N_SESSIONS
         is always 1 when this ctor init fires. #}
-{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env){ (void)this->dispatchToSession(env, 0); })"] %}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env, const SCE::Mesh::CustomTcp::PeerLink& link){ this->onCustomTcpInbound(env, link); })"] %}
 {%-   endif %}
 {%- endfor %}
 {#- SCE Mesh §10.10 per-target OutboundBuffer initializers. Declaration
@@ -2011,7 +2051,7 @@ struct TransportRouter {
 {%- endif %}
 {%- for peer in scxml_remote_outbound_peers %}
 {%-   if peer.transport == "custom_tcp" %}
-{%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
+{%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {})"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ someip_sce_app_field ~ ", SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
 {%-   elif peer.transport != "zenoh" %}
@@ -2021,7 +2061,7 @@ struct TransportRouter {
 {%- endfor %}
 {%- for peer in scxml_remote_inbound_peers %}
 {%-   if peer.transport == "custom_tcp" %}
-{%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&) {})"] %}
+{%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {})"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ someip_sce_app_field ~ ", SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
 {%-   elif peer.transport != "zenoh" %}
@@ -2108,19 +2148,32 @@ struct TransportRouter {
                             target, eventName, invokeId);
                     }
                 }
-{% if "someip" in transport_types %}
-                // RPC correlation: generate correlation_id and register reply-event
-                // (SOME/IP-only — Zenoh's session.get on_reply closure correlates
-                // natively without a lookup table).
+{% if "someip" in transport_types or "custom_tcp" in transport_types %}
+                // RPC correlation: generate correlation_id and register reply-event.
+                // Zenoh is absent here — its session.get on_reply closure correlates
+                // natively without a lookup table.
                 if (env.pattern == SCE::Mesh::PatternKind::RpcRequest) {
                     auto cid = SCE::uuid::v7();
                     env.correlation_id = cid;
                     env.reply_to = "{{ machine_name }}";
                     const char* reply = resolveReplyEvent(eventName);
                     if (reply[0] != '\0') {
+                        std::uint64_t bound_stream = 0;
+{% for t in targets if t.state.kind == "custom_tcp" %}
+                        // SCE_MESH.md §mesh-10.4.4: acquire the stream BEFORE
+                        // registering so the entry names the exact connection
+                        // this request leaves on. Acquiring here (rather than
+                        // reading it back after the send) closes the window in
+                        // which a loopback reply could arrive before the entry
+                        // carries its stream — `link()` dials on demand and the
+                        // send below reuses that same stream.
+                        if (target == "{{ t.target }}") {
+                            bound_stream = {{ t.target_snake }}_.link().id();
+                        }
+{% endfor %}
                         std::lock_guard<std::mutex> lock(correlation_mutex_);
                         pending_rpcs_[CorrelationKey{cid}] =
-                            PendingRpc{reply, respondersFor(target)};
+                            PendingRpc{reply, respondersFor(target), bound_stream};
                     }
                 }
 {% endif %}
@@ -2198,8 +2251,14 @@ struct TransportRouter {
                 // The engine's currentEventInvokeId propagates as invokeId
                 // → env.invoke_id (parsed above). Stamp correlation_id so
                 // handleServerResponse finds the stored request.
+                // EventNotify belongs here for the same reason FieldNotify
+                // does: a server raising `event.notification.X` is
+                // publishing to its eventgroup, not addressing a target.
+                // It has no correlation to match, so it falls straight
+                // through `handleServerResponse` to the publish path.
                 if (env.pattern == SCE::Mesh::PatternKind::RpcReply
-                    || env.pattern == SCE::Mesh::PatternKind::FieldNotify) {
+                    || env.pattern == SCE::Mesh::PatternKind::FieldNotify
+                    || env.pattern == SCE::Mesh::PatternKind::EventNotify) {
                     if (!env.correlation_id && env.invoke_id) {
                         env.correlation_id = env.invoke_id;
                     }
@@ -3000,37 +3059,9 @@ struct TransportRouter {
 {%- set custom_tcp_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
         custom_tcp_server_ = std::make_unique<SCE::Mesh::CustomTcp::Server>(
             {{ custom_tcp_transport.listen }},
-            [this](const SCE::Mesh::MeshEnvelope& env) {
-{% if custom_tcp_inbound_peers or custom_tcp_outbound_peers %}
-                switch (env.pattern) {
-{% if custom_tcp_inbound_peers %}
-                case SCE::Mesh::PatternKind::InvokeStart:
-                case SCE::Mesh::PatternKind::ParentEvent:
-                case SCE::Mesh::PatternKind::InvokeCancel: {
-{% for peer in custom_tcp_inbound_peers %}
-                    if (env.source == "{{ peer.name }}") {
-                        std::scoped_lock lk(tcp_invoke_inbound_mutex_{{ peer.name }}_);
-                        tcp_invoke_inbound_queue_{{ peer.name }}_.push_back(env);
-                        return;
-                    }
-{% endfor %}
-                    return;  // unknown source — drop (sender bug)
-                }
-{% endif %}
-{% if custom_tcp_outbound_peers %}
-                case SCE::Mesh::PatternKind::InvokeStarted:
-                case SCE::Mesh::PatternKind::ChildEvent:
-                case SCE::Mesh::PatternKind::InvokeDone:
-                case SCE::Mesh::PatternKind::InvokeError:
-                    // Parent-side: dispatchEnvelope handles wires 15/16/18/20
-                    (void)this->dispatchToSession(env, 0);
-                    return;
-{% endif %}
-                default:
-                    break;  // fall through
-                }
-{% endif %}
-                (void)this->dispatchToSession(env, 0);
+            [this](const SCE::Mesh::MeshEnvelope& env,
+                   const SCE::Mesh::CustomTcp::PeerLink& link) {
+                this->onCustomTcpInbound(env, link);
             });
         if (!custom_tcp_server_->valid()) {
             shutdown();
@@ -4150,6 +4181,17 @@ struct TransportRouter {
 {% set ns.has_patterns = true %}
         if (eventName == "{{ resp }}") return PK::FieldNotify;
 {% endfor %}
+{# Declared eventgroup events the server publishes spontaneously. A
+   `field.notify.X` eventgroup event is already resolved above as a paired
+   reply and its arm here is unreachable; an `event.notification.X` one has
+   no other arm, and without this it would fall through to FireForget and
+   never reach the publish path. The kind is resolved in Rust
+   (`ServerEventgroupContext::pattern_kind`) so the pattern vocabulary
+   stays owned by `pattern.rs`. #}
+{% for eg in server.eventgroup_events %}
+{% set ns.has_patterns = true %}
+        if (eventName == "{{ eg.event }}") return static_cast<PK>({{ eg.pattern_kind }});
+{% endfor %}
 {% endif %}
 {% if not ns.has_patterns %}
         (void)eventName;
@@ -4173,6 +4215,177 @@ struct TransportRouter {
     }
 {% endif %}
 
+{% if "custom_tcp" in transport_types %}
+{%- set custom_tcp_inbound_peers = scxml_remote_inbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
+{%- set custom_tcp_outbound_peers = scxml_remote_outbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
+{#- Only a custom_tcp target carrying a request/reply PAIR can ever retire a
+    correlation entry. Gating on the target's mere existence would emit a
+    reply-admission path on a FireForget-only binding, where `reply_event`
+    is empty and the branch could never fire. #}
+{%- set ns_ctcp_rpc = namespace(v=false) %}
+{%- for t in targets if t.state.kind == "custom_tcp" %}
+{%-   for ep in t.event_patterns if ep.reply_event %}
+{%-     set ns_ctcp_rpc.v = true %}
+{%-   endfor %}
+{%- endfor %}
+{%- set custom_tcp_client_rpc = ns_ctcp_rpc.v %}
+    /// Single inbound entry point for every custom_tcp endpoint on this
+    /// router — the device-shared `listen:` server and each per-target
+    /// client's duplex reader alike.
+    ///
+    /// SCE_MESH.md §mesh-10.4.4: custom_tcp is brokerless, so the stream an
+    /// envelope arrived on IS the route back to its sender. `link` carries
+    /// that stream; handlers that owe the peer an answer send on it rather
+    /// than dialing a reversed connection the peer may not be listening for.
+    ///
+    /// Runs on a transport read thread. `dispatchEnvelope` is documented
+    /// thread-safe for callback threads (§mesh-14.4 convention), so the
+    /// patterns that terminate in the engine dispatch inline; only the
+    /// §mesh-9.6 child-session wires stage into a queue, because
+    /// `WorkerSessionHost`'s session map is single-threaded by contract.
+    void onCustomTcpInbound(const SCE::Mesh::MeshEnvelope& inbound,
+                            const SCE::Mesh::CustomTcp::PeerLink& link) {
+        SCE::Mesh::MeshEnvelope env = inbound;
+        (void)link;
+{% if custom_tcp_client_rpc %}
+        // ── Reply admission (SCE_MESH.md §mesh-14.6 + §mesh-10.4.4) ──
+        //
+        // A correlation entry is a one-shot resource: whoever matches it
+        // retires the request. On a connection-oriented transport the
+        // trustworthy responder identity is the stream, not `env.source`,
+        // which the sender writes and can therefore forge. Admitting only
+        // the stream the request left on makes retiring someone else's
+        // pending request structurally impossible rather than
+        // policy-checked — knowing the correlation id is not enough.
+        //
+        // The check runs BEFORE the erase, so a rejected reply leaves the
+        // entry live and the request still answerable.
+        if (env.pattern == SCE::Mesh::PatternKind::RpcReply
+            || env.pattern == SCE::Mesh::PatternKind::FieldNotify) {
+            bool undeclared_replier = false;
+            if (env.correlation_id) {
+                std::lock_guard<std::mutex> lock(correlation_mutex_);
+                auto it = pending_rpcs_.find(CorrelationKey{*env.correlation_id});
+                if (it != pending_rpcs_.end()) {
+                    if (it->second.stream_id != 0 && it->second.stream_id == link.id()) {
+                        env.type = it->second.reply_event;
+                        env.pattern = SCE::Mesh::PatternKind::RpcReply;
+                        pending_rpcs_.erase(it);
+                    } else {
+                        undeclared_replier = true;
+                    }
+                }
+            }
+            if (undeclared_replier) {
+                // SCE_MESH.md §mesh-16.7 row 14, raised outside the
+                // correlation mutex.
+                SCE::Mesh::CommunicationError err;
+                err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
+                err.source = env.source;
+                err.transport = "custom_tcp";
+                err.envelope_id = env.id;
+                raiseCommunicationError(std::move(err));
+                return;
+            }
+        }
+{% endif %}
+{% if has_server_custom_tcp %}
+        // ── Server role (SCE_MESH.md §mesh-8.3) ──
+        //
+        // An inbound request has to stay answerable after this callback
+        // returns: the engine replies later, on its own step thread. Stash
+        // the link under the key the engine's reply will carry, mirroring
+        // the SOME/IP message stash and the Zenoh query stash.
+        //
+        // Keying matches those arms exactly (`invoke_id`, else
+        // `correlation_id`, else a fresh uuid) so `handleServerResponse`
+        // resolves one way regardless of which transport served the
+        // request.
+        if (env.pattern == SCE::Mesh::PatternKind::RpcRequest
+            || env.pattern == SCE::Mesh::PatternKind::FieldRead
+            || env.pattern == SCE::Mesh::PatternKind::FieldWrite) {
+            auto cid = env.invoke_id.value_or(
+                env.correlation_id.value_or(SCE::uuid::v7()));
+            {
+                std::lock_guard<std::mutex> lock(server_pending_mutex_);
+                pending_server_links_[CorrelationKey{cid}] = link;
+            }
+            env.correlation_id = cid;
+            // Seed `invoke_id` as well, because it is the ONLY envelope
+            // field the engine round-trips: MeshDispatch surfaces it as
+            // `_event.invokeid`, and the mesh send callback reconstructs
+            // `correlation_id` from it when the reply comes back out.
+            // A request that arrived as a plain `<send>` carries no
+            // invoke lifecycle and so would otherwise reach the engine
+            // with nothing to carry the correlation, leaving its reply
+            // unmatchable in `handleServerResponse`.
+            env.invoke_id = cid;
+        }
+{% if server.has_eventgroup %}
+        // Subscribe / unsubscribe never reach the engine: they mutate this
+        // router's own subscriber registry and are answered by the
+        // notifications that follow, not by a state transition.
+        if (env.pattern == SCE::Mesh::PatternKind::EventSubscribe) {
+            std::lock_guard<std::mutex> lock(subscriber_mutex_);
+            auto& axis = subscribers_[subscriptionKeyOf(env.type)];
+            // Re-subscribing on a live link is idempotent — otherwise a
+            // peer that resubscribed after a reconnect would receive
+            // every notification twice.
+            for (const auto& existing : axis) {
+                if (existing == link) return;
+            }
+            axis.push_back(link);
+            return;
+        }
+        if (env.pattern == SCE::Mesh::PatternKind::EventUnsubscribe) {
+            std::lock_guard<std::mutex> lock(subscriber_mutex_);
+            auto it = subscribers_.find(subscriptionKeyOf(env.type));
+            if (it != subscribers_.end()) {
+                auto& axis = it->second;
+                axis.erase(std::remove_if(axis.begin(), axis.end(),
+                                          [&link](const SCE::Mesh::CustomTcp::PeerLink& held) {
+                                              return held == link || !held.valid();
+                                          }),
+                           axis.end());
+                if (axis.empty()) subscribers_.erase(it);
+            }
+            return;
+        }
+{% endif %}
+{% endif %}
+{% if custom_tcp_inbound_peers or custom_tcp_outbound_peers %}
+        switch (env.pattern) {
+{% if custom_tcp_inbound_peers %}
+        case SCE::Mesh::PatternKind::InvokeStart:
+        case SCE::Mesh::PatternKind::ParentEvent:
+        case SCE::Mesh::PatternKind::InvokeCancel: {
+{% for peer in custom_tcp_inbound_peers %}
+            if (env.source == "{{ peer.name }}") {
+                std::scoped_lock lk(tcp_invoke_inbound_mutex_{{ peer.name }}_);
+                tcp_invoke_inbound_queue_{{ peer.name }}_.push_back(env);
+                return;
+            }
+{% endfor %}
+            return;  // unknown source — drop (sender bug)
+        }
+{% endif %}
+{% if custom_tcp_outbound_peers %}
+        case SCE::Mesh::PatternKind::InvokeStarted:
+        case SCE::Mesh::PatternKind::ChildEvent:
+        case SCE::Mesh::PatternKind::InvokeDone:
+        case SCE::Mesh::PatternKind::InvokeError:
+            // Parent-side: dispatchEnvelope handles wires 15/16/18/20
+            (void)this->dispatchToSession(env, 0);
+            return;
+{% endif %}
+        default:
+            break;  // fall through
+        }
+{% endif %}
+        (void)this->dispatchToSession(env, 0);
+    }
+
+{% endif %}
 {% if "someip" in transport_types or "zenoh" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers %}
     /// Dispatch an incoming envelope to a specific session via MeshDispatch.
     ///
@@ -4592,8 +4805,50 @@ struct TransportRouter {
         stored_query.reply(zenoh::KeyExpr(ZENOH_SERVER_KEY),
                            zenoh::Bytes(std::move(buf)));
         return true;
+{% elif has_server_custom_tcp %}
+        // SCE_MESH.md §mesh-10.4.4: answer on the stream that carried the
+        // request. Move the link out and erase before sending, so a reply
+        // is one-shot exactly as the SOME/IP and Zenoh arms are — a second
+        // response to the same correlation id finds nothing and returns
+        // false rather than writing twice to the peer.
+        //
+        // The send happens outside `server_pending_mutex_`: it performs a
+        // blocking socket write, and holding the map lock across it would
+        // let one slow peer stall every other reply on this router.
+        SCE::Mesh::CustomTcp::PeerLink reply_link;
+        {
+            std::lock_guard<std::mutex> lock(server_pending_mutex_);
+            auto it = pending_server_links_.find(ckey);
+            if (it == pending_server_links_.end()) return false;
+            reply_link = std::move(it->second);
+            pending_server_links_.erase(it);
+        }
+        return reply_link.send(env);
 {% endif %}
     }
+{% if has_server_custom_tcp and server.has_eventgroup %}
+
+    /// The subscription axis an event name addresses — everything after
+    /// the pattern prefix. `event.subscribe.status`,
+    /// `event.unsubscribe.status` and `event.notification.status` all key
+    /// on `status`, which is what makes a subscribe and the notifications
+    /// it asked for meet without a codegen-emitted pairing table.
+    static std::string subscriptionKeyOf(const std::string& eventName) {
+        static constexpr const char* kPrefixes[] = {
+            "event.subscribe.",
+            "event.unsubscribe.",
+            "event.notification.",
+            "field.notify.",
+        };
+        for (const char* prefix : kPrefixes) {
+            const std::size_t n = std::char_traits<char>::length(prefix);
+            if (eventName.size() > n && eventName.compare(0, n, prefix) == 0) {
+                return eventName.substr(n);
+            }
+        }
+        return eventName;
+    }
+{% endif %}
 {% if server.has_eventgroup %}
 
     /// Publish an eventgroup notification to all subscribed clients.
@@ -4649,6 +4904,44 @@ struct TransportRouter {
             zenoh_session_->put(zenoh::KeyExpr(ZENOH_SERVER_KEY),
                                 zenoh::Bytes(std::move(buf)));
             return true;
+        }
+{% endfor %}
+        return false;
+{% elif has_server_custom_tcp %}
+        // Brokerless fan-out (SCE_MESH.md §mesh-8.1). session_idx is
+        // unused: the pool shape is SOME/IP-only (§mesh-14.4), so
+        // N_SESSIONS is 1 and there is one server-side instance axis.
+        (void)session_idx;
+{% for eg in server.eventgroup_events %}
+        if (env.type == "{{ eg.event }}") {
+            std::vector<SCE::Mesh::CustomTcp::PeerLink> recipients;
+            {
+                std::lock_guard<std::mutex> lock(subscriber_mutex_);
+                auto it = subscribers_.find(subscriptionKeyOf(env.type));
+                if (it == subscribers_.end()) return false;
+                // Purge peers that have hung up while holding the lock —
+                // the stored link is self-reporting, so a dead subscriber
+                // costs one predicate rather than an expiry mechanism.
+                auto& axis = it->second;
+                axis.erase(std::remove_if(axis.begin(), axis.end(),
+                                          [](const SCE::Mesh::CustomTcp::PeerLink& held) {
+                                              return !held.valid();
+                                          }),
+                           axis.end());
+                if (axis.empty()) {
+                    subscribers_.erase(it);
+                    return false;
+                }
+                recipients = axis;
+            }
+            // Send outside the registry lock: each send is a blocking
+            // socket write, and one slow subscriber must not stall the
+            // others or block a concurrent subscribe.
+            bool delivered = false;
+            for (const auto& peer : recipients) {
+                delivered = peer.send(env) || delivered;
+            }
+            return delivered;
         }
 {% endfor %}
         return false;

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.8.3: client exercising all four pattern categories over
+     custom_tcp. Deliberately the same shape as brake_zenoh_multi.scxml so
+     the fixtures differ on exactly one axis — the bound transport. A
+     behaviour that appears here but not there is a custom_tcp property,
+     not a pattern-vocabulary property.
+
+     Event-name prefixes drive pattern detection
+     (sce-build/src/mesh/pattern.rs); SCE_MESH.md §13 path B pairs
+     service.request.X with service.response.X by convention, so no sce:*
+     attribute appears. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="brake_tcp_multi" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="active"/>
+    </state>
+    <state id="active">
+        <onentry>
+            <!-- FireForget: one framed envelope, no reply leg. -->
+            <send target="#motor" event="service.fire_forget.activate"/>
+            <!-- RpcRequest: correlation entry pinned to the stream this
+                 request leaves on; the reply returns on that same stream. -->
+            <send target="#motor" event="service.request.compute_force"/>
+            <!-- EventSubscribe: registers this connection on the server's
+                 `status` axis. No broker, no retained session. -->
+            <send target="#motor" event="event.subscribe.status"/>
+            <!-- FieldWrite / FieldRead: both answered by field.notify. -->
+            <send target="#motor" event="field.set.position"/>
+            <send target="#motor" event="field.get.position"/>
+        </onentry>
+        <transition event="service.response.compute_force" target="idle"/>
+        <transition event="event.notification.status"      target="idle"/>
+        <transition event="field.notify.position"          target="idle"/>
+        <transition event="brake.release"                  target="idle"/>
+    </state>
+</scxml>
