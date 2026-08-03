@@ -12805,6 +12805,81 @@ mod tests {
     .expect("> max-size tail payload must decode/build + round-trip under alloc");
 }
 
+/// SCE Forge — the storage profile must be pinned for `N` to infer.
+///
+/// Sibling of `tail_owned_hand_assembled_infers_cap` above, which shows
+/// that `SceBytes::from_slice(&v)` infers `N` with no turbofish. That
+/// test pins the profile on the binding (`let owned: CodecTailOwned =
+/// …`), and the inference it demonstrates is *conditional on that pin*:
+/// a field's type reaches `N` only through `S::Bytes<N>`, so while `S`
+/// is unknown `N` is unreadable and the two unknowns fail together.
+///
+/// This test fixes the other half of the condition. The owned literal is
+/// bound without an annotation and its only use is `as_borrowed()` —
+/// an `impl<S>` method, which holds for every profile and therefore
+/// constrains nothing. rustc has no way to choose `S`, and reports
+/// `E0283` on the literal plus `E0284` on the `from_slice` call.
+///
+/// Why a compile-FAILURE is the right thing to lock:
+///
+///   * It is the honest contract. `S` is a type parameter with no
+///     inference path from a value — an associated type cannot be run
+///     backwards — so requiring one annotation is the design, not a
+///     defect. Pinning it stops the docs from claiming the inference is
+///     unconditional.
+///   * It is directional cover. If someone later gives `S` a default
+///     that applies to expression inference, or the projection becomes
+///     invertible, this test turns red and the doc claim gets revisited
+///     deliberately rather than drifting.
+///
+/// The assertion checks the diagnostic CODE, not merely that the build
+/// failed: a typo'd path or a missing fixture would also fail, and
+/// asserting only `is_err()` would pass for those reasons and prove
+/// nothing about inference.
+///
+/// Reported by a downstream consumer, whose migration hit exactly this
+/// shape three times — the notice had described the `N` property as
+/// unconditional because this half was never locked.
+#[test]
+fn forge_codec_owned_literal_without_pinned_profile_fails_to_infer() {
+    const HARNESS: &str = r#"// Injected by forge_codec_owned_literal_without_pinned_profile_fails_to_infer.
+#[cfg(test)]
+mod tests {
+    use crate::codec_tail::CodecTailOwned;
+    use ::sce_forge_runtime::codec::SceBytes;
+
+    #[test]
+    fn owned_literal_with_no_profile_pinning_use() {
+        let data = [0xCDu8; 50];
+        // No annotation on the binding, and `as_borrowed()` is an
+        // `impl<S>` method: nothing here can determine `S`.
+        let owned = CodecTailOwned {
+            msg_id: 7,
+            status: 9,
+            payload: SceBytes::from_slice(&data).expect("alloc copy is unbounded"),
+        };
+        let _ = owned.as_borrowed();
+    }
+}
+"#;
+    let err = rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &["codec_tail.scxml"],
+        &[("owned_unpinned.rs", HARNESS)],
+        "codec_owned_unpinned_profile",
+    )
+    .expect_err("an owned literal whose storage profile nothing pins must not compile");
+
+    // E0283 = type annotations needed (the ambiguous `S`).
+    // E0284 = type annotations needed for the const `N` that hangs off it.
+    // Asserting the codes is what makes this test about inference rather
+    // than about any build failure at all.
+    assert!(
+        err.contains("E0283") || err.contains("type annotations needed"),
+        "expected an inference failure naming the ambiguous storage profile, got:\n{err}"
+    );
+}
+
 // Plain-id `sce:length-field` sibling-shape validator (parser-time
 // rejection). Covers the three reachable failure modes:
 //   (1) Fixed sibling with bit-size ∉ {8, 16, 24, 32} — uint64 is
