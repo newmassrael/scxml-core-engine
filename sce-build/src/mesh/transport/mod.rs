@@ -312,8 +312,13 @@ pub struct TransportDescriptor {
     ///     of the query model, not a missing feature — Zenoh is
     ///     same-target by construction and carries no cross-target
     ///     mis-correlation risk either.
-    ///   - `custom_tcp` / `shm` / `can` / `dds`: no `RequestReply`
-    ///     capability at all, so the question does not arise.
+    ///   - `custom_tcp`: the reply is written on the stream the request
+    ///     arrived on, so another target — by definition another
+    ///     connection — has no entry its reply could land in. Same
+    ///     conclusion as `zenoh`, reached from the connection model
+    ///     rather than the query model.
+    ///   - `shm` / `can` / `dds`: no `RequestReply` capability at all, so
+    ///     the question does not arise.
     ///
     /// Consumed by `deploy::validate_reply_from`: a binding event
     /// declaring a `reply_from:` set wider than its own target on a

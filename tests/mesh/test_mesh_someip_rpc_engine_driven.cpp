@@ -42,6 +42,9 @@
 //   §2 FieldRead roundtrip: field.get.vehicle_speed → ready transition
 //                     raise → field.notify.vehicle_speed reply via
 //                     FieldNotify pattern (create_response path)
+//   §3 Plain <send> RPC roundtrip: same as §1 but the request carries no
+//                     invoke_id, so the server has to mint the correlation
+//                     and seed the field the engine round-trips
 //
 // For FireForget / FieldWrite (no reply) see test_mesh_someip_runtime.cpp.
 
@@ -196,6 +199,47 @@ int run_test() {
         }),
                           "engine-driven FieldRead reply not received — regression "
                           "in transition<raise>→FieldNotify correlation chain");
+    }
+
+    // ── §3. Plain <send> RPC roundtrip: request carries no invoke_id ──
+    //
+    // §1 and §2 both stamp invoke_id, which is what an upstream
+    // `<invoke type="sce:mesh-rpc">` does. A sender that instead writes a
+    // plain `<send event="service.request.compute_force" target="#motor">`
+    // has no invoke lifecycle, so its envelope reaches the message handler
+    // with invoke_id unset — and the server has to mint the correlation
+    // itself.
+    //
+    // Minting alone is not enough: the correlation has to ride back out
+    // through the engine, and `invoke_id` is the only envelope field that
+    // makes that trip (MeshDispatch surfaces it as `_event.invokeid`, the
+    // engine re-emits it as currentEventInvokeId, and the mesh send
+    // callback rebuilds correlation_id from it). Stashing the vsomeip
+    // message under a freshly minted id while leaving invoke_id unset
+    // strands the reply: handleServerResponse finds no correlation_id and
+    // rejects it, so create_response is never called and brake waits out
+    // its timeout.
+    //
+    // Keeping §1 alongside pins that the server's correlation works
+    // whether or not the sender has an invoke lifecycle.
+    brake_engine.received_.clear();
+    {
+        SCE::Mesh::MeshEnvelope env;
+        env.id = SCE::uuid::v7();
+        env.source = "test";
+        env.type = "service.request.compute_force";
+        env.pattern = PK::RpcRequest;
+        env.datacontenttype = SCE::Mesh::PayloadCodec::Json;
+        std::string payload = R"({"force":250})";
+        env.data.assign(payload.begin(), payload.end());
+        // Deliberately no env.invoke_id — that absence is the test.
+
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env), "brake route_send plain RpcRequest returned false");
+        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "plain <send> RPC reply not received — the server did not seed the "
+                          "correlation onto the field the engine round-trips");
     }
 
     // Stop the pump eagerly so shutdown observes a quiet engine; the
