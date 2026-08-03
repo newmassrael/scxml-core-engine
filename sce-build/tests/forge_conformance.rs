@@ -12870,13 +12870,22 @@ mod tests {
     )
     .expect_err("an owned literal whose storage profile nothing pins must not compile");
 
-    // E0283 = type annotations needed (the ambiguous `S`).
-    // E0284 = type annotations needed for the const `N` that hangs off it.
-    // Asserting the codes is what makes this test about inference rather
-    // than about any build failure at all.
+    // E0283 specifically: "type annotations needed" arising from an
+    // AMBIGUOUS type — several `CodecStorage` impls could satisfy the
+    // projection and nothing chooses one. The prose "type annotations
+    // needed" is shared with E0282 (nothing known at all) and E0284
+    // (const), so matching on it would let a different inference failure
+    // pass as this one. Pinning the code is the whole point of the
+    // assertion.
+    //
+    // If a future rustc renumbers this diagnostic, or the shape starts
+    // failing as E0282 instead, this test goes red — and that is the
+    // intended signal, not brittleness: either would mean the reason
+    // this shape fails has changed and the documented condition needs
+    // re-checking.
     assert!(
-        err.contains("E0283") || err.contains("type annotations needed"),
-        "expected an inference failure naming the ambiguous storage profile, got:\n{err}"
+        err.contains("E0283"),
+        "expected E0283 (ambiguous storage profile), got:\n{err}"
     );
 }
 
