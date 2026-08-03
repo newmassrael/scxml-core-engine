@@ -1,0 +1,98 @@
+name: Rust Workspace Tests
+
+# CI mirror of pre-push Stage 4 (`cargo test --workspace`).
+#
+# Until this workflow existed, no GitHub workflow ran the sce-build unit
+# suite at all: drift-verify.yml runs two named integration targets
+# (b9_drift_detection, sourcemap_addr2sce) and w3c-tests.yml runs
+# `-p sce-rust-tests`. drift-verify.yml's own header claimed the full
+# sweep was "covered by w3c-tests.yml", which was not true — so roughly
+# 1300 unit tests were enforced only by a local hook, and anything they
+# would have caught reached main whenever the hook was bypassed.
+#
+# That gap is what let the WASM template registry ship broken: the
+# browser generator rendered from a hand-maintained template list that
+# omitted `_macros/`, and no CI job ever rendered from that list.
+# `template_registry::tests` now does, and this workflow is what makes
+# those tests binding.
+#
+# Scope is the default feature set, matching pre-push Stage 4. The
+# `cli`-gated targets are covered by drift-verify.yml, which invokes
+# them explicitly — `cargo test --workspace` silently skips them.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'sce-build-wasm/**'
+      - 'backends/rust/**'
+      - 'tools/codegen/templates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust-workspace-tests.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'sce-build-wasm/**'
+      - 'backends/rust/**'
+      - 'tools/codegen/templates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust-workspace-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: cargo test --workspace
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    # libxml2 backs the default `xsd` feature; without it the workspace
+    # build fails at link time rather than running the suite.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libxml2-dev
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-workspace-tests-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-workspace-tests-
+
+    # The W3C BasicHTTP suites (test_201, 5xx series) send to
+    # http://localhost:8080/test and fail as a block without it. Same
+    # server w3c-tests.yml and pre-push Stage 4 start; failing here
+    # rather than proceeding keeps a dozen red tests from reading as a
+    # code regression.
+    - name: Start W3C HTTP Test Server
+      run: |
+        node tests/w3c/standalone_http_server.js 8080 /test &
+        echo $! > /tmp/http_server.pid
+        sleep 1
+        kill -0 "$(cat /tmp/http_server.pid)" \
+          || { echo "W3C HTTP test server failed to start"; exit 1; }
+        echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
+
+    - name: cargo test --workspace
+      run: cargo test --workspace --no-fail-fast
