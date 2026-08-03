@@ -1,8 +1,9 @@
 /**
  * WASM-based SCXML Code Generator
  *
- * Native Rust codegen compiled to WebAssembly.
- * All templates (Rust, C++, Kotlin) embedded in ~3MB WASM binary.
+ * Native Rust codegen compiled to WebAssembly. The template tree is
+ * embedded in the binary by sce-build's build script, so the browser
+ * generates from exactly the templates the native binary uses.
  * No Python runtime needed.
  */
 
@@ -52,10 +53,26 @@ class WasmCodegen {
     }
 
     /**
+     * Languages this build can generate.
+     *
+     * Comes from the WASM binary rather than a list maintained here:
+     * the page used to offer a Go button that the generator rejected,
+     * because the menu and the dispatcher were separate lists.
+     *
+     * @returns {string[]} Language identifiers accepted by generate()
+     */
+    supportedLanguages() {
+        if (!this.loaded) {
+            throw new Error('WASM codegen not initialized. Call init() first.');
+        }
+        return Array.from(this.module.supported_languages());
+    }
+
+    /**
      * Generate code from SCXML content for any supported language.
      *
      * @param {string} scxmlContent - SCXML file content
-     * @param {string} language - Target language: 'rust', 'cpp', 'kotlin', 'go'
+     * @param {string} language - Target language, from supportedLanguages()
      * @param {string} filename - Original SCXML filename (for naming)
      * @returns {{ files: Array<[string, string]>, primaryCode: string }}
      */
