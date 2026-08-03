@@ -42,6 +42,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -56,11 +57,6 @@
 #include <vector>
 
 namespace SCE::Mesh::CustomTcp {
-
-/// Receive callback signature: invoked on a transport thread once per
-/// successfully decoded envelope. The callback owns dispatch to the
-/// engine; this layer does no policy interpretation.
-using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &)>;
 
 /// Decode-error callback signature: invoked on a per-connection read
 /// thread when an inbound frame's CBOR decode fails. Codegen wires
@@ -231,7 +227,144 @@ inline bool write_envelope(int fd, const SCE::Mesh::MeshEnvelope &env) {
     return write_exact(fd, buf.data(), buf.size());
 }
 
+/// Process-wide monotonic stream identifier. Ids start at 1 so that 0 is
+/// reserved as the "no stream" sentinel a default-constructed `PeerLink`
+/// reports.
+inline std::uint64_t next_stream_id() {
+    static std::atomic<std::uint64_t> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
+/// One peer stream — an accepted server connection, or the socket a
+/// `Client` dialed. Reference-counted so that a `PeerLink` parked in a
+/// generated subscription registry stays safe to call after the peer
+/// disconnects: the fd survives until the last reference drops, and every
+/// send past `close()` fails instead of touching a recycled descriptor.
+///
+/// SCE_MESH.md §mesh-10.4: the transport owns framing and stream
+/// lifetime, never pattern policy. A `Stream` therefore exposes exactly
+/// two operations — write one framed envelope, and close.
+struct Stream {
+    Stream(int fd, std::uint64_t id) : fd(fd), id(id) {}
+
+    Stream(const Stream &) = delete;
+    Stream &operator=(const Stream &) = delete;
+
+    ~Stream() {
+        if (fd >= 0) {
+            ::close(fd);
+        }
+    }
+
+    /// Write one length-prefixed frame. Serialised against concurrent
+    /// senders on the same stream: two interleaved `write_envelope` calls
+    /// would splice their length prefixes and corrupt the peer's framing.
+    ///
+    /// A failed write closes the stream so the next send fails fast and a
+    /// subscription registry holding this link can purge it on the next
+    /// fan-out rather than retrying a half-open socket forever.
+    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope &env) {
+        std::lock_guard<std::mutex> lock(write_mutex);
+        if (!open.load(std::memory_order_acquire)) {
+            return false;
+        }
+        if (!write_envelope(fd, env)) {
+            closeLocked();
+            return false;
+        }
+        return true;
+    }
+
+    /// Idempotent. Unblocks a reader parked in `recv` via `::shutdown`
+    /// but does NOT close the descriptor — the destructor does that once
+    /// every reference (reader thread included) is gone, so no send can
+    /// ever address a recycled fd.
+    void close() {
+        std::lock_guard<std::mutex> lock(write_mutex);
+        closeLocked();
+    }
+
+    [[nodiscard]] bool is_open() const noexcept {
+        return open.load(std::memory_order_acquire);
+    }
+
+    int fd = -1;
+    std::uint64_t id = 0;
+
+private:
+    void closeLocked() {
+        bool expected = true;
+        if (!open.compare_exchange_strong(expected, false, std::memory_order_acq_rel)) {
+            return;
+        }
+        ::shutdown(fd, SHUT_RDWR);
+    }
+
+    std::mutex write_mutex;
+    std::atomic<bool> open{true};
+};
+
 }  // namespace detail
+
+/// Handle to the peer stream an inbound envelope arrived on.
+///
+/// SCE_MESH.md §mesh-10.4.4: a brokerless transport answers a request on
+/// the stream that carried it, so the receive callback must be told which
+/// stream that was. `PeerLink` is that identity — copyable, storable, and
+/// safe to outlive the connection (`send` returns false once the peer is
+/// gone, `valid()` reports it without a send attempt).
+///
+/// Holding the link IS the subscription in the generated PubSub registry:
+/// a subscriber that dies takes its own registration out of service
+/// without any expiry timer or liveness probe, because the very handle
+/// the registry stored reports itself invalid.
+class PeerLink {
+public:
+    PeerLink() = default;
+
+    explicit PeerLink(std::shared_ptr<detail::Stream> stream) : stream_(std::move(stream)) {}
+
+    /// Write one framed envelope back to this peer. False when the link is
+    /// empty, the peer has disconnected, or the write failed.
+    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope &env) const {
+        return stream_ && stream_->send(env);
+    }
+
+    /// True while the stream is still usable. A registry purging on this
+    /// predicate never has to distinguish "never subscribed" from
+    /// "subscribed then died".
+    [[nodiscard]] bool valid() const noexcept {
+        return stream_ && stream_->is_open();
+    }
+
+    /// Stable per-connection identifier; 0 for a default-constructed link.
+    /// Two links compare equal iff they name the same stream, which is
+    /// what an unsubscribe has to match on.
+    [[nodiscard]] std::uint64_t id() const noexcept {
+        return stream_ ? stream_->id : 0;
+    }
+
+    [[nodiscard]] bool operator==(const PeerLink &other) const noexcept {
+        return id() == other.id();
+    }
+
+    [[nodiscard]] bool operator!=(const PeerLink &other) const noexcept {
+        return !(*this == other);
+    }
+
+private:
+    std::shared_ptr<detail::Stream> stream_;
+};
+
+/// Receive callback signature: invoked on a transport thread once per
+/// successfully decoded envelope, with the link the envelope arrived on.
+/// The callback owns dispatch to the engine and any reply; this layer does
+/// no policy interpretation.
+///
+/// Both `Server` and `Client` use this one signature — a client's inbound
+/// stream is as much a peer link as an accepted connection, so pattern
+/// handling in generated code is written once rather than per role.
+using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &, const PeerLink &)>;
 
 /// TCP server: binds at construction, accepts connections in a background
 /// thread, spawns one read thread per accepted connection. Each decoded
@@ -334,11 +467,18 @@ public:
             std::lock_guard<std::mutex> lock(connections_mutex_);
             taken = std::move(connections_);
         }
+        // Close every stream first, then join: a reader still inside
+        // `on_receive_` may reply on its own link or on a sibling one, and
+        // that reply must not block behind this teardown. Closing is
+        // non-blocking, so every reader is already unblocked (and every
+        // in-flight reply already resolved to a fast `false`) by the time
+        // the first join runs.
         for (auto &c : taken) {
-            if (c.fd >= 0) {
-                ::shutdown(c.fd, SHUT_RDWR);
-                ::close(c.fd);
+            if (c.stream) {
+                c.stream->close();
             }
+        }
+        for (auto &c : taken) {
             if (c.reader.joinable()) {
                 c.reader.join();
             }
@@ -347,7 +487,7 @@ public:
 
 private:
     struct Connection {
-        int fd = -1;
+        std::shared_ptr<detail::Stream> stream;
         std::thread reader;
     };
 
@@ -370,28 +510,33 @@ private:
             // would just add jitter.
             int one = 1;
             ::setsockopt(conn, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-            // Two-step construct so the reader thread sees `slot.fd` set
-            // before it runs. emplace_back returns a stable reference for
-            // the assignment; the lambda captures `conn` by value so a
-            // future vector reallocation does not invalidate the fd it
-            // reads (the slot itself is move-relocated, but the fd value
-            // it carries was already copied into the closure).
+            // The reader owns a reference to the stream, so the fd stays
+            // valid for exactly as long as someone can still read or write
+            // it — vector reallocation of the slot cannot strand it, and
+            // no descriptor is recycled while a `PeerLink` handed to
+            // application code still names it.
+            auto stream = std::make_shared<detail::Stream>(conn, detail::next_stream_id());
             std::lock_guard<std::mutex> lock(connections_mutex_);
             auto &slot = connections_.emplace_back();
-            slot.fd = conn;
-            slot.reader = std::thread([this, conn] { readLoop(conn); });
+            slot.stream = stream;
+            slot.reader = std::thread([this, stream] { readLoop(stream); });
         }
     }
 
-    void readLoop(int fd) {
+    void readLoop(const std::shared_ptr<detail::Stream> &stream) {
         SCE::Mesh::MeshEnvelope env;
         // Per-reader scratch buffer — see detail::read_envelope contract.
         // Lives on this thread's stack, so no synchronization needed and
         // it is freed automatically when the reader exits.
         std::vector<uint8_t> scratch;
+        const PeerLink link(stream);
+        const int fd = stream->fd;
         while (!stopping_.load()) {
             auto result = detail::read_envelope(fd, env, scratch);
             if (result == detail::ReadResult::SocketClosed) {
+                // Mark the stream down so a registry holding this link
+                // stops fanning out to a peer that has hung up.
+                stream->close();
                 break;
             }
             if (result == detail::ReadResult::DecodeError) {
@@ -407,7 +552,7 @@ private:
                 continue;
             }
             if (on_receive_) {
-                on_receive_(env);
+                on_receive_(env, link);
             }
             env = {};
         }
@@ -439,11 +584,14 @@ private:
 };
 
 /// TCP client: dials lazily on first send. Spawns a single read thread
-/// for the duration of the connection so the same TCP stream carries
-/// both outbound sends and any inbound traffic the peer may push back
-/// (full duplex). FireForget is the only pattern in this session, but
-/// the duplex reader is wired now so RPC patterns can be added without
-/// reshuffling the lifecycle.
+/// for the duration of the connection so the same TCP stream carries both
+/// outbound sends and whatever the peer pushes back — replies to this
+/// client's requests, and notifications for event groups it subscribed to
+/// (full duplex).
+///
+/// One connection carries every pattern in both directions. A reply never
+/// needs a reversed connection back to the requester, which is what lets
+/// custom_tcp answer a peer that dialed from an ephemeral port.
 class Client {
 public:
     Client(std::string connect_endpoint, ReceiveCallback on_receive)
@@ -468,8 +616,8 @@ public:
     /// — one side wins the lock and the other observes the decided
     /// state on entry.
     [[nodiscard]] bool set_connect_endpoint(std::string endpoint) {
-        std::lock_guard<std::mutex> lock(send_mutex_);
-        if (fd_ >= 0 || stopping_.load()) {
+        std::lock_guard<std::mutex> lock(dial_mutex_);
+        if (stream_ || stopping_.load()) {
             return false;
         }
         connect_endpoint_ = std::move(endpoint);
@@ -478,19 +626,22 @@ public:
 
     /// Encode and send the envelope. Connects on demand; subsequent calls
     /// reuse the same socket. Returns false on connect / send failure.
+    ///
+    /// Re-entrant: an inbound reply handled on this client's reader thread
+    /// may trigger a state-entry `<send>` that lands back here. The dial
+    /// lock is released before the write, and the write is serialised by
+    /// the stream itself, so the re-entrant call contends for nothing that
+    /// the reader is holding.
     [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope &env) {
-        std::lock_guard<std::mutex> lock(send_mutex_);
-        if (fd_ < 0 && !connect()) {
-            return false;
-        }
-        if (!detail::write_envelope(fd_, env)) {
-            // Tear down on first send error so a subsequent send() retries
-            // cleanly rather than reusing a broken half-open socket. The
-            // reader thread observes the close and exits.
-            tearDownLocked();
-            return false;
-        }
-        return true;
+        auto stream = acquireStream();
+        return stream && stream->send(env);
+    }
+
+    /// The link to this client's own peer, dialing on demand exactly as
+    /// `send` does. Lets a client-role machine answer on the stream it
+    /// already owns instead of requiring a second, reversed connection.
+    [[nodiscard]] PeerLink link() {
+        return PeerLink(acquireStream());
     }
 
     void shutdown() {
@@ -498,19 +649,60 @@ public:
         if (!stopping_.compare_exchange_strong(expected, true)) {
             return;
         }
-        std::lock_guard<std::mutex> lock(send_mutex_);
-        tearDownLocked();
+        std::shared_ptr<detail::Stream> stream;
+        std::thread reader;
+        std::vector<std::thread> retired;
+        {
+            std::lock_guard<std::mutex> lock(dial_mutex_);
+            stream = std::move(stream_);
+            reader = std::move(reader_);
+            retired = std::move(retired_readers_);
+        }
+        if (stream) {
+            stream->close();
+        }
+        // Join OUTSIDE `dial_mutex_`. A reader parked in `on_receive_` may
+        // still re-enter `send()`, which needs that lock to observe
+        // `stopping_` and fail fast; holding it across the join would put
+        // the reader and this thread in a cycle. `stopping_` is already
+        // set and the stream already closed, so every such call now
+        // returns false promptly and the reader drains.
+        if (reader.joinable()) {
+            reader.join();
+        }
+        for (auto &t : retired) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
     }
 
 private:
-    bool connect() {
+    /// Return an open stream, dialing if the previous one is gone.
+    /// `nullptr` once shutting down or when the dial fails.
+    std::shared_ptr<detail::Stream> acquireStream() {
+        std::lock_guard<std::mutex> lock(dial_mutex_);
+        if (stopping_.load()) {
+            return nullptr;
+        }
+        if (stream_ && stream_->is_open()) {
+            return stream_;
+        }
+        return connect();
+    }
+
+    /// Caller MUST hold `dial_mutex_`. Retires the previous reader without
+    /// joining it — a join here could be a self-join when the re-dial is
+    /// driven by that very reader's callback. Retired threads are joined
+    /// in `shutdown()`, on a thread that is never one of them.
+    std::shared_ptr<detail::Stream> connect() {
         sockaddr_in addr{};
         if (!detail::parse_endpoint(connect_endpoint_, addr)) {
-            return false;
+            return nullptr;
         }
         int s = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (s < 0) {
-            return false;
+            return nullptr;
         }
         // Retry connect briefly: in tests the server may still be
         // racing through bind() when the client first tries to dial.
@@ -531,24 +723,29 @@ private:
         }
         if (!connected) {
             ::close(s);
-            return false;
+            return nullptr;
         }
         int one = 1;
         ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-        fd_ = s;
-        if (on_receive_) {
-            reader_ = std::thread([this] { readLoop(); });
+        if (reader_.joinable()) {
+            retired_readers_.push_back(std::move(reader_));
         }
-        return true;
+        stream_ = std::make_shared<detail::Stream>(s, detail::next_stream_id());
+        if (on_receive_) {
+            reader_ = std::thread([this, stream = stream_] { readLoop(stream); });
+        }
+        return stream_;
     }
 
-    void readLoop() {
-        int fd_snapshot = fd_;
+    void readLoop(const std::shared_ptr<detail::Stream> &stream) {
         SCE::Mesh::MeshEnvelope env;
         std::vector<uint8_t> scratch;  // reused across iterations
-        while (!stopping_.load() && fd_snapshot >= 0) {
-            auto result = detail::read_envelope(fd_snapshot, env, scratch);
+        const PeerLink link(stream);
+        const int fd = stream->fd;
+        while (!stopping_.load()) {
+            auto result = detail::read_envelope(fd, env, scratch);
             if (result == detail::ReadResult::SocketClosed) {
+                stream->close();
                 break;
             }
             if (result == detail::ReadResult::DecodeError) {
@@ -561,7 +758,7 @@ private:
                 env = {};
                 continue;
             }
-            on_receive_(env);
+            on_receive_(env, link);
             env = {};
         }
     }
@@ -580,47 +777,21 @@ public:
     }
 
 private:
-    /// Caller MUST hold `send_mutex_`. Idempotent; safe to call from
-    /// shutdown() and the failure path of send().
-    ///
-    /// DEADLOCK INVARIANT (caller-maintained, not structural):
-    /// joining the reader while holding `send_mutex_` is safe ONLY while
-    /// the reader's exit path is purely the `recv()` unblock from the
-    /// `::shutdown` above. This holds today because the on_receive_
-    /// callback installed by codegen is `(env){ dispatchToSender(env); }`,
-    /// which queues the envelope on the sender engine's external queue
-    /// and returns — it does NOT synchronously call back into this
-    /// `Client::send`.
-    ///
-    /// Adding RPC patterns will violate this invariant if the inbound
-    /// reply triggers a state-entry `<send>` that re-enters the same
-    /// Client. Concrete failure mode:
-    ///   1. main thread: shutdown() → tearDownLocked() takes send_mutex_
-    ///   2. reader thread: in on_receive_ → engine.processEvent → onentry
-    ///      <send> → setMeshSendCallback → route_send → Client::send
-    ///      → blocks on send_mutex_
-    ///   3. main thread: reader_.join() blocks waiting for reader to exit
-    ///   → deadlock
-    /// The fix when RPC lands is to drop send_mutex_ before joining (or
-    /// use a separate connect_mutex_ that gates only the dial path).
-    void tearDownLocked() {
-        if (fd_ >= 0) {
-            ::shutdown(fd_, SHUT_RDWR);
-            ::close(fd_);
-            fd_ = -1;
-        }
-        if (reader_.joinable()) {
-            reader_.join();
-        }
-    }
-
     std::string connect_endpoint_;
     ReceiveCallback on_receive_;
     DecodeErrorCallback on_decode_error_;
-    std::mutex send_mutex_;
+    /// Gates the dial path and the `stream_` / `reader_` handles only.
+    /// Frame serialisation lives on the stream, so this lock is never held
+    /// across a write, a join, or a user callback — which is what makes an
+    /// inbound reply free to re-enter `send()` while teardown runs.
+    std::mutex dial_mutex_;
     std::atomic<bool> stopping_{false};
-    int fd_ = -1;
+    std::shared_ptr<detail::Stream> stream_;
     std::thread reader_;
+    /// Readers of superseded connections. Joined in `shutdown()` rather
+    /// than at re-dial time because the re-dial may be driven by the
+    /// retiring reader's own callback, and a thread cannot join itself.
+    std::vector<std::thread> retired_readers_;
 };
 
 }  // namespace SCE::Mesh::CustomTcp

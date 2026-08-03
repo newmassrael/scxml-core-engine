@@ -523,14 +523,19 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // per-target client (its `connect:` endpoint) and the device exposes a
     // single `listen:` server (declared in `transports.custom_tcp.listen`),
     // so both shape flags apply: per-target client field + device-shared
-    // server. FireForget only in this session — RPC/PubSub/FieldAccess
-    // arrive with the dedup layer + duplex correlation in the next session.
+    // server.
+    //
+    // All four capabilities are realised (§mesh-10.4.4). The enabling
+    // property is that one TCP connection is duplex: a reply and a
+    // notification both travel back on the stream that carried the request
+    // or the subscribe, so no pattern needs a reversed connection to a peer
+    // that may have dialed from an ephemeral port, and none needs a broker.
     static CUSTOM_TCP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
             has_per_target_field: true,
             has_shared_session: true,
         },
-        capabilities: &[FireForget],
+        capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &["connect"],
         // One TCP socket per sender→receiver pair; the stream itself
@@ -544,8 +549,16 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // adding a pool would require SCE to implement its own SD
         // protocol (§mesh-3.3 design invariant rejects middleware SD).
         supports_pool: false,
-        // No pub/sub capability in this session — machine-lifetime is
-        // moot. Dedup + duplex correlation for FireForget-only today.
+        // The mechanism is transport-generic — `init()` builds an
+        // `EventSubscribe` envelope and hands it to the same `route_send`
+        // the SCXML-driven path uses, and the receiving half (registry
+        // registration keyed on the event's axis) is covered by
+        // `mesh_tcp_multipattern_verification`. What is NOT covered is the
+        // deploy.yaml-originated half end to end, and this flag's contract
+        // is precisely "realised end-to-end", so claiming it on a
+        // structural argument would advertise a capability no test backs.
+        // Flip it together with a fixture that drives
+        // `machines.<name>.subscriptions:`.
         supports_machine_lifetime_subscribe: false,
         // Single static client→server TCP endpoint — no peer-identity
         // dimension on the inbound side.
@@ -554,7 +567,15 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // half of spec L2730's "kind tcp/shm" default pair for
         // inter-partition traffic within the same machine.
         supports_inter_partition_ipc: true,
-        // No RequestReply capability; the question does not arise.
+        // Same-target by construction, like Zenoh but for a different
+        // reason. A pending request is pinned to the stream it left on
+        // (`PendingRpc::stream_id`), and another target is by definition
+        // another connection — so there is no place for its reply to
+        // enter. That pinning is what makes forging `source` useless
+        // here, and it is also what forecloses the wider responder set:
+        // the property that removes the vulnerability removes the
+        // feature. A `reply_from:` wider than the binding's own target
+        // is therefore rejected at parse time.
         supports_cross_target_reply: false,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
@@ -731,15 +752,31 @@ mod tests {
     }
 
     #[test]
-    fn custom_tcp_fire_forget_only_in_session_e2_step1() {
-        // Other patterns require dedup + duplex correlation, landing in
-        // subsequent E2 sessions. The capability list documents the
-        // current contract; widening must update the template + tests.
+    fn custom_tcp_realizes_every_pattern() {
+        // §mesh-10.4.4: one duplex TCP connection carries every pattern in
+        // both directions, so nothing here is advertised ahead of its
+        // template arm. Narrowing this list again would mean a pattern lost
+        // its realisation — which must break a test, not degrade silently.
         let d = lookup("custom_tcp").expect("known");
-        assert!(d.capabilities.contains(&FireForget));
-        assert!(!d.capabilities.contains(&RequestReply));
-        assert!(!d.capabilities.contains(&PubSub));
-        assert!(!d.capabilities.contains(&FieldAccess));
+        for cap in &[RequestReply, FireForget, PubSub, FieldAccess] {
+            assert!(
+                d.capabilities.contains(cap),
+                "custom_tcp should advertise {cap}"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_tcp_reply_is_same_target_by_construction() {
+        // The stream a request left on IS the responder identity
+        // (`PendingRpc::stream_id`), so another target's reply has no
+        // correlation entry to reach — the same shape as Zenoh's
+        // per-query reply closure, reached by a different mechanism.
+        // Advertising cross-target reply here would promise a routing
+        // path that the pinning deliberately forecloses.
+        let d = lookup("custom_tcp").expect("known");
+        assert!(d.capabilities.contains(&RequestReply));
+        assert!(!d.supports_cross_target_reply);
     }
 
     #[test]

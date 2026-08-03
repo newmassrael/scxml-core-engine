@@ -1729,6 +1729,29 @@ A transport is verified against the §10.4 contract by:
 1. **Build-time (sce-build)**: Pattern capability check — `TransportDescriptor::capabilities` must include the pattern's required category. Violation is a hard build error.
 2. **Build-time (sce-build)**: Required binding fields — `TransportDescriptor::required_binding_fields` must all be present in deploy.yaml. Violation is `TopologyError::MissingBindingField`.
 3. **Runtime (mesh conformance suite, Session E2)**: The IRP distributed harness (§16.8) runs identical tests over single-process and distributed modes. A transport that drops, reorders, or duplicates events (without dedup suppression) will produce verdict mismatches, surfacing the conformance violation.
+
+#### 10.4.4 Connection-oriented pattern realization
+
+§8.2 states which patterns a transport supports; this section states how a **connection-oriented** transport realizes them. It applies to any transport whose peers are joined by a bidirectional stream and which has no broker or routing fabric in between — `custom_tcp` is the in-tree instance.
+
+The enabling property is that one connection is duplex. Every pattern that needs a return leg reuses the stream that carried the outbound leg:
+
+| Pattern | Return leg |
+|---|---|
+| `RequestReply` | The reply is written on the stream the request arrived on. |
+| `FieldAccess` | Identical to `RequestReply`; `field.notify.X` is the reply. |
+| `PubSub` | Notifications are written on the stream the `event.subscribe.X` arrived on. |
+| `FireForget` | No return leg. |
+
+Two consequences are normative, because they change what the transport guarantees rather than merely how it is built:
+
+1. **The stream is the responder identity.** A pending request records the connection it left on, and a reply is admitted only from that connection. `source` is written by the sender and therefore cannot be the gate: a peer that learns a correlation id must not be able to retire another peer's pending request. The check runs *before* the correlation entry is consumed, so a rejected reply leaves the request answerable and raises §16.7 row 14.
+
+   This is why `supports_cross_target_reply` is `false` for such a transport. Another target is by definition another connection, so its reply has no entry to reach. The property that removes the mis-correlation risk is the same property that forecloses a wider responder set — a `reply_from:` set wider than the binding's own target is rejected at parse time (§14.6).
+
+2. **A subscription lives exactly as long as its connection.** The subscriber registry holds the connection, so a peer that hangs up is unsubscribed by that fact alone. There is no expiry timer, no liveness probe, and no retained-session negotiation; a dead subscriber is dropped on the next fan-out. Registration is keyed on the subscription axis — the event-name suffix shared by `event.subscribe.X`, `event.unsubscribe.X` and `event.notification.X` — so a peer subscribed to one axis is not woken by another. A key-scoped fabric cannot make that distinction and must publish to every subscriber on the key.
+
+A server on such a transport requires no address for its clients, and correspondingly no per-server binding field: it is addressed by the device's own `transports.<name>.listen:` endpoint, and it answers whoever connected. This is what lets it serve a peer that dialed from an ephemeral port.
 4. **Runtime (seeded fault injection, Session E2)**: Disconnect the transport mid-test. The engine must receive `error.communication` within one macrostep. The test verifies event delivery, `reason` payload, and macrostep boundary compliance.
 
 **Status**: gates 1 and 2 are active. Gates 3 and 4 are Session E2 scope (§16.9) and not yet implemented. Today's runtime evidence for transport conformance is the 44 mesh ctest fixtures catalogued in [`docs/SCE_MESH_CONFORMANCE_MATRIX.md`](docs/SCE_MESH_CONFORMANCE_MATRIX.md) — per-sender FIFO is asserted wire-level by `mesh_custom_tcp_runtime_verification`, duplicate tolerance by the §10.5 fixtures, and fault-signal emission by the §16.7 liveness fixtures. These ctests verify the transport primitives that gate 3 will consume; they are not the gate 3 suite itself.

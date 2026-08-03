@@ -3532,6 +3532,78 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         # parallel ctest invocations against different ports).
         RESOURCE_LOCK sce_mesh_custom_tcp_${SCE_TEST_CUSTOM_TCP_PORT})
 
+    # ── custom_tcp multi-pattern realization (SCE_MESH.md §mesh-10.4.4)
+    # Sibling of the FireForget test above, differing on exactly one axis:
+    # the bindings carry RPC / FieldAccess / PubSub events and motor
+    # declares a `server:` block. Proves the patterns the transport
+    # advertises are the patterns it actually serves — a capability the
+    # registry claims but no template arm realizes is a correctness bug,
+    # not a documentation gap.
+    set(MESH_TCP_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_tcp_multi_generated")
+
+    # Distinct from SCE_TEST_CUSTOM_TCP_PORT so the two custom_tcp tests
+    # can run concurrently; each takes its own RESOURCE_LOCK bucket.
+    set(SCE_TEST_TCP_MULTI_PORT "55831" CACHE STRING
+        "TCP loopback port for the custom_tcp multi-pattern test (IANA dynamic range)")
+
+    file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
+        "${MESH_TCP_MULTI_OUTPUT_DIR}" "${MESH_TEST_DIR}")
+    configure_file(
+        "${MESH_TEST_DIR}/deploy_tcp_multi.yaml.in"
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
+        @ONLY)
+
+    foreach(tcp_multi_machine brake_tcp_multi motor_tcp_multi)
+        add_custom_command(
+            OUTPUT "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_sm.h"
+                   "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_MULTI_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${tcp_multi_machine}.scxml"
+                    -l cpp -o "${MESH_TCP_MULTI_OUTPUT_DIR}"
+                    --deploy "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
+                    --write-deps "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_tcp_multi.scxml"
+                    "${MESH_TEST_DIR}/motor_tcp_multi.scxml"
+                    "${MESH_TCP_MULTI_OUTPUT_DIR}/deploy_tcp_multi.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_TCP_MULTI_OUTPUT_DIR}/${tcp_multi_machine}_sm.h.d"
+            COMMENT "Mesh custom_tcp multi-pattern: Generating ${tcp_multi_machine}_sm.h + _transport.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_tcp_multipattern_runtime_test
+        mesh/test_mesh_tcp_multipattern_runtime.cpp
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/brake_tcp_multi_sm.h"
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/brake_tcp_multi_transport.h"
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/motor_tcp_multi_sm.h"
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/motor_tcp_multi_transport.h")
+
+    target_include_directories(mesh_tcp_multipattern_runtime_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_TCP_MULTI_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_tcp_multipattern_runtime_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+            pthread
+    )
+
+    target_compile_features(mesh_tcp_multipattern_runtime_test PRIVATE cxx_std_17)
+    target_compile_definitions(mesh_tcp_multipattern_runtime_test PRIVATE
+        SCE_TEST_TCP_MULTI_PORT=${SCE_TEST_TCP_MULTI_PORT})
+
+    apply_sce_test_policies(mesh_tcp_multipattern_runtime_test)
+
+    add_test(NAME mesh_tcp_multipattern_verification
+             COMMAND mesh_tcp_multipattern_runtime_test)
+    set_tests_properties(mesh_tcp_multipattern_verification PROPERTIES
+        TIMEOUT 60
+        RESOURCE_LOCK sce_mesh_tcp_multi_${SCE_TEST_TCP_MULTI_PORT})
+
     # ── SCE_MESH.md §16.8.3 two-process orchestration smoke ────────
     # Proves the bash orchestrator in tests/mesh/run_two_process_fixture.sh
     # correctly:
