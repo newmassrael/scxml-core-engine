@@ -27,8 +27,8 @@ use crate::filters;
 use crate::forge::error::SourceLocation;
 use crate::generator::{GeneratedOutput, Language};
 use crate::mesh::deploy::{
-    CustomTcpTransportConfig, LivelinessConfig, OrderingTimings, SomeipTransportConfig,
-    ZenohTransportConfig,
+    CustomTcpTransportConfig, DdsTransportConfig, LivelinessConfig, OrderingTimings,
+    SomeipTransportConfig, ZenohTransportConfig,
 };
 use crate::mesh::error::CodegenError;
 use crate::mesh::topology::ResolvedTarget;
@@ -189,6 +189,31 @@ impl CustomTcpTransportContext {
     }
 }
 
+/// Template context for DDS device-shared configuration.
+///
+/// Only the domain id: a DDS domain is the isolation unit, and everything
+/// else Cyclone DDS exposes is tuning that belongs in its own XML config
+/// (reached through `CYCLONEDDS_URI`) rather than in the mesh schema.
+///
+/// Unlike `CustomTcpTransportContext` this has no "is it empty" notion —
+/// a device with dds bindings always joins a domain, defaulting to 0, so
+/// the context is always meaningful when dds is in play.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+struct DdsTransportContext {
+    /// Domain the device's single participant joins. Rendered as a plain
+    /// integer literal; `0` is the DDS default and the value used when
+    /// deploy.yaml omits the block entirely.
+    domain_id: u32,
+}
+
+impl DdsTransportContext {
+    fn from_config(cfg: Option<&DdsTransportConfig>) -> Self {
+        Self {
+            domain_id: cfg.and_then(|c| c.domain_id).unwrap_or(0),
+        }
+    }
+}
+
 // ── Template context ─────────────────────────────────────────
 
 /// SOME/IP service identity, pre-rendered as `0xNNNN` hex strings so the
@@ -242,6 +267,16 @@ enum TargetStateView {
         connect: String,
         extra: HashMap<String, serde_yaml_ng::Value>,
     },
+    Dds {
+        /// Request-leg topic name, pre-escaped as a complete C++ string
+        /// literal (including outer quotes) so the template emits it
+        /// verbatim. The reply and notification topic names are derived
+        /// from this one at emission time rather than carried separately —
+        /// a binding cannot pair a request topic with an unrelated reply
+        /// topic because there is no field in which to express that.
+        topic: String,
+        extra: HashMap<String, serde_yaml_ng::Value>,
+    },
 }
 
 impl TargetStateView {
@@ -273,6 +308,10 @@ impl TargetStateView {
             },
             TransportState::CustomTcp { connect, extra } => Self::CustomTcp {
                 connect: cpp_string_literal(connect),
+                extra: extra.clone(),
+            },
+            TransportState::Dds { topic, extra } => Self::Dds {
+                topic: cpp_string_literal(topic),
                 extra: extra.clone(),
             },
             TransportState::Unimplemented { transport_name } => unreachable!(
@@ -930,6 +969,7 @@ pub struct MeshCodegenInputs<'a> {
     pub zenoh_session: Option<&'a ZenohTransportConfig>,
     pub someip_config: Option<&'a SomeipTransportConfig>,
     pub custom_tcp_config: Option<&'a CustomTcpTransportConfig>,
+    pub dds_config: Option<&'a DdsTransportConfig>,
     pub subscriptions: &'a [super::deploy::SubscriptionConfig],
     pub machine_ordering: OrderingTimings,
     pub machine_liveliness: Option<LivelinessConfig>,
@@ -1102,6 +1142,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         zenoh_session,
         someip_config,
         custom_tcp_config,
+        dds_config,
         subscriptions,
         machine_ordering,
         machine_liveliness,
@@ -1414,7 +1455,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         // schema adds a server-side `protocol: tcp` pin, extend this
         // match to recognise it — same pattern as the target-side
         // `needs_dedup` computation above.
-        matches!(sc.transport_kind.as_str(), "someip" | "zenoh")
+        matches!(sc.transport_kind.as_str(), "someip" | "zenoh" | "dds")
     });
     let has_undeduped_transport = any_target_needs_dedup || server_needs_dedup;
 
@@ -1456,6 +1497,12 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     let custom_tcp_transport = custom_tcp_config
         .map(CustomTcpTransportContext::from_config)
         .filter(|s| !s.is_empty());
+
+    // Always present when dds is in play, unlike the transports above: a
+    // device with dds bindings joins a domain whether or not deploy.yaml
+    // declared the block, so the absent-block case is "domain 0", not
+    // "no context".
+    let dds_transport = DdsTransportContext::from_config(dds_config);
 
     let machine_pascal = filters::to_pascal_case(machine_name.to_string());
 
@@ -1706,6 +1753,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         zenoh_connect_endpoints => zenoh_connect_endpoints,
         someip_transport => someip_transport,
         custom_tcp_transport => custom_tcp_transport,
+        dds_transport => dds_transport,
         machine_subscriptions => subscriptions,
         server => server_context,
         n_sessions => n_sessions,
