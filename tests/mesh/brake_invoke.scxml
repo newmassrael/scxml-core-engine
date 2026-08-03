@@ -17,8 +17,13 @@
         <transition event="abort" target="aborted"/>
         <transition event="done.invoke" target="ok"/>
         <transition event="error.invoke" target="failed"/>
+        <!-- SCE Mesh 16.7 row 14: a reply from outside the binding's
+             responder set is rejected loudly, not dropped. Observing it
+             as a state change is what proves the raise reaches SCXML. -->
+        <transition event="error.communication" target="rejected"/>
     </state>
     <final id="ok"/>
     <final id="failed"/>
     <final id="aborted"/>
+    <final id="rejected"/>
 </scxml>

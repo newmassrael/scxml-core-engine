@@ -1,0 +1,45 @@
+# SCE Mesh §14.6 same-target constraint adjudication fixture.
+#
+# One client, two SOME/IP RPC targets. Both servers are raw vsomeip
+# applications owned by the test, not SCE machines — the test needs to
+# control the correlation_id a reply carries, which a generated server
+# would never do (it echoes the correlation_id it received).
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_cross_target.json
+        application_name: cross_target_client_app
+    machines:
+      cross_target_client:
+        source: cross_target_client.scxml
+        bindings:
+          "#alpha":
+            transport: someip
+            service: alpha_svc
+            events:
+              "service.request.compute_force":
+                method: compute_force
+          "#beta":
+            transport: someip
+            service: beta_svc
+            events:
+              "service.request.other_call":
+                method: other_call
+      alpha:
+        source: cross_target_alpha.scxml
+        server:
+          transport: someip
+          service: alpha_svc
+          events:
+            "service.request.compute_force":
+              method: compute_force
+      beta:
+        source: cross_target_beta.scxml
+        server:
+          transport: someip
+          service: beta_svc
+          events:
+            "service.request.other_call":
+              method: other_call

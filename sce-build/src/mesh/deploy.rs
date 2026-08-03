@@ -2623,6 +2623,31 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_from: Option<String>,
 
+    /// SCE Mesh §mesh-14.6 — the set of targets whose RpcReply may be
+    /// correlated against a request sent to THIS binding's target.
+    ///
+    /// Absent ⇒ the responder set is the binding's own target: a reply
+    /// arriving from anywhere else does not retire the correlation
+    /// entry. That default is what §mesh-14.6 calls the same-target
+    /// constraint, and it is the safe shape — a correlation entry is a
+    /// one-shot resource, so any peer permitted to spend it can retire
+    /// another peer's pending request.
+    ///
+    /// Present ⇒ a broker / proxy / fan-in topology: the request goes to
+    /// `#alpha`, but `#broker` is also allowed to answer it. Each member
+    /// must name a machine that exists in the topology, the list may not
+    /// be empty, and the binding's own target is always implicitly a
+    /// member (declaring it explicitly is allowed and idempotent).
+    ///
+    /// Rejected at parse time on transports whose
+    /// [`TransportDescriptor::supports_cross_target_reply`] is `false`
+    /// — on Zenoh the reply closure is bound to one target's KeyExpr at
+    /// the protocol layer, so a wider set could never be realised.
+    ///
+    /// [`TransportDescriptor::supports_cross_target_reply`]: crate::mesh::transport::TransportDescriptor::supports_cross_target_reply
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_from: Option<Vec<String>>,
+
     /// SCE Protocol-Synthesis RFC §synth-5-E — name reference into the forge
     /// pool registry naming the buffer-pool kind artifact whose slots
     /// the link's RX-side `Sample::take()` copies into. Resolved
@@ -2741,6 +2766,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_server_query_timeout(&cfg)?;
     validate_server_pool_rejection(&cfg)?;
     validate_pool_capability(&cfg)?;
+    validate_reply_from(&cfg)?;
     validate_stage_pool_transport(&cfg)?;
     validate_outbound_buffer(&cfg)?;
     validate_retry_policy(&cfg)?;
@@ -4895,6 +4921,107 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                     }
                     Some(_) => {}
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// SCE_MESH.md §mesh-14.6 — validate every binding's `reply_from:`
+/// responder set.
+///
+/// A correlation entry is a one-shot resource: whoever is allowed to
+/// match it retires it, and the request can then never be answered by
+/// anyone else. The responder set is therefore the security boundary of
+/// the RPC reply path, and it is validated here rather than at codegen
+/// so an unresolvable or unrealisable set surfaces against the
+/// deploy.yaml line that declared it.
+///
+/// Three rejections, all at parse time:
+///
+/// * empty list — an empty responder set would make every reply
+///   uncorrelatable, which is never the author's intent; omitting the
+///   field is how you ask for the same-target default.
+/// * a member that is not a `#<machine>` target, or names a machine the
+///   topology does not declare — the gate would silently never match.
+/// * a set wider than the binding's own target on a transport whose
+///   [`crate::mesh::transport::TransportDescriptor::supports_cross_target_reply`]
+///   is `false` — the declared set could never be exercised.
+///
+/// Declaring only the binding's own target is always legal on every
+/// transport: that is the default set written out explicitly.
+fn validate_reply_from(cfg: &DeployConfig) -> Result<(), DeployError> {
+    // §mesh-14.6: the responder set is the security boundary of the RPC
+    // reply path, so its three rejections are enforced here at parse
+    // time rather than at codegen.
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // Every machine name across all devices — a responder may live on a
+    // different ECU than the requester.
+    let mut known_machines: BTreeSet<&str> = BTreeSet::new();
+    for device in cfg.topology.values() {
+        for name in device.machines.keys() {
+            known_machines.insert(name.as_str());
+        }
+    }
+
+    // Deterministic sorted scan so the first reported violation is
+    // stable across runs even though `topology` is a HashMap.
+    let mut by_binding: BTreeMap<(&str, &TargetId), &BindingConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            for (target, binding) in &machine.bindings {
+                by_binding.insert((machine_name.as_str(), target), binding);
+            }
+        }
+    }
+
+    for ((machine_name, target), binding) in by_binding {
+        let Some(responders) = &binding.reply_from else {
+            continue;
+        };
+        let invalid = |reason: String| DeployError::InvalidReplyFrom {
+            machine: machine_name.to_string(),
+            binding: target.as_str().to_string(),
+            reason,
+        };
+
+        if responders.is_empty() {
+            return Err(invalid(
+                "the list is empty; omit `reply_from:` to keep the same-target default".to_string(),
+            ));
+        }
+
+        let mut widens = false;
+        for raw in responders {
+            if !raw.starts_with('#') {
+                return Err(invalid(format!(
+                    "member '{raw}' is not a target identifier — write '#{raw}' to name a machine"
+                )));
+            }
+            let Some(member) = TargetId::new(raw.clone()) else {
+                return Err(invalid("a member is empty".to_string()));
+            };
+            if !known_machines.contains(member.name()) {
+                return Err(invalid(format!(
+                    "names machine '{}', which the topology does not declare",
+                    member.name()
+                )));
+            }
+            if member.as_str() != target.as_str() {
+                widens = true;
+            }
+        }
+
+        if widens {
+            let supported = crate::mesh::transport::lookup(&binding.transport)
+                .is_some_and(|d| d.supports_cross_target_reply);
+            if !supported {
+                return Err(DeployError::CrossTargetReplyNotSupported {
+                    machine: machine_name.to_string(),
+                    binding: target.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                });
             }
         }
     }
@@ -7477,6 +7604,131 @@ topology:
                 );
             }
             other => panic!("expected InvalidOutboundBuffer, got {other:?}"),
+        }
+    }
+
+    // ── SCE_MESH.md §mesh-14.6 responder set ────────────────────────
+    //
+    // Every arm below builds the same two-machine topology and varies
+    // only the `reply_from:` value, so a failure names the rule that
+    // broke rather than a fixture difference.
+    fn reply_from_yaml(transport: &str, reply_from_clause: &str) -> String {
+        format!(
+            r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#alpha":
+            transport: {transport}
+            service: alpha_svc
+{reply_from_clause}
+      alpha:
+        source: alpha.scxml
+      broker:
+        source: broker.scxml
+"##
+        )
+    }
+
+    #[test]
+    fn reply_from_absent_keeps_the_same_target_default() {
+        // The safe default must not require an opt-out.
+        parse_deploy_str(&reply_from_yaml("someip", "")).expect("absent reply_from must parse");
+    }
+
+    #[test]
+    fn reply_from_naming_only_its_own_target_is_accepted_everywhere() {
+        // Writing the default out explicitly does not widen the set, so
+        // it stays legal even on a transport that cannot cross targets.
+        parse_deploy_str(&reply_from_yaml(
+            "zenoh",
+            "            reply_from: [\"#alpha\"]",
+        ))
+        .expect("self-only reply_from must parse on any transport");
+    }
+
+    #[test]
+    fn reply_from_empty_list_rejected() {
+        match parse_deploy_str(&reply_from_yaml("someip", "            reply_from: []")) {
+            Err(DeployError::InvalidReplyFrom {
+                machine,
+                binding,
+                reason,
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#alpha");
+                assert!(reason.contains("empty"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidReplyFrom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reply_from_unknown_machine_rejected() {
+        match parse_deploy_str(&reply_from_yaml(
+            "someip",
+            "            reply_from: [\"#alpha\", \"#ghost\"]",
+        )) {
+            Err(DeployError::InvalidReplyFrom { reason, .. }) => {
+                assert!(
+                    reason.contains("ghost"),
+                    "reason must name the miss: {reason}"
+                );
+            }
+            other => panic!("expected InvalidReplyFrom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reply_from_member_without_hash_rejected() {
+        // `alpha` and `#alpha` must not both be accepted: the gate
+        // compares against the binding key, which always carries `#`.
+        match parse_deploy_str(&reply_from_yaml(
+            "someip",
+            "            reply_from: [\"alpha\"]",
+        )) {
+            Err(DeployError::InvalidReplyFrom { reason, .. }) => {
+                assert!(
+                    reason.contains("#alpha"),
+                    "reason must show the fix: {reason}"
+                );
+            }
+            other => panic!("expected InvalidReplyFrom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reply_from_wider_set_accepted_on_someip() {
+        parse_deploy_str(&reply_from_yaml(
+            "someip",
+            "            reply_from: [\"#alpha\", \"#broker\"]",
+        ))
+        .expect("someip correlates through pending_rpcs_, so a wider set is realisable");
+    }
+
+    #[test]
+    fn reply_from_wider_set_rejected_on_zenoh() {
+        // `session.get` binds the reply closure to one target's KeyExpr,
+        // so a wider set could never be exercised — reject at parse time
+        // rather than generating a router that silently ignores it.
+        match parse_deploy_str(&reply_from_yaml(
+            "zenoh",
+            "            reply_from: [\"#alpha\", \"#broker\"]",
+        )) {
+            Err(DeployError::CrossTargetReplyNotSupported {
+                machine,
+                binding,
+                transport,
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#alpha");
+                assert_eq!(transport, "zenoh");
+            }
+            other => panic!("expected CrossTargetReplyNotSupported, got {other:?}"),
         }
     }
 

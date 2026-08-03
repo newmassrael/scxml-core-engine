@@ -155,9 +155,13 @@ TEST(DeadlinePreemptsRetryTest, DeadlineLambdaCancelsPendingRetry) {
     // reply (or here, a synchronous deadline) cannot race the entry's
     // creation. Correlation keys off the INVOKE uuid (matches
     // env.invoke_id).
-    correlation.registerInvoke(kInvokeUuid, "#motor", [&deliver](RpcStatus status, std::vector<std::uint8_t> data) {
-        deliver(status, std::move(data));
-    });
+    // §14.6 responder set: this fixture models the same-target default,
+    // so the only peer allowed to retire the entry is the invoke's own
+    // target. The deadline path below does not consult it — a locally
+    // observed failure has no replier.
+    correlation.registerInvoke(
+        kInvokeUuid, "#motor", {"motor"},
+        [&deliver](RpcStatus status, std::vector<std::uint8_t> data) { deliver(status, std::move(data)); });
 
     // Arm the deadline BEFORE send_with_retry — same order the
     // codegen-emitted invokeMeshRpc uses (registerDeadline before

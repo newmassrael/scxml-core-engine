@@ -1716,6 +1716,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `supports_machine_lifetime_subscribe` | `bool` | deploy.yaml `machines.<name>.subscriptions:` is realised end-to-end here (§13), which is narrower than the general PubSub capability. |
 | `supports_multi_instance_server` | `bool` | Inbound messages carry a peer-identifying instance dimension, so the machine can host a multi-instance server pool (§14.4). |
 | `supports_inter_partition_ipc` | `bool` | Transport may carry traffic between the OS processes a `partitions:` split creates (§14). |
+| `supports_cross_target_reply` | `bool` | An RpcReply for a request sent to target A can arrive from a different target B, because correlation goes through a lookup table keyed on a sender-minted identifier. `false` where the reply path is bound to the request at the protocol layer (Zenoh `session.get`) or where there is no `RequestReply` capability. Gates a `reply_from:` set wider than the binding's own target (§14.6). |
 
 Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time. §6.4 is the step-by-step form of the same procedure.
 
@@ -2619,6 +2620,7 @@ Runtime selection of a remote target *instance* within an already-declared bindi
 - **`<invoke type="sce:mesh-rpc" srcexpr>`** (§9.5) — parser accepts `srcexpr` with the exactly-one rule against `src`, typed as the `MeshRpcTarget` sum type so "both empty" and "both set" are structurally impossible. `srcexpr` is evaluated at `<invoke>` entry through the datamodel; the resolved `#<name>` is looked up in static topology. A miss is a pre-envelope setup fault — `error.execution` with `reason=INVOKE_SRC_NOT_FOUND` per §10.7.1 (§9.5 three-tier error table). No retry, no wait.
 
 **Rejected (explicitly, not deferred)**:
+- Cross-target RPC reply — **landed** as the §14.6 `reply_from:` responder set (transport-gated on `supports_cross_target_reply`). It needed no peer table: the correlation tables were already keyed on a sender-minted identifier, so the work was to scope which peers may match one, not to build routing.
 - Middleware-level service discovery (IDiscovery trait / `runtime_targets_` map / SCE-maintained peer tables) — transport-native routing is the source of truth (§3.3)
 - Cross-transport automatic bridging codegen — bridging is explicit SCXML responsibility (§14.5)
 - `discovery.mode: static | dynamic` deploy-level switch — runtime target selection is a per-binding property, not a deployment mode
@@ -2860,6 +2862,26 @@ Any future revisit would require explicit motivation in a new section; the defau
 
 **Deprecated (Session E cleanup)**: inline `service_id: 0x1234` / `method_id: 0x0042` / `event_group_id` / `event_id` / `getter_id` / `setter_id` as shipped in Session C. Retained as a parse-tolerant migration path but emitting a warning; removed after all in-tree fixtures are migrated.
 
+### 14.6 RPC responder set (`reply_from:`)
+
+the RpcReply event must be received from a target in the request binding's **responder set**. The set is declared by the binding's `reply_from:` key and defaults to the binding's own target, which is the same-target rule. A reply carrying a live correlation id from outside the set does **not** retire the correlation entry — the request stays answerable by a declared responder — and raises `error.communication` with `reason = "RPC_REPLY_FROM_UNDECLARED_PEER"` (§16.7 row 14).
+
+The gate exists because a correlation entry is a **one-shot resource**: whoever matches it retires it. Without the check, any peer that learned a correlation id could retire another peer's pending request, and the genuine reply would then arrive with nothing to match — the request would hang until its deadline. The check therefore runs **before** the erase, on both correlation paths (`pending_rpcs_` for `<send>` RPC, `InvokeCorrelation` for `<invoke type="sce:mesh-rpc">`).
+
+**Cross-target pairing** (request to `#A`, reply from `#B` — broker, proxy, and fan-in topologies) is supported by declaring `#B` in `#A`'s `reply_from:`. It is gated on the transport registry's `supports_cross_target_reply` (§10.4.2): `someip` and `local` correlate through a lookup table keyed on an identifier the sender minted, so a reply landing on a different inbound path can still be matched; `zenoh` cannot, because `session.get` binds the reply closure to one target's KeyExpr at the protocol layer. A `reply_from:` set wider than its own target on a transport that cannot carry it is rejected at parse time (`mesh/deploy-cross-target-reply-not-supported`) rather than generating a router whose declared set can never be exercised.
+
+```yaml
+bindings:
+"#alpha":
+  transport: someip
+  service: alpha_svc
+  # #broker answers on alpha's behalf. Omit the key entirely for the
+  # same-target default; the binding's own target is always a member.
+  reply_from: ["#alpha", "#broker"]
+```
+
+Deploy validation rejects an empty list and any member that is not a `#<machine>` target present in the topology (`mesh/deploy-invalid-reply-from`).
+
 ### Partition resolution rules
 
 When `partitions:` is present:
@@ -2925,7 +2947,7 @@ PatternKind ::= RpcRequest | RpcReply | FireForget
 - **Required**: when `kind: RpcRequest` AND the event name is not `service.request.X` (i.e., the default mirror pairing cannot apply). Absence is a hard build error (`RpcRequest without paired_with outside convention`).
 - **Rejected**: on any `kind:` other than `RpcRequest`. Presence is a hard build error.
 - **Referent**: `paired_with` must name an event that either (a) appears in the same machine's SCXML as a `<transition event="...">` or (b) has a `patterns:` entry with `kind: RpcReply`. Unresolved referents are a hard build error (`paired_with target not found`).
-- **Same-target constraint**: the RpcReply event must be received from the SAME transport target as the RpcRequest's `<send target>`. Cross-target pairing (request to `#A`, reply from `#B`) is not supported in E1 — it would require an RPC routing table the engine does not maintain. Cross-target RPC is a deferred capability (Phase 4).
+- **Responder set**: the RpcReply event must be received from a target in the request binding's responder set — declared by `reply_from:`, defaulting to the binding's own target (the same-target rule). A reply from outside the set does not retire the correlation entry and raises `error.communication` with `reason = "RPC_REPLY_FROM_UNDECLARED_PEER"` (§16.7 row 14). Cross-target pairing (request to `#A`, reply from `#B`) is supported by declaring `#B` in `#A`'s `reply_from:`, gated on the transport registry's `supports_cross_target_reply`. Full grammar and rationale: §14.6.
 
 **Overlap with inference**: if `paired_with` names an event whose own pattern is inferred as something other than `RpcReply` (e.g., `field.notify.X` which infers as `FieldNotify`), the build fails with `paired_with target has incompatible inferred kind`. The author must either rename the reply event to match the `service.response.*` mirror or declare both via `patterns:` entries that are consistent.
 
@@ -3595,6 +3617,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 11 | Inbound envelope reached an active `OrderingBuffer` without `sequence_no` (§10.6.3) | `MISSING_SEQUENCE` | *(baseline only — `source`, `envelope_id` carry the diagnosis)* |
 | 12 | `OrderingBuffer` fast-forwarded past a missing sequence range after `gap_timeout` expired (§10.6.4) | `ORDERING_GAP` | `lost_seq_lo: uint64`, `lost_seq_hi: uint64` (inclusive range of skipped sequence numbers) |
 | 13 | Peer region-partition's liveness signal observed lost (§16.4 per-partition liveness; transport-conditional manifestation — Zenoh: `sce/live/<machine>/<partition>` 3-segment token DELETE; SOME/IP: vsomeip `register_availability_handler` fires `available=false` per RFC F.X-3). Orthogonal axis from row 8 — raises intra-machine when one OS process of a `<parallel>`-split machine exits while siblings remain. | `REGION_PARTITIONED` | `machine: string`, `partition: string`, `last_seen_ms_ago: int?` |
+| 14 | An `RpcReply` carried a live correlation id but arrived from a peer outside the request binding's §14.6 responder set. The correlation entry is **left in place** — the request stays answerable by a declared responder — so this row is the loud-fail that keeps the rejection from being a silent drop. Raised on the receiving (requesting) side. | `RPC_REPLY_FROM_UNDECLARED_PEER` | `source: string` (the machine the reply came from), `invoke_id: string` (the invoke it tried to retire) |
 
 **Common fields (§10.7.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
 

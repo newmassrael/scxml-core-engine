@@ -33,6 +33,12 @@ using SCE::Mesh::RpcStatus;
 
 namespace {
 
+/// SCE_MESH.md §14.6: `handleReply` reports three outcomes so a caller
+/// can tell "not ours" from "not allowed". Aliased here so the
+/// assertions below read as `Outcome::Delivered` rather than the full
+/// nested name.
+using Outcome = SCE::Mesh::InvokeCorrelation::ReplyOutcome;
+
 constexpr InvokeCorrelation::Key kUuidA = {
     0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
 };
@@ -64,12 +70,12 @@ TEST(InvokeCorrelation, RegisterThenReplyOk_FiresCallbackWithPayload) {
     InvokeCorrelation table;
     Sink sink;
 
-    EXPECT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    EXPECT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
     EXPECT_EQ(table.size(), 1u);
     EXPECT_TRUE(table.contains(kUuidA));
 
     const std::vector<std::uint8_t> payload{0x01, 0x02, 0x03};
-    EXPECT_TRUE(table.handleReply(kUuidA, RpcStatus::Ok, payload));
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "motor", RpcStatus::Ok, payload));
 
     EXPECT_EQ(sink.calls, 1);
     EXPECT_EQ(sink.status, RpcStatus::Ok);
@@ -81,9 +87,9 @@ TEST(InvokeCorrelation, RegisterThenReplyOk_FiresCallbackWithPayload) {
 TEST(InvokeCorrelation, RegisterThenReplyError_PropagatesStatus) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
 
-    EXPECT_TRUE(table.handleReply(kUuidA, RpcStatus::Unavailable, {}));
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "motor", RpcStatus::Unavailable, {}));
 
     EXPECT_EQ(sink.calls, 1);
     EXPECT_EQ(sink.status, RpcStatus::Unavailable);
@@ -94,7 +100,7 @@ TEST(InvokeCorrelation, RegisterThenReplyError_PropagatesStatus) {
 TEST(InvokeCorrelation, DeadlineFires_DeliveredAsDeadlineExceeded) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
 
     EXPECT_TRUE(table.handleDeadline(kUuidA));
 
@@ -107,7 +113,7 @@ TEST(InvokeCorrelation, DeadlineFires_DeliveredAsDeadlineExceeded) {
 TEST(InvokeCorrelation, CancelErasesWithoutFiringCallback) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
 
     EXPECT_TRUE(table.handleCancel(kUuidA));
 
@@ -120,25 +126,25 @@ TEST(InvokeCorrelation, CancelErasesWithoutFiringCallback) {
 TEST(InvokeCorrelation, LateReplyAfterCancel_IsSilentlyDropped) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
     ASSERT_TRUE(table.handleCancel(kUuidA));
 
     // Reply arrives after cancel — the entry is gone, so nothing
     // fires and the table reports "not found".
-    EXPECT_FALSE(table.handleReply(kUuidA, RpcStatus::Ok, {0x99}));
+    EXPECT_EQ(Outcome::NoSuchInvoke, table.handleReply(kUuidA, "motor", RpcStatus::Ok, {0x99}));
     EXPECT_EQ(sink.calls, 0);
 }
 
 TEST(InvokeCorrelation, LateReplyAfterDeadline_IsSilentlyDropped) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
     ASSERT_TRUE(table.handleDeadline(kUuidA));
     ASSERT_EQ(sink.calls, 1);  // deadline fired
 
     // Reply arrives after the deadline already fired and erased —
     // drop silently, do not invoke the callback a second time.
-    EXPECT_FALSE(table.handleReply(kUuidA, RpcStatus::Ok, {0x99}));
+    EXPECT_EQ(Outcome::NoSuchInvoke, table.handleReply(kUuidA, "motor", RpcStatus::Ok, {0x99}));
     EXPECT_EQ(sink.calls, 1);
 }
 
@@ -147,12 +153,12 @@ TEST(InvokeCorrelation, DuplicateRegister_IsContractViolationReturningFalse) {
     Sink first;
     Sink second;
 
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", first.callback()));
-    EXPECT_FALSE(table.registerInvoke(kUuidA, "motor", second.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, first.callback()));
+    EXPECT_FALSE(table.registerInvoke(kUuidA, "motor", {"motor"}, second.callback()));
 
     // The first registration is preserved. A reply fires only the
     // first callback, not the duplicate.
-    EXPECT_TRUE(table.handleReply(kUuidA, RpcStatus::Ok, {}));
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "motor", RpcStatus::Ok, {}));
     EXPECT_EQ(first.calls, 1);
     EXPECT_EQ(second.calls, 0);
 }
@@ -162,12 +168,12 @@ TEST(InvokeCorrelation, IndependentUuids_DoNotInterfere) {
     Sink sinkA;
     Sink sinkB;
 
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sinkA.callback()));
-    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", sinkB.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sinkA.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", {"brake"}, sinkB.callback()));
     EXPECT_EQ(table.size(), 2u);
 
     // Reply to A leaves B untouched.
-    ASSERT_TRUE(table.handleReply(kUuidA, RpcStatus::Ok, {0xaa}));
+    ASSERT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "motor", RpcStatus::Ok, {0xaa}));
     EXPECT_EQ(sinkA.calls, 1);
     EXPECT_EQ(sinkB.calls, 0);
     EXPECT_EQ(table.size(), 1u);
@@ -177,9 +183,9 @@ TEST(InvokeCorrelation, IndependentUuids_DoNotInterfere) {
 TEST(InvokeCorrelation, HandleReply_OnUnknownId_ReturnsFalse) {
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
 
-    EXPECT_FALSE(table.handleReply(kUuidB, RpcStatus::Ok, {0xff}));
+    EXPECT_EQ(Outcome::NoSuchInvoke, table.handleReply(kUuidB, "motor", RpcStatus::Ok, {0xff}));
     EXPECT_EQ(sink.calls, 0);
     EXPECT_EQ(table.size(), 1u);
 }
@@ -197,8 +203,8 @@ TEST(InvokeCorrelation, CancelAllPending_IteratesEntriesWithTargetAndErases) {
     InvokeCorrelation table;
     Sink sinkA;
     Sink sinkB;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sinkA.callback()));
-    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", sinkB.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sinkA.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", {"brake"}, sinkB.callback()));
     EXPECT_EQ(table.size(), 2u);
 
     std::vector<std::pair<InvokeCorrelation::Key, std::string>> seen;
@@ -245,7 +251,7 @@ TEST(InvokeCorrelation, CancelAllPending_NullCallback_IsTolerated) {
     // erase path even before they have a notification target wired.
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
     table.cancelAllPending({});
     EXPECT_EQ(table.size(), 0u);
     EXPECT_EQ(sink.calls, 0);
@@ -265,12 +271,12 @@ TEST(InvokeCorrelation, CancelAllPendingForTarget_OnlyErasesMatchingTarget) {
     Sink sinkMotorA;
     Sink sinkMotorB;
     Sink sinkBrake;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sinkMotorA.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sinkMotorA.callback()));
     // kUuidB is a different uuid; alias kUuidC manufactured locally.
     InvokeCorrelation::Key kUuidC = kUuidA;
     kUuidC[0] = 0xff;
-    ASSERT_TRUE(table.registerInvoke(kUuidC, "motor", sinkMotorB.callback()));
-    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", sinkBrake.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidC, "motor", {"motor"}, sinkMotorB.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidB, "brake", {"brake"}, sinkBrake.callback()));
     EXPECT_EQ(table.size(), 3u);
 
     std::vector<InvokeCorrelation::Key> seen;
@@ -283,10 +289,73 @@ TEST(InvokeCorrelation, CancelAllPendingForTarget_OnlyErasesMatchingTarget) {
     EXPECT_EQ(sinkMotorA.calls, 0) << "deliver NOT fired (cancel-style)";
     EXPECT_EQ(sinkMotorB.calls, 0);
 
-    // The surviving brake entry must still be deliverable.
-    EXPECT_TRUE(table.handleReply(kUuidB, RpcStatus::Ok, {0x01}));
+    // The surviving brake entry must still be deliverable — by BRAKE.
+    // Its responder set is {"brake"}, so a reply stamped "motor" would
+    // be gated out (§14.6); the replier here has to be the peer the
+    // entry was registered against.
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidB, "brake", RpcStatus::Ok, {0x01}));
     EXPECT_EQ(sinkBrake.calls, 1);
     EXPECT_EQ(sinkBrake.status, RpcStatus::Ok);
+}
+
+// ── SCE_MESH.md §14.6 responder set ─────────────────────────────
+
+TEST(InvokeCorrelation, ReplyFromUndeclaredPeer_IsRejectedAndLeavesEntryLive) {
+    // The load-bearing property: a correlation entry is a one-shot
+    // resource, so the responder check must run BEFORE the erase. If it
+    // ran after, any peer that learned an invoke id could retire another
+    // peer's pending request and the genuine reply would find nothing.
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "alpha", {"alpha"}, sink.callback()));
+
+    EXPECT_EQ(Outcome::ReplierNotDeclared, table.handleReply(kUuidA, "beta", RpcStatus::Ok, {0x09}));
+    EXPECT_EQ(sink.calls, 0) << "an undeclared replier must not deliver";
+    EXPECT_EQ(table.size(), 1u) << "the entry must survive the rejection";
+    EXPECT_TRUE(table.contains(kUuidA));
+
+    // The declared responder can still answer — this is what the
+    // survive-the-rejection property buys.
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "alpha", RpcStatus::Ok, {0x09}));
+    EXPECT_EQ(sink.calls, 1);
+    EXPECT_EQ(table.size(), 0u);
+}
+
+TEST(InvokeCorrelation, ReplyFromDeclaredCrossTargetPeer_IsDelivered) {
+    // A broker topology: the request went to alpha, but the deployment
+    // declared broker as an allowed responder via `reply_from:`.
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "alpha", {"alpha", "broker"}, sink.callback()));
+
+    EXPECT_EQ(Outcome::Delivered, table.handleReply(kUuidA, "broker", RpcStatus::Ok, {0x07}));
+    EXPECT_EQ(sink.calls, 1);
+    EXPECT_EQ(sink.status, RpcStatus::Ok);
+    EXPECT_EQ(table.size(), 0u);
+}
+
+TEST(InvokeCorrelation, EmptyResponderSetIsRefused) {
+    // An entry nobody may answer would hang until its deadline. Codegen
+    // must not be able to produce one silently.
+    InvokeCorrelation table;
+    Sink sink;
+    EXPECT_FALSE(table.registerInvoke(kUuidA, "alpha", {}, sink.callback()));
+    EXPECT_EQ(table.size(), 0u);
+}
+
+TEST(InvokeCorrelation, LocalFailureBypassesTheResponderGate) {
+    // A deadline / query-drop is this router's own observation, not a
+    // wire reply, so it has no replier to check. Routing it through the
+    // gate would need a fake replier name — which would be a way to
+    // talk past the gate.
+    InvokeCorrelation table;
+    Sink sink;
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "alpha", {"alpha"}, sink.callback()));
+
+    EXPECT_TRUE(table.failLocally(kUuidA, RpcStatus::Unavailable));
+    EXPECT_EQ(sink.calls, 1);
+    EXPECT_EQ(sink.status, RpcStatus::Unavailable);
+    EXPECT_EQ(table.size(), 0u);
 }
 
 TEST(InvokeCorrelation, CancelAllPendingForTarget_NoMatch_ReturnsZero) {
@@ -296,7 +365,7 @@ TEST(InvokeCorrelation, CancelAllPendingForTarget_NoMatch_ReturnsZero) {
     // declared peer without checking whether the table has entries.
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
 
     int callback_count = 0;
     const std::size_t erased =
@@ -313,7 +382,7 @@ TEST(InvokeCorrelation, CancelAllPendingForTarget_NullCallback_IsTolerated) {
     // the erase path before the notification target is hooked up.
     InvokeCorrelation table;
     Sink sink;
-    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
+    ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", {"motor"}, sink.callback()));
     EXPECT_EQ(table.cancelAllPendingForTarget("motor", {}), 1u);
     EXPECT_EQ(table.size(), 0u);
     EXPECT_EQ(sink.calls, 0);
@@ -337,10 +406,10 @@ TEST(InvokeCorrelation, ConcurrentReplyVsCancel_AtMostOneWinsExactlyOnce) {
         uuid[0] = static_cast<std::uint8_t>(i & 0xff);
         uuid[1] = static_cast<std::uint8_t>((i >> 8) & 0xff);
 
-        ASSERT_TRUE(table.registerInvoke(uuid, "motor", [&](RpcStatus, auto) { ++deliver_calls; }));
+        ASSERT_TRUE(table.registerInvoke(uuid, "motor", {"motor"}, [&](RpcStatus, auto) { ++deliver_calls; }));
 
         std::thread t_reply([&] {
-            if (table.handleReply(uuid, RpcStatus::Ok, {})) {
+            if (table.handleReply(uuid, "motor", RpcStatus::Ok, {}) == Outcome::Delivered) {
                 ++reply_winners;
             }
         });

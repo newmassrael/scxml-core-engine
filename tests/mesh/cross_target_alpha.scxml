@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Target alpha for the §14.6 same-target constraint adjudication.
+
+     Declared so the topology analyzer can resolve `#alpha` and emit the
+     client's RpcRequest binding. At runtime the test replaces this
+     machine with a raw vsomeip application offering the same
+     (service, instance, method) tuple, because the adjudication needs a
+     server that replies with a correlation_id it did not receive —
+     something a generated server never does. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="alpha" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="computing"/>
+    </state>
+    <state id="computing">
+        <onentry>
+            <raise event="service.response.compute_force"/>
+        </onentry>
+        <transition target="ready"/>
+    </state>
+</scxml>

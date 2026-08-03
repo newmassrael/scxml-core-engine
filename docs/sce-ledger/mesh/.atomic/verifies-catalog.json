@@ -92,6 +92,12 @@
       ]
     },
     {
+      "file": "tests/mesh/test_mesh_cross_target_rpc_reply.cpp",
+      "section_ids": [
+        "mesh-14.6"
+      ]
+    },
+    {
       "file": "tests/mesh/test_mesh_custom_tcp_runtime.cpp",
       "section_ids": [
         "mesh-16.8.3"
@@ -158,6 +164,18 @@
       "file": "tests/mesh/test_mesh_session_f_wire_roundtrip.cpp",
       "section_ids": [
         "mesh-9.6"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_someip_cross_target_reply.cpp",
+      "section_ids": [
+        "mesh-14.6"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_someip_declared_responder.cpp",
+      "section_ids": [
+        "mesh-14.6"
       ]
     },
     {

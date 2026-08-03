@@ -326,6 +326,15 @@ struct TargetContext {
     /// Drives both the per-target `seq_counter` emission on the
     /// sender side and the receiver-side `admitOrdered` branch.
     needs_ordering: bool,
+    /// SCE_MESH.md §mesh-14.6 responder set — machine names (no leading
+    /// `#`) whose RpcReply may retire a correlation entry for a request
+    /// sent to this target. Carried verbatim from
+    /// [`ResolvedTarget::responders`]; the template emits it as the
+    /// `respondersFor` arm for this target and as the per-target
+    /// allow-list the SOME/IP response handler checks. Never empty for
+    /// a declared target — the deploy validator rejects an empty
+    /// `reply_from:` and the default arm yields the target itself.
+    responders: Vec<String>,
     /// SCE_MESH.md §mesh-16.7 row 3 retry policy carried verbatim into the
     /// template context. `None` ⇒ the OutboundBuffer's dispatcher
     /// goes straight to the transport-send closure (Stage 1/2
@@ -1250,6 +1259,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 has_per_target_field: desc.shape.has_per_target_field,
                 needs_dedup,
                 needs_ordering,
+                responders: t.responders.clone(),
                 event_patterns,
                 has_rpc,
                 has_pubsub,
@@ -2159,6 +2169,9 @@ mod tests {
             has_per_target_field: false,
             needs_dedup: false,
             needs_ordering: false,
+            // §14.6 same-target default: the probe target answers for
+            // itself, which is what an absent `reply_from:` yields.
+            responders: vec!["probe".into()],
             event_patterns: Vec::new(),
             has_rpc,
             has_pubsub: false,
