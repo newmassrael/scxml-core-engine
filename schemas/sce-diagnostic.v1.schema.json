@@ -236,6 +236,8 @@
         "mesh/deploy-pool-empty-instance-list",
         "mesh/deploy-pool-invalid-placeholder",
         "mesh/deploy-server-pool-not-supported",
+        "mesh/deploy-cross-target-reply-not-supported",
+        "mesh/deploy-invalid-reply-from",
         "mesh/deploy-stage-pool-not-declared",
         "mesh/deploy-stage-pool-wrong-kind",
         "mesh/deploy-stage-pool-transport-mismatch",

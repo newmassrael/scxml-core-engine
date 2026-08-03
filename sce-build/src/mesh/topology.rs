@@ -358,6 +358,18 @@ pub struct ResolvedTarget {
         skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none"
     )]
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// SCE_MESH.md §mesh-14.6 responder set — the machine names (no
+    /// leading `#`) whose RpcReply may retire a correlation entry for a
+    /// request sent to this target. Derived from the binding's
+    /// `reply_from:`; when that is absent the set is this target alone,
+    /// which is the same-target default. Never empty.
+    ///
+    /// Codegen emits it as the `responders` argument to
+    /// `InvokeCorrelation::registerInvoke` and as the per-target
+    /// allow-list the SOME/IP response handler checks before consulting
+    /// `pending_rpcs_`.
+    #[serde(default)]
+    pub responders: Vec<String>,
     /// SCE_MESH.md §mesh-16.7 row 3 retry policy. `None` ⇒ no retry layer
     /// (codegen wires the OutboundBuffer dispatcher directly to the
     /// transport-send closure, Stage 1/2 behaviour); `Some(_)` ⇒
@@ -1555,6 +1567,10 @@ pub(crate) struct PartialTarget {
     /// per-binding `needs_ordering` decision without revisiting
     /// deploy.yaml.
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// SCE_MESH.md §mesh-14.6 responder set, derived from the binding's
+    /// `reply_from:` by [`responder_set`]. Carried through the partial
+    /// so the merge step does not have to revisit deploy.yaml.
+    pub responders: Vec<String>,
     /// SCE_MESH.md §mesh-16.7 row 3 retry policy, copied verbatim from the
     /// `BindingConfig`. `None` ⇒ no retry layer; OutboundBuffer's
     /// dispatcher goes straight to the transport. `Some(_)` ⇒ codegen
@@ -1666,6 +1682,7 @@ pub(crate) fn contribute_send_partials(
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
+                    responders: responder_set(target, binding),
                     retry: binding.retry,
                     auth: binding.auth.clone(),
                     instance_from: binding.instance_from.clone(),
@@ -1833,6 +1850,30 @@ pub fn build_resolved_targets(
 /// responsible for emitting no duplicates within their own output.
 ///
 /// If no existing entry matches, `new` is appended as-is.
+/// SCE_MESH.md §mesh-14.6 — derive a binding's responder set.
+///
+/// `reply_from:` entries are `#<machine>` targets (deploy validation
+/// enforces the shape); the correlation gate compares against
+/// `MeshEnvelope::source`, which is a bare machine name, so the `#` is
+/// stripped here rather than at every comparison site.
+///
+/// Absent `reply_from:` yields the binding's own target — the
+/// same-target default. The result is never empty: deploy validation
+/// rejects an empty list, and the default arm always produces one
+/// element.
+fn responder_set(target: &TargetId, binding: &crate::mesh::deploy::BindingConfig) -> Vec<String> {
+    // §mesh-14.6: absent `reply_from:` yields the binding's own target —
+    // the same-target default — and the `#` is stripped because the
+    // correlation gate compares against `MeshEnvelope::source`.
+    match &binding.reply_from {
+        Some(list) => list
+            .iter()
+            .map(|raw| raw.trim_start_matches('#').to_string())
+            .collect(),
+        None => vec![target.name().to_string()],
+    }
+}
+
 fn merge_partial_into(partials: &mut Vec<PartialTarget>, new: PartialTarget) {
     let Some(existing) = partials.iter_mut().find(|pt| pt.target == new.target) else {
         partials.push(new);
@@ -1946,13 +1987,14 @@ pub(crate) fn contribute_subscription_partials(
         merge_partial_into(
             &mut partials,
             PartialTarget {
-                target: source_target,
+                target: source_target.clone(),
                 events: Vec::new(),
                 transport: binding.transport.clone(),
                 extra: binding.extra.clone(),
                 event_patterns: Vec::new(),
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
+                responders: responder_set(&source_target, binding),
                 retry: binding.retry,
                 auth: binding.auth.clone(),
                 instance_from: binding.instance_from.clone(),
@@ -2204,6 +2246,7 @@ pub(crate) fn finalize_targets(
             state,
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
+            responders: pt.responders,
             retry: pt.retry,
             auth: pt.auth,
             pool_plan,
@@ -3424,6 +3467,7 @@ mod tests {
             state: TransportState::Local,
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
+            responders: vec!["motor".to_string()],
             retry: None,
             auth: None,
             pool_plan: None,

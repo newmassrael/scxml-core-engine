@@ -134,15 +134,43 @@
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
 {% if kind == "rpc" %}
-                // Correlation: look up reply-event name for this correlation_id
+                // Correlation: look up reply-event name for this correlation_id.
+                //
+                // SCE_MESH.md §14.6: the entry is retired only if THIS
+                // target is in the request binding's responder set. The
+                // check runs before the erase — a correlation entry is a
+                // one-shot resource, so letting an undeclared peer match
+                // it would let that peer retire another peer's pending
+                // request. `{{ target.target }}` is this handler's own
+                // target, known at codegen time because the handler is
+                // registered per (service, instance, method).
+                bool undeclared_replier = false;
                 if (env.correlation_id) {
                     std::lock_guard<std::mutex> lock(correlation_mutex_);
                     auto it = pending_rpcs_.find(CorrelationKey{*env.correlation_id});
                     if (it != pending_rpcs_.end()) {
-                        env.type = it->second;
-                        env.pattern = SCE::Mesh::PatternKind::RpcReply;
-                        pending_rpcs_.erase(it);
+                        static constexpr const char* kThisMachine = "{{ target.target | replace("#", "") }}";
+                        const auto& allowed = it->second.responders;
+                        if (std::find(allowed.begin(), allowed.end(), kThisMachine) != allowed.end()) {
+                            env.type = it->second.reply_event;
+                            env.pattern = SCE::Mesh::PatternKind::RpcReply;
+                            pending_rpcs_.erase(it);
+                        } else {
+                            undeclared_replier = true;
+                        }
                     }
+                }
+                if (undeclared_replier) {
+                    // SCE_MESH.md §16.7 row 14, raised outside the
+                    // correlation mutex. The entry is still live, so the
+                    // request stays answerable by a declared responder.
+                    SCE::Mesh::CommunicationError err;
+                    err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
+                    err.source = env.source;
+                    err.transport = "someip";
+                    err.envelope_id = env.id;
+                    raiseCommunicationError(std::move(err));
+                    return;
                 }
 {% else %}
                 env.pattern = {{ pattern_kind }};
@@ -393,6 +421,14 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% if has_mesh_rpc.v or has_server %}
 #include <mutex>
 #include <unordered_map>
+{% endif %}
+{% if needs_correlation_key or has_mesh_rpc.v %}
+// SCE_MESH.md §14.6 responder set: `respondersFor` returns a
+// `std::vector<std::string>` and both correlation gates scan it with
+// `std::find`.
+#include <algorithm>
+#include <string>
+#include <vector>
 {% endif %}
 {% if has_mesh_rpc.v %}
 #include "mesh/InvokeCorrelation.h"
@@ -1599,10 +1635,47 @@ struct TransportRouter {
         }
     };
 {% endif %}
+{% if needs_correlation_key or has_mesh_rpc.v %}
+    /// SCE_MESH.md §14.6 — the responder set for a request sent to
+    /// `target`: the machine names whose RpcReply may retire that
+    /// request's correlation entry.
+    ///
+    /// Derived from the binding's `reply_from:`; absent `reply_from:`
+    /// yields the target alone, which is the same-target default. The
+    /// deploy validator rejects an empty or unresolvable set, so every
+    /// declared target returns a non-empty vector; an unknown target
+    /// returns empty, which `InvokeCorrelation::registerInvoke` refuses
+    /// rather than registering an entry nobody may answer.
+    static std::vector<std::string> respondersFor(const std::string& target) {
+{% if targets %}
+{% for t in targets %}
+        if (target == "{{ t.target }}") {
+            return { {% for r in t.responders %}"{{ r }}"{% if not loop.last %}, {% endif %}{% endfor %} };
+        }
+{% endfor %}
+{% else %}
+        // Server-only router: no client bindings, so no request of ours
+        // can be answered and the responder set is never consulted.
+        (void)target;
+{% endif %}
+        return {};
+    }
+
+{% endif %}
 {% if "someip" in transport_types %}
     // Client SOME/IP RPC correlation: maps correlation_id → reply event name.
     std::mutex correlation_mutex_;
-    std::unordered_map<CorrelationKey, std::string, CorrelationKeyHash> pending_rpcs_;
+    /// SCE_MESH.md §14.6: a pending SOME/IP RPC remembers both the
+    /// reply-event name to rewrite `env.type` to AND the responder set
+    /// allowed to retire it. Storing the set here (rather than
+    /// re-deriving it in the response handler) keeps the gate keyed on
+    /// the REQUEST's binding — the handler only knows which target it
+    /// is, not which target the request went to.
+    struct PendingRpc {
+        std::string reply_event;
+        std::vector<std::string> responders;
+    };
+    std::unordered_map<CorrelationKey, PendingRpc, CorrelationKeyHash> pending_rpcs_;
 {% endif %}
 
 {# ── (D2d) sce:mesh-rpc invoke bookkeeping (SCE_MESH.md §9.5) ── #}
@@ -2046,7 +2119,8 @@ struct TransportRouter {
                     const char* reply = resolveReplyEvent(eventName);
                     if (reply[0] != '\0') {
                         std::lock_guard<std::mutex> lock(correlation_mutex_);
-                        pending_rpcs_[CorrelationKey{cid}] = reply;
+                        pending_rpcs_[CorrelationKey{cid}] =
+                            PendingRpc{reply, respondersFor(target)};
                     }
                 }
 {% endif %}
@@ -4139,9 +4213,34 @@ struct TransportRouter {
         // session_idx is 0.
         if (env.pattern == SCE::Mesh::PatternKind::RpcReply && env.invoke_id) {
             const auto status = env.rpc_status.value_or(SCE::Mesh::RpcStatus::Ok);
-            if (invoke_correlation_.handleReply(*env.invoke_id, status, env.data)) {
+            using ReplyOutcome = SCE::Mesh::InvokeCorrelation::ReplyOutcome;
+            switch (invoke_correlation_.handleReply(*env.invoke_id, env.source, status, env.data)) {
+            case ReplyOutcome::Delivered:
                 deadline_scheduler_.cancelDeadline(*env.invoke_id);
                 return true;
+            case ReplyOutcome::ReplierNotDeclared: {
+                // SCE_MESH.md §16.7 row 14. The entry is still live —
+                // `handleReply` checks the responder set BEFORE erasing —
+                // so the request stays answerable by a declared peer and
+                // its deadline stays armed. Raise rather than drop: a
+                // reply carrying a live correlation id from an
+                // undeclared peer is either a topology error or an
+                // attempt to retire someone else's request, and both
+                // are things the author must be able to observe.
+                SCE::Mesh::CommunicationError err;
+                err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
+                err.source = env.source;
+                err.invoke_id = SCE::uuid::to_string(*env.invoke_id);
+                err.envelope_id = env.id;
+                raiseCommunicationError(std::move(err));
+                return true;
+            }
+            case ReplyOutcome::NoSuchInvoke:
+                // Unknown or already-retired id: ordinary traffic. Fall
+                // through to generic dispatch, which may still match a
+                // session-level RPC through the SOME/IP pending_rpcs_
+                // table.
+                break;
             }
         }
 {% endif %}
@@ -4706,7 +4805,7 @@ struct TransportRouter {
         // codegen, so `sessions_[0]` is the sole session here.
         SenderEngine* sender_ptr = sessions_[0];
         std::string captured_invoke_id = invokeId;
-        invoke_correlation_.registerInvoke(invoke_uuid, target,
+        invoke_correlation_.registerInvoke(invoke_uuid, target, respondersFor(target),
             [sender_ptr, captured_invoke_id](
                 SCE::Mesh::RpcStatus status,
                 std::vector<std::uint8_t> payload) {
@@ -4995,8 +5094,11 @@ struct TransportRouter {
         // invoke uuid above).
         cancelEnvelopeRetryById(envelope_uuid);
 {% endif %}
-        (void)invoke_correlation_.handleReply(
-            invoke_uuid, SCE::Mesh::RpcStatus::Unavailable, {});
+        // Locally-observed failure (the query terminated without a
+        // reply), so it goes through `failLocally` — there is no
+        // replier and therefore no §14.6 responder set to check.
+        (void)invoke_correlation_.failLocally(
+            invoke_uuid, SCE::Mesh::RpcStatus::Unavailable);
     }
 {% endif %}
 {% endif %}

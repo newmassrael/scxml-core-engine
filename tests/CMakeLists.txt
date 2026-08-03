@@ -3205,6 +3205,38 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_invoke_rpc_runtime_verification COMMAND mesh_invoke_rpc_runtime_test)
 
+    # §9.5 correlation scope: adjudicates the §14.6 "Same-target
+    # constraint" clause against the runtime. A reply carrying a live
+    # invoke_id but a source that is not the invoke's target — and not
+    # any machine in the topology — is injected into the client router.
+    # Two control arms (correct source / novel invoke_id) isolate the
+    # correlation axis so the verdict cannot be a fixture artifact.
+    add_executable(mesh_cross_target_rpc_reply_test
+        mesh/test_mesh_cross_target_rpc_reply.cpp
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/motor_invoke_sm.h"
+        "${MESH_INVOKE_OUTPUT_DIR}/brake_invoke_transport.h"
+    )
+
+    target_include_directories(mesh_cross_target_rpc_reply_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_INVOKE_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_cross_target_rpc_reply_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+    )
+
+    target_compile_features(mesh_cross_target_rpc_reply_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_cross_target_rpc_reply_test)
+
+    add_test(NAME mesh_cross_target_rpc_reply_verification
+             COMMAND mesh_cross_target_rpc_reply_test)
+
     # §9.5 deadline expiry: motor never replies, 50ms deadline fires
     # error.invoke on the scheduler thread. SCE_THREAD_SAFE enables the
     # EventQueueManager mutex so the scheduler thread's raiseExternal push
@@ -4645,6 +4677,135 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set_tests_properties(mesh_someip_rpc_engine_driven PROPERTIES
             TIMEOUT 30
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_rpc_engine.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
+        # ── §14.6 same-target constraint adjudication over live SOME/IP ──
+        # A client with two SOME/IP RPC targets, so codegen installs a
+        # response handler on each service and both consult the same
+        # router-scoped pending_rpcs_ table. Both servers are raw vsomeip
+        # applications owned by the test: the adjudication needs a server
+        # that replies with a correlation_id it did not receive, which a
+        # generated server never does.
+        set(MESH_CROSS_TARGET_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_cross_target_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_CROSS_TARGET_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_CROSS_TARGET_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_cross_target.yaml"
+                    --write-deps "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h.d"
+            COMMENT "Mesh cross-target (§14.6): Generating cross_target_client_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_CROSS_TARGET_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_cross_target.yaml"
+                    --transport-only
+                    --write-deps "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${MESH_TEST_DIR}/deploy_cross_target.yaml"
+                    "${MESH_TEST_DIR}/cross_target_alpha.scxml" "${MESH_TEST_DIR}/cross_target_beta.scxml"
+                    "${MESH_TEST_DIR}/vsomeip_cross_target.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h"
+            DEPFILE "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h.d"
+            COMMENT "Mesh cross-target (§14.6): Generating cross_target_client_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_cross_target_reply_test
+            mesh/test_mesh_someip_cross_target_reply.cpp
+            "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_sm.h"
+            "${MESH_CROSS_TARGET_OUTPUT_DIR}/cross_target_client_transport.h"
+        )
+
+        target_include_directories(mesh_someip_cross_target_reply_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_CROSS_TARGET_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_cross_target_reply_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_cross_target_reply_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_cross_target_reply_test)
+        add_test(NAME mesh_someip_cross_target_reply
+                 COMMAND mesh_someip_cross_target_reply_test)
+        set_tests_properties(mesh_someip_cross_target_reply PROPERTIES
+            TIMEOUT 60
+            RUN_SERIAL TRUE
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_cross_target.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
+        # ── §14.6 declared responder set: the positive half ──────────
+        # Same SCXML as the cross-target fixture above, different
+        # deploy.yaml (`reply_from:` declared), so the pair proves the
+        # gate keys on the declared set and nothing else.
+        set(MESH_XT_DECLARED_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_cross_target_declared_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_XT_DECLARED_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_XT_DECLARED_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
+                    --write-deps "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h.d"
+            COMMENT "Mesh cross-target declared (§14.6): Generating cross_target_client_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/cross_target_client.scxml" -l cpp -o "${MESH_XT_DECLARED_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
+                    --transport-only
+                    --write-deps "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/cross_target_client.scxml" "${MESH_TEST_DIR}/deploy_cross_target_declared.yaml"
+                    "${MESH_TEST_DIR}/cross_target_alpha.scxml" "${MESH_TEST_DIR}/cross_target_beta.scxml"
+                    "${MESH_TEST_DIR}/vsomeip_cross_target.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h"
+            DEPFILE "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h.d"
+            COMMENT "Mesh cross-target declared (§14.6): Generating cross_target_client_transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_declared_responder_test
+            mesh/test_mesh_someip_declared_responder.cpp
+            "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_sm.h"
+            "${MESH_XT_DECLARED_OUTPUT_DIR}/cross_target_client_transport.h"
+        )
+
+        target_include_directories(mesh_someip_declared_responder_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_XT_DECLARED_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_declared_responder_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_declared_responder_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_declared_responder_test)
+        add_test(NAME mesh_someip_declared_responder
+                 COMMAND mesh_someip_declared_responder_test)
+        set_tests_properties(mesh_someip_declared_responder PROPERTIES
+            TIMEOUT 60
+            RUN_SERIAL TRUE
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_cross_target.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
         # ── SCE Mesh §10.10 Gap 5 (i): SOME/IP late-boot OutboundBuffer ──
         # Re-runs sce-codegen on the same brake_someip_multi /
@@ -7149,5 +7310,53 @@ if(SCE_BUILD_INSTALL_CONSUMER_TEST)
         # Install produces a scratch prefix under $TMPDIR; run.sh cleans up
         # via `trap`, but avoid interleaving with other tests writing to /tmp.
         RUN_SERIAL TRUE
+    )
+endif()
+
+# ----------------------------------------------------------------------------
+# Staleness guard: no test may run against a binary older than its sources.
+#
+# CTest has no build dependency — `ctest` (and `ninja test`) run whatever
+# executables already exist. A tree edited after the last build therefore
+# reports the PREVIOUS build's verdict, which reads as a pass. That failure
+# mode is silent and directional: it only ever turns red into green.
+#
+# The fix is a setup fixture that rebuilds, plus a blanket
+# FIXTURES_REQUIRED applied to every test registered in this directory.
+# Two properties make it hard to bypass:
+#
+#   * `-R` / `-L` filters do not exclude a required fixture — a fixture is
+#     pulled in by dependency, not by name match, so `ctest -R one_test`
+#     builds first as well.
+#   * when the build fails the dependent tests are reported NOT RUN rather
+#     than passed, so a broken tree cannot produce a green summary.
+#
+# The blanket application is deliberate: enumerating targets by hand would
+# make coverage depend on remembering to opt each new test in, which is the
+# same class of mistake this guard exists to remove. A no-op rebuild costs
+# about a second.
+#
+# Not covered: running a test executable directly (`./tests/foo_test`)
+# bypasses CTest entirely. That is a deliberate scope limit — pinning a
+# source digest into every binary is disproportionate, and the direct-run
+# case is normally "the target I just built", not the stale-sibling case
+# this guard addresses.
+add_test(NAME sce_build_is_current
+    COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --parallel
+)
+set_tests_properties(sce_build_is_current PROPERTIES
+    FIXTURES_SETUP sce_built
+    # A cold or heavily-invalidated tree can take a while; the steady state
+    # is a no-op ninja.
+    TIMEOUT 3000
+    # Serial so parallel ctest does not start N concurrent builds.
+    RUN_SERIAL TRUE
+)
+
+get_property(_sce_registered_tests DIRECTORY PROPERTY TESTS)
+list(REMOVE_ITEM _sce_registered_tests sce_build_is_current)
+if(_sce_registered_tests)
+    set_tests_properties(${_sce_registered_tests} PROPERTIES
+        FIXTURES_REQUIRED sce_built
     )
 endif()

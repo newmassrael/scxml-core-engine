@@ -1086,6 +1086,96 @@
       "decision_status": "active",
       "coverage_expectation": "out_of_scope_here"
     },
+    "mesh-14.6": {
+      "title": "RPC responder set (`reply_from:`)",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-14",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_reply_from",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "responder_set",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/InvokeCorrelation.h",
+          "symbol": "handleReply",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/InvokeCorrelation.h",
+          "symbol": "registerInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "BindingConfig",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "PartialTarget",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "ResolvedTarget",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "TargetContext",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "symbol": "TransportDescriptor",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "ReasonCode",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/InvokeCorrelation.h",
+          "symbol": "failLocally",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/InvokeCorrelation.h",
+          "symbol": "responders",
+          "kind": "references"
+        },
+        {
+          "file": "tests/mesh/test_mesh_cross_target_rpc_reply.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_someip_cross_target_reply.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_someip_declared_responder.cpp",
+          "kind": "verifies"
+        }
+      ]
+    },
     "mesh-15": {
       "title": "Zenoh Transport Template Specification",
       "parent_doc": "mesh",

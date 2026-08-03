@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §14.6 same-target constraint adjudication fixture.
+
+     A client with TWO SOME/IP RPC targets. Each target carries its own
+     RpcRequest binding, so the generated router installs a response
+     message handler for BOTH services. That is the precondition for
+     asking whether a reply arriving on target B can correlate against a
+     request issued to target A.
+
+     The two request events are distinct so their correlation entries are
+     distinguishable in the pending_rpcs_ table. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="cross_target_client" initial="idle">
+    <state id="idle">
+        <onentry>
+            <!-- RpcRequest to target alpha. Reply event
+                 "service.response.compute_force" is inferred by convention. -->
+            <send target="#alpha" event="service.request.compute_force"/>
+            <!-- RpcRequest to target beta. Its reply handler is what makes
+                 beta a live inbound RPC path on this router. -->
+            <send target="#beta" event="service.request.other_call"/>
+        </onentry>
+        <transition event="service.response.compute_force" target="done"/>
+        <transition event="service.response.other_call"    target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>

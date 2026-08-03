@@ -118,6 +118,13 @@ enum class ReasonCode : std::uint8_t {
     /// region-partition's liveness signal observed lost (§mesh-16.4
     /// per-partition liveness).
     RegionPartitioned,
+    /// §mesh-16.7 row 14 — wire `"RPC_REPLY_FROM_UNDECLARED_PEER"`. An
+    /// RpcReply carried a live correlation id but arrived from a peer
+    /// outside the request binding's §mesh-14.6 responder set. The
+    /// correlation entry is left in place, so the request stays
+    /// answerable by a declared responder; this raise is the loud-fail
+    /// that keeps the rejection from being a silent drop.
+    RpcReplyFromUndeclaredPeer,
 };
 
 /// Canonical mapping table — single source of truth for both JSON
@@ -125,7 +132,7 @@ enum class ReasonCode : std::uint8_t {
 /// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
 /// this table; the cross-doc test fails the build if the table and
 /// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 13> kReasonCodeTable = {{
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 14> kReasonCodeTable = {{
     {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
     {ReasonCode::SendFailed, "SEND_FAILED"},
     {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
@@ -139,10 +146,11 @@ inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 13> kReason
     {ReasonCode::MissingSequence, "MISSING_SEQUENCE"},
     {ReasonCode::OrderingGap, "ORDERING_GAP"},
     {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
+    {ReasonCode::RpcReplyFromUndeclaredPeer, "RPC_REPLY_FROM_UNDECLARED_PEER"},
 }};
 
 /// Map a `ReasonCode` to its canonical wire string. Linear lookup
-/// over the 13-entry table; the compiler collapses the loop under
+/// over the 14-entry table; the compiler collapses the loop under
 /// `-O2`. Crashes (logic-error path) if a future variant is added
 /// to the enum without extending `kReasonCodeTable` — the missing-
 /// entry case is caught earlier by the cross-doc test, but the

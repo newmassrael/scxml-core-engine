@@ -15,7 +15,7 @@
 // codegen (F3) populates it on invoke entry and consults it on reply
 // / cancel / deadline; the class itself knows nothing about codegen,
 // envelopes, or schedulers — its only job is to keep a thread-safe
-// map of `uuid → {target, deliver}` entries and invoke each deliver
+// map of `uuid → {target, responders, deliver}` entries and invoke each deliver
 // callback at most once with the right `RpcStatus`. The `target`
 // field is the deploy.yaml peer machine name the invoke is bound to
 // — carried alongside the callback so the §mesh-10.4.1 row 1704
@@ -36,6 +36,7 @@
 #include "mesh/MeshUuidKey.h"
 #include "mesh/RpcStatus.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -82,31 +83,115 @@ public:
     /// callback without firing it.
     using DeliverCallback = std::function<void(RpcStatus, std::vector<std::uint8_t>)>;
 
+    /// Outcome of [`handleReply`]. Three cases rather than a bool
+    /// because the caller must distinguish "not ours" from "not
+    /// allowed": SCE_MESH.md §mesh-16.7 raises `error.communication`
+    /// with `reason = "RPC_REPLY_FROM_UNDECLARED_PEER"` only for the
+    /// latter. A reply for an id this router never issued (or one
+    /// already retired by cancel / deadline) is ordinary traffic and
+    /// stays silent.
+    enum class ReplyOutcome {
+        /// The entry matched and its deliver callback has fired.
+        Delivered,
+        /// No live entry for `uuid` — unknown, or already retired.
+        NoSuchInvoke,
+        /// The entry is live, but `replier` is not in its responder
+        /// set. **The entry is left in place**: the request stays
+        /// answerable by a declared responder.
+        ReplierNotDeclared,
+    };
+
     /// Register an in-flight invoke. `target` is the deploy.yaml peer
     /// machine name the invoke is bound to — stored alongside the
     /// callback so the §mesh-10.4.1 row 1704 shutdown-time §mesh-16.7 row 5
     /// `INVOKE_CHILD_LOST` raise can surface it without a parallel
-    /// reverse index. Returns `false` if `uuid` is already registered
-    /// — that is a caller contract violation (an invoke id must be
-    /// unique per parent), and the duplicate is dropped without
-    /// disturbing the first registration.
-    bool registerInvoke(const Key &uuid, std::string target, DeliverCallback deliver) {
+    /// reverse index.
+    ///
+    /// `responders` is the SCE_MESH.md §mesh-14.6 responder set —
+    /// the machine names (no leading `#`) whose RpcReply may retire
+    /// this entry. It comes from the binding's `reply_from:` and
+    /// defaults to the single target the invoke was sent to. An empty
+    /// set is a caller contract violation and is refused: a
+    /// correlation entry nobody may answer would hang until its
+    /// deadline, so codegen emitting an empty set must fail loudly
+    /// rather than silently.
+    ///
+    /// Returns `false` if `uuid` is already registered — that is also
+    /// a caller contract violation (an invoke id must be unique per
+    /// parent) — or if `responders` is empty. In both cases nothing is
+    /// inserted and any first registration is left undisturbed.
+    bool registerInvoke(const Key &uuid, std::string target, std::vector<std::string> responders,
+                        DeliverCallback deliver) {
+        if (responders.empty()) {
+            return false;
+        }
         std::lock_guard<std::mutex> lock(mutex_);
-        auto [it, inserted] = pending_.emplace(uuid, Entry{std::move(target), std::move(deliver)});
+        auto [it, inserted] =
+            pending_.emplace(uuid, Entry{std::move(target), std::move(responders), std::move(deliver)});
         (void)it;
         return inserted;
     }
 
-    /// `RpcReply` envelope arrived. If `uuid` is live, moves the
-    /// deliver callback out of the map, erases the entry, releases
-    /// the mutex, and then fires the callback with `status` and
-    /// `data`. Returns `true` on hit, `false` if the entry was
-    /// already erased by cancel, deadline, or unknown id.
+    /// `RpcReply` envelope arrived from `replier` (the envelope's
+    /// `source`, i.e. a machine name with no leading `#`).
     ///
-    /// The callback runs *outside* the mutex: the transport thread
-    /// that calls this should not block other correlation-table
+    /// SCE_MESH.md §mesh-14.6: a correlation entry is a one-shot
+    /// resource — whoever matches it retires it, and the request can
+    /// then never be answered by anyone else. So the responder set is
+    /// checked BEFORE the entry is erased. A reply from outside the set
+    /// leaves the entry live and returns
+    /// [`ReplyOutcome::ReplierNotDeclared`]; without that ordering any
+    /// peer that learned an invoke id could retire another peer's
+    /// pending request.
+    ///
+    /// On a match the deliver callback is moved out, the entry erased,
+    /// the mutex released, and only then is the callback fired — the
+    /// transport thread calling this must not block other correlation
     /// operations while the engine processes the event.
-    bool handleReply(const Key &uuid, RpcStatus status, std::vector<std::uint8_t> data) {
+    ReplyOutcome handleReply(const Key &uuid, const std::string &replier, RpcStatus status,
+                             std::vector<std::uint8_t> data) {
+        DeliverCallback cb;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = pending_.find(uuid);
+            if (it == pending_.end()) {
+                return ReplyOutcome::NoSuchInvoke;
+            }
+            const auto &allowed = it->second.responders;
+            if (std::find(allowed.begin(), allowed.end(), replier) == allowed.end()) {
+                return ReplyOutcome::ReplierNotDeclared;
+            }
+            cb = std::move(it->second.deliver);
+            pending_.erase(it);
+        }
+        if (cb) {
+            cb(status, std::move(data));
+        }
+        return ReplyOutcome::Delivered;
+    }
+
+    /// Author `<cancel>` hit this invoke. Erases the entry without
+    /// firing the deliver callback. Returns `true` if the entry
+    /// existed (i.e. there was something to cancel).
+    bool handleCancel(const Key &uuid) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return pending_.erase(uuid) != 0;
+    }
+
+    /// Fail an in-flight invoke from a condition this router observed
+    /// itself — a deadline expiring, a Zenoh query terminating without
+    /// a reply, a transport dropping. Fires `deliver(status, {})` and
+    /// erases. Returns `false` if a concurrent reply or cancel already
+    /// erased the entry — a benign race whose loser drops silently.
+    ///
+    /// Deliberately NOT routed through [`handleReply`]: there is no
+    /// replier here, so there is no responder set to check. The
+    /// authority is this router itself, which is precisely what the
+    /// §mesh-14.6 gate exists to verify for envelopes that came off the
+    /// wire. Routing local failures through the gate would either need
+    /// a fake replier name or a bypass flag — both of which turn the
+    /// gate into something a caller can talk its way past.
+    bool failLocally(const Key &uuid, RpcStatus status) {
         DeliverCallback cb;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -118,25 +203,15 @@ public:
             pending_.erase(it);
         }
         if (cb) {
-            cb(status, std::move(data));
+            cb(status, {});
         }
         return true;
     }
 
-    /// Author `<cancel>` hit this invoke. Erases the entry without
-    /// firing the deliver callback. Returns `true` if the entry
-    /// existed (i.e. there was something to cancel).
-    bool handleCancel(const Key &uuid) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return pending_.erase(uuid) != 0;
-    }
-
-    /// Deadline timer fired before a reply arrived. Fires
-    /// `deliver(RpcStatus::DeadlineExceeded, {})` and erases.
-    /// Returns `false` if a concurrent reply or cancel already
-    /// erased the entry — a benign race whose loser drops silently.
+    /// Deadline timer fired before a reply arrived. Thin alias for
+    /// [`failLocally`] with `RpcStatus::DeadlineExceeded`.
     bool handleDeadline(const Key &uuid) {
-        return handleReply(uuid, RpcStatus::DeadlineExceeded, {});
+        return failLocally(uuid, RpcStatus::DeadlineExceeded);
     }
 
     std::size_t size() const {
@@ -238,6 +313,10 @@ private:
     /// a parallel reverse index from uuid → target.
     struct Entry {
         std::string target;
+        /// SCE_MESH.md §mesh-14.6 responder set: machine names (no
+        /// leading `#`) whose RpcReply may retire this entry. Always
+        /// non-empty — `registerInvoke` refuses an empty set.
+        std::vector<std::string> responders;
         DeliverCallback deliver;
     };
 

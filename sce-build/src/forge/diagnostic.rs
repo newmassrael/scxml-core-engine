@@ -1838,6 +1838,10 @@ pub enum DiagnosticCode {
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
     MeshDeployServerPoolNotSupported,
+    #[serde(rename = "mesh/deploy-cross-target-reply-not-supported")]
+    MeshDeployCrossTargetReplyNotSupported,
+    #[serde(rename = "mesh/deploy-invalid-reply-from")]
+    MeshDeployInvalidReplyFrom,
     // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback deploy.yaml stage_pool family ──
     // These diagnostics validate the deploy.yaml `binding.stage_pool:`
     // cross-reference into the forge buffer-pool registry. Distinct
@@ -2791,6 +2795,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPoolEmptyInstanceList,
         MeshDeployPoolInvalidPlaceholder,
         MeshDeployServerPoolNotSupported,
+        MeshDeployCrossTargetReplyNotSupported,
+        MeshDeployInvalidReplyFrom,
         MeshDeployStagePoolNotDeclared,
         MeshDeployStagePoolWrongKind,
         MeshDeployStagePoolTransportMismatch,
@@ -3265,6 +3271,9 @@ impl DiagnosticCode {
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
             | MeshTopologyPoolParamNameMissing => Some("SCE Mesh §14.4"),
+
+            // ── Mesh RPC responder set (SCE_MESH.md §14.6) ──
+            MeshDeployCrossTargetReplyNotSupported | MeshDeployInvalidReplyFrom => Some("SCE Mesh §14.6"),
 
             // ── Mesh partitions schema (SCE_MESH.md §14 rules 6-10) ──
             MeshDeployPartitionDuplicateName
@@ -3835,6 +3844,10 @@ impl DiagnosticCode {
             MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
             MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
             MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
+            MeshDeployCrossTargetReplyNotSupported => {
+                "mesh/deploy-cross-target-reply-not-supported"
+            }
+            MeshDeployInvalidReplyFrom => "mesh/deploy-invalid-reply-from",
             MeshDeployStagePoolNotDeclared => "mesh/deploy-stage-pool-not-declared",
             MeshDeployStagePoolWrongKind => "mesh/deploy-stage-pool-wrong-kind",
             MeshDeployStagePoolTransportMismatch => "mesh/deploy-stage-pool-transport-mismatch",
@@ -10383,6 +10396,26 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5f473bdda8049652","code":"mesh/deploy-server-pool-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'motor': `server.instances:` is not supported on transport 'zenoh' — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can host a multi-instance server pool. Drop `instances:` from the server section, switch the server transport to one that supports pools, or run N processes each hosting a single-instance server. See SCE_MESH.md §14.4.","actual":"motor","fix":{"kind":"remove_fields","location":"topology.*.machines.motor.server","fields":["instances"]}}"#,
             ),
             (
+                "mesh/deploy-cross-target-reply-not-supported",
+                DeployError::CrossTargetReplyNotSupported {
+                    machine: "brake".into(),
+                    binding: "#alpha".into(),
+                    transport: "zenoh".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:42bfa9b16bf8c23d","code":"mesh/deploy-cross-target-reply-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.6","message":"machine 'brake': binding '#alpha' on transport 'zenoh' declares a `reply_from:` set wider than its own target, but this transport cannot carry a cross-target reply (supports_cross_target_reply = false). Either drop `reply_from:` to keep the same-target default, or move the binding to a transport that correlates replies through a lookup table (someip, local).","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-invalid-reply-from",
+                DeployError::InvalidReplyFrom {
+                    machine: "brake".into(),
+                    binding: "#alpha".into(),
+                    reason: "names machine 'ghost', which the topology does not declare".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2449562e1103c5ed","code":"mesh/deploy-invalid-reply-from","stage":"mesh-deploy","spec":"SCE Mesh §14.6","message":"machine 'brake': binding '#alpha' has an invalid `reply_from:` list — names machine 'ghost', which the topology does not declare. Omit the field entirely to keep the same-target default.","actual":"brake"}"#,
+            ),
+            (
                 "mesh/deploy-stage-pool-not-declared",
                 DeployError::StagePoolNotDeclared {
                     machine: "mcu_node".into(),
@@ -12279,6 +12312,8 @@ mod tests {
             | MeshDeployPoolEmptyInstanceList
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
+            | MeshDeployCrossTargetReplyNotSupported
+            | MeshDeployInvalidReplyFrom
             | MeshDeployStagePoolTransportMismatch
             | MeshDeployScxmlInvokeTargetConflict
             | MeshDeployPartitionDuplicateName
@@ -12921,6 +12956,8 @@ mod tests {
                 | MeshDeployPoolEmptyInstanceList
                 | MeshDeployPoolInvalidPlaceholder
                 | MeshDeployServerPoolNotSupported
+                | MeshDeployCrossTargetReplyNotSupported
+                | MeshDeployInvalidReplyFrom
                 | MeshDeployStagePoolNotDeclared
                 | MeshDeployStagePoolWrongKind
                 | MeshDeployStagePoolTransportMismatch
@@ -13056,9 +13093,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            326,
+            328,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 326 distinct variants to match the DiagnosticCode \
+             expected 328 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

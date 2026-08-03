@@ -1,0 +1,28 @@
+{
+  "applications": [
+    { "name": "cross_target_client_app" },
+    { "name": "xt_alpha_app" },
+    { "name": "xt_beta_app" }
+  ],
+  "services": [
+    {
+      "name": "alpha_svc",
+      "service": "0x3000",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "compute_force", "method": "0x0101" }
+      ]
+    },
+    {
+      "name": "beta_svc",
+      "service": "0x3001",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "other_call", "method": "0x0102" }
+      ]
+    }
+  ],
+  "service-discovery": {
+    "enable": "false"
+  }
+}

@@ -288,6 +288,39 @@ pub struct TransportDescriptor {
     /// `false` is rejected at parse time with
     /// `MeshDeployPartitionTransportBindingUnsupported`.
     pub supports_inter_partition_ipc: bool,
+    /// Can an RpcReply for a request sent to target A be received from a
+    /// different target B on this transport (SCE_MESH.md §mesh-14.6
+    /// responder set)?
+    ///
+    /// `true` for transports whose reply arrives through a correlation
+    /// lookup keyed on something the sender minted, so a reply landing on
+    /// a different inbound path can still be matched:
+    ///   - `someip`: the reply carries `correlation_id` in the envelope
+    ///     and the router-scoped `pending_rpcs_` table resolves it; each
+    ///     target's `register_message_handler` consults the same table.
+    ///   - `local`: in-process dispatch reaches `dispatchToSession`
+    ///     directly, where the `invoke_correlation_` table resolves
+    ///     `invoke_id` without consulting the arrival path.
+    ///
+    /// `false` for transports whose reply path is bound to the request
+    /// at the protocol layer, leaving no place for another target's
+    /// reply to enter:
+    ///   - `zenoh`: `session.get(key, …)` installs a per-query reply
+    ///     closure on ONE target's KeyExpr. A different target's
+    ///     queryable is a different key and therefore a different query;
+    ///     there is no correlation table to address. This is a property
+    ///     of the query model, not a missing feature — Zenoh is
+    ///     same-target by construction and carries no cross-target
+    ///     mis-correlation risk either.
+    ///   - `custom_tcp` / `shm` / `can` / `dds`: no `RequestReply`
+    ///     capability at all, so the question does not arise.
+    ///
+    /// Consumed by `deploy::validate_reply_from`: a binding event
+    /// declaring a `reply_from:` set wider than its own target on a
+    /// transport whose flag is `false` is rejected at parse time
+    /// (`DeployError::CrossTargetReplyNotSupported`). The default
+    /// responder set — the binding's own target — is always legal.
+    pub supports_cross_target_reply: bool,
 }
 
 // ── Single registry ─────────────────────────────────────────
@@ -328,6 +361,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // In-process direct dispatch cannot cross the OS process
         // boundary that `partitions:` defines (§mesh-14 L2729-2730).
         supports_inter_partition_ipc: false,
+        // Replies resolve through `invoke_correlation_` at
+        // `dispatchToSession`, which keys on `invoke_id` alone and
+        // never consults the arrival path.
+        supports_cross_target_reply: true,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -368,6 +405,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Shared-memory ring buffer per channel is the canonical
         // same-machine IPC mechanism (§mesh-14 L2730 "kind tcp/shm").
         supports_inter_partition_ipc: true,
+        // No RequestReply capability; the question does not arise.
+        supports_cross_target_reply: false,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -428,6 +467,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // instead of the direct channel §mesh-14 intends; authors should
         // pick `shm` or `custom_tcp` for inter-partition traffic.
         supports_inter_partition_ipc: false,
+        // The reply carries `correlation_id` and every target's
+        // `register_message_handler` resolves it against the same
+        // router-scoped `pending_rpcs_` table.
+        supports_cross_target_reply: true,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -469,6 +512,11 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // instead of the direct channel §mesh-14 intends; authors should
         // pick `shm` or `custom_tcp` for inter-partition traffic.
         supports_inter_partition_ipc: false,
+        // `session.get` binds the reply closure to ONE target's
+        // KeyExpr, so another target's queryable is a different
+        // query with no shared correlation table. Same-target by
+        // construction.
+        supports_cross_target_reply: false,
     };
     // SCE Mesh §mesh-16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -506,6 +554,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // half of spec L2730's "kind tcp/shm" default pair for
         // inter-partition traffic within the same machine.
         supports_inter_partition_ipc: true,
+        // No RequestReply capability; the question does not arise.
+        supports_cross_target_reply: false,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -541,6 +591,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // a same-machine IPC channel. Unimplemented + out of §mesh-14's
         // IPC scope.
         supports_inter_partition_ipc: false,
+        // Unimplemented and no RequestReply capability.
+        supports_cross_target_reply: false,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -573,6 +625,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // CAN is a priority-arbitrated broadcast bus — not a direct
         // same-machine IPC channel.
         supports_inter_partition_ipc: false,
+        // Broadcast bus, no RequestReply capability.
+        supports_cross_target_reply: false,
     };
 
     match transport {
