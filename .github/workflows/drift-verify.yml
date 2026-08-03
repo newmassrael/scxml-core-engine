@@ -10,7 +10,9 @@ name: Drift Verify (B9 §6.2.6)
 # trees, lockfile) or the workflow itself. Sub-2-minute runtime
 # expected — only the b9_drift_detection + sourcemap_addr2sce
 # integration suites run, not the full workspace test sweep
-# (covered by w3c-tests.yml).
+# (covered by rust-workspace-tests.yml). This note used to name
+# w3c-tests.yml, which runs `-p sce-rust-tests` and never swept the
+# workspace; the claim outlived any job that made it true.
 #
 # Real-tree invariants exercised by this gate:
 #   - verify_passes_on_real_committed_{rust,kotlin}_w3c_tree (efdd2591)
