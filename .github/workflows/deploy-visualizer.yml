@@ -7,6 +7,12 @@ on:
       - 'web/visualizer/**'
       - 'rsm/**'
       - 'tools/codegen/**'
+      # The codegen WASM is built from these, so a change here changes
+      # what the site ships. They were absent while the artifact was
+      # committed, which meant a generator fix could not reach the page
+      # even after someone rebuilt the binary by hand.
+      - 'sce-build/**'
+      - 'sce-build-wasm/**'
       - 'tests/w3c/InteractiveTestRunner.cpp'
       - 'examples/doom_wasm/**'
       - 'web/site/**'
@@ -62,6 +68,27 @@ jobs:
 
     - name: Build sce-codegen
       run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    # The codegen WASM used to be a committed binary under
+    # web/visualizer/wasm/ that nothing in the repository could rebuild:
+    # `sce-build` had no cdylib crate-type, so wasm-pack refused it and
+    # the artifact could only be produced by hand-editing Cargo.toml.
+    # It therefore drifted from the templates it embeds — the shipped
+    # copy rendered `_macros/` imports that its own template list did not
+    # contain, so every browser generation failed while every native
+    # build passed. Building it here makes the deployed generator a
+    # function of the commit being deployed.
+    - name: Install wasm-pack
+      uses: jetli/wasm-pack-action@v0.4.0
+      with:
+        version: 'latest'
+
+    - name: Build Codegen WASM
+      run: |
+        wasm-pack build sce-build-wasm \
+          --target web \
+          --out-dir ../web/visualizer/wasm \
+          --out-name sce_build
 
     - name: Setup Emscripten (emsdk)
       run: |
