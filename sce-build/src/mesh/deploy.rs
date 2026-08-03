@@ -1344,6 +1344,10 @@ pub struct TransportConfigs {
     /// per-target `connect:` reaches another device's server. Omit for
     /// devices that only initiate connections.
     pub custom_tcp: Option<CustomTcpTransportConfig>,
+    /// DDS device-shared participant config. One DomainParticipant per
+    /// device joins the declared domain; every dds binding on the device
+    /// publishes and subscribes through it. Omit to join domain 0.
+    pub dds: Option<DdsTransportConfig>,
 }
 
 /// Zenoh device-shared session configuration.
@@ -1384,6 +1388,31 @@ pub struct CustomTcpTransportConfig {
     /// loopback-only; non-loopback hosts are an authoring concern, not
     /// a build-time validation.
     pub listen: Option<String>,
+}
+
+/// DDS device-shared participant configuration.
+///
+/// A DDS domain is the isolation unit: participants in different domains
+/// never discover each other, and there is no cross-domain bridging. That
+/// makes `domain_id` the one field a deployment genuinely has to control —
+/// it is what keeps two deployments (or two concurrent test fixtures) on
+/// the same host from joining each other's discovery. Everything else
+/// Cyclone DDS exposes is tuning that belongs in its own XML config,
+/// reached through `CYCLONEDDS_URI`, not in the mesh schema.
+///
+/// `deny_unknown_fields` rejects typos like `domian_id:` at parse time
+/// rather than letting them fall through to the default domain, where the
+/// symptom would be two deployments silently discovering each other.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DdsTransportConfig {
+    /// DDS domain id. Omitted means domain 0, the DDS default. The DDS
+    /// specification caps the usable range well below `u32::MAX`, but the
+    /// exact bound is a function of the participant's port-mapping
+    /// parameters, so the schema accepts any `u32` and lets the DDS
+    /// implementation reject an unusable value at participant creation —
+    /// a build-time bound here would encode one vendor's mapping.
+    pub domain_id: Option<u32>,
 }
 
 impl CustomTcpTransportConfig {
@@ -2379,6 +2408,12 @@ pub struct ServerConfig {
     /// Zenoh key expression for queryable registration.
     #[serde(default)]
     pub key: Option<String>,
+    /// DDS request-leg topic this server reads. The reply and
+    /// notification topics are derived from it, so a server answers on
+    /// the leg paired with the topic it serves and there is no field in
+    /// which to express an unpaired one.
+    #[serde(default)]
+    pub topic: Option<String>,
     /// SCE Mesh §mesh-14.4 — server-side multi-instance pool.
     ///
     /// Accepted on transports whose registry entry sets

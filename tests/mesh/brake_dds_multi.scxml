@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh Session D: brake controller exercising all 4 Zenoh
+     pattern categories. Event-name prefixes drive pattern detection
+     (sce-build/src/mesh/pattern.rs). SCE_MESH.md §13 path B:
+     RPC request events (service.request.X) are paired with their
+     reply (service.response.X) by topology-inferred convention —
+     no sce:* attribute is needed. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="brake_dds_multi" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="active"/>
+    </state>
+    <state id="active">
+        <onentry>
+            <!-- FireForget: session.put(key, envelope) -->
+            <send target="#motor" event="service.fire_forget.activate"/>
+            <!-- RpcRequest: session.get(key, params, on_reply, opts{payload}).
+                 Paired reply event "service.response.compute_force" is
+                 inferred by convention (topology analyzer). -->
+            <send target="#motor" event="service.request.compute_force"/>
+            <!-- EventSubscribe: declare_subscriber(key, on_sample) -->
+            <send target="#motor" event="event.subscribe.status"/>
+            <!-- FieldWrite: session.put(key, envelope) -->
+            <send target="#motor" event="field.set.position"/>
+            <!-- FieldRead: session.get(key, params, on_reply, opts{payload}) -->
+            <send target="#motor" event="field.get.position"/>
+        </onentry>
+        <!-- Reply paths (RPC response + field response + subscription notify) -->
+        <transition event="service.response.compute_force" target="idle"/>
+        <transition event="event.notification.status"      target="idle"/>
+        <transition event="field.notify.position"          target="idle"/>
+        <transition event="brake.release"                  target="idle"/>
+    </state>
+</scxml>

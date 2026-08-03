@@ -1193,14 +1193,26 @@ Not all transports support all communication patterns. sce-build validates patte
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch.
 
+**DDS realization.** DDS is the one in-tree transport whose patterns ride a *derived* set of topics rather than a single addressable endpoint. A binding names one topic; the reply leg is `<topic>_Reply` and the notification leg is `<topic>_Event`, derived at emission time. A request topic therefore cannot be paired with an unrelated reply topic — there is no field in which to express that.
+
+Three consequences are normative, because they change what the transport guarantees rather than merely how it is built:
+
+1. **QoS follows from what each leg means, not from the deployment.** Request and reply are RELIABLE + KEEP_ALL + VOLATILE: a server that joins late must not be handed a backlog of stale requests. Notifications are RELIABLE + KEEP_LAST(1) + TRANSIENT_LOCAL, which is the DDS-native expression of the current-value contract a SOME/IP field carries — a subscriber that joins after the last publish still receives that value. Leaving these to deploy.yaml would make a wrong combination a silent runtime degradation rather than a build-time question.
+
+2. **Every reader ignores its own participant.** One participant hosts every binding on a device, so without `IGNORE_LOCAL(participant)` a device reads its own writes and a co-located client and server each receive the other's traffic *and* their own. This is a correctness gate, not a tuning knob.
+
+3. **A subscription is its reader.** `event.subscribe.X` creates the notification reader and `event.unsubscribe.X` destroys it; neither is a write. A publisher learns of both through DDS discovery, so there is no unsubscribe message on the wire that could be lost — the same property `custom_tcp` gets from holding the connection (§10.4.4), reached from the discovery model instead.
+
+Unlike a connection-oriented transport, DDS cannot make the responder identity structural: a reply is published on the reply topic and matched by correlation, so the server keeps the set of correlations it has admitted and refuses to publish a reply for one it never handed out. That is weaker than `custom_tcp`'s stream gate — the reply topic is not private to one peer — and it is stated here rather than left implied.
+
 ### 8.3 Realization Status
 
 The capability matrix above is enforced, not aspirational: a pattern a transport does not implement is a **hard build error**, so no deployment reaches runtime with a pattern that would silently degrade.
 
-- **`service.fire_forget`**: realized end-to-end across local/shm/someip/zenoh/custom_tcp.
-- **`service.request`**: realized over someip (`create_response`), zenoh (`Query::reply`) and custom_tcp (the reply is written on the stream the request arrived on, §10.4.4) with wire-level correlation through the pending-RPC table; `local` replies in-process via `linkTo` → `dispatchToSession`.
-- **`event.subscribe`**: realized over someip eventgroups, zenoh pub/sub and custom_tcp connection-held subscriptions (§10.4.4), including unsubscribe and subscriber-refresh lifecycle.
-- **`field.get` / `field.set`**: realized over someip, zenoh and custom_tcp. `shm` advertises `[FireForget]` only — it is a unidirectional ring with no reply path, so `field.get` over `shm` is rejected at build time rather than advertised falsely.
+- **`service.fire_forget`**: realized end-to-end across local/shm/someip/zenoh/custom_tcp/dds.
+- **`service.request`**: realized over someip (`create_response`), zenoh (`Query::reply`) and custom_tcp (the reply is written on the stream the request arrived on, §10.4.4) and dds (a publish on the derived `_Reply` topic, §8.2) with wire-level correlation through the pending-RPC table; `local` replies in-process via `linkTo` → `dispatchToSession`.
+- **`event.subscribe`**: realized over someip eventgroups, zenoh pub/sub, custom_tcp connection-held subscriptions (§10.4.4) and dds notification readers (§8.2), including unsubscribe and subscriber-refresh lifecycle.
+- **`field.get` / `field.set`**: realized over someip, zenoh, custom_tcp and dds — on dds through the same paired reply leg `service.request` uses, which is why the two were never separable. `shm` advertises `[FireForget]` only — it is a unidirectional ring with no reply path, so `field.get` over `shm` is rejected at build time rather than advertised falsely.
 
 Enforcement lives in [`sce-build/src/mesh/topology.rs::validate_pattern_capability`], which returns `PatternViolation` for any pattern outside the target transport's advertised capabilities; `codegen.rs` additionally rejects a transport marked `implemented: false`.
 

@@ -588,9 +588,19 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
             has_per_target_field: true,
             has_shared_session: false,
         },
-        capabilities: &[FireForget, PubSub, FieldAccess],
-        implemented: false,
-        required_binding_fields: &[],
+        // All four are realised (SCE_MESH.md section 8.2). `RequestReply`
+        // joins the set that was already advertised: the reply leg is a
+        // topic derived from the request topic, and `FieldAccess` was
+        // never separable from it — a `field.get` needs the same paired
+        // reply a `service.request` does, which is why advertising one
+        // without the other was incoherent.
+        capabilities: &[FireForget, RequestReply, PubSub, FieldAccess],
+        implemented: true,
+        // A binding names its request-leg topic; the reply and
+        // notification topics are derived from it at emission time, so
+        // there is no field in which an author could pair a request topic
+        // with an unrelated reply topic.
+        required_binding_fields: &["topic"],
         // DDS BEST_EFFORT and multicast paths admit application-visible
         // duplicates; reliable-only deployments still need dedup for
         // cross-participant fan-out.
@@ -602,22 +612,31 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Per-(topic, reader) unicast delivery from each publisher
         // supports a stamped sequence domain.
         ordering_representable: true,
-        // DCPS participant discovery is native. Gated on
-        // `implemented: false` but the capability already exists.
-        supports_pool: true,
-        // Unimplemented; gated by `implemented: false` before this
-        // flag is ever consulted. Consistent `false` keeps the
-        // registry shape uniform.
+        // Lowered to `false` when the transport landed. DCPS discovery
+        // would make peer-level addressing expressible, but the emitted
+        // arm bakes each binding's `topic:` into a `static constexpr`
+        // and performs no `{name}` substitution — so the capability is
+        // not realised, and advertising it would be exactly the false
+        // advertising this landing set out to remove. Raise it together
+        // with a fixture that substitutes a placeholder.
+        supports_pool: false,
+        // The flag's contract is "realised end-to-end". A DDS
+        // subscription is its notification reader, which the router
+        // creates and destroys, so the mechanism looks generic — but no
+        // fixture drives deploy.yaml `subscriptions:` over dds, so this
+        // stays `false` on the same grounds custom_tcp does.
         supports_machine_lifetime_subscribe: false,
-        // DCPS participant discovery exists but the runtime has no
-        // server-pool scaffolding; `implemented: false` gates this
-        // before the flag is consulted.
+        // SCE_MESH.md section 14.4 scopes the multi-instance server pool to SOME/IP.
+        // The dds arm emits one server endpoint per router and reads
+        // `session_idx` 0 throughout.
         supports_multi_instance_server: false,
-        // DDS is an inter-machine multi-participant middleware, not
-        // a same-machine IPC channel. Unimplemented + out of §mesh-14's
-        // IPC scope.
+        // DDS is an inter-machine multi-participant middleware, not a
+        // same-machine IPC channel — out of §mesh-14's IPC scope.
         supports_inter_partition_ipc: false,
-        // Unimplemented and no RequestReply capability.
+        // A reply rides the topic paired with the request topic of the
+        // binding it answers, so another target — a different topic
+        // pair — has no entry its reply could land in. Same conclusion
+        // as zenoh and custom_tcp, reached from the topic model.
         supports_cross_target_reply: false,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
@@ -683,7 +702,7 @@ pub fn supports(transport: &str, capability: TransportCapability) -> bool {
 /// parse the error prose. Order matches the `lookup()` dispatch so
 /// drift between the two is obvious in code review.
 pub fn implemented_names() -> &'static [&'static str] {
-    &["local", "shm", "someip", "zenoh", "custom_tcp"]
+    &["local", "shm", "someip", "zenoh", "custom_tcp", "dds"]
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -793,14 +812,15 @@ mod tests {
 
     #[test]
     fn unimplemented_transports_have_capabilities_but_no_template() {
-        for name in &["dds", "can"] {
-            let d = lookup(name).unwrap();
-            assert!(!d.implemented, "transport '{name}' has no template yet");
-            assert!(
-                !d.capabilities.is_empty(),
-                "transport '{name}' should still have capabilities for pattern validation"
-            );
-        }
+        // `can` is the last unimplemented entry: dds joined the implemented
+        // set when its template arm landed. Kept as a single case rather than
+        // a loop so the shrinking set is visible at the call site.
+        let d = lookup("can").expect("known");
+        assert!(!d.implemented, "transport 'can' has no template yet");
+        assert!(
+            !d.capabilities.is_empty(),
+            "transport 'can' should still have capabilities for pattern validation"
+        );
     }
 
     // ── supplies_dedup (SCE_MESH.md §mesh-10.5) ──────────────────
@@ -916,9 +936,9 @@ mod tests {
     }
 
     #[test]
-    fn exactly_two_implemented_transports_require_runtime_ordering() {
-        // Regression guard mirroring `exactly_two_implemented_transports_require_runtime_dedup`:
-        // today SOME/IP and Zenoh are the implemented transports that may
+    fn exactly_three_implemented_transports_require_runtime_ordering() {
+        // Regression guard mirroring the dedup counterpart below: today
+        // SOME/IP, Zenoh and DDS are the implemented transports that may
         // reorder. local/shm/custom_tcp preserve order by construction.
         // If this count changes, the classification table in
         // supplies_ordering comments MUST be updated in the same commit.
@@ -928,9 +948,9 @@ mod tests {
             .collect();
         assert_eq!(
             unordered_impls.len(),
-            2,
-            "expected exactly two implemented transports to require runtime ordering \
-             (someip + zenoh); got {unordered_impls:?}"
+            3,
+            "expected exactly three implemented transports to require runtime ordering \
+             (someip + zenoh + dds); got {unordered_impls:?}"
         );
     }
 
@@ -1014,8 +1034,8 @@ mod tests {
     }
 
     #[test]
-    fn exactly_two_implemented_transports_require_runtime_dedup() {
-        // Regression guard: today SOME/IP and Zenoh are the two
+    fn exactly_three_implemented_transports_require_runtime_dedup() {
+        // Regression guard: today SOME/IP, Zenoh and DDS are the
         // implemented transports that admit duplicates. local/shm/
         // custom_tcp are duplicate-free by construction. If this count
         // changes, the classification table in supplies_dedup comments
@@ -1027,8 +1047,8 @@ mod tests {
             .collect();
         assert_eq!(
             undeduped_impls.len(),
-            2,
-            "expected exactly two implemented transports to lack inherent dedup (someip + zenoh); got {undeduped_impls:?}"
+            3,
+            "expected exactly three implemented transports to lack inherent dedup (someip + zenoh + dds); got {undeduped_impls:?}"
         );
     }
 
@@ -1063,10 +1083,38 @@ mod tests {
     }
 
     #[test]
-    fn dds_no_request_reply() {
+    fn dds_realises_all_four() {
+        // Request/reply rides a topic derived from the request topic;
+        // FieldAccess reuses that same paired leg, which is why the two
+        // cannot be advertised apart (SCE_MESH.md section 8.2).
         let d = lookup("dds").unwrap();
-        assert!(!d.capabilities.contains(&RequestReply));
-        assert!(d.capabilities.contains(&PubSub));
+        for cap in &[RequestReply, FireForget, PubSub, FieldAccess] {
+            assert!(d.capabilities.contains(cap), "dds should advertise {cap}");
+        }
+    }
+
+    #[test]
+    fn dds_does_not_advertise_unrealised_dimensions() {
+        // Guards the direction this landing had to resist: a transport
+        // gaining `implemented: true` must not carry flags whose "gated
+        // by implemented: false" justification just evaporated.
+        let d = lookup("dds").unwrap();
+        assert!(
+            !d.supports_pool,
+            "the emitted arm substitutes no placeholder"
+        );
+        assert!(
+            !d.supports_machine_lifetime_subscribe,
+            "no fixture drives it"
+        );
+        assert!(
+            !d.supports_multi_instance_server,
+            "pool shape is SOME/IP-only"
+        );
+        assert!(
+            !d.supports_cross_target_reply,
+            "a reply rides its own topic pair"
+        );
     }
 
     #[test]

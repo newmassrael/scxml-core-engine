@@ -1,0 +1,47 @@
+# SCE Mesh DDS multi-pattern compile & runtime verification.
+#
+# The orthogonal sibling of deploy_zenoh_multi.yaml and deploy_tcp_multi.yaml:
+# the SCXML shape is held constant and only the transport changes, so a
+# difference in behaviour is attributable to the transport rather than to the
+# state machines.
+#
+# Both devices join the same DDS domain. The domain is the isolation unit —
+# participants in different domains never discover each other — so this value
+# is what keeps the fixture from meeting a developer's own deployment or a
+# concurrently running test. It is deliberately not 0 (the DDS default) for
+# that reason.
+#
+# Unlike zenoh and custom_tcp there are no endpoints to declare: DDS discovers
+# peers itself, so neither side names an address and neither side is "the
+# listener". The binding's `topic:` is the whole of the addressing, and the
+# reply / notification topics are derived from it (SCE_MESH.md §mesh-8.2) so a
+# request topic cannot be paired with an unrelated reply topic.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      dds:
+        domain_id: 71
+    machines:
+      brake_dds_multi:
+        source: brake_dds_multi.scxml
+        bindings:
+          "#motor":
+            transport: dds
+            topic: "SceBrakeMotor"
+  ecu_motor:
+    transports:
+      dds:
+        domain_id: 71
+    machines:
+      motor:
+        source: motor_dds_multi.scxml
+        server:
+          transport: dds
+          topic: "SceBrakeMotor"
+          events:
+            # Server-initiated field notification (SCE_MESH.md §mesh-8.1).
+            # On DDS this is a publish on the derived `_Event` topic, held
+            # transient-local depth 1 so a subscriber that joins after the
+            # publish still receives the current value.
+            "field.notify.position": {}

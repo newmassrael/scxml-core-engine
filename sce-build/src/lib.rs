@@ -5999,6 +5999,7 @@ pub fn compile_mesh_transport(
     let zenoh_session = device.and_then(|d| d.transports.zenoh.as_ref());
     let someip_config = device.and_then(|d| d.transports.someip.as_ref());
     let custom_tcp_config = device.and_then(|d| d.transports.custom_tcp.as_ref());
+    let dds_config = device.and_then(|d| d.transports.dds.as_ref());
     // SCE_MESH.md §10.6.1: per-machine ordering buffer timings. The
     // `resolved_ordering_timings` helper supplies the absent-section
     // defaults from a single source (deploy::DEFAULT_*), so a
@@ -6074,6 +6075,7 @@ pub fn compile_mesh_transport(
             zenoh_session,
             someip_config,
             custom_tcp_config,
+            dds_config,
             subscriptions: machine_subscriptions,
             machine_ordering,
             machine_liveliness,

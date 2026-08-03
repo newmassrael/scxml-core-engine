@@ -7369,6 +7369,59 @@ option(SCE_BUILD_INSTALL_CONSUMER_TEST
     "Add tests/install_tree_consumer smoke test (ctest label install-consumer)"
     OFF)
 
+# ── DDS multi-pattern verification ───────────────────────────────
+# Gated on Cyclone DDS being installed, the same way the zenoh and SOME/IP
+# fixtures gate on theirs: a developer without the transport gets a tree
+# that configures rather than a hard failure.
+find_package(CycloneDDS QUIET)
+find_package(CycloneDDS-CXX QUIET)
+if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
+    # One IDL type for the whole mesh (sce/idl/sce_mesh.idl): an opaque
+    # octet sequence carrying the CBOR MeshEnvelope. Adding an event or a
+    # machine changes no IDL, so this target never goes stale against a
+    # topology — the divergence from OMG DDS-RPC's interface-per-service.
+    idlcxx_generate(TARGET sce_mesh_dds_types
+        FILES "${CMAKE_SOURCE_DIR}/sce/idl/sce_mesh.idl"
+        WARNINGS no-implicit-extensibility)
+
+    set(MESH_DDS_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_multi_generated")
+
+    foreach(_dds_machine brake_dds_multi motor_dds_multi)
+        add_custom_command(
+            OUTPUT "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MULTI_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_machine}.scxml" -l cpp
+                    -o "${MESH_DDS_MULTI_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
+                    --write-deps "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/${_dds_machine}.scxml" "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
+                    "${MESH_TEST_DIR}/brake_dds_multi.scxml" "${MESH_TEST_DIR}/motor_dds_multi.scxml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
+            COMMENT "Mesh dds multi: Generating ${_dds_machine}_sm.h + _transport.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_dds_multipattern_test
+        mesh/test_mesh_dds_multipattern.cpp
+        "${MESH_DDS_MULTI_OUTPUT_DIR}/brake_dds_multi_sm.h"
+        "${MESH_DDS_MULTI_OUTPUT_DIR}/motor_dds_multi_sm.h"
+    )
+    target_include_directories(mesh_dds_multipattern_test
+        PRIVATE "${MESH_DDS_MULTI_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(mesh_dds_multipattern_test
+        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+    )
+    target_compile_features(mesh_dds_multipattern_test PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_dds_multipattern_test)
+    add_test(NAME mesh_dds_multipattern COMMAND mesh_dds_multipattern_test)
+    set_tests_properties(mesh_dds_multipattern PROPERTIES
+        TIMEOUT 90
+    )
+endif()
+
 if(SCE_BUILD_INSTALL_CONSUMER_TEST)
     add_test(
         NAME install_tree_consumer

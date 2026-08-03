@@ -2490,6 +2490,10 @@
           "file": "sce-build/src/mesh/topology.rs",
           "symbol": "validate_pattern_capability",
           "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction"
