@@ -168,6 +168,11 @@ paths = [
 # `paths` entries moved the scan set from 58 files to 81, with both prefixes
 # still listed below.
 scan_exclusions = [
+    # WASM entry point crate, split out of `sce-build/src/wasm.rs` when the
+    # browser build needed its own cdylib. Measured: it carries exactly one
+    # citation, §synth-5-O, and none in this workspace's namespace — so
+    # excluding it swallows no section from this gate.
+    "sce-build-wasm/",
     "backends/",
     "sce-build/",
     "tests/",

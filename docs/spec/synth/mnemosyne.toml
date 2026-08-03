@@ -79,6 +79,11 @@ paths = [
     # the authored cite-bearing surface even though it sits beside `src/`
     # rather than inside it.
     "sce-build/build.rs",
+    # The WASM entry point split out of `sce-build/src/wasm.rs` when the
+    # browser build needed its own cdylib crate. It carries the §synth-5-O
+    # cite that moved with it, so it belongs in the gate rather than in
+    # `scan_exclusions` — measured: 1 citation, all §synth-.
+    "sce-build-wasm/src",
     "backends/rust/runtime/src",
     "backends/c/forge-runtime",
     # Source subdirs only: the parent holds a gitignored `build/` whose artifacts
