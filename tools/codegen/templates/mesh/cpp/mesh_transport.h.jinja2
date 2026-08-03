@@ -290,6 +290,45 @@ admitInbound({{ env_name }}, {{ session_idx_expr }})
 dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- endif -%}
 {%- endmacro %}
+{#
+  SCE_MESH.md §8.3: server-side correlation establishment.
+
+  An inbound request has to stay answerable after its handler returns —
+  the engine replies later, on its own step thread — so every server
+  role stashes the request under an id the reply will be looked up by.
+  These two macros bracket that stash so each transport establishes the
+  correlation identically; the caller supplies the stash itself, under
+  whatever lock its pending map needs.
+
+  `mint_correlation` picks the id. A request from
+  `<invoke type="sce:mesh-rpc">` already carries one in `invoke_id`, and
+  a SOME/IP client stamps `correlation_id`; a plain `<send>` carries
+  neither, so the server mints its own. That fallback is the normative
+  case, not a degraded one: §8.1 does not require a requester to supply
+  a correlation, so establishing it is the server's job. (DDS-RPC's
+  `related_sample_identity` and MQTT 5's Correlation Data both put that
+  burden on the requester instead.)
+
+  `seed_correlation` writes the id onto BOTH correlation fields.
+  `correlation_id` is what `handleServerResponse` looks up.
+  `invoke_id` has to carry the same value because it is the only
+  envelope field that survives the round trip through the engine:
+  MeshDispatch surfaces it as `_event.invokeid` (§10.7), the engine
+  re-emits it as `currentEventInvokeId` on the reply's injected
+  `<send>`, and the mesh send callback rebuilds `correlation_id` from it
+  (`MeshSendCallback`'s contract in StaticExecutionEngine.h). Leaving it
+  unset strands every reply whose request arrived without an invoke
+  lifecycle — the reply reaches `handleServerResponse` with nothing to
+  match.
+
+  Both expand to one line so the caller keeps its own indentation.
+#}
+{%- macro mint_correlation(env_name) -%}
+{{ env_name }}.invoke_id.value_or({{ env_name }}.correlation_id.value_or(SCE::uuid::v7()))
+{%- endmacro %}
+{%- macro seed_correlation(env_name, cid_expr) -%}
+{{ env_name }}.correlation_id = {{ cid_expr }}; {{ env_name }}.invoke_id = {{ cid_expr }};
+{%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // [generated] SCE Mesh transport routing for {{ machine_name }}
@@ -3614,18 +3653,18 @@ struct TransportRouter {
                     SCE::Mesh::MeshEnvelope env;
                     if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
                     // Stash original request for create_response() when the
-                    // engine sends service.response.X. Key by invoke_id when
-                    // available (mesh-rpc path) for correlation bridge symmetry
-                    // with the Zenoh queryable handler. env.type / env.pattern
-                    // are trusted from the decoded envelope — the client
-                    // encoded them via resolvePattern before send.
-                    auto cid = env.invoke_id.value_or(
-                        env.correlation_id.value_or(SCE::uuid::v7()));
+                    // engine sends service.response.X. Minting and seeding are
+                    // the shared §8.3 correlation macros, so this handler keys
+                    // identically to the FieldAccess, Zenoh queryable and
+                    // custom_tcp server arms. env.type / env.pattern are
+                    // trusted from the decoded envelope — the client encoded
+                    // them via resolvePattern before send.
+                    auto cid = {{ mint_correlation("env") }};
                     {
                         std::lock_guard<std::mutex> lock(server_pending_mutex_);
                         pending_server_requests_[CorrelationKey{cid}] = msg;
                     }
-                    env.correlation_id = cid;
+                    {{ seed_correlation("env", "cid") }}
                     // SCE_MESH.md §10.5: server-side dedup gate. Today the
                     // deploy schema has no server-side `protocol: tcp` knob,
                     // so SOME/IP server sockets ride the vsomeip.json-defined
@@ -3691,17 +3730,17 @@ struct TransportRouter {
                     if (!pl) return;
                     SCE::Mesh::MeshEnvelope env;
                     if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {{ raise_envelope_corrupt("someip") }}
-                    // Stash original request (key symmetry with the RPC
-                    // handler: invoke_id first, correlation_id fallback,
-                    // fresh UUID last). handleServerResponse looks the
-                    // message back up and calls create_response on it.
-                    auto cid = env.invoke_id.value_or(
-                        env.correlation_id.value_or(SCE::uuid::v7()));
+                    // Stash original request under the shared §8.3 correlation
+                    // macros — same keying as the RPC handler above.
+                    // handleServerResponse looks the message back up and calls
+                    // create_response on it when the engine raises
+                    // field.notify.X.
+                    auto cid = {{ mint_correlation("env") }};
                     {
                         std::lock_guard<std::mutex> lock(server_pending_mutex_);
                         pending_server_requests_[CorrelationKey{cid}] = msg;
                     }
-                    env.correlation_id = cid;
+                    {{ seed_correlation("env", "cid") }}
                     // SCE_MESH.md §10.5: same server-side dedup gate as the
                     // RPC / FireForget handlers above.
                     (void)this->{{ dedup_or_dispatch(server_needs_dedup, "env", "session_idx") }};
@@ -3732,13 +3771,11 @@ struct TransportRouter {
                 auto bytes = payload_opt->get().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {{ raise_envelope_corrupt("zenoh") }}
-                // Key by invoke_id when available (mesh-rpc invoke path) so the
-                // outbound response can be correlated through the engine's
-                // currentEventInvokeId without an extra mapping table. Falls
-                // back to correlation_id (SOME/IP client sets it) or a fresh
-                // UUID (plain <send> path — single outstanding request).
-                auto cid = env.invoke_id.value_or(
-                    env.correlation_id.value_or(SCE::uuid::v7()));
+                // Stash the Query under the shared §8.3 correlation macros so
+                // the outbound response resolves through the engine's
+                // currentEventInvokeId without an extra mapping table — same
+                // keying as the SOME/IP and custom_tcp server arms.
+                auto cid = {{ mint_correlation("env") }};
                 {
                     std::lock_guard<std::mutex> lock(server_pending_mutex_);
                     pending_server_queries_.insert_or_assign(CorrelationKey{cid}, query.clone());
@@ -3759,7 +3796,7 @@ struct TransportRouter {
                         [this, cid]() noexcept { onServerQueryTimedOut(cid); });
 {% endif %}
                 }
-                env.correlation_id = cid;
+                {{ seed_correlation("env", "cid") }}
                 // SCE_MESH.md §10.5: Zenoh server queryable gate. Uses
                 // the same `server_needs_dedup` flag as the SOME/IP
                 // server handlers above so all server-side inbound
@@ -4292,34 +4329,21 @@ struct TransportRouter {
 {% if has_server_custom_tcp %}
         // ── Server role (SCE_MESH.md §mesh-8.3) ──
         //
-        // An inbound request has to stay answerable after this callback
-        // returns: the engine replies later, on its own step thread. Stash
-        // the link under the key the engine's reply will carry, mirroring
-        // the SOME/IP message stash and the Zenoh query stash.
-        //
-        // Keying matches those arms exactly (`invoke_id`, else
-        // `correlation_id`, else a fresh uuid) so `handleServerResponse`
-        // resolves one way regardless of which transport served the
-        // request.
+        // Stash the link under the shared §8.3 correlation macros, mirroring
+        // the SOME/IP message stash and the Zenoh query stash. What is
+        // stashed differs per transport — here the duplex link that carries
+        // the return leg (§10.4.4) — but the key does not, so
+        // `handleServerResponse` resolves one way whichever transport served
+        // the request.
         if (env.pattern == SCE::Mesh::PatternKind::RpcRequest
             || env.pattern == SCE::Mesh::PatternKind::FieldRead
             || env.pattern == SCE::Mesh::PatternKind::FieldWrite) {
-            auto cid = env.invoke_id.value_or(
-                env.correlation_id.value_or(SCE::uuid::v7()));
+            auto cid = {{ mint_correlation("env") }};
             {
                 std::lock_guard<std::mutex> lock(server_pending_mutex_);
                 pending_server_links_[CorrelationKey{cid}] = link;
             }
-            env.correlation_id = cid;
-            // Seed `invoke_id` as well, because it is the ONLY envelope
-            // field the engine round-trips: MeshDispatch surfaces it as
-            // `_event.invokeid`, and the mesh send callback reconstructs
-            // `correlation_id` from it when the reply comes back out.
-            // A request that arrived as a plain `<send>` carries no
-            // invoke lifecycle and so would otherwise reach the engine
-            // with nothing to carry the correlation, leaving its reply
-            // unmatchable in `handleServerResponse`.
-            env.invoke_id = cid;
+            {{ seed_correlation("env", "cid") }}
         }
 {% if server.has_eventgroup %}
         // Subscribe / unsubscribe never reach the engine: they mutate this

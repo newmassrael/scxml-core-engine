@@ -39,6 +39,9 @@
 //                     → service.response.compute_force reply
 //   §2 FieldRead roundtrip: field.get.position → ready transition raise
 //                     → field.notify.position reply via FieldNotify pattern
+//   §3 Plain <send> RPC roundtrip: same as §1 but the request carries no
+//                     invoke_id, so the server has to mint the correlation
+//                     and seed the field the engine round-trips
 //
 // For FireForget / FieldWrite (no reply) see test_mesh_zenoh_server_runtime.cpp
 // — those patterns intentionally have no client-observable return, so
@@ -195,6 +198,56 @@ int run_test() {
                               [](const auto &v) { return !v.empty() && v.back().type == "field.notify.position"; }),
                           "engine-driven FieldRead reply not received — regression in "
                           "transition<raise>→FieldNotify correlation chain");
+    }
+
+    // ── §3. Plain <send> RPC roundtrip: request carries no invoke_id ──
+    //
+    // §1 and §2 both stamp invoke_id, which is what an upstream
+    // `<invoke type="sce:mesh-rpc">` does. A sender that instead writes a
+    // plain `<send event="service.request.compute_force" target="#motor">`
+    // has no invoke lifecycle, so its envelope reaches the queryable with
+    // invoke_id unset — and the server has to mint the correlation itself.
+    //
+    // Minting alone is not enough: the correlation has to ride back out
+    // through the engine, and `invoke_id` is the only envelope field that
+    // makes that trip (MeshDispatch surfaces it as `_event.invokeid`, the
+    // engine re-emits it as currentEventInvokeId, and the mesh send
+    // callback rebuilds correlation_id from it). Stashing the Query under
+    // a freshly minted id while leaving invoke_id unset strands the reply:
+    // handleServerResponse sees no correlation_id and rejects it, after
+    // which the RpcReply leaks onto the eventgroup publish path instead of
+    // reaching this querier.
+    //
+    // Keeping §1 alongside pins that the server's correlation works
+    // whether or not the sender has an invoke lifecycle.
+    ReceivedEvents plain_replies;
+    {
+        auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"force":250})");
+        // Deliberately no req.invoke_id — that absence is the test.
+        auto req_bytes = SCE::Mesh::encodeEnvelope(req);
+
+        zenoh::Session::GetOptions opts;
+        opts.payload = zenoh::Bytes(std::move(req_bytes));
+        client_session.get(
+            zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
+            [&plain_replies](const zenoh::Reply &reply_msg) {
+                if (!reply_msg.is_ok()) {
+                    return;
+                }
+                const auto &sample = reply_msg.get_ok();
+                auto bytes = sample.get_payload().as_vector();
+                SCE::Mesh::MeshEnvelope resp;
+                if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
+                    plain_replies.push({resp.type, std::string(resp.data.begin(), resp.data.end())});
+                }
+            },
+            [] {}, std::move(opts));
+
+        MESH_TEST_REQUIRE(plain_replies.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "plain <send> RPC reply not received — the server did not seed the "
+                          "correlation onto the field the engine round-trips");
     }
 
     // Teardown order matters: stop the engine pump BEFORE shutting down
