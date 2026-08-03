@@ -278,7 +278,24 @@ pub enum TransportState {
         /// `extra.<key>` with `is defined` even on empty bindings.
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
-    /// Recognised in the registry but not yet implemented (dds, can, …).
+    /// DDS via Eclipse Cyclone DDS. The topic name is mandatory.
+    ///
+    /// A binding names ONE topic; the reply and notification topics are
+    /// derived from it rather than declared, so an author cannot pair a
+    /// request topic with an unrelated reply topic. The DomainParticipant
+    /// is device-shared state and lives on
+    /// [`crate::mesh::deploy::DdsTransportConfig`], not here — the same
+    /// split `custom_tcp` uses for its listen endpoint.
+    Dds {
+        /// DDS topic name for the request leg (`ChassisBrakeCmd`, etc).
+        /// Validated as present upstream by
+        /// `required_binding_fields = ["topic"]`.
+        topic: String,
+        /// Non-typed passthrough; always serialised so consumers can probe
+        /// `extra.<key>` with `is defined` even on empty bindings.
+        extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
+    },
+    /// Recognised in the registry but not yet implemented (can, …).
     /// Codegen rejects with `UnsupportedTransport` before this variant
     /// reaches the template — the variant exists so the sum type
     /// covers every entry in `transport::lookup`.
@@ -300,6 +317,7 @@ impl TransportState {
             Self::Someip { .. } => "someip",
             Self::Zenoh { .. } => "zenoh",
             Self::CustomTcp { .. } => "custom_tcp",
+            Self::Dds { .. } => "dds",
             Self::Unimplemented { transport_name } => transport_name,
         }
     }
@@ -1315,11 +1333,31 @@ fn build_server_transport_state(
                 extra: server_cfg.extra.clone(),
             })
         }
+        "dds" => {
+            // The server reads the request-leg topic named here and
+            // answers on the reply topic derived from it, so `topic:` is
+            // the whole of its addressing — the same shape Zenoh's `key:`
+            // has, and unlike custom_tcp whose server address is the
+            // device's listen endpoint.
+            let topic = server_cfg.topic.clone().unwrap_or_default();
+            if topic.is_empty() {
+                return Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: server_target,
+                    transport: "dds".to_string(),
+                    field: "topic".to_string(),
+                });
+            }
+            Ok(TransportState::Dds {
+                topic,
+                extra: server_cfg.extra.clone(),
+            })
+        }
         other => Err(TopologyError::MissingBindingField {
             machine: machine_name.to_string(),
             target: server_target,
             transport: other.to_string(),
-            field: "server transport must be 'someip', 'zenoh', or 'custom_tcp'".to_string(),
+            field: "server transport must be 'someip', 'zenoh', 'custom_tcp', or 'dds'".to_string(),
         }),
     }
 }
@@ -2406,6 +2444,28 @@ fn build_transport_state(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             TransportState::CustomTcp { connect, extra }
+        }
+        "dds" => {
+            // Same location-transparency argument as the zenoh arm above:
+            // the topic name comes from this binding's `topic:` and from
+            // nowhere else, so no authored SCXML string can reach the
+            // emitted DDS topic. `topic` presence is enforced by
+            // `required_binding_fields` (`["topic"]`) before we get here —
+            // an empty string would mean the registry list and this arm
+            // have drifted apart.
+            let topic = pt
+                .extra
+                .get("topic")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let extra = pt
+                .extra
+                .iter()
+                .filter(|(k, _)| k.as_str() != "topic")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            TransportState::Dds { topic, extra }
         }
         other => TransportState::Unimplemented {
             transport_name: other.to_string(),

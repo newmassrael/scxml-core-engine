@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// The entire DDS type vocabulary for SCE Mesh.
+//
+// One opaque envelope carries every pattern — request, reply, notification,
+// fire-and-forget alike — because the service vocabulary lives inside the
+// CBOR MeshEnvelope (§mesh-7.5), not in the DDS type system. OMG DDS-RPC
+// takes the opposite approach: an IDL interface per service, regenerated
+// whenever a service gains an operation. Here, adding an event, a machine,
+// or a whole deployment changes nothing in this file, so no generated DDS
+// type ever goes stale against a topology.
+//
+// The cost of that choice is that DDS-native tooling sees octets rather than
+// typed fields. That is the correct trade for SCE: the authority on payload
+// shape is the SCXML/EventSchema layer, and a second, DDS-specific schema
+// would be a second place for it to drift.
+
+module sce_mesh {
+    struct Envelope {
+        sequence<octet> payload;
+    };
+};
