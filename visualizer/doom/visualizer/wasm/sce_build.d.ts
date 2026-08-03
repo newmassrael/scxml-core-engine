@@ -14,17 +14,30 @@ export function compile_scxml_lang(scxml_content: string, scxml_name: string, la
  */
 export function get_machine_name(scxml_content: string): string;
 
+/**
+ * Languages this build can generate, as the identifiers
+ * [`compile_scxml_lang`] accepts.
+ *
+ * Exported so a caller's language menu is a projection of what the
+ * generator actually supports rather than a second list to keep in
+ * step — the visualizer offered a Go button against a dispatcher that
+ * rejected Go for exactly as long as the two were maintained apart.
+ */
+export function supported_languages(): string[];
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly compile_scxml_lang: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly get_machine_name: (a: number, b: number) => [number, number, number, number];
+    readonly supported_languages: () => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_drop_slice: (a: number, b: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

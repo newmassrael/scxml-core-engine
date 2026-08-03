@@ -61,6 +61,23 @@ export function get_machine_name(scxml_content) {
     }
 }
 
+/**
+ * Languages this build can generate, as the identifiers
+ * [`compile_scxml_lang`] accepts.
+ *
+ * Exported so a caller's language menu is a projection of what the
+ * generator actually supports rather than a second list to keep in
+ * step — the visualizer offered a Go button against a dispatcher that
+ * rejected Go for exactly as long as the two were maintained apart.
+ * @returns {string[]}
+ */
+export function supported_languages() {
+    const ret = wasm.supported_languages();
+    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v1;
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -83,6 +100,25 @@ function __wbg_get_imports() {
         __proto__: null,
         "./sce_build_bg.js": import0,
     };
+}
+
+function getArrayJsValueFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    const mem = getDataViewMemory0();
+    const result = [];
+    for (let i = ptr; i < ptr + 4 * len; i += 4) {
+        result.push(wasm.__wbindgen_externrefs.get(mem.getUint32(i, true)));
+    }
+    wasm.__externref_drop_slice(ptr, len);
+    return result;
+}
+
+let cachedDataViewMemory0 = null;
+function getDataViewMemory0() {
+    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
+        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
+    }
+    return cachedDataViewMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -174,6 +210,7 @@ let wasmModule, wasm;
 function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
+    cachedDataViewMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;
