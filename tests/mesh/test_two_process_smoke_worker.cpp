@@ -34,11 +34,12 @@ int main() {
     std::signal(SIGTERM, on_signal);
     std::signal(SIGINT, on_signal);
 
-    SCE::Mesh::CustomTcp::Server server("127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &env) {
-        if (env.type == "smoke.ping") {
-            g_received.fetch_add(1, std::memory_order_release);
-        }
-    });
+    SCE::Mesh::CustomTcp::Server server("127.0.0.1:0",
+                                        [](const SCE::Mesh::MeshEnvelope &env, const SCE::Mesh::CustomTcp::PeerLink &) {
+                                            if (env.type == "smoke.ping") {
+                                                g_received.fetch_add(1, std::memory_order_release);
+                                            }
+                                        });
     if (!server.valid()) {
         std::fprintf(stderr, "worker: Server bind on 127.0.0.1:0 failed\n");
         return 1;

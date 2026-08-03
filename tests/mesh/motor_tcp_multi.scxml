@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §16.8.3: custom_tcp server counterpart to brake_tcp_multi.
+     Sibling of motor_zenoh_multi.scxml — same states and same replies, so
+     the generated difference is confined to the transport arms.
+
+     The build-time UncoveredEvents check requires every <send event="X">
+     in the sender to have a matching <transition event="X"> here. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="motor_tcp_multi" initial="ready">
+    <state id="ready">
+        <transition event="service.fire_forget.activate" target="ready"/>
+        <transition event="service.request.compute_force" target="computing"/>
+        <transition event="event.subscribe.status" target="ready"/>
+        <!-- FieldAccess responses (SCE_MESH.md §8.3): raise field.notify.X
+             as the spec-canonical reply form. inject_server_response_sends
+             appends a synthetic <send> alongside each raise so the
+             transport layer routes the response back on the stream that
+             carried the request. -->
+        <transition event="field.set.position" target="ready">
+            <raise event="field.notify.position"/>
+        </transition>
+        <transition event="field.get.position" target="ready">
+            <raise event="field.notify.position"/>
+        </transition>
+        <!-- Spontaneous notification: no preceding getter/setter, so
+             handleServerResponse finds no pending link and the send falls
+             through to the brokerless fan-out over registered subscribers.
+             The axis is `status`, matching event.subscribe.status — a
+             per-axis registry only delivers to peers that asked for THIS
+             axis, unlike a key-scoped fabric where every subscriber on the
+             key receives it and filters locally. -->
+        <transition event="sensor.update" target="ready">
+            <raise event="event.notification.status"/>
+        </transition>
+    </state>
+    <state id="computing">
+        <onentry>
+            <raise event="service.response.compute_force"/>
+        </onentry>
+        <transition target="ready"/>
+    </state>
+</scxml>

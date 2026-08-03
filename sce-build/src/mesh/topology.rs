@@ -1298,11 +1298,28 @@ fn build_server_transport_state(
                 extra: server_cfg.extra.clone(),
             })
         }
+        "custom_tcp" => {
+            // SCE_MESH.md §mesh-10.4.4: the server side of custom_tcp is
+            // addressed by the device's `transports.custom_tcp.listen:`
+            // endpoint, which is declared once per device rather than per
+            // machine. There is consequently no per-server binding field
+            // to require here — unlike SOME/IP (numeric service identity)
+            // and Zenoh (`key:`), whose addressing lives on the server
+            // block itself.
+            //
+            // Inbound requests arrive on that shared listener and are
+            // answered on the connection they arrived on, so the server
+            // needs no address for the client either.
+            Ok(TransportState::CustomTcp {
+                connect: String::new(),
+                extra: server_cfg.extra.clone(),
+            })
+        }
         other => Err(TopologyError::MissingBindingField {
             machine: machine_name.to_string(),
             target: server_target,
             transport: other.to_string(),
-            field: "server transport must be 'someip' or 'zenoh'".to_string(),
+            field: "server transport must be 'someip', 'zenoh', or 'custom_tcp'".to_string(),
         }),
     }
 }

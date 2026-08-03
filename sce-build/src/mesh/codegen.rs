@@ -744,6 +744,13 @@ struct ServerEventgroupContext {
     /// SOME/IP event ID (`0xNNNN`, >= 0x8000). `None` for Zenoh.
     #[serde(skip_serializing_if = "Option::is_none")]
     event_id: Option<String>,
+    /// Wire `PatternKind` this event resolves to, so the emitted
+    /// `resolvePattern` table can classify a server-published event
+    /// without re-deriving the vocabulary from name prefixes in Jinja2.
+    /// `field.notify.X` resolves to `FieldNotify` and
+    /// `event.notification.X` to `EventNotify`; both are published, but
+    /// only the first is also a paired reply.
+    pattern_kind: u16,
 }
 
 /// Build a [`ServerContext`] from a resolved [`super::topology::ServerBinding`].
@@ -850,6 +857,13 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
                 event_const: event_to_const_suffix(&eg.event),
                 event_group_id: eg_id,
                 event_id: ev_id,
+                // An unrecognised prefix cannot be published as anything
+                // meaningful, so fall back to the notification kind rather
+                // than to FireForget — a declared eventgroup event is by
+                // definition server-published.
+                pattern_kind: crate::mesh::pattern::detect_pattern(&eg.event)
+                    .unwrap_or(crate::mesh::pattern::CommunicationPattern::Notification)
+                    .wire_value(),
             }
         })
         .collect();
