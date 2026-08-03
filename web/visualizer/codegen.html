@@ -118,12 +118,11 @@
         <div class="status" id="status"></div>
 
         <div class="controls">
-            <div class="lang-selector">
-                <button class="lang-btn active" data-lang="cpp" onclick="selectLanguage('cpp')">C++</button>
-                <button class="lang-btn" data-lang="kotlin" onclick="selectLanguage('kotlin')">Kotlin</button>
-                <button class="lang-btn" data-lang="rust" onclick="selectLanguage('rust')">Rust</button>
-                <button class="lang-btn" data-lang="go" onclick="selectLanguage('go')">Go</button>
-            </div>
+            <!-- Populated from the WASM binary's supported_languages()
+                 once it loads; see renderLanguageButtons(). Hardcoding
+                 them here is what put a Go button in front of a
+                 dispatcher that rejected Go. -->
+            <div class="lang-selector" id="langSelector"></div>
             <button onclick="generateCode()" id="generateBtn" disabled>Generate Code</button>
             <button onclick="downloadCode()" id="downloadBtn" disabled>Download Code</button>
             <button onclick="visualizeSCXML()" style="background: #28a745;">Visualize</button>
@@ -164,24 +163,44 @@
 
     <script>
         let generatedCode = '';
+        let generatedFiles = [];
         let exampleCode = '';
         let currentLanguage = 'cpp';
 
-        const LANGUAGE_CONFIG = {
-            cpp: { label: 'C++', downloadExt: '_sm.h' },
-            kotlin: { label: 'Kotlin', downloadExt: 'Sm.kt' },
-            rust: { label: 'Rust', downloadExt: '_sm.rs' },
-            go: { label: 'Go', downloadExt: '_sm.go' }
+        // Display names only. Which languages exist is the WASM
+        // binary's answer, not this object's — an identifier missing
+        // here still gets a button, labelled with the identifier.
+        const LANGUAGE_LABELS = {
+            cpp: 'C++',
+            c11: 'C',
+            kotlin: 'Kotlin',
+            rust: 'Rust',
+            go: 'Go',
+            python: 'Python'
         };
 
-        // Read language from URL query parameter (e.g., ?lang=kotlin)
-        (function() {
-            const params = new URLSearchParams(window.location.search);
-            const lang = params.get('lang');
-            if (lang && LANGUAGE_CONFIG[lang]) {
-                currentLanguage = lang;
+        const languageLabel = lang => LANGUAGE_LABELS[lang] || lang;
+
+        /// Build the language menu from what the generator supports,
+        /// and settle `currentLanguage` on a member of that set.
+        function renderLanguageButtons(languages) {
+            const requested = new URLSearchParams(window.location.search).get('lang');
+            if (requested && languages.includes(requested)) {
+                currentLanguage = requested;
+            } else if (!languages.includes(currentLanguage)) {
+                currentLanguage = languages[0];
             }
-        })();
+
+            const selector = document.getElementById('langSelector');
+            selector.replaceChildren(...languages.map(lang => {
+                const button = document.createElement('button');
+                button.className = 'lang-btn' + (lang === currentLanguage ? ' active' : '');
+                button.dataset.lang = lang;
+                button.textContent = languageLabel(lang);
+                button.addEventListener('click', () => selectLanguage(lang));
+                return button;
+            }));
+        }
 
         function selectLanguage(lang) {
             currentLanguage = lang;
@@ -192,6 +211,7 @@
             document.getElementById('exampleContent').textContent = '';
             document.getElementById('downloadBtn').disabled = true;
             generatedCode = '';
+            generatedFiles = [];
             exampleCode = '';
         }
 
@@ -230,7 +250,7 @@
             }
 
             btn.disabled = true;
-            const langLabel = LANGUAGE_CONFIG[currentLanguage].label;
+            const langLabel = languageLabel(currentLanguage);
 
             try {
                 showStatus(`Generating ${langLabel} code...`, 'loading');
@@ -238,6 +258,7 @@
                 const smName = wasmCodegen.getStateMachineName(scxmlInput);
 
                 generatedCode = result.primaryCode;
+                generatedFiles = result.files;
                 exampleCode = generateUsageExample(smName, scxmlInput, currentLanguage);
 
                 document.getElementById('generatedContent').textContent = generatedCode;
@@ -359,12 +380,13 @@ fn main() {
                 showStatus('No code to download', 'error');
                 return;
             }
-            const ext = LANGUAGE_CONFIG[currentLanguage].downloadExt;
+            // The generator names its own outputs, so the extension is
+            // not a per-language table to maintain here.
             const blob = new Blob([generatedCode], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'generated' + ext;
+            a.download = generatedFiles.length > 0 ? generatedFiles[0][0] : 'generated.txt';
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -375,6 +397,7 @@ fn main() {
             document.getElementById('exampleContent').textContent = '';
             document.getElementById('downloadBtn').disabled = true;
             generatedCode = '';
+            generatedFiles = [];
             exampleCode = '';
             clearStatus();
             document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
@@ -397,7 +420,6 @@ fn main() {
 
         // Initialize WASM on page load
         window.addEventListener('DOMContentLoaded', async () => {
-            selectLanguage(currentLanguage);
             showStatus('Loading WASM codegen...', 'loading', 10);
             setStatusText('Loading...');
 
@@ -407,11 +429,18 @@ fn main() {
                     setStatusText(message);
                 });
 
+                // Only now is the supported set knowable, so the menu
+                // is built here rather than shipped in the markup.
+                const languages = wasmCodegen.supportedLanguages();
+                renderLanguageButtons(languages);
+                selectLanguage(currentLanguage);
+
                 clearStatus();
                 setStatusText('Ready');
                 document.getElementById('generateBtn').disabled = false;
                 document.getElementById('generatedContent').textContent =
-                    'Ready to generate C++, Kotlin, Rust, or Go code from SCXML.';
+                    'Ready to generate ' + languages.map(languageLabel).join(', ') +
+                    ' code from SCXML.';
             } catch (error) {
                 console.error('WASM init error:', error);
                 showStatus('Failed to initialize WASM codegen: ' + error.message + '<br>Please refresh the page.', 'error');
