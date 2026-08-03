@@ -16,9 +16,29 @@ name: Rust Workspace Tests
 # `template_registry::tests` now does, and this workflow is what makes
 # those tests binding.
 #
-# Scope is the default feature set, matching pre-push Stage 4. The
-# `cli`-gated targets are covered by drift-verify.yml, which invokes
-# them explicitly — `cargo test --workspace` silently skips them.
+# Scope is the default feature set, matching pre-push Stage 4, with one
+# prerequisite the hook gets from its own Stage 1: `sce-codegen` must
+# already be built. Four test targets shell out to that binary through
+# `CARGO_BIN_EXE_sce-codegen` without declaring `required-features =
+# ["cli"]` — codegen_invocation_determinism,
+# event_schema_cross_state_guard, rust_derive_ssot and
+# sourcemap_ownership_walker — so a bare `cargo test --workspace` runs
+# them and they die on `NotFound`. The first revision of this file did
+# exactly that, and passed locally only because a stale
+# `target/debug/sce-codegen` happened to be on disk.
+#
+# The genuinely cli-gated targets (b9_drift_detection,
+# error_format_json) declare the feature and stay skipped here; they are
+# drift-verify.yml's lane, which runs them with `--test-threads=1`
+# because the real-tree verify steps invoke the binary directly.
+# Enabling `sce-build/cli` here instead would pull them into a parallel
+# sweep and change how an existing gate runs, so this job mirrors the
+# hook rather than widening it. Measured, for whoever revisits this:
+# `--features sce-build/cli` runs 3383 tests to this configuration's
+# 3240 and passed once with default parallelism. One green run is not
+# evidence that the serialisation those lanes ask for is unnecessary,
+# and an intermittent red here would cost more than the 143 tests
+# drift-verify.yml already runs on every relevant push.
 
 on:
   push:
@@ -93,6 +113,11 @@ jobs:
         kill -0 "$(cat /tmp/http_server.pid)" \
           || { echo "W3C HTTP test server failed to start"; exit 1; }
         echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
+
+    # Mirrors pre-push Stage 1. Debug profile so the binary lands where
+    # `CARGO_BIN_EXE_sce-codegen` resolves for the test step below.
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: cargo test --workspace
       run: cargo test --workspace --no-fail-fast
