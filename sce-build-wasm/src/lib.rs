@@ -7,7 +7,8 @@
 //! used to be a module inside `sce-build` carrying a hardcoded
 //! `include_str!` list of every template, which is how the browser came
 //! to generate from a different template set than the native binary:
-//! §synth-5-O added the shared `_macros/` family, nothing added it to
+//! the synth round that introduced the shared `_macros/` family (5-O)
+//! added it to the tree and nothing added it to
 //! the list, and `include_str!` cannot report a template that was never
 //! named. The list now comes from `sce_build::template_registry`, which
 //! `sce-build/build.rs` derives from the template tree itself.

@@ -53,9 +53,8 @@ impl Language {
     /// and not the other.
     ///
     /// C++ and C11 return the root: every backend shares
-    /// `license_header.jinja2` there, and RFC §synth-5-J-1 puts the C11
-    /// statechart templates under `c/` while leaving that shared header
-    /// at the root, so both layers have to be visible in one pass.
+    /// `license_header.jinja2` there, while the C11 statechart templates
+    /// live under `c/`, so both layers have to be visible in one pass.
     pub fn template_subdir(self) -> &'static str {
         match self {
             Language::Rust => "rust",

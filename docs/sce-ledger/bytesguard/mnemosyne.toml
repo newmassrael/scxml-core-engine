@@ -112,6 +112,11 @@ paths = [
 # Rust files citing this namespace sit under sce-build/src + sce-build/tests,
 # both of which `paths` already scans. This declaration gates nothing away.
 scan_exclusions = [
+    # WASM entry point crate, split out of `sce-build/src/wasm.rs` when the
+    # browser build needed its own cdylib. Measured: it carries exactly one
+    # citation, §synth-5-O, and none in this workspace's namespace — so
+    # excluding it swallows no section from this gate.
+    "sce-build-wasm/",
     # Build-time generator-identity resolution. Measured: it carries exactly
     # one citation, §synth-6.2.6, and none in this workspace's namespace —
     # so excluding it swallows no section from this gate.

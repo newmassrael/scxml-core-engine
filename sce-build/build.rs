@@ -11,7 +11,7 @@
 //! `include_str!` registry so the in-memory template path (WASM, and any
 //! caller without a filesystem) cannot carry a hand-maintained copy of
 //! that list. A hand-maintained copy is not a hypothetical failure: the
-//! `_macros/` family added by §synth-5-O was never added to the previous
+//! `_macros/` family added by the synth 5-O round was never added to the previous
 //! hardcoded list, and because `include_str!` only ever names files that
 //! *do* exist, nothing rejected the omission at compile time — the
 //! templates rendered fine natively and failed only in the browser.

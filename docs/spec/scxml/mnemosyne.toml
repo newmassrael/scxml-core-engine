@@ -136,6 +136,11 @@ paths = [
 # only once its prose cites are migrated — which is why the no_std runtime moved
 # from this list into `paths` above rather than staying declared out.
 scan_exclusions = [
+    # WASM entry point crate, split out of `sce-build/src/wasm.rs` when the
+    # browser build needed its own cdylib. Measured: it carries exactly one
+    # citation, §synth-5-O, and none in this workspace's namespace — so
+    # excluding it swallows no section from this gate.
+    "sce-build-wasm/",
     # Build-time generator-identity resolution. Measured: it carries exactly
     # one citation, §synth-6.2.6, and none in this workspace's namespace —
     # so excluding it swallows no section from this gate.
