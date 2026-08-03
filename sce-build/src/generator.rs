@@ -41,6 +41,50 @@ pub enum Language {
     C11,
 }
 
+impl Language {
+    /// Subdirectory of `tools/codegen/templates/` holding this
+    /// language's templates, or `""` when they live at the tree root.
+    ///
+    /// Single source of truth for template scoping: the filesystem
+    /// loader joins it onto the tree root, and
+    /// [`crate::template_registry::embedded_templates_for`] strips it from the
+    /// embedded registry's names. Both derive the same scope from this
+    /// one match, so a new backend cannot be reachable from one source
+    /// and not the other.
+    ///
+    /// C++ and C11 return the root: every backend shares
+    /// `license_header.jinja2` there, and RFC §synth-5-J-1 puts the C11
+    /// statechart templates under `c/` while leaving that shared header
+    /// at the root, so both layers have to be visible in one pass.
+    pub fn template_subdir(self) -> &'static str {
+        match self {
+            Language::Rust => "rust",
+            Language::Cpp => "",
+            Language::Kotlin => "kotlin",
+            Language::Go => "go",
+            Language::Python => "python",
+            Language::C11 => "",
+        }
+    }
+
+    /// The identifier [`FromStr`](std::str::FromStr) accepts for this
+    /// language, and the one a caller should present.
+    ///
+    /// `FromStr` also accepts aliases (`c++`, `kt`, `golang`); this is
+    /// the spelling to round-trip through, so a caller enumerating
+    /// languages emits something the parser is guaranteed to take back.
+    pub fn canonical_name(self) -> &'static str {
+        match self {
+            Language::Rust => "rust",
+            Language::Cpp => "cpp",
+            Language::Kotlin => "kotlin",
+            Language::Go => "go",
+            Language::Python => "python",
+            Language::C11 => "c11",
+        }
+    }
+}
+
 impl std::str::FromStr for Language {
     type Err = String;
 
