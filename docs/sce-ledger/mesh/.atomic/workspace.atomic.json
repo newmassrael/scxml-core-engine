@@ -2013,6 +2013,26 @@
           "file": "sce/include/mesh/transports/DdsTransport.h",
           "symbol": "liveliness_lease_ms",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/transports/CustomTcpTransport.h",
+          "symbol": "SCE::Mesh::CustomTcp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/transports/CustomTcpTransport.h",
+          "symbol": "setPeerLossHandler",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/transports/CustomTcpTransport.h",
+          "symbol": "keepalive",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "CustomTcpTransportConfig",
+          "kind": "references"
         }
       ]
     },
