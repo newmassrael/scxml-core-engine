@@ -568,15 +568,19 @@ pub struct PlatformConfig {
     pub driver_root: Option<String>,
     /// SCE Protocol-Synthesis RFC §5.2 — C11-backend-only linker
     /// section attribute injection. When `class` is set, every emitted
-    /// statechart function definition is prefixed with
-    /// `__attribute__((section("<class>")))`. When `driver` is set,
-    /// the same is intended for emitted driver-glue functions
-    /// (consumer-gated; only the `class` half is emitted today).
-    /// Non-C11 backends reject this section with
-    /// `mcu/section-attribute-on-non-mcu-target` (the same non-MCU
-    /// reject pattern as `<sce:extern>`). Only the GCC / Clang / Keil
-    /// common `__attribute__((section("...")))` syntax is emitted;
-    /// IAR's `@".name"` placement syntax is consumer-gated.
+    /// statechart function definition is placed in the named section.
+    /// When `driver` is set, the same is intended for emitted
+    /// driver-glue functions (parsed but not yet consumed by codegen —
+    /// only the `class` half is emitted today). Non-C11 backends reject
+    /// this section with `mcu/section-attribute-on-non-mcu-target` (the
+    /// same non-MCU reject pattern as `<sce:extern>`).
+    ///
+    /// Both toolchain families are emitted, selected by the compiler
+    /// that is actually running: `__attribute__((section("...")))` for
+    /// GCC / Clang / Keil, `#pragma location` for IAR
+    /// (`__IAR_SYSTEMS_ICC__`). The section name is a property of the
+    /// deployment and lives here; the syntax is a property of the
+    /// compiler and is not configurable.
     #[serde(default)]
     pub c11_section_attribute: Option<C11SectionAttribute>,
 }
@@ -585,24 +589,33 @@ pub struct PlatformConfig {
 /// injection knobs. Set on `machines.<n>.platform.c11_section_attribute`
 /// in `deploy.yaml`. `class` controls statechart function placement;
 /// `driver` is reserved for the driver-glue half — parsed but
-/// not yet consumed by codegen (consumer-gated).
+/// not yet consumed by codegen.
 ///
-/// Only the GCC / Clang / Keil common `__attribute__((section("...")))`
-/// syntax is emitted. IAR's `@".name"` placement syntax is
-/// consumer-gated. Non-C11 backends (cpp / rust / kotlin / go / python)
-/// raise `mcu/section-attribute-on-non-mcu-target` when this section is
+/// The emitter carries both toolchain spellings behind a compiler
+/// check, so one generated file builds under either family:
+/// `__attribute__((section("<class>")))` on GCC / Clang / Keil, and
+/// `#pragma location="<class>"` on IAR. The name is validated against
+/// the portable section-name subset before emission — it lands inside a
+/// string literal on one arm and inside a nested one on the other
+/// (`mcu/section-attribute-name-invalid`). Non-C11 backends
+/// (cpp / rust / kotlin / go / python) raise
+/// `mcu/section-attribute-on-non-mcu-target` when this section is
 /// present, matching the `<sce:extern>` non-MCU reject pattern.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct C11SectionAttribute {
     /// Section name for statechart class functions. When set, every
-    /// emitted statechart function definition is prefixed with
-    /// `__attribute__((section("<class>")))`. Examples: `.app_code`,
-    /// `.text.statechart`.
+    /// emitted statechart function definition lands in it. Examples:
+    /// `.app_code`, `.text.statechart`.
+    ///
+    /// Accepted characters are letters, digits, `.`, `_`, `$` and `-` —
+    /// the portable intersection of what GNU ld, armlink and IAR's
+    /// ILINK take, and narrow enough that the name cannot escape the
+    /// string literal it is emitted into on either toolchain arm.
     #[serde(default)]
     pub class: Option<String>,
     /// Section name for driver-glue functions. Parsed today but
-    /// its codegen consumer (driver-glue emission) is consumer-gated.
+    /// its codegen consumer (driver-glue emission) does not exist yet.
     /// Reserved.
     #[serde(default)]
     pub driver: Option<String>,

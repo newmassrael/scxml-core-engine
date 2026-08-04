@@ -1086,7 +1086,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (332 codes)
+## Appendix — `DiagnosticCode` index (333 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1450,6 +1450,7 @@ or SCE-internal issues.
 | `traceability/meta-generated-source-line-marker-missing` | Generate | SCE Protocol-Synthesis RFC §5.O Atomic 1 follow-up — codegen-internal traceability invariant: every SCE-emitted file (one carrying a §6.2.6 drift header) must contain at least one `SCE-MAP:` marker line. Fires from `forge::sourcemap::validate_emitted_files_have_markers` walking `out_dir` after every successful `cmd_generate` / `cmd_generate_w3c`. ARCHITECTURE.md "Traceability Ownership Boundary" pins the scope: external meta-generator output (protoc, bindgen, cbindgen) carries no drift header and is silently out-of-scope. Not author-preventable — fix lives in the template that lost its `sce_map_marker` macro call. |
 | `mcu/driver-header-not-found` | Validation | SCE Protocol-Synthesis RFC §5.2 Round F-α — a top-level `<sce:driver href="..."/>` reference on the SCXML root cannot be resolved against `deploy.yaml`'s `platform.driver_root` (or the SCXML file's parent directory as fallback). The referenced header is the author's contract with the C11 backend: `*_sm.c` `#include`s the resolved path, so absence breaks cross-TU symbol resolution before any C compiler can speak up. Repair is author-domain — fix the `href` value, add the missing file, or set `platform.driver_root` so the relative path resolves. |
 | `mcu/section-attribute-on-non-mcu-target` | Generate | SCE Protocol-Synthesis RFC §5.2 Round F-α — `platform.c11_section_attribute` is set in `deploy.yaml` but the target codegen backend is not `c11`. The section attribute injects `__attribute__((section("...")))` syntax that only the C11 backend emits; non-MCU backends (cpp / rust / kotlin / go / python) have no equivalent contract and reject the field by design (Q-Round-F-D3 lock, mirrors Q-Call-7 non-MCU pattern). Repair is multi-axis — remove the section attribute, switch the backend to `c11`, or split deploy configurations per target. |
+| `mcu/section-attribute-name-invalid` | Generate | SCE Protocol-Synthesis RFC §5.2 — `platform.c11_section_attribute.class` names a section the C11 emitter cannot place verbatim into a string literal. The name reaches two nested string contexts (a plain C string in `__attribute__((section("...")))`, and a string inside a string in `_Pragma("location=\"...\"")` on IAR), so a quote or backslash would terminate one of them. Accepted characters are letters, digits, `.`, `_`, `$` and `-`; the name must be non-empty. Repair is a rename in `deploy.yaml` and in the linker script that places the section. |
 
 ---
 

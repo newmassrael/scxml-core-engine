@@ -2694,8 +2694,12 @@ pub fn compile_scxml_with_imports(
             for machine in device.machines.values() {
                 if let Some(platform) = machine.platform.as_ref() {
                     if let Some(section) = platform.c11_section_attribute.as_ref() {
-                        forge::codegen_matrix::check_c11_section_attribute(true, language)
-                            .map_err(|e| Located::new(e.into(), "deploy.yaml", None, None))?;
+                        forge::codegen_matrix::check_c11_section_attribute(
+                            true,
+                            section.class.as_deref(),
+                            language,
+                        )
+                        .map_err(|e| Located::new(e.into(), "deploy.yaml", None, None))?;
                         if deploy_section_class.is_none() {
                             deploy_section_class.clone_from(&section.class);
                         }

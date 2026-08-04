@@ -2451,6 +2451,11 @@ pub enum DiagnosticCode {
     McuDriverHeaderNotFound,
     #[serde(rename = "mcu/section-attribute-on-non-mcu-target")]
     McuSectionAttributeOnNonMcuTarget,
+    /// `platform.c11_section_attribute.class` names a section the C11
+    /// emitter cannot place into a string literal — see
+    /// [`GenerateError::McuSectionAttributeNameInvalid`].
+    #[serde(rename = "mcu/section-attribute-name-invalid")]
+    McuSectionAttributeNameInvalid,
 
     // ── NL→IR Item C1 Path A: Enum kind invariants ───
     /// Enum document declares no `<sce:variant>` children — see
@@ -2947,6 +2952,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // non-MCU backend reject of `platform.c11_section_attribute`.
         McuDriverHeaderNotFound,
         McuSectionAttributeOnNonMcuTarget,
+        McuSectionAttributeNameInvalid,
         // ── NL→IR Item C1 Path A: Enum kind invariants ──
         ValidationEnumNoVariants,
         ValidationEnumVariantDuplicateName,
@@ -3431,7 +3437,9 @@ impl DiagnosticCode {
             //    (SCE Protocol-Synthesis RFC §5.2). Both anchor at §5.2
             //    (driver header reference
             //    + non-MCU section attribute reject).
-            McuDriverHeaderNotFound | McuSectionAttributeOnNonMcuTarget => {
+            McuDriverHeaderNotFound
+            | McuSectionAttributeOnNonMcuTarget
+            | McuSectionAttributeNameInvalid => {
                 Some("SCE Protocol-Synthesis RFC §5.2")
             }
 
@@ -4053,6 +4061,7 @@ impl DiagnosticCode {
             }
             McuDriverHeaderNotFound => "mcu/driver-header-not-found",
             McuSectionAttributeOnNonMcuTarget => "mcu/section-attribute-on-non-mcu-target",
+            McuSectionAttributeNameInvalid => "mcu/section-attribute-name-invalid",
             // ── NL→IR Item C1 Path A: Enum kind invariants ──
             ValidationEnumNoVariants => "validation/enum-no-variants",
             ValidationEnumVariantDuplicateName => "validation/enum-variant-duplicate-name",
@@ -7320,6 +7329,20 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![backend.clone()],
         },
+        // The repair is a rename the author has to make in two places
+        // (deploy.yaml and the linker script that places the section),
+        // so no candidate set is derivable and `fix` stays `None`. The
+        // name rides `actual` verbatim; the per-character reason is in
+        // the message rather than in `expected`, which would otherwise
+        // be read as a suggested replacement.
+        GenerateError::McuSectionAttributeNameInvalid { name, reason } => DiagnosticPayload {
+            code: DiagnosticCode::McuSectionAttributeNameInvalid,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), reason.clone()],
+        },
         GenerateError::CodegenNoStdScriptNotSupported {
             document,
             locations,
@@ -10136,6 +10159,22 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d9ee1c8383fc6b8f","code":"mcu/section-attribute-on-non-mcu-target","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.2","message":"platform.c11_section_attribute is set in deploy.yaml but the target backend is 'rust', not 'c11'. The section attribute injects `__attribute__((section(...)))` which only the C11 backend emits. Repair: remove the section attribute, switch the backend to 'c11', or split deploy configurations per target.","actual":"rust"}"#,
             ),
+            // ── Section name the C11 emitter cannot place into a
+            //    string literal. The quote case is the one that
+            //    matters: the name reaches a plain C string on
+            //    GCC/Clang/Keil and a string-inside-a-string on IAR,
+            //    and a `"` closes one of them.
+            (
+                "mcu/section-attribute-name-invalid",
+                crate::forge::error::GenerateError::McuSectionAttributeNameInvalid {
+                    name: ".app\"code".into(),
+                    reason: "it contains a double quote, which would close the \
+                             string literal the name is emitted into"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:bf5be93d976d3ac3","code":"mcu/section-attribute-name-invalid","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.2","message":"platform.c11_section_attribute.class = '.app\"code' is not a usable section name: it contains a double quote, which would close the string literal the name is emitted into. Accepted characters are letters, digits, `.`, `_`, `$` and `-`, and the name must not be empty. Repair: rename the section in deploy.yaml and in the linker script that places it.","actual":".app\"code"}"#,
+            ),
             // ── NL→IR Item C1 Path A: Enum kind invariants ──
             //   `id` hashes are placeholders; the goldens test prints
             //   the actual FNV1a on first run, copy them back here.
@@ -12558,6 +12597,7 @@ mod tests {
             //    outside FixCarriesCandidates by design.
             | McuDriverHeaderNotFound
             | McuSectionAttributeOnNonMcuTarget
+            | McuSectionAttributeNameInvalid
             // ── Flag inversion — flag-bind sibling codes that
             //    don't carry candidate lists:
             //   - `flag-bind-source-not-resolved`: open-ended repair
@@ -13142,6 +13182,7 @@ mod tests {
                 // the non_overlap_class match above.
                 | McuDriverHeaderNotFound
                 | McuSectionAttributeOnNonMcuTarget
+                | McuSectionAttributeNameInvalid
                 // Flag inversion — parent-side flag-bind cross-doc
                 // validator codes. One in FixCarriesCandidates
                 // (`flag-bind-input-not-declared`) and five in
@@ -13175,9 +13216,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            332,
+            333,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 332 distinct variants to match the DiagnosticCode \
+             expected 333 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
