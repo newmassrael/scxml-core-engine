@@ -1644,14 +1644,14 @@ pub enum ValidationError {
 
     /// SCE Protocol-Synthesis RFC §synth-5-E application-layer
     /// ownership diagnostic (spec lines 1516-1519): an
-    /// `<sce:on-sample callback="rust:crate::path::fn">` attribute
-    /// carries an authoring path that fails the Rust
-    /// path subset. Today's reachable arms are path-syntax failures
-    /// (unknown language prefix, leading/trailing/double `::`,
-    /// non-NCName segment, empty path); future signature inspection
-    /// extends the same diagnostic code with shape-mismatch arms
-    /// (owned-mode first parameter rejected at the SCE-side parser
-    /// when a consumer needs it).
+    /// `<sce:on-sample callback="...">` attribute carries an authoring
+    /// path that fails its language's path subset. Today's reachable
+    /// arms are path-syntax failures (unknown language prefix,
+    /// leading/trailing/double `::`, a `::` on the C axis, non-NCName
+    /// segment, empty path); future signature inspection extends the
+    /// same diagnostic code with shape-mismatch arms (owned-mode first
+    /// parameter rejected at the SCE-side parser when a consumer needs
+    /// it).
     ///
     /// Diagnostic name preserves spec wording
     /// verbatim; the `reason` field
@@ -1660,9 +1660,10 @@ pub enum ValidationError {
     /// "callback-signature-non-borrow" wording.
     #[error(
         "state '{state_id}': <sce:on-sample link=\"{link}\" callback=\"{callback}\"> {reason}. \
-         The `callback` value must match the `rust:crate::module::fn` path \
-         subset. The borrow-mode contract is enforced at the dispatch site; rustc rejects \
-         owned-mode signatures at user-crate compile time. See SCE Protocol-Synthesis RFC §5.E."
+         The `callback` value must match `rust:crate::module::fn` or `c:identifier`. \
+         The borrow-mode contract is enforced at the dispatch site; rustc rejects \
+         owned-mode signatures at user-crate compile time, and the C11 backend emits a \
+         prototype the host definition must match. See SCE Protocol-Synthesis RFC §5.E."
     )]
     PoolSampleCallbackSignatureNonBorrow {
         /// State id whose `<sce:on-sample callback>` triggers the
@@ -3348,11 +3349,11 @@ pub enum CallbackPathReason {
     /// attribute itself.
     #[error("declares an empty callback path")]
     EmptyPath,
-    /// Unknown or missing language prefix. Today the only legal
-    /// prefix is `rust:` (future language axes are forward-compat
-    /// schema slots). The empty `prefix` carries the missing-colon
-    /// case; non-empty prefixes carry the unknown-prefix case.
-    #[error("uses an unsupported language prefix `{prefix}` (only `rust:` is accepted today)")]
+    /// Unknown or missing language prefix. The legal prefixes are
+    /// `rust:` and `c:` — one per backend that has a lowering for the
+    /// callback. The empty `prefix` carries the missing-colon case;
+    /// non-empty prefixes carry the unknown-prefix case.
+    #[error("uses an unsupported language prefix `{prefix}` (accepted: `rust:`, `c:`)")]
     UnknownLanguagePrefix {
         /// Prefix as authored, or `""` when no `:` separator was
         /// present in the original value.

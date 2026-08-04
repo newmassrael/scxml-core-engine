@@ -4029,24 +4029,37 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym
    `Engine<...Policy>`. Each function:
      1. iterates the active configuration via `<machine>_in_state`
         for every state declaring `<sce:on-sample link="X">`,
-     2. raises `event="Y"` onto the external queue — the event is
-        always raised (the callback path is Rust-only; the C11
-        backend ignores `<sce:on-sample callback="rust:...">` and
-        a `c:`-prefix callback axis is consumer-gated),
-     3. drops the borrow at function exit; the slot returns to the
+     2. calls the host callback when the block names one on the C
+        axis (`callback="c:<identifier>"`), passing the borrow and
+        the statechart as `sce_sub_callback_t`'s `ctx` — a
+        `rust:`-prefixed path names a module path with no C
+        lowering and is skipped, mirroring the Rust backend
+        skipping a `c:` one,
+     3. raises `event="Y"` onto the external queue — always, callback
+        or not, so SCXML transitions react to the arrival either way,
+     4. drops the borrow at function exit; the slot returns to the
         pool through the host's `sce_sub_callback_t` contract.
    `event_data` is the empty string. #}
 {% for link in model.on_sample_links %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
     {{ csym_prefix }}{{ model.name }}_t *sm,
     const sce_sample_t *sample) {
-    (void)sample;  /* borrow held; C11 callback dispatch is consumer-gated */
+    (void)sample;  /* borrow held; unused when no block names a c: callback */
 {% for state_id, state in model.states | dictsort %}
 {% for block in state.on_sample_blocks %}
 {% if block.link == link %}
     if ({{ csym_prefix }}{{ model.name }}_in_state(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }})) {
-        /* Event always raised; callback ignored (callback
-           dispatch is Rust-only). */
+{% if block.callback and (block.callback | callback_lang) == "c" %}
+        /* Callback dispatch — synchronous call into the host
+           function declared in the header. Runs before the raise so
+           the handler observes the sample while the borrow is
+           unquestionably live. `sm` rides as the `ctx` argument, so a
+           handler shared across machines can tell which one it was
+           called for. */
+        {{ block.callback | extern_callback_path }}(sample, sm);
+{% endif %}
+        /* Event raise: unconditional, so a document stays meaningful
+           on a backend that does not own the callback's axis. */
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _on_sample_evt = {0};
         _on_sample_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ block.event | upper | replace('.', '_') | replace('-', '_') }};
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_on_sample_evt);

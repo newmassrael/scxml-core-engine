@@ -395,3 +395,224 @@ fn w1_2_skipped_when_no_on_sample_blocks() {
         "deliver_link_* must elide for documents without <sce:on-sample>:\n{code}"
     );
 }
+
+// ── `c:` callback axis (C11 side of the symmetry) ───────────────
+
+/// The `rust:` arm has always emitted a synchronous call into a
+/// host-supplied function; the C11 backend carried the same
+/// `<sce:on-sample callback>` attribute and silently dropped it, so a
+/// C11 deployment could declare a callback and get nothing but the
+/// event raise. `c:` closes that.
+///
+/// The emitted call matches `sce_sub_callback_t` in `<sce/sample.h>`
+/// exactly — `(const sce_sample_t *, void *ctx)` with the statechart as
+/// the context — so one host function satisfies both this generated
+/// dispatch and a direct registration on the link's RX path. An
+/// adapter shim between the two would be the thing that drifts.
+const C_CALLBACK_FIXTURE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart"
+       name="watcher">
+  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"
+                   callback="c:app_on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>
+</scxml>
+"##;
+
+#[test]
+fn c_callback_emits_dispatch_and_prototype_on_c11() {
+    let (header, source) = render_c11(C_CALLBACK_FIXTURE);
+
+    // The prototype has to be emitted, not assumed: without it the
+    // call below is an implicit declaration, which C99 onward rejects
+    // and which would otherwise let a mismatched host signature link.
+    assert!(
+        header.contains("void app_on_scout(const sce_sample_t *sample"),
+        "header must declare the host callback with the sample borrow:\n{header}"
+    );
+    assert!(
+        header.contains("void *ctx);"),
+        "prototype must match sce_sub_callback_t's context parameter:\n{header}"
+    );
+
+    // Call site: context is the statechart instance, so a callback can
+    // reach the machine that received the sample without the host
+    // threading its own registry.
+    assert!(
+        source.contains("app_on_scout(sample, sm);"),
+        "missing C callback dispatch line:\n{source}"
+    );
+    // The language prefix must not survive into C, where `:` is not
+    // part of an identifier.
+    assert!(
+        !source.contains("c:app_on_scout"),
+        "language prefix leaked into the call site:\n{source}"
+    );
+
+    // The event raise is unconditional on both axes; a callback
+    // replaces neither the raise nor its ordering.
+    let cb_pos = source.find("app_on_scout(sample, sm);").expect("callback");
+    let raise_pos = source
+        .find("_raise_external(sm, &_on_sample_evt);")
+        .expect("raise");
+    assert!(cb_pos < raise_pos, "callback must precede the event raise");
+}
+
+#[test]
+fn rust_backend_ignores_a_c_callback() {
+    // Symmetric to the C11 backend ignoring `rust:`: a `c:` path has no
+    // Rust lowering, and emitting it would produce a call to an
+    // identifier rustc cannot resolve. The event raise still happens,
+    // so the document remains meaningful on both backends.
+    let code = render_rust(C_CALLBACK_FIXTURE);
+    assert!(
+        !code.contains("app_on_scout"),
+        "a c: callback must not reach the Rust call site:\n{code}"
+    );
+    assert!(
+        code.contains("self.raise_external_by_name(\"scout.tick\", \"\");"),
+        "the event raise must survive on the backend that skips the callback:\n{code}"
+    );
+    syn::parse_file(&code).unwrap_or_else(|e| panic!("c-callback fixture must still parse: {e}"));
+}
+
+#[test]
+fn c11_backend_still_ignores_a_rust_callback() {
+    // The pre-existing half of the symmetry, pinned so adding `c:`
+    // cannot accidentally make C11 emit a Rust path.
+    const RUST_CALLBACK: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="running"
+       datamodel="ecmascript"
+       sce:kind="statechart"
+       name="watcher">
+  <state id="running">
+    <sce:on-sample link="scout_link" event="scout.tick"
+                   callback="rust:my_app::on_scout"/>
+    <transition event="scout.tick" target="running"/>
+  </state>
+</scxml>
+"##;
+    let (header, source) = render_c11(RUST_CALLBACK);
+    assert!(
+        !source.contains("my_app") && !header.contains("my_app"),
+        "a rust: callback must not reach the C11 output"
+    );
+    assert!(
+        source.contains("_raise_external(sm, &_on_sample_evt);"),
+        "the event raise must survive on the backend that skips the callback:\n{source}"
+    );
+}
+
+/// The three string assertions above prove the text is emitted; they
+/// cannot tell an emitted prototype that compiles from one that does
+/// not. `SCE_PARAM_TYPESTATE` in particular is only in scope because
+/// `<sce/sample.h>` is included ahead of the prototype — an ordering a
+/// `contains` check would never notice breaking.
+///
+/// The negative half is the point: a host whose definition disagrees
+/// with the generated prototype must fail its own compile. Without the
+/// emitted prototype the call site would be an implicit declaration and
+/// the mismatch would reach the linker instead.
+#[test]
+fn c_callback_output_compiles_and_pins_the_host_signature() {
+    use std::process::Command;
+
+    let Some(cc) = which("gcc").or_else(|| which("cc")) else {
+        eprintln!("SKIP c_callback_output_compiles: no gcc/cc on PATH");
+        return;
+    };
+
+    let tmp = tempdir().expect("tempdir");
+    let dir = tmp.path();
+    let src = dir.join("watcher.scxml");
+    fs::write(&src, C_CALLBACK_FIXTURE).expect("write fixture");
+    let tdir: PathBuf = sce_build::find_template_dir_for(sce_build::generator::Language::C11);
+    let out = sce_build::compile_scxml_lang(
+        src.to_str().unwrap(),
+        &tdir,
+        sce_build::generator::Language::C11,
+    )
+    .expect("c11 codegen");
+    for (name, content) in &out.files {
+        fs::write(dir.join(name), content).expect("write generated");
+    }
+
+    let runtime_inc = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .join("backends/c/runtime/include");
+
+    let syntax_only = |file: &std::path::Path| -> Result<(), String> {
+        let out = Command::new(&cc)
+            .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-fsyntax-only"])
+            .arg("-I")
+            .arg(&runtime_inc)
+            .arg("-I")
+            .arg(dir)
+            .arg(file)
+            .output()
+            .expect("run cc");
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).into_owned())
+        }
+    };
+
+    let generated_c = dir.join("watcher_sm.c");
+    syntax_only(&generated_c)
+        .unwrap_or_else(|e| panic!("generated C must compile clean at -Werror:\n{e}"));
+
+    // A conforming host definition compiles against the prototype.
+    let host_ok = dir.join("host_ok.c");
+    fs::write(
+        &host_ok,
+        "#include \"watcher_sm.h\"\n\
+         void app_on_scout(const sce_sample_t *sample, void *ctx) { (void)sample; (void)ctx; }\n",
+    )
+    .expect("write host");
+    syntax_only(&host_ok)
+        .unwrap_or_else(|e| panic!("a conforming host callback must compile:\n{e}"));
+
+    // A host that drops `ctx` must not. If this ever passes, the
+    // prototype stopped being emitted and the mismatch moved to link
+    // time, where nothing reports it.
+    let host_bad = dir.join("host_bad.c");
+    fs::write(
+        &host_bad,
+        "#include \"watcher_sm.h\"\n\
+         void app_on_scout(const sce_sample_t *sample) { (void)sample; }\n",
+    )
+    .expect("write host");
+    let err = syntax_only(&host_bad)
+        .expect_err("a host signature that disagrees with the prototype must fail to compile");
+    assert!(
+        err.contains("conflicting types") || err.contains("incompatible"),
+        "expected a conflicting-declaration diagnostic, got:\n{err}"
+    );
+}
+
+fn which(tool: &str) -> Option<PathBuf> {
+    let out = std::process::Command::new("which")
+        .arg(tool)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let p = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if p.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(p))
+    }
+}

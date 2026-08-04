@@ -67,6 +67,7 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    env.add_filter("callback_lang", filter_callback_lang);
 }
 
 /// Convert identifier to snake_case for Rust function/variable/module names.
@@ -458,18 +459,48 @@ fn filter_slice_from(s: String, n: usize) -> String {
 
 /// SCE Protocol-Synthesis RFC §synth-5-E sample-callback lowering — strip the
 /// language prefix from `<sce:on-sample callback="...">` to produce
-/// the bare path the codegen emits at the call site. Today only
-/// `rust:` is valid; the validator
-/// (`validate_on_sample_callback_paths`) rejects every other
-/// shape before this filter ever runs, so the prefix is always
-/// `rust:` here. Future language axes (`c:`, `kotlin:`, …) extend
-/// the same filter via the same pattern — they will arrive with
-/// their own per-backend dispatch sites and won't share this one.
+/// the bare path the codegen emits at the call site. The validator
+/// (`validate_on_sample_callback_paths`) rejects every prefix outside
+/// [`CALLBACK_LANGUAGE_PREFIXES`] before this filter ever runs, so an
+/// unstripped return here means a new prefix reached the validator
+/// without reaching this list.
 fn filter_extern_callback_path(s: String) -> String {
-    if let Some(rest) = s.strip_prefix("rust:") {
-        return rest.to_string();
+    for (_, prefix) in CALLBACK_LANGUAGE_PREFIXES {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            return rest.to_string();
+        }
     }
     s
+}
+
+/// The `<sce:on-sample callback>` language axes, as
+/// `(language, prefix)`. One entry per backend that has a lowering for
+/// the callback: Rust calls a module path, C11 calls a flat identifier
+/// matching `sce_sub_callback_t`.
+///
+/// The single place the prefix strings live. Templates ask
+/// [`filter_callback_lang`] which axis a callback is on rather than
+/// testing for `"rust:"` themselves, so a backend cannot start
+/// emitting another backend's callback by copying a string literal.
+const CALLBACK_LANGUAGE_PREFIXES: &[(&str, &str)] = &[("rust", "rust:"), ("c", "c:")];
+
+/// SCE Protocol-Synthesis RFC §synth-5-E — name the language axis of an
+/// `<sce:on-sample callback="...">` value (`"rust"` / `"c"`).
+///
+/// Each backend emits a call only for its own axis: a `rust:` path has
+/// no C lowering and a `c:` identifier does not resolve in Rust, so the
+/// backend that does not own the axis skips the call and emits the
+/// event raise alone. Returns the empty string for a value carrying no
+/// known prefix, which the validator has already made unreachable —
+/// the empty string then matches no template arm, which is the safe
+/// direction.
+fn filter_callback_lang(s: String) -> String {
+    for (lang, prefix) in CALLBACK_LANGUAGE_PREFIXES {
+        if s.starts_with(prefix) {
+            return (*lang).to_string();
+        }
+    }
+    String::new()
 }
 
 /// Strip the SCXML auto-id leading underscore so an invoke id can be embedded
@@ -536,6 +567,7 @@ pub fn register_go_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    env.add_filter("callback_lang", filter_callback_lang);
 }
 
 /// Map SCXML variable type to Go type.
@@ -623,6 +655,7 @@ pub fn register_cpp_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    env.add_filter("callback_lang", filter_callback_lang);
 }
 
 /// Capitalize state/event names for C++ enums.
@@ -667,6 +700,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    env.add_filter("callback_lang", filter_callback_lang);
     // SCE Protocol-Synthesis RFC §synth-5-E per-link delivery codegen: per-link function names
     // (`<machine>_deliver_link_<X>_sample`) snake-case the link
     // name to keep the C identifier stable when the SCXML link
@@ -753,6 +787,7 @@ pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    env.add_filter("callback_lang", filter_callback_lang);
 }
 
 /// Convert identifier to camelCase for Kotlin property names.
@@ -878,6 +913,7 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
+    env.add_filter("callback_lang", filter_callback_lang);
     // §scxml-5.2.2: `<data src="file:...">` inlining at codegen time —
     // same filter the C11 backend uses (see
     // `tools/codegen/templates/c/scriptengine.jinja2:272`) so Python
