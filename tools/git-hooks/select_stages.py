@@ -67,7 +67,15 @@ STAGES: dict[str, dict] = {
     # (`json_schema_enums_match_rust_source_of_truth`, the sourcemap and XSD
     # byte pins), and the forge-AST export schema.
     "4": {"workflows": ["rust-workspace-tests.yml"],
-          "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"]},
+          # `roadmap_marker_gate` enumerates every tracked file in the repo
+          # and checks its comments, so a workspace test reads paths far
+          # outside the workflow's own filter — including this selector.
+          # Listing it here is what keeps a hook edit from skipping the
+          # suite that judges it. See E6 in the debt register: the
+          # workflow's trigger is narrower than that test's scan set, which
+          # is a CI hole this cannot close from the hook side.
+          "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**",
+                    "tools/git-hooks/**"]},
     "4b": {"workflows": ["drift-verify.yml"]},
     "5": {"workflows": ["forge-conformance.yml"], "extra": ["backends/go/**"]},
     "6": {"workflows": ["forge-conformance.yml"], "extra": ["backends/cpp/**", "sce/**"]},
@@ -102,15 +110,13 @@ INERT = [
     ".gitattributes",
     "*.md",
     "docs/adr/**",
-    # The hook and this selector gate nothing in CI (no workflow lists
-    # `tools/git-hooks/**`), and the selector's own correctness is covered by
-    # `--self-test`, which the hook runs unconditionally on every push. So a
-    # hook edit needs no product stage — but it does still get verified, by
-    # the self-test that decides whether the edit is even usable.
-    "tools/git-hooks/**",
-    "claudedocs/**",
     "LICENSE*",
 ]
+
+# Entries here list only TRACKED paths, because a changed path comes from
+# `git diff --name-only` and a gitignored one can never appear there. An
+# ignored directory in this list would be dead config that reads as a
+# decision.
 
 
 def glob_to_regex(glob: str) -> re.Pattern:
@@ -238,8 +244,11 @@ def self_test(repo_root: Path) -> int:
     # The failure of 2026-08-04: a SCE-VERIFIES marker must reach the catalog gate.
     check("verifies-marker", ["tests/mesh/CustomTcpSocketOptionsTest.cpp"],
           want_has=["8b"])
-    # The hook's own sources gate nothing in CI; the self-test is their gate.
-    check("hook-self", ["tools/git-hooks/select_stages.py"], want_full=False)
+    # The hook's own sources are read by `roadmap_marker_gate`, a workspace
+    # test, so a hook edit must still run Stage 4 — the case that shipped
+    # a tree-wide gate failure when this was classified inert.
+    check("hook-self", ["tools/git-hooks/select_stages.py"],
+          want_full=False, want_has=["4"])
     # A ledger-only edit needs the citation gates, not the C++ build.
     check("ledger-only", ["docs/sce-ledger/mesh/.atomic/workspace.atomic.json"],
           want_has=["8"], want_lacks=["2b", "6"])
