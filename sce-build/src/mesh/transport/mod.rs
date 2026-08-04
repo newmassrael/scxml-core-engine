@@ -237,7 +237,11 @@ pub struct TransportDescriptor {
     ///   and silently drop; SOME/IP support here is consumer-gated.
     /// - `zenoh`: binding-wide `key:` is sufficient for subscribe
     ///   dispatch — no per-event resolution needed. `true`.
-    /// - `dds` / `can`: unimplemented; set `false`.
+    /// - `dds`: implemented, but no fixture drives deploy.yaml
+    ///   `subscriptions:` over it, so this stays `false` on the same
+    ///   grounds custom_tcp does — the flag's contract is "realised
+    ///   end-to-end", not "the mechanism looks generic".
+    /// - `can`: unimplemented; set `false`.
     ///
     /// Consumed by the topology-stage contributor
     /// (`topology::contribute_subscription_partials`): a subscription source whose
@@ -267,9 +271,11 @@ pub struct TransportDescriptor {
     ///   - local / shm / custom_tcp: endpoints are compile-time process
     ///     addresses; a single process cannot semantically back N
     ///     independent peer identities on the same in-process channel.
-    ///   - dds / can: unimplemented; flag stays `false` for
-    ///     consistency — the runtime has no session-pool scaffolding
-    ///     for broadcast-bus shapes regardless.
+    ///   - dds: implemented; SCE_MESH.md section 14.4 scopes the
+    ///     multi-instance server pool to SOME/IP, and the dds arm emits
+    ///     one server endpoint per router.
+    ///   - can: unimplemented; a broadcast bus has no per-peer server
+    ///     instance for a pool to scale.
     ///
     /// Consumed by `deploy::validate_server_pool_rejection`: a machine
     /// declaring `server.instances:` on a transport whose flag is
@@ -298,8 +304,10 @@ pub struct TransportDescriptor {
     ///   daemon or routing fabric instead of the intended same-machine
     ///   channel; authors should pick `shm` or `custom_tcp` when the
     ///   traffic never leaves the device.
-    /// - `dds` / `can` — unimplemented + non-IPC semantics (broadcast
-    ///   bus, multi-participant DCPS).
+    /// - `dds` — implemented; an inter-machine multi-participant DCPS
+    ///   middleware rather than a same-machine channel.
+    /// - `can` — unimplemented, and a priority-arbitrated broadcast bus
+    ///   is not a direct same-machine IPC channel either.
     ///
     /// Consumed by `deploy::validate_partitions_schema`: a partition
     /// whose `transport_binding:` names a transport with this flag
@@ -926,6 +934,66 @@ mod tests {
         assert!(
             !d.capabilities.is_empty(),
             "transport 'can' should still have capabilities for pattern validation"
+        );
+    }
+
+    #[test]
+    fn no_doc_comment_calls_an_implemented_transport_unimplemented() {
+        // Field docs summarise why each transport carries a given value,
+        // naming transports directly. When one is implemented the summary
+        // has to move with it, and three of them did not: dds landed a
+        // template in the multi-pattern arm while
+        // `supports_machine_lifetime_subscribe`,
+        // `supports_multi_instance_server` and
+        // `supports_inter_partition_ipc` still documented it as
+        // unimplemented. Each flag is still `false`, so no behaviour was
+        // wrong — the recorded *reason* was, which is worse than a stale
+        // value because it reads as a live justification for a decision
+        // nobody would revisit.
+        //
+        // Scoped to `///` field docs: those are where a transport name and
+        // a claim about it sit together. Ordinary `//` comments in this
+        // module discuss the same names narratively ("dds joined the
+        // implemented set") and are not claims about a field's value.
+        //
+        // Any implemented transport named on a doc line that also says
+        // "unimplemented" is a mismatch, whatever separator joins the
+        // names — the stale form was "`dds` / `can`: unimplemented", so
+        // keying on the separator would have missed the very case this
+        // exists for.
+        let source = include_str!("mod.rs");
+        let named: Vec<(&str, regex::Regex)> = implemented_names()
+            .iter()
+            .map(|name| {
+                let word = regex::Regex::new(&format!(r"\b{}\b", regex::escape(name)))
+                    .expect("transport-name regex compiles");
+                (*name, word)
+            })
+            .collect();
+
+        let mut stale = Vec::new();
+        for (idx, line) in source.lines().enumerate() {
+            if !line.trim_start().starts_with("///") || !line.contains("unimplemented") {
+                continue;
+            }
+            for (name, word) in &named {
+                if word.is_match(line) {
+                    stale.push(format!(
+                        "  mod.rs:{}: '{}' — {}",
+                        idx + 1,
+                        name,
+                        line.trim()
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            stale.is_empty(),
+            "doc comment(s) describe an implemented transport as unimplemented:\n{}\n\
+             Replace the claim with the reason the field actually holds its \
+             value — the descriptor body already states it.",
+            stale.join("\n")
         );
     }
 
