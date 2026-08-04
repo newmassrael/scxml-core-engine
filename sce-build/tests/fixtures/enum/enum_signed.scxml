@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Signed underlying carrier. The values are the int8 boundaries plus a
+     negative sentinel, which is the shape a signal catalogue reaches for:
+     an out-of-band "not available" code that must not collide with any
+     in-range measurement. Encoded as an unsigned carrier it would have to
+     be 0xFF, which every consumer then has to remember means -1. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="temperature_status"
+       sce:underlying-type="int8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="not_available" value="-128"/>
+      <sce:variant name="sensor_fault" value="-1"/>
+      <sce:variant name="nominal" value="0"/>
+      <sce:variant name="over_range" value="127"/>
+    </data>
+  </datamodel>
+</scxml>

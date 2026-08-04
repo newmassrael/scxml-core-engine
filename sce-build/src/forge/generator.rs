@@ -1326,9 +1326,9 @@ fn render_lookup(
 //   * Python: `class <Pascal>(IntEnum): <UPPER_SNAKE> = N`
 //   * C11  : `typedef enum { <UPPER_TYPE>_<UPPER_VARIANT> = N, … } <Pascal>_t;`
 //
-// `m.underlying_type` is always a primitive (`Uint8/16/32/64`); the
-// parser rejects any other shape via
-// `validation/enum-unsupported-underlying-type`, so the
+// `m.underlying_type` is always a fixed-width integer primitive
+// (`Uint8/16/32/64`, `Int8/16/32/64`); the parser rejects any other
+// shape via `validation/enum-unsupported-underlying-type`, so the
 // `<lang>_type(&m.underlying_type)` lookups here never reach the
 // `SceType::Enum(_)` arm.
 //
@@ -1397,11 +1397,15 @@ fn render_enum(
         SceType::Uint16 => "uint16",
         SceType::Uint32 => "uint32",
         SceType::Uint64 => "uint64",
-        // Parser rejects every other underlying type via
+        SceType::Int8 => "int8",
+        SceType::Int16 => "int16",
+        SceType::Int32 => "int32",
+        SceType::Int64 => "int64",
+        // Parser rejects every non-integer underlying type via
         // `validation/enum-unsupported-underlying-type`; reaching any
         // other arm here is a parse-side regression.
         _ => unreachable!(
-            "render_enum invoked with non-unsigned underlying_type — \
+            "render_enum invoked with a non-integer underlying_type — \
              parser must reject via validation/enum-unsupported-underlying-type"
         ),
     };

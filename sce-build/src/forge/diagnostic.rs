@@ -10185,7 +10185,7 @@ mod tests {
                     declared: "float32".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (supported: uint8 | uint16 | uint32 | uint64)","actual":"float32"}"#,
+                r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (supported: uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64)","actual":"float32"}"#,
             ),
             // ── NL→IR Item C1 Path A: EventSchema kind ───
             //   `id` hashes are placeholders; the goldens test prints

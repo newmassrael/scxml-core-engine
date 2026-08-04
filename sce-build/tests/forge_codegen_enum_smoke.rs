@@ -25,11 +25,25 @@ use std::process::{Command, Stdio};
 ///   * `enum_minimal`     — uint8 underlying, 3 variants, contiguous
 ///   * `enum_wide`        — uint16 underlying, variants requiring 16-bit
 ///   * `enum_hex_values`  — uint8 underlying, hex-notation values
+///   * `enum_signed`      — int8 underlying, negative variant values
+///
+/// `enum_signed` is the axis where a per-backend syntax check earns its
+/// keep rather than duplicating the IR test: the negative value has to
+/// survive into whatever literal each language accepts for its signed
+/// carrier, and Kotlin in particular needs `(-128).toByte()` where the
+/// unsigned carriers get `128u.toUByte()`. A string assertion on the
+/// emitted text cannot tell those apart from a form that does not
+/// compile.
 ///
 /// Negative fixtures live alongside but are exercised by
 /// `tests/enum_kind.rs` for parse-time rejection, not by this smoke
 /// gate (they never reach codegen).
-const FIXTURES: &[&str] = &["enum_minimal", "enum_wide", "enum_hex_values"];
+const FIXTURES: &[&str] = &[
+    "enum_minimal",
+    "enum_wide",
+    "enum_hex_values",
+    "enum_signed",
+];
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 128 fits a uint8 but not an int8. A range check that only tested the
+     bit width, or that reused the unsigned ceiling, would accept it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="signed_positive_overflow"
+       sce:underlying-type="int8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="too_big" value="128"/>
+    </data>
+  </datamodel>
+</scxml>

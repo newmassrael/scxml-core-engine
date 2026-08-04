@@ -265,6 +265,122 @@ fn negative_enum_unsupported_underlying_rejects() {
     );
 }
 
+// ── Signed underlying carriers ───────────────────────────────────
+
+/// C and C++ have always let an enumeration rest on a signed carrier,
+/// and a negative sentinel beside a measurement range is the ordinary
+/// way a signal catalogue spells "no reading" — DBC and AUTOSAR
+/// catalogues are full of them. Restricting the Enum kind to unsigned
+/// carriers forced those catalogues to be re-encoded (a -1 becoming
+/// 0xFF) and pushed the sign convention out of the schema and into
+/// every consumer's head.
+///
+/// The Kotlin backend makes the cost concrete: it has no unsigned
+/// primitive in its ordinary type vocabulary, so an unsigned-only Enum
+/// kind hands a Kotlin consumer `UByte` where the domain says `Byte`.
+#[test]
+fn positive_enum_signed_parses_int8_underlying() {
+    let xml = fixture("enum_signed");
+    let doc = parse_forge(&xml, label_for("enum_signed"))
+        .expect("parse succeeds")
+        .expect("not a statechart");
+    let m = match doc {
+        ForgeDocument::Enum(m) => m,
+        other => panic!("expected Enum, got {:?}", other.kind()),
+    };
+    assert_eq!(m.underlying_type, SceType::Int8);
+    assert_eq!(m.variants.len(), 4);
+    // Both boundaries, so an off-by-one in either direction of the
+    // range check fails rather than passing on a mid-range sample.
+    assert_eq!(m.variants[0].name, "not_available");
+    assert_eq!(m.variants[0].value, -128);
+    assert_eq!(m.variants[1].value, -1);
+    assert_eq!(m.variants[2].value, 0);
+    assert_eq!(m.variants[3].value, 127);
+}
+
+#[test]
+fn negative_enum_signed_positive_overflow_rejects() {
+    // 128 fits uint8 and not int8: a check that kept the unsigned
+    // ceiling while admitting the signed carrier would accept it.
+    let err = expect_parse_error("negative_enum_signed_positive_overflow");
+    assert!(
+        matches!(
+            err,
+            ValidationError::EnumVariantValueOverflowsUnderlying {
+                ref variant_name,
+                value,
+                ref underlying,
+                ..
+            } if variant_name == "too_big" && value == 128 && underlying == "int8"
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn negative_enum_negative_value_on_unsigned_underlying_rejects() {
+    // The sign is a property of the declared carrier, not of the
+    // literal: -1 against uint8 reports as the same overflow the
+    // out-of-range positive case does.
+    let err = expect_parse_error("negative_enum_negative_on_unsigned");
+    assert!(
+        matches!(
+            err,
+            ValidationError::EnumVariantValueOverflowsUnderlying {
+                ref variant_name,
+                value,
+                ref underlying,
+                ..
+            } if variant_name == "bad" && value == -1 && underlying == "uint8"
+        ),
+        "got {err:?}"
+    );
+}
+
+/// A signed carrier must reach every backend's emitted enum, not just
+/// the IR. The six type maps already carry `int8`…`int64`, so what is
+/// actually at risk is the value rendering: a negative variant has to
+/// survive into the literal each language wants (Kotlin needs
+/// `(-128).toByte()`, not `-128u.toUByte()`).
+#[test]
+fn signed_enum_reaches_every_backend_with_negative_values() {
+    use sce_build::compile_forge_from_string;
+    use sce_build::generator::Language;
+
+    let xml = fixture("enum_signed");
+    let label = label_for("temperature_status");
+    for (lang, want) in [
+        (Language::Cpp, "int8_t"),
+        (Language::Rust, "i8"),
+        (Language::Kotlin, "Byte"),
+        (Language::Go, "int8"),
+        (Language::C11, "int8_t"),
+    ] {
+        let out = compile_forge_from_string(&xml, label, lang)
+            .unwrap_or_else(|e| panic!("{lang:?} codegen must succeed: {e:?}"));
+        let code = out.files[0].1.clone();
+        assert!(
+            code.contains(want),
+            "{lang:?} must carry the signed carrier {want}:\n{code}"
+        );
+        assert!(
+            code.contains("-128"),
+            "{lang:?} must render the negative boundary variant:\n{code}"
+        );
+    }
+
+    // Python's IntEnum lowers to plain `int`, so the carrier survives
+    // only as the documented `sce:underlying-type` name — which is the
+    // one backend where a missing signed arm would show up as a panic
+    // rather than a wrong type.
+    let out = compile_forge_from_string(&xml, label, Language::Python)
+        .expect("python codegen must succeed");
+    let code = out.files[0].1.clone();
+    assert!(code.contains("int8"), "python must document int8:\n{code}");
+    assert!(code.contains("-128"), "python must render -128:\n{code}");
+}
+
 // ── strict-variants doc-as-contract: codegen ignores it ──────────
 
 /// `forge::generator::render_enum` carries a comment asserting that
