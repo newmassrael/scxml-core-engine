@@ -340,8 +340,8 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringHidesTransientFailuresAndRaises
         [&delivery_recorder](CommunicationError err) { delivery_recorder(std::move(err)); });
 
     OutboundBuffer outbound(
-        /*target=*/"motor", /*max_pending=*/4, /*transport=*/"zenoh",
-        [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
+        /*target=*/"motor", /*max_pending=*/4, /*max_age=*/std::chrono::milliseconds::zero(),
+        /*transport=*/"zenoh", [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
         [&send_failed_recorder](CommunicationError err) { send_failed_recorder(std::move(err)); });
 
     outbound.markReady();  // simulate the transport availability anchor
@@ -375,8 +375,8 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringExhaustionRaisesDeliveryExhaust
         [&delivery_recorder](CommunicationError err) { delivery_recorder(std::move(err)); });
 
     OutboundBuffer outbound(
-        /*target=*/"motor", /*max_pending=*/4, /*transport=*/"zenoh",
-        [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
+        /*target=*/"motor", /*max_pending=*/4, /*max_age=*/std::chrono::milliseconds::zero(),
+        /*transport=*/"zenoh", [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
         [&send_failed_recorder](CommunicationError err) { send_failed_recorder(std::move(err)); });
 
     outbound.markReady();

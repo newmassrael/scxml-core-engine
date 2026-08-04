@@ -2166,9 +2166,9 @@ struct TransportRouter {
 {%-       set wrapped_dispatch =
             "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { return " ~
             target.target_snake ~ "_retry_.send_with_retry(env); }" %}
-{%-       set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ wrapped_dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-       set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", std::chrono::milliseconds(" ~ machine_outbound_buffer.max_age_ms ~ "), " ~ transport_literal ~ ", " ~ wrapped_dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
 {%-     else %}
-{%-       set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", " ~ transport_literal ~ ", " ~ dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
+{%-       set init = target.target_snake ~ "_outbound_(\"" ~ target.target ~ "\", " ~ machine_outbound_buffer.max_pending_per_target ~ ", std::chrono::milliseconds(" ~ machine_outbound_buffer.max_age_ms ~ "), " ~ transport_literal ~ ", " ~ dispatch ~ ", [this](SCE::Mesh::CommunicationError err) { raiseCommunicationError(std::move(err)); })" %}
 {%-     endif %}
 {%-     set ns.parts = ns.parts + [init] %}
 {%-   endfor %}

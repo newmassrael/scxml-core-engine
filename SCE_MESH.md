@@ -573,6 +573,8 @@ GONE        -> removed
 
 Events arriving before READY are buffered (configurable timeout).
 
+**Realization status.** The lifecycle above is a model, not a built state machine: `DISCOVERED` presupposes the §4.2/§4.3 discovery modes this tree does not build, and no runtime component tracks a per-instance `REGISTERED → … → GONE` progression. What *is* built is the half that matters to an author — the buffering, and its timeout. §10.10's `OutboundBuffer` holds outbound envelopes while the peer's transport-native readiness primitive says "not yet", and bounds the hold in both dimensions: `outbound_buffer.max_pending_per_target` caps how many, `outbound_buffer.max_age_ms` caps how long. Both are deploy.yaml fields, and exceeding either raises `error.communication` (§16.7 rows 9 and 15) rather than dropping silently. The sentence above should be read as pointing there.
+
 ---
 
 ## 5. QoS Model: Deploy-Time Realization
@@ -2011,11 +2013,12 @@ Sibling of §10.5 `DedupRouter` and §10.6 `OrderingBuffer`. Both of those layer
 - **SOME/IP**: vsomeip `app.send()` on a NOT_AVAILABLE service returns `true` and drops the payload. Pre-§10.10 the first `<send target="#peer">` on a service that has not yet been `offer_service`'d by the server is lost with **no `error.communication`** raised. The harness-level workaround (`test_mesh_someip_runtime.cpp` manually blocks on `register_availability_handler` before sending) does not generalise to production code that cannot predict peer boot order.
 - **Zenoh (PUT-style only — FireForget, FieldWrite)**: `session.put` to a keyexpr with no matching subscriber is lost. Zenoh's default delivery model has no retention for publisher-first samples — a subscriber that declares after the put never observes it. GET-style patterns (RpcRequest, FieldRead) and subscribe patterns (EventSubscribe) are structurally resilient to this (GETs surface late peers via `on_drop` → §9.5 gap Z3 `RpcStatus::Unavailable`; subscribers get future samples by construction).
 
-**The §10.10 primitive**: per-target `OutboundBuffer` instance (`sce/include/mesh/OutboundBuffer.h`), constructed by the generated `TransportRouter` with three inputs: the target identifier (for `BACKPRESSURE_DROP` event data), a dispatch closure bound to the transport-specific send function, and a capacity bound (`max_pending_per_target` from deploy.yaml). `admit(env)` is the single entry from `route_send`:
+**The §10.10 primitive**: per-target `OutboundBuffer` instance (`sce/include/mesh/OutboundBuffer.h`), constructed by the generated `TransportRouter` with the target identifier (for the event data), a dispatch closure bound to the transport-specific send function, and the two bounds from deploy.yaml (`max_pending_per_target`, `max_age_ms`). `admit(env)` is the single entry from `route_send`:
 
 - **Fast path** (ready && queue empty): dispatch immediately.
 - **Enqueue** (not ready, or queue non-empty mid-drain): push to FIFO queue up to `max_pending_per_target`.
 - **Overflow** (queue at capacity, not ready): raise `error.communication` with reason `BACKPRESSURE_DROP` (§16.7 row 9) and drop the newest envelope.
+- **Drain** (`markReady`): dispatch in FIFO order, except that an envelope whose wait exceeded `max_age_ms` is dropped and raises `OUTBOUND_STALE_DROP` (§16.7 row 15) instead.
 
 Transport readiness primitives call `markReady()` / `markNotReady()`:
 - SOME/IP: `app.register_availability_handler` — installed in `init()` before `start()` so the initial NOT_AVAILABLE→AVAILABLE edge is observed. Availability is service-level, so the buffer gates **all** outbound patterns on this target.
@@ -2025,21 +2028,28 @@ Transport readiness primitives call `markReady()` / `markNotReady()`:
 
 **Scope (what `OutboundBuffer` is NOT)**:
 - **Not a retry layer**. A dispatcher return of `false` (transport-native send failure after readiness) is not re-enqueued. Existing error surfaces (§16.7 row 2 `SEND_FAILED`, row 3 `DELIVERY_EXHAUSTED`) cover that axis and are raised by call-sites that already exist before admit.
-- **Not an age-based drop policy**. Overflow policy is fixed at `BACKPRESSURE_DROP` + drop-newest. `max_age_ms` and `overflow: drop_oldest` are additive grammar extensions gated on a future consumer.
+- **Not an overflow-policy choice**. Capacity overflow is fixed at `BACKPRESSURE_DROP` + drop-newest; `overflow: drop_oldest` is an additive grammar extension. Age, however, IS bounded — see `max_age_ms` below.
 - **Not a retention store**. The buffer is router-scoped (destroyed with the `TransportRouter`); envelopes in the queue at `shutdown()` are discarded silently.
 - **Not applicable to local / shm / custom_tcp targets**. Local is in-process (no readiness concern); shm pairs at ctor time; `CustomTcp::Client` has its own connect-retry semantics. The template only emits `OutboundBuffer` members for `target.state.kind in ("someip", "zenoh")`.
 
 **Opt-in gate**: absent `outbound_buffer:` section on the machine ⇒ zero buffer code emitted, `route_send` arms keep the pre-§10.10 direct-dispatch shape. See §14 grammar below.
 
-**Configuration** (per-machine, single knob):
+**Configuration** (per-machine):
 ```yaml
 machines:
   brake:
     outbound_buffer:
       max_pending_per_target: 64
+      max_age_ms: 2000          # optional; omit for no age bound
 ```
 
 `max_pending_per_target` must be `>= MIN_OUTBOUND_BUFFER_MAX_PENDING` (1) per the `sce-build/src/mesh/deploy.rs` validation floor. Zero is rejected at parse time with `mesh/deploy-invalid-outbound-buffer` because a zero-capacity buffer is semantically indistinguishable from opting out.
+
+`max_age_ms` bounds the **other** dimension of the same hold. `max_pending_per_target` answers "how many envelopes may wait"; `max_age_ms` answers "how long may one wait and still be worth sending". They are independent because a slow peer and an absent peer produce different failures: a peer that consumes slower than the machine produces fills the queue (row 9), while a peer that is gone for a minute and then returns leaves a queue whose contents describe a world that no longer exists. At drain, an envelope whose wait exceeded the bound is dropped instead of dispatched and raises `error.communication` with reason `OUTBOUND_STALE_DROP` (§16.7 row 15) carrying both the observed `age_ms` and the declared `max_age_ms`.
+
+The check runs at drain, not on a timer: an envelope's staleness only becomes a decision at the moment it would be sent, so a timer would add a thread to reach the same answer. Omitting the field keeps the pre-existing behaviour — the queue is bounded by count alone and a returning peer receives everything held. Zero is rejected at parse time for the same reason a zero capacity is: it would drop every buffered envelope while still reading as "buffering configured".
+
+The value is deliberately unbounded above. A staleness horizon is a property of what the events mean — a brake command is stale in milliseconds, a configuration push is not stale in an hour — and any ceiling here would be a guess at that.
 
 ---
 
@@ -3684,6 +3694,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 12 | `OrderingBuffer` fast-forwarded past a missing sequence range after `gap_timeout` expired (§10.6.4) | `ORDERING_GAP` | `lost_seq_lo: uint64`, `lost_seq_hi: uint64` (inclusive range of skipped sequence numbers) |
 | 13 | Peer region-partition's liveness signal observed lost (§16.4 per-partition liveness; transport-conditional manifestation — Zenoh: `sce/live/<machine>/<partition>` 3-segment token DELETE; SOME/IP: vsomeip `register_availability_handler` fires `available=false` per RFC F.X-3). Orthogonal axis from row 8 — raises intra-machine when one OS process of a `<parallel>`-split machine exits while siblings remain. | `REGION_PARTITIONED` | `machine: string`, `partition: string`, `last_seen_ms_ago: int?` |
 | 14 | An `RpcReply` carried a live correlation id but arrived from a peer outside the request binding's §14.6 responder set. The correlation entry is **left in place** — the request stays answerable by a declared responder — so this row is the loud-fail that keeps the rejection from being a silent drop. Raised on the receiving (requesting) side. | `RPC_REPLY_FROM_UNDECLARED_PEER` | `source: string` (the machine the reply came from), `invoke_id: string` (the invoke it tried to retire) |
+| 15 | An envelope held by the §10.10 `OutboundBuffer` waiting for peer readiness exceeded `outbound_buffer.max_age_ms` and was dropped instead of dispatched when readiness arrived. Orthogonal to row 9: that is a capacity bound observed at admit, this is an age bound observed at drain. Raised on the sending side. | `OUTBOUND_STALE_DROP` | `transport: string`, `target: string`, `age_ms: int`, `max_age_ms: int` |
 
 **Common fields (§10.7.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
 

@@ -21,6 +21,7 @@
 //   * BackpressureDropShape
 //   * EnvelopeCorruptShape
 //   * DedupWindowOverflowShape
+//   * OutboundStaleDropShape
 //   * TransportUnavailableShape
 //   * SendFailedShape
 //   * SendFailedShapeWithTransportError
@@ -461,6 +462,33 @@ TEST(CommunicationErrorTest, DedupWindowOverflowShape) {
                    "\"reason\":\"DEDUP_WINDOW_OVERFLOW\","
                    "\"source\":\"motor\","
                    "\"window_size\":256}");
+}
+
+TEST(CommunicationErrorTest, OutboundStaleDropShape) {
+    // §16.7 row 15 — OUTBOUND_STALE_DROP carries transport + target plus
+    // both halves of the age judgement. `age_ms` alone would leave the
+    // reader asking "compared to what", and `max_age_ms` alone would not
+    // say by how much the envelope missed; carrying the pair is what
+    // lets an author distinguish "barely over" from "the peer was gone
+    // for a minute" without correlating against deploy.yaml.
+    //
+    // Field order in the emitted JSON follows `toJsonBytes`'s fixed
+    // sequence, which is what makes this a byte-exact pin rather than a
+    // set comparison.
+    CommunicationError err;
+    err.reason = ReasonCode::OutboundStaleDrop;
+    err.target = "motor";
+    err.transport = "someip";
+    err.age_ms = 5000;
+    err.max_age_ms = 2000;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out, "{\"errorName\":\"communication\","
+                   "\"reason\":\"OUTBOUND_STALE_DROP\","
+                   "\"target\":\"motor\","
+                   "\"transport\":\"someip\","
+                   "\"age_ms\":5000,"
+                   "\"max_age_ms\":2000}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
