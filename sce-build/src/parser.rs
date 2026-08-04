@@ -4157,20 +4157,35 @@ fn validate_on_sample_callback_paths(
 }
 
 /// Classify an `<sce:on-sample callback="...">` value against the
-/// accepted Rust path subset. Returns `None` for accepted inputs;
-/// returns `Some(reason)` keyed by the failure mode so the diagnostic
-/// message can name the specific authoring mistake.
+/// accepted path subset for its declared language. Returns `None` for
+/// accepted inputs; returns `Some(reason)` keyed by the failure mode so
+/// the diagnostic message can name the specific authoring mistake.
+///
+/// Two language axes are accepted, one per backend that has a lowering
+/// for the callback:
+///
+/// ```text
+/// callback ::= "rust:" rust_path | "c:" c_identifier
+/// rust_path ::= segment ("::" segment)*
+/// segment   ::= "crate" | "self" | "super" | identifier
+/// ```
+///
+/// `c:` takes a bare identifier because C has no namespaces — a `::`
+/// under `c:` is an author reaching for a Rust path on the wrong axis,
+/// and reporting it as `MalformedPath` names that directly rather than
+/// letting `app::on_scout` reach the C call site as a syntax error in
+/// generated code.
 ///
 /// Checks (first failure wins, in order):
 /// 1. Empty value → `EmptyPath`.
 /// 2. Missing language prefix or unknown prefix → `UnknownLanguagePrefix`.
-///    Today only `rust:` is accepted (other language prefixes are
-///    consumer-gated schema slots). The `prefix` field carries the
-///    parsed prefix (or `""` when the colon is absent).
-/// 3. Path body empty after prefix (`rust:`) → `EmptyPath`.
-/// 4. Path body has a leading `::`, trailing `::`, or empty segment
-///    → `MalformedPath`.
-/// 5. Any segment fails `is_rust_path_segment` → `MalformedSegment`.
+///    The `prefix` field carries the parsed prefix (or `""` when the
+///    colon is absent).
+/// 3. Path body empty after the prefix → `EmptyPath`.
+/// 4. Path body has a leading `::`, trailing `::`, or empty segment, or
+///    carries any `::` at all under `c:` → `MalformedPath`.
+/// 5. Any segment fails its language's identifier subset →
+///    `MalformedSegment`.
 fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::CallbackPathReason> {
     use crate::forge::error::CallbackPathReason;
     if raw.is_empty() {
@@ -4184,7 +4199,7 @@ fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::Ca
             });
         }
     };
-    if prefix != "rust" {
+    if !matches!(prefix, "rust" | "c") {
         return Some(CallbackPathReason::UnknownLanguagePrefix {
             prefix: prefix.to_string(),
         });
@@ -4195,19 +4210,47 @@ fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::Ca
     if body.starts_with("::") || body.ends_with("::") {
         return Some(CallbackPathReason::MalformedPath);
     }
+    if prefix == "c" && body.contains("::") {
+        // A path separator on the C axis: C resolves one flat
+        // identifier, so this is a Rust path declared under `c:`.
+        return Some(CallbackPathReason::MalformedPath);
+    }
     let segments: Vec<&str> = body.split("::").collect();
     for segment in &segments {
         if segment.is_empty() {
             // `a::::b` — split between two `::` produces an empty arm.
             return Some(CallbackPathReason::MalformedPath);
         }
-        if !is_rust_path_segment(segment) {
+        // `crate` / `self` / `super` are Rust path keywords, not C
+        // identifiers; `is_c_identifier` admits the plain-identifier
+        // subset both languages share and nothing else.
+        let accepted = match prefix {
+            "c" => is_c_identifier(segment),
+            _ => is_rust_path_segment(segment),
+        };
+        if !accepted {
             return Some(CallbackPathReason::MalformedSegment {
                 segment: (*segment).to_string(),
             });
         }
     }
     None
+}
+
+/// True iff `seg` is a C identifier: an ASCII letter or `_` followed by
+/// ASCII alphanumerics or `_`.
+///
+/// Deliberately narrower than C's own grammar, which admits `$` on some
+/// implementations and universal character names on all of them. The
+/// value here is emitted verbatim into generated C, so the subset is
+/// the portable intersection rather than what any one compiler accepts.
+fn is_c_identifier(seg: &str) -> bool {
+    let mut chars = seg.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// True iff `seg` is a valid Rust path segment per the accepted

@@ -1240,11 +1240,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}LinkRx for ::sce_rust_runtime::
 {% for block in state.on_sample_blocks %}
 {% if block.link == link %}
                 {{ machine_name }}State::{{ state_id | to_state_variant }} => {
-{% if block.callback %}
+{% if block.callback and (block.callback | callback_lang) == "rust" %}
                     // Callback dispatch — synchronous extern
                     // call. rustc enforces the user's callback
                     // signature against the borrow contract
-                    // (spec lines 1513-1519).
+                    // (spec lines 1513-1519). A `c:` path names a
+                    // flat C identifier with no Rust lowering and is
+                    // skipped here, mirroring the C11 backend
+                    // skipping a `rust:` one.
                     {{ block.callback | extern_callback_path }}(&sample);
 {% endif %}
                     // Event raise: when a callback was present it

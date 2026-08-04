@@ -8542,7 +8542,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match the `rust:crate::module::fn` path subset. The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See SCE Protocol-Synthesis RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
+                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (accepted: `rust:`, `c:`). The `callback` value must match `rust:crate::module::fn` or `c:identifier`. The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time, and the C11 backend emits a prototype the host definition must match. See SCE Protocol-Synthesis RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
             ),
             (
                 // RFC §synth-5-D line 911: worker shared-state encapsulation.

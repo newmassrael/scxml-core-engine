@@ -521,19 +521,40 @@ bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }}{{ model.
    delivery surface. Host's link RX path (zenoh-pico subscriber,
    custom_tcp dispatch loop, …) calls the matching function for
    every Sample arriving on the named link. The body iterates the
-   active configuration, fires the user-supplied callback (when
-   `<sce:on-sample callback>` is declared with a `c:`-prefix
-   axis, which is consumer-gated — the callback attribute is
-   `rust:`-only and is silently ignored on the C11 backend),
-   then enqueues `event="..."` onto the
-   external queue (the event is always raised). Sample
-   borrow drops at function exit; slot return is the host's
-   responsibility per the `sce_sub_callback_t` contract in
-   `<sce/sample.h>`. */
+   active configuration, fires the user-supplied callback when
+   `<sce:on-sample callback="c:...">` names one, then enqueues
+   `event="..."` onto the external queue (the event is always
+   raised, callback or not). A `rust:`-prefixed callback names a
+   module path with no C lowering and is skipped here, exactly as
+   the Rust backend skips a `c:` one. Sample borrow drops at
+   function exit; slot return is the host's responsibility per the
+   `sce_sub_callback_t` contract in `<sce/sample.h>`. */
 {% for link in model.on_sample_links %}
 void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
     {{ csym_prefix }}{{ model.name }}_t *sm,
     const sce_sample_t *sample);
+{% endfor %}
+{# Host-supplied callback prototypes. Declared here rather than left to
+   the host so the call site below is never an implicit declaration (a
+   hard error since C99) and so a host definition whose signature does
+   not match trips a conflicting-declaration error at its own compile
+   rather than linking into a mismatched call. The shape is
+   `sce_sub_callback_t` verbatim, including the typestate annotation, so
+   the same function can also be registered directly on a link's RX path
+   without an adapter — and so Clang's consumed analysis reaches a
+   callback that lets the borrow escape. Deduplicated: two states may
+   name the same callback on the same link. #}
+{% set seen_c_callbacks = namespace(names=[]) %}
+{% for state_id, state in model.states | dictsort %}
+{% for block in state.on_sample_blocks %}
+{% if block.callback and (block.callback | callback_lang) == "c" %}
+{% set cb = block.callback | extern_callback_path %}
+{% if cb not in seen_c_callbacks.names %}
+{% set seen_c_callbacks.names = seen_c_callbacks.names + [cb] %}
+void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void *ctx);
+{% endif %}
+{% endif %}
+{% endfor %}
 {% endfor %}
 
 {% endif %}
