@@ -240,8 +240,12 @@
                 
                 // W3C SCXML 3.13: Check if this is a done.state event
                 // done.state events are generated when parallel/compound states complete
+                // `std::string_view::starts_with` is C++20. Generated code must
+                // build at C++17, which is the standard the mesh runtime library
+                // publishes to its consumers, so this uses the portable spelling
+                // already used elsewhere in the tree (SendHelper.h).
                 bool isDoneStateEvent = (event != Event::NONE) &&
-                    std::string_view({{ model.name }}Policy::getEventName(event)).starts_with("done.state.");
+                    std::string_view({{ model.name }}Policy::getEventName(event)).rfind("done.state.", 0) == 0;
                 
                 // Skip non-atomic states UNLESS processing done.state event
                 if (isNonAtomic && !isDoneStateEvent) {

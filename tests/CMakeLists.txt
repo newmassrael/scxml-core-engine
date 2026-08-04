@@ -68,6 +68,27 @@ else()
 endif()
 
 # ============================================================================
+# C++17 ceiling for targets that advertise C++17
+# ============================================================================
+# `target_compile_features(<t> PRIVATE cxx_std_17)` states a MINIMUM. With
+# the project's global `CMAKE_CXX_STANDARD 20` every such target actually
+# compiles at `-std=c++20`, so the declaration is inert: a C++20-only
+# construct in generated mesh output builds green in-tree and fails only
+# in a downstream tree honouring the contract `sce_mesh_common` publishes
+# (`cxx_std_17` PUBLIC, per SCE_MESH.md §10.4).
+#
+# This makes the declaration mean what it reads as. Use it on any target
+# whose job is to prove generated code compiles at the advertised
+# standard; `sce_verify_cxx17_ceilings` below fails configuration if a
+# compile-only mesh target is added without it.
+function(sce_pin_cxx17 target_name)
+    set_target_properties(${target_name} PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+endfunction()
+
+# ============================================================================
 # SCE test configuration: Disable std::cout usage
 # ============================================================================
 function(apply_sce_test_policies target_name)
@@ -1955,6 +1976,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     target_compile_features(mesh_compile_test PRIVATE cxx_std_17)
+    sce_pin_cxx17(mesh_compile_test)
 
     apply_sce_test_policies(mesh_compile_test)
 
@@ -2010,6 +2032,12 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     target_compile_features(mesh_partitions_test PRIVATE cxx_std_17)
+    # This target compiles the only generated statechart in the tree whose
+    # source has parallel states, so it is the one place the done.state
+    # branch of process_transition reaches a compiler. That branch emitted
+    # `std::string_view::starts_with` — C++20 — and shipped green because
+    # nothing here built at the standard the runtime advertises.
+    sce_pin_cxx17(mesh_partitions_test)
 
     apply_sce_test_policies(mesh_partitions_test)
 
@@ -2401,6 +2429,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     target_compile_features(mesh_invoke_compile_test PRIVATE cxx_std_17)
+    sce_pin_cxx17(mesh_invoke_compile_test)
 
     apply_sce_test_policies(mesh_invoke_compile_test)
 
@@ -3118,6 +3147,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     target_compile_features(mesh_srcexpr_compile_test PRIVATE cxx_std_17)
+    sce_pin_cxx17(mesh_srcexpr_compile_test)
 
     apply_sce_test_policies(mesh_srcexpr_compile_test)
 
@@ -3386,6 +3416,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     target_compile_features(mesh_shm_compile_test PRIVATE cxx_std_17)
+    sce_pin_cxx17(mesh_shm_compile_test)
 
     apply_sce_test_policies(mesh_shm_compile_test)
 
@@ -3667,10 +3698,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     # The point of the target: an exact standard, not a floor.
-    set_target_properties(mesh_cxx17_conformance_test PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF)
+    sce_pin_cxx17(mesh_cxx17_conformance_test)
 
     apply_sce_test_policies(mesh_cxx17_conformance_test)
 
@@ -4050,6 +4078,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
 
         target_compile_features(mesh_someip_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_compile_test)
 
         apply_sce_test_policies(mesh_someip_compile_test)
 
@@ -4138,6 +4167,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
 
         target_compile_features(mesh_someip_multipattern_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_multipattern_compile_test)
         apply_sce_test_policies(mesh_someip_multipattern_compile_test)
         add_test(NAME mesh_someip_multipattern_compile_verification
                  COMMAND mesh_someip_multipattern_compile_test)
@@ -4574,6 +4604,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         target_compile_definitions(mesh_someip_region_liveness_left_compile_test
             PRIVATE SCE_LIVENESS_PARTITION_LEFT)
         target_compile_features(mesh_someip_region_liveness_left_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_region_liveness_left_compile_test)
         apply_sce_test_policies(mesh_someip_region_liveness_left_compile_test)
         add_test(NAME mesh_someip_region_liveness_left_compile
                  COMMAND mesh_someip_region_liveness_left_compile_test)
@@ -4593,6 +4624,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         target_compile_definitions(mesh_someip_region_liveness_right_compile_test
             PRIVATE SCE_LIVENESS_PARTITION_RIGHT)
         target_compile_features(mesh_someip_region_liveness_right_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_region_liveness_right_compile_test)
         apply_sce_test_policies(mesh_someip_region_liveness_right_compile_test)
         add_test(NAME mesh_someip_region_liveness_right_compile
                  COMMAND mesh_someip_region_liveness_right_compile_test)
@@ -4655,6 +4687,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         target_compile_definitions(mesh_someip_machine_liveness_alpha_compile_test
             PRIVATE SCE_F4_MACHINE_ALPHA)
         target_compile_features(mesh_someip_machine_liveness_alpha_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_machine_liveness_alpha_compile_test)
         apply_sce_test_policies(mesh_someip_machine_liveness_alpha_compile_test)
         add_test(NAME mesh_someip_machine_liveness_alpha_compile
                  COMMAND mesh_someip_machine_liveness_alpha_compile_test)
@@ -4674,6 +4707,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         target_compile_definitions(mesh_someip_machine_liveness_beta_compile_test
             PRIVATE SCE_F4_MACHINE_BETA)
         target_compile_features(mesh_someip_machine_liveness_beta_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_machine_liveness_beta_compile_test)
         apply_sce_test_policies(mesh_someip_machine_liveness_beta_compile_test)
         add_test(NAME mesh_someip_machine_liveness_beta_compile
                  COMMAND mesh_someip_machine_liveness_beta_compile_test)
@@ -5250,6 +5284,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
 
         target_compile_features(mesh_zenoh_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_zenoh_compile_test)
 
         apply_sce_test_policies(mesh_zenoh_compile_test)
 
@@ -6358,6 +6393,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
 
         target_compile_features(mesh_zenoh_multipattern_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_zenoh_multipattern_compile_test)
         apply_sce_test_policies(mesh_zenoh_multipattern_compile_test)
         add_test(NAME mesh_zenoh_multipattern_compile_verification
                  COMMAND mesh_zenoh_multipattern_compile_test)
@@ -6607,6 +6643,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
 
         target_compile_features(mesh_pool_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_pool_compile_test)
 
         apply_sce_test_policies(mesh_pool_compile_test)
 
@@ -6679,6 +6716,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
 
         target_compile_features(mesh_someip_server_pool_compile_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_server_pool_compile_test)
 
         apply_sce_test_policies(mesh_someip_server_pool_compile_test)
 
@@ -7487,6 +7525,9 @@ if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
         PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
     )
     target_compile_features(mesh_dds_multipattern_test PRIVATE cxx_std_17)
+    # DDS is the one transport with no compile-only target of its own, so
+    # its emitted shape reaches C++17 through this runtime target.
+    sce_pin_cxx17(mesh_dds_multipattern_test)
     apply_sce_test_policies(mesh_dds_multipattern_test)
     add_test(NAME mesh_dds_multipattern COMMAND mesh_dds_multipattern_test)
     set_tests_properties(mesh_dds_multipattern PROPERTIES
@@ -7557,3 +7598,31 @@ if(_sce_registered_tests)
         FIXTURES_REQUIRED sce_built
     )
 endif()
+
+# ============================================================================
+# C++17 ceiling coverage gate
+# ============================================================================
+# A compile-only mesh target exists to prove generated code builds at the
+# standard the runtime advertises. Adding one without `sce_pin_cxx17` leaves
+# it compiling at the global `CMAKE_CXX_STANDARD`, where it proves nothing —
+# and does so silently, because the target still builds and its declared
+# `cxx_std_17` still reads as a promise. That is how a C++20-only
+# `std::string_view::starts_with` reached generated output and stayed there.
+#
+# Configuration is the right place to fail: the answer is known before a
+# compiler runs, and a missing ceiling is a gap in verification rather than
+# a broken build.
+get_directory_property(_sce_dir_targets BUILDSYSTEM_TARGETS)
+foreach(_sce_t IN LISTS _sce_dir_targets)
+    if(_sce_t MATCHES "^mesh_.*compile_test$")
+        get_target_property(_sce_std ${_sce_t} CXX_STANDARD)
+        if(NOT _sce_std STREQUAL "17")
+            message(FATAL_ERROR
+                "${_sce_t} is a compile-only mesh target but does not pin the "
+                "standard (CXX_STANDARD='${_sce_std}'). Call "
+                "sce_pin_cxx17(${_sce_t}) after its target_compile_features(); "
+                "without it the target compiles at the global standard and "
+                "verifies nothing about the C++17 contract it declares.")
+        endif()
+    endif()
+endforeach()
