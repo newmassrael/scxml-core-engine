@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §13 machine-lifetime subscription fixture, publisher side.
+
+     The counterpart to brake_someip_machine_lifetime_subscribe.scxml:
+     offers the eventgroup the subscriber subscribes to and notifies on it.
+     `inject_server_response_sends` appends the synthetic <send> that routes
+     the raise through publishEventgroupNotify. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="motor_someip_machine_lifetime_subscribe" initial="ready">
+    <state id="ready">
+        <transition event="sensor.update" target="ready">
+            <raise event="field.notify.vehicle_speed"/>
+        </transition>
+    </state>
+</scxml>

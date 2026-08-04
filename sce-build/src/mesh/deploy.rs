@@ -2887,8 +2887,14 @@ impl ServerConfig {
 #[serde(deny_unknown_fields)]
 pub struct SubscriptionConfig {
     /// Event name to subscribe to (e.g. `event.notification.vehicle_speed`).
-    /// Must match the `event.notification.*` or `event.subscribe.*` prefix
-    /// convention; validated at topology resolution time.
+    ///
+    /// This is the SCXML event name the router raises when a notification
+    /// arrives, so the author picks it and no prefix is imposed: the
+    /// subscribe leg's semantics come from the entry's position in
+    /// `subscriptions:`, not from the name. On SOME/IP the name selects
+    /// the binding's eventgroup declaration (`events.<name>.event_group`,
+    /// or the binding-level `event_group:` sugar); a name with no such
+    /// declaration is rejected at topology resolution time.
     pub event: String,
     /// Source target that publishes the event (e.g. `"#chassis"`). Must
     /// have a matching entry in the machine's `bindings:` map so the
