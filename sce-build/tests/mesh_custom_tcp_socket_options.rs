@@ -125,7 +125,11 @@ fn declared_socket_options_reach_the_emitted_struct() {
          \x20       connect_max_attempts: 7\n\
          \x20       connect_retry_interval_ms: 125\n\
          \x20       recv_buffer_bytes: 262144\n\
-         \x20       send_buffer_bytes: 131072\n",
+         \x20       send_buffer_bytes: 131072\n\
+         \x20       keepalive: true\n\
+         \x20       keepalive_idle_s: 17\n\
+         \x20       keepalive_interval_s: 3\n\
+         \x20       keepalive_count: 9\n",
     )
     .expect("compile");
 
@@ -137,6 +141,10 @@ fn declared_socket_options_reach_the_emitted_struct() {
         "o.connect_retry_interval_ms = 125",
         "o.recv_buffer_bytes = 262144",
         "o.send_buffer_bytes = 131072",
+        "o.keepalive = true",
+        "o.keepalive_idle_s = 17",
+        "o.keepalive_interval_s = 3",
+        "o.keepalive_count = 9",
     ] {
         assert!(
             code.contains(expected),
@@ -161,6 +169,12 @@ fn absent_socket_options_emit_the_historical_literals() {
         "o.connect_retry_interval_ms = 50",
         "o.recv_buffer_bytes = 0",
         "o.send_buffer_bytes = 0",
+        // Off by default: enabling keepalive changes when an existing
+        // deployment observes a peer disappear, so it is opt-in.
+        "o.keepalive = false",
+        "o.keepalive_idle_s = 60",
+        "o.keepalive_interval_s = 10",
+        "o.keepalive_count = 6",
     ] {
         assert!(
             code.contains(expected),
@@ -188,6 +202,48 @@ fn socket_options_reach_a_pure_client_device() {
         "a client-only device must still carry its socket options"
     );
     assert!(code.contains("o.connect_max_attempts = 3"));
+}
+
+#[test]
+fn every_custom_tcp_client_reports_peer_loss() {
+    // §16.7 row 8. custom_tcp was the only transport that could not raise
+    // PEER_PARTITIONED, even though a connection-oriented transport holds
+    // the liveness evidence more directly than the token / SD-flag / lease
+    // the other three infer it from. The raise is unconditional — a clean
+    // FIN reports without any configuration; `keepalive:` only extends it
+    // to the crash-and-partition case.
+    let code = compile("peer_loss", "        listen: \"127.0.0.1:9100\"\n").expect("compile");
+
+    assert!(
+        code.contains("setPeerLossHandler"),
+        "every custom_tcp client must install the row 8 peer-loss handler"
+    );
+    assert!(
+        code.contains("ReasonCode::PeerPartitioned"),
+        "the peer-loss handler must raise PEER_PARTITIONED"
+    );
+    assert!(
+        code.contains("err.target = \"#motor\""),
+        "the raise must name the peer, which is what row 8 carries"
+    );
+}
+
+#[test]
+fn zero_keepalive_idle_is_rejected() {
+    // A zero idle would ask the kernel to probe continuously. Rejected for
+    // the same reason as the other socket values: omitting the field is
+    // how an author takes the default.
+    let err = match compile(
+        "zero_keepalive",
+        "        listen: \"127.0.0.1:9100\"\n        keepalive_idle_s: 0\n",
+    ) {
+        Err(e) => e,
+        Ok(_) => panic!("keepalive_idle_s: 0 must not compile"),
+    };
+    assert!(
+        err.to_string().contains("keepalive_idle_s"),
+        "the diagnostic must name the offending field: {err}"
+    );
 }
 
 #[test]

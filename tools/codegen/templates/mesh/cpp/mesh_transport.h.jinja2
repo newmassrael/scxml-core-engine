@@ -789,6 +789,10 @@ constexpr SCE::Mesh::CustomTcp::SocketOptions sceCustomTcpSocketOptions() {
     o.nodelay = {{ "true" if custom_tcp_socket.nodelay else "false" }};
     o.connect_max_attempts = {{ custom_tcp_socket.connect_max_attempts }};
     o.connect_retry_interval_ms = {{ custom_tcp_socket.connect_retry_interval_ms }};
+    o.keepalive = {{ "true" if custom_tcp_socket.keepalive else "false" }};
+    o.keepalive_idle_s = {{ custom_tcp_socket.keepalive_idle_s }};
+    o.keepalive_interval_s = {{ custom_tcp_socket.keepalive_interval_s }};
+    o.keepalive_count = {{ custom_tcp_socket.keepalive_count }};
     o.recv_buffer_bytes = {{ custom_tcp_socket.recv_buffer_bytes }};
     o.send_buffer_bytes = {{ custom_tcp_socket.send_buffer_bytes }};
     return o;
@@ -3288,6 +3292,18 @@ struct TransportRouter {
 {% for target in targets if target.state.kind == "custom_tcp" %}
         {{ target.target_snake }}_.setDecodeErrorHandler(
             [this]() {{ raise_envelope_corrupt_lambda("custom_tcp") }});
+        // §16.7 row 8: the stream to this peer IS the liveness signal, so
+        // its loss is the same condition zenoh reports with a token DELETE,
+        // SOME/IP with `available=false` and DDS with a liveliness lease
+        // expiry. Without `keepalive` the edge fires on a clean FIN or a
+        // reset; with it, on a partition too.
+        {{ target.target_snake }}_.setPeerLossHandler([this]() {
+            SCE::Mesh::CommunicationError err;
+            err.reason = SCE::Mesh::ReasonCode::PeerPartitioned;
+            err.transport = "custom_tcp";
+            err.target = "{{ target.target }}";
+            this->raiseCommunicationError(std::move(err));
+        });
 {% endfor %}
 {% for peer in custom_tcp_outbound_peers %}
         p2c_to_{{ peer.name }}_.setDecodeErrorHandler(
