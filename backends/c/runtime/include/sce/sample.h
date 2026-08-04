@@ -18,9 +18,9 @@
 //     `-Wconsumed -Wthread-safety` the attributes diagnose
 //     use-after-take, double-take, callback-leak, and ignored
 //     `sce_sample_take` results at compile time. On non-Clang or
-//     older Clang the macros expand to nothing — the API contract
-//     is documented and analyzer-driven (Layer 2/3 are
-//     consumer-gated).
+//     older Clang the macros expand to nothing and the Layer 2
+//     analyzer annotations below carry the same facts to PC-lint
+//     Plus and Coverity.
 //
 //   * `sce_sample_t` — the read-only borrow handed to subscriber
 //     callbacks. Carries the protocol-decoded key expression, the
@@ -32,6 +32,18 @@
 //     `sce_sample_take` (consume → caller-owned bytes), and
 //     `sce_sub_callback_t` (typedef for the subscriber-side
 //     callback signature).
+//
+//   * Layer 2 analyzer annotations (spec lines 1349-1365) on the two
+//     function declarations — PC-lint Plus `-sem` semantics and
+//     Coverity function-model primitives. Both are rendered from
+//     `sce-build/src/forge/ownership_contract.rs`, which is also what
+//     the per-pool C11 template renders from; the
+//     `sample_h_layer2_annotations_match_the_ownership_contract` test
+//     pins this file against that contract. Hand-editing an
+//     annotation here without editing the contract fails that test.
+//     The two syntaxes disagree on argument numbering (PC-lint is
+//     1-based, Coverity 0-based), which is exactly why they are
+//     generated from one origin rather than maintained as a pair.
 //
 //   * `_Static_assert` invariants — pin the Slot handle's
 //     discriminant ordering and `SCE_SLOT_INVALID` sentinel value
@@ -51,11 +63,19 @@
 //     `sce_sample_t`, keeping the borrow shape stable across all
 //     possible downstream typedefs.
 //
-//   * Layer 2 (PC-Lint / Coverity / Polyspace) annotations —
-//     consumer-gated (spec lines 1349-1378 describe the emission).
+//   * Polyspace-specific annotations. Spec line 1351 groups Polyspace
+//     with PC-Lint and Coverity, but Polyspace's in-source
+//     `/* polyspace ... */` comments justify *findings* — they cannot
+//     declare function behaviour. Behaviour mapping goes through
+//     `-code-behavior-specifications`, a separate XML file whose
+//     schema ships with the installation. Emitting a Polyspace comment
+//     the tool ignores would be a silently-inert hook, so nothing is
+//     emitted; Polyspace users get the result-check contract via
+//     MISRA C:2012 Rule 17.7, which `SCE_WARN_UNUSED` below states in
+//     the form every conforming MISRA checker reads.
 //
 //   * Layer 3 / 3.5 (debug-build runtime poisoning, release-mode
-//     opt-in) — likewise consumer-gated.
+//     opt-in) — not yet implemented.
 //
 // Pre-1.0: this contract may evolve before SCE 1.0 (per
 // `feedback_pre_release_no_compat.md`); downstream consumers re-link
@@ -207,6 +227,12 @@ typedef struct SCE_CONSUMABLE {
 /// `sce_sample_take` is a compile-time error under
 /// `-Wconsumed -Wthread-safety` and undefined behaviour without
 /// the analyzer.
+///
+/// Layer 2: the sample is borrowed, not consumed — `1p` states only
+/// that the argument is dereferenced. No `custodial` and no Coverity
+/// `+free`: telling an analyzer this accessor consumes its argument
+/// would flag correct callers that go on to `take`.
+/*lint -sem(sce_sample_payload, 1p) */
 SCE_CALLABLE_WHEN("unconsumed")
 const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"));
 
@@ -216,7 +242,17 @@ const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE
 /// so subsequent borrow accesses surface as Layer 1 diagnostics.
 /// Returns `SCE_RESULT_OK` on success, or one of the documented
 /// `SCE_RESULT_ERR_*` values otherwise. `SCE_WARN_UNUSED` makes
-/// ignoring the result a Clang/GCC warning.
+/// ignoring the result a Clang/GCC warning — and states MISRA C:2012
+/// Rule 17.7 in the form every conforming checker reads, which is the
+/// only Layer 2 fact Polyspace can consume from source.
+///
+/// Layer 2: `custodial(1)` is the whole point of the layer — after the
+/// call argument 1 is invalid, so PC-lint flags a subsequent
+/// `sce_sample_payload(sample)` in the same scope (issue 429 / 449).
+/// Coverity's `+free : arg-0` states the same fact 0-based. `2p` and
+/// `4p` mark `dst` and `out_len` as dereferenced out-parameters.
+/*lint -sem(sce_sample_take, custodial(1), 1p, 2p, 4p) */
+/* coverity[+free : arg-0] */
 SCE_WARN_UNUSED
 SCE_CALLABLE_WHEN("unconsumed")
 SCE_SET_TYPESTATE("consumed")

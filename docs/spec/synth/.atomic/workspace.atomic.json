@@ -2013,6 +2013,21 @@
         {
           "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_buffer_pool_c",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/ownership_contract.rs",
+          "symbol": "POOL_CONTRACTS",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/ownership_contract.rs",
+          "symbol": "PointerEffect",
+          "kind": "implements"
         }
       ]
     },

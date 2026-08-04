@@ -1347,22 +1347,22 @@ are diagnosed at compile time:
 This is the closest C gets to Rust's compile-time ownership.
 
 **Layer 2 — Lint / static-analyzer comments (compile-time,
-analyzer-driven).** For builds that aren't Clang, codegen also
-emits PC-Lint / Coverity / Polyspace recognizable annotations:
+analyzer-driven).** Codegen emits PC-lint Plus `-sem` semantics and
+Coverity function-model primitives. Polyspace is excluded: its
+in-source comments justify findings, not function behaviour —
+that is `-code-behavior-specifications`, a separate XML file.
 
 ```c
-/*lint -sem(sce_sample_take, custodial(1)) */
-/*lint -function(sce_sample_take, sce_sample_payload) */
+/*lint -sem(sce_sample_take, custodial(1), 1p, 2p, 4p) */
 /* coverity[+free : arg-0] */
 sce_result_t sce_sample_take(const sce_sample_t* sample, ...);
 ```
 
-`custodial(1)` tells PC-Lint that argument 1 (the sample) becomes
-invalid after the call; subsequent `sce_sample_payload(sample)` in
-the same scope is flagged. Coverity's `+free` annotation behaves
-similarly. These are advisory — analyzer absence means analyzer
-silence — but they cost nothing at runtime and catch the same class
-of bugs as Layer 1 in toolchains that aren't Clang.
+`custodial(1)` tells PC-lint argument 1 becomes invalid after the
+call; a later `sce_sample_payload(sample)` in scope is flagged.
+Coverity's `+free : arg-0` says the same 0-based. Per-pool
+accessors add `r_null` / `inout(1)`. Both forms render from one
+contract table (`forge::ownership_contract`), never by hand.
 
 **Layer 3 — Debug-build runtime poisoning (test/QA builds only).**
 When `-DSCE_DEBUG_OWNERSHIP=1` is defined (recommended for test
