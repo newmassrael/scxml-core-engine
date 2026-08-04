@@ -1820,6 +1820,11 @@ pub enum DiagnosticCode {
     /// (§mesh-10.5). Parse-time reject; no closed candidate set.
     #[serde(rename = "mesh/deploy-invalid-dedup-window")]
     MeshDeployInvalidDedupWindow,
+    /// A device's `transports.custom_tcp:` socket-layer field declares a
+    /// value that would disable what it configures (§mesh-16.8.3).
+    /// Parse-time reject; the legal set is open, so no candidates.
+    #[serde(rename = "mesh/deploy-invalid-custom-tcp-socket")]
+    MeshDeployInvalidCustomTcpSocket,
     #[serde(rename = "mesh/deploy-invalid-liveliness")]
     MeshDeployInvalidLiveliness,
     #[serde(rename = "mesh/deploy-invalid-server-query-timeout")]
@@ -2794,6 +2799,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployDuplicateMachine,
         MeshDeployInvalidOrderingTimings,
         MeshDeployInvalidDedupWindow,
+        MeshDeployInvalidCustomTcpSocket,
         MeshDeployInvalidLiveliness,
         MeshDeployInvalidServerQueryTimeout,
         MeshDeployInvalidOutboundBuffer,
@@ -3245,6 +3251,7 @@ impl DiagnosticCode {
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
             MeshDeployInvalidOrderingTimings => Some("SCE Mesh §10.6"),
             MeshDeployInvalidDedupWindow => Some("SCE Mesh §10.5"),
+            MeshDeployInvalidCustomTcpSocket => Some("SCE Mesh §16.8.3"),
 
             // ── Mesh communication errors (SCE_MESH.md §16.7) ────
             MeshDeployInvalidLiveliness => Some("SCE Mesh §16.7"),
@@ -3847,6 +3854,7 @@ impl DiagnosticCode {
             MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshDeployInvalidDedupWindow => "mesh/deploy-invalid-dedup-window",
+            MeshDeployInvalidCustomTcpSocket => "mesh/deploy-invalid-custom-tcp-socket",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
             MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
@@ -10308,6 +10316,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:e3f14d59a0d51e88","code":"mesh/deploy-invalid-dedup-window","stage":"mesh-deploy","spec":"SCE Mesh §10.5","message":"machine 'brake': invalid `dedup:` section in deploy.yaml — window_size must be greater than zero — a zero-length window admits every duplicate, which is not a narrow filter but no filter. Omit the `dedup:` section to take the default of 256 entries.","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-invalid-custom-tcp-socket",
+                DeployError::InvalidCustomTcpSocket {
+                    device: "ecu1".into(),
+                    reason: "backlog (0) must be at least 1 — omit the field to take the default rather than declaring a value that disables it".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c3ab6607263bd89f","code":"mesh/deploy-invalid-custom-tcp-socket","stage":"mesh-deploy","spec":"SCE Mesh §16.8.3","message":"device 'ecu1': invalid `transports.custom_tcp:` socket setting — backlog (0) must be at least 1 — omit the field to take the default rather than declaring a value that disables it","actual":"ecu1"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-liveliness",
                 DeployError::InvalidLiveliness {
                     machine: "brake".into(),
@@ -12344,6 +12361,7 @@ mod tests {
             | MeshDeployDuplicateMachine
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidDedupWindow
+            | MeshDeployInvalidCustomTcpSocket
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerQueryTimeout
             | MeshDeployInvalidOutboundBuffer
@@ -12989,6 +13007,7 @@ mod tests {
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
+                | MeshDeployInvalidCustomTcpSocket
                 | MeshDeployInvalidLiveliness
                 | MeshDeployInvalidServerQueryTimeout
                 | MeshDeployInvalidOutboundBuffer
@@ -13138,9 +13157,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            330,
+            331,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 330 distinct variants to match the DiagnosticCode \
+             expected 331 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

@@ -226,6 +226,7 @@
         "mesh/deploy-duplicate-machine",
         "mesh/deploy-invalid-ordering-timings",
         "mesh/deploy-invalid-dedup-window",
+        "mesh/deploy-invalid-custom-tcp-socket",
         "mesh/deploy-invalid-liveliness",
         "mesh/deploy-invalid-server-query-timeout",
         "mesh/deploy-invalid-outbound-buffer",

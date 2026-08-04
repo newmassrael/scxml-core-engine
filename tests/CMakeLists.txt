@@ -1711,6 +1711,35 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_outbound_buffer_verification COMMAND mesh_outbound_buffer_test)
 
+    # ── custom_tcp SocketOptions unit tests (SCE_MESH.md §16.8.3) ──
+    # The behavioural half of the socket-layer configuration axis: that
+    # the runtime applies the options it is handed. The declaration half
+    # (a deploy.yaml value reaching the emitted struct) is the cargo test
+    # `mesh_custom_tcp_socket_options`; the two can fail independently,
+    # so both exist.
+    add_executable(mesh_custom_tcp_socket_options_test
+        mesh/CustomTcpSocketOptionsTest.cpp
+    )
+
+    target_include_directories(mesh_custom_tcp_socket_options_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_custom_tcp_socket_options_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_custom_tcp_socket_options_test PRIVATE cxx_std_20)
+
+    apply_sce_test_policies(mesh_custom_tcp_socket_options_test)
+
+    add_test(NAME mesh_custom_tcp_socket_options_verification
+             COMMAND mesh_custom_tcp_socket_options_test)
+
     # ── CommunicationError unit tests (SCE_MESH.md §10.10.1 + §16.7) ─
     # Pins the JSON render shape of `_event.data` for `error.communication`
     # events raised by the mesh runtime (MISSING_SEQUENCE + ORDERING_GAP
