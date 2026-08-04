@@ -447,9 +447,10 @@ TEST(CommunicationErrorTest, DedupWindowOverflowShape) {
     // `DedupRouter::admitWithSignal` returns NovelWithEviction —
     // the spec's "sustained rate exceeds window capacity" condition
     // is observed operationally as "novel id evicted an existing
-    // entry". `window_size` echoes `DedupWindow::kCapacity` (256)
-    // so authors can correlate the raise with the configured ring
-    // depth without parsing extra context.
+    // entry". `window_size` echoes the emitting router's
+    // `kCapacity` — the deploy.yaml `dedup.window_size`, 256 by
+    // default — so authors can correlate the raise with the configured
+    // ring depth without parsing extra context.
     CommunicationError err;
     err.reason = ReasonCode::DedupWindowOverflow;
     err.source = "motor";

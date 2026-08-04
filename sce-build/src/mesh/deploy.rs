@@ -1508,6 +1508,68 @@ pub const DEFAULT_GAP_TIMEOUT_MS: u64 = 100;
 /// `gap_timeout + tick_period`.
 pub const DEFAULT_TICK_PERIOD_MS: u64 = 50;
 
+/// Default `window_size` applied when a machine omits the `dedup:`
+/// section — SCE_MESH.md §mesh-10.5 states the size as "configurable;
+/// default 256 entries", and this constant is the single source of that
+/// default. The C++ runtime carries no fallback: every emitted router
+/// instantiates `DedupRouterT<N>` with an explicit N.
+pub const DEFAULT_DEDUP_WINDOW_SIZE: usize = 256;
+
+/// Per-machine duplicate-suppression window (SCE_MESH.md §mesh-10.5).
+///
+/// The window is per (receiver, sender) pair: a receiver holds one
+/// window per envelope source, each remembering the last `window_size`
+/// envelope ids from that sender. An envelope whose id is still in the
+/// window is dropped; one that has aged out is admitted again, which is
+/// why the size is a deployment property rather than a constant — it has
+/// to span the transport's retransmit horizon at the sender's rate.
+///
+/// Cost of raising it, both linear in `window_size`: 16 bytes of memory
+/// per entry per sender, and one comparison per entry on every inbound
+/// envelope (the runtime scans the ring). At the default 256 that is
+/// 4 KiB and 256 comparisons per sender.
+///
+/// Reaches codegen as the `DedupRouterT<N>` template argument, so the
+/// value is fixed at build time; there is no runtime resize.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DedupConfig {
+    /// Number of recently-seen envelope ids retained per sender.
+    pub window_size: usize,
+}
+
+impl DedupConfig {
+    /// Window applied when a machine omits the `dedup:` section.
+    pub const fn default_const() -> Self {
+        Self {
+            window_size: DEFAULT_DEDUP_WINDOW_SIZE,
+        }
+    }
+
+    /// Validate the declared size. Returns the rejection reason without
+    /// the machine name — the caller wraps it into
+    /// [`DeployError::InvalidDedupWindow`].
+    ///
+    /// Zero is the only rejected value, and it is rejected because it is
+    /// not a small window but *no* window: every duplicate the §mesh-10.5
+    /// layer exists to suppress would be admitted, while the deployment
+    /// still reads as having duplicate suppression configured. There is
+    /// deliberately no upper bound — the cost of a large window is linear
+    /// and stated, and any ceiling picked here would be a guess at
+    /// someone's sender rate.
+    fn validation_error(&self) -> Option<String> {
+        if self.window_size == 0 {
+            return Some(
+                "window_size must be greater than zero — a zero-length window admits \
+                 every duplicate, which is not a narrow filter but no filter. Omit the \
+                 `dedup:` section to take the default of 256 entries."
+                    .to_string(),
+            );
+        }
+        None
+    }
+}
+
 /// Per-machine ordering buffer timings (SCE_MESH.md §mesh-10.6.1).
 ///
 /// Both fields are required when the `ordering:` section is present —
@@ -2121,6 +2183,14 @@ pub struct MachineConfig {
     /// layer.
     #[serde(default)]
     pub ordering: Option<OrderingTimings>,
+    /// Per-machine duplicate-suppression window (SCE_MESH.md §mesh-10.5).
+    /// Absent section ⇒ [`DedupConfig::default_const`] (256 entries).
+    /// Section present ⇒ `window_size` is required and validated
+    /// (non-zero) at parse time. The value is emitted as the
+    /// `DedupRouterT<N>` template argument; no fallback exists below the
+    /// deploy layer.
+    #[serde(default)]
+    pub dedup: Option<DedupConfig>,
     /// Per-machine Zenoh liveliness configuration (SCE Mesh §mesh-16.7 row 8).
     /// Absent section ⇒ no liveliness token declared and no subscriber
     /// installed; the generated router emits zero liveliness code.
@@ -2408,6 +2478,13 @@ impl MachineConfig {
     /// in exactly one place.
     pub fn resolved_ordering_timings(&self) -> OrderingTimings {
         self.ordering.unwrap_or_else(OrderingTimings::default_const)
+    }
+
+    /// Resolve the machine's dedup window, filling the default when the
+    /// `dedup:` section is absent. Same single-source role as
+    /// [`Self::resolved_ordering_timings`].
+    pub fn resolved_dedup(&self) -> DedupConfig {
+        self.dedup.unwrap_or_else(DedupConfig::default_const)
     }
 }
 
@@ -2887,6 +2964,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_links(&cfg)?;
     validate_pool_defaults(&cfg)?;
     validate_binding_field_names(&cfg)?;
+    validate_dedup_window(&cfg)?;
 
     Ok(cfg)
 }
@@ -4747,6 +4825,34 @@ fn summarize_discovery_content(value: &serde_yaml_ng::Value) -> String {
         }
         Value::Tagged(_) => "tagged value".to_string(),
     }
+}
+
+/// Walk every machine that declared an explicit `dedup:` section and
+/// reject a zero window (SCE_MESH.md §mesh-10.5). Parse time, for the
+/// same reason as [`validate_ordering_timings`]: the alternative is a
+/// generated `DedupRouterT<0>` whose `static_assert` fires as a C++
+/// error pointing at machine-written code.
+fn validate_dedup_window(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    // Deterministic order (sorted by machine name) so the first reported
+    // violation is stable across runs — the topology map is a HashMap.
+    let mut by_machine: BTreeMap<&str, &DedupConfig> = BTreeMap::new();
+    for device in cfg.topology.values() {
+        for (machine_name, machine) in &device.machines {
+            if let Some(d) = &machine.dedup {
+                by_machine.insert(machine_name.as_str(), d);
+            }
+        }
+    }
+    for (machine, dedup) in by_machine {
+        if let Some(reason) = dedup.validation_error() {
+            return Err(DeployError::InvalidDedupWindow {
+                machine: machine.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Walk every machine that declared an explicit `ordering:` section and

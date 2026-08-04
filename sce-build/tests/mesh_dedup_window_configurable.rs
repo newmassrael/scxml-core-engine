@@ -113,15 +113,7 @@ fn generate(tag: &str, dedup_section: &str) -> String {
     code.clone()
 }
 
-// Pending: the schema has no `dedup:` section yet, so this asserts the
-// §10.5 contract rather than current behaviour. Ignored rather than deleted
-// because the failure message IS the debt record — run with
-// `cargo test -p sce-build --test mesh_dedup_window_configurable -- --ignored`
-// to see it. Remove the attribute in the commit that lands the section;
-// leaving a permanently-red check in CI would be worse than no check.
 #[test]
-#[ignore = "SCE_MESH.md 10.5 says the dedup window size is configurable; \
-            the deploy schema has no field for it yet"]
 fn declared_dedup_window_reaches_the_generated_router() {
     // §10.5's "configurable" claim, exercised through the only surface an
     // author has. 512 is chosen so it cannot be confused with the default.
@@ -148,5 +140,44 @@ fn absent_dedup_section_still_emits_the_dedup_layer() {
     assert!(
         code.contains("mesh/DedupRouter.h"),
         "an undeclared window must still emit the dedup layer"
+    );
+    assert!(
+        code.contains("DedupRouterT<256>"),
+        "the §10.5 documented default must be emitted explicitly rather than \
+         left to a runtime fallback — deploy.yaml is the only source of the size"
+    );
+}
+
+#[test]
+fn zero_window_is_rejected_at_parse_time() {
+    // A zero-length window is not a narrow filter, it is no filter: every
+    // duplicate §10.5 exists to suppress would reach the engine while the
+    // deployment still reads as having duplicate suppression configured.
+    // Rejecting at parse time also keeps `DedupRouterT<0>`'s static_assert
+    // from being the thing the author sees — a C++ error pointing at
+    // generated code is a worse diagnostic than a deploy.yaml one.
+    let fx = Fixture::new("zero");
+    fx.write("brake.scxml", BRAKE_SCXML);
+    fx.write("motor.scxml", MOTOR_SCXML);
+    let deploy_path = fx.write(
+        "deploy.yaml",
+        &deploy_yaml("        dedup:\n          window_size: 0\n"),
+    );
+
+    let mut model = parse_brake();
+    let err = match sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp) {
+        Err(e) => e,
+        Ok(_) => panic!("window_size: 0 must not compile"),
+    };
+
+    let text = err.to_string();
+    assert!(
+        text.contains("window_size"),
+        "the diagnostic must name the offending key: {text}"
+    );
+    assert!(
+        text.contains("256"),
+        "the diagnostic must name the default the author gets by omitting \
+         the section, so the repair does not require reading the spec: {text}"
     );
 }

@@ -6011,6 +6011,16 @@ pub fn compile_mesh_transport(
             mesh::deploy::OrderingTimings::default_const,
             mesh::deploy::MachineConfig::resolved_ordering_timings,
         );
+    // SCE_MESH.md §10.5: per-machine duplicate-suppression window. Same
+    // single-source shape as the ordering timings above — a machine that
+    // declares no `dedup:` section and one that declares the default
+    // reach codegen identically.
+    let machine_dedup = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .map_or_else(
+            mesh::deploy::DedupConfig::default_const,
+            mesh::deploy::MachineConfig::resolved_dedup,
+        );
     // SCE Mesh §16.7 row 8 (PEER_PARTITIONED): opt-in Zenoh liveliness
     // tokens. Absent section on the machine ⇒ `None`, and the template
     // emits zero liveliness code for that machine. `LivelinessConfig`
@@ -6078,6 +6088,7 @@ pub fn compile_mesh_transport(
             dds_config,
             subscriptions: machine_subscriptions,
             machine_ordering,
+            machine_dedup,
             machine_liveliness,
             machine_outbound_buffer,
             partition_self_name: partition_self_name.as_deref(),

@@ -342,6 +342,14 @@ pub enum DeployError {
     )]
     InvalidOrderingTimings { machine: String, reason: String },
 
+    /// A machine declared a `dedup:` section whose `window_size` cannot
+    /// produce a working filter (SCE_MESH.md §mesh-10.5). Rejected at
+    /// parse time so the value cannot reach codegen, where it would
+    /// become a `DedupRouterT<0>` and fail as a C++ `static_assert`
+    /// pointing at generated code.
+    #[error("machine '{machine}': invalid `dedup:` section in deploy.yaml — {reason}")]
+    InvalidDedupWindow { machine: String, reason: String },
+
     /// A machine declared a `liveliness:` section whose `lease_ms`
     /// violates the minimum-floor constraint (SCE Mesh §mesh-16.7 row 8;
     /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
@@ -2505,6 +2513,17 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k.extend(devices.iter().cloned());
                 k
             },
+        },
+        DeployError::InvalidDedupWindow { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidDedupWindow,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // The reason string already names the only legal repair
+            // (raise the value or drop the section), and both are the
+            // author's call — no closed candidate set to carry.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
         },
         DeployError::InvalidOrderingTimings { machine, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidOrderingTimings,
