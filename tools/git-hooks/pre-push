@@ -22,9 +22,12 @@
 #                                              catches stable-toolchain lint
 #                                              drift (unnecessary_sort_by,
 #                                              collapsible_match) before CI
-#   3.  verify_embed_manifest.sh             — embed/MANIFEST.json public-API
-#                                              drift (header surface changed
-#                                              without package_embed.sh)
+#   3.  embed manifest/payload/consumer      — embed/MANIFEST.json public-API
+#                                              drift, the same manifest left
+#                                              stale by a sce/ edit, and a
+#                                              consumer build over a freshly
+#                                              packaged embed/ tree; mirrors
+#                                              embed-vendor-smoke.yml in full
 #   4.  cargo test --workspace               — Rust unit + integration suite
 #                                              (covers forge goldens, mesh,
 #                                              diagnostic contract tests)
@@ -447,9 +450,29 @@ if stage_on "3"; then
     # fail-fast path; this covers the orthogonal DRIFT path (committed
     # manifest vs the current header surface) — the gap that let the
     # SetCurrentEventArgs surface change land stale.
-    log_step "Stage 3/8 — verify_embed_manifest.sh (embed public-API drift)"
+    # The workflow runs three checks and this stage ran only the first
+    # until 2026-08-04, which is the harder kind of gap to notice: the
+    # stage fires on the right changes and still misses two thirds of
+    # what CI will run. The other two cover different halves —
+    # verify_embed_payload.sh catches a manifest left stale by a sce/
+    # edit (the upstream direction verify_embed_manifest.sh cannot see,
+    # since it re-emits from whatever embed/include/ is on disk), and
+    # smoke_embed_consumer.sh builds a consumer against a freshly
+    # packaged tree, catching assets that sce_codegen_assets.cmake lists
+    # but package_embed.sh never ships.
+    #
+    # Measured locally: 112s and 116s. Both work in `mktemp -d` scratch
+    # directories with `trap rm -rf`, so neither can leave the working
+    # tree dirty the way an interrupted verify_embed_manifest.sh can.
+    # The stage triggers only on public-header and packaging paths, so
+    # the cost lands on exactly the changes that can break the channel.
+    log_step "Stage 3/8 — embed manifest drift + payload lag + consumer smoke"
     bash scripts/verify_embed_manifest.sh \
         || fail_step "Stage 3 (embed/MANIFEST.json drift)"
+    bash scripts/verify_embed_payload.sh \
+        || fail_step "Stage 3 (embed/MANIFEST.json stale relative to sce/)"
+    bash scripts/smoke_embed_consumer.sh \
+        || fail_step "Stage 3 (embed consumer smoke build)"
 
 fi
 if stage_on "4"; then
