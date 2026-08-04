@@ -39,6 +39,13 @@ name: Rust Workspace Tests
 # evidence that the serialisation those lanes ask for is unnecessary,
 # and an intermittent red here would cost more than the 143 tests
 # drift-verify.yml already runs on every relevant push.
+#
+# Both sides run the default test profile. The hook used `--release`
+# until 2026-08-04, so the debug assertions this suite relies on for
+# overflow detection were compiled out exactly where a developer would
+# have seen the failure first, and the optimised artifacts it produced
+# were shared with nothing else on an unoptimised development tree.
+# `hook_ci_parity` fails if either side moves off the profile again.
 
 on:
   push:

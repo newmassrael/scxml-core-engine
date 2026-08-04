@@ -18,15 +18,18 @@ name: Tree Hygiene
 # `cargo test` was what eventually caught it.
 #
 # Splitting the gate out is what makes the trigger match the scan set.
-# The job runs two named test targets rather than the workspace suite, so
+# The job names its test targets rather than sweeping the workspace, so
 # firing on every push costs a cached build and sub-second tests instead
 # of the 20-minute sweep rust-workspace-tests.yml carries.
 #
 # `workflow_trigger_coverage` pins both halves of the arrangement: that
 # this file declares no path filter, and that every gate whose input set
-# outgrows a filter is run by a workflow which declares none. It is
-# itself such a gate — it reads all of `.github/workflows/` — so it runs
-# here beside the gate it protects.
+# outgrows a filter is run by a workflow which declares none.
+# `hook_ci_parity` pins the neighbouring property — that a hook stage
+# claiming to mirror a workflow does not run a weaker command than the
+# workflow it mirrors. Both read all of `.github/workflows/`, which makes
+# them gates of the kind described above, so they run here beside the
+# gate they protect.
 
 on:
   push:
@@ -79,4 +82,5 @@ jobs:
       run: |
         cargo test -p sce-build \
           --test roadmap_marker_gate \
-          --test workflow_trigger_coverage
+          --test workflow_trigger_coverage \
+          --test hook_ci_parity
