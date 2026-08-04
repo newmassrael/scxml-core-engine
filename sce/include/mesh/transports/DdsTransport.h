@@ -212,19 +212,20 @@ inline std::string eventTopicName(const std::string &base) {
     return base + "_Event";
 }
 
-/// QoS for the request and reply legs. KEEP_ALL because dropping a request
-/// under load would surface as a lost RPC rather than as backpressure.
 /// DEADLINE and LIVELINESS are RxO policies: the reader's request must be
 /// no stricter than the writer's offer or the two never match. Both sides
 /// are therefore built from the SAME deploy.yaml declaration through this
 /// one function — a per-side knob would let a deployment express a pair
-/// that silently fails to communicate, which is the failure mode §mesh-8.2
-/// exists to keep out of the schema.
+/// that silently fails to communicate, which is the failure mode the
+/// spec keeps out of the schema.
 ///
 /// Templated on the QoS type because `DataWriterQos` and `DataReaderQos`
 /// share no base but accept the same policies; a pair of overloads would
 /// be two places for the values to drift apart.
 template <typename Qos> inline void applyNotifyRxOOverlay(Qos &qos, const QosOverlay &overlay) {
+    // SCE_MESH.md §mesh-8.2: the deployment may add these two, and both
+    // ends take the value from the same declaration so an RxO pair can
+    // never be expressed as a non-matching one.
     if (overlay.deadline_ms > 0) {
         qos << dds::core::policy::Deadline(dds::core::Duration::from_millisecs(overlay.deadline_ms));
     }
@@ -243,6 +244,8 @@ inline void applyWriterOverlay(dds::pub::qos::DataWriterQos &qos, const QosOverl
     }
 }
 
+/// QoS for the request and reply legs. KEEP_ALL because dropping a request
+/// under load would surface as a lost RPC rather than as backpressure.
 inline dds::pub::qos::DataWriterQos requestWriterQos(const dds::pub::Publisher &pub, const QosOverlay &overlay) {
     auto qos = pub.default_datawriter_qos();
     qos << dds::core::policy::Reliability::Reliable() << dds::core::policy::History::KeepAll();

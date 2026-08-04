@@ -199,11 +199,6 @@
       "bindings": [
         {
           "file": "sce/include/mesh/DedupRouter.h",
-          "symbol": "DedupRouter",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/mesh/DedupRouter.h",
           "symbol": "kCapacity",
           "kind": "references"
         },
@@ -252,6 +247,26 @@
         {
           "file": "tests/mesh/test_mesh_dedup_injection.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/include/mesh/DedupRouter.h",
+          "symbol": "SCE::Mesh",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DedupConfig",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineConfig",
+          "kind": "references"
         }
       ]
     },
@@ -1736,11 +1751,6 @@
         },
         {
           "file": "sce/include/mesh/DedupRouter.h",
-          "symbol": "DedupWindow",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/mesh/DedupRouter.h",
           "symbol": "admitWithSignal",
           "kind": "implements"
         },
@@ -1948,6 +1958,61 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "age_ms",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "max_age_ms",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "deadline_ms",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "symbol": "missed_count",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/DedupRouter.h",
+          "symbol": "DedupResult",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/DedupRouter.h",
+          "symbol": "kCapacity",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DdsQosConfig",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/transports/DdsTransport.h",
+          "symbol": "QosViolationKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/transports/DdsTransport.h",
+          "symbol": "QosOverlay",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/transports/DdsTransport.h",
+          "symbol": "deadline_ms",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/transports/DdsTransport.h",
+          "symbol": "liveliness_lease_ms",
+          "kind": "references"
         }
       ]
     },
@@ -2056,6 +2121,15 @@
         {
           "file": "tests/mesh/test_mesh_custom_tcp_runtime.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "kind": "references"
         }
       ]
     },
@@ -2494,6 +2568,30 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DdsTransportConfig",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/transports/DdsTransport.h",
+          "symbol": "QosOverlay",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/transports/DdsTransport.h",
+          "symbol": "applyNotifyRxOOverlay",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction"
