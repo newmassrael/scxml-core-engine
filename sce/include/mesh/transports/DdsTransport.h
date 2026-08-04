@@ -281,11 +281,34 @@ inline bool waitForWriterMatch(dds::pub::DataWriter<sce_mesh::Envelope> &writer,
 /// which is what makes `IGNORE_LOCAL(participant)` the right granularity:
 /// "local" means "this device", which is exactly the traffic that must not
 /// come back in.
+///
+/// `config` is the deploy.yaml `transports.dds.config:` value, forwarded to
+/// the participant constructor that CycloneDDS-CXX provides for exactly this
+/// purpose: Cyclone reads it as a file name, or as XML text when it starts
+/// with '<'. Passing it here rather than exporting `CYCLONEDDS_URI` keeps the
+/// deployment description in one file, and is what lets two processes on one
+/// host run with different Cyclone configurations. `domain_id` still wins over
+/// any domain id inside the file — Cyclone's rule, which is why the two are
+/// not alternatives.
+///
+/// A default-constructed `config` selects Cyclone's own resolution order
+/// (`CYCLONEDDS_URI`, then built-in defaults), which is the pre-existing
+/// behaviour and the one every deployment that declares no config keeps.
 class Participant {
 public:
-    explicit Participant(std::uint32_t domain_id) {
+    explicit Participant(std::uint32_t domain_id, const char *config = nullptr) {
         try {
-            participant_.emplace(domain_id);
+            if (config != nullptr && *config != '\0') {
+                // The 5-argument form is the 1-argument constructor's own
+                // body plus the config string (TDomainParticipantImpl.hpp),
+                // so the defaults below are not choices — they are what the
+                // short form already passes.
+                participant_.emplace(
+                    domain_id, org::eclipse::cyclonedds::domain::DomainParticipantDelegate::default_participant_qos(),
+                    nullptr, dds::core::status::StatusMask::none(), std::string(config));
+            } else {
+                participant_.emplace(domain_id);
+            }
             publisher_.emplace(*participant_);
             subscriber_.emplace(*participant_);
             valid_ = true;

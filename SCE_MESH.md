@@ -2497,7 +2497,7 @@ Industrial deployments already carry native transport configuration, often auto-
 
 - **SOME/IP**: `vsomeip.json` — service/instance/event-group/method IDs, routing manager, security policies. Typically generated from ARXML (AUTOSAR XML) or Franca IDL.
 - **Zenoh**: `zenoh.json5` — session mode, endpoints, scouting config, ACL.
-- **DDS** (Phase 4): `rti_connext.xml` or Cyclone DDS XML profiles.
+- **DDS**: Cyclone DDS XML — discovery peers and tags, transport selection, buffer sizes, thread scheduling, tracing.
 
 SCE Mesh **does not duplicate** these. deploy.yaml references the external file by path and resolves names → IDs at build time:
 
@@ -2510,6 +2510,9 @@ topology:
         application_name: brake_app          # matches vsomeip.json applications[*].name
       zenoh:
         config: ./config/zenoh.json5         # external file
+      dds:
+        domain_id: 71                        # isolation unit; wins over the file
+        config: ./config/cyclonedds.xml      # external file, or inline XML
     machines:
       brake:
         source: brake.scxml
@@ -2528,6 +2531,10 @@ Build-time resolution:
 1. `sce-build` parses `vsomeip.json` at generation time using a **minimal partial-schema serde model** — only the fields SCE Mesh consumes are declared (see table below); all other fields are tolerated (no `deny_unknown_fields`) because vsomeip.json is owned by the platform team / OEM tooling, not by SCE.
 2. For each named entity in deploy.yaml (`service: motor_control`), it looks up the matching entry and embeds the numeric ID in generated code.
 3. Unresolved names → hard build failure (never silent). This replaces the runtime misconfigurations that Session C/D's inline `service_id: 0x1234` style would only catch at bus contact.
+
+**DDS is a passthrough, not a resolution.** SOME/IP and Zenoh configs are *read* by sce-build, because deploy.yaml names entities (`service: motor_control`) that only the external file can turn into IDs. A DDS binding names its topic directly, so there is nothing to resolve: `transports.dds.config:` is handed to the participant constructor verbatim — as a file name, or as the XML itself when the value starts with `<`. sce-build therefore does not parse it, and a malformed file surfaces at participant creation rather than at build time. The reason to declare it in deploy.yaml regardless of that is reproducibility: the alternative is the `CYCLONEDDS_URI` environment variable, which lives outside the file that describes the deployment and cannot differ between two processes started from one shell.
+
+What it does **not** open is QoS. Cyclone's XML configures the DDSI stack, while the §8.2 leg QoS (RELIABLE/KEEP_ALL/VOLATILE for request-reply, KEEP_LAST(1)/TRANSIENT_LOCAL for notifications) is set through the DDS API at endpoint creation. The derivation stated in §8.2 is therefore unaffected by this field — a deployment can retune discovery and transport without being able to silently break the pattern semantics.
 
 Minimum vsomeip.json fields consumed by sce-build:
 
