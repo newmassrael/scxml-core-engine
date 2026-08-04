@@ -1588,10 +1588,15 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // `outbound_buffer:` section — template reads as a falsy gate and
     // emits zero buffer code. Present value carries the deploy-
     // validated `max_pending_per_target` (floor enforced by
-    // `OutboundBufferConfig::validation_error`).
+    // `OutboundBufferConfig::validation_error`) and `max_age_ms`,
+    // which is rendered as 0 when the author omitted it — the runtime
+    // reads zero as "no age bound", so the absent case and the
+    // explicit-no-bound case are the same value rather than two
+    // template branches.
     let machine_outbound_buffer_ctx = match machine_outbound_buffer {
         Some(b) => serde_json::json!({
             "max_pending_per_target": b.max_pending_per_target,
+            "max_age_ms": b.max_age_ms.unwrap_or(0),
         }),
         None => serde_json::Value::Null,
     };

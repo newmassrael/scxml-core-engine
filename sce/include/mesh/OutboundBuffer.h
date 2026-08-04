@@ -56,10 +56,15 @@
 //     considered consumed — the buffer does not re-enqueue or retry.
 //     SCE_MESH.md §mesh-16.7 row 3 `DELIVERY_EXHAUSTED` (retry-exhausted)
 //     is orthogonal and lives in a future retry-layer atomic.
-//   * No age-based drop. Overflow policy is fixed at
+//   * No choice of overflow policy. Capacity overflow is fixed at
 //     `BACKPRESSURE_DROP` (§mesh-16.7 row 9) + drop-newest. Grammar
-//     additions (`max_age_ms`, `overflow: drop_oldest`) are deferred
-//     until a consumer lands.
+//     addition `overflow: drop_oldest` is deferred. The age axis is
+//     NOT deferred — `max_age_ms` bounds how long an envelope may
+//     wait and still be worth sending, checked at drain and raising
+//     §mesh-16.7 row 15 `OUTBOUND_STALE_DROP`. The two bounds answer
+//     different questions: capacity says the peer is slower than the
+//     machine produces, age says the peer returned too late for the
+//     held envelopes to still describe the world.
 //   * No cross-target serialization. Each OutboundBuffer instance is
 //     per-target (deploy.yaml roster axis); admit + drain are
 //     serialized only within one target. A router with N opt-in
@@ -89,7 +94,9 @@
 #include "mesh/CommunicationError.h"
 #include "mesh/MeshEnvelope.h"
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -191,10 +198,16 @@ public:
     /// admits on the same target.
     using ErrorRaise = std::function<void(CommunicationError)>;
 
-    OutboundBuffer(std::string target, std::size_t max_pending, std::string transport_name, Dispatcher dispatch,
-                   ErrorRaise raise_error)
+    /// `max_age` bounds how long a queued envelope may wait for peer
+    /// readiness and still be worth sending (deploy.yaml
+    /// `outbound_buffer.max_age_ms`). `std::chrono::milliseconds::zero()`
+    /// means "no age bound", which is what a deployment that omits the
+    /// field gets — the pre-existing behaviour where a returning peer
+    /// receives everything held.
+    OutboundBuffer(std::string target, std::size_t max_pending, std::chrono::milliseconds max_age,
+                   std::string transport_name, Dispatcher dispatch, ErrorRaise raise_error)
         : target_(std::move(target)), transport_name_(std::move(transport_name)), max_pending_(max_pending),
-          dispatch_(std::move(dispatch)), raise_error_(std::move(raise_error)) {}
+          max_age_(max_age), dispatch_(std::move(dispatch)), raise_error_(std::move(raise_error)) {}
 
     OutboundBuffer(const OutboundBuffer &) = delete;
     OutboundBuffer &operator=(const OutboundBuffer &) = delete;
@@ -243,7 +256,7 @@ public:
                 overflow = true;
                 depth_at_overflow = queue_.size();
             } else {
-                queue_.push_back(env);
+                queue_.push_back(Pending{env, std::chrono::steady_clock::now()});
                 accepted = true;
             }
         }
@@ -297,17 +310,44 @@ public:
         // post-drain raise carries the correct (or absent)
         // transport_error.
         std::vector<std::optional<std::string>> failures;
+        // §mesh-16.7 row 15: ages of envelopes the drain discarded for
+        // exceeding `max_age_`. Collected alongside `failures` and for
+        // the same reason — the raise runs after the mutex releases.
+        std::vector<std::int64_t> stale_ages_ms;
         {
             std::lock_guard<std::mutex> lock(mu_);
             ready_ = true;
+            const auto now = std::chrono::steady_clock::now();
             while (!queue_.empty()) {
-                MeshEnvelope env = std::move(queue_.front());
+                Pending pending = std::move(queue_.front());
                 queue_.pop_front();
-                SendResult result = dispatch_(env);
+                // The age check runs here rather than on a timer: an
+                // envelope's staleness only becomes a decision at the
+                // moment it would be sent, and `now` is sampled once
+                // for the whole drain so a long drain cannot make
+                // later envelopes look staler than the batch they
+                // arrived in.
+                if (max_age_ > std::chrono::milliseconds::zero()) {
+                    const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - pending.enqueued_at);
+                    if (age > max_age_) {
+                        stale_ages_ms.push_back(static_cast<std::int64_t>(age.count()));
+                        continue;
+                    }
+                }
+                SendResult result = dispatch_(pending.env);
                 if (!result.ok) {
                     failures.push_back(std::move(result.transport_error));
                 }
             }
+        }
+        for (std::int64_t age_ms : stale_ages_ms) {
+            CommunicationError err;
+            err.reason = ::SCE::Mesh::ReasonCode::OutboundStaleDrop;
+            err.target = target_;
+            err.transport = transport_name_;
+            err.age_ms = age_ms;
+            err.max_age_ms = static_cast<std::int64_t>(max_age_.count());
+            raise_error_(std::move(err));
         }
         for (auto &transport_error : failures) {
             CommunicationError err;
@@ -375,14 +415,26 @@ public:
     }
 
 private:
+    /// One queued envelope plus the instant it was admitted. The
+    /// timestamp is taken at enqueue rather than derived from anything
+    /// on the envelope: `deadline_unix_ms` is an author-level RPC
+    /// concept on some envelopes and absent on most, while this is a
+    /// transport-hold measurement that has to exist for every envelope
+    /// the buffer touches.
+    struct Pending {
+        MeshEnvelope env;
+        std::chrono::steady_clock::time_point enqueued_at;
+    };
+
     const std::string target_;
     const std::string transport_name_;
     const std::size_t max_pending_;
+    const std::chrono::milliseconds max_age_;
     Dispatcher dispatch_;
     ErrorRaise raise_error_;
 
     mutable std::mutex mu_;
-    std::deque<MeshEnvelope> queue_;
+    std::deque<Pending> queue_;
     bool ready_ = false;
 };
 
