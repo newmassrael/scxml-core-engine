@@ -204,12 +204,22 @@ struct DdsTransportContext {
     /// integer literal; `0` is the DDS default and the value used when
     /// deploy.yaml omits the block entirely.
     domain_id: u32,
+    /// Pre-escaped C++ string literal for the vendor config
+    /// (`transports.dds.config:`), or `None` when the deployment declares
+    /// none. `None` and "the empty string" are not the same thing to
+    /// Cyclone — an empty config is a file name it cannot open — so the
+    /// template branches on presence rather than emitting `""`.
+    config: Option<String>,
 }
 
 impl DdsTransportContext {
     fn from_config(cfg: Option<&DdsTransportConfig>) -> Self {
         Self {
             domain_id: cfg.and_then(|c| c.domain_id).unwrap_or(0),
+            config: cfg
+                .and_then(|c| c.config.as_ref())
+                .and_then(|p| p.to_str())
+                .map(cpp_string_literal),
         }
     }
 }
