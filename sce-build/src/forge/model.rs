@@ -545,6 +545,30 @@ impl SceType {
             _ => None,
         }
     }
+
+    /// Inclusive `(min, max)` value range of a fixed-width integer type,
+    /// as mathematical integers. `None` for non-integer types.
+    ///
+    /// The single place the Enum kind's admissible variant values are
+    /// defined. `parser::parse_enum` range-checks each `<sce:variant>`
+    /// against it at parse time and
+    /// `event_schema_check::value_fits_underlying` narrows comparison
+    /// literals against the same answer — two checks that must agree by
+    /// construction, since a value the parser accepted and the narrowing
+    /// layer then rejected would make a well-formed document
+    /// un-comparable against its own variants.
+    ///
+    /// `i128` is the narrowest carrier holding both `u64::MAX` and
+    /// `i64::MIN`, so no legal range is truncated here.
+    pub fn int_value_range(&self) -> Option<(i128, i128)> {
+        let bits = self.int_bit_width()?;
+        Some(if self.is_signed() {
+            let half = 1i128 << (bits - 1);
+            (-half, half - 1)
+        } else {
+            (0, (1i128 << bits) - 1)
+        })
+    }
 }
 
 // ── Field direction ────────────────────────────────────────────
@@ -729,11 +753,16 @@ impl LookupModel {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct EnumVariant {
     pub name: String,
-    /// Parsed numeric value of the variant. Stored as `u64` so any
-    /// declared `underlying_type` (uint8 → uint64) fits without
-    /// per-variant tagging; the document-level `underlying_type` is
-    /// the size-of-record.
-    pub value: u64,
+    /// Parsed numeric value of the variant, as a mathematical integer.
+    ///
+    /// `i128` is the narrowest carrier that holds every legal value of
+    /// every legal `underlying_type` without per-variant tagging: the
+    /// unsigned carriers reach `u64::MAX` and the signed ones reach
+    /// `i64::MIN`, and no smaller primitive spans both. The
+    /// document-level `underlying_type` remains the size-of-record —
+    /// this field never carries a value the parser did not first prove
+    /// in range for it.
+    pub value: i128,
     /// Source line of the `<sce:variant>` element, captured for
     /// duplicate-value / duplicate-name / overflow diagnostics that
     /// anchor on the specific variant. `#[serde(skip)]` keeps the

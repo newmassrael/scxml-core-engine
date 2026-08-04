@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A negative variant under an unsigned carrier. Admitting signed
+     underlying types must not make the sign a free-floating property of
+     the literal: -1 against uint8 is the same class of error as 256
+     against uint8, and reports through the same diagnostic. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="negative_on_unsigned"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="bad" value="-1"/>
+    </data>
+  </datamodel>
+</scxml>

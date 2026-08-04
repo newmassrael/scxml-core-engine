@@ -1028,8 +1028,11 @@ the Enum document remains the single source of truth.
 literals compared against (receive-side) or assigned to
 (send-side) an enum-typed field are narrowed against the
 imported enum's declared `underlying_type`. Decimal, hex (`0x`),
-binary (`0b`), and octal (`0o`) literal forms all parse; values
-exceeding the underlying width raise
+binary (`0b`), and octal (`0o`) literal forms all parse, with an
+optional leading `-` — the carrier may be signed
+(`int8`/`int16`/`int32`/`int64` alongside the unsigned four), so a
+negative sentinel is an ordinary comparison. Values outside the
+carrier's range in either direction raise
 `validation/cross-kind-type-mismatch` (reused per Item 4
 precedent — no new wire code). The narrowing fires only when the
 statechart's own `<sce:import kind="enum" as="<alias>">` resolves

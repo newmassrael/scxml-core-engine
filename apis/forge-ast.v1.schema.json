@@ -1562,9 +1562,8 @@
           "type": "string"
         },
         "value": {
-          "description": "Parsed numeric value of the variant. Stored as `u64` so any declared `underlying_type` (uint8 → uint64) fits without per-variant tagging; the document-level `underlying_type` is the size-of-record.",
-          "format": "uint64",
-          "minimum": 0.0,
+          "description": "Parsed numeric value of the variant, as a mathematical integer.\n\n`i128` is the narrowest carrier that holds every legal value of every legal `underlying_type` without per-variant tagging: the unsigned carriers reach `u64::MAX` and the signed ones reach `i64::MIN`, and no smaller primitive spans both. The document-level `underlying_type` remains the size-of-record — this field never carries a value the parser did not first prove in range for it.",
+          "format": "int128",
           "type": "integer"
         }
       },

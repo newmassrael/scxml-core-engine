@@ -754,6 +754,43 @@ fn parse_lookup(
 
 // ── Enum kind parsing ────────────────────────────────────────
 
+/// Parse a `<sce:variant value="...">` literal into a mathematical
+/// integer.
+///
+/// Accepts an optional leading `-`, then either a `0x`-prefixed hex
+/// magnitude or a decimal one. The sign is applied to the magnitude
+/// rather than parsed as part of it so `-0x80` reads the way an author
+/// writing an int8 boundary expects, and so the caller sees one
+/// out-of-range diagnostic for both `-1 on uint8` and `256 on uint8`
+/// instead of a malformed-literal error for the first.
+///
+/// `i128` is wide enough that no legal carrier's range can overflow the
+/// parse, so a `None` here means the text was not an integer at all —
+/// the caller renders that as `NumericParse`, and the range check that
+/// follows is the only place a well-formed but unrepresentable value is
+/// reported.
+fn parse_variant_value(text: &str) -> Option<i128> {
+    let (negative, magnitude) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest.trim_start()),
+        None => (false, text),
+    };
+    let parsed: i128 = if let Some(hex) = magnitude
+        .strip_prefix("0x")
+        .or_else(|| magnitude.strip_prefix("0X"))
+    {
+        i128::from_str_radix(hex, 16).ok()?
+    } else {
+        magnitude.parse::<i128>().ok()?
+    };
+    // A `+`-signed or otherwise re-signed magnitude would have slipped
+    // through `parse::<i128>` as a second sign; reject it so the
+    // grammar stays the one documented above.
+    if parsed < 0 {
+        return None;
+    }
+    Some(if negative { -parsed } else { parsed })
+}
+
 /// Parse an `sce:kind="enum"` document into an [`EnumModel`].
 ///
 /// Shape (design RFC §2.1):
@@ -770,8 +807,13 @@ fn parse_lookup(
 /// ```
 ///
 /// Parse-time invariants (each maps to a `DiagnosticCode`):
-///   * `sce:underlying-type` present and one of `uint8`/`uint16`/`uint32`/
-///     `uint64` — `validation/enum-unsupported-underlying-type` otherwise
+///   * `sce:underlying-type` present and one of the fixed-width integer
+///     carriers `uint8`/`uint16`/`uint32`/`uint64`/`int8`/`int16`/
+///     `int32`/`int64` — `validation/enum-unsupported-underlying-type`
+///     otherwise. Signed carriers exist because C and C++ enumerations
+///     have always allowed them and because a negative sentinel beside
+///     a measurement range is the ordinary spelling for "no reading" in
+///     a signal catalogue.
 ///   * At least one `<sce:variant>` declared — `validation/enum-no-variants`
 ///     when empty
 ///   * Variant `name`s unique within the document —
@@ -802,14 +844,7 @@ fn parse_enum(
         .trim()
         .to_string();
     let underlying_type = match SceType::from_attr(&declared) {
-        Some(t)
-            if matches!(
-                t,
-                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
-            ) =>
-        {
-            t
-        }
+        Some(t) if t.int_bit_width().is_some() => t,
         _ => {
             return Err(located(
                 root,
@@ -822,16 +857,13 @@ fn parse_enum(
         }
     };
 
-    // Bit-width-aware ceiling for the overflow check below. Each
-    // unsigned carrier has a deterministic maximum; non-unsigned
-    // types are already rejected above.
-    let max_value: u64 = match underlying_type {
-        SceType::Uint8 => u8::MAX as u64,
-        SceType::Uint16 => u16::MAX as u64,
-        SceType::Uint32 => u32::MAX as u64,
-        SceType::Uint64 => u64::MAX,
-        _ => unreachable!("Unsupported underlying type passed through gate"),
-    };
+    // Inclusive range of the declared carrier. `SceType::int_value_range`
+    // is the SSOT the narrowing layer in `event_schema_check` also reads,
+    // so a variant this parser admits can never be one that layer then
+    // calls out of range.
+    let (min_value, max_value) = underlying_type
+        .int_value_range()
+        .expect("gate above admitted only integer carriers");
 
     // 2. <datamodel> is the host for the <data id="variants"> wrapper
     //    that holds the <sce:variant> elements. Mirrors the same
@@ -855,7 +887,7 @@ fn parse_enum(
     let mut seen_names: std::collections::BTreeMap<String, ()> = std::collections::BTreeMap::new();
     // first_value_seen carries (value -> first variant name) so the
     // duplicate-value diagnostic names both colliding variants.
-    let mut first_value_seen: std::collections::BTreeMap<u64, String> =
+    let mut first_value_seen: std::collections::BTreeMap<i128, String> =
         std::collections::BTreeMap::new();
 
     for data in data_children(&datamodel) {
@@ -904,39 +936,26 @@ fn parse_enum(
                 .trim()
                 .to_string();
             // Accept decimal + hex (`0x` prefix) per the same loose
-            // grammar Lookup keys allow. u64 parse with manual hex
-            // branch so the diagnostic anchors at NumericParse on
-            // either form.
-            let value: u64 = if let Some(hex) = value_str
-                .strip_prefix("0x")
-                .or_else(|| value_str.strip_prefix("0X"))
-            {
-                u64::from_str_radix(hex, 16).map_err(|_| {
-                    located(
-                        &child,
-                        label.diagnostic_label,
-                        ValidationError::NumericParse {
-                            element: "<sce:variant>".into(),
-                            attr: "value".into(),
-                            value: value_str.clone(),
-                            detail: "expected unsigned integer (decimal or 0x-prefixed hex)".into(),
-                        },
-                    )
-                })?
-            } else {
-                value_str.parse::<u64>().map_err(|_| {
-                    located(
-                        &child,
-                        label.diagnostic_label,
-                        ValidationError::NumericParse {
-                            element: "<sce:variant>".into(),
-                            attr: "value".into(),
-                            value: value_str.clone(),
-                            detail: "expected unsigned integer (decimal or 0x-prefixed hex)".into(),
-                        },
-                    )
-                })?
-            };
+            // grammar Lookup keys allow, with an optional leading `-`
+            // so a signed carrier can name its negative variants. The
+            // sign is parsed independently of the declared carrier and
+            // then range-checked against it below — that ordering is
+            // what lets `-1` on a `uint8` report as an out-of-range
+            // value rather than as a malformed literal.
+            let value: i128 = parse_variant_value(&value_str).ok_or_else(|| {
+                located(
+                    &child,
+                    label.diagnostic_label,
+                    ValidationError::NumericParse {
+                        element: "<sce:variant>".into(),
+                        attr: "value".into(),
+                        value: value_str.clone(),
+                        detail: "expected an integer (decimal or 0x-prefixed hex, \
+                                 optionally signed)"
+                            .into(),
+                    },
+                )
+            })?;
 
             if seen_names.insert(name.clone(), ()).is_some() {
                 return Err(located(
@@ -949,7 +968,7 @@ fn parse_enum(
                 ));
             }
 
-            if value > max_value {
+            if value < min_value || value > max_value {
                 return Err(located(
                     &child,
                     label.diagnostic_label,

@@ -55,7 +55,7 @@ use std::path::Path;
 use crate::forge::error::{ExprError, ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::expr::{
     decode_bytes_literal, parse_to_ast, references_event_data_lexically, transpile_typed, BinOp,
-    ExprKind, ExprTarget, TypedExpr,
+    ExprKind, ExprTarget, TypedExpr, UnaryOp,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
 use crate::forge::types::{InferredType, TypeCtx};
@@ -1175,11 +1175,10 @@ fn number_text_looks_like_int(n: &str) -> bool {
 ///     compares against string literals through the existing
 ///     equality-as-bytes coercion at codegen).
 ///   * `SceType::Enum(EnumRef)` accepts `Int` literals (per the lattice
-///     rule `Enum(E) ⊑ E.underlying_type` — the underlying type is an
-///     unsigned integer per the Enum kind's unsigned-only rule). Width
-///     narrowing against the resolved `underlying_type` runs as a
-///     second layer in [`enum_underlying_overflow`] — this helper
-///     decides category only.
+///     rule `Enum(E) ⊑ E.underlying_type` — the underlying type is a
+///     fixed-width integer, signed or unsigned). Width narrowing
+///     against the resolved `underlying_type` runs as a second layer in
+///     [`enum_underlying_overflow`] — this helper decides category only.
 fn literal_is_compatible_with(field_type: &SceType, literal_kind: LiteralKind) -> bool {
     match field_type {
         SceType::Uint8
@@ -1221,27 +1220,21 @@ struct EnumUnderlyingOverflow {
 ///     resolvable via `imported_enums` (silent-skip otherwise — the
 ///     alias is opaque from the statechart's view and the
 ///     conservative-accept default applies),
-///   * `operand` is an integer literal parseable as a `u64` whose value
-///     exceeds the enum's declared `underlying_type` max.
+///   * `operand` is an integer literal whose value falls outside the
+///     enum's declared `underlying_type` range, in either direction.
 ///
-/// Returns `None` when any of the above does not hold — the
-/// non-overflowing positive case + the silent-skip case both return
-/// `None` and let the caller continue.
+/// Returns `None` when any of the above does not hold — the in-range
+/// case + the silent-skip case both return `None` and let the caller
+/// continue.
 ///
 /// Hex / binary / octal literal forms (`0x`, `0b`, `0o` prefixes) are
 /// parsed alongside decimal so authors can write `_event.data.code ===
-/// 0xFF` against a `uint8` underlying without false rejections. Unary
-/// minus on enum operands is structurally unreachable here: the Enum
-/// kind declares unsigned-only underlying types (signed underlying
-/// types are consumer-gated), so a
-/// negative literal is the wrong category and gets rejected earlier
-/// inside [`literal_is_compatible_with`] via the int category test.
-/// (`operand_literal_kind` walks through unary minus, but the
-/// resulting `LiteralKind::Int` still passes the category check; the
-/// numeric-parsing path here returns `None` on `-N`, so unary minus
-/// silent-skips narrowing rather than wrongly accepting a negative
-/// value as unsigned — that case raises through the existing typed-
-/// expression pipeline at codegen time.)
+/// 0xFF` against a `uint8` underlying without false rejections. A
+/// leading unary minus is unwrapped by [`integer_literal_value`] rather
+/// than skipped: enum carriers may be signed, so `=== -1` is an
+/// ordinary comparison that must be narrowed like any other, and `-1`
+/// against an unsigned carrier has to report here instead of falling
+/// through to the typed-expression pipeline at codegen time.
 fn enum_underlying_overflow(
     field_type: &SceType,
     operand: &TypedExpr,
@@ -1267,16 +1260,28 @@ fn enum_underlying_overflow(
 
 /// Parse an integer-literal `TypedExpr` (decimal, hex, binary, or
 /// octal — matches the lexer's [`crate::forge::expr`] numeric forms)
-/// into its `u64` value. Returns `None` for non-integer literals,
-/// unary-prefixed forms (signed literals — unsigned-only enum
-/// underlying), or values that do not fit in `u64`. The
-/// unsigned-only design lock means a `u64` carrier is always at least
-/// as wide as the largest legal underlying.
-fn integer_literal_value(operand: &TypedExpr) -> Option<u64> {
-    let ExprKind::NumberLit(text) = &operand.kind else {
-        return None;
-    };
-    parse_int_literal_text(text)
+/// into its value. Returns `None` for non-integer literals and for
+/// magnitudes that do not fit in `u64`.
+///
+/// A leading unary minus is unwrapped here rather than rejected: enum
+/// carriers may be signed, so `_event.data.status === -1` is a
+/// well-formed comparison whose width and membership must be checked
+/// like any other. `i128` holds every legal carrier value plus the
+/// negation of every `u64` magnitude, so the unwrap cannot itself
+/// overflow.
+fn integer_literal_value(operand: &TypedExpr) -> Option<i128> {
+    match &operand.kind {
+        ExprKind::NumberLit(text) => parse_int_literal_text(text).map(i128::from),
+        // The lexer models `-1` as a unary minus over a NumberLit; the
+        // sign never reaches the literal's own text.
+        ExprKind::Unary { op, operand: inner } if *op == UnaryOp::Neg => {
+            let ExprKind::NumberLit(text) = &inner.kind else {
+                return None;
+            };
+            parse_int_literal_text(text).map(|v| -i128::from(v))
+        }
+        _ => None,
+    }
 }
 
 /// Membership diagnostic payload returned by [`enum_variant_not_declared`].
@@ -1297,8 +1302,8 @@ struct EnumVariantNotDeclared {
 ///     conservative-accept default as the width narrowing layer),
 ///   * the imported enum's `strict_variants` flag is `true` (opt-out
 ///     is owned by the declaring vocabulary),
-///   * `operand` is an integer literal whose parsed `u64` value is
-///     not one of the values declared on the enum's `variants`.
+///   * `operand` is an integer literal whose value is not one of the
+///     values declared on the enum's `variants`.
 ///
 /// Ordering invariant (design lock #3): callers MUST invoke this
 /// helper *after* [`enum_underlying_overflow`] returns `None` —
@@ -1369,23 +1374,23 @@ fn parse_int_literal_text(text: &str) -> Option<u64> {
     }
 }
 
-/// Compare an unsigned literal `value` against an enum's declared
-/// `underlying_type`. Returns `true` iff `value` fits without
-/// overflow. The Enum kind declares unsigned-only underlying (signed
-/// is consumer-gated); the non-unsigned-int arm is structurally unreachable for
-/// enum underlying types (the parser rejects them with
-/// `validation/enum-unsupported-underlying-type`), but a permissive
-/// `true` here keeps the narrowing layer silent rather than producing
-/// a contradictory diagnostic if a future relaxation changes the
-/// parser-side admission rule.
-fn value_fits_underlying(value: u64, underlying: &SceType) -> bool {
-    match underlying {
-        SceType::Uint8 => value <= u64::from(u8::MAX),
-        SceType::Uint16 => value <= u64::from(u16::MAX),
-        SceType::Uint32 => value <= u64::from(u32::MAX),
-        SceType::Uint64 => true,
-        _ => true,
-    }
+/// Compare a literal `value` against an enum's declared
+/// `underlying_type`. Returns `true` iff `value` fits without overflow
+/// in either direction.
+///
+/// The range comes from [`SceType::int_value_range`], which is also what
+/// `parser::parse_enum` admits variants against, so this layer cannot
+/// call a value out of range that the parser already accepted. A
+/// non-integer carrier is structurally unreachable for an enum
+/// underlying (the parser rejects it with
+/// `validation/enum-unsupported-underlying-type`), and the permissive
+/// `true` keeps the narrowing layer silent there rather than producing
+/// a contradictory diagnostic if the parser-side rule ever relaxes.
+fn value_fits_underlying(value: i128, underlying: &SceType) -> bool {
+    let Some((min, max)) = underlying.int_value_range() else {
+        return true;
+    };
+    (min..=max).contains(&value)
 }
 
 fn literal_kind_canonical(kind: LiteralKind) -> String {
@@ -2353,7 +2358,7 @@ mod tests {
     fn enum_model_strict_with_variants(
         name: &str,
         underlying: SceType,
-        variants: &[(&str, u64)],
+        variants: &[(&str, i128)],
     ) -> EnumModel {
         EnumModel {
             name: name.to_string(),
@@ -2378,7 +2383,7 @@ mod tests {
     fn enum_model_open_with_variants(
         name: &str,
         underlying: SceType,
-        variants: &[(&str, u64)],
+        variants: &[(&str, i128)],
     ) -> EnumModel {
         let mut m = enum_model_strict_with_variants(name, underlying, variants);
         m.strict_variants = false;

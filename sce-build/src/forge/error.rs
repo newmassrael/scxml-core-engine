@@ -3195,7 +3195,7 @@ pub enum ValidationError {
         /// Owning enum document name.
         enum_name: String,
         /// The shared underlying integer value.
-        value: u64,
+        value: i128,
         /// Name of the first variant declared with this value.
         first_name: String,
         /// Name of the second variant attempting to reuse the value.
@@ -3217,24 +3217,27 @@ pub enum ValidationError {
         enum_name: String,
         /// Variant carrying the overflowing value.
         variant_name: String,
-        /// The numeric value as authored (parsed as u64).
-        value: u64,
+        /// The numeric value as authored. Out of range for the declared
+        /// carrier in either direction — `-1` against an unsigned
+        /// carrier reports here just as `256` against `uint8` does,
+        /// because the sign belongs to the declared carrier and not to
+        /// the literal.
+        value: i128,
         /// The underlying-type spelling (e.g. `uint8`).
         underlying: String,
     },
 
     /// `sce:underlying-type` declares a type that is not one of the
-    /// supported unsigned integer carriers (`uint8`/`uint16`/`uint32`/
-    /// `uint64`). Unsigned only —
-    /// signed-integer underlying types defer until a consumer needs
-    /// negative wire bytes. Non-integer types (string/bool/float) are
-    /// rejected unconditionally — enum variants need a fixed-width
-    /// integer carrier for wire round-tripping.
+    /// supported fixed-width integer carriers (`uint8`/`uint16`/
+    /// `uint32`/`uint64`/`int8`/`int16`/`int32`/`int64`). Non-integer
+    /// types (string/bool/float) are rejected unconditionally — enum
+    /// variants need a fixed-width integer carrier for wire
+    /// round-tripping.
     ///
     /// Wire code: `validation/enum-unsupported-underlying-type`.
     #[error(
         "enum '{name}': sce:underlying-type='{declared}' is not supported \
-         (supported: uint8 | uint16 | uint32 | uint64)"
+         (supported: uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64)"
     )]
     EnumUnsupportedUnderlyingType {
         /// Document name (the kind's `name` attribute).
