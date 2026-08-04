@@ -3633,6 +3633,49 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         TIMEOUT 60
         RESOURCE_LOCK sce_mesh_tcp_multi_${SCE_TEST_TCP_MULTI_PORT})
 
+    # ── Generated mesh code compiles at C++17 (SCE_MESH.md §10.4) ──
+    # `sce_mesh_common` declares `cxx_std_17` PUBLIC, so every consumer
+    # linking it may build at 17 — but `target_compile_features` states a
+    # MINIMUM, and this project's global `CMAKE_CXX_STANDARD 20` means the
+    # mesh targets that declare `cxx_std_17` all actually compile at
+    # `-std=c++20`. A C++20-only construct in the mesh template therefore
+    # built green everywhere in-tree while breaking any downstream honouring
+    # the declared contract.
+    #
+    # This target is the ceiling those declarations are not: setting the
+    # CXX_STANDARD property (rather than a compile feature) pins the exact
+    # dialect, so the violation becomes a build error where it is written.
+    # Reuses the custom_tcp multi-pattern generated routers — the densest
+    # emitted mesh output in the tree — rather than generating a fixture of
+    # its own.
+    add_executable(mesh_cxx17_conformance_test
+        mesh/MeshCxx17ConformanceTest.cpp
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/brake_tcp_multi_transport.h"
+        "${MESH_TCP_MULTI_OUTPUT_DIR}/motor_tcp_multi_transport.h")
+
+    target_include_directories(mesh_cxx17_conformance_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_TCP_MULTI_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_cxx17_conformance_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+            pthread
+    )
+
+    # The point of the target: an exact standard, not a floor.
+    set_target_properties(mesh_cxx17_conformance_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+
+    apply_sce_test_policies(mesh_cxx17_conformance_test)
+
+    add_test(NAME mesh_cxx17_conformance COMMAND mesh_cxx17_conformance_test)
+
     # ── SCE_MESH.md §16.8.3 two-process orchestration smoke ────────
     # Proves the bash orchestrator in tests/mesh/run_two_process_fixture.sh
     # correctly:
