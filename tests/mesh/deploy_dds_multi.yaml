@@ -37,6 +37,20 @@ topology:
       dds:
         domain_id: 71
         config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_multi</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          # §mesh-8.2 overlay: policies SCE derives nowhere, so declaring
+          # them adds behaviour rather than contradicting a derivation.
+          # `partition` is the third isolation dimension this fixture
+          # carries (domain 71, a discovery tag, and now a partition), and
+          # unlike the other two a mismatch is loud — non-intersecting
+          # partitions never match, so a dropped declaration shows up as
+          # the fixture failing rather than as it quietly sharing a bus.
+          partition: "sce_mesh_dds_multi"
+          notify_lifespan_ms: 30000
+          # Declared so the §16.7 raise path is emitted and compiled. The
+          # lease is long relative to the fixture's runtime, so a healthy
+          # run observes no violation — the raise is wired, not provoked.
+          liveliness_lease_ms: 30000
     machines:
       brake_dds_multi:
         source: brake_dds_multi.scxml
@@ -49,6 +63,20 @@ topology:
       dds:
         domain_id: 71
         config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_multi</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          # §mesh-8.2 overlay: policies SCE derives nowhere, so declaring
+          # them adds behaviour rather than contradicting a derivation.
+          # `partition` is the third isolation dimension this fixture
+          # carries (domain 71, a discovery tag, and now a partition), and
+          # unlike the other two a mismatch is loud — non-intersecting
+          # partitions never match, so a dropped declaration shows up as
+          # the fixture failing rather than as it quietly sharing a bus.
+          partition: "sce_mesh_dds_multi"
+          notify_lifespan_ms: 30000
+          # Declared so the §16.7 raise path is emitted and compiled. The
+          # lease is long relative to the fixture's runtime, so a healthy
+          # run observes no violation — the raise is wired, not provoked.
+          liveliness_lease_ms: 30000
     machines:
       motor:
         source: motor_dds_multi.scxml

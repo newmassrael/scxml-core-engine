@@ -93,6 +93,113 @@ using DecodeErrorCallback = std::function<void()>;
 /// is therefore nothing per-arrival for the callback to hold onto.
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &)>;
 
+/// Deployment-declared QoS that sits ALONGSIDE the derived policies rather
+/// than replacing any of them (deploy.yaml `transports.dds.qos:`,
+/// SCE_MESH.md §mesh-8.2).
+///
+/// The eleven policy settings this file derives — RELIABLE and KEEP_ALL on
+/// the request/reply legs, RELIABLE + KEEP_LAST(1) + TRANSIENT_LOCAL on the
+/// notification leg, IGNORE_LOCAL on every reader — are not represented
+/// here and are not overridable. Each encodes what a leg *means*: inverting
+/// the durability pair hands a late-joining server a backlog of stale
+/// requests or denies a late subscriber the current value, and dropping
+/// IGNORE_LOCAL makes a device read its own writes. Those are correctness
+/// gates, and a deployment that could edit them would be able to break the
+/// pattern semantics silently.
+///
+/// What this carries is the orthogonal set: policies SCE sets nowhere, so a
+/// declaration adds behaviour rather than contradicting a derivation.
+///
+/// DEADLINE and LIVELINESS are in that set and carry an obligation the
+/// others do not: both are how DDS reports that a peer stopped behaving,
+/// and a deployment that declares one must get the report. `ReaderPump`
+/// therefore installs a status listener for exactly these two and lifts
+/// them onto the §mesh-16.7 catalogue — deadline misses as row 16, a
+/// liveliness loss as row 8 `PEER_PARTITIONED`, which is the same
+/// condition Zenoh signals with a token DELETE and SOME/IP with
+/// `available=false`. Declaring a QoS whose violation nothing reported
+/// would be the false advertising this whole surface exists to remove.
+///
+/// Zero / empty means "not declared", which is how a deployment that omits
+/// the section reaches the runtime: every field then leaves the DDS default
+/// in place.
+struct QosOverlay {
+    /// LIFESPAN on the notification writer, in milliseconds. A published
+    /// value older than this is dropped rather than delivered — the natural
+    /// companion to TRANSIENT_LOCAL, which would otherwise hand a
+    /// late-joining subscriber a current value of unbounded age. Not an
+    /// RxO policy, so declaring it on one side matches regardless.
+    std::int64_t notify_lifespan_ms = 0;
+
+    /// LATENCY_BUDGET on every writer, in milliseconds. A hint that the
+    /// middleware may batch samples up to this delay; zero (the DDS
+    /// default) asks for immediate delivery.
+    std::int64_t latency_budget_ms = 0;
+
+    /// TRANSPORT_PRIORITY on every writer. Cyclone maps it to the DSCP
+    /// field, so it is how a deployment tells the network which of its
+    /// meshes matters under congestion. Not RxO.
+    std::int32_t transport_priority = 0;
+
+    /// DEADLINE on the notification writer and reader, in milliseconds:
+    /// the maximum gap the deployment expects between published values.
+    ///
+    /// Two effects, both real. It is an RxO policy, so a reader
+    /// requesting a period shorter than the writer offers does not match
+    /// at all — declaring it from one deploy.yaml gives both ends the
+    /// same value, which is what keeps that from becoming a silent
+    /// non-match. And a missed period fires
+    /// `on_requested_deadline_missed`, which `ReaderPump` lifts to
+    /// `error.communication` / `NOTIFICATION_DEADLINE_MISSED`
+    /// (§mesh-16.7 row 16).
+    std::int64_t deadline_ms = 0;
+
+    /// LIVELINESS lease on the notification writer and reader, in
+    /// milliseconds, with the AUTOMATIC kind — the infrastructure
+    /// asserts liveliness on the writer's behalf, so a peer that dies or
+    /// partitions stops asserting and its readers observe the loss
+    /// within the lease.
+    ///
+    /// `ReaderPump` raises §mesh-16.7 row 8 `PEER_PARTITIONED` on the
+    /// alive-count decrease, which is the same row Zenoh's liveliness
+    /// token DELETE and SOME/IP's `available=false` already produce.
+    /// DDS was the transport missing from that row.
+    std::int64_t liveliness_lease_ms = 0;
+
+    /// PARTITION on the device's publisher and subscriber. Endpoints only
+    /// match when their partition sets intersect, so this is a second
+    /// isolation dimension alongside `domain_id` — one that, unlike the
+    /// domain, costs no extra participant. Empty means the default
+    /// partition. A mismatch is loud by construction: nothing communicates.
+    std::string partition;
+};
+
+/// Which declared QoS a peer violated. Namespace-scope because the raise
+/// site (generated codegen) switches on it to pick the §mesh-16.7 row.
+enum class QosViolationKind {
+    /// DEADLINE elapsed with no sample — §mesh-16.7 row 16
+    /// `NOTIFICATION_DEADLINE_MISSED`.
+    DeadlineMissed,
+    /// A matched writer's liveliness lease expired — §mesh-16.7 row 8
+    /// `PEER_PARTITIONED`, the same row Zenoh and SOME/IP raise for the
+    /// same condition through their own mechanisms.
+    LivelinessLost,
+};
+
+/// One observed violation. `count` is the DDS status counter that came
+/// with it (total deadline misses, or writers currently not alive), which
+/// the raise site forwards so an author can tell a single blip from a
+/// sustained fault.
+struct QosViolation {
+    QosViolationKind kind;
+    std::int64_t count;
+};
+
+/// Invoked on a Cyclone-internal thread when a declared QoS is violated.
+/// Codegen binds it to `raiseCommunicationError` so the violation reaches
+/// the SCXML author as `error.communication`.
+using QosViolationCallback = std::function<void(QosViolation)>;
+
 namespace detail {
 
 /// Reply-leg topic for a binding's base topic name.
@@ -107,32 +214,79 @@ inline std::string eventTopicName(const std::string &base) {
 
 /// QoS for the request and reply legs. KEEP_ALL because dropping a request
 /// under load would surface as a lost RPC rather than as backpressure.
-inline dds::pub::qos::DataWriterQos requestWriterQos(const dds::pub::Publisher &pub) {
+/// DEADLINE and LIVELINESS are RxO policies: the reader's request must be
+/// no stricter than the writer's offer or the two never match. Both sides
+/// are therefore built from the SAME deploy.yaml declaration through this
+/// one function — a per-side knob would let a deployment express a pair
+/// that silently fails to communicate, which is the failure mode §mesh-8.2
+/// exists to keep out of the schema.
+///
+/// Templated on the QoS type because `DataWriterQos` and `DataReaderQos`
+/// share no base but accept the same policies; a pair of overloads would
+/// be two places for the values to drift apart.
+template <typename Qos> inline void applyNotifyRxOOverlay(Qos &qos, const QosOverlay &overlay) {
+    if (overlay.deadline_ms > 0) {
+        qos << dds::core::policy::Deadline(dds::core::Duration::from_millisecs(overlay.deadline_ms));
+    }
+    if (overlay.liveliness_lease_ms > 0) {
+        qos << dds::core::policy::Liveliness(dds::core::policy::LivelinessKind::AUTOMATIC,
+                                             dds::core::Duration::from_millisecs(overlay.liveliness_lease_ms));
+    }
+}
+
+inline void applyWriterOverlay(dds::pub::qos::DataWriterQos &qos, const QosOverlay &overlay) {
+    if (overlay.latency_budget_ms > 0) {
+        qos << dds::core::policy::LatencyBudget(dds::core::Duration::from_millisecs(overlay.latency_budget_ms));
+    }
+    if (overlay.transport_priority != 0) {
+        qos << dds::core::policy::TransportPriority(overlay.transport_priority);
+    }
+}
+
+inline dds::pub::qos::DataWriterQos requestWriterQos(const dds::pub::Publisher &pub, const QosOverlay &overlay) {
     auto qos = pub.default_datawriter_qos();
     qos << dds::core::policy::Reliability::Reliable() << dds::core::policy::History::KeepAll();
+    applyWriterOverlay(qos, overlay);
     return qos;
 }
 
 /// QoS for the notification leg — see the header comment on why this one
 /// differs from the request/reply legs.
-inline dds::pub::qos::DataWriterQos notifyWriterQos(const dds::pub::Publisher &pub) {
+inline dds::pub::qos::DataWriterQos notifyWriterQos(const dds::pub::Publisher &pub, const QosOverlay &overlay) {
     auto qos = pub.default_datawriter_qos();
     qos << dds::core::policy::Reliability::Reliable() << dds::core::policy::History::KeepLast(1)
         << dds::core::policy::Durability::TransientLocal();
+    applyWriterOverlay(qos, overlay);
+    // LIFESPAN bounds the age of the value TRANSIENT_LOCAL would otherwise
+    // hand a late joiner unconditionally. Notification leg only: a request
+    // is already VOLATILE, so there is no retained sample to expire.
+    if (overlay.notify_lifespan_ms > 0) {
+        qos << dds::core::policy::Lifespan(dds::core::Duration::from_millisecs(overlay.notify_lifespan_ms));
+    }
+    applyNotifyRxOOverlay(qos, overlay);
     return qos;
 }
 
-inline dds::sub::qos::DataReaderQos requestReaderQos(const dds::sub::Subscriber &sub) {
+inline dds::sub::qos::DataReaderQos requestReaderQos(const dds::sub::Subscriber &sub, const QosOverlay &overlay) {
     auto qos = sub.default_datareader_qos();
     qos << dds::core::policy::Reliability::Reliable() << dds::core::policy::History::KeepAll()
         << dds::core::policy::IgnoreLocal::Participant();
+    // LATENCY_BUDGET is RxO: the reader's requested value must not exceed
+    // what the writer offers, so both sides read the same declaration.
+    if (overlay.latency_budget_ms > 0) {
+        qos << dds::core::policy::LatencyBudget(dds::core::Duration::from_millisecs(overlay.latency_budget_ms));
+    }
     return qos;
 }
 
-inline dds::sub::qos::DataReaderQos notifyReaderQos(const dds::sub::Subscriber &sub) {
+inline dds::sub::qos::DataReaderQos notifyReaderQos(const dds::sub::Subscriber &sub, const QosOverlay &overlay) {
     auto qos = sub.default_datareader_qos();
     qos << dds::core::policy::Reliability::Reliable() << dds::core::policy::History::KeepLast(1)
         << dds::core::policy::Durability::TransientLocal() << dds::core::policy::IgnoreLocal::Participant();
+    if (overlay.latency_budget_ms > 0) {
+        qos << dds::core::policy::LatencyBudget(dds::core::Duration::from_millisecs(overlay.latency_budget_ms));
+    }
+    applyNotifyRxOOverlay(qos, overlay);
     return qos;
 }
 
@@ -141,12 +295,61 @@ inline dds::sub::qos::DataReaderQos notifyReaderQos(const dds::sub::Subscriber &
 /// A waitset blocks the thread until data arrives or the poll interval
 /// elapses; the interval bounds shutdown latency, so a stopping pump never
 /// waits on a topic that may never see another sample again.
+/// Status listener for the notification reader.
+///
+/// It exists because of a rule this transport applies to itself: a QoS
+/// whose violation nothing reports is a knob that only appears to work.
+/// DEADLINE and LIVELINESS are the two overlay policies whose whole
+/// purpose is to detect a peer that stopped behaving, so declaring either
+/// installs this and routes the status to `error.communication`.
+///
+/// Callbacks arrive on a Cyclone-internal thread, exactly as custom_tcp's
+/// reader callbacks arrive on their read thread. The listener holds only
+/// a `std::function` guarded by the pump's handler mutex, so a raise that
+/// blocks cannot deadlock the drain.
+class NotifyStatusListener : public dds::sub::NoOpDataReaderListener<sce_mesh::Envelope> {
+public:
+    explicit NotifyStatusListener(QosViolationCallback on_violation) : on_violation_(std::move(on_violation)) {}
+
+    void on_requested_deadline_missed(dds::sub::DataReader<sce_mesh::Envelope> &,
+                                      const dds::core::status::RequestedDeadlineMissedStatus &status) override {
+        if (on_violation_) {
+            on_violation_(
+                QosViolation{QosViolationKind::DeadlineMissed, static_cast<std::int64_t>(status.total_count())});
+        }
+    }
+
+    void on_liveliness_changed(dds::sub::DataReader<sce_mesh::Envelope> &,
+                               const dds::core::status::LivelinessChangedStatus &status) override {
+        // Only a decrease is a loss. The same callback fires when a writer
+        // appears, and reporting that as a partition would make the
+        // healthy case indistinguishable from the failure.
+        if (on_violation_ && status.alive_count_change() < 0) {
+            on_violation_(
+                QosViolation{QosViolationKind::LivelinessLost, static_cast<std::int64_t>(status.not_alive_count())});
+        }
+    }
+
+private:
+    QosViolationCallback on_violation_;
+};
+
 class ReaderPump {
 public:
     ReaderPump(dds::sub::DataReader<sce_mesh::Envelope> reader, ReceiveCallback on_receive,
                std::shared_ptr<std::atomic<bool>> decode_error_flag)
         : reader_(std::move(reader)), on_receive_(std::move(on_receive)), decode_error_(std::move(decode_error_flag)) {
         thread_ = std::thread([this] { drain(); });
+    }
+
+    /// Install the QoS-violation listener. Called only when the overlay
+    /// declared `deadline_ms` or `liveliness_lease_ms` — an unmasked
+    /// listener on a reader nobody configured would cost a callback
+    /// registration for statuses that can never fire.
+    void watchQosStatuses(QosViolationCallback on_violation) {
+        listener_ = std::make_unique<NotifyStatusListener>(std::move(on_violation));
+        reader_.listener(listener_.get(), dds::core::status::StatusMask::requested_deadline_missed() |
+                                              dds::core::status::StatusMask::liveliness_changed());
     }
 
     ReaderPump(const ReaderPump &) = delete;
@@ -160,6 +363,15 @@ public:
         bool expected = true;
         if (!running_.compare_exchange_strong(expected, false)) {
             return;
+        }
+        // Detach the listener before the thread join so no callback can
+        // reach a half-destroyed pump.
+        if (listener_) {
+            try {
+                reader_.listener(nullptr, dds::core::status::StatusMask::none());
+            } catch (const dds::core::Exception &) {
+                // Participant already going away; nothing left to detach.
+            }
         }
         if (thread_.joinable()) {
             thread_.join();
@@ -177,6 +389,8 @@ public:
     }
 
 private:
+    std::unique_ptr<NotifyStatusListener> listener_;
+
     static constexpr auto kPollInterval = std::chrono::milliseconds(20);
 
     void drain() {
@@ -296,7 +510,8 @@ inline bool waitForWriterMatch(dds::pub::DataWriter<sce_mesh::Envelope> &writer,
 /// behaviour and the one every deployment that declares no config keeps.
 class Participant {
 public:
-    explicit Participant(std::uint32_t domain_id, const char *config = nullptr) {
+    explicit Participant(std::uint32_t domain_id, const char *config = nullptr, QosOverlay overlay = {})
+        : overlay_(std::move(overlay)) {
         try {
             if (config != nullptr && *config != '\0') {
                 // The 5-argument form is the 1-argument constructor's own
@@ -309,8 +524,21 @@ public:
             } else {
                 participant_.emplace(domain_id);
             }
-            publisher_.emplace(*participant_);
-            subscriber_.emplace(*participant_);
+            // PARTITION rides the publisher and subscriber rather than an
+            // endpoint: it is a device-wide isolation dimension, and putting
+            // it here means every binding on the device shares one set by
+            // construction instead of by convention.
+            if (overlay_.partition.empty()) {
+                publisher_.emplace(*participant_);
+                subscriber_.emplace(*participant_);
+            } else {
+                auto pub_qos = participant_->default_publisher_qos();
+                pub_qos << dds::core::policy::Partition(overlay_.partition);
+                publisher_.emplace(*participant_, pub_qos);
+                auto sub_qos = participant_->default_subscriber_qos();
+                sub_qos << dds::core::policy::Partition(overlay_.partition);
+                subscriber_.emplace(*participant_, sub_qos);
+            }
             valid_ = true;
         } catch (const dds::core::Exception &) {
             valid_ = false;
@@ -338,7 +566,14 @@ public:
         return *subscriber_;
     }
 
+    /// The deployment's QoS overlay, read by every endpoint builder so the
+    /// declaration reaches each leg from one place.
+    [[nodiscard]] const QosOverlay &qos() const noexcept {
+        return overlay_;
+    }
+
 private:
+    const QosOverlay overlay_;
     std::optional<dds::domain::DomainParticipant> participant_;
     std::optional<dds::pub::Publisher> publisher_;
     std::optional<dds::sub::Subscriber> subscriber_;
@@ -363,10 +598,11 @@ public:
             request_topic_.emplace(participant.raw(), topic_name_);
             reply_topic_.emplace(participant.raw(), detail::replyTopicName(topic_name_));
             request_writer_.emplace(participant.publisher(), *request_topic_,
-                                    detail::requestWriterQos(participant.publisher()));
+                                    detail::requestWriterQos(participant.publisher(), participant.qos()));
             reply_pump_ = std::make_unique<detail::ReaderPump>(
-                dds::sub::DataReader<sce_mesh::Envelope>(participant.subscriber(), *reply_topic_,
-                                                         detail::requestReaderQos(participant.subscriber())),
+                dds::sub::DataReader<sce_mesh::Envelope>(
+                    participant.subscriber(), *reply_topic_,
+                    detail::requestReaderQos(participant.subscriber(), participant.qos())),
                 on_receive_, decode_error_);
             valid_ = true;
         } catch (const dds::core::Exception &) {
@@ -415,9 +651,18 @@ public:
         try {
             notify_topic_.emplace(participant_.raw(), detail::eventTopicName(topic_name_));
             notify_pump_ = std::make_unique<detail::ReaderPump>(
-                dds::sub::DataReader<sce_mesh::Envelope>(participant_.subscriber(), *notify_topic_,
-                                                         detail::notifyReaderQos(participant_.subscriber())),
+                dds::sub::DataReader<sce_mesh::Envelope>(
+                    participant_.subscriber(), *notify_topic_,
+                    detail::notifyReaderQos(participant_.subscriber(), participant_.qos())),
                 on_receive_, decode_error_);
+            // Only when the deployment declared a policy whose violation
+            // this reports. A reader with neither DEADLINE nor LIVELINESS
+            // configured can never fire either status, so registering the
+            // listener would buy nothing.
+            const auto &overlay = participant_.qos();
+            if (on_qos_violation_ && (overlay.deadline_ms > 0 || overlay.liveliness_lease_ms > 0)) {
+                notify_pump_->watchQosStatuses(on_qos_violation_);
+            }
             return true;
         } catch (const dds::core::Exception &) {
             notify_pump_.reset();
@@ -449,6 +694,21 @@ public:
         }
     }
 
+    /// Route DEADLINE / LIVELINESS violations on the notification leg to
+    /// the generated router's `raiseCommunicationError`. Set before
+    /// `subscribe()`; a notification reader created earlier keeps whatever
+    /// it was given, because the listener is installed with the reader.
+    void setQosViolationHandler(QosViolationCallback handler) {
+        std::lock_guard<std::mutex> lock(notify_mutex_);
+        on_qos_violation_ = std::move(handler);
+        if (notify_pump_) {
+            const auto &overlay = participant_.qos();
+            if (on_qos_violation_ && (overlay.deadline_ms > 0 || overlay.liveliness_lease_ms > 0)) {
+                notify_pump_->watchQosStatuses(on_qos_violation_);
+            }
+        }
+    }
+
     void shutdown() {
         unsubscribe();
         if (reply_pump_) {
@@ -469,6 +729,7 @@ private:
     std::optional<dds::pub::DataWriter<sce_mesh::Envelope>> request_writer_;
     std::unique_ptr<detail::ReaderPump> reply_pump_;
     std::unique_ptr<detail::ReaderPump> notify_pump_;
+    QosViolationCallback on_qos_violation_;
     std::mutex notify_mutex_;
     bool valid_ = false;
 };
@@ -490,12 +751,13 @@ public:
             reply_topic_.emplace(participant.raw(), detail::replyTopicName(topic));
             notify_topic_.emplace(participant.raw(), detail::eventTopicName(topic));
             reply_writer_.emplace(participant.publisher(), *reply_topic_,
-                                  detail::requestWriterQos(participant.publisher()));
+                                  detail::requestWriterQos(participant.publisher(), participant.qos()));
             notify_writer_.emplace(participant.publisher(), *notify_topic_,
-                                   detail::notifyWriterQos(participant.publisher()));
+                                   detail::notifyWriterQos(participant.publisher(), participant.qos()));
             request_pump_ = std::make_unique<detail::ReaderPump>(
-                dds::sub::DataReader<sce_mesh::Envelope>(participant.subscriber(), *request_topic_,
-                                                         detail::requestReaderQos(participant.subscriber())),
+                dds::sub::DataReader<sce_mesh::Envelope>(
+                    participant.subscriber(), *request_topic_,
+                    detail::requestReaderQos(participant.subscriber(), participant.qos())),
                 std::move(on_receive), decode_error_);
             valid_ = true;
         } catch (const dds::core::Exception &) {

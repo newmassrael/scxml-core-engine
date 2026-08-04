@@ -1537,6 +1537,117 @@ pub struct DdsTransportConfig {
     /// are not mutually exclusive.
     #[serde(default)]
     pub config: Option<PathBuf>,
+    /// Deployment-declared QoS that sits **alongside** the §mesh-8.2
+    /// derived policies rather than replacing any of them. See
+    /// [`DdsQosConfig`] for why the derived set is not represented here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qos: Option<DdsQosConfig>,
+}
+
+/// The `transports.dds.qos:` overlay (SCE_MESH.md §mesh-8.2).
+///
+/// SCE derives eleven DDS policy settings from what each leg *means*:
+/// RELIABLE + KEEP_ALL on request/reply, RELIABLE + KEEP_LAST(1) +
+/// TRANSIENT_LOCAL on notifications, IGNORE_LOCAL on every reader. None
+/// of them appears in this struct and none is overridable — inverting the
+/// durability pair hands a late-joining server a backlog of stale
+/// requests or denies a late subscriber the current value, and dropping
+/// IGNORE_LOCAL makes a device read its own writes. A deployment able to
+/// edit those could break the pattern semantics with no build-time or
+/// runtime signal, which is exactly the failure §mesh-8.2 refuses.
+///
+/// What is here is the orthogonal set: policies SCE sets nowhere, so a
+/// declaration adds behaviour instead of contradicting a derivation.
+/// `deny_unknown_fields` therefore does real work — an author reaching
+/// for `reliability:` or `durability:` is refused, and
+/// [`validate_dds_qos`] turns that refusal into a diagnostic that names
+/// the reason rather than the generic unknown-key message.
+///
+/// DEADLINE and LIVELINESS are deliberately absent: both are observable
+/// only through a status listener this transport does not install, so
+/// offering them would advertise a knob whose effect nothing reports —
+/// the same false advertising the derived set exists to avoid.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DdsQosConfig {
+    /// LIFESPAN on the notification writer. Bounds the age of the value
+    /// TRANSIENT_LOCAL would otherwise hand a late joiner unconditionally.
+    /// Notification leg only — a request is VOLATILE, so it retains no
+    /// sample to expire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify_lifespan_ms: Option<u64>,
+    /// LATENCY_BUDGET on every writer and reader. A batching hint; the
+    /// DDS default of zero asks for immediate delivery. Declared on both
+    /// sides because the policy is RxO — a reader requesting less than
+    /// the writer offers does not match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latency_budget_ms: Option<u64>,
+    /// TRANSPORT_PRIORITY on every writer. Cyclone maps it to DSCP, so it
+    /// is how a deployment tells the network which of its meshes matters
+    /// under congestion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_priority: Option<i32>,
+    /// DEADLINE on the notification writer and reader: the maximum gap
+    /// the deployment expects between published values.
+    ///
+    /// It is an RxO policy, so both ends are built from this one
+    /// declaration — a per-side knob would let a deployment express a
+    /// pair that silently fails to match. A missed period raises
+    /// `error.communication` / `NOTIFICATION_DEADLINE_MISSED`
+    /// (§mesh-16.7 row 16), which is what keeps the policy from being a
+    /// setting whose violation nobody hears.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline_ms: Option<u64>,
+    /// LIVELINESS lease (AUTOMATIC kind) on the notification writer and
+    /// reader. A peer that dies or partitions stops asserting and its
+    /// readers observe the loss within the lease, raising §mesh-16.7
+    /// row 8 `PEER_PARTITIONED` — the same row Zenoh's token DELETE and
+    /// SOME/IP's `available=false` produce. DDS was the transport
+    /// missing from that row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveliness_lease_ms: Option<u64>,
+    /// PARTITION on the device's publisher and subscriber. A second
+    /// isolation dimension alongside `domain_id` that costs no extra
+    /// participant. A mismatch is loud by construction: endpoints whose
+    /// partition sets do not intersect never match, so nothing
+    /// communicates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition: Option<String>,
+}
+
+impl DdsQosConfig {
+    /// Validate the overlay. Returns the rejection reason without the
+    /// device name — the caller wraps it into
+    /// [`DeployError::InvalidDdsQos`].
+    ///
+    /// Zero is rejected on the duration fields because it is the DDS
+    /// default, i.e. "not declared"; writing it explicitly reads as a
+    /// setting while doing nothing, and omitting the field is how an
+    /// author takes the default. An empty `partition:` is rejected for
+    /// the same reason — the empty string IS the default partition.
+    fn validation_error(&self) -> Option<String> {
+        for (name, value) in [
+            ("notify_lifespan_ms", self.notify_lifespan_ms),
+            ("latency_budget_ms", self.latency_budget_ms),
+            ("deadline_ms", self.deadline_ms),
+            ("liveliness_lease_ms", self.liveliness_lease_ms),
+        ] {
+            if value == Some(0) {
+                return Some(format!(
+                    "{name} must be greater than zero — zero is the DDS default, so \
+                     declaring it changes nothing; omit the field instead"
+                ));
+            }
+        }
+        if self.partition.as_deref() == Some("") {
+            return Some(
+                "partition must not be empty — the empty string is the default \
+                 partition, so declaring it changes nothing; omit the field instead"
+                    .to_string(),
+            );
+        }
+        None
+    }
 }
 
 impl CustomTcpTransportConfig {
@@ -3094,6 +3205,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_binding_field_names(&cfg)?;
     validate_dedup_window(&cfg)?;
     validate_custom_tcp_socket(&cfg)?;
+    validate_dds_qos(&cfg)?;
 
     Ok(cfg)
 }
@@ -4954,6 +5066,32 @@ fn summarize_discovery_content(value: &serde_yaml_ng::Value) -> String {
         }
         Value::Tagged(_) => "tagged value".to_string(),
     }
+}
+
+/// Walk every device that declared a `transports.dds.qos:` overlay and
+/// reject values that declare a DDS default (SCE_MESH.md §mesh-8.2).
+///
+/// The overlay's *shape* is already closed by `deny_unknown_fields`: a
+/// deployment reaching for `reliability:` or `durability:` cannot parse.
+/// This validator covers the other half — a field that parses but says
+/// nothing.
+fn validate_dds_qos(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let mut by_device: BTreeMap<&str, &DdsQosConfig> = BTreeMap::new();
+    for (device_name, device) in cfg.topology.iter() {
+        if let Some(qos) = device.transports.dds.as_ref().and_then(|d| d.qos.as_ref()) {
+            by_device.insert(device_name.as_str(), qos);
+        }
+    }
+    for (device, qos) in by_device {
+        if let Some(reason) = qos.validation_error() {
+            return Err(DeployError::InvalidDdsQos {
+                device: device.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Walk every device that declared a `transports.custom_tcp:` block and
