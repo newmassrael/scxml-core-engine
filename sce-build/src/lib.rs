@@ -10410,6 +10410,90 @@ int main(void) {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the Layer 2
+    /// analyzer annotations carried by
+    /// `backends/c/runtime/include/sce/sample.h` must be exactly what
+    /// `forge::ownership_contract` renders — checked in both
+    /// directions.
+    ///
+    /// Forward: every contract's rendered lines appear in the header.
+    /// Reverse: every `/*lint` and `/* coverity` line in the header
+    /// came from a contract. The reverse direction is the load-bearing
+    /// one — a hand-added annotation is precisely how the spec's
+    /// `-function(sce_sample_take, sce_sample_payload)` defect would
+    /// re-enter, and a forward-only check would pass while it sat
+    /// there telling analyzers the borrow accessor consumes its
+    /// argument.
+    ///
+    /// Placement is checked too: both syntaxes key on the declaration
+    /// that follows the comment, so an annotation that drifts away
+    /// from its declaration silently applies to the wrong function or
+    /// to none.
+    #[test]
+    fn sample_h_layer2_annotations_match_the_ownership_contract() {
+        use crate::forge::ownership_contract::RUNTIME_CONTRACTS;
+
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let header_path = crate_dir.join("../backends/c/runtime/include/sce/sample.h");
+        let header = std::fs::read_to_string(&header_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", header_path.display()));
+        let lines: Vec<&str> = header.lines().map(str::trim).collect();
+
+        // ── Forward: contract → header ──────────────────────────────
+        for contract in RUNTIME_CONTRACTS.iter() {
+            for rendered in contract.rendered_lines() {
+                let at = lines
+                    .iter()
+                    .position(|l| *l == rendered)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "sce/sample.h is missing the Layer 2 annotation the \
+                         ownership contract renders for `{}`:\n  {rendered}\n\
+                         Edit sce-build/src/forge/ownership_contract.rs and \
+                         mirror the rendered line here.",
+                            contract.name
+                        )
+                    });
+
+                // The annotated declaration must follow within the
+                // comment block that introduces it. Ten lines covers
+                // the attribute-macro prefix (`SCE_WARN_UNUSED`,
+                // `SCE_CALLABLE_WHEN`, `SCE_SET_TYPESTATE`) without
+                // reaching the next declaration.
+                let window = lines[at + 1..lines.len().min(at + 11)].join("\n");
+                assert!(
+                    window.contains(contract.name),
+                    "Layer 2 annotation for `{}` is not immediately above its \
+                     declaration; both PC-lint and Coverity key on the \
+                     following declaration.\nannotation: {rendered}\n\
+                     following lines:\n{window}",
+                    contract.name
+                );
+            }
+        }
+
+        // ── Reverse: header → contract ──────────────────────────────
+        let sanctioned: Vec<String> = RUNTIME_CONTRACTS
+            .iter()
+            .flat_map(|c| c.rendered_lines())
+            .collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let is_annotation = line.starts_with("/*lint") || line.starts_with("/* coverity[");
+            if !is_annotation {
+                continue;
+            }
+            assert!(
+                sanctioned.iter().any(|s| s == line),
+                "sce/sample.h line {} carries an analyzer annotation that no \
+                 ownership contract renders:\n  {line}\nAnnotations must be \
+                 declared in sce-build/src/forge/ownership_contract.rs so the \
+                 PC-lint (1-based) and Coverity (0-based) forms cannot \
+                 disagree.",
+                idx + 1,
+            );
+        }
+    }
+
     #[test]
     fn link_with_sufficient_pool_slots_passes_cross_resolution() {
         use tempfile::TempDir;
