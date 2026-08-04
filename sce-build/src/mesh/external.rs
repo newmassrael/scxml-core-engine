@@ -37,7 +37,7 @@ use crate::mesh::vsomeip_config::{Service, VsomeipConfig};
 /// name. Any occurrence in `BindingConfig.extra` is rejected as
 /// [`ExternalConfigError::ReservedSomeipIdKeys`]. Kept as a
 /// grep-locatable list so rejection site and diagnostic stay in sync.
-const RESERVED_SOMEIP_ID_KEYS: &[&str] = &[
+pub(crate) const RESERVED_SOMEIP_ID_KEYS: &[&str] = &[
     "service_id",
     "instance_id",
     "method_id",
