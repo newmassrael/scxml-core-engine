@@ -21,6 +21,11 @@
 #      check, the example smoke) carry an explicit local trigger with the
 #      reason written next to it, rather than being silently always-on or
 #      silently never-on.
+#   3. A stage whose trigger is the catch-all `**` is selected always and
+#      counts as classifying nothing. Its workflow runs on every push, so a
+#      match carries no information about whether a path is understood —
+#      letting it count would mark every path in the repository known and
+#      rule 1 would never fire again.
 #
 # Output: one stage key per line on stdout, or the single line `FULL`.
 # Exit status is 0 in both cases; a usage error exits 2.
@@ -50,6 +55,13 @@ STAGES: dict[str, dict] = {
     # Guards the clang degraded-AST regression in the manifest emitter.
     "1c": {"local": ["scripts/emit_embed_manifest.sh", "scripts/package_embed.sh",
                      "sce/include/**"]},
+    # Tree-wide hygiene gates. `roadmap_marker_gate` reads every tracked file
+    # and `workflow_trigger_coverage` reads every workflow, so tree-hygiene.yml
+    # declares no `paths:` filter — no glob list is both correct and narrower
+    # than the tree. That missing filter is what makes this stage
+    # unconditional here, derived the same way every other workflow-backed
+    # trigger is rather than hand-set to "always".
+    "1d": {"workflows": ["tree-hygiene.yml"]},
     "2": {"workflows": ["clippy-check.yml"]},
     "2b": {"workflows": ["sce-rust-runtime-no-std.yml"]},
     "2c": {"workflows": ["sce-rust-runtime-no-std.yml"]},
@@ -66,16 +78,14 @@ STAGES: dict[str, dict] = {
     # doc (`acceptance_doc_covers_every_code`), the wire schemas
     # (`json_schema_enums_match_rust_source_of_truth`, the sourcemap and XSD
     # byte pins), and the forge-AST export schema.
+    # `tools/git-hooks/**` used to be listed here because the workspace sweep
+    # carries `roadmap_marker_gate`, which reads this very file. That was a
+    # patch over one path: the gate's scan set is the whole tree, so every
+    # unlisted path had the same hole. Stage 1d now runs it unconditionally
+    # from a workflow with no filter, which closes the class rather than the
+    # instance.
     "4": {"workflows": ["rust-workspace-tests.yml"],
-          # `roadmap_marker_gate` enumerates every tracked file in the repo
-          # and checks its comments, so a workspace test reads paths far
-          # outside the workflow's own filter — including this selector.
-          # Listing it here is what keeps a hook edit from skipping the
-          # suite that judges it. See E6 in the debt register: the
-          # workflow's trigger is narrower than that test's scan set, which
-          # is a CI hole this cannot close from the hook side.
-          "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**",
-                    "tools/git-hooks/**"]},
+          "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"]},
     "4b": {"workflows": ["drift-verify.yml"]},
     "5": {"workflows": ["forge-conformance.yml"], "extra": ["backends/go/**"]},
     "6": {"workflows": ["forge-conformance.yml"], "extra": ["backends/cpp/**", "sce/**"]},
@@ -99,11 +109,12 @@ DEPENDS_ON: dict[str, list[str]] = {
     "7": ["1"],
 }
 
-# Paths that demonstrably drive no stage. Anything here is classified — and
-# therefore may skip the full run — so an entry is a claim that no gate reads
-# it. Everything NOT matched here and NOT matched by a stage trigger forces
-# FULL, which is what keeps this list from being load-bearing in the unsafe
-# direction.
+# Paths that drive no path-scoped stage. Anything here is classified — and
+# therefore may skip the full run — so an entry is a claim that no such gate
+# reads it. Rule 3 stages are outside that claim by construction: they run for
+# every change, so an inert path is still judged by them. Everything NOT
+# matched here and NOT matched by a stage trigger forces FULL, which is what
+# keeps this list from being load-bearing in the unsafe direction.
 INERT = [
     ".claude/**",
     ".gitignore",
@@ -111,6 +122,11 @@ INERT = [
     "*.md",
     "docs/adr/**",
     "LICENSE*",
+    # Local tooling — no CI workflow consumes the hooks, so no mirrored stage
+    # has them as an input. The one gate that does read them,
+    # `roadmap_marker_gate`, reaches every change through stage 1d, and the
+    # selector's own cases run unconditionally before any stage is chosen.
+    "tools/git-hooks/**",
 ]
 
 # Entries here list only TRACKED paths, because a changed path comes from
@@ -191,10 +207,16 @@ def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
         return ([], "no changed paths — nothing to verify")
 
     triggers = stage_triggers(repo_root)
-    compiled = {k: [glob_to_regex(g) for g in v] for k, v in triggers.items()}
+    # Rule 3. Held out of `compiled` so they cannot classify a path, and
+    # seeded into `selected` so they still run. `workflow_paths` also returns
+    # the catch-all for a workflow it cannot find, which lands here as
+    # "run it, learn nothing" — the safe reading of a missing file.
+    always_on = {k for k, globs in triggers.items() if "**" in globs}
+    compiled = {k: [glob_to_regex(g) for g in v]
+                for k, v in triggers.items() if k not in always_on}
     inert = [glob_to_regex(g) for g in INERT]
 
-    selected: set[str] = set()
+    selected: set[str] = set(always_on)
     for path in changed:
         hit = False
         for key, pats in compiled.items():
@@ -224,8 +246,11 @@ def stage_sort_key(key: str) -> tuple:
 def self_test(repo_root: Path) -> int:
     """Cases that pin the two rules the filtering must not break."""
     failures = []
+    cases = 0
 
     def check(label, changed, want_full=None, want_has=(), want_lacks=()):
+        nonlocal cases
+        cases += 1
         keys, reason = select(repo_root, changed)
         full = len(keys) == len(STAGES)
         if want_full is not None and full != want_full:
@@ -239,16 +264,29 @@ def self_test(repo_root: Path) -> int:
 
     # Rule 1 — the safety property. A path nobody classified runs everything.
     check("unclassified", ["some_new_top_level_dir/thing.txt"], want_full=True)
-    # Docs-only touches nothing.
-    check("inert", ["README.md", ".claude/settings.json"], want_full=False)
+    # Rule 3 — an always-on stage must not classify. Were the catch-all
+    # allowed to count, this path would read as known and rule 1 would never
+    # fire again for anything.
+    check("catch-all-does-not-classify", ["brand_new_dir/file.xyz"],
+          want_full=True, want_has=["1d"])
+    # Every other workflow classifies its own edits by naming itself in its
+    # `paths:`. The unfiltered one has no such list to name itself in, so
+    # editing it is unclassified and buys the full run. Rare, and rule 1's
+    # direction.
+    check("unfiltered-workflow-self", [".github/workflows/tree-hygiene.yml"],
+          want_full=True)
+    # Docs-only runs the tree-wide gates and nothing else: prose is still
+    # tracked source as far as the marker gate is concerned.
+    check("inert", ["README.md", ".claude/settings.json"],
+          want_full=False, want_has=["1d"], want_lacks=["4"])
     # The failure of 2026-08-04: a SCE-VERIFIES marker must reach the catalog gate.
     check("verifies-marker", ["tests/mesh/CustomTcpSocketOptionsTest.cpp"],
           want_has=["8b"])
-    # The hook's own sources are read by `roadmap_marker_gate`, a workspace
-    # test, so a hook edit must still run Stage 4 — the case that shipped
-    # a tree-wide gate failure when this was classified inert.
+    # The hook's own sources are read by the tree-wide gates. They reach the
+    # change through stage 1d's unfiltered workflow now, so the whole
+    # workspace sweep no longer has to run to judge a hook edit.
     check("hook-self", ["tools/git-hooks/select_stages.py"],
-          want_full=False, want_has=["4"])
+          want_full=False, want_has=["1d"], want_lacks=["4"])
     # A ledger-only edit needs the citation gates, not the C++ build.
     check("ledger-only", ["docs/sce-ledger/mesh/.atomic/workspace.atomic.json"],
           want_has=["8"], want_lacks=["2b", "6"])
@@ -265,7 +303,7 @@ def self_test(repo_root: Path) -> int:
         for f in failures:
             print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
         return 1
-    print("select_stages self-test: 8 cases OK", file=sys.stderr)
+    print(f"select_stages self-test: {cases} cases OK", file=sys.stderr)
     return 0
 
 
