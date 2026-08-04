@@ -1,0 +1,43 @@
+# SCE Mesh §13 machine-lifetime subscription over SOME/IP.
+#
+# §13's own machine-lifetime example is written `transport: someip`, but
+# the topology stage used to reject every SOME/IP subscription outright:
+# the synthesis path was believed to have no way to reach an
+# `event_group_id`. It does — the same `events:` table the SCXML-driven
+# subscribe path resolves against, read through the same vsomeip.json.
+#
+# Subscriber declares no `<send>` at all, so every SOME/IP call in the
+# generated router traces back to `subscriptions:` below. The publisher's
+# `server:` offers the eventgroup those ids name.
+#
+# Service ids are distinct from the other SOME/IP fixtures (0x2000
+# motor_control family) so a cross-fixture mix-up cannot pass by
+# coincidence.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_someip_machine_lifetime.json
+        application_name: brake_someip_machine_lifetime_app
+    machines:
+      brake_someip_machine_lifetime_subscribe:
+        source: brake_someip_machine_lifetime_subscribe.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            events:
+              "event.notification.vehicle_speed":
+                event_group: speed_group
+        subscriptions:
+          - event: event.notification.vehicle_speed
+            source: "#motor"
+      motor:
+        source: motor_someip_machine_lifetime_subscribe.scxml
+        server:
+          transport: someip
+          service: motor_control
+          events:
+            "field.notify.vehicle_speed":
+              event_group: speed_group

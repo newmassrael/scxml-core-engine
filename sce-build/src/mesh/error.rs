@@ -2336,16 +2336,19 @@ pub enum TopologyError {
     /// `source:` whose binding transport does not support the
     /// machine-lifetime synthesis path. The init-time subscribe
     /// envelope synthesised from deploy.yaml alone would drop at the
-    /// transport's send path — not because pub/sub is missing, but
-    /// because the send path needs per-event external metadata
-    /// (e.g. SOME/IP event_group_id) that synthesis cannot supply.
+    /// transport's send path, whose dispatch carries no subscribe arm.
     /// Detected at topology time so the diagnostic fires at the
     /// build rather than surfacing as a never-delivered subscription
     /// at runtime.
     ///
     /// SSoT: `super::transport::TransportDescriptor::
-    /// supports_machine_lifetime_subscribe`. Currently `true` only
-    /// for `zenoh`; SOME/IP support is consumer-gated.
+    /// supports_machine_lifetime_subscribe`.
+    ///
+    /// A transport that *does* support the path but whose binding is
+    /// missing the per-event addressing metadata (a SOME/IP eventgroup
+    /// declaration, say) is a different failure and reports as
+    /// [`Self::MissingBindingField`] naming the event — the repair is a
+    /// declaration, not a change of transport.
     #[error(
         "machine '{machine}': subscription on source '{source_target}' for event \
              '{event}' uses transport '{transport}', which does not support the \

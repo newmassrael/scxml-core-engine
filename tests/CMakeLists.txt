@@ -4172,6 +4172,103 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         add_test(NAME mesh_someip_multipattern_compile_verification
                  COMMAND mesh_someip_multipattern_compile_test)
 
+        # ── §13 machine-lifetime subscription over SOME/IP ────────────
+        # The subscriber document declares no <send>, so every SOME/IP call
+        # in its generated router traces back to deploy.yaml
+        # `subscriptions:` resolving against vsomeip.json. Compiling it is
+        # what proves the emitted request_event / subscribe / unsubscribe
+        # calls type-check against vsomeip 3.x; the Rust-side generation
+        # test only proves the text is there.
+        set(MESH_SOMEIP_MLSUB_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_machine_lifetime_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml"
+                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h.d"
+            COMMENT "Mesh someip machine-lifetime: Generating brake_someip_machine_lifetime_subscribe_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
+                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h.d"
+            COMMENT "Mesh someip machine-lifetime: Generating motor_someip_machine_lifetime_subscribe_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml"
+                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+                    --transport-only
+                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_someip_machine_lifetime_subscribe.scxml"
+                    "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
+                    "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_someip_machine_lifetime.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
+            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h.d"
+            COMMENT "Mesh someip machine-lifetime: Generating brake_someip_machine_lifetime_subscribe_transport.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
+                    -l cpp -o "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+                    --transport-only
+                    --write-deps "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/motor_someip_machine_lifetime_subscribe.scxml"
+                    "${MESH_TEST_DIR}/deploy_someip_machine_lifetime_subscribe.yaml"
+                    "${MESH_TEST_DIR}/vsomeip_someip_machine_lifetime.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h"
+            DEPFILE "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h.d"
+            COMMENT "Mesh someip machine-lifetime: Generating motor_someip_machine_lifetime_subscribe_transport.h (publisher)"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_machine_lifetime_subscribe_test
+            mesh/test_mesh_someip_machine_lifetime_subscribe.cpp
+            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
+            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_sm.h"
+            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h"
+            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/motor_someip_machine_lifetime_subscribe_transport.h"
+        )
+
+        target_include_directories(mesh_someip_machine_lifetime_subscribe_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_MLSUB_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_machine_lifetime_subscribe_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_machine_lifetime_subscribe_test PRIVATE cxx_std_17)
+        sce_pin_cxx17(mesh_someip_machine_lifetime_subscribe_test)
+        apply_sce_test_policies(mesh_someip_machine_lifetime_subscribe_test)
+        add_test(NAME mesh_someip_machine_lifetime_subscribe_verification
+                 COMMAND mesh_someip_machine_lifetime_subscribe_test)
+
         # ── Session F: SOME/IP runtime E2E ────────────────────────────
         # Exercises both client and server TransportRouters end-to-end
         # via vsomeip internal routing (single process, no daemon).

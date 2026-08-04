@@ -107,6 +107,36 @@
         return true;
 {%- endmacro %}
 
+{# The eventgroup leg of `send_to_<target>`, shared by both subscribe paths:
+   an SCXML-driven `<send event="event.subscribe.X">` and a deploy.yaml
+   `subscriptions:` entry produce the same envelope pattern against the same
+   vsomeip.json-resolved ids, so they must produce the same three calls
+   (SCE_MESH.md §13). `request_event` declares which event of the group this
+   client wants; `subscribe` is the SD SubscribeEventgroup. #}
+{% macro someip_eventgroup_dispatch(target, event_const) -%}
+        using PK = SCE::Mesh::PatternKind;
+        if (env.pattern == PK::EventSubscribe) {
+            app.request_event(
+                SOMEIP_SERVICE_{{ target.target_snake | upper }},
+                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ event_const }},
+                {SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ event_const }}});
+            app.subscribe(
+                SOMEIP_SERVICE_{{ target.target_snake | upper }},
+                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ event_const }});
+            return true;
+        }
+        if (env.pattern == PK::EventUnsubscribe) {
+            app.unsubscribe(
+                SOMEIP_SERVICE_{{ target.target_snake | upper }},
+                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ event_const }});
+            return true;
+        }
+        return false;  // EventNotify is inbound-only
+{%- endmacro %}
+
 {% macro someip_receive_handler(target, method_constant, pattern_kind, kind) -%}
         {{ target.target_snake }}_app_->register_message_handler(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
@@ -763,6 +793,14 @@ static constexpr vsomeip::method_t SOMEIP_GETTER_{{ target.target_snake | upper 
 static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.setter_id }};
 {% endif %}
 {% endfor %}
+{# Machine-lifetime subscriptions (SCE_MESH.md §13): same constant shape as
+   the event_group arm above, resolved from the same vsomeip.json. The list
+   excludes any event the loop above already emitted, so no name is defined
+   twice. #}
+{% for se in target.subscription_event_ids %}
+static constexpr vsomeip::eventgroup_t SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ se.event_const }} = {{ se.event_group_id }};
+static constexpr vsomeip::event_t SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ se.event_const }} = {{ se.event_id }};
+{% endfor %}
 {% endfor %}
 
 {% endif %}
@@ -1013,6 +1051,12 @@ inline void send_to_{{ target.target_snake }}(
 {% for ep in target.event_patterns if ep.field_kind %}
 {% set has_any_event_ids.v = true %}
 {% endfor %}
+{# A subscriptions-only target has no outbound send vocabulary at all, so
+   the loop above finds nothing while the router still has to dispatch the
+   init-time subscribe. #}
+{% if target.subscription_event_ids %}
+{% set has_any_event_ids.v = true %}
+{% endif %}
 {% if not has_any_event_ids.v %}
     (void)app; (void)env;
     return false;  // no per-event SOME/IP IDs configured for this target
@@ -1028,27 +1072,7 @@ inline void send_to_{{ target.target_snake }}(
     }
 {% elif ep.field_kind == "event_group" %}
     if (env.type == "{{ ep.event }}") {
-        using PK = SCE::Mesh::PatternKind;
-        if (env.pattern == PK::EventSubscribe) {
-            app.request_event(
-                SOMEIP_SERVICE_{{ target.target_snake | upper }},
-                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
-                SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ ep.event_const }},
-                {SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }}});
-            app.subscribe(
-                SOMEIP_SERVICE_{{ target.target_snake | upper }},
-                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
-                SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }});
-            return true;
-        }
-        if (env.pattern == PK::EventUnsubscribe) {
-            app.unsubscribe(
-                SOMEIP_SERVICE_{{ target.target_snake | upper }},
-                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
-                SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ ep.event_const }});
-            return true;
-        }
-        return false;  // EventNotify is inbound-only
+{{ someip_eventgroup_dispatch(target, ep.event_const) }}
     }
 {% elif ep.field_kind == "getter" %}
     if (env.type == "{{ ep.event }}") {
@@ -1059,6 +1083,15 @@ inline void send_to_{{ target.target_snake }}(
 {{ someip_send_request(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const) }}
     }
 {% endif %}
+{% endfor %}
+{# SCE_MESH.md §13 machine-lifetime subscriptions: the init()-time envelope
+   arrives here under the event name deploy.yaml declared, so the arm has to
+   exist or the subscribe falls through to the unknown-event return below —
+   which is exactly the silent drop this path is built to avoid. #}
+{% for se in target.subscription_event_ids %}
+    if (env.type == "{{ se.event }}") {
+{{ someip_eventgroup_dispatch(target, se.event_const) }}
+    }
 {% endfor %}
     (void)app;
     return false;  // unknown event name for this target
@@ -2999,6 +3032,15 @@ struct TransportRouter {
         // {{ ep.event }} → SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }}
 {{ someip_receive_handler(target, "SOMEIP_SETTER_" + (target.target_snake | upper) + "_" + ep.event_const, "SCE::Mesh::PatternKind::FieldNotify", "field") }}
 {% endif %}
+{% endfor %}
+{# SCE_MESH.md §13: a machine-lifetime subscription has no outbound event
+   pattern, so the loop above never reaches it — but a notification that
+   arrives with no registered handler is dropped inside vsomeip without a
+   trace. Emitting the handler from the same declaration that emits the
+   subscribe is what keeps the two halves from drifting. #}
+{% for se in target.subscription_event_ids %}
+        // {{ se.event }} → SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ se.event_const }}
+{{ someip_receive_handler(target, "SOMEIP_EVENT_" + (target.target_snake | upper) + "_" + se.event_const, "SCE::Mesh::PatternKind::EventNotify", "notify") }}
 {% endfor %}
 {% if machine_outbound_buffer %}
         // SCE Mesh §10.10: feed the per-target OutboundBuffer's readiness

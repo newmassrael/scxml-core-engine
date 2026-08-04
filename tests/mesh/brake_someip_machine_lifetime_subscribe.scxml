@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §13 machine-lifetime subscription fixture, SOME/IP side.
+
+     Subscriptions-only: the document carries no <send> at all, so every
+     SOME/IP call in the generated router — request_service, request_event,
+     subscribe, register_message_handler, unsubscribe — has to come from
+     deploy.yaml `machines.<name>.subscriptions:` resolving against
+     vsomeip.json. A regression that dropped the subscription would leave a
+     router with no SOME/IP dispatch whatsoever, which is why this fixture
+     deliberately declares nothing else. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="brake_someip_machine_lifetime_subscribe" initial="armed">
+    <state id="armed">
+        <transition event="event.notification.vehicle_speed" target="armed"/>
+    </state>
+</scxml>
