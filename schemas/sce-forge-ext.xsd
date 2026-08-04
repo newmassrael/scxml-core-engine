@@ -216,11 +216,11 @@
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a
-       `sce:kind="enum"` `<scxml>` root names the integer carrier
-       (uint8/uint16/uint32/uint64) for the document's variant
-       values. Free-form `sceType` at the XSD layer; α restricts to
-       unsigned ints at parse time (see
-       `validation/enum-unsupported-underlying-type`). -->
+       `sce:kind="enum"` `<scxml>` root names the fixed-width integer
+       carrier (uint8/uint16/uint32/uint64/int8/int16/int32/int64) for
+       the document's variant values. Free-form `sceType` at the XSD
+       layer; the parser rejects the non-integer members of that type
+       (see `validation/enum-unsupported-underlying-type`). -->
   <xs:attribute name="underlying-type" type="sce:sceType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:strict-variants` on
