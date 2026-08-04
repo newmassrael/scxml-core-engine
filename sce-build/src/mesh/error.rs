@@ -12,6 +12,30 @@
 
 use std::path::PathBuf;
 
+/// Render the " — closest legal key: `x`" clause for
+/// [`DeployError::UnknownBindingField`], or the empty string when nothing
+/// in the legal set is near enough to be a plausible slip.
+///
+/// `candidates` arrives closest-first, so only the head is a suggestion
+/// candidate. The threshold scales with the key's length: one edit for a
+/// short name, up to a third of the characters for a long one, so
+/// `deadline_msec` → `deadline_ms` (two edits over eleven characters) is
+/// still named while an unrelated word is not.
+///
+/// Lives here rather than at the construction site because it is a
+/// display concern: carrying the rendered clause on the variant would
+/// cost a `String` in every `Result<_, DeployError>` in the crate.
+fn closest_legal_key_clause(field: &str, candidates: &[String]) -> String {
+    match candidates.first() {
+        Some(name)
+            if crate::mesh::deploy::edit_distance(field, name) <= (name.len() / 3).max(1) =>
+        {
+            format!(" \u{2014} closest legal key: `{name}`")
+        }
+        _ => String::new(),
+    }
+}
+
 /// Top-level error for the mesh code-generation pipeline.
 ///
 /// Variants correspond to pipeline stages so callers can react
@@ -460,6 +484,39 @@ pub enum DeployError {
         machine: String,
         binding: String,
         reason: String,
+    },
+
+    /// A binding (or `server:`) declares a key that neither the shared
+    /// schema nor the bound transport reads. `BindingConfig` cannot use
+    /// `deny_unknown_fields` — its flattened `extra` map is what carries
+    /// transport-native keys such as zenoh's `key:` — so the closed set
+    /// comes from the transport registry
+    /// ([`crate::mesh::transport::TransportDescriptor::known_binding_fields`])
+    /// plus the typed schema fields.
+    ///
+    /// Rejected at parse time for the same reason
+    /// [`Self::ServerPoolNotSupported`] is: a tuning key that parses and
+    /// then reaches no template arm is indistinguishable, from the
+    /// author's side, from one that took effect.
+    #[error(
+        "deploy.yaml `{location}` (transport: {transport}) declares unknown key \
+             `{field}:`{}. No transport reads it, so it would be \
+             dropped between parse and codegen. Legal keys for a '{transport}' \
+             binding: [{}].",
+        closest_legal_key_clause(.field, .candidates),
+        .candidates.join(", ")
+    )]
+    UnknownBindingField {
+        location: String,
+        transport: String,
+        field: String,
+        /// The transport's legal binding keys, ordered closest-first to
+        /// [`Self::UnknownBindingField::field`]. Sibling variants carry a
+        /// pre-rendered `candidates_list` alongside; this one derives both
+        /// the list and the suggestion at display time instead, because
+        /// two more `String`s would put the variant over the size at
+        /// which every `Result<_, DeployError>` starts paying for it.
+        candidates: Vec<String>,
     },
 
     /// A SOME/IP binding uses a placeholder but does not declare the
@@ -2578,6 +2635,24 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // so no single Fix candidate is emitted.
             fix: None,
             key_fragments: vec![machine.clone(), binding.clone(), reason.clone()],
+        },
+        DeployError::UnknownBindingField {
+            location,
+            transport,
+            field,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployUnknownBindingField,
+            stage: Stage::MeshDeploy,
+            // `actual` is the offending key; the legal set rides
+            // `Fix::ReplaceOneOf` closest-first, so an agent repairing
+            // the file can take candidates[0] as the likely intent.
+            actual: Some(field.clone()),
+            expected: None,
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![location.clone(), transport.clone(), field.clone()],
         },
         DeployError::PoolMissingInstanceList { machine, binding } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployPoolMissingInstanceList,

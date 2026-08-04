@@ -1083,7 +1083,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (328 codes)
+## Appendix — `DiagnosticCode` index (329 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1312,6 +1312,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-server-pool-not-supported` | Mesh Deploy |
 | `mesh/deploy-cross-target-reply-not-supported` | Mesh Deploy |
 | `mesh/deploy-invalid-reply-from` | Mesh Deploy |
+| `mesh/deploy-unknown-binding-field` | Mesh Deploy |
 | `mesh/deploy-stage-pool-not-declared` | Mesh Deploy |
 | `mesh/deploy-stage-pool-wrong-kind` | Mesh Deploy |
 | `mesh/deploy-stage-pool-transport-mismatch` | Mesh Deploy |

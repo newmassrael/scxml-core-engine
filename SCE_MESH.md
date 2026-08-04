@@ -1727,6 +1727,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `capabilities` | `[TransportCapability]` | Supported communication patterns. Build-time validation rejects pattern/transport mismatches (§8.2). |
 | `implemented` | `bool` | Template exists. `false` → build error at codegen stage (not deferred to C++ `#error`). |
 | `required_binding_fields` | `[&str]` | deploy.yaml fields that must be present. `[]` for transports with no binding-level config (local, shm). |
+| `optional_binding_fields` | `[&str]` | deploy.yaml keys the transport *may* carry — transport-native tunables that reach codegen through the binding's flattened catch-all rather than a typed field. With `required_binding_fields` this is the closed set: a binding key outside it is a parse-time reject (`mesh/deploy-unknown-binding-field`, §14.4), because a key nothing reads is indistinguishable from one that took effect. |
 | `supplies_dedup` | `bool` | Transport suppresses envelope duplicates itself. When every transport on a receiver sets it, codegen omits the `DedupRouter` member (§10.5). |
 | `supplies_ordering` | `bool` | Transport preserves per-sender envelope order, so the §10.6 ordering buffer is unnecessary. |
 | `ordering_representable` | `bool` | Transport can carry a sequence number at all; `false` makes a binding that declares `ordering: required` a topology reject. |
@@ -1746,6 +1747,7 @@ A transport is verified against the §10.4 contract by:
 
 1. **Build-time (sce-build)**: Pattern capability check — `TransportDescriptor::capabilities` must include the pattern's required category. Violation is a hard build error.
 2. **Build-time (sce-build)**: Required binding fields — `TransportDescriptor::required_binding_fields` must all be present in deploy.yaml. Violation is `TopologyError::MissingBindingField`.
+2b. **Build-time (sce-build)**: Closed binding-key set — every key on a binding must be either a typed schema field or a member of `required_binding_fields` + `optional_binding_fields`. Violation is `DeployError::UnknownBindingField`, raised at parse time so it covers bindings the SCXML does not yet send to.
 3. **Runtime (mesh conformance suite, Session E2)**: The IRP distributed harness (§16.8) runs identical tests over single-process and distributed modes. A transport that drops, reorders, or duplicates events (without dedup suppression) will produce verdict mismatches, surfacing the conformance violation.
 4. **Runtime (seeded fault injection, Session E2)**: Disconnect the transport mid-test. The engine must receive `error.communication` within one macrostep. The test verifies event delivery, `reason` payload, and macrostep boundary compliance.
 
@@ -2901,7 +2903,7 @@ Any future revisit would require explicit motivation in a new section; the defau
 1. **No duplication with external infra**: `vsomeip.json` declares `{service: motor_control, id: 0x1001}` exactly once. deploy.yaml says `service: motor_control` and the build tool resolves.
 2. **Names, not numbers**: IDs are implementation details of the transport. SCXML and deploy.yaml talk in stable logical names.
 3. **Same SCXML, multiple deploy.yaml**: A single `brake.scxml` deploys to a vehicle (SOME/IP + vsomeip.json from OEM), an IntraECU bench (SHM, no external config), or an MMORPG server (Zenoh + peer config) just by swapping deploy.yaml.
-4. **Strict validation**: `deny_unknown_fields` on every config struct. Missing names in external configs fail the build. Request/response pairing mismatch fails the build.
+4. **Strict validation**: no key is silently absorbed. Every config struct that can carry `deny_unknown_fields` does; a per-binding entry cannot, because its transport-native keys (`key:`, `topic:`, `protocol:`) arrive through a flattened catch-all map that `deny_unknown_fields` would reject wholesale. That surface is instead closed against the transport registry: the legal set is the typed schema fields plus the bound transport's `required_binding_fields` + `optional_binding_fields` (§10.4.2), and anything outside it is rejected at parse time (`mesh/deploy-unknown-binding-field`) with the legal set attached, ordered closest-first to what the author wrote. Missing names in external configs fail the build. Request/response pairing mismatch fails the build.
 
 **Deprecated (Session E cleanup)**: inline `service_id: 0x1234` / `method_id: 0x0042` / `event_group_id` / `event_id` / `getter_id` / `setter_id` as shipped in Session C. Retained as a parse-tolerant migration path but emitting a warning; removed after all in-tree fixtures are migrated.
 

@@ -115,6 +115,24 @@ pub struct TransportDescriptor {
     ///
     /// Empty for transports with no required per-binding config (local, shm).
     pub required_binding_fields: &'static [&'static str],
+    /// Per-binding keys this transport *may* carry beyond the required
+    /// ones — the transport-native tunables that reach codegen through
+    /// `BindingConfig`'s flattened `extra` map rather than a typed field.
+    ///
+    /// Together with [`Self::required_binding_fields`] this is the
+    /// closed set of extra keys the transport reads. A binding key
+    /// outside the union is rejected at parse time
+    /// (`DeployError::UnknownBindingField`) instead of sinking into
+    /// `extra` unread — the silent failure the typed device-level
+    /// `transports:` structs already avoid via `deny_unknown_fields`,
+    /// which the per-binding surface cannot use because `extra` is
+    /// what carries transport-native keys in the first place.
+    ///
+    /// Adding a tunable here is half of the work: the other half is the
+    /// template arm that reads it. A key listed here with no reader is
+    /// worse than an unlisted one, because it advertises a setting that
+    /// parses and then does nothing.
+    pub optional_binding_fields: &'static [&'static str],
     /// Does this transport inherently suppress envelope duplicates?
     ///
     /// Consumed by the codegen's `dispatchToSender` branching (SCE_MESH.md
@@ -328,6 +346,23 @@ pub struct TransportDescriptor {
     pub supports_cross_target_reply: bool,
 }
 
+impl TransportDescriptor {
+    /// The closed set of per-binding keys this transport reads through
+    /// the flattened `extra` map: required first, then optional, each in
+    /// declaration order.
+    ///
+    /// Callers use this both to reject unknown keys and to tell the
+    /// author what *was* legal, so the ordering is the one a reader
+    /// benefits from — mandatory keys ahead of tunables — rather than
+    /// alphabetical.
+    pub fn known_binding_fields(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.required_binding_fields
+            .iter()
+            .chain(self.optional_binding_fields.iter())
+            .copied()
+    }
+}
+
 // ── Single registry ─────────────────────────────────────────
 
 /// Single source of truth for transport metadata.
@@ -350,6 +385,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &[],
+        // In-process dispatch reads no per-binding key: the target is a
+        // compile-time reference, so there is nothing to address.
+        optional_binding_fields: &[],
         // In-process direct dispatch — no wire, no reordering.
         supplies_dedup: true,
         // Direct function call preserves invocation order.
@@ -393,6 +431,11 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[FireForget],
         implemented: true,
         required_binding_fields: &[],
+        // Ring geometry: both are validated by
+        // `topology::validate_shm_extras_partial` (u32 range,
+        // power-of-two capacity) and reach codegen as
+        // `TransportState::Shm`.
+        optional_binding_fields: &["shm_arena_bytes", "shm_ring_capacity"],
         // Single shared ring per channel with READY_MAGIC gating — a
         // producer cannot publish the same slot twice.
         supplies_dedup: true,
@@ -426,6 +469,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // `event_bindings`) populated by `finalize_targets`, and
         // topology runs a typed check after that pass.
         required_binding_fields: &[],
+        // `protocol:` selects the vsomeip reliability flag per binding
+        // (`udp` default, `tcp` reliable) and is read by both the send
+        // and the scxml-invoke arms of the template. The numeric SOME/IP
+        // ID keys are not listed here on purpose — they are reserved,
+        // and `external::reject_reserved_id_keys` refuses them with a
+        // diagnostic that names the name-based alternative.
+        optional_binding_fields: &["protocol"],
         // SOME/IP cannot guarantee at-most-once delivery across its layers:
         // service discovery is UDP multicast (retransmits + bridged
         // segments), eventgroups default to UDP, and current in-tree
@@ -489,6 +539,12 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &["key"],
+        // Everything else a Zenoh deployment tunes lives in the device-
+        // level `transports.zenoh.config:` json5 file, which Zenoh's own
+        // schema validates — a per-binding tunable would have to be
+        // merged into that session config, which the session does not
+        // support per-publisher.
+        optional_binding_fields: &[],
         // Zenoh router reordering is visible to applications even in reliable
         // mode — the runtime-level DedupWindow filters re-delivered envelopes.
         supplies_dedup: false,
@@ -543,6 +599,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[RequestReply, FireForget, PubSub, FieldAccess],
         implemented: true,
         required_binding_fields: &["connect"],
+        optional_binding_fields: &[],
         // One TCP socket per sender→receiver pair; the stream itself
         // guarantees at-most-once delivery of any framed envelope.
         supplies_dedup: true,
@@ -601,6 +658,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // there is no field in which an author could pair a request topic
         // with an unrelated reply topic.
         required_binding_fields: &["topic"],
+        optional_binding_fields: &[],
         // DDS BEST_EFFORT and multicast paths admit application-visible
         // duplicates; reliable-only deployments still need dedup for
         // cross-participant fan-out.
@@ -647,6 +705,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         capabilities: &[FireForget, FieldAccess],
         implemented: false,
         required_binding_fields: &[],
+        optional_binding_fields: &[],
         // CAN is a broadcast bus — retransmits and bridged segments can
         // redeliver the same frame.
         supplies_dedup: false,
@@ -801,6 +860,53 @@ mod tests {
         let d = lookup("custom_tcp").expect("known");
         assert!(d.capabilities.contains(&RequestReply));
         assert!(!d.supports_cross_target_reply);
+    }
+
+    #[test]
+    fn every_known_binding_field_has_a_reader() {
+        // A key in this set parses; if no arm reads it, the author gets a
+        // setting that takes effect nowhere — the exact failure the
+        // unknown-key gate exists to prevent, re-introduced from the
+        // other side. So the set is pinned here, and growing it means
+        // pointing at the reader in the same commit.
+        //
+        //   shm    → `topology::build_transport_state` (TransportState::Shm)
+        //   someip → `mesh_transport.h.jinja2` reliability flag
+        //   zenoh/custom_tcp/dds → the address each arm bakes in
+        let with_fields: Vec<(&str, Vec<&str>)> = [
+            "local",
+            "shm",
+            "someip",
+            "zenoh",
+            "custom_tcp",
+            "dds",
+            "can",
+        ]
+        .iter()
+        .copied()
+        .map(|n| (n, lookup(n).unwrap().known_binding_fields().collect()))
+        .filter(|(_, f): &(_, Vec<&str>)| !f.is_empty())
+        .collect();
+
+        assert_eq!(
+            with_fields,
+            vec![
+                ("shm", vec!["shm_arena_bytes", "shm_ring_capacity"]),
+                ("someip", vec!["protocol"]),
+                ("zenoh", vec!["key"]),
+                ("custom_tcp", vec!["connect"]),
+                ("dds", vec!["topic"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn required_fields_lead_the_known_set() {
+        // `known_binding_fields` is what the unknown-key diagnostic
+        // renders as "legal keys", and a reader scanning that list
+        // should meet the mandatory ones first.
+        let d = lookup("zenoh").expect("known");
+        assert_eq!(d.known_binding_fields().next(), Some("key"));
     }
 
     #[test]
