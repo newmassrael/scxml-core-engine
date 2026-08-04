@@ -82,7 +82,87 @@ struct PortOverride {
     std::unordered_map<std::string, std::string> peer_connect_endpoints;
 };
 
+/// Socket-layer settings for one device's custom_tcp endpoints
+/// (deploy.yaml `transports.custom_tcp`).
+///
+/// Every value here was a literal in this file until it became a
+/// deployment field, and each literal's justification was the test
+/// harness: `SO_REUSEADDR` "keeps tests deterministic across rapid
+/// teardowns", `TCP_NODELAY` "keep harness latencies deterministic",
+/// the dial retry "covers ctest startup jitter". Those are good
+/// defaults, and they remain the defaults — but custom_tcp is SCE's own
+/// implementation, so unlike zenoh or SOME/IP there is no vendor config
+/// file a deployment could reach past them with. A production deployment
+/// whose service accepts more than 16 pending connections, or whose link
+/// prefers Nagle coalescing to per-message latency, had no way to say so.
+///
+/// The member defaults ARE the historical literals, pinned by
+/// `CustomTcpSocketOptionsTest.DefaultsMatchHistory` and mirrored in
+/// `deploy.rs` as `DEFAULT_CUSTOM_TCP_*`. Generated routers always pass
+/// an explicit object built from deploy.yaml, so these defaults serve
+/// direct library users (the two-process harness, the transport unit
+/// tests) rather than acting as a second configuration path underneath
+/// the schema.
+struct SocketOptions {
+    /// `listen()` backlog — how many completed connections the kernel
+    /// queues before refusing. 16 is fine for a fixture and low for a
+    /// service that peers reconnect to in a storm after a restart.
+    int backlog = 16;
+
+    /// `SO_REUSEADDR` on the listen socket. Lets bind() succeed while a
+    /// previous incarnation's port sits in TIME_WAIT — which is what
+    /// makes rapid restarts work, and what a deployment that would
+    /// rather see bind() fail than take over a port can now decline.
+    bool reuse_addr = true;
+
+    /// `TCP_NODELAY` on every accepted and dialed connection. `true`
+    /// disables Nagle: each framed envelope leaves immediately, trading
+    /// bandwidth efficiency for latency. `false` lets the kernel
+    /// coalesce small frames, which a high-rate link carrying many tiny
+    /// envelopes may prefer. This is a deployment judgement, not a
+    /// correctness one, which is precisely why it belongs here.
+    bool nodelay = true;
+
+    /// How many times a `Client`'s lazy connect retries a refused dial
+    /// before giving up. With the default interval this is the
+    /// historical ~1 s total wait that covers a peer still racing
+    /// through bind().
+    int connect_max_attempts = 20;
+
+    /// Delay between dial attempts, in milliseconds.
+    int connect_retry_interval_ms = 50;
+
+    /// `SO_RCVBUF` / `SO_SNDBUF` in bytes. Zero means "leave the kernel
+    /// default", which is what every SCE deployment got before these
+    /// existed. Named after the equivalent Cyclone DDS exposes
+    /// (`SocketReceiveBufferSize` / `SocketSendBufferSize`) — a reference
+    /// transport that lets a deployment size its socket buffers while
+    /// SCE's own did not was the clearest form of the gap.
+    int recv_buffer_bytes = 0;
+    int send_buffer_bytes = 0;
+};
+
 namespace detail {
+
+/// Apply the connection-level options that belong on an established or
+/// accepted socket. Shared by `Server`'s accept loop and `Client`'s dial
+/// so the two directions cannot drift — a link whose two ends disagreed
+/// about Nagle would be a latency asymmetry no test would name.
+///
+/// Failures are ignored deliberately: a kernel that declines
+/// `SO_RCVBUF` still yields a working connection, and turning a tuning
+/// preference into a connection failure would be a worse outcome than
+/// running with the kernel's own value.
+inline void apply_connection_options(int fd, const SocketOptions &opts) {
+    const int nodelay = opts.nodelay ? 1 : 0;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+    if (opts.recv_buffer_bytes > 0) {
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opts.recv_buffer_bytes, sizeof(opts.recv_buffer_bytes));
+    }
+    if (opts.send_buffer_bytes > 0) {
+        ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &opts.send_buffer_bytes, sizeof(opts.send_buffer_bytes));
+    }
+}
 
 /// Parse `host:port` (IPv4 only). Returns false on malformed input or a
 /// port outside [0, 65535]. Port 0 is the BSD-sockets sentinel that asks
@@ -375,7 +455,8 @@ using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &, cons
 /// shutting down the listener and any open connections.
 class Server {
 public:
-    Server(const std::string &listen_endpoint, ReceiveCallback on_receive) : on_receive_(std::move(on_receive)) {
+    Server(const std::string &listen_endpoint, ReceiveCallback on_receive, SocketOptions options = {})
+        : on_receive_(std::move(on_receive)), options_(options) {
         sockaddr_in addr{};
         if (!detail::parse_endpoint(listen_endpoint, addr)) {
             return;  // valid_ stays false
@@ -384,16 +465,20 @@ public:
         if (listen_fd_ < 0) {
             return;
         }
-        // SO_REUSEADDR keeps tests deterministic across rapid teardowns
-        // (a port in TIME_WAIT would otherwise reject the next bind).
-        int one = 1;
-        ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        // SO_REUSEADDR lets bind() succeed while a previous incarnation's
+        // port sits in TIME_WAIT — deterministic across rapid teardowns,
+        // and declinable by a deployment that would rather see bind()
+        // fail than take over a port (`reuse_addr: false`).
+        if (options_.reuse_addr) {
+            int one = 1;
+            ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        }
         if (::bind(listen_fd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
             ::close(listen_fd_);
             listen_fd_ = -1;
             return;
         }
-        if (::listen(listen_fd_, 16) != 0) {
+        if (::listen(listen_fd_, options_.backlog) != 0) {
             ::close(listen_fd_);
             listen_fd_ = -1;
             return;
@@ -505,11 +590,10 @@ private:
                 }
                 return;  // unrecoverable: listener is gone
             }
-            // Disable Nagle to keep harness latencies deterministic; tests
-            // measure end-to-end ordering, not throughput, so coalescing
-            // would just add jitter.
-            int one = 1;
-            ::setsockopt(conn, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+            // Nagle and socket buffers, from deploy.yaml. Applied through
+            // the same helper the dial path uses so the two ends of a link
+            // cannot disagree.
+            detail::apply_connection_options(conn, options_);
             // The reader owns a reference to the stream, so the fd stays
             // valid for exactly as long as someone can still read or write
             // it — vector reallocation of the slot cannot strand it, and
@@ -575,6 +659,7 @@ public:
 private:
     ReceiveCallback on_receive_;
     DecodeErrorCallback on_decode_error_;
+    const SocketOptions options_;
     int listen_fd_ = -1;
     bool valid_ = false;
     std::atomic<bool> stopping_{false};
@@ -594,8 +679,8 @@ private:
 /// custom_tcp answer a peer that dialed from an ephemeral port.
 class Client {
 public:
-    Client(std::string connect_endpoint, ReceiveCallback on_receive)
-        : connect_endpoint_(std::move(connect_endpoint)), on_receive_(std::move(on_receive)) {}
+    Client(std::string connect_endpoint, ReceiveCallback on_receive, SocketOptions options = {})
+        : connect_endpoint_(std::move(connect_endpoint)), on_receive_(std::move(on_receive)), options_(options) {}
 
     ~Client() {
         shutdown();
@@ -642,6 +727,20 @@ public:
     /// already owns instead of requiring a second, reversed connection.
     [[nodiscard]] PeerLink link() {
         return PeerLink(acquireStream());
+    }
+
+    /// File descriptor of the dialed socket, or -1 before the first
+    /// dial. Test-only accessor: production code reaches the peer
+    /// through `send` / `link` and never touches the descriptor.
+    ///
+    /// It exists because `SocketOptions` are applied with `setsockopt`
+    /// calls whose failure is deliberately ignored — a kernel that
+    /// declines `SO_RCVBUF` should still yield a working connection — so
+    /// the only honest verification that an option took effect is a
+    /// `getsockopt` readback on the real descriptor.
+    [[nodiscard]] int connected_fd() {
+        std::lock_guard<std::mutex> lock(dial_mutex_);
+        return stream_ ? stream_->fd : -1;
     }
 
     void shutdown() {
@@ -704,14 +803,15 @@ private:
         if (s < 0) {
             return nullptr;
         }
-        // Retry connect briefly: in tests the server may still be
-        // racing through bind() when the client first tries to dial.
-        // Up to 1s of total wait covers ctest startup jitter without
-        // turning a real ECONNREFUSED into a hang.
-        constexpr int kMaxAttempts = 20;
-        constexpr auto kSleep = std::chrono::milliseconds(50);
+        // Retry connect briefly: the peer may still be racing through
+        // bind() when this side first dials. The default 20 x 50 ms is
+        // the historical ~1 s, which covers ctest startup jitter without
+        // turning a real ECONNREFUSED into a hang; a deployment whose
+        // peers boot on a different timescale sets its own.
+        const int max_attempts = options_.connect_max_attempts;
+        const auto sleep_for = std::chrono::milliseconds(options_.connect_retry_interval_ms);
         bool connected = false;
-        for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+        for (int attempt = 0; attempt < max_attempts; ++attempt) {
             if (::connect(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0) {
                 connected = true;
                 break;
@@ -719,14 +819,13 @@ private:
             if (errno != ECONNREFUSED && errno != ECONNRESET && errno != EINTR) {
                 break;
             }
-            std::this_thread::sleep_for(kSleep);
+            std::this_thread::sleep_for(sleep_for);
         }
         if (!connected) {
             ::close(s);
             return nullptr;
         }
-        int one = 1;
-        ::setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        detail::apply_connection_options(s, options_);
         if (reader_.joinable()) {
             retired_readers_.push_back(std::move(reader_));
         }
@@ -780,6 +879,7 @@ private:
     std::string connect_endpoint_;
     ReceiveCallback on_receive_;
     DecodeErrorCallback on_decode_error_;
+    const SocketOptions options_;
     /// Gates the dial path and the `stream_` / `reader_` handles only.
     /// Frame serialisation lives on the stream, so this lock is never held
     /// across a write, a join, or a user callback — which is what makes an

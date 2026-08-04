@@ -1371,13 +1371,22 @@ pub struct ZenohTransportConfig {
     pub config: Option<PathBuf>,
 }
 
-/// custom_tcp device-shared listen endpoint (SCE_MESH.md §mesh-16.8.3).
+/// custom_tcp device-shared endpoint and socket layer (SCE_MESH.md
+/// §mesh-16.8.3).
 ///
 /// IPv4 loopback only; the harness reference transport is local-only
 /// by design. `listen:` is omitted when the device only acts as a TCP
 /// client. `deny_unknown_fields` rejects typos like `lsten:` at parse
 /// time so a missing server is surfaced as a deploy.yaml error rather
 /// than as silent connection refusal at runtime.
+///
+/// The socket-layer fields below all default to the values that were
+/// literals in `CustomTcpTransport.h` before they became configurable.
+/// custom_tcp is SCE's own implementation, so unlike zenoh
+/// (`zenoh.json5`), SOME/IP (`vsomeip.json`) and dds (`cyclonedds.xml`)
+/// there is no vendor config file a deployment can reach past the
+/// schema with — an option not present here is an option that does not
+/// exist for the deployer.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CustomTcpTransportConfig {
@@ -1388,6 +1397,94 @@ pub struct CustomTcpTransportConfig {
     /// loopback-only; non-loopback hosts are an authoring concern, not
     /// a build-time validation.
     pub listen: Option<String>,
+    /// `listen()` backlog — completed connections the kernel queues
+    /// before refusing. Absent ⇒ [`DEFAULT_CUSTOM_TCP_BACKLOG`], which
+    /// is fine for a fixture and low for a service that a fleet of
+    /// peers reconnects to after a restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backlog: Option<i32>,
+    /// `SO_REUSEADDR` on the listen socket. Absent ⇒ `true`, which lets
+    /// bind() succeed while a previous incarnation's port sits in
+    /// TIME_WAIT. Set `false` to make that case a visible bind failure
+    /// instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reuse_addr: Option<bool>,
+    /// `TCP_NODELAY` on every accepted and dialed connection. Absent ⇒
+    /// `true` (Nagle disabled): each framed envelope leaves
+    /// immediately, trading bandwidth for latency. `false` lets the
+    /// kernel coalesce small frames, which a high-rate link carrying
+    /// many tiny envelopes may prefer. A deployment judgement, which is
+    /// why it is a field rather than a constant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nodelay: Option<bool>,
+    /// How many times a client retries a refused connect before giving
+    /// up. Absent ⇒ [`DEFAULT_CUSTOM_TCP_CONNECT_MAX_ATTEMPTS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_max_attempts: Option<i32>,
+    /// Delay between dial attempts. Absent ⇒
+    /// [`DEFAULT_CUSTOM_TCP_CONNECT_RETRY_INTERVAL_MS`]. With the
+    /// attempt default this is the historical ~1 s total wait.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_retry_interval_ms: Option<i32>,
+    /// `SO_RCVBUF` in bytes. Absent ⇒ the kernel default, which is what
+    /// every deployment got before this field existed. Named after
+    /// Cyclone DDS's `SocketReceiveBufferSize`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_buffer_bytes: Option<i32>,
+    /// `SO_SNDBUF` in bytes. Absent ⇒ the kernel default. Named after
+    /// Cyclone DDS's `SocketSendBufferSize`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_buffer_bytes: Option<i32>,
+}
+
+/// `listen()` backlog applied when `transports.custom_tcp.backlog` is
+/// absent — the literal `CustomTcpTransport.h` carried before the field
+/// existed. Single source: the C++ `SocketOptions` member default is
+/// pinned against this by `socket_option_defaults_match_history`.
+pub const DEFAULT_CUSTOM_TCP_BACKLOG: i32 = 16;
+
+/// Dial attempts applied when `connect_max_attempts` is absent.
+pub const DEFAULT_CUSTOM_TCP_CONNECT_MAX_ATTEMPTS: i32 = 20;
+
+/// Delay between dial attempts applied when `connect_retry_interval_ms`
+/// is absent. With the attempt default this is the historical ~1 s.
+pub const DEFAULT_CUSTOM_TCP_CONNECT_RETRY_INTERVAL_MS: i32 = 50;
+
+impl CustomTcpTransportConfig {
+    /// Validate the socket-layer fields. Returns the rejection reason
+    /// without the device name — the caller wraps it into
+    /// [`DeployError::InvalidCustomTcpSocket`].
+    ///
+    /// Every check rejects a value that would silently disable the thing
+    /// it configures: a zero backlog refuses every connection, zero
+    /// attempts never dials, a zero retry interval busy-spins, and a
+    /// zero buffer size is not "the kernel default" (that is expressed
+    /// by omitting the field) but a request the kernel would clamp.
+    /// Negative values are rejected for all of them.
+    ///
+    /// No upper bounds: a backlog ceiling would be a guess at the peer
+    /// fleet size, and a socket-buffer ceiling a guess at the link's
+    /// bandwidth-delay product. The kernel clamps what it cannot honour.
+    fn validation_error(&self) -> Option<String> {
+        let positive = [
+            ("backlog", self.backlog),
+            ("connect_max_attempts", self.connect_max_attempts),
+            ("connect_retry_interval_ms", self.connect_retry_interval_ms),
+            ("recv_buffer_bytes", self.recv_buffer_bytes),
+            ("send_buffer_bytes", self.send_buffer_bytes),
+        ];
+        for (name, value) in positive {
+            if let Some(v) = value {
+                if v < 1 {
+                    return Some(format!(
+                        "{name} ({v}) must be at least 1 — omit the field to take the \
+                         default rather than declaring a value that disables it"
+                    ));
+                }
+            }
+        }
+        None
+    }
 }
 
 /// DDS device-shared participant configuration.
@@ -2996,6 +3093,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_pool_defaults(&cfg)?;
     validate_binding_field_names(&cfg)?;
     validate_dedup_window(&cfg)?;
+    validate_custom_tcp_socket(&cfg)?;
 
     Ok(cfg)
 }
@@ -4856,6 +4954,32 @@ fn summarize_discovery_content(value: &serde_yaml_ng::Value) -> String {
         }
         Value::Tagged(_) => "tagged value".to_string(),
     }
+}
+
+/// Walk every device that declared a `transports.custom_tcp:` block and
+/// reject socket-layer values that would disable what they configure
+/// (SCE_MESH.md §mesh-16.8.3). Parse time, like its siblings — the
+/// alternative is a `listen(fd, 0)` whose only symptom is that every
+/// peer connection is refused.
+fn validate_custom_tcp_socket(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    // Deterministic order so the first reported violation is stable —
+    // the topology map is a HashMap.
+    let mut by_device: BTreeMap<&str, &CustomTcpTransportConfig> = BTreeMap::new();
+    for (device_name, device) in cfg.topology.iter() {
+        if let Some(tcp) = device.transports.custom_tcp.as_ref() {
+            by_device.insert(device_name.as_str(), tcp);
+        }
+    }
+    for (device, tcp) in by_device {
+        if let Some(reason) = tcp.validation_error() {
+            return Err(DeployError::InvalidCustomTcpSocket {
+                device: device.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Walk every machine that declared an explicit `dedup:` section and

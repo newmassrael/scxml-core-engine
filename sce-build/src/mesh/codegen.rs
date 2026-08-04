@@ -189,6 +189,52 @@ impl CustomTcpTransportContext {
     }
 }
 
+/// Template context for the custom_tcp socket layer (SCE_MESH.md
+/// §mesh-16.8.3).
+///
+/// Separate from [`CustomTcpTransportContext`] because that one is
+/// `None` for a pure-client device (no `listen:`), while socket options
+/// apply to the dial side too — `nodelay`, the connect retry and the
+/// buffer sizes are exactly what a client-only device wants to tune.
+/// Always present when custom_tcp is in play, like `dds_transport`.
+///
+/// Every field is emitted; a deployment that declares nothing gets the
+/// historical literals, which now live in `deploy.rs` constants rather
+/// than in the C++ header.
+#[derive(Debug, Clone, serde::Serialize)]
+struct CustomTcpSocketContext {
+    backlog: i32,
+    reuse_addr: bool,
+    nodelay: bool,
+    connect_max_attempts: i32,
+    connect_retry_interval_ms: i32,
+    /// Zero means "leave the kernel default" — the value the runtime
+    /// reads as "do not call setsockopt". Absent in deploy.yaml and
+    /// zero here are the same thing on purpose: there is no third state.
+    recv_buffer_bytes: i32,
+    send_buffer_bytes: i32,
+}
+
+impl CustomTcpSocketContext {
+    fn from_config(cfg: Option<&CustomTcpTransportConfig>) -> Self {
+        Self {
+            backlog: cfg
+                .and_then(|c| c.backlog)
+                .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_BACKLOG),
+            reuse_addr: cfg.and_then(|c| c.reuse_addr).unwrap_or(true),
+            nodelay: cfg.and_then(|c| c.nodelay).unwrap_or(true),
+            connect_max_attempts: cfg
+                .and_then(|c| c.connect_max_attempts)
+                .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_CONNECT_MAX_ATTEMPTS),
+            connect_retry_interval_ms: cfg
+                .and_then(|c| c.connect_retry_interval_ms)
+                .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_CONNECT_RETRY_INTERVAL_MS),
+            recv_buffer_bytes: cfg.and_then(|c| c.recv_buffer_bytes).unwrap_or(0),
+            send_buffer_bytes: cfg.and_then(|c| c.send_buffer_bytes).unwrap_or(0),
+        }
+    }
+}
+
 /// Template context for DDS device-shared configuration.
 ///
 /// Only the domain id: a DDS domain is the isolation unit, and everything
@@ -1510,6 +1556,10 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         .map(CustomTcpTransportContext::from_config)
         .filter(|s| !s.is_empty());
 
+    // Socket layer: always present when custom_tcp is in play, unlike
+    // `custom_tcp_transport` above which is None on a pure-client device.
+    let custom_tcp_socket = CustomTcpSocketContext::from_config(custom_tcp_config);
+
     // Always present when dds is in play, unlike the transports above: a
     // device with dds bindings joins a domain whether or not deploy.yaml
     // declared the block, so the absent-block case is "domain 0", not
@@ -1780,6 +1830,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         zenoh_connect_endpoints => zenoh_connect_endpoints,
         someip_transport => someip_transport,
         custom_tcp_transport => custom_tcp_transport,
+        custom_tcp_socket => custom_tcp_socket,
         dds_transport => dds_transport,
         machine_subscriptions => subscriptions,
         server => server_context,
