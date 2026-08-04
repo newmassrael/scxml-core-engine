@@ -49,8 +49,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 using SCE::Mesh::CommunicationError;
@@ -87,6 +89,7 @@ TEST(OutboundBufferTest, BackpressureOverflowRaisesRow9) {
         /* target          */
         "motor",
         /* max_pending     */ 2,
+        /* max_age         */ std::chrono::milliseconds::zero(),
         /* transport_name  */ "someip",
         /* dispatch        */ [](const MeshEnvelope &) { return SendResult::success(); },
         /* raise_error     */ std::ref(sink));
@@ -121,8 +124,8 @@ TEST(OutboundBufferTest, SustainedOverflowRaisesPerAdmit) {
     // silently throttled into a single error event.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 1, "zenoh", [](const MeshEnvelope &) { return SendResult::success(); },
-        std::ref(sink));
+        "motor", /*max_pending*/ 1, std::chrono::milliseconds::zero(), "zenoh",
+        [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     MeshEnvelope env{};
     EXPECT_TRUE(buf.admit(env));   // queue depth 1
@@ -144,8 +147,8 @@ TEST(OutboundBufferTest, MarkNotReadyFromInitialStateDoesNotRaise) {
     // (true→false after a real markReady) raises Row 1.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "someip", [](const MeshEnvelope &) { return SendResult::success(); },
-        std::ref(sink));
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "someip",
+        [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     buf.markNotReady();  // initial false → false: no transition
     buf.markNotReady();  // still false → false: still no transition
@@ -167,8 +170,8 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     // lifecycle transition signal from the FIFO drain path.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "zenoh", [](const MeshEnvelope &) { return SendResult::success(); },
-        std::ref(sink));
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "zenoh",
+        [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     buf.markReady();  // Ready → Active anchor
     EXPECT_EQ(sink.call_count, 0) << "Ready→Active is the entry edge; only Active→Disconnected raises";
@@ -198,6 +201,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRaisesRow2) {
         /* target          */
         "motor",
         /* max_pending     */ 4,
+        /* max_age         */ std::chrono::milliseconds::zero(),
         /* transport_name  */ "someip",
         /* dispatch        */ [](const MeshEnvelope &) { return SendResult::failure(); },
         /* raise_error     */ std::ref(sink));
@@ -227,7 +231,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRelaysTransportError) {
     // SCE-authored prose.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "zenoh",
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "zenoh",
         [](const MeshEnvelope &) { return SendResult::failure("ZException: closed session"); }, std::ref(sink));
 
     buf.markReady();
@@ -247,8 +251,8 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchSuccessDoesNotRaise) {
     // would spam SCXML authors on every successful send.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "someip", [](const MeshEnvelope &) { return SendResult::success(); },
-        std::ref(sink));
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "someip",
+        [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     buf.markReady();
     MeshEnvelope env{};
@@ -265,7 +269,7 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRaisesRow2PerEnvelope) {
     // during the drain itself.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 8, "someip",
+        "motor", /*max_pending*/ 8, std::chrono::milliseconds::zero(), "someip",
         [](const MeshEnvelope &) { return SendResult::failure(); },  // always declines
         std::ref(sink));
 
@@ -300,7 +304,7 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRelaysPerEnvelopeTransportErr
     ErrorSink sink;
     std::vector<std::optional<std::string>> captured_errors;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 8, "zenoh",
+        "motor", /*max_pending*/ 8, std::chrono::milliseconds::zero(), "zenoh",
         [&](const MeshEnvelope &) {
             const int idx = call_index++;
             return SendResult::failure("ZException env#" + std::to_string(idx));
@@ -337,7 +341,7 @@ TEST(OutboundBufferTest, MarkReadyDrainMixedSuccessAndFailureRaisesPerFailure) {
     int call_index = 0;
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 8, "someip",
+        "motor", /*max_pending*/ 8, std::chrono::milliseconds::zero(), "someip",
         [&](const MeshEnvelope &) {
             // Indices: 0=ok, 1=fail, 2=ok, 3=fail
             return ((call_index++ % 2) == 0) ? SendResult::success() : SendResult::failure();
@@ -367,8 +371,8 @@ TEST(OutboundBufferTest, RepeatedMarkNotReadyRaisesPerTransitionOnly) {
     // disconnection event and earns its own raise.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "someip", [](const MeshEnvelope &) { return SendResult::success(); },
-        std::ref(sink));
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "someip",
+        [](const MeshEnvelope &) { return SendResult::success(); }, std::ref(sink));
 
     buf.markReady();
     buf.markNotReady();  // transition #1 → raise
@@ -381,4 +385,121 @@ TEST(OutboundBufferTest, RepeatedMarkNotReadyRaisesPerTransitionOnly) {
     buf.markNotReady();  // transition #2 → raise
 
     EXPECT_EQ(sink.call_count, 2) << "each Active→Disconnected edge raises; reconnect is transparent";
+}
+
+// ── §16.7 row 15 OUTBOUND_STALE_DROP (age bound) ──────────────
+
+TEST(OutboundBufferTest, StaleEnvelopeIsDroppedAtDrainAndRaisesRow15) {
+    // §10.10 age bound: an envelope held longer than `max_age` is not
+    // worth sending when the peer finally returns, because it describes
+    // a world that has moved on. The drop is loud — row 15 — for the
+    // same reason every other §10.10 discard is: a silent one is
+    // indistinguishable from delivery, from the author's side.
+    ErrorSink sink;
+    std::vector<MeshEnvelope> dispatched;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds(20), "someip",
+        [&dispatched](const MeshEnvelope &env) {
+            dispatched.push_back(env);
+            return SendResult::success();
+        },
+        std::ref(sink));
+
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));  // enqueued while not ready
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    buf.markReady();
+
+    EXPECT_TRUE(dispatched.empty()) << "an envelope past the age bound must not reach the transport";
+    ASSERT_EQ(sink.call_count, 1);
+    ASSERT_TRUE(sink.last.has_value());
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::OutboundStaleDrop);
+    ASSERT_TRUE(sink.last->target.has_value());
+    EXPECT_EQ(*sink.last->target, "motor");
+    ASSERT_TRUE(sink.last->transport.has_value());
+    EXPECT_EQ(*sink.last->transport, "someip");
+    ASSERT_TRUE(sink.last->max_age_ms.has_value());
+    EXPECT_EQ(*sink.last->max_age_ms, 20) << "the declared bound rides the raise so the author need not "
+                                             "correlate against deploy.yaml";
+    ASSERT_TRUE(sink.last->age_ms.has_value());
+    EXPECT_GE(*sink.last->age_ms, 20) << "observed age must exceed the bound that rejected it";
+}
+
+TEST(OutboundBufferTest, FreshEnvelopeSurvivesTheAgeBound) {
+    // The other direction, and the one that makes the bound a filter
+    // rather than a purge: an envelope within the window drains
+    // normally and raises nothing.
+    ErrorSink sink;
+    std::vector<MeshEnvelope> dispatched;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds(10'000), "zenoh",
+        [&dispatched](const MeshEnvelope &env) {
+            dispatched.push_back(env);
+            return SendResult::success();
+        },
+        std::ref(sink));
+
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));
+    buf.markReady();
+
+    EXPECT_EQ(dispatched.size(), 1u) << "an envelope inside the window must still be delivered";
+    EXPECT_EQ(sink.call_count, 0) << "no raise for an envelope that was not dropped";
+}
+
+TEST(OutboundBufferTest, ZeroAgeMeansNoBoundNotDropEverything) {
+    // `std::chrono::milliseconds::zero()` is how a deployment that
+    // omits `max_age_ms` reaches the runtime, so it must mean "no age
+    // bound". Reading it as a zero-length window instead would silently
+    // discard every buffered envelope on every deployment that never
+    // asked for an age bound — the loudest possible regression, and the
+    // reason this direction is pinned rather than assumed.
+    ErrorSink sink;
+    std::vector<MeshEnvelope> dispatched;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 4, std::chrono::milliseconds::zero(), "someip",
+        [&dispatched](const MeshEnvelope &env) {
+            dispatched.push_back(env);
+            return SendResult::success();
+        },
+        std::ref(sink));
+
+    MeshEnvelope env{};
+    EXPECT_TRUE(buf.admit(env));
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    buf.markReady();
+
+    EXPECT_EQ(dispatched.size(), 1u) << "no age bound declared ⇒ the returning peer receives what was held";
+    EXPECT_EQ(sink.call_count, 0);
+}
+
+TEST(OutboundBufferTest, StaleAndFreshInOneDrainAreSeparated) {
+    // A drain that holds both kinds must dispatch the fresh ones and
+    // drop only the stale ones — the bound is per envelope, not per
+    // drain. FIFO order is preserved among the survivors.
+    ErrorSink sink;
+    std::vector<std::string> dispatched_types;
+    OutboundBuffer buf(
+        "motor", /*max_pending*/ 8, std::chrono::milliseconds(40), "someip",
+        [&dispatched_types](const MeshEnvelope &env) {
+            dispatched_types.push_back(env.type);
+            return SendResult::success();
+        },
+        std::ref(sink));
+
+    MeshEnvelope old_env{};
+    old_env.type = "old";
+    EXPECT_TRUE(buf.admit(old_env));
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    MeshEnvelope fresh_env{};
+    fresh_env.type = "fresh";
+    EXPECT_TRUE(buf.admit(fresh_env));
+    buf.markReady();
+
+    ASSERT_EQ(dispatched_types.size(), 1u);
+    EXPECT_EQ(dispatched_types[0], "fresh") << "only the envelope inside the window is delivered";
+    EXPECT_EQ(sink.call_count, 1) << "exactly one raise, for the one dropped envelope";
+    ASSERT_TRUE(sink.last.has_value());
+    EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::OutboundStaleDrop);
 }

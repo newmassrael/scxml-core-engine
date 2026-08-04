@@ -1727,11 +1727,17 @@ pub const MIN_OUTBOUND_BUFFER_MAX_PENDING: u32 = 1;
 /// transport's readiness callback, and drains buffered envelopes on
 /// the 0→1 ready transition.
 ///
-/// One knob today: `max_pending_per_target`. Other overflow policies
-/// (`drop_oldest`, `max_age_ms`) are deferred — no consumer has
-/// requested them yet (`feedback_verify_before_ship.md`). Validation
-/// rejects `max_pending_per_target == 0` at parse time; see
-/// [`MIN_OUTBOUND_BUFFER_MAX_PENDING`].
+/// Two bounds, on independent axes: `max_pending_per_target` caps how
+/// many envelopes may wait, `max_age_ms` caps how long one may wait and
+/// still be worth sending. A slow peer fills the queue; an absent peer
+/// that returns leaves a queue describing a world that has moved on, and
+/// only the age bound answers the second case. The remaining grammar
+/// extension (`overflow: drop_oldest`) is a policy choice on the
+/// capacity axis and stays deferred.
+///
+/// Validation rejects zero on both fields at parse time — each would
+/// discard everything while still reading as "buffering configured".
+/// See [`MIN_OUTBOUND_BUFFER_MAX_PENDING`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutboundBufferConfig {
@@ -1740,6 +1746,22 @@ pub struct OutboundBufferConfig {
     /// `BACKPRESSURE_DROP` (§mesh-16.7 row 9) and drops the newest. Must
     /// be `>= MIN_OUTBOUND_BUFFER_MAX_PENDING`.
     pub max_pending_per_target: u32,
+    /// Maximum time an envelope may wait for peer readiness before the
+    /// drain discards it instead of dispatching, raising
+    /// `error.communication` with reason `OUTBOUND_STALE_DROP`
+    /// (§mesh-16.7 row 15). Absent ⇒ no age bound: a returning peer
+    /// receives everything held, which is the pre-existing behaviour.
+    ///
+    /// Checked at drain rather than on a timer — an envelope's
+    /// staleness only becomes a decision at the moment it would be
+    /// sent, so a timer would spend a thread reaching the same answer.
+    ///
+    /// Deliberately unbounded above: a staleness horizon is a property
+    /// of what the events mean (a brake command is stale in
+    /// milliseconds, a configuration push is not stale in an hour), so
+    /// any ceiling here would be a guess at that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age_ms: Option<u64>,
 }
 
 impl OutboundBufferConfig {
@@ -1755,6 +1777,15 @@ impl OutboundBufferConfig {
                  entirely to opt out of buffering instead",
                 self.max_pending_per_target, MIN_OUTBOUND_BUFFER_MAX_PENDING,
             ));
+        }
+        if self.max_age_ms == Some(0) {
+            return Some(
+                "max_age_ms must be greater than zero — a zero age bound discards \
+                 every buffered envelope at drain, which is indistinguishable from \
+                 not buffering at all; omit the field to hold envelopes without an \
+                 age bound, or omit the whole section to opt out of buffering"
+                    .to_string(),
+            );
         }
         None
     }

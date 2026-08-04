@@ -125,6 +125,17 @@ enum class ReasonCode : std::uint8_t {
     /// answerable by a declared responder; this raise is the loud-fail
     /// that keeps the rejection from being a silent drop.
     RpcReplyFromUndeclaredPeer,
+    /// §mesh-16.7 row 15 — wire `"OUTBOUND_STALE_DROP"`. An envelope
+    /// held by the §mesh-10.10 `OutboundBuffer` waiting for peer
+    /// readiness exceeded the deploy.yaml
+    /// `outbound_buffer.max_age_ms` bound and was dropped instead of
+    /// dispatched when readiness finally arrived. Distinct from row 9
+    /// `BACKPRESSURE_DROP`, which is a capacity bound observed at
+    /// admit: this one is an age bound observed at drain, and the two
+    /// answer different questions ("the peer is slower than I produce"
+    /// versus "the peer came back too late for this to still mean
+    /// anything").
+    OutboundStaleDrop,
 };
 
 /// Canonical mapping table — single source of truth for both JSON
@@ -132,7 +143,7 @@ enum class ReasonCode : std::uint8_t {
 /// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
 /// this table; the cross-doc test fails the build if the table and
 /// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 14> kReasonCodeTable = {{
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 15> kReasonCodeTable = {{
     {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
     {ReasonCode::SendFailed, "SEND_FAILED"},
     {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
@@ -147,6 +158,7 @@ inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 14> kReason
     {ReasonCode::OrderingGap, "ORDERING_GAP"},
     {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
     {ReasonCode::RpcReplyFromUndeclaredPeer, "RPC_REPLY_FROM_UNDECLARED_PEER"},
+    {ReasonCode::OutboundStaleDrop, "OUTBOUND_STALE_DROP"},
 }};
 
 /// Map a `ReasonCode` to its canonical wire string. Linear lookup
@@ -316,6 +328,18 @@ struct CommunicationError {
     /// fault.
     std::optional<std::int64_t> window_size;
 
+    /// §mesh-16.7 row 15 (OUTBOUND_STALE_DROP): how long the dropped
+    /// envelope had been waiting for peer readiness, in milliseconds,
+    /// measured from the admit that enqueued it to the drain that
+    /// discarded it. Paired with the declared bound so an author can
+    /// tell "barely over" from "the peer was gone for a minute"
+    /// without correlating against deploy.yaml.
+    std::optional<std::int64_t> age_ms;
+
+    /// §mesh-16.7 row 15 (OUTBOUND_STALE_DROP): the deploy.yaml
+    /// `outbound_buffer.max_age_ms` the drop was measured against.
+    std::optional<std::int64_t> max_age_ms;
+
     /// §mesh-16.7 row 12 (ORDERING_GAP): inclusive low end of the fast-
     /// forwarded sequence range.
     std::optional<std::uint64_t> lost_seq_lo;
@@ -417,6 +441,12 @@ struct CommunicationError {
         }
         if (window_size) {
             j["window_size"] = *window_size;
+        }
+        if (age_ms) {
+            j["age_ms"] = *age_ms;
+        }
+        if (max_age_ms) {
+            j["max_age_ms"] = *max_age_ms;
         }
         if (lost_seq_lo) {
             j["lost_seq_lo"] = *lost_seq_lo;
