@@ -2740,6 +2740,44 @@ pub struct BindingConfig {
     pub extra: HashMap<String, serde_yaml_ng::Value>,
 }
 
+/// Every typed field name on [`BindingConfig`], i.e. the keys serde
+/// consumes before the flattened `extra` map sees them.
+///
+/// Needed as data (not just as struct fields) because the unknown-key
+/// diagnostic has to answer "what *was* legal here", and the most likely
+/// cause of an unknown key is a typo of a typed field — `deadline_msec:`
+/// rather than `deadline_ms:` — which lands in `extra` exactly like a
+/// bogus transport key does. `binding_typed_fields_match_the_struct`
+/// pins this list against the struct definition.
+const BINDING_TYPED_FIELDS: &[&str] = &[
+    "transport",
+    "service",
+    "method",
+    "event_group",
+    "getter",
+    "setter",
+    "events",
+    "deadline_ms",
+    "ordering",
+    "instances",
+    "instance_from",
+    "reply_from",
+    "stage_pool",
+    "retry",
+    "auth",
+];
+
+/// [`BINDING_TYPED_FIELDS`]'s counterpart for [`ServerConfig`].
+const SERVER_TYPED_FIELDS: &[&str] = &[
+    "transport",
+    "service",
+    "events",
+    "key",
+    "topic",
+    "instances",
+    "query_timeout_ms",
+];
+
 impl BindingConfig {
     /// True iff any of the flat per-binding method/event_group/getter/setter
     /// fields is set (i.e. the single-event sugar path is in use).
@@ -2821,8 +2859,132 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_machine_timer_wheel_capacity(&cfg)?;
     validate_links(&cfg)?;
     validate_pool_defaults(&cfg)?;
+    validate_binding_field_names(&cfg)?;
 
     Ok(cfg)
+}
+
+/// Reject per-binding keys that neither the typed schema nor the bound
+/// transport reads (`mesh/deploy-unknown-binding-field`).
+///
+/// The device-level `transports:` structs all carry
+/// `deny_unknown_fields`, so a typo there is refused at parse time.
+/// [`BindingConfig`] cannot: its flattened `extra` map is the mechanism
+/// that carries transport-native keys (zenoh `key:`, dds `topic:`,
+/// someip `protocol:`), and serde offers no way to say "flatten, but
+/// only these names". So the closed set is assembled here instead —
+/// typed fields from [`BINDING_TYPED_FIELDS`], transport-native keys
+/// from the registry — and anything outside it is refused with the legal
+/// set attached.
+///
+/// Runs at parse time rather than at the topology stage where
+/// `required_binding_fields` is checked, because topology only walks the
+/// bindings the SCXML actually sends to: a typo on an as-yet-unused
+/// binding would pass unnoticed until the day someone routes traffic
+/// through it.
+///
+/// Reserved SOME/IP numeric-ID keys are skipped: they are refused a
+/// stage later by `external::reject_reserved_id_keys`, whose diagnostic
+/// names the name-based alternative and is strictly more useful than
+/// "unknown key" would be.
+fn validate_binding_field_names(cfg: &DeployConfig) -> Result<(), DeployError> {
+    for (device_name, device) in cfg.topology.iter() {
+        for (machine_name, machine) in device.machines.iter() {
+            for (target, binding) in machine.bindings.iter() {
+                check_extra_keys(
+                    &format!(
+                        "topology.{device_name}.machines.{machine_name}.bindings.{}",
+                        target.as_str()
+                    ),
+                    &binding.transport,
+                    BINDING_TYPED_FIELDS,
+                    binding.extra.keys(),
+                )?;
+            }
+            if let Some(server) = machine.server.as_ref() {
+                check_extra_keys(
+                    &format!("topology.{device_name}.machines.{machine_name}.server"),
+                    &server.transport,
+                    SERVER_TYPED_FIELDS,
+                    server.extra.keys(),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One binding's worth of [`validate_binding_field_names`]. `typed` is
+/// the schema's own field list; the transport contributes the rest.
+fn check_extra_keys<'a>(
+    location: &str,
+    transport: &str,
+    typed: &[&str],
+    extra_keys: impl Iterator<Item = &'a String>,
+) -> Result<(), DeployError> {
+    let native: Vec<&'static str> = match crate::mesh::transport::lookup(transport) {
+        Some(desc) => desc.known_binding_fields().collect(),
+        // An unknown transport name is its own diagnostic
+        // (`mesh/codegen-unsupported-transport`); reporting every key on
+        // such a binding as unknown would bury it.
+        None => return Ok(()),
+    };
+
+    // Deterministic order: BTreeMap over the HashMap keys so the first
+    // offender on a multi-typo binding is stable across runs.
+    let offenders: BTreeMap<&str, ()> = extra_keys
+        .map(|k| (k.as_str(), ()))
+        .filter(|(k, _)| !native.contains(k))
+        .filter(|(k, _)| !crate::mesh::external::RESERVED_SOMEIP_ID_KEYS.contains(k))
+        .collect();
+    let Some((&field, _)) = offenders.iter().next() else {
+        return Ok(());
+    };
+
+    // The legal set an author may write here is both halves: typed
+    // schema fields and the transport's native keys. Ordered by
+    // closeness to what they actually wrote, so `candidates[0]` is the
+    // repair an agent should try first.
+    let mut ranked: Vec<(usize, &str)> = typed
+        .iter()
+        .copied()
+        .chain(native.iter().copied())
+        .map(|k| (edit_distance(field, k), k))
+        .collect();
+    ranked.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
+
+    // The legal set rides the error closest-first; the "did you mean"
+    // decision is a display concern and lives with the `Display` impl
+    // (`error::closest_legal_key_clause`).
+    Err(DeployError::UnknownBindingField {
+        location: location.to_string(),
+        transport: transport.to_string(),
+        field: field.to_string(),
+        candidates: ranked.into_iter().map(|(_, k)| k.to_string()).collect(),
+    })
+}
+
+/// Levenshtein distance, iterative single-row.
+///
+/// The forge extern registry ranks its 101 candidates by shared prefix
+/// instead, which is the right trade at that size. Here the candidate
+/// set is at most two dozen short keys, so the exact distance is
+/// affordable — and it is the difference between naming and missing the
+/// suggestion for the transposition and insertion typos this guard
+/// exists to catch (`topci`, `kye`), where the shared prefix is 1 or 2.
+pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
+    let b_chars: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b_chars.len()).collect();
+    let mut cur = vec![0usize; b_chars.len() + 1];
+    for (i, ca) in a.chars().enumerate() {
+        cur[0] = i + 1;
+        for (j, &cb) in b_chars.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b_chars.len()]
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-K line 2517-2519 parse-time typo guard
@@ -6023,6 +6185,48 @@ pub fn validate_event_schemas_cross_machine(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Field names declared by `struct <name>` in this very file, in
+    /// source order, excluding the flattened `extra` catch-all.
+    ///
+    /// Reading the source back is the only way to keep
+    /// [`BINDING_TYPED_FIELDS`] honest: serde consumes the typed fields
+    /// before `extra` sees them, so a field added to the struct and
+    /// forgotten here would silently drop out of the legal-key list an
+    /// author is shown — the diagnostic would name a key the schema
+    /// does accept.
+    fn declared_fields(struct_name: &str) -> Vec<String> {
+        let src = include_str!("deploy.rs");
+        let header = format!("pub struct {struct_name} {{\n");
+        let start = src.find(&header).expect("struct declaration") + header.len();
+        let body = &src[start..];
+        let end = body.find("\n}\n").expect("struct terminator");
+        let body = &body[..end];
+
+        assert!(
+            !body.contains("#[serde(rename"),
+            "{struct_name} gained a serde rename — the wire key no longer \
+             matches the Rust field name, so this extractor would report \
+             the wrong legal-key list"
+        );
+
+        body.lines()
+            .filter_map(|l| l.trim().strip_prefix("pub "))
+            .filter_map(|l| l.split(':').next())
+            .map(str::to_string)
+            .filter(|f| f != "extra")
+            .collect()
+    }
+
+    #[test]
+    fn binding_typed_fields_match_the_struct() {
+        assert_eq!(declared_fields("BindingConfig"), BINDING_TYPED_FIELDS);
+    }
+
+    #[test]
+    fn server_typed_fields_match_the_struct() {
+        assert_eq!(declared_fields("ServerConfig"), SERVER_TYPED_FIELDS);
+    }
 
     #[test]
     fn supported_version_accepted() {

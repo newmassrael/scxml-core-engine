@@ -1842,6 +1842,11 @@ pub enum DiagnosticCode {
     MeshDeployCrossTargetReplyNotSupported,
     #[serde(rename = "mesh/deploy-invalid-reply-from")]
     MeshDeployInvalidReplyFrom,
+    /// A binding key that neither the typed schema nor the bound
+    /// transport reads. Parse-time typo guard; FixCarriesCandidates
+    /// over the transport's legal binding-key set, closest-first.
+    #[serde(rename = "mesh/deploy-unknown-binding-field")]
+    MeshDeployUnknownBindingField,
     // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback deploy.yaml stage_pool family ──
     // These diagnostics validate the deploy.yaml `binding.stage_pool:`
     // cross-reference into the forge buffer-pool registry. Distinct
@@ -2797,6 +2802,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployServerPoolNotSupported,
         MeshDeployCrossTargetReplyNotSupported,
         MeshDeployInvalidReplyFrom,
+        MeshDeployUnknownBindingField,
         MeshDeployStagePoolNotDeclared,
         MeshDeployStagePoolWrongKind,
         MeshDeployStagePoolTransportMismatch,
@@ -3015,6 +3021,7 @@ impl DiagnosticCode {
             | MeshTopologyMachineNotFound
             | MeshTopologyMissingBindingField
             | MeshTopologyInvalidBindingField
+            | MeshDeployUnknownBindingField
             | MeshTopologyEventBindingUnused => Some("SCE Mesh §14"),
 
             // ── Mesh remote invoke / topology (SCE_MESH.md §9) ───
@@ -3848,6 +3855,7 @@ impl DiagnosticCode {
                 "mesh/deploy-cross-target-reply-not-supported"
             }
             MeshDeployInvalidReplyFrom => "mesh/deploy-invalid-reply-from",
+            MeshDeployUnknownBindingField => "mesh/deploy-unknown-binding-field",
             MeshDeployStagePoolNotDeclared => "mesh/deploy-stage-pool-not-declared",
             MeshDeployStagePoolWrongKind => "mesh/deploy-stage-pool-wrong-kind",
             MeshDeployStagePoolTransportMismatch => "mesh/deploy-stage-pool-transport-mismatch",
@@ -10416,6 +10424,20 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:2449562e1103c5ed","code":"mesh/deploy-invalid-reply-from","stage":"mesh-deploy","spec":"SCE Mesh §14.6","message":"machine 'brake': binding '#alpha' has an invalid `reply_from:` list — names machine 'ghost', which the topology does not declare. Omit the field entirely to keep the same-target default.","actual":"brake"}"#,
             ),
             (
+                // Parse-time typo guard for the per-binding key surface.
+                // FixCarriesCandidates over the transport's legal keys,
+                // ordered closest-first so `candidates[0]` is the repair.
+                "mesh/deploy-unknown-binding-field",
+                DeployError::UnknownBindingField {
+                    location: "topology.ecu1.machines.brake.bindings.#motor".into(),
+                    transport: "zenoh".into(),
+                    field: "orderng".into(),
+                    candidates: vec!["ordering".into(), "key".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8e0d02a6016f0b67","code":"mesh/deploy-unknown-binding-field","stage":"mesh-deploy","spec":"SCE Mesh §14","message":"deploy.yaml `topology.ecu1.machines.brake.bindings.#motor` (transport: zenoh) declares unknown key `orderng:` — closest legal key: `ordering`. No transport reads it, so it would be dropped between parse and codegen. Legal keys for a 'zenoh' binding: [ordering, key].","actual":"orderng","fix":{"kind":"replace_one_of","candidates":["ordering","key"]}}"#,
+            ),
+            (
                 "mesh/deploy-stage-pool-not-declared",
                 DeployError::StagePoolNotDeclared {
                     machine: "mcu_node".into(),
@@ -11926,6 +11948,10 @@ mod tests {
             // `StageCopyPolicy::ALL`). FixCarriesCandidates over the
             // three values.
             | MeshDeployStageCopyPolicyUnknown
+            // mesh/deploy-unknown-binding-field — closed set = the
+            // transport's legal binding keys, ordered closest-first so
+            // `candidates[0]` is the likely intent behind a typo.
+            | MeshDeployUnknownBindingField
             // deploy/stateless-accept-extern-not-
             // whitelisted (RFC §synth-5-K line 2466-2469). Closed set =
             // sorted union of §synth-5-I baseline intrinsics names + any
@@ -12958,6 +12984,7 @@ mod tests {
                 | MeshDeployServerPoolNotSupported
                 | MeshDeployCrossTargetReplyNotSupported
                 | MeshDeployInvalidReplyFrom
+                | MeshDeployUnknownBindingField
                 | MeshDeployStagePoolNotDeclared
                 | MeshDeployStagePoolWrongKind
                 | MeshDeployStagePoolTransportMismatch
@@ -13093,9 +13120,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            328,
+            329,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 328 distinct variants to match the DiagnosticCode \
+             expected 329 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
