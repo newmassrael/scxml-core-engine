@@ -1426,6 +1426,33 @@ pub struct CustomTcpTransportConfig {
     /// attempt default this is the historical ~1 s total wait.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connect_retry_interval_ms: Option<i32>,
+    /// `SO_KEEPALIVE` on every connection. Absent ⇒ `false`, which is
+    /// what every deployment had before this field existed.
+    ///
+    /// Without it a peer that crashes or is partitioned leaves a half-open
+    /// socket that never reports anything; a graceful shutdown is detected
+    /// either way. Enabling it is therefore what makes §mesh-16.7 row 8
+    /// `PEER_PARTITIONED` fire on a partition rather than only on a clean
+    /// exit — custom_tcp's answer to the liveliness mechanisms zenoh,
+    /// SOME/IP and DDS use for the same row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive: Option<bool>,
+    /// `TCP_KEEPIDLE` — seconds of silence before the first probe.
+    /// Absent ⇒ [`DEFAULT_CUSTOM_TCP_KEEPALIVE_IDLE_S`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_idle_s: Option<i32>,
+    /// `TCP_KEEPINTVL` — seconds between probes. Absent ⇒
+    /// [`DEFAULT_CUSTOM_TCP_KEEPALIVE_INTERVAL_S`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_interval_s: Option<i32>,
+    /// `TCP_KEEPCNT` — unanswered probes before the kernel declares the
+    /// connection dead. Absent ⇒ [`DEFAULT_CUSTOM_TCP_KEEPALIVE_COUNT`].
+    ///
+    /// The three together are one number: detection latency is roughly
+    /// `idle + interval * count` seconds, so a deployment tunes them as a
+    /// budget rather than individually.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_count: Option<i32>,
     /// `SO_RCVBUF` in bytes. Absent ⇒ the kernel default, which is what
     /// every deployment got before this field existed. Named after
     /// Cyclone DDS's `SocketReceiveBufferSize`.
@@ -1442,6 +1469,16 @@ pub struct CustomTcpTransportConfig {
 /// existed. Single source: the C++ `SocketOptions` member default is
 /// pinned against this by `socket_option_defaults_match_history`.
 pub const DEFAULT_CUSTOM_TCP_BACKLOG: i32 = 16;
+
+/// `TCP_KEEPIDLE` applied when `keepalive_idle_s` is absent.
+pub const DEFAULT_CUSTOM_TCP_KEEPALIVE_IDLE_S: i32 = 60;
+
+/// `TCP_KEEPINTVL` applied when `keepalive_interval_s` is absent.
+pub const DEFAULT_CUSTOM_TCP_KEEPALIVE_INTERVAL_S: i32 = 10;
+
+/// `TCP_KEEPCNT` applied when `keepalive_count` is absent. With the two
+/// above, a partition surfaces in roughly 120 s.
+pub const DEFAULT_CUSTOM_TCP_KEEPALIVE_COUNT: i32 = 6;
 
 /// Dial attempts applied when `connect_max_attempts` is absent.
 pub const DEFAULT_CUSTOM_TCP_CONNECT_MAX_ATTEMPTS: i32 = 20;
@@ -1472,6 +1509,9 @@ impl CustomTcpTransportConfig {
             ("connect_retry_interval_ms", self.connect_retry_interval_ms),
             ("recv_buffer_bytes", self.recv_buffer_bytes),
             ("send_buffer_bytes", self.send_buffer_bytes),
+            ("keepalive_idle_s", self.keepalive_idle_s),
+            ("keepalive_interval_s", self.keepalive_interval_s),
+            ("keepalive_count", self.keepalive_count),
         ];
         for (name, value) in positive {
             if let Some(v) = value {

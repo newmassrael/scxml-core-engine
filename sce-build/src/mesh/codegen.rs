@@ -208,6 +208,10 @@ struct CustomTcpSocketContext {
     nodelay: bool,
     connect_max_attempts: i32,
     connect_retry_interval_ms: i32,
+    keepalive: bool,
+    keepalive_idle_s: i32,
+    keepalive_interval_s: i32,
+    keepalive_count: i32,
     /// Zero means "leave the kernel default" — the value the runtime
     /// reads as "do not call setsockopt". Absent in deploy.yaml and
     /// zero here are the same thing on purpose: there is no third state.
@@ -229,6 +233,16 @@ impl CustomTcpSocketContext {
             connect_retry_interval_ms: cfg
                 .and_then(|c| c.connect_retry_interval_ms)
                 .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_CONNECT_RETRY_INTERVAL_MS),
+            keepalive: cfg.and_then(|c| c.keepalive).unwrap_or(false),
+            keepalive_idle_s: cfg
+                .and_then(|c| c.keepalive_idle_s)
+                .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_KEEPALIVE_IDLE_S),
+            keepalive_interval_s: cfg
+                .and_then(|c| c.keepalive_interval_s)
+                .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_KEEPALIVE_INTERVAL_S),
+            keepalive_count: cfg
+                .and_then(|c| c.keepalive_count)
+                .unwrap_or(crate::mesh::deploy::DEFAULT_CUSTOM_TCP_KEEPALIVE_COUNT),
             recv_buffer_bytes: cfg.and_then(|c| c.recv_buffer_bytes).unwrap_or(0),
             send_buffer_bytes: cfg.and_then(|c| c.send_buffer_bytes).unwrap_or(0),
         }

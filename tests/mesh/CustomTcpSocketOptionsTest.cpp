@@ -28,8 +28,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <string>
+#include <thread>
 
 using SCE::Mesh::MeshEnvelope;
 using SCE::Mesh::CustomTcp::Client;
@@ -189,4 +191,98 @@ TEST(CustomTcpSocketOptionsTest, AcceptSideSharesTheSameApplier) {
 
     ::close(fds[0]);
     ::close(fds[1]);
+}
+
+// ── §16.7 row 8: keepalive + peer-loss reporting ──────────────
+
+TEST(CustomTcpSocketOptionsTest, KeepaliveDefaultsAreOff) {
+    // Enabling keepalive changes when an existing deployment observes a
+    // peer disappear, so it is opt-in — and the three tunables are only
+    // meaningful once it is on. Pinned because "off" is the behaviour
+    // every deployment had before the field existed.
+    SocketOptions defaults;
+    EXPECT_FALSE(defaults.keepalive);
+    EXPECT_EQ(defaults.keepalive_idle_s, 60);
+    EXPECT_EQ(defaults.keepalive_interval_s, 10);
+    EXPECT_EQ(defaults.keepalive_count, 6);
+}
+
+TEST(CustomTcpSocketOptionsTest, KeepaliveReachesTheDialedSocket) {
+    // Read back off the real descriptor: the setters ignore failure, so
+    // only getsockopt proves the option took.
+    SocketOptions opts;
+    opts.keepalive = true;
+    opts.keepalive_idle_s = 23;
+    opts.keepalive_interval_s = 4;
+    opts.keepalive_count = 5;
+
+    Server server("127.0.0.1:0", [](const MeshEnvelope &, const PeerLink &) {});
+    ASSERT_TRUE(server.valid());
+
+    Client client(ephemeral_server_endpoint(server), [](const MeshEnvelope &, const PeerLink &) {}, opts);
+    const int fd = dial_and_get_fd(client);
+    ASSERT_GE(fd, 0);
+
+    EXPECT_NE(getsockopt_int(fd, SOL_SOCKET, SO_KEEPALIVE), 0) << "`keepalive: true` must set SO_KEEPALIVE";
+#ifdef TCP_KEEPIDLE
+    EXPECT_EQ(getsockopt_int(fd, IPPROTO_TCP, TCP_KEEPIDLE), 23);
+    EXPECT_EQ(getsockopt_int(fd, IPPROTO_TCP, TCP_KEEPINTVL), 4);
+    EXPECT_EQ(getsockopt_int(fd, IPPROTO_TCP, TCP_KEEPCNT), 5);
+#endif
+}
+
+TEST(CustomTcpSocketOptionsTest, KeepaliveOffLeavesTheSocketAlone) {
+    // The other direction, so the test above cannot pass by the option
+    // being set unconditionally.
+    Server server("127.0.0.1:0", [](const MeshEnvelope &, const PeerLink &) {});
+    ASSERT_TRUE(server.valid());
+
+    Client client(ephemeral_server_endpoint(server), [](const MeshEnvelope &, const PeerLink &) {}, SocketOptions{});
+    const int fd = dial_and_get_fd(client);
+    ASSERT_GE(fd, 0);
+
+    EXPECT_EQ(getsockopt_int(fd, SOL_SOCKET, SO_KEEPALIVE), 0) << "the default must leave SO_KEEPALIVE off";
+}
+
+TEST(CustomTcpSocketOptionsTest, PeerLossFiresWhenTheServerGoesAway) {
+    // §16.7 row 8, the behavioural half. A peer that goes away closes the
+    // stream, and the client's reader must report it exactly once —
+    // codegen binds this callback to
+    // `raiseCommunicationError(PEER_PARTITIONED)`.
+    std::atomic<int> losses{0};
+
+    auto server = std::make_unique<Server>("127.0.0.1:0", [](const MeshEnvelope &, const PeerLink &) {});
+    ASSERT_TRUE(server->valid());
+    const std::string endpoint = ephemeral_server_endpoint(*server);
+
+    Client client(endpoint, [](const MeshEnvelope &, const PeerLink &) {});
+    client.setPeerLossHandler([&losses]() { losses.fetch_add(1, std::memory_order_relaxed); });
+    ASSERT_TRUE(client.link().valid()) << "dial must succeed before the peer can be lost";
+
+    // Tear the peer down: its FIN is what the reader observes.
+    server.reset();
+
+    for (int i = 0; i < 200 && losses.load() == 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(losses.load(), 1) << "peer loss must be reported exactly once per loss edge";
+}
+
+TEST(CustomTcpSocketOptionsTest, LocalShutdownIsNotReportedAsPeerLoss) {
+    // The direction that keeps row 8 honest: our own teardown must not
+    // masquerade as the peer partitioning. `shutdown()` sets `stopping_`
+    // before closing, and the reader checks it before raising.
+    std::atomic<int> losses{0};
+
+    Server server("127.0.0.1:0", [](const MeshEnvelope &, const PeerLink &) {});
+    ASSERT_TRUE(server.valid());
+
+    Client client(ephemeral_server_endpoint(server), [](const MeshEnvelope &, const PeerLink &) {});
+    client.setPeerLossHandler([&losses]() { losses.fetch_add(1, std::memory_order_relaxed); });
+    ASSERT_TRUE(client.link().valid());
+
+    client.shutdown();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    EXPECT_EQ(losses.load(), 0) << "a local shutdown is not a peer partition";
 }

@@ -68,6 +68,20 @@ namespace SCE::Mesh::CustomTcp {
 /// silently — a single bad envelope leaves the connection alive.
 using DecodeErrorCallback = std::function<void()>;
 
+/// Peer-loss callback: invoked once on the reader thread when the
+/// connection to this client's peer goes down — a clean FIN, a reset, or a
+/// keepalive timeout, which are the three ways a TCP peer stops being
+/// reachable.
+///
+/// Codegen wires it to `raiseCommunicationError(PEER_PARTITIONED,
+/// target=<peer>)`. That row is transport-portable: Zenoh reports the same
+/// condition through a liveliness token DELETE, SOME/IP through
+/// `available=false`, DDS through a liveliness lease expiry (§mesh-16.7
+/// row 8). custom_tcp was the transport that could not report it, even
+/// though a connection-oriented transport knows it more directly than any
+/// of them — the stream IS the liveness signal.
+using PeerLossCallback = std::function<void()>;
+
 /// Runtime override for endpoints the generated TransportRouter::init()
 /// would otherwise take from codegen-baked deploy.yaml values. The
 /// two-process cross-device harness populates this before calling
@@ -132,6 +146,36 @@ struct SocketOptions {
     /// Delay between dial attempts, in milliseconds.
     int connect_retry_interval_ms = 50;
 
+    /// `SO_KEEPALIVE` on every accepted and dialed connection, with the
+    /// three Linux tunables below.
+    ///
+    /// Without it a peer that crashes or is partitioned away leaves a
+    /// half-open socket: the local end holds a connection nobody is on,
+    /// `read()` blocks forever, and no `SocketClosed` ever arrives. A
+    /// graceful shutdown is still detected without keepalive — the peer's
+    /// FIN closes the stream — so this is specifically the
+    /// crash-and-partition case, which is the one §mesh-16.7 row 8 exists
+    /// to report.
+    ///
+    /// Off by default, because turning it on changes when an existing
+    /// deployment sees a peer disappear. A deployment that wants
+    /// PEER_PARTITIONED to fire on a partition rather than only on a clean
+    /// exit enables it.
+    bool keepalive = false;
+
+    /// `TCP_KEEPIDLE` — seconds of silence before the first probe.
+    int keepalive_idle_s = 60;
+
+    /// `TCP_KEEPINTVL` — seconds between probes once probing starts.
+    int keepalive_interval_s = 10;
+
+    /// `TCP_KEEPCNT` — unanswered probes before the kernel declares the
+    /// connection dead. With the defaults above a partition surfaces in
+    /// roughly `idle + interval * count` seconds, so the trio is the
+    /// deployment's detection-latency budget rather than three unrelated
+    /// knobs.
+    int keepalive_count = 6;
+
     /// `SO_RCVBUF` / `SO_SNDBUF` in bytes. Zero means "leave the kernel
     /// default", which is what every SCE deployment got before these
     /// existed. Named after the equivalent Cyclone DDS exposes
@@ -156,6 +200,23 @@ namespace detail {
 inline void apply_connection_options(int fd, const SocketOptions &opts) {
     const int nodelay = opts.nodelay ? 1 : 0;
     ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+    if (opts.keepalive) {
+        const int on = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
+        // The three tunables are Linux-specific. Setting them is what turns
+        // SO_KEEPALIVE from "some hours, eventually" into the bounded
+        // detection window a deployment declared; a platform without them
+        // still gets keepalive, just on its own schedule.
+#ifdef TCP_KEEPIDLE
+        ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &opts.keepalive_idle_s, sizeof(opts.keepalive_idle_s));
+#endif
+#ifdef TCP_KEEPINTVL
+        ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &opts.keepalive_interval_s, sizeof(opts.keepalive_interval_s));
+#endif
+#ifdef TCP_KEEPCNT
+        ::setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &opts.keepalive_count, sizeof(opts.keepalive_count));
+#endif
+    }
     if (opts.recv_buffer_bytes > 0) {
         ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opts.recv_buffer_bytes, sizeof(opts.recv_buffer_bytes));
     }
@@ -845,6 +906,15 @@ private:
             auto result = detail::read_envelope(fd, env, scratch);
             if (result == detail::ReadResult::SocketClosed) {
                 stream->close();
+                // §mesh-16.7 row 8: the peer this client dials is gone.
+                // Raised only when the loss was not our own teardown —
+                // `shutdown()` sets `stopping_` before closing, so a local
+                // stop cannot masquerade as a partition. Once per loss
+                // edge, because the loop exits here; the next `send()`
+                // re-dials and a later loss raises again.
+                if (!stopping_.load() && on_peer_loss_) {
+                    on_peer_loss_();
+                }
                 break;
             }
             if (result == detail::ReadResult::DecodeError) {
@@ -875,10 +945,21 @@ public:
         on_decode_error_ = std::move(handler);
     }
 
+    /// Install the peer-loss handler (§mesh-16.7 row 8). Same timing
+    /// contract as the decode-error handler above: set it BEFORE the first
+    /// `send()` that triggers the lazy dial, so the reader thread sees it
+    /// when it starts. Unset means the loss is still handled — the stream
+    /// closes and the next send re-dials — but goes unreported, which is
+    /// this transport's pre-row-8 behaviour.
+    void setPeerLossHandler(PeerLossCallback handler) {
+        on_peer_loss_ = std::move(handler);
+    }
+
 private:
     std::string connect_endpoint_;
     ReceiveCallback on_receive_;
     DecodeErrorCallback on_decode_error_;
+    PeerLossCallback on_peer_loss_;
     const SocketOptions options_;
     /// Gates the dial path and the `stream_` / `reader_` handles only.
     /// Frame serialisation lives on the stream, so this lock is never held
