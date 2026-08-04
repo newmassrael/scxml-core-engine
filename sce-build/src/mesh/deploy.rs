@@ -1394,11 +1394,18 @@ pub struct CustomTcpTransportConfig {
 ///
 /// A DDS domain is the isolation unit: participants in different domains
 /// never discover each other, and there is no cross-domain bridging. That
-/// makes `domain_id` the one field a deployment genuinely has to control —
-/// it is what keeps two deployments (or two concurrent test fixtures) on
-/// the same host from joining each other's discovery. Everything else
-/// Cyclone DDS exposes is tuning that belongs in its own XML config,
-/// reached through `CYCLONEDDS_URI`, not in the mesh schema.
+/// makes `domain_id` the field a deployment always has to control — it is
+/// what keeps two deployments (or two concurrent test fixtures) on the
+/// same host from joining each other's discovery.
+///
+/// Everything else Cyclone DDS exposes — discovery peers, transport
+/// selection, buffer sizes, thread scheduling, tracing — is tuning that
+/// belongs in its own XML config rather than mirrored into the mesh
+/// schema. `config:` names that file, the same way
+/// `transports.zenoh.config:` names a `zenoh.json5` and
+/// `transports.someip.config:` a `vsomeip.json`. Naming it here rather
+/// than leaving it to the `CYCLONEDDS_URI` environment variable is what
+/// makes a deployment reproducible from deploy.yaml alone.
 ///
 /// `deny_unknown_fields` rejects typos like `domian_id:` at parse time
 /// rather than letting them fall through to the default domain, where the
@@ -1413,6 +1420,26 @@ pub struct DdsTransportConfig {
     /// implementation reject an unusable value at participant creation —
     /// a build-time bound here would encode one vendor's mapping.
     pub domain_id: Option<u32>,
+    /// Vendor configuration for the device's participant, passed through
+    /// to CycloneDDS-CXX's `DomainParticipant(id, qos, listener, mask,
+    /// config)` constructor. Cyclone reads it as a **file name**, or —
+    /// when the value starts with `<` — as the XML text itself, so both
+    /// an out-of-line `cyclonedds.xml` and a short inline fragment are
+    /// expressible.
+    ///
+    /// The value is emitted verbatim, matching
+    /// [`ZenohTransportConfig::config`]: a relative path resolves against
+    /// the generated program's working directory, not against
+    /// deploy.yaml. Absent means the participant keeps Cyclone's own
+    /// resolution order (`CYCLONEDDS_URI`, then built-in defaults), so
+    /// adding the field changes nothing for a deployment that does not
+    /// use it.
+    ///
+    /// `domain_id` takes precedence over any domain id inside the file —
+    /// that is Cyclone's rule, not SCE's, and it is why the two fields
+    /// are not mutually exclusive.
+    #[serde(default)]
+    pub config: Option<PathBuf>,
 }
 
 impl CustomTcpTransportConfig {

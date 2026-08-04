@@ -16,12 +16,27 @@
 # listener". The binding's `topic:` is the whole of the addressing, and the
 # reply / notification topics are derived from it (SCE_MESH.md §mesh-8.2) so a
 # request topic cannot be paired with an unrelated reply topic.
+#
+# `config:` carries the vendor settings through to the participant
+# (SCE_MESH.md §mesh-14.4). It is given inline rather than as a file name —
+# both forms are legal, Cyclone reads a leading '<' as "this IS the XML" —
+# so the fixture does not depend on the ctest working directory. The
+# discovery tag it sets is the second isolation dimension: `domain_id`
+# already separates this fixture from another deployment on the host, and a
+# tag separates it from anything that happens to share the domain. If the
+# declared config failed to reach the participant, the two peers here would
+# fall back to the untagged default together and this fixture would still
+# pass — that direction is asserted at build time instead, by
+# `sce-build/tests/mesh_dds_vendor_config.rs`. What this fixture adds is
+# that a participant given a config still comes up and still carries every
+# pattern.
 version: "1.0"
 topology:
   ecu_brake:
     transports:
       dds:
         domain_id: 71
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_multi</Tag></Discovery></Domain></CycloneDDS>'
     machines:
       brake_dds_multi:
         source: brake_dds_multi.scxml
@@ -33,6 +48,7 @@ topology:
     transports:
       dds:
         domain_id: 71
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_multi</Tag></Discovery></Domain></CycloneDDS>'
     machines:
       motor:
         source: motor_dds_multi.scxml

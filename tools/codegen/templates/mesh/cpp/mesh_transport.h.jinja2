@@ -772,6 +772,14 @@ static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper 
 // unit: participants in different domains never discover each other, so
 // this is what keeps two deployments on one host apart.
 static constexpr std::uint32_t DDS_DOMAIN_ID = {{ dds_transport.domain_id }};
+{% if dds_transport.config %}
+// Vendor configuration for this device's participant (deploy.yaml
+// `transports.dds.config:`). Cyclone reads it as a file name, or as XML
+// text when it starts with '<'. Emitted only when declared: an empty
+// string is a file name Cyclone cannot open, so "no config" has to be the
+// absence of the argument, not an empty one.
+static constexpr const char* DDS_CONFIG = {{ dds_transport.config }};
+{% endif %}
 {% for target in targets if target.state.kind == "dds" %}
 // Request-leg topic for {{ target.target }}. The reply and notification
 // topics are derived from it inside DdsTransport.h rather than declared
@@ -3263,7 +3271,7 @@ struct TransportRouter {
         // The participant comes first: every endpoint below borrows it,
         // and IGNORE_LOCAL(participant) only means "this device's own
         // traffic" because they all share this one.
-        dds_participant_ = std::make_unique<SCE::Mesh::Dds::Participant>(DDS_DOMAIN_ID);
+        dds_participant_ = std::make_unique<SCE::Mesh::Dds::Participant>(DDS_DOMAIN_ID{% if dds_transport.config %}, DDS_CONFIG{% endif %});
         if (!dds_participant_->valid()) {
             shutdown();
             return false;
