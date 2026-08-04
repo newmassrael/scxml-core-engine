@@ -56,6 +56,7 @@ Column legend:
 | mesh_shm_compile_verification | §3.3 (shm transport) | SHM transport codegen compiles. | build |
 | mesh_someip_compile_verification | §3.3, §8.2 | SOME/IP transport codegen compiles. | build |
 | mesh_someip_multipattern_compile_verification | §8.2 (capability matrix) | Multi-pattern SOME/IP codegen compiles. | build |
+| mesh_someip_machine_lifetime_subscribe_verification | §13 (machine-lifetime path) | deploy.yaml `subscriptions:` → `request_event` + `subscribe` + inbound handler resolved from vsomeip.json, on a machine with no `<send>` at all. | build |
 | mesh_zenoh_compile_verification | §3.3 | Zenoh transport codegen compiles. | build |
 | mesh_zenoh_multipattern_compile_verification | §8.2 | Multi-pattern Zenoh codegen compiles. | build |
 | mesh_pool_compile_verification | §14 (pool config) | Pool deploy.yaml codegen compiles. | build |
@@ -125,7 +126,7 @@ and delta"; `S` = spec-only, no runtime evidence.
 | §10.7 `_event` field wiring | P | Covered indirectly by every runtime fixture that raises `error.communication` or `done.invoke.<id>`. No dedicated field-by-field assertion suite. |
 | §10.7.1 Structured `error.*` data | F | `mesh_communication_error_verification` covers every catalog row. |
 | §10.8 Delayed send + cancel | P | Deadline scheduler unit test + RPC deadline expiry; `<send delay>` cross-process sender-hold not exercised (Session E2 scope). |
-| §13 Topology (inferred pairing, subscription dual-lifecycle) | F | `mesh_zenoh_base_subscribe_verification`, `mesh_zenoh_machine_lifetime_subscribe_verification`, `mesh_someip_unsubscribe`. |
+| §13 Topology (inferred pairing, subscription dual-lifecycle) | F | `mesh_zenoh_base_subscribe_verification`, `mesh_zenoh_machine_lifetime_subscribe_verification`, `mesh_someip_machine_lifetime_subscribe_verification`, `mesh_someip_unsubscribe`. The machine-lifetime path is covered on both transports that realise it; §13's own example is written `transport: someip`. |
 | §14 Pattern dispatch + pool + srcexpr | F | Multi-pattern runtime fixtures + `mesh_pool_zenoh_runtime_verification` + `mesh_srcexpr_compile_verification`. |
 | §14 `partitions:` schema (rules 1/2/5/6–12) | F | Rules 1/2/5–11 via `mesh_partition_rule{1,2,6,7,8,9,10,11}_rejection`; rule 12 (five violations) via `mesh_partition_rule12{a,b,c,d,e}_rejection`. Cross-reference enforced by `sce-build/src/mesh/partitions.rs::validate_parallel_root_designation`. |
 | §16.3 / §16.4 Distributability analyzer (R1–R4) | S | Session E2 scope. Zero fixtures. |

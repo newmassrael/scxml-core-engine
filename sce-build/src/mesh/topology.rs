@@ -1971,10 +1971,15 @@ fn merge_partial_into(partials: &mut Vec<PartialTarget>, new: PartialTarget) {
 ///   lists in codegen.
 /// - Transport capability is checked per entry: a binding whose
 ///   transport lacks `TransportDescriptor::supports_machine_lifetime_subscribe`
-///   (e.g. SOME/IP before pub/sub support lands) rejects with
-///   `MachineLifetimeSubscriptionUnsupported` rather than silently
-///   dispatching to a `route_send` arm whose transport handler has
-///   no `case EventSubscribe`.
+///   rejects with `MachineLifetimeSubscriptionUnsupported` rather than
+///   silently dispatching to a `route_send` arm whose transport handler
+///   has no `case EventSubscribe`.
+///
+/// Per-event addressing metadata is *not* resolved here — it belongs to
+/// [`resolve_someip_ids`], which projects the binding's eventgroup
+/// declaration onto every entry of `subscription_events` after the
+/// SCXML-outbound fan-out. Splitting it that way keeps this contributor
+/// transport-agnostic and keeps one resolver for both subscribe paths.
 ///
 /// The returned vector is already deduplicated within this contributor's
 /// output (two subscription entries naming the same source + event
@@ -2015,14 +2020,12 @@ pub(crate) fn contribute_subscription_partials(
             }
         })?;
 
-        // Machine-lifetime synthesis gate: the transport must be able
-        // to dispatch a subscribe envelope from deploy.yaml-only
-        // information (no per-event external resolution). The
-        // `supports_machine_lifetime_subscribe` flag is the registry
-        // SSoT — true only for transports where a binding-wide
-        // address (e.g. Zenoh `key:`) is sufficient. Fail-closed so a
-        // SOME/IP subscription source does not silently fall through
-        // to the transport's "unknown event" arm.
+        // Machine-lifetime synthesis gate: the transport's send path
+        // must carry a subscribe arm reachable from a deploy.yaml
+        // declaration. The `supports_machine_lifetime_subscribe` flag is
+        // the registry SSoT. Fail-closed so a subscription source on a
+        // transport without that arm does not silently fall through to
+        // the "unknown event" return.
         let transport_supports_machine_lifetime = super::transport::lookup(&binding.transport)
             .is_some_and(|d| d.supports_machine_lifetime_subscribe);
         if !transport_supports_machine_lifetime {
@@ -2249,13 +2252,19 @@ fn validate_someip_pattern_fields(
 /// Map a SOME/IP field kind back to the deploy.yaml identifier the operator
 /// would use to declare it. Kept close to validation so diagnostics match
 /// the user-facing vocabulary exactly.
+///
+/// These are the *name* keys (`method:`, `event_group:`, …) that resolve
+/// against vsomeip.json — not the `_id` forms. The `_id` spellings are in
+/// [`super::external::RESERVED_SOMEIP_ID_KEYS`] and are rejected outright,
+/// so a diagnostic that named them would be telling the author to add the
+/// one key the next build refuses.
 fn field_kind_yaml_name(kind: super::pattern::SomeipFieldKind) -> &'static str {
     use super::pattern::SomeipFieldKind;
     match kind {
-        SomeipFieldKind::Method => "method_id",
-        SomeipFieldKind::EventGroup => "event_group_id",
-        SomeipFieldKind::Getter => "getter_id",
-        SomeipFieldKind::Setter => "setter_id",
+        SomeipFieldKind::Method => "method",
+        SomeipFieldKind::EventGroup => "event_group",
+        SomeipFieldKind::Getter => "getter",
+        SomeipFieldKind::Setter => "setter",
     }
 }
 
@@ -2561,11 +2570,57 @@ fn resolve_someip_ids(
         }
     }
 
-    // Detect unused per-event entries (likely typos).
+    // Machine-lifetime subscriptions (SCE_MESH.md §mesh-13). A
+    // `subscriptions:` entry addresses a SOME/IP eventgroup by
+    // construction — `request_event` + `subscribe` want an
+    // `(event_group_id, event_id)` pair and nothing else — so the field
+    // kind comes from the entry's *role*, not from the event name's
+    // pattern prefix. The name is an SCXML dispatch key the author picks
+    // freely; deriving a field kind from it would let
+    // `subscriptions: [{event: service.request.x}]` resolve to a method
+    // id and emit an RPC request where a subscribe belongs.
+    //
+    // Resolution order matches the outbound path: an entry already
+    // resolved by the SCXML fan-out above wins (the same event may be
+    // both `<send>`-subscribed and machine-lifetime subscribed), then the
+    // explicit `events:` table, then the binding-level flat sugar.
+    for event in &pt.subscription_events {
+        let ids = event_bindings
+            .get(event)
+            .or_else(|| per_binding.by_event.get(event))
+            .cloned()
+            .or_else(|| default_ids.project_to(super::pattern::CommunicationPattern::Subscribe));
+        // Anything other than an eventgroup pairing cannot drive a
+        // subscribe. vsomeip would accept the mismatched call and then
+        // never deliver; naming the missing declaration is the whole
+        // reason deploy.yaml references vsomeip.json by name.
+        match ids {
+            Some(SomeipEventIds::EventGroup { .. }) => {
+                event_bindings.insert(event.clone(), ids.expect("matched Some above"));
+            }
+            _ => {
+                return Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: pt.target.clone(),
+                    transport: "someip".to_string(),
+                    field: format!(
+                        "{} (machine-lifetime subscription on event \"{event}\")",
+                        field_kind_yaml_name(super::pattern::SomeipFieldKind::EventGroup),
+                    ),
+                });
+            }
+        }
+    }
+
+    // Detect unused per-event entries (likely typos). Subscription
+    // interest counts as a use: a subscriptions-only machine sends
+    // nothing, so cross-checking against the outbound vocabulary alone
+    // would reject the `events:` entry that makes the deployment work.
     let actual_events: BTreeSet<&str> = pt
         .event_patterns
         .iter()
         .map(|ep| ep.event.as_str())
+        .chain(pt.subscription_events.iter().map(String::as_str))
         .collect();
     for declared in per_binding.by_event.keys() {
         if !actual_events.contains(declared.as_str()) {
@@ -4870,13 +4925,22 @@ topology:
     }
 
     #[test]
-    fn subscription_on_non_pubsub_transport_rejected() {
-        // SOME/IP currently has no `case EventSubscribe` in its send path.
-        // A deploy.yaml that points a
-        // subscription source at a SOME/IP binding would otherwise build
-        // successfully and silently drop every subscribe envelope at the
-        // transport. Topology-stage reject pins this fail-closed so the
-        // §mesh-13 "delivered" claim stays honest transport-agnostically.
+    fn subscription_on_transport_without_a_subscribe_arm_rejected() {
+        // The fail-closed gate, exercised on the transport that most
+        // invites a false positive: DDS is implemented and advertises
+        // PubSub, so "the mechanism looks generic" would let a
+        // subscription through — but its send path routes subscribe and
+        // unsubscribe outside `send_to_<target>` entirely (they create and
+        // destroy the notification reader), and no fixture drives that
+        // from a deploy.yaml declaration. A subscription pointed at it
+        // would build and then silently deliver nothing, which is the
+        // §mesh-13 "delivered" claim going quietly false.
+        //
+        // SOME/IP is deliberately *not* the case here any more: it
+        // resolves its subscribe through the same vsomeip.json the
+        // outbound path uses, so it is covered by
+        // `tests/mesh_someip_machine_lifetime_subscribe.rs` on the
+        // success side instead.
         let scxml = r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="brake" initial="idle">
@@ -4884,9 +4948,6 @@ topology:
         <transition event="event.notification.heartbeat" target="idle"/>
     </state>
 </scxml>"##;
-        // Minimal someip binding — no SCXML send targets #motor, so
-        // per-event ID resolution never runs (the synthesis path
-        // rejects at capability check before finalize_targets).
         let yaml = r##"version: "1.0"
 topology:
   ecu1:
@@ -4895,7 +4956,8 @@ topology:
         source: b.scxml
         bindings:
           "#motor":
-            transport: someip
+            transport: dds
+            topic: sce/brake/motor
         subscriptions:
           - event: event.notification.heartbeat
             source: "#motor"
@@ -4916,7 +4978,7 @@ topology:
             "brake",
             &external,
         )
-        .expect_err("SOME/IP machine-lifetime subscribe must reject at topology");
+        .expect_err("a transport with no subscribe arm must reject at topology");
         match err {
             TopologyError::MachineLifetimeSubscriptionUnsupported {
                 machine,
@@ -4927,7 +4989,7 @@ topology:
                 assert_eq!(machine, "brake");
                 assert_eq!(source_target.as_str(), "#motor");
                 assert_eq!(event, "event.notification.heartbeat");
-                assert_eq!(transport, "someip");
+                assert_eq!(transport, "dds");
             }
             other => panic!("expected MachineLifetimeSubscriptionUnsupported, got {other:?}"),
         }

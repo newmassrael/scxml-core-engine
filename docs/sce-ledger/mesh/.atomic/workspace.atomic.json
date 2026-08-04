@@ -755,11 +755,6 @@
         },
         {
           "file": "sce-build/src/mesh/topology.rs",
-          "symbol": "subscription_on_non_pubsub_transport_rejected",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/src/mesh/topology.rs",
           "symbol": "tests",
           "kind": "references"
         },
@@ -798,6 +793,26 @@
         {
           "file": "sce-build/tests/mesh_external_config.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "subscription_on_transport_without_a_subscribe_arm_rejected",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "resolve_someip_ids",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "TargetContext",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "symbol": "SOMEIP",
+          "kind": "references"
         }
       ]
     },

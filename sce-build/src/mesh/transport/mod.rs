@@ -229,12 +229,14 @@ pub struct TransportDescriptor {
     /// - `local` / `shm` / `custom_tcp`: no pub/sub capability at all.
     ///   Already rejected earlier; set `false` for structural
     ///   consistency.
-    /// - `someip`: pub/sub works through SCXML `<send>` (template emits
-    ///   `request_event` + `subscribe` from per-event event_group_id
-    ///   resolved via vsomeip.json), but machine-lifetime synthesis
-    ///   never consults vsomeip.json — it has no event_group_id to
-    ///   emit, so the subscribe would land in the "unknown event" arm
-    ///   and silently drop; SOME/IP support here is consumer-gated.
+    /// - `someip`: `true`. The subscribe needs an
+    ///   `(event_group_id, event_id)` pair, and `resolve_someip_ids`
+    ///   projects the binding's eventgroup declaration onto the
+    ///   subscription event exactly as it does for an SCXML-driven
+    ///   `event.subscribe.X` — the machine-lifetime path reads the same
+    ///   vsomeip.json through the same resolver. A subscription whose
+    ///   binding declares no eventgroup is rejected by name rather than
+    ///   dispatched into the "unknown event" arm.
     /// - `zenoh`: binding-wide `key:` is sufficient for subscribe
     ///   dispatch — no per-event resolution needed. `true`.
     /// - `dds`: implemented, but no fixture drives deploy.yaml
@@ -511,12 +513,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Codegen emits one `request_service(SERVICE, i)` per declared
         // instance at init().
         supports_pool: true,
-        // SCXML-driven subscribes work (template emits request_event +
-        // subscribe from vsomeip.json-resolved event_group_id), but the
-        // machine-lifetime synthesis path has no external resolution
-        // step — the subscribe envelope would hit the "unknown event"
-        // arm and drop; SOME/IP support here is consumer-gated.
-        supports_machine_lifetime_subscribe: false,
+        // Both subscribe paths share one resolver: a deploy.yaml
+        // `subscriptions:` entry projects the binding's eventgroup
+        // declaration onto its event the same way an SCXML-driven
+        // `event.subscribe.X` does, so init() emits the same
+        // request_event + subscribe pair against vsomeip.json-resolved
+        // ids (SCE_MESH.md §mesh-13).
+        supports_machine_lifetime_subscribe: true,
         // SOME/IP's routing_manager tracks per-(service, instance) state
         // independently: `offer_service(SERVICE, i)` advertises one
         // instance, `register_message_handler(SERVICE, i, METHOD, ...)`

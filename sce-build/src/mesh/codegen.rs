@@ -501,6 +501,19 @@ struct TargetContext {
     auth: Option<AuthPolicyContext>,
     /// Per-event pattern metadata for pattern-aware send logic.
     event_patterns: Vec<EventPatternContext>,
+    /// SCE_MESH.md §mesh-13 machine-lifetime subscriptions, carrying the
+    /// per-event addressing metadata the subscribe leg needs. Parallel to
+    /// [`Self::event_patterns`] rather than folded into it: that list is
+    /// the target's *outbound send* vocabulary and `resolvePattern()`
+    /// classifies from it, so an inbound notification name landing there
+    /// would be classified as something the machine sends.
+    ///
+    /// Entries whose event already appears in `event_patterns` are
+    /// omitted — the same event may be both `<send>`-subscribed and
+    /// machine-lifetime subscribed, and the two lists drive the same
+    /// per-event constants, which C++ may only define once.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    subscription_event_ids: Vec<SubscriptionEventContext>,
     /// True if any event uses RPC patterns (ServiceRequest/ServiceResponse).
     has_rpc: bool,
     /// True if any event uses PubSub patterns (Subscribe/Notification).
@@ -652,6 +665,32 @@ struct EventPatternContext {
     /// silently replace the subscribe handler in vsomeip. The codegen
     /// sets this flag so the template avoids hard-coding wire values.
     skip_receive_handler: bool,
+}
+
+/// A machine-lifetime subscription as the template sees it
+/// (SCE_MESH.md §mesh-13).
+///
+/// Deliberately narrower than [`EventPatternContext`]: a subscription has
+/// no outbound pattern, no reply event and no field-kind choice. It
+/// addresses an eventgroup — that is what `request_event` + `subscribe`
+/// take — so the two ids are non-optional here, and topology has already
+/// rejected the declaration that could not supply them. Modelling it with
+/// the wider struct would reintroduce the "which Option happened to be
+/// set" probing the tagged `SomeipEventIds` enum exists to remove.
+///
+/// Emitted only for SOME/IP targets; other transports address a
+/// subscription with the binding-wide identity they already carry (Zenoh's
+/// `key:`), so they need no per-event record.
+#[derive(Debug, Clone, serde::Serialize)]
+struct SubscriptionEventContext {
+    event: String,
+    /// C++-identifier-safe upper-snake form, shared with
+    /// [`EventPatternContext::event_const`] so both lists name the same
+    /// constant for the same event.
+    event_const: String,
+    /// Rendered `0x####` literals, resolved from vsomeip.json.
+    event_group_id: String,
+    event_id: String,
 }
 
 /// Convert an SCXML event name (`service.request.compute_force`) into a
@@ -1377,6 +1416,37 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 })
                 .collect();
 
+            // SCE_MESH.md §mesh-13: machine-lifetime subscriptions carry
+            // their own addressing metadata on SOME/IP. `resolve_someip_ids`
+            // has already rejected any entry it could not resolve to an
+            // eventgroup pairing, so a `None` here means the event is
+            // already covered by `event_patterns` (a `<send>` on the same
+            // name) and must not define its constants a second time.
+            let subscription_event_ids: Vec<SubscriptionEventContext> = t
+                .subscription_events
+                .iter()
+                .filter(|event| !t.event_patterns.iter().any(|ep| &ep.event == *event))
+                .filter_map(|event| {
+                    let ids = event_bindings_view.and_then(|bs| bs.get(event))?;
+                    match *ids {
+                        super::topology::SomeipEventIds::EventGroup {
+                            event_group_id,
+                            event_id,
+                        } => Some(SubscriptionEventContext {
+                            event: event.clone(),
+                            event_const: event_to_const_suffix(event),
+                            event_group_id: fmt_someip_id(event_group_id),
+                            event_id: fmt_someip_id(event_id),
+                        }),
+                        // Topology rejects every other variant for a
+                        // subscription before codegen runs; skipping keeps
+                        // this a pure projection rather than a second
+                        // validator that could disagree with the first.
+                        _ => None,
+                    }
+                })
+                .collect();
+
             // Detect pattern categories by recovering the symbolic pattern
             // from the cached wire value and consulting its capability.
             // `CommunicationPattern::required_capability()` is the SSOT
@@ -1424,6 +1494,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 needs_ordering,
                 responders: t.responders.clone(),
                 event_patterns,
+                subscription_event_ids,
                 has_rpc,
                 has_pubsub,
                 has_field,
@@ -2363,6 +2434,7 @@ mod tests {
             // itself, which is what an absent `reply_from:` yields.
             responders: vec!["probe".into()],
             event_patterns: Vec::new(),
+            subscription_event_ids: Vec::new(),
             has_rpc,
             has_pubsub: false,
             has_field: false,

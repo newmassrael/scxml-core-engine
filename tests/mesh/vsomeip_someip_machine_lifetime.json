@@ -1,0 +1,19 @@
+{
+  "applications": [
+    { "name": "brake_someip_machine_lifetime_app" }
+  ],
+  "services": [
+    {
+      "name": "motor_control",
+      "service": "0x3100",
+      "instance": "0x0007",
+      "eventgroups": [
+        {
+          "name": "speed_group",
+          "eventgroup": "0x0021",
+          "events": ["0x8042"]
+        }
+      ]
+    }
+  ]
+}
