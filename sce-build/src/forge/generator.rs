@@ -14740,6 +14740,23 @@ fn render_buffer_pool_c(
                 cfg.per_peer_quota,
             ),
         };
+    // Layer 2 analyzer annotations (RFC §synth-5-E lines 1349-1365),
+    // rendered from the same `ownership_contract` table that pins
+    // `<sce/sample.h>`. Keyed by contract suffix so the template names
+    // the declaration it annotates rather than indexing positionally;
+    // `check_layer2_annotations_emitted_c11` below fails the render if
+    // the template drops one, so a missing key cannot degrade to
+    // silently-inert analyzer coverage.
+    let layer2: std::collections::BTreeMap<String, String> =
+        crate::forge::ownership_contract::POOL_CONTRACTS
+            .iter()
+            .map(|c| {
+                (
+                    c.suffix.to_string(),
+                    c.rendered_lines(&snake_name).join("\n"),
+                )
+            })
+            .collect();
     let ctx = minijinja::context! {
         name => &m.name,
         snake_name => snake_name.clone(),
@@ -14753,6 +14770,7 @@ fn render_buffer_pool_c(
         dma_channel => m.dma_channel.clone().unwrap_or_default(),
         has_dma_channel => m.dma_channel.is_some(),
         cache_policy => m.cache_policy.to_string(),
+        layer2 => layer2,
         // C5 cache-maintenance gating; mirror of Rust template
         // context shape so per-backend template authors can reach for
         // the same names without per-backend wiring guesswork.
@@ -14769,10 +14787,44 @@ fn render_buffer_pool_c(
             "buffer_pool.h.jinja2 (c11): {e}"
         )))
     })?;
+    check_layer2_annotations_emitted_c11(&m.name, &snake_name, &rendered)?;
     if variant_reassembly {
         check_reassembly_peer_id_zid_invariant_c11(&m.name, &snake_name, &rendered)?;
     }
     Ok(rendered)
+}
+
+/// Codegen self-check for the Layer 2 analyzer annotations
+/// (RFC §synth-5-E lines 1349-1365).
+///
+/// The template reaches into the `layer2` map by suffix. minijinja
+/// resolves an unknown key to undefined and renders it as the empty
+/// string, so a typo or a dropped lookup would strip analyzer coverage
+/// from every generated pool while every existing test stayed green —
+/// the silently-inert hook class §2.4 invariant 1 forbids. Fail the
+/// render instead: the contract table is the authority on what must
+/// appear, so it is also what this checks against.
+fn check_layer2_annotations_emitted_c11(
+    pool_name: &str,
+    snake_name: &str,
+    rendered: &str,
+) -> Result<(), ForgeError> {
+    for contract in crate::forge::ownership_contract::POOL_CONTRACTS.iter() {
+        for line in contract.rendered_lines(snake_name) {
+            if !rendered.contains(&line) {
+                return Err(ForgeError::from(GenerateError::TemplateRender(format!(
+                    "buffer_pool.h.jinja2 (c11): pool `{pool_name}` rendered without \
+                     the Layer 2 analyzer annotation for `{}`:\n  {line}\n\
+                     The template must emit `layer2[\"{}\"]` immediately above that \
+                     declaration; without it, non-Clang toolchains lose the \
+                     ownership contract entirely (RFC §synth-5-E lines 1349-1365).",
+                    contract.qualified_name(snake_name),
+                    contract.suffix,
+                ))));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Item C9 codegen self-check for the §synth-5-M reassembly-variant peer-id

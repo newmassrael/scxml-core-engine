@@ -26,6 +26,7 @@ pub mod limits;
 pub mod manifest;
 pub mod model;
 pub mod native_action;
+pub mod ownership_contract;
 pub mod parser;
 pub mod pool_registry;
 pub mod provenance;
