@@ -26,6 +26,12 @@
       ]
     },
     {
+      "file": "tests/mesh/CustomTcpSocketOptionsTest.cpp",
+      "section_ids": [
+        "mesh-16.8.3"
+      ]
+    },
+    {
       "file": "tests/mesh/DedupRouterTest.cpp",
       "section_ids": [
         "mesh-10.5"
@@ -35,6 +41,12 @@
       "file": "tests/mesh/InvokeCorrelationTest.cpp",
       "section_ids": [
         "mesh-9.5"
+      ]
+    },
+    {
+      "file": "tests/mesh/MeshCxx17ConformanceTest.cpp",
+      "section_ids": [
+        "mesh-10.4"
       ]
     },
     {
