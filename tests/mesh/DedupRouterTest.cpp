@@ -5,15 +5,23 @@
 //
 // DedupRouter / DedupWindow unit tests — SCE_MESH.md §10.5.
 //
-// The window is a 256-entry ring of recently-observed UUIDs per sender.
-// These tests pin down the four guarantees §10.5 promises:
+// The window is a ring of recently-observed UUIDs per sender, sized by
+// deploy.yaml (`machines.<name>.dedup.window_size`, §10.5 default 256)
+// and reaching the runtime as a template argument. These tests
+// instantiate the default size, since the guarantees are stated in terms
+// of `kCapacity` rather than of a literal:
 //
 //   (1) seeing the same id twice → the second call is rejected,
-//   (2) 256 distinct ids all pass,
-//   (3) the 257th distinct id evicts the oldest (so the first id
-//       becomes novel again),
+//   (2) `kCapacity` distinct ids all pass,
+//   (3) the (kCapacity + 1)-th distinct id evicts the oldest (so the
+//       first id becomes novel again),
 //   (4) the per-sender map gives each source its own ring — admitting
 //       the same id on two distinct sources returns true both times.
+//
+// `NonDefaultCapacityIsHonoured` covers the axis the template argument
+// adds: a second instantiation must carry its own capacity, not the
+// default one. Without it, a `DedupRouterT<N>` that ignored N and always
+// allocated 256 slots would pass every other test in this file.
 //
 // Plus a coarse concurrency smoke test so `-fsanitize=thread` gets a
 // chance to see the internal mutex in action. The fine-grained race
@@ -31,8 +39,13 @@
 #include <thread>
 #include <vector>
 
-using SCE::Mesh::DedupRouter;
-using SCE::Mesh::DedupWindow;
+using SCE::Mesh::DedupResult;
+
+// The deploy.yaml default (`deploy::DEFAULT_DEDUP_WINDOW_SIZE`), named
+// once here so the capacity under test is visible at the top of the file
+// rather than repeated at each instantiation.
+using DedupWindow = SCE::Mesh::DedupWindowT<256>;
+using DedupRouter = SCE::Mesh::DedupRouterT<256>;
 
 namespace {
 
@@ -144,12 +157,12 @@ TEST(DedupWindow, ObserveWithSignalEnumPathing) {
     // site has a closed switch.
     DedupWindow w;
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
-        ASSERT_EQ(w.observeWithSignal(id_of(n)), DedupWindow::Result::Novel)
+        ASSERT_EQ(w.observeWithSignal(id_of(n)), DedupResult::Novel)
             << "id " << n << " inside pre-wrap window must be Novel";
     }
-    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity + 1)), DedupWindow::Result::NovelWithEviction)
+    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity + 1)), DedupResult::NovelWithEviction)
         << "first eviction must surface NovelWithEviction";
-    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity)), DedupWindow::Result::Duplicate)
+    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity)), DedupResult::Duplicate)
         << "still-resident recent id must surface Duplicate";
 }
 
@@ -159,9 +172,9 @@ TEST(DedupRouter, AdmitWithSignalRaisesOverflowOnFirstEviction) {
     // when the result is NovelWithEviction.
     DedupRouter r;
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
-        ASSERT_EQ(r.admitWithSignal("motor", id_of(n)), DedupWindow::Result::Novel);
+        ASSERT_EQ(r.admitWithSignal("motor", id_of(n)), DedupResult::Novel);
     }
-    EXPECT_EQ(r.admitWithSignal("motor", id_of(DedupWindow::kCapacity + 1)), DedupWindow::Result::NovelWithEviction);
+    EXPECT_EQ(r.admitWithSignal("motor", id_of(DedupWindow::kCapacity + 1)), DedupResult::NovelWithEviction);
 }
 
 TEST(DedupRouter, BoolAdmitContractUnchanged) {
@@ -203,4 +216,43 @@ TEST(DedupRouter, ConcurrentAdmitsNeverDoubleAdmit) {
         w.join();
     }
     EXPECT_EQ(admitted.load(), kTotalIds);
+}
+
+// ── Declared capacity (SCE_MESH.md §10.5 "size is configurable") ──
+
+TEST(DedupWindow, NonDefaultCapacityIsHonoured) {
+    // The axis the template argument adds. A window declared at 4 must
+    // evict on the 5th distinct id — an implementation that ignored the
+    // argument and always held 256 slots would admit all five and pass
+    // every other test in this file.
+    SCE::Mesh::DedupWindowT<4> w;
+    for (std::uint32_t n = 1; n <= 4; ++n) {
+        ASSERT_EQ(w.observeWithSignal(id_of(n)), DedupResult::Novel) << "id " << n << " fits in a 4-entry window";
+    }
+    EXPECT_EQ(w.observeWithSignal(id_of(5)), DedupResult::NovelWithEviction)
+        << "the 5th distinct id must evict in a window declared at 4";
+    EXPECT_TRUE(w.observe(id_of(1))) << "the evicted first id must be novel again";
+}
+
+TEST(DedupRouter, CapacityIsPerInstantiationNotGlobal) {
+    // Two capacities coexisting in one translation unit: the narrow
+    // router must forget what the wide one still remembers. This is what
+    // makes the per-machine `dedup.window_size` meaningful in a build
+    // that emits several machines.
+    SCE::Mesh::DedupRouterT<2> narrow;
+    SCE::Mesh::DedupRouterT<8> wide;
+    for (std::uint32_t n = 1; n <= 3; ++n) {
+        ASSERT_TRUE(narrow.admit("motor", id_of(n)));
+        ASSERT_TRUE(wide.admit("motor", id_of(n)));
+    }
+    EXPECT_TRUE(narrow.admit("motor", id_of(1))) << "id 1 aged out of a 2-entry window";
+    EXPECT_FALSE(wide.admit("motor", id_of(1))) << "id 1 is still resident in an 8-entry window";
+}
+
+TEST(DedupRouter, CapacityConstantMatchesTheInstantiation) {
+    // The generated §16.7 row 7 payload reports the window size through
+    // `DedupRouter::kCapacity`, so the constant has to track the template
+    // argument rather than a stale literal.
+    EXPECT_EQ(SCE::Mesh::DedupRouterT<512>::kCapacity, 512u);
+    EXPECT_EQ(DedupRouter::kCapacity, 256u);
 }

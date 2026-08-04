@@ -14,10 +14,22 @@
 // the window for that source and drops the envelope if the id is
 // already present.
 //
-// The window size is 256 entries. UUID v7's ms-prefix timestamp makes
-// the ring a time-bounded sliding filter: at 1 000 events/sec/sender
-// that is a 256 ms window — longer than any practical retransmit
-// interval at the transport layer.
+// The window size is a deploy.yaml property (SCE_MESH.md §mesh-10.5
+// "size is configurable; default 256 entries"), reaching this header as
+// the `Capacity` template argument that generated code instantiates.
+// It is a template argument rather than a constructor parameter because
+// the ring is a `std::array` member: a runtime size would move it to the
+// heap, and the per-sender window is exactly the place where an
+// allocation is unwelcome — it is constructed on the receive path the
+// first time a sender is seen.
+//
+// UUID v7's ms-prefix timestamp makes the ring a time-bounded sliding
+// filter: at 1 000 events/sec/sender the default 256 entries is a 256 ms
+// window — longer than any practical retransmit interval at the
+// transport layer. A deployment whose sender rate or retransmit horizon
+// differs scales the number accordingly, paying 16 bytes of memory and
+// one comparison per entry per inbound envelope (the scan is linear;
+// see `observeWithSignal`).
 //
 // Scope (what this class is NOT):
 //   * No sender eviction. The per-source map grows to the cardinality
@@ -26,7 +38,8 @@
 //     deploy.yaml (bounded, small), so this is acceptable; game-scale
 //     fan-in would need an eviction policy layered on top.
 //   * No cross-session replay defence. An envelope that arrives more
-//     than 256 events after its first delivery will pass the filter.
+//     than `Capacity` events after its first delivery will pass the
+//     filter.
 //     §mesh-10.5 calls this out — the DedupWindow is a correctness guard
 //     against transport-level re-delivery, not against a malicious
 //     replay attacker.
@@ -65,14 +78,34 @@
 
 #pragma once
 
+#include "mesh/MeshUuidKey.h"
+
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 
 namespace SCE::Mesh {
+
+/// Outcome of admitting one envelope id into a window.
+///
+/// Namespace-scope rather than a member of the window, because it does
+/// not vary with capacity: a `DedupRouterT<256>` and a
+/// `DedupRouterT<512>` on the same device must report the same three
+/// outcomes to the same `raiseCommunicationError` call site.
+///
+/// SCE_MESH.md §mesh-16.7 row 7 — `NovelWithEviction` distinguishes
+/// "novel id, fresh slot" from "novel id, evicted an existing entry".
+/// The DEDUP_WINDOW_OVERFLOW raise condition the catalog defines maps to
+/// `NovelWithEviction`: the runtime has no oracle for "leaked duplicate
+/// older than the window", so eviction at full capacity is the closest
+/// observable proxy for "sustained rate exceeds window capacity".
+enum class DedupResult {
+    Duplicate,
+    Novel,
+    NovelWithEviction,
+};
 
 /// Ring-buffer window of recently-observed envelope ids for a single
 /// sender. `observe(id)` returns `true` iff the id was novel (not in
@@ -85,37 +118,31 @@ namespace SCE::Mesh {
 /// scan uses `wrapped_` + `head_` to walk only the slots that have
 /// actually been written, so a fresh window always admits its first id
 /// regardless of its value.
-class DedupWindow {
+template <std::size_t Capacity> class DedupWindowT {
+    static_assert(Capacity > 0, "a zero-length dedup window would admit every duplicate; "
+                                "deploy.yaml rejects window_size: 0 before codegen reaches here");
+
 public:
-    /// Capacity is fixed at 256 per §mesh-10.5. Exposed as a constant so
-    /// tests can assert the "257th distinct id evicts the first"
-    /// invariant without a magic number.
-    static constexpr std::size_t kCapacity = 256;
+    /// The deploy.yaml-declared window size, re-exposed so tests and the
+    /// generated §mesh-16.7 row 7 payload can name the capacity without
+    /// repeating the literal.
+    static constexpr std::size_t kCapacity = Capacity;
 
-    using Id = std::array<std::uint8_t, 16>;
-
-    /// SCE_MESH.md §mesh-16.7 row 7 — distinguishes "novel id, fresh slot"
-    /// from "novel id, evicted an existing entry". The DEDUP_WINDOW_OVERFLOW
-    /// raise condition the catalog defines maps to NovelWithEviction
-    /// — the runtime has no oracle for "leaked duplicate older than
-    /// kCapacity events", so eviction at full capacity is the closest
-    /// observable proxy for "sustained rate exceeds window capacity".
-    enum class Result {
-        Duplicate,
-        Novel,
-        NovelWithEviction,
-    };
+    /// The shared 16-byte UUID key (`MeshUuidKey.h`), not a private
+    /// redeclaration — the envelope ids this window holds are the same
+    /// values `InvokeCorrelation` and `MeshDeadlineScheduler` key on.
+    using Id = MeshUuidKey;
 
     /// Rich result variant of `observe`. Returns NovelWithEviction iff
     /// the ring was already wrapped (i.e. at capacity) AND the new id
     /// is novel — meaning an existing slot was overwritten by this
     /// call. Novel iff the ring still had unused slots before this
     /// insert. Duplicate iff the id matched any populated slot.
-    [[nodiscard]] Result observeWithSignal(const Id &id) noexcept {
+    [[nodiscard]] DedupResult observeWithSignal(const Id &id) noexcept {
         const std::size_t filled = wrapped_ ? kCapacity : head_;
         for (std::size_t i = 0; i < filled; ++i) {
             if (recent_ids_[i] == id) {
-                return Result::Duplicate;
+                return DedupResult::Duplicate;
             }
         }
         const bool eviction = wrapped_;
@@ -124,7 +151,7 @@ public:
         if (head_ == 0) {
             wrapped_ = true;
         }
-        return eviction ? Result::NovelWithEviction : Result::Novel;
+        return eviction ? DedupResult::NovelWithEviction : DedupResult::Novel;
     }
 
     /// Backward-compatible bool wrapper. Returns true iff `id` was
@@ -132,11 +159,14 @@ public:
     /// contract is unchanged for callers that do not need the row 7
     /// signal).
     ///
-    /// Complexity: O(kCapacity). Linear scan over a 4 KiB array beats
-    /// hash-set overhead at this size, and there is no sorting to
-    /// maintain: the ring is append-only with head-rotation.
+    /// Complexity: O(Capacity). At the default 256 the linear scan over
+    /// a 4 KiB array beats hash-set overhead, and there is no sorting to
+    /// maintain: the ring is append-only with head-rotation. The cost is
+    /// linear in the declared size, which is the trade a deployment
+    /// accepts when it raises the window — stated in the deploy schema
+    /// so the choice is informed rather than discovered.
     [[nodiscard]] bool observe(const Id &id) noexcept {
-        return observeWithSignal(id) != Result::Duplicate;
+        return observeWithSignal(id) != DedupResult::Duplicate;
     }
 
 private:
@@ -155,15 +185,21 @@ private:
 /// Envelopes from transports with inherent dedup (local, shm, SOME/IP
 /// over TCP, custom_tcp) MUST NOT traverse this class — the codegen
 /// branches at the inbound call site so those paths are zero-cost.
-class DedupRouter {
+template <std::size_t Capacity> class DedupRouterT {
 public:
-    using Id = DedupWindow::Id;
+    using Window = DedupWindowT<Capacity>;
+    using Id = typename Window::Id;
+
+    /// Re-exposed from the window so a call site holding only the router
+    /// type — which is what generated code names — can report the
+    /// capacity in the §mesh-16.7 row 7 payload.
+    static constexpr std::size_t kCapacity = Capacity;
 
     /// Returns true iff the envelope should proceed to the engine.
     /// Returns false iff the (source, id) pair was already observed
     /// within the window and the envelope should be dropped.
     [[nodiscard]] bool admit(const std::string &source, const Id &id) {
-        return admitWithSignal(source, id) != DedupWindow::Result::Duplicate;
+        return admitWithSignal(source, id) != DedupResult::Duplicate;
     }
 
     /// Rich variant — surfaces the §mesh-16.7 row 7 DEDUP_WINDOW_OVERFLOW
@@ -172,7 +208,7 @@ public:
     /// (a) drop on Duplicate, (b) proceed silently on Novel,
     /// (c) proceed AND raise DEDUP_WINDOW_OVERFLOW on
     ///     NovelWithEviction.
-    [[nodiscard]] DedupWindow::Result admitWithSignal(const std::string &source, const Id &id) {
+    [[nodiscard]] DedupResult admitWithSignal(const std::string &source, const Id &id) {
         std::lock_guard<std::mutex> lock(mutex_);
         // `operator[]` value-initializes the window on first insert,
         // i.e. an all-zero ring with head_ = 0 — any non-zero UUID is
@@ -182,7 +218,7 @@ public:
 
 private:
     std::mutex mutex_;
-    std::unordered_map<std::string, DedupWindow> windows_;
+    std::unordered_map<std::string, Window> windows_;
 };
 
 }  // namespace SCE::Mesh

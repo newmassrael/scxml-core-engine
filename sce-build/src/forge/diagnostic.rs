@@ -1816,6 +1816,10 @@ pub enum DiagnosticCode {
     MeshDeployDuplicateMachine,
     #[serde(rename = "mesh/deploy-invalid-ordering-timings")]
     MeshDeployInvalidOrderingTimings,
+    /// A machine's `dedup:` section declares a window that cannot filter
+    /// (§mesh-10.5). Parse-time reject; no closed candidate set.
+    #[serde(rename = "mesh/deploy-invalid-dedup-window")]
+    MeshDeployInvalidDedupWindow,
     #[serde(rename = "mesh/deploy-invalid-liveliness")]
     MeshDeployInvalidLiveliness,
     #[serde(rename = "mesh/deploy-invalid-server-query-timeout")]
@@ -2789,6 +2793,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployUnsupportedVersion,
         MeshDeployDuplicateMachine,
         MeshDeployInvalidOrderingTimings,
+        MeshDeployInvalidDedupWindow,
         MeshDeployInvalidLiveliness,
         MeshDeployInvalidServerQueryTimeout,
         MeshDeployInvalidOutboundBuffer,
@@ -3239,6 +3244,7 @@ impl DiagnosticCode {
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
             MeshDeployInvalidOrderingTimings => Some("SCE Mesh §10.6"),
+            MeshDeployInvalidDedupWindow => Some("SCE Mesh §10.5"),
 
             // ── Mesh communication errors (SCE_MESH.md §16.7) ────
             MeshDeployInvalidLiveliness => Some("SCE Mesh §16.7"),
@@ -3840,6 +3846,7 @@ impl DiagnosticCode {
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
             MeshDeployDuplicateMachine => "mesh/deploy-duplicate-machine",
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
+            MeshDeployInvalidDedupWindow => "mesh/deploy-invalid-dedup-window",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
             MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
@@ -10292,6 +10299,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:8dedacb2b46600f4","code":"mesh/deploy-invalid-ordering-timings","stage":"mesh-deploy","spec":"SCE Mesh §10.6","message":"machine 'brake': invalid `ordering:` section in deploy.yaml — tick_period_ms (100) must be strictly less than gap_timeout_ms (100) so a missed sequence is detected within `gap_timeout + tick_period`. Either fix the values or omit the section entirely to accept the defaults.","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-invalid-dedup-window",
+                DeployError::InvalidDedupWindow {
+                    machine: "brake".into(),
+                    reason: "window_size must be greater than zero — a zero-length window admits every duplicate, which is not a narrow filter but no filter. Omit the `dedup:` section to take the default of 256 entries.".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e3f14d59a0d51e88","code":"mesh/deploy-invalid-dedup-window","stage":"mesh-deploy","spec":"SCE Mesh §10.5","message":"machine 'brake': invalid `dedup:` section in deploy.yaml — window_size must be greater than zero — a zero-length window admits every duplicate, which is not a narrow filter but no filter. Omit the `dedup:` section to take the default of 256 entries.","actual":"brake"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-liveliness",
                 DeployError::InvalidLiveliness {
                     machine: "brake".into(),
@@ -12327,6 +12343,7 @@ mod tests {
             | MeshDeployParse
             | MeshDeployDuplicateMachine
             | MeshDeployInvalidOrderingTimings
+            | MeshDeployInvalidDedupWindow
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerQueryTimeout
             | MeshDeployInvalidOutboundBuffer
@@ -12971,6 +12988,7 @@ mod tests {
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
+                | MeshDeployInvalidDedupWindow
                 | MeshDeployInvalidLiveliness
                 | MeshDeployInvalidServerQueryTimeout
                 | MeshDeployInvalidOutboundBuffer
@@ -13120,9 +13138,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            329,
+            330,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 329 distinct variants to match the DiagnosticCode \
+             expected 330 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

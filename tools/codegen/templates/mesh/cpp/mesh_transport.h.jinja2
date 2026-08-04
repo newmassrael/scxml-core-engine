@@ -1542,7 +1542,15 @@ struct TransportRouter {
     // No eviction: the per-source window count is bounded by the sender
     // roster in deploy.yaml (small, static). Game-scale fan-in would
     // need a TTL-based cleanup, which is explicitly out of scope today.
-    SCE::Mesh::DedupRouter dedup_;
+    // Window size comes from deploy.yaml `machines.<name>.dedup.window_size`
+    // ({{ machine_dedup.window_size }} entries here, §10.5 default 256). It is a
+    // template argument because the ring is a `std::array` member: a
+    // runtime size would put the per-sender window on the heap, and the
+    // window is constructed on the receive path the first time a sender
+    // is seen. There is no fallback constant in the runtime; deploy.yaml
+    // is the only source.
+    using DedupRouter = ::SCE::Mesh::DedupRouterT<{{ machine_dedup.window_size }}>;
+    DedupRouter dedup_;
 {% endif %}
 {% if has_ordered_binding %}
     // SCE_MESH.md §10.6: per-sender sequence-ordered admit layer.
@@ -4750,10 +4758,10 @@ struct TransportRouter {
     [[nodiscard]] bool admitInbound(const SCE::Mesh::MeshEnvelope& env,
                                     std::size_t session_idx) {
         const auto dedup_result = dedup_.admitWithSignal(env.source, env.id);
-        if (dedup_result == ::SCE::Mesh::DedupWindow::Result::Duplicate) {
+        if (dedup_result == ::SCE::Mesh::DedupResult::Duplicate) {
             return false;
         }
-        if (dedup_result == ::SCE::Mesh::DedupWindow::Result::NovelWithEviction) {
+        if (dedup_result == ::SCE::Mesh::DedupResult::NovelWithEviction) {
             // SCE_MESH.md §16.7 row 7 — DEDUP_WINDOW_OVERFLOW. The
             // sender's sustained novel-id rate exceeded this
             // receiver's 256-slot per-sender ring; the spec calls
@@ -4767,7 +4775,7 @@ struct TransportRouter {
             __sce_dedup_err.reason = ::SCE::Mesh::ReasonCode::DedupWindowOverflow;
             __sce_dedup_err.source = env.source;
             __sce_dedup_err.window_size =
-                static_cast<std::int64_t>(::SCE::Mesh::DedupWindow::kCapacity);
+                static_cast<std::int64_t>(DedupRouter::kCapacity);
             raiseCommunicationError(std::move(__sce_dedup_err));
         }
         return dispatchToSession(env, session_idx);
@@ -4866,15 +4874,15 @@ struct TransportRouter {
             // every registry transport today.
             const auto __sce_dedup_after_ordering =
                 dedup_.admitWithSignal(env.source, env.id);
-            if (__sce_dedup_after_ordering == ::SCE::Mesh::DedupWindow::Result::Duplicate) continue;
-            if (__sce_dedup_after_ordering == ::SCE::Mesh::DedupWindow::Result::NovelWithEviction) {
+            if (__sce_dedup_after_ordering == ::SCE::Mesh::DedupResult::Duplicate) continue;
+            if (__sce_dedup_after_ordering == ::SCE::Mesh::DedupResult::NovelWithEviction) {
                 // §16.7 row 7 — same overflow surface as admitInbound
                 // (separate dispatch entry, identical raise contract).
                 ::SCE::Mesh::CommunicationError __sce_dedup_err;
                 __sce_dedup_err.reason = ::SCE::Mesh::ReasonCode::DedupWindowOverflow;
                 __sce_dedup_err.source = env.source;
                 __sce_dedup_err.window_size =
-                    static_cast<std::int64_t>(::SCE::Mesh::DedupWindow::kCapacity);
+                    static_cast<std::int64_t>(DedupRouter::kCapacity);
                 raiseCommunicationError(std::move(__sce_dedup_err));
             }
 {% endif %}
