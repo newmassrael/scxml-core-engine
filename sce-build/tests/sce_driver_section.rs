@@ -287,3 +287,288 @@ topology:
          functions). Got {fn_prefix_count}.",
     );
 }
+
+// ── IAR toolchain arm ────────────────────────────────────────────
+
+/// Compile the emitted translation unit and report every `FUNC` symbol
+/// that did not land in `expect_section`. Returns `None` when no C
+/// compiler is available.
+fn funcs_outside_section(files: &[(String, String)], expect_section: &str) -> Option<Vec<String>> {
+    use std::process::Command;
+    let cc = resolve("gcc").or_else(|| resolve("cc"))?;
+    let readelf = resolve("readelf")?;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = write_unit(tmp.path(), files);
+    let obj = tmp.path().join("unit.o");
+    let runtime_inc = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("backends/c/runtime/include");
+    let out = Command::new(&cc)
+        .args(["-std=c11", "-c"])
+        .arg("-I")
+        .arg(&runtime_inc)
+        .arg("-I")
+        .arg(tmp.path())
+        .arg(&src)
+        .arg("-o")
+        .arg(&obj)
+        .output()
+        .expect("run cc");
+    assert!(
+        out.status.success(),
+        "generated C must compile:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let sections = Command::new(&readelf)
+        .args(["-SW"])
+        .arg(&obj)
+        .output()
+        .expect("readelf -SW");
+    let sections = String::from_utf8_lossy(&sections.stdout).into_owned();
+    let idx = sections
+        .lines()
+        .find(|l| l.contains(expect_section))
+        .and_then(|l| l.split(']').next())
+        .and_then(|l| l.rsplit('[').next())
+        .map(|n| n.trim().to_string())
+        .unwrap_or_else(|| panic!("no `{expect_section}` section in the object file:\n{sections}"));
+
+    let syms = Command::new(&readelf)
+        .args(["-sW"])
+        .arg(&obj)
+        .output()
+        .expect("readelf -sW");
+    let syms = String::from_utf8_lossy(&syms.stdout).into_owned();
+    let mut escaped = Vec::new();
+    for line in syms.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() >= 8 && f[3] == "FUNC" && f[6] != idx {
+            escaped.push(f[7].to_string());
+        }
+    }
+    Some(escaped)
+}
+
+fn resolve(tool: &str) -> Option<PathBuf> {
+    let out = std::process::Command::new("which")
+        .arg(tool)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let p = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!p.is_empty()).then(|| PathBuf::from(p))
+}
+
+/// Render every C11 file for `FIXTURE_NO_DRIVER` with the given
+/// section class declared in deploy.yaml. Both the `.c` and its `.h`
+/// come back because the translation unit includes its own header —
+/// compiling the `.c` alone would fail on the include, not on anything
+/// this file is testing.
+fn render_c11_with_section_files(class: &str) -> Vec<(String, String)> {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let scxml = write_scxml(&tmp, FIXTURE_NO_DRIVER);
+    let deploy_yaml = format!(
+        r#"
+topology:
+  app_device:
+    machines:
+      round_f_alpha:
+        source: round_f_alpha.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+          c11_section_attribute:
+            class: "{class}"
+"#
+    );
+    let deploy_cfg =
+        sce_build::mesh::deploy::parse_deploy_str(&deploy_yaml).expect("deploy.yaml parses");
+    let outputs = sce_build::compile_scxml_with_imports(
+        &[&scxml],
+        &[],
+        &template_dir(),
+        Language::C11,
+        &ForgeCompileOptions::default(),
+        Some(&deploy_cfg),
+    )
+    .expect("C11 codegen succeeds");
+    let files: Vec<(String, String)> = outputs
+        .iter()
+        .flat_map(|(_b, out)| out.files.iter().cloned())
+        .collect();
+    assert!(
+        files.iter().any(|(n, _)| n.ends_with("_sm.c")),
+        "a *_sm.c is emitted"
+    );
+    files
+}
+
+/// The `_sm.c` body alone, for the assertions that only read text.
+fn render_c11_with_section(class: &str) -> String {
+    render_c11_with_section_files(class)
+        .into_iter()
+        .find(|(n, _)| n.ends_with("_sm.c"))
+        .map(|(_, body)| body)
+        .expect("a *_sm.c is emitted")
+}
+
+/// Write a rendered file set into `dir` and return the `.c` path.
+fn write_unit(dir: &std::path::Path, files: &[(String, String)]) -> PathBuf {
+    let mut unit = None;
+    for (name, body) in files {
+        let p = dir.join(name);
+        fs::write(&p, body).expect("write generated file");
+        if name.ends_with("_sm.c") {
+            unit = Some(p);
+        }
+    }
+    unit.expect("a *_sm.c is emitted")
+}
+
+#[test]
+fn section_placement_selects_the_syntax_the_running_compiler_accepts() {
+    // IAR and the GCC family spell function placement differently and
+    // neither parses the other's form, so a generated file that
+    // committed to one would only build on one. The section NAME is a
+    // property of the deployment; the SYNTAX is a property of the
+    // compiler, which is why the choice is a `#if` on the compiler's
+    // own predefined macro rather than a second deploy.yaml knob that
+    // could disagree with the build system.
+    let sm_c = render_c11_with_section(".app_code");
+
+    assert!(
+        sm_c.contains("#if defined(__IAR_SYSTEMS_ICC__)"),
+        "the arm must be selected by IAR's own predefined macro:\n{sm_c}"
+    );
+    assert!(
+        sm_c.contains(r#"#define SCE_SM_FN _Pragma("location=\".app_code\"")"#),
+        "IAR arm must place via `#pragma location`, reached through _Pragma \
+         so it can live in a macro:\n{sm_c}"
+    );
+    assert!(
+        sm_c.contains(r#"#define SCE_SM_FN __attribute__((section(".app_code")))"#),
+        "the GCC/Clang/Keil arm must survive unchanged:\n{sm_c}"
+    );
+}
+
+#[test]
+fn every_emitted_statechart_function_lands_in_the_declared_section() {
+    // The macro's documented contract is "every emitted statechart
+    // function definition". Two escaped it — `_initial_state` and
+    // `_init_impl` — which for an MCU deployment placing code in fast
+    // RAM or a protected region is exactly the failure the feature
+    // exists to prevent: a stray function outside the region the
+    // linker script reserved.
+    //
+    // Checked against the linker's own view rather than by grepping
+    // for the macro, so a function that carries the macro but does not
+    // actually get placed would still be caught.
+    let files = render_c11_with_section_files(".app_code");
+    let Some(escaped) = funcs_outside_section(&files, ".app_code") else {
+        eprintln!("SKIP: no gcc/readelf on PATH");
+        return;
+    };
+
+    // `sce_*` are `static inline` helpers from `sce/types.h`, not
+    // emitted statechart functions — they are outside the contract and
+    // outside the section by the same token.
+    let ours: Vec<&String> = escaped.iter().filter(|n| !n.starts_with("sce_")).collect();
+    assert!(
+        ours.is_empty(),
+        "these emitted statechart functions are outside `.app_code`: {ours:?}"
+    );
+}
+
+#[test]
+fn the_iar_arm_parses_at_every_emission_site() {
+    // `#pragma location` applies to the NEXT declaration, so the macro
+    // has to sit at the very start of each declaration — not between
+    // the storage class and the return type, where it used to sit for
+    // most of the ~60 sites. A single site left in the old position
+    // would be a pragma bound to the wrong declaration, or a parse
+    // error, on IAR.
+    //
+    // GCC cannot check `location`'s semantics, but it can check that
+    // the arm is well-formed C in every position it appears, which is
+    // what the normalization actually put at risk.
+    use std::process::Command;
+    let Some(cc) = resolve("gcc").or_else(|| resolve("cc")) else {
+        eprintln!("SKIP: no gcc/cc on PATH");
+        return;
+    };
+    let files = render_c11_with_section_files(".app_code");
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = write_unit(tmp.path(), &files);
+    let runtime_inc = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("backends/c/runtime/include");
+
+    let out = Command::new(&cc)
+        .args([
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-unknown-pragmas",
+            "-D__IAR_SYSTEMS_ICC__=9",
+            "-fsyntax-only",
+        ])
+        .arg("-I")
+        .arg(&runtime_inc)
+        .arg("-I")
+        .arg(tmp.path())
+        .arg(&src)
+        .output()
+        .expect("run cc");
+    assert!(
+        out.status.success(),
+        "the IAR arm must be well-formed C at every emission site:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_section_name_that_would_escape_the_string_literal_is_rejected() {
+    // The name lands in a plain C string on the GCC family and in a
+    // string-inside-a-string on IAR. A quote closes one of them, and
+    // the IAR form is where it is least visible — the generated file
+    // would carry a `_Pragma` whose argument silently ends early.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let scxml = write_scxml(&tmp, FIXTURE_NO_DRIVER);
+    let deploy_yaml = r#"
+topology:
+  app_device:
+    machines:
+      round_f_alpha:
+        source: round_f_alpha.scxml
+        platform:
+          class: mcu
+          os: bare_metal
+          c11_section_attribute:
+            class: ".app\"code"
+"#;
+    let deploy_cfg =
+        sce_build::mesh::deploy::parse_deploy_str(deploy_yaml).expect("deploy.yaml parses");
+    let result = sce_build::compile_scxml_with_imports(
+        &[&scxml],
+        &[],
+        &template_dir(),
+        Language::C11,
+        &ForgeCompileOptions::default(),
+        Some(&deploy_cfg),
+    );
+    let Err(err) = result else {
+        panic!("a quote in the section name must not reach the emitted file");
+    };
+    let text = err.to_string();
+    assert!(
+        text.contains("double quote") && text.contains("section name"),
+        "diagnostic must name the offending character, got: {text}"
+    );
+}

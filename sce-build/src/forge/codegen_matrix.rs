@@ -281,16 +281,64 @@ pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
 /// not on `ForgeKind`, so this helper takes a boolean rather than a
 /// kind. Co-located with `check` so the codegen-matrix module owns
 /// every "this target rejects feature X" gate in one place.
+///
+/// `class` is the declared section name when the block carries one. It
+/// is validated here rather than at deploy-parse time because this is
+/// the gate the C11 emission path already runs through, and the name's
+/// constraint comes from how the emitter spells it — see
+/// [`GenerateError::McuSectionAttributeNameInvalid`].
 pub fn check_c11_section_attribute(
     section_attribute_present: bool,
+    class: Option<&str>,
     lang: Language,
 ) -> Result<(), GenerateError> {
-    if !section_attribute_present || matches!(lang, Language::C11) {
+    if !section_attribute_present {
         return Ok(());
     }
-    Err(GenerateError::McuSectionAttributeOnNonMcuTarget {
-        backend: language_wire_name(lang).to_string(),
-    })
+    if !matches!(lang, Language::C11) {
+        return Err(GenerateError::McuSectionAttributeOnNonMcuTarget {
+            backend: language_wire_name(lang).to_string(),
+        });
+    }
+    if let Some(name) = class {
+        if let Some(reason) = section_name_rejection(name) {
+            return Err(GenerateError::McuSectionAttributeNameInvalid {
+                name: name.to_string(),
+                reason,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Why `name` cannot be emitted as a section name, or `None` when it
+/// can. Named per-character so the author sees which one to remove
+/// rather than a blanket "invalid".
+fn section_name_rejection(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return Some("the name is empty".to_string());
+    }
+    for c in name.chars() {
+        let ok = c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '$' | '-');
+        if !ok {
+            return Some(match c {
+                '"' => "it contains a double quote, which would close the \
+                        string literal the name is emitted into"
+                    .to_string(),
+                '\\' => "it contains a backslash, which would start an escape \
+                         sequence in the string literal the name is emitted into"
+                    .to_string(),
+                c if c.is_whitespace() => {
+                    format!("it contains whitespace (U+{:04X})", c as u32)
+                }
+                c if c.is_control() => {
+                    format!("it contains a control character (U+{:04X})", c as u32)
+                }
+                c => format!("it contains `{c}`"),
+            });
+        }
+    }
+    None
 }
 
 /// Stable wire-name for a `Language`, matching `Language::from_str`
