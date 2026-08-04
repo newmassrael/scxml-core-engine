@@ -766,6 +766,35 @@ static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper 
 {% endfor %}
 
 {% endif %}
+{% if "custom_tcp" in transport_types or scxml_remote_outbound_peers | selectattr("transport", "equalto", "custom_tcp") | list or scxml_remote_inbound_peers | selectattr("transport", "equalto", "custom_tcp") | list %}
+// Socket layer for every custom_tcp endpoint on this device (deploy.yaml
+// `transports.custom_tcp:`, SCE_MESH.md §16.8.3). Emitted as one object
+// so the listen socket, the accepted connections and the dialed
+// connections cannot drift apart — the two ends of a link disagreeing
+// about Nagle would be a latency asymmetry nothing would name.
+// Zero buffer sizes mean "leave the kernel default"; there is no third
+// state, which is why an absent deploy.yaml field and a zero here are
+// the same value.
+//
+// Built field-by-field rather than with an aggregate initializer:
+// positional aggregate init would silently change meaning if
+// `SocketOptions` ever reorders its members, and designated
+// initializers are C++20 while `sce_mesh_common` declares `cxx_std_17`
+// — a downstream consumer honouring that contract must be able to
+// compile this file.
+constexpr SCE::Mesh::CustomTcp::SocketOptions sceCustomTcpSocketOptions() {
+    SCE::Mesh::CustomTcp::SocketOptions o{};
+    o.backlog = {{ custom_tcp_socket.backlog }};
+    o.reuse_addr = {{ "true" if custom_tcp_socket.reuse_addr else "false" }};
+    o.nodelay = {{ "true" if custom_tcp_socket.nodelay else "false" }};
+    o.connect_max_attempts = {{ custom_tcp_socket.connect_max_attempts }};
+    o.connect_retry_interval_ms = {{ custom_tcp_socket.connect_retry_interval_ms }};
+    o.recv_buffer_bytes = {{ custom_tcp_socket.recv_buffer_bytes }};
+    o.send_buffer_bytes = {{ custom_tcp_socket.send_buffer_bytes }};
+    return o;
+}
+static constexpr SCE::Mesh::CustomTcp::SocketOptions CUSTOM_TCP_SOCKET = sceCustomTcpSocketOptions();
+{% endif %}
 {% if "dds" in transport_types or has_server_dds %}
 // DDS domain this device's participant joins (deploy.yaml
 // `transports.dds.domain_id:`, default 0). A domain is DDS's isolation
@@ -2084,7 +2113,7 @@ struct TransportRouter {
         path the same way SOME/IP and Zenoh do. session_idx is `0`:
         custom_tcp is client-only (no pool support), so N_SESSIONS
         is always 1 when this ctor init fires. #}
-{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env, const SCE::Mesh::CustomTcp::PeerLink& link){ this->onCustomTcpInbound(env, link); })"] %}
+{%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.state.connect ~ ", [this](const SCE::Mesh::MeshEnvelope& env, const SCE::Mesh::CustomTcp::PeerLink& link){ this->onCustomTcpInbound(env, link); }, CUSTOM_TCP_SOCKET)"] %}
 {%-   elif target.state.kind == "dds" %}
 {#-     No initializer on purpose. A DDS client needs the device
         participant, which does not exist until init() joins the domain,
@@ -2209,7 +2238,7 @@ struct TransportRouter {
 {%- endif %}
 {%- for peer in scxml_remote_outbound_peers %}
 {%-   if peer.transport == "custom_tcp" %}
-{%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {})"] %}
+{%-     set ns.parts = ns.parts + ["p2c_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {}, CUSTOM_TCP_SOCKET)"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ someip_sce_app_field ~ ", SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
 {%-   elif peer.transport != "zenoh" %}
@@ -2219,7 +2248,7 @@ struct TransportRouter {
 {%- endfor %}
 {%- for peer in scxml_remote_inbound_peers %}
 {%-   if peer.transport == "custom_tcp" %}
-{%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {})"] %}
+{%-     set ns.parts = ns.parts + ["c2p_to_" ~ peer.name ~ "_(\"" ~ peer.connect_endpoint ~ "\", [](const SCE::Mesh::MeshEnvelope&, const SCE::Mesh::CustomTcp::PeerLink&) {}, CUSTOM_TCP_SOCKET)"] %}
 {%-   elif peer.transport == "someip" %}
 {%-     set ns.parts = ns.parts + ["scxml_invoke_to_" ~ peer.name ~ "_(" ~ someip_sce_app_field ~ ", SCE_SOMEIP_SERVICE_SELF, SCE_SOMEIP_SERVICE_PEER_" ~ (peer.name | upper) ~ ")"] %}
 {%-   elif peer.transport != "zenoh" %}
@@ -3220,7 +3249,8 @@ struct TransportRouter {
             [this](const SCE::Mesh::MeshEnvelope& env,
                    const SCE::Mesh::CustomTcp::PeerLink& link) {
                 this->onCustomTcpInbound(env, link);
-            });
+            },
+            CUSTOM_TCP_SOCKET);
         if (!custom_tcp_server_->valid()) {
             shutdown();
             return false;

@@ -350,6 +350,16 @@ pub enum DeployError {
     #[error("machine '{machine}': invalid `dedup:` section in deploy.yaml — {reason}")]
     InvalidDedupWindow { machine: String, reason: String },
 
+    /// A device's `transports.custom_tcp:` block declares a socket-layer
+    /// value that would disable what it configures (SCE_MESH.md
+    /// §mesh-16.8.3). custom_tcp is SCE's own implementation, so there
+    /// is no vendor config file below this schema to correct it —
+    /// which is why the value is rejected here rather than passed
+    /// through to a `listen(fd, 0)` whose only symptom is that every
+    /// peer connection is refused.
+    #[error("device '{device}': invalid `transports.custom_tcp:` socket setting — {reason}")]
+    InvalidCustomTcpSocket { device: String, reason: String },
+
     /// A machine declared a `liveliness:` section whose `lease_ms`
     /// violates the minimum-floor constraint (SCE Mesh §mesh-16.7 row 8;
     /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
@@ -2513,6 +2523,17 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k.extend(devices.iter().cloned());
                 k
             },
+        },
+        DeployError::InvalidCustomTcpSocket { device, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidCustomTcpSocket,
+            stage: Stage::MeshDeploy,
+            actual: Some(device.clone()),
+            // The reason string names the only repair (omit the field
+            // to take the default), and the legal set is "any positive
+            // integer" — not a closed candidate list.
+            expected: None,
+            fix: None,
+            key_fragments: vec![device.clone(), reason.clone()],
         },
         DeployError::InvalidDedupWindow { machine, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidDedupWindow,
