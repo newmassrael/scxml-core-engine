@@ -11,6 +11,11 @@
 #                                              before the heavy test stage
 #                                              compiles to the same error
 #   1c. emit_embed_manifest fail-fast TC     — clang degraded-AST regression
+#   1d. tree-wide hygiene gates              — mirrors tree-hygiene.yml;
+#                                              roadmap markers over every
+#                                              tracked file, plus the gate
+#                                              that keeps such tests bound
+#                                              to an unfiltered workflow
 #   2.  cargo clippy --workspace             — mirrors clippy-check.yml;
 #                                              catches stable-toolchain lint
 #                                              drift (unnecessary_sort_by,
@@ -127,9 +132,9 @@ else
 fi
 
 # ── Path-scoped stage selection ───────────────────────────────────
-# Running all thirteen stages on every push costs 20-30 minutes, most of
-# it irrelevant to the change being pushed: a ledger-only edit does not
-# need the no_std MCU build, and a docs edit needs nothing at all.
+# Running every stage on every push costs 20-30 minutes, most of it
+# irrelevant to the change being pushed: a ledger-only edit does not need
+# the no_std MCU build, and a docs edit needs only the tree-wide gates.
 #
 # Which gate a change needs is already answered by the `paths:` filter on
 # the CI workflow each stage mirrors, so `select_stages.py` reads those
@@ -315,6 +320,27 @@ if stage_on "1c"; then
     log_step "Stage 1c/8 — emit_embed_manifest.sh fail-fast regression TC"
     bash scripts/test_emit_manifest_fail_fast.sh \
         || fail_step "Stage 1c (emit_embed_manifest fail-fast TC)"
+
+fi
+if stage_on "1d"; then
+    # ── Stage 1d: tree-wide hygiene gates (mirror tree-hygiene.yml) ───
+    # Two gates whose inputs are wider than any `paths:` list.
+    # `roadmap_marker_gate` reads every tracked file; when it rode the
+    # workspace suite, a violation under a path outside that suite's
+    # filter never started CI and reached main green (2026-08-04).
+    # `workflow_trigger_coverage` reads every workflow and is what keeps
+    # the arrangement from rotting: it fails if a gate like that is ever
+    # run only by a filtered workflow again.
+    #
+    # tree-hygiene.yml declares no filter, so the selector derives "always"
+    # for this stage the same way it derives every other trigger. Both
+    # targets are named explicitly rather than swept, so this costs one
+    # cached build and sub-second tests instead of Stage 4's full suite.
+    log_step "Stage 1d/8 — tree-wide hygiene gates (marker + trigger coverage)"
+    cargo test -p sce-build \
+        --test roadmap_marker_gate \
+        --test workflow_trigger_coverage \
+        || fail_step "Stage 1d (tree-wide hygiene gates)"
 
 fi
 if stage_on "2"; then

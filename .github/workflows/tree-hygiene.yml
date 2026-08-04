@@ -1,0 +1,82 @@
+name: Tree Hygiene
+
+# The workflow that must never carry a `paths:` filter.
+#
+# `roadmap_marker_gate` enumerates every tracked file in the repository
+# (`git ls-files`, 17 extensions plus CMakeLists.txt) and rejects roadmap
+# markers, internal chain codenames, and references to gitignored working
+# documents. Its input set is the whole tree, so any path filter on the
+# workflow running it is narrower than what it judges: a change outside
+# the filter never starts CI, while the gate still holds that change to
+# its rule. The gate looks enforced and is not.
+#
+# That is measured, not hypothetical. On 2026-08-04 a reference to a
+# gitignored doc directory landed in `tools/git-hooks/select_stages.py`.
+# rust-workspace-tests.yml runs the gate as part of `cargo test
+# --workspace`, but its `paths:` filter does not list `tools/git-hooks/**`,
+# so no workflow started and the violation reached main green. A local
+# `cargo test` was what eventually caught it.
+#
+# Splitting the gate out is what makes the trigger match the scan set.
+# The job runs two named test targets rather than the workspace suite, so
+# firing on every push costs a cached build and sub-second tests instead
+# of the 20-minute sweep rust-workspace-tests.yml carries.
+#
+# `workflow_trigger_coverage` pins both halves of the arrangement: that
+# this file declares no path filter, and that every gate whose input set
+# outgrows a filter is run by a workflow which declares none. It is
+# itself such a gate — it reads all of `.github/workflows/` — so it runs
+# here beside the gate it protects.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: tree-wide gates
+    runs-on: ubuntu-latest
+
+    steps:
+    # No `submodules: recursive`: the gate skips third_party/ and vendor/,
+    # and neither target compiles against a submodule. Checking them out
+    # would only slow a job that fires on every push.
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    # libxml2 backs sce-build's default `xsd` feature; without it the
+    # crate fails at link time before any test runs.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libxml2-dev
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-tree-hygiene-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-tree-hygiene-
+
+    # `git ls-files` is the gate's enumeration source, so it needs a real
+    # repository rather than an exported tree. actions/checkout gives one.
+    - name: Tree-wide hygiene gates
+      run: |
+        cargo test -p sce-build \
+          --test roadmap_marker_gate \
+          --test workflow_trigger_coverage
