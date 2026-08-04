@@ -250,6 +250,11 @@ struct DdsTransportContext {
     /// integer literal; `0` is the DDS default and the value used when
     /// deploy.yaml omits the block entirely.
     domain_id: u32,
+    /// Deployment QoS overlay, pre-rendered for the template. `None`
+    /// when the deployment declared no `qos:` section — the template then
+    /// emits a default-constructed `QosOverlay`, which the runtime reads
+    /// as "every field at its DDS default".
+    qos: Option<DdsQosContext>,
     /// Pre-escaped C++ string literal for the vendor config
     /// (`transports.dds.config:`), or `None` when the deployment declares
     /// none. `None` and "the empty string" are not the same thing to
@@ -258,10 +263,41 @@ struct DdsTransportContext {
     config: Option<String>,
 }
 
+/// The §mesh-8.2 QoS overlay, rendered for direct emission. Zero and the
+/// empty string are the runtime's "not declared" sentinels, so an absent
+/// deploy.yaml field and a zero here are the same value — there is no
+/// third state to represent.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+struct DdsQosContext {
+    notify_lifespan_ms: u64,
+    latency_budget_ms: u64,
+    deadline_ms: u64,
+    liveliness_lease_ms: u64,
+    transport_priority: i32,
+    /// Complete C++ string literal, already escaped.
+    partition: String,
+}
+
+impl DdsQosContext {
+    fn from_config(cfg: &crate::mesh::deploy::DdsQosConfig) -> Self {
+        Self {
+            notify_lifespan_ms: cfg.notify_lifespan_ms.unwrap_or(0),
+            latency_budget_ms: cfg.latency_budget_ms.unwrap_or(0),
+            deadline_ms: cfg.deadline_ms.unwrap_or(0),
+            liveliness_lease_ms: cfg.liveliness_lease_ms.unwrap_or(0),
+            transport_priority: cfg.transport_priority.unwrap_or(0),
+            partition: cpp_string_literal(cfg.partition.as_deref().unwrap_or("")),
+        }
+    }
+}
+
 impl DdsTransportContext {
     fn from_config(cfg: Option<&DdsTransportConfig>) -> Self {
         Self {
             domain_id: cfg.and_then(|c| c.domain_id).unwrap_or(0),
+            qos: cfg
+                .and_then(|c| c.qos.as_ref())
+                .map(DdsQosContext::from_config),
             config: cfg
                 .and_then(|c| c.config.as_ref())
                 .and_then(|p| p.to_str())
