@@ -183,9 +183,20 @@ else
             git diff --name-only "$remote_sha" "$local_sha" >>"$CHANGED_FILE"
         fi
     done
-    # No refs on stdin means the hook was invoked by hand, not by git; the
-    # range is unknown, so verify everything.
-    (( saw_ref )) || force_full=1
+    # githooks(5): git writes one line per ref it is about to push. No lines
+    # therefore means there is nothing to push — an already-up-to-date `git
+    # push`, which git still invokes the hook for. Treating that as "range
+    # unknown, verify everything" made a no-op push run the entire 20-minute
+    # suite, the exact opposite of what this selection exists for. Nothing to
+    # push is nothing to verify.
+    #
+    # The same applies to a by-hand invocation with no stdin: there is no
+    # range to derive, so there is nothing to check. `PREPUSH_FULL=1` is the
+    # way to run the suite deliberately.
+    if (( ! saw_ref )); then
+        printf '\n==> pre-push: no refs to push — nothing to verify\n' >&2
+        exit 0
+    fi
 fi
 
 if (( force_full )); then
