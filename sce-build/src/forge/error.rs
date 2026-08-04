@@ -3590,6 +3590,29 @@ pub enum GenerateError {
     )]
     McuSectionAttributeOnNonMcuTarget { backend: String },
 
+    /// `deploy.yaml`'s `platform.c11_section_attribute.class` names a
+    /// section the C11 emitter cannot place verbatim into a string
+    /// literal. The name reaches two nested string contexts — a plain
+    /// C string in `__attribute__((section("<name>")))` and a string
+    /// inside a string in `_Pragma("location=\"<name>\"")` for IAR — so
+    /// a quote or backslash would terminate one of them and produce
+    /// generated C that is either malformed or silently placing code in
+    /// a section nobody named. Rejecting at codegen entry keeps that
+    /// failure out of the emitted file.
+    ///
+    /// The accepted subset is the portable intersection of what GNU ld,
+    /// armlink and IAR's ILINK take in a section name; it covers every
+    /// conventional spelling (`.app_code`, `.text.fast`, `MYSEC`,
+    /// `.ARM.__at_0x1000`). Producer:
+    /// `forge::codegen_matrix::check_c11_section_attribute`.
+    #[error(
+        "platform.c11_section_attribute.class = '{name}' is not a usable section \
+         name: {reason}. Accepted characters are letters, digits, `.`, `_`, `$` \
+         and `-`, and the name must not be empty. Repair: rename the section in \
+         deploy.yaml and in the linker script that places it."
+    )]
+    McuSectionAttributeNameInvalid { name: String, reason: String },
+
     /// SCE Protocol-Synthesis RFC §synth-5-J-2 (item C3): the SCXML document
     /// is generated with `sce-codegen generate -l rust --no-std` but
     /// contains a `<script>` element. The `sce-rust-runtime`

@@ -52,16 +52,39 @@
 /* SCE Protocol-Synthesis RFC §5.2 — C11 section attribute prefix
    for every statechart function definition emitted below. When
    `deploy.yaml`'s `platform.c11_section_attribute.class` is set, the
-   macro expands to `__attribute__((section("<name>")))` so the linker
-   places every function in the named section (C11-side wiring;
-   non-C11 backends are rejected at the orchestrator
+   macro places every emitted statechart function in the named section
+   (C11-side wiring; non-C11 backends are rejected at the orchestrator
    pass). When unset, the macro expands to nothing — author-side
    override remains possible via a pre-include `#define SCE_SM_FN ...`
    or compiler `-DSCE_SM_FN=...`. The `#ifndef` guard makes the
-   override stable across includes / unity builds. */
+   override stable across includes / unity builds.
+
+   Two toolchain families spell function placement differently and
+   neither accepts the other's syntax, so the choice is made by the
+   compiler that is actually running rather than by a deploy.yaml knob:
+   the section NAME is a property of the deployment, but the SYNTAX is a
+   property of the compiler, and asking a deployer to state their
+   toolchain twice — once to the build system, once here — is a pair
+   that can disagree.
+
+     * IAR (`__IAR_SYSTEMS_ICC__`, defined by every IAR C/C++ compiler):
+       `#pragma location="<name>"`, reached through `_Pragma` so it can
+       live in a macro. The pragma applies to the NEXT declaration,
+       which is why every use site below places the macro at the very
+       start of the declaration rather than between the storage class
+       and the return type.
+     * GCC / Clang / Keil: `__attribute__((section("<name>")))`, which
+       is valid in that same leading position.
+
+   One generated file therefore builds under either family with no
+   regeneration and no configuration change. */
 #ifndef SCE_SM_FN
 {% if model.c11_section_attribute_class %}
+#if defined(__IAR_SYSTEMS_ICC__)
+#define SCE_SM_FN _Pragma("location=\"{{ model.c11_section_attribute_class }}\"")
+#else
 #define SCE_SM_FN __attribute__((section("{{ model.c11_section_attribute_class }}")))
+#endif
 {% else %}
 #define SCE_SM_FN
 {% endif %}
@@ -115,14 +138,14 @@
    queues and macrostep helpers they belong with. The forward decl keeps
    `-Werror=implicit-function-declaration` quiet without reordering the
    logical sections of the generated source. */
-static SCE_C_UNUSED SCE_SM_FN void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static SCE_C_UNUSED void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ csym_prefix }}{{ model.name }}_event_t event,
                            const char *send_id
 {%- if model.needs_script_engine %},
                            int payload_lua_ref
 {%- endif %});
-static SCE_C_UNUSED SCE_SM_FN void scheduled_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *send_id);
+SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *send_id);
 {% if model.has_parent_communication %}
 /* W3C SCXML 6.2 + 6.4 (test187): delayed `<send target="#_parent">` —
    distinct entry-point from `scheduled_push` so the local-event arm
@@ -131,7 +154,7 @@ static SCE_C_UNUSED SCE_SM_FN void scheduled_cancel({{ csym_prefix }}{{ model.na
    the same `scheduled_queue_t` so `_tick`'s pop-by-fire-time ordering
    stays unified, and `scheduled_cancel`'s send_id walk catches
    to-parent entries the same way as local entries. */
-static SCE_C_UNUSED SCE_SM_FN void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static SCE_C_UNUSED void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                   uint64_t fire_time_ms,
                                   const char *event_name,
                                   const char *send_id);
@@ -150,7 +173,7 @@ static SCE_C_UNUSED SCE_SM_FN void scheduled_push_parent({{ csym_prefix }}{{ mod
    the document's transition set (≤ ~10 names). The jinja2-inline contract puts
    no helper functions in the runtime; the fixture-side static helper
    is generated source, so it is in scope. */
-static {{ csym_prefix }}{{ model.name }}_event_t SCE_SM_FN {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len) {
+SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ model.name }}_event_from_name(const char *name, size_t len) {
     if (name == NULL || len == 0u) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
     }
@@ -1528,7 +1551,7 @@ static {{ csym_prefix }}{{ model.name }}_event_t SCE_SM_FN {{ csym_prefix }}{{ m
    on capacity-via-policy; the C11 backend instead bakes a per-fixture
    circular buffer with `SCE_MAX_EVENTS` slots. Overflow drops silently —
    matching the C++ behaviour when the underlying queue rejects a push.    #}
-static void SCE_SM_FN event_queue_push({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
+SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                              const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
         return;
@@ -1538,7 +1561,7 @@ static void SCE_SM_FN event_queue_push({{ csym_prefix }}{{ model.name }}_event_q
     q->count = (uint16_t)(q->count + 1u);
 }
 
-static bool SCE_SM_FN event_queue_pop({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
+SCE_SM_FN static bool event_queue_pop({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                             {{ csym_prefix }}{{ model.name }}_event_with_meta_t *out) {
     if (q->count == 0u) {
         return false;
@@ -1564,7 +1587,7 @@ static bool SCE_SM_FN event_queue_pop({{ csym_prefix }}{{ model.name }}_event_qu
    declared a deep initial that bypasses an intermediate state's
    default initial child (test388: `<scxml initial="s012">` vs
    `<state id="s01" initial="s011">`). #}
-{{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void) {
+SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void) {
     return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ model.initial | upper | replace('-', '_') | replace('.', '_') }};
 }
 
@@ -1585,7 +1608,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }
    state, no parent" from "self-parent" (which never occurs in well-formed
    SCXML but the contract is still explicit so callers do not need a
    sentinel value baked into the State enum). */
-static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t state_get_parent({{ csym_prefix }}{{ model.name }}_state_t s, bool *has_parent) {
+SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t state_get_parent({{ csym_prefix }}{{ model.name }}_state_t s, bool *has_parent) {
     *has_parent = true;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
@@ -1602,7 +1625,7 @@ static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t state_ge
 
 /* W3C SCXML 3.3: Compound-state predicate (true if state has an
    `initial` attribute or non-empty `<initial>` child). */
-static SCE_C_UNUSED SCE_SM_FN bool state_is_compound({{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static SCE_C_UNUSED bool state_is_compound({{ csym_prefix }}{{ model.name }}_state_t s) {
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial %}
@@ -1619,7 +1642,7 @@ static SCE_C_UNUSED SCE_SM_FN bool state_is_compound({{ csym_prefix }}{{ model.n
    activates every region child simultaneously (mirrors cpp
    StateRegistry::isParallel + the parallel-entry branch in
    HierarchicalStateHelper::buildEntryChain). */
-static SCE_C_UNUSED SCE_SM_FN bool state_is_parallel({{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static SCE_C_UNUSED bool state_is_parallel({{ csym_prefix }}{{ model.name }}_state_t s) {
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.is_parallel %}
@@ -1634,7 +1657,7 @@ static SCE_C_UNUSED SCE_SM_FN bool state_is_parallel({{ csym_prefix }}{{ model.n
 
 /* W3C SCXML 3.6: Initial child of a compound state. Returns the state
    itself if not compound (callers loop until `child == self` for descend). */
-static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t state_get_initial_child({{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t state_get_initial_child({{ csym_prefix }}{{ model.name }}_state_t s) {
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial_children and state.initial_children | length > 0 %}
@@ -1653,17 +1676,17 @@ static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t state_ge
    holds compound states alongside their leaves). Mirrors of cpp
    StaticExecutionEngine::activeStates_ helpers — bitmap operations are
    inlined (no helper-class dispatch). #}
-static SCE_C_UNUSED SCE_SM_FN uint32_t state_bit({{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static SCE_C_UNUSED uint32_t state_bit({{ csym_prefix }}{{ model.name }}_state_t s) {
     return (uint32_t)1u << (uint32_t)s;
 }
 
-static SCE_C_UNUSED SCE_SM_FN bool config_in(uint32_t active, {{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static SCE_C_UNUSED bool config_in(uint32_t active, {{ csym_prefix }}{{ model.name }}_state_t s) {
     return (active & state_bit(s)) != 0u;
 }
 
 /* W3C SCXML 3.2: descendant test via parent walk-up. Used by the exit
    chain to identify the active subtree under a transition's source. */
-static SCE_C_UNUSED SCE_SM_FN bool is_descendant_of({{ csym_prefix }}{{ model.name }}_state_t child,
+SCE_SM_FN static SCE_C_UNUSED bool is_descendant_of({{ csym_prefix }}{{ model.name }}_state_t child,
                                          {{ csym_prefix }}{{ model.name }}_state_t ancestor) {
     {{ csym_prefix }}{{ model.name }}_state_t cur = child;
     while (true) {
@@ -1683,7 +1706,7 @@ static SCE_C_UNUSED SCE_SM_FN bool is_descendant_of({{ csym_prefix }}{{ model.na
    no active children (single-leaf invariant; <parallel> generalisation
    lands when its first fixture forces multi-leaf walking — at that point
    process_transition will iterate every leaf instead of just the first). */
-static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t config_leaf(uint32_t active) {
+SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t config_leaf(uint32_t active) {
     for (uint32_t s = 0u; s < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++s) {
         if ((active & ((uint32_t)1u << s)) == 0u) {
             continue;
@@ -1710,7 +1733,7 @@ static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t config_l
 /* W3C SCXML 3.2: enter `s` and every ancestor on its parent chain. Mirrors
    cpp HierarchicalStateHelper::buildEntryChain followed by the configuration
    set inserts. Idempotent — re-entering an already-active state is a no-op. */
-static SCE_C_UNUSED SCE_SM_FN uint32_t config_enter_chain(uint32_t active, {{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ csym_prefix }}{{ model.name }}_state_t s) {
     uint32_t out = active | state_bit(s);
     {{ csym_prefix }}{{ model.name }}_state_t cur = s;
     while (true) {
@@ -1743,18 +1766,18 @@ static SCE_C_UNUSED SCE_SM_FN uint32_t config_enter_chain(uint32_t active, {{ cs
    appears (mutual recursion: parallel → regions → enter_state_recursive →
    compound/leaf). The body switches on the parallel state and emits one
    enter_state_recursive call per region child in document order. */
-static void SCE_SM_FN enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
-static void SCE_SM_FN execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
 {% if model.has_history_states %}
 /* enter_state_recursive's compound-with-history dispatch routes to
    enter_history_state, which is defined alongside the rest of the
    history machinery further down. The forward decl keeps that backward
    call resolved in the same translation unit without reordering the
    logical sections. */
-static void SCE_SM_FN enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid);
+SCE_SM_FN static void enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid);
 {% endif %}
 
-static void SCE_SM_FN enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static void enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
@@ -1792,7 +1815,7 @@ static void SCE_SM_FN enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t
 
    Mirrors cpp HierarchicalStateHelper::buildEntryChain followed by the
    StaticExecutionEngine::executeMicrostep parallel re-entry pass. */
-static void SCE_SM_FN enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
     if (config_in(sm->active, s)) {
         return;
     }
@@ -1933,7 +1956,7 @@ static void SCE_SM_FN enter_state_recursive({{ csym_prefix }}{{ model.name }}_t 
 {% if state.on_entry_blocks %}
 {% for block in state.on_entry_blocks %}
 {{ sce_map.source_marker(state.source_location, "c") }}
-static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
 {%- if action.req or action.unresolved %}
@@ -1949,7 +1972,7 @@ static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | l
 {% if state.on_exit_blocks %}
 {% for block in state.on_exit_blocks %}
 {{ sce_map.source_marker(state.source_location, "c") }}
-static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
 {%- if action.req or action.unresolved %}
@@ -1962,7 +1985,7 @@ static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lo
 {% endif %}
 {% endfor %}
 {{ sce_map.source_marker(model.source_location, "c") }}
-static void SCE_SM_FN execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
@@ -2221,7 +2244,7 @@ static void SCE_SM_FN execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
 }
 
 {{ sce_map.source_marker(model.source_location, "c") }}
-static void SCE_SM_FN execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
+SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
@@ -2306,7 +2329,7 @@ static void SCE_SM_FN execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
 {% endif %}
 {% endfor %}
 {{ sce_map.source_marker(model.source_location, "c") }}
-static void SCE_SM_FN execute_transition_actions({{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name }}_t *sm) {
 {% if any_transition_actions.value %}
     switch (sm->policy.last_transition_source_state) {
     {% for state_id, state in model.states | dictsort %}
@@ -2458,7 +2481,7 @@ static void SCE_SM_FN execute_transition_actions({{ csym_prefix }}{{ model.name 
    strict-descendant). compute_exit_set treats both with the same
    "exit everything active" semantics, matching cpp
    StaticExecutionEngine::handleHierarchicalTransition's no-LCA branch. */
-static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t find_lcca({{ csym_prefix }}{{ model.name }}_state_t source,
+SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t find_lcca({{ csym_prefix }}{{ model.name }}_state_t source,
                                                         {{ csym_prefix }}{{ model.name }}_state_t target,
                                                         bool *out_has) {
     bool hp = false;
@@ -2490,7 +2513,7 @@ static SCE_C_UNUSED SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t find_lcc
      compound asymmetric transitions (target not a sibling of source) and
      parallel-region transitions both fall through this path, so test403c
      and test505/506 share one implementation. */
-static SCE_C_UNUSED SCE_SM_FN uint32_t compute_exit_set(uint32_t active,
+SCE_SM_FN static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
                                               {{ csym_prefix }}{{ model.name }}_state_t source,
                                               {{ csym_prefix }}{{ model.name }}_state_t target,
                                               bool is_internal, bool is_targetless) {
@@ -2554,7 +2577,7 @@ static SCE_C_UNUSED SCE_SM_FN uint32_t compute_exit_set(uint32_t active,
    Mirrors cpp ConflictResolutionAlgorithms::removeConflictingTransitions.
    Working buffer reuses the SCE_MAX_ENABLED_TRANSITIONS cap so no
    heap traffic; final result copied back into the caller's list. */
-static SCE_C_UNUSED SCE_SM_FN uint8_t remove_conflicting_transitions({{ csym_prefix }}{{ model.name }}_transition_info_t *list,
+SCE_SM_FN static SCE_C_UNUSED uint8_t remove_conflicting_transitions({{ csym_prefix }}{{ model.name }}_transition_info_t *list,
                                                             uint8_t count) {
     {{ csym_prefix }}{{ model.name }}_transition_info_t filtered[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t filtered_count = 0u;
@@ -2662,7 +2685,7 @@ static SCE_C_UNUSED SCE_SM_FN uint8_t remove_conflicting_transitions({{ csym_pre
    whose transition graph is sparse — the casts are no-ops once the
    switch arms reference sm->active (compute_exit_set) and `event`
    (matcher branches). */
-static bool SCE_SM_FN try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm,
                                 {{ csym_prefix }}{{ model.name }}_state_t check_state,
                                 {{ csym_prefix }}{{ model.name }}_event_t event,
                                 {{ csym_prefix }}{{ model.name }}_transition_info_t *out_list,
@@ -2751,7 +2774,7 @@ static bool SCE_SM_FN try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
    future fixture forcing done.state events on a compound/parallel target
    relaxes that filter alongside the cpp `isDoneStateEvent` mirror. */
 {{ sce_map.source_marker(model.source_location, "c") }}
-static bool SCE_SM_FN process_transition({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static bool process_transition({{ csym_prefix }}{{ model.name }}_t *sm,
                                 {{ csym_prefix }}{{ model.name }}_event_t event,
                                 {{ csym_prefix }}{{ model.name }}_transition_info_t *out_list,
                                 uint8_t *out_count) {
@@ -2804,7 +2827,7 @@ static bool SCE_SM_FN process_transition({{ csym_prefix }}{{ model.name }}_t *sm
    to `true` even when the captured bitmap is empty — that is what
    distinguishes "never visited" (default-target replay) from "visited
    but currently empty" (restore-as-empty), per W3C 3.10. */
-static void SCE_SM_FN capture_histories({{ csym_prefix }}{{ model.name }}_t *sm, uint32_t exit_union) {
+SCE_SM_FN static void capture_histories({{ csym_prefix }}{{ model.name }}_t *sm, uint32_t exit_union) {
     {% for hid, info in model.history_states | dictsort %}
     {% set parent_enum = model.name | upper ~ '_STATE_' ~ (info.parent | upper | replace('-', '_') | replace('.', '_')) %}
     /* <history id="{{ hid }}" type="{{ info.type }}"> child of {{ info.parent }} */
@@ -2858,7 +2881,7 @@ static void SCE_SM_FN capture_histories({{ csym_prefix }}{{ model.name }}_t *sm,
    been captured, subsequent re-entries restore it verbatim, matching
    the W3C "default transition body executes only when no stored history"
    contract that test579 verifies. */
-static void SCE_SM_FN enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid) {
+SCE_SM_FN static void enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid) {
     switch (hid) {
     {% for hid, info in model.history_states | dictsort %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}:
@@ -2899,7 +2922,7 @@ static void SCE_SM_FN enter_history_state({{ csym_prefix }}{{ model.name }}_t *s
    (s01p > s01p1 > s01p11 ordering); a fixture whose alphabetic order
    diverges from doc-order will force a codegen-time doc-order table
    (cpp's StateRegistry mirror). */
-static void SCE_SM_FN handle_microstep({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static void handle_microstep({{ csym_prefix }}{{ model.name }}_t *sm,
                              {{ csym_prefix }}{{ model.name }}_transition_info_t *list,
                              uint8_t count) {
     if (count == 0u) {
@@ -3091,7 +3114,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
    error rather than silent loss); the entry being inserted is the one
    dropped, matching the bounded-resource contract documented at the
    `SCE_MAX_SCHEDULED` define site in `sce/types.h`. #}
-static void SCE_SM_FN scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ csym_prefix }}{{ model.name }}_event_t event,
                            const char *send_id
@@ -3158,7 +3181,7 @@ static void SCE_SM_FN scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
    this SM, so the routing target travels as an event NAME in
    `to_parent_event`. Capacity overflow drops the entry the same way
    the local arm does (raise error.execution + return). */
-static void SCE_SM_FN scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                   uint64_t fire_time_ms,
                                   const char *event_name,
                                   const char *send_id) {
@@ -3203,7 +3226,7 @@ static void SCE_SM_FN scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t 
    Returns true and writes the matured entry into `out` when ready, false otherwise.
    Mirrors cpp `SchedulerQueueCore::popReadyEvent(now, …)` — the head element
    is always the earliest-firing thanks to `scheduled_push`'s sorted insert. */
-static bool SCE_SM_FN scheduled_pop_ready({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static bool scheduled_pop_ready({{ csym_prefix }}{{ model.name }}_t *sm,
                                 uint64_t now_ms,
                                 {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *out) {
     if (sm->scheduled_queue.count == 0u) {
@@ -3234,7 +3257,7 @@ static bool SCE_SM_FN scheduled_pop_ready({{ csym_prefix }}{{ model.name }}_t *s
    `if (sendid.empty()) return`). The action is silent on a miss, mirroring
    the spec: W3C 6.3 doesn't require an error if the send_id is unknown
    (cpp's `cancelEvent` ignores the result of `erase`). */
-static SCE_C_UNUSED SCE_SM_FN void scheduled_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *send_id) {
+SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.name }}_t *sm, const char *send_id) {
     if (send_id == NULL || send_id[0] == '\0') {
         return;
     }
@@ -3296,7 +3319,7 @@ static SCE_C_UNUSED SCE_SM_FN void scheduled_cancel({{ csym_prefix }}{{ model.na
    fixture declares no events (then both the switch and the parameters
    fall through unused). #}
 {% if model.needs_script_engine %}
-static void SCE_SM_FN set_current_event(lua_State *L, const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     (void)L;
     (void)evt;
     /* W3C SCXML 5.10.1 (test332): expose `evt->send_id` to the lua side
@@ -3444,7 +3467,7 @@ static void SCE_SM_FN set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
    sequence matches the cpp `processMacrostep` body. Forward declared
    so the eventless loop and queue drain can call each other; the
    eventless function definition follows. */
-static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm);
+SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm);
 
 {% if model.has_autoforward_invoke %}
 /* W3C SCXML 6.4 (test229): forward each external event to active
@@ -3467,7 +3490,7 @@ static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name
    Appendix D's `isCancelEvent` arm, which `continue`s past the forward
    block entirely; the wildcard sentinel and the empty-name placeholder are
    codegen bookkeeping with no name to copy. */
-static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children({{ csym_prefix }}{{ model.name }}_t *sm,
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     /* W3C SCXML 6.4: the copy handed to each child is exact, so the source
        event's fields are packed into the transport-neutral carrier once and
@@ -3504,7 +3527,7 @@ static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
 }
 {% endif %}
 
-static void SCE_SM_FN process_internal_queue({{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
@@ -3554,7 +3577,7 @@ static void SCE_SM_FN process_internal_queue({{ csym_prefix }}{{ model.name }}_t
    dequeued. Draining to exhaustion here consumes what that state's
    `<onentry>` queued while its invoke is still pending, and an autoforward
    child never sees it. */
-static bool SCE_SM_FN process_next_external_event({{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
@@ -3685,7 +3708,7 @@ static bool SCE_SM_FN process_next_external_event({{ csym_prefix }}{{ model.name
    the C++ guard against pathological cycles (`MAX_ITERATIONS`). Each
    iteration's enabled list is built fresh, conflict-resolved, then
    executed atomically — same shape as cpp's per-microstep collection. */
-static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
     int iter = 0;
@@ -3724,7 +3747,7 @@ static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name
    yet while that drain runs, so everything `<onentry>` queued for this
    session on the way in is consumed with no autoforward child to receive it
    — and there is no later point at which it is delivered. */
-static void SCE_SM_FN run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *sm) {
     while (true) {
         /* W3C SCXML Appendix D: complete the macrostep on eventless
            transitions and internal events alone. */
@@ -3872,7 +3895,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.n
 }
 
 {% if not model.has_parent_communication %}
-static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_script_engine %},
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}) {
     memset(sm, 0, sizeof(*sm));
 {% if model.needs_script_engine %}
