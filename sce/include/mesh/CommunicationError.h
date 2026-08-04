@@ -136,6 +136,13 @@ enum class ReasonCode : std::uint8_t {
     /// versus "the peer came back too late for this to still mean
     /// anything").
     OutboundStaleDrop,
+    /// §mesh-16.7 row 16 — wire `"NOTIFICATION_DEADLINE_MISSED"`. A DDS
+    /// notification reader whose deployment declared
+    /// `transports.dds.qos.deadline_ms` went a full period with no
+    /// sample. Distinct from row 8 `PEER_PARTITIONED`: the peer may be
+    /// perfectly alive and merely publishing slower than the deployment
+    /// declared it would, which is a different repair.
+    NotificationDeadlineMissed,
 };
 
 /// Canonical mapping table — single source of truth for both JSON
@@ -143,7 +150,7 @@ enum class ReasonCode : std::uint8_t {
 /// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
 /// this table; the cross-doc test fails the build if the table and
 /// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 15> kReasonCodeTable = {{
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 16> kReasonCodeTable = {{
     {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
     {ReasonCode::SendFailed, "SEND_FAILED"},
     {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
@@ -159,6 +166,7 @@ inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 15> kReason
     {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
     {ReasonCode::RpcReplyFromUndeclaredPeer, "RPC_REPLY_FROM_UNDECLARED_PEER"},
     {ReasonCode::OutboundStaleDrop, "OUTBOUND_STALE_DROP"},
+    {ReasonCode::NotificationDeadlineMissed, "NOTIFICATION_DEADLINE_MISSED"},
 }};
 
 /// Map a `ReasonCode` to its canonical wire string. Linear lookup
@@ -340,6 +348,16 @@ struct CommunicationError {
     /// `outbound_buffer.max_age_ms` the drop was measured against.
     std::optional<std::int64_t> max_age_ms;
 
+    /// §mesh-16.7 row 16 (NOTIFICATION_DEADLINE_MISSED): the deadline
+    /// period the deployment declared, in milliseconds. Paired with
+    /// `missed_count` so an author can tell one late sample from a
+    /// publisher that has stopped.
+    std::optional<std::int64_t> deadline_ms;
+
+    /// §mesh-16.7 row 16: DDS's cumulative count of missed deadlines on
+    /// this reader at the moment of the raise.
+    std::optional<std::int64_t> missed_count;
+
     /// §mesh-16.7 row 12 (ORDERING_GAP): inclusive low end of the fast-
     /// forwarded sequence range.
     std::optional<std::uint64_t> lost_seq_lo;
@@ -447,6 +465,12 @@ struct CommunicationError {
         }
         if (max_age_ms) {
             j["max_age_ms"] = *max_age_ms;
+        }
+        if (deadline_ms) {
+            j["deadline_ms"] = *deadline_ms;
+        }
+        if (missed_count) {
+            j["missed_count"] = *missed_count;
         }
         if (lost_seq_lo) {
             j["lost_seq_lo"] = *lost_seq_lo;

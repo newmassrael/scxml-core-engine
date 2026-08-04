@@ -1197,13 +1197,32 @@ If SCXML uses a pattern that the bound transport does not support, sce-build emi
 
 **DDS realization.** DDS is the one in-tree transport whose patterns ride a *derived* set of topics rather than a single addressable endpoint. A binding names one topic; the reply leg is `<topic>_Reply` and the notification leg is `<topic>_Event`, derived at emission time. A request topic therefore cannot be paired with an unrelated reply topic — there is no field in which to express that.
 
-Three consequences are normative, because they change what the transport guarantees rather than merely how it is built:
+Four consequences are normative, because they change what the transport guarantees rather than merely how it is built:
 
-1. **QoS follows from what each leg means, not from the deployment.** Request and reply are RELIABLE + KEEP_ALL + VOLATILE: a server that joins late must not be handed a backlog of stale requests. Notifications are RELIABLE + KEEP_LAST(1) + TRANSIENT_LOCAL, which is the DDS-native expression of the current-value contract a SOME/IP field carries — a subscriber that joins after the last publish still receives that value. Leaving these to deploy.yaml would make a wrong combination a silent runtime degradation rather than a build-time question.
+1. **QoS follows from what each leg means, not from the deployment.** Request and reply are RELIABLE + KEEP_ALL + VOLATILE: a server that joins late must not be handed a backlog of stale requests. Notifications are RELIABLE + KEEP_LAST(1) + TRANSIENT_LOCAL, which is the DDS-native expression of the current-value contract a SOME/IP field carries — a subscriber that joins after the last publish still receives that value. Leaving these to deploy.yaml would make a wrong combination a silent runtime degradation rather than a build-time question — which is why the `qos:` overlay in point 3 cannot express any of them.
 
 2. **Every reader ignores its own participant.** One participant hosts every binding on a device, so without `IGNORE_LOCAL(participant)` a device reads its own writes and a co-located client and server each receive the other's traffic *and* their own. This is a correctness gate, not a tuning knob.
 
-3. **A subscription is its reader.** `event.subscribe.X` creates the notification reader and `event.unsubscribe.X` destroys it; neither is a write. A publisher learns of both through DDS discovery, so there is no unsubscribe message on the wire that could be lost — the same property `custom_tcp` gets from holding the connection (§10.4.4), reached from the discovery model instead.
+3. **What a deployment may add, and what it may not.** The eleven policy settings above are derived, and none of them is declarable: `transports.dds.qos:` cannot express reliability, durability, history or ignore-local, and an attempt to name one is a parse-time reject. That is the whole content of point 1, stated as a schema rather than as a convention.
+
+   What the overlay *does* carry is the set SCE sets nowhere, so a declaration adds behaviour instead of contradicting a derivation:
+
+   ```yaml
+   transports:
+     dds:
+       domain_id: 71
+       qos:
+         notify_lifespan_ms: 3000    # LIFESPAN, notification writer
+         latency_budget_ms: 5        # LATENCY_BUDGET, writers and readers
+         transport_priority: 10      # TRANSPORT_PRIORITY (Cyclone → DSCP)
+         partition: "sce/lab7"       # PARTITION, device publisher + subscriber
+   ```
+
+   `notify_lifespan_ms` is the natural companion to TRANSIENT_LOCAL, which otherwise hands a late joiner a current value of unbounded age; `partition:` is a second isolation dimension alongside `domain_id` that costs no extra participant, and a mismatch is loud by construction because non-intersecting partitions simply never match. Declaring a value that is already the DDS default (a zero duration, an empty partition) is rejected — it reads as a setting while changing nothing (`mesh/deploy-invalid-dds-qos`).
+
+   DEADLINE and LIVELINESS are deliberately **absent**. Both are observable only through a status listener this transport does not install, so offering them would advertise a knob whose effect nothing reports — the same false advertising the derivation above exists to prevent. They become expressible when the listener is wired, not before.
+
+4. **A subscription is its reader.** `event.subscribe.X` creates the notification reader and `event.unsubscribe.X` destroys it; neither is a write. A publisher learns of both through DDS discovery, so there is no unsubscribe message on the wire that could be lost — the same property `custom_tcp` gets from holding the connection (§10.4.4), reached from the discovery model instead.
 
 Unlike a connection-oriented transport, DDS cannot make the responder identity structural: a reply is published on the reply topic and matched by correlation, so the server keeps the set of correlations it has admitted and refuses to publish a reply for one it never handed out. That is weaker than `custom_tcp`'s stream gate — the reply topic is not private to one peer — and it is stated here rather than left implied.
 
@@ -3687,7 +3706,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 5 | Invoke child device unreachable (transport-level) | `INVOKE_CHILD_LOST` | `invoke_id: string`, `target: string` |
 | 6 | Parallel barrier timeout (§16.5) | `PARALLEL_BARRIER_TIMEOUT` | `parallel_id: string`, `missing_regions: [string]`, `timeout_ms: int` |
 | 7 | Envelope dedup window overflow (sustained rate exceeds window capacity) | `DEDUP_WINDOW_OVERFLOW` | `source: string`, `window_size: int` |
-| 8 | Peer machine's liveness signal observed lost. Transport-portable manifestation — Zenoh: `sce/live/<machine>` 2-segment token DELETE; SOME/IP: vsomeip `register_availability_handler` fires `available=false` on the machine-level liveness service in `[0x8280, 0x82FF]` (RFC F.X-4). | `PEER_PARTITIONED` | `target: string`, `last_seen_ms_ago: int?` |
+| 8 | Peer machine's liveness signal observed lost. Transport-portable manifestation — Zenoh: `sce/live/<machine>` 2-segment token DELETE; SOME/IP: vsomeip `register_availability_handler` fires `available=false` on the machine-level liveness service in `[0x8280, 0x82FF]` (RFC F.X-4); DDS: a matched writer's LIVELINESS lease expires and the notification reader's `on_liveliness_changed` reports a decreased alive count (requires `transports.dds.qos.liveliness_lease_ms`, §8.2). | `PEER_PARTITIONED` | `target: string`, `last_seen_ms_ago: int?` |
 | 9 | Transport backpressure queue full, outbound envelope dropped (§10.10 `OutboundBuffer` at `max_pending_per_target`) | `BACKPRESSURE_DROP` | `transport: string`, `target: string`, `queue_depth: int` |
 | 10 | Peer rejected envelope due to authorization failure | `UNAUTHORIZED` | `target: string`, `transport_status?: string` |
 | 11 | Inbound envelope reached an active `OrderingBuffer` without `sequence_no` (§10.6.3) | `MISSING_SEQUENCE` | *(baseline only — `source`, `envelope_id` carry the diagnosis)* |
@@ -3695,6 +3714,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 13 | Peer region-partition's liveness signal observed lost (§16.4 per-partition liveness; transport-conditional manifestation — Zenoh: `sce/live/<machine>/<partition>` 3-segment token DELETE; SOME/IP: vsomeip `register_availability_handler` fires `available=false` per RFC F.X-3). Orthogonal axis from row 8 — raises intra-machine when one OS process of a `<parallel>`-split machine exits while siblings remain. | `REGION_PARTITIONED` | `machine: string`, `partition: string`, `last_seen_ms_ago: int?` |
 | 14 | An `RpcReply` carried a live correlation id but arrived from a peer outside the request binding's §14.6 responder set. The correlation entry is **left in place** — the request stays answerable by a declared responder — so this row is the loud-fail that keeps the rejection from being a silent drop. Raised on the receiving (requesting) side. | `RPC_REPLY_FROM_UNDECLARED_PEER` | `source: string` (the machine the reply came from), `invoke_id: string` (the invoke it tried to retire) |
 | 15 | An envelope held by the §10.10 `OutboundBuffer` waiting for peer readiness exceeded `outbound_buffer.max_age_ms` and was dropped instead of dispatched when readiness arrived. Orthogonal to row 9: that is a capacity bound observed at admit, this is an age bound observed at drain. Raised on the sending side. | `OUTBOUND_STALE_DROP` | `transport: string`, `target: string`, `age_ms: int`, `max_age_ms: int` |
+| 16 | A DDS notification reader whose deployment declared `transports.dds.qos.deadline_ms` went a full period with no sample. Distinct from row 8: the peer may be alive and merely publishing slower than declared, which is a different repair. Raised on the subscribing side, from the reader's `on_requested_deadline_missed` status. | `NOTIFICATION_DEADLINE_MISSED` | `transport: string`, `deadline_ms: int`, `missed_count: int` |
 
 **Common fields (§10.7.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
 

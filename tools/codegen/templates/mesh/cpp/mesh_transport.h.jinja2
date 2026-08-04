@@ -801,6 +801,29 @@ static constexpr SCE::Mesh::CustomTcp::SocketOptions CUSTOM_TCP_SOCKET = sceCust
 // unit: participants in different domains never discover each other, so
 // this is what keeps two deployments on one host apart.
 static constexpr std::uint32_t DDS_DOMAIN_ID = {{ dds_transport.domain_id }};
+{% if dds_transport.qos %}
+// Deployment QoS overlay (deploy.yaml `transports.dds.qos:`,
+// SCE_MESH.md §8.2). It sits ALONGSIDE the derived leg policies —
+// RELIABLE/KEEP_ALL on request-reply, KEEP_LAST(1)/TRANSIENT_LOCAL on
+// notifications, IGNORE_LOCAL on every reader — and cannot express any
+// of them: those encode what a leg means, and a deployment able to edit
+// them could break the pattern semantics with no signal.
+//
+// Built field-by-field for the same reason the custom_tcp options are:
+// `sce_mesh_common` declares `cxx_std_17`, so designated initializers are
+// unavailable, and positional aggregate init would change meaning if the
+// struct ever reorders.
+inline SCE::Mesh::Dds::QosOverlay sceDdsQosOverlay() {
+    SCE::Mesh::Dds::QosOverlay q;
+    q.notify_lifespan_ms = {{ dds_transport.qos.notify_lifespan_ms }};
+    q.latency_budget_ms = {{ dds_transport.qos.latency_budget_ms }};
+    q.deadline_ms = {{ dds_transport.qos.deadline_ms }};
+    q.liveliness_lease_ms = {{ dds_transport.qos.liveliness_lease_ms }};
+    q.transport_priority = {{ dds_transport.qos.transport_priority }};
+    q.partition = {{ dds_transport.qos.partition }};
+    return q;
+}
+{% endif %}
 {% if dds_transport.config %}
 // Vendor configuration for this device's participant (deploy.yaml
 // `transports.dds.config:`). Cyclone reads it as a file name, or as XML
@@ -3309,7 +3332,7 @@ struct TransportRouter {
         // The participant comes first: every endpoint below borrows it,
         // and IGNORE_LOCAL(participant) only means "this device's own
         // traffic" because they all share this one.
-        dds_participant_ = std::make_unique<SCE::Mesh::Dds::Participant>(DDS_DOMAIN_ID{% if dds_transport.config %}, DDS_CONFIG{% endif %});
+        dds_participant_ = std::make_unique<SCE::Mesh::Dds::Participant>(DDS_DOMAIN_ID{% if dds_transport.config %}, DDS_CONFIG{% elif dds_transport.qos %}, nullptr{% endif %}{% if dds_transport.qos %}, sceDdsQosOverlay(){% endif %});
         if (!dds_participant_->valid()) {
             shutdown();
             return false;
@@ -3344,6 +3367,28 @@ struct TransportRouter {
         }
         {{ target.target_snake }}_->setDecodeErrorHandler(
             [this]() {{ raise_envelope_corrupt_lambda("dds") }});
+{% if dds_transport.qos and (dds_transport.qos.deadline_ms or dds_transport.qos.liveliness_lease_ms) %}
+        // §8.2: a declared DEADLINE / LIVELINESS is a promise about the
+        // peer's behaviour, so its violation reaches the author as
+        // `error.communication` rather than sitting in a DDS status
+        // nothing reads. Deadline is its own row 16; a liveliness loss is
+        // row 8 PEER_PARTITIONED, the same row zenoh and someip raise for
+        // the same condition through their own mechanisms.
+        {{ target.target_snake }}_->setQosViolationHandler(
+            [this](SCE::Mesh::Dds::QosViolation violation) {
+                SCE::Mesh::CommunicationError err;
+                err.transport = "dds";
+                err.target = "{{ target.target }}";
+                if (violation.kind == SCE::Mesh::Dds::QosViolationKind::DeadlineMissed) {
+                    err.reason = SCE::Mesh::ReasonCode::NotificationDeadlineMissed;
+                    err.deadline_ms = {{ dds_transport.qos.deadline_ms }};
+                    err.missed_count = violation.count;
+                } else {
+                    err.reason = SCE::Mesh::ReasonCode::PeerPartitioned;
+                }
+                this->raiseCommunicationError(std::move(err));
+            });
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if "zenoh" in transport_types %}

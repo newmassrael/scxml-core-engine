@@ -22,6 +22,7 @@
 //   * EnvelopeCorruptShape
 //   * DedupWindowOverflowShape
 //   * OutboundStaleDropShape
+//   * NotificationDeadlineMissedShape
 //   * TransportUnavailableShape
 //   * SendFailedShape
 //   * SendFailedShapeWithTransportError
@@ -489,6 +490,33 @@ TEST(CommunicationErrorTest, OutboundStaleDropShape) {
                    "\"transport\":\"someip\","
                    "\"age_ms\":5000,"
                    "\"max_age_ms\":2000}");
+}
+
+TEST(CommunicationErrorTest, NotificationDeadlineMissedShape) {
+    // §16.7 row 16 — raised from the DDS notification reader's
+    // `on_requested_deadline_missed` status when the deployment declared
+    // `transports.dds.qos.deadline_ms`. Carries the declared period and
+    // DDS's cumulative miss count: the period alone would leave the
+    // reader asking "how bad", and the count alone would not say what
+    // was promised.
+    //
+    // The row exists because declaring a QoS whose violation nothing
+    // reported would be a setting that only appears to work — the same
+    // failure the §8.2 derivation avoids from the other direction.
+    CommunicationError err;
+    err.reason = ReasonCode::NotificationDeadlineMissed;
+    err.target = "motor";
+    err.transport = "dds";
+    err.deadline_ms = 250;
+    err.missed_count = 3;
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out, "{\"errorName\":\"communication\","
+                   "\"reason\":\"NOTIFICATION_DEADLINE_MISSED\","
+                   "\"target\":\"motor\","
+                   "\"transport\":\"dds\","
+                   "\"deadline_ms\":250,"
+                   "\"missed_count\":3}");
 }
 
 TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {

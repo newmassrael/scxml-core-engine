@@ -360,6 +360,15 @@ pub enum DeployError {
     #[error("device '{device}': invalid `transports.custom_tcp:` socket setting — {reason}")]
     InvalidCustomTcpSocket { device: String, reason: String },
 
+    /// A device's `transports.dds.qos:` overlay declares a value that is
+    /// already the DDS default (SCE_MESH.md §mesh-8.2). The overlay's
+    /// shape is closed by `deny_unknown_fields`, so an author reaching
+    /// for a derived policy (`reliability:`, `durability:`, `history:`,
+    /// `ignore_local:`) is refused at parse time; this variant covers
+    /// the other half — a field that parses but changes nothing.
+    #[error("device '{device}': invalid `transports.dds.qos:` setting — {reason}")]
+    InvalidDdsQos { device: String, reason: String },
+
     /// A machine declared a `liveliness:` section whose `lease_ms`
     /// violates the minimum-floor constraint (SCE Mesh §mesh-16.7 row 8;
     /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
@@ -2523,6 +2532,16 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 k.extend(devices.iter().cloned());
                 k
             },
+        },
+        DeployError::InvalidDdsQos { device, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidDdsQos,
+            stage: Stage::MeshDeploy,
+            actual: Some(device.clone()),
+            // The reason names the only repair (omit the field); there is
+            // no closed candidate set to carry.
+            expected: None,
+            fix: None,
+            key_fragments: vec![device.clone(), reason.clone()],
         },
         DeployError::InvalidCustomTcpSocket { device, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidCustomTcpSocket,
