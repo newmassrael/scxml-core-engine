@@ -27,7 +27,7 @@ use crate::filters;
 use crate::forge::error::SourceLocation;
 use crate::generator::{GeneratedOutput, Language};
 use crate::mesh::deploy::{
-    CustomTcpTransportConfig, DdsTransportConfig, LivelinessConfig, OrderingTimings,
+    CustomTcpTransportConfig, DdsTransportConfig, DedupConfig, LivelinessConfig, OrderingTimings,
     SomeipTransportConfig, ZenohTransportConfig,
 };
 use crate::mesh::error::CodegenError;
@@ -982,6 +982,7 @@ pub struct MeshCodegenInputs<'a> {
     pub dds_config: Option<&'a DdsTransportConfig>,
     pub subscriptions: &'a [super::deploy::SubscriptionConfig],
     pub machine_ordering: OrderingTimings,
+    pub machine_dedup: DedupConfig,
     pub machine_liveliness: Option<LivelinessConfig>,
     pub machine_outbound_buffer: Option<super::deploy::OutboundBufferConfig>,
     pub partition_self_name: Option<&'a str>,
@@ -1155,6 +1156,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         dds_config,
         subscriptions,
         machine_ordering,
+        machine_dedup,
         machine_liveliness,
         machine_outbound_buffer,
         partition_self_name,
@@ -1560,6 +1562,15 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         "tick_period_ms": machine_ordering.tick_period_ms,
     });
 
+    // SCE_MESH.md §mesh-10.5: the dedup window size, emitted as the
+    // `DedupRouterT<N>` template argument. Serialized unconditionally
+    // for the same reason as the ordering timings — the template reads
+    // it only inside the dedup branch, but an undefined value would
+    // crash a future branch rather than fall back.
+    let machine_dedup_ctx = serde_json::json!({
+        "window_size": machine_dedup.window_size,
+    });
+
     // SCE Mesh §mesh-16.7 row 8 (PEER_PARTITIONED): per-machine Zenoh
     // liveliness opt-in. `null` when the deploy.yaml author declared no
     // `liveliness:` section, which the template reads as a falsy gate —
@@ -1755,6 +1766,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         server_needs_dedup => server_needs_dedup,
         has_ordered_binding => has_ordered_binding,
         machine_ordering => machine_ordering_ctx,
+        machine_dedup => machine_dedup_ctx,
         machine_liveliness => machine_liveliness_ctx,
         machine_outbound_buffer => machine_outbound_buffer_ctx,
         zenoh_session_json5 => zenoh_session_json5,

@@ -1781,14 +1781,28 @@ A server on such a transport requires no address for its clients, and correspond
 Per-envelope duplicate suppression is a **mesh runtime responsibility**, not a transport-layer one. Runtime maintains a **per-sender recent-id window**:
 
 ```cpp
-struct DedupWindow {
+template <std::size_t Capacity>
+struct DedupWindowT {
     // Ring buffer of UUID v7 envelope ids from this sender. Window size is
     // configurable; default 256 entries ~= 4KB per sender.
-    std::array<std::array<uint8_t, 16>, 256> recent_ids;
+    std::array<std::array<uint8_t, 16>, Capacity> recent_ids;
     size_t head;
 };
-std::unordered_map<std::string /*sender*/, DedupWindow> dedup_;
+template <std::size_t Capacity>
+using DedupRouterT = std::unordered_map<std::string /*sender*/, DedupWindowT<Capacity>>;
 ```
+
+The size is declared per machine and reaches the runtime as the template argument, so a build carries no runtime fallback:
+
+```yaml
+machines:
+  brake:
+    source: brake.scxml
+    dedup:
+      window_size: 512     # omit the section for the 256 default
+```
+
+It is a **template** argument rather than a constructor parameter because `recent_ids` is a `std::array` member: a runtime size would move the per-sender window to the heap, and that window is constructed on the receive path the first time a sender is seen. The cost of raising it is linear in both directions — 16 bytes per entry per sender, and one comparison per entry on every inbound envelope, since admission scans the ring. `window_size: 0` is rejected at parse time (`mesh/deploy-invalid-dedup-window`): it is not a narrow filter but no filter, and a deployment that declared it would still read as having duplicate suppression configured. There is deliberately no upper bound — the cost is stated and linear, and any ceiling would be a guess at someone's sender rate.
 
 On envelope receipt:
 1. Look up `dedup_[envelope.source]`.

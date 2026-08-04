@@ -306,7 +306,8 @@ struct CommunicationError {
     std::optional<std::int64_t> queue_depth;
 
     /// §mesh-16.7 row 7 (DEDUP_WINDOW_OVERFLOW): per-sender dedup ring
-    /// capacity (`DedupWindow::kCapacity`, 256 at HEAD) at the moment
+    /// capacity (the emitting router's `kCapacity`, i.e. deploy.yaml
+    /// `machines.<name>.dedup.window_size`, 256 by default) at the moment
     /// an eviction was observed. The "sustained rate exceeds capacity"
     /// condition the spec names is detected operationally as
     /// "novel-id insert evicted an existing entry" — the runtime
