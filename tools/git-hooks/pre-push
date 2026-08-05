@@ -543,9 +543,41 @@ if stage_on "5"; then
     # generate.sh already runs `go build ./conformance/...` as a smoke check,
     # so a codegen drift that produces uncompilable Go (the package-alias bug
     # this hook was born to catch) surfaces right here.
-    log_step "Stage 5/8 — Go forge conformance regenerate + go build"
+    log_step "Stage 5/8 — Go forge conformance regenerate + test"
     ( cd backends/go/forge-runtime/conformance && bash generate.sh ) \
+        || fail_step "Stage 5 (Go forge conformance generate)"
+    # The regenerate above is the expensive half; running the suite it
+    # just produced costs milliseconds. Building an artifact and then
+    # not looking at the result is how `forge-conformance.yml` came to
+    # be mirrored in name only.
+    ( cd backends/go/forge-runtime && go test ./conformance/ -count=1 ) \
         || fail_step "Stage 5 (Go forge conformance)"
+    # ./round_trip/ is the committed tree, orthogonal to the §6.2.6
+    # header-hash drift gate: that one checks parity, this checks the
+    # tree still functions.
+    ( cd backends/go/forge-runtime && go test ./round_trip/ -count=1 ) \
+        || fail_step "Stage 5 (Go forge round-trip)"
+
+fi
+if stage_on "5b"; then
+    # ── Stage 5b: Rust forge conformance ──────────────────────────────
+    # `--release` is not incidental: the numerical conformance vectors
+    # are compared against optimised floating-point output, which is
+    # what ships. Stage 4 runs the workspace in debug and cannot stand
+    # in for it. The separate profile costs a one-time release build
+    # (~50s); afterwards it is incremental — ~0.1s on a push that does
+    # not touch the crate, which is most of them.
+    log_step "Stage 5b/8 — Rust forge conformance (numerical)"
+    cargo test --release -p sce-forge-runtime --features alloc --test numerical_conformance \
+        || fail_step "Stage 5b (Rust forge conformance)"
+
+fi
+if stage_on "5c"; then
+    # ── Stage 5c: Python forge conformance ────────────────────────────
+    # No build step, so this is the cheapest of the five language arms.
+    log_step "Stage 5c/8 — Python forge conformance (numerical)"
+    ( cd backends/python/forge-runtime && PYTHONPATH=tests python3 -m unittest tests.test_numerical_conformance ) \
+        || fail_step "Stage 5c (Python forge conformance)"
 
 fi
 if stage_on "6"; then
@@ -562,6 +594,12 @@ if stage_on "6"; then
         || fail_step "Stage 6 (C++ forge conformance configure)"
     cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
         || fail_step "Stage 6 (C++ forge conformance build)"
+    # Same reasoning as Stage 5: the build dominates and is already
+    # paid. This is NOT the W3C ctest suite the hook deliberately
+    # leaves to CI — it is the conformance fixture that was just built
+    # here, and it runs in hundredths of a second.
+    ctest --test-dir "$BUILD_DIR" --output-on-failure \
+        || fail_step "Stage 6 (C++ forge conformance)"
 
 fi
 if stage_on "7"; then
@@ -667,9 +705,24 @@ fi
 # stage-by-stage has to mirror this one too; the push it blocked otherwise
 # succeeds locally and fails on the runner.
 if stage_on "8b"; then
-    log_step "Stage 8b/8 — verifies-catalog drift (SCE-VERIFIES markers)"
+    log_step "Stage 8b/8 — spec snapshot + verifies-catalog drift"
+    # Snapshot integrity is a sha256 comparison against the pinned
+    # provenance — no network, no build. `--mode upstream` is the one
+    # that fetches, and it stays CI-only (see CI_ONLY in
+    # sce-build/tests/hook_ci_parity.rs).
+    python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity \
+        || fail_step "Stage 8b (spec snapshot drift — snapshot does not match its provenance)"
+    # Two catalogs, two scripts, different files. The hook ran only the
+    # mesh one for long enough that the asymmetry read as intentional.
+    python3 tools/mnemosyne-adoption/gen_verifies_catalog.py --check \
+        || fail_step "Stage 8b (verifies-catalog stale — regenerate with tools/mnemosyne-adoption/gen_verifies_catalog.py)"
     python3 tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py --check \
         || fail_step "Stage 8b (mesh verifies-catalog stale — regenerate with tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py)"
+    # These tools drive Stage 8's ledger validation. If they regress,
+    # the stage above answers confidently and wrongly, so their own
+    # tests belong on the same side of the push.
+    python3 -m unittest discover -s tools/mnemosyne-adoption/tests \
+        || fail_step "Stage 8b (mnemosyne-adoption tooling regression)"
 fi
 
 printf '\npre-push: selected gates passed — push allowed.\n' >&2
