@@ -17,6 +17,7 @@
 // expected to install every backend's toolchain; local dev machines
 // without one toolchain should not be blocked.
 
+use sce_build::toolchain;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -63,19 +64,6 @@ fn fixtures_dir() -> PathBuf {
 fn scratch_for(lang: &str) -> PathBuf {
     let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("forge_enum_smoke");
     base.join(lang)
-}
-
-fn resolve_tool(name: &str) -> Option<PathBuf> {
-    let out = Command::new("which").arg(name).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let path = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(path))
-    }
 }
 
 /// Run `sce-codegen generate -l <lang> -o <out> <fixture>.scxml`. Adds
@@ -127,8 +115,8 @@ fn reset_scratch(lang: &str) -> PathBuf {
 
 #[test]
 fn smoke_cpp() {
-    let Some(gpp) = resolve_tool("g++") else {
-        eprintln!("SKIP smoke_cpp: g++ not on PATH");
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped("smoke_cpp: g++ not on PATH");
         return;
     };
     let scratch = reset_scratch("cpp");
@@ -198,8 +186,8 @@ fn smoke_rust() {
 
 #[test]
 fn smoke_go() {
-    let Some(gofmt) = resolve_tool("gofmt") else {
-        eprintln!("SKIP smoke_go: gofmt not on PATH");
+    let Some(gofmt) = toolchain::locate("gofmt") else {
+        toolchain::skipped("smoke_go: gofmt not on PATH");
         return;
     };
     let scratch = reset_scratch("go");
@@ -246,8 +234,8 @@ fn find_kotlin_runtime_jar() -> Option<PathBuf> {
 
 #[test]
 fn smoke_kotlin() {
-    let Some(kotlinc) = resolve_tool("kotlinc") else {
-        eprintln!("SKIP smoke_kotlin: kotlinc not on PATH");
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("smoke_kotlin: kotlinc not on PATH");
         return;
     };
     // Enum templates ship `@OptIn(ExperimentalUnsignedTypes::class)`
@@ -295,8 +283,8 @@ fn smoke_kotlin() {
 
 #[test]
 fn smoke_python() {
-    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
-        eprintln!("SKIP smoke_python: python3/python not on PATH");
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped("smoke_python: python3/python not on PATH");
         return;
     };
     let scratch = reset_scratch("python");
@@ -332,8 +320,8 @@ fn smoke_python() {
 fn smoke_c11() {
     // Prefer clang for strict-C11 conformance checking; fall back to
     // gcc when clang is unavailable.
-    let Some(cc) = resolve_tool("clang").or_else(|| resolve_tool("gcc")) else {
-        eprintln!("SKIP smoke_c11: clang/gcc not on PATH");
+    let Some(cc) = toolchain::locate_any(&["clang", "gcc"]) else {
+        toolchain::skipped("smoke_c11: clang/gcc not on PATH");
         return;
     };
     let scratch = reset_scratch("c11");

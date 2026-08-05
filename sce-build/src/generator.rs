@@ -123,6 +123,43 @@ pub struct GeneratedOutput {
     pub deps: Vec<PathBuf>,
 }
 
+/// Return `content` guaranteed to end with a newline.
+///
+/// POSIX defines a text file as a sequence of lines, each terminated by
+/// a newline — a trailing fragment without one is not a line. Consumers
+/// enforce it: `clang -Werror -Wnewline-eof` rejects such a header
+/// outright, and `-Werror` is a default MCU consumers build with.
+///
+/// Every template already ends with a newline, but Jinja's
+/// `keep_trailing_newline` default strips exactly one from each render.
+/// Backends whose pipeline includes a formatter (clang-format for C++,
+/// gofmt, rustfmt, ktlint) had it restored downstream and so never
+/// showed the defect; C11 has no formatter, so its headers shipped
+/// ending in `#endif  /* GUARD */` with no newline at all.
+///
+/// The rule belongs at the boundary where an artefact becomes a file,
+/// not in the template environment. Ending with a newline is a property
+/// of a file, not of a render: enabling `keep_trailing_newline` would
+/// equally preserve the newline of every included partial and smear
+/// blank lines through the middle of the output. Applied at the write
+/// boundary it holds once for every backend, including ones that have
+/// no formatter and templates not yet written.
+///
+/// Exposed rather than private to the binary because two write paths
+/// need it — `sce-codegen`'s writers and the `compile_scxml` build.rs
+/// facade — and any downstream consumer driving [`GeneratedOutput`] to
+/// its own files needs the same guarantee.
+///
+/// An empty artefact stays empty: a zero-byte file is a valid text file
+/// and no consumer diagnoses it.
+pub fn with_trailing_newline(content: &str) -> std::borrow::Cow<'_, str> {
+    if content.is_empty() || content.ends_with('\n') {
+        std::borrow::Cow::Borrowed(content)
+    } else {
+        std::borrow::Cow::Owned(format!("{content}\n"))
+    }
+}
+
 /// License configuration matching Python license_config.py
 fn license_config() -> serde_json::Value {
     serde_json::json!({
@@ -1603,6 +1640,31 @@ fn count_braces(line: &str, brace: char) -> i32 {
 mod tests {
     use super::*;
     use crate::parser::SCXMLParser;
+
+    #[test]
+    fn trailing_newline_is_added_only_when_missing() {
+        // The defect: a C11 header ends at its include guard.
+        assert_eq!(
+            with_trailing_newline("#endif  /* SCE_GUARD_H */"),
+            "#endif  /* SCE_GUARD_H */\n",
+        );
+        // Already conformant input is returned untouched, so backends
+        // whose formatter already guarantees this produce byte-identical
+        // output and their committed trees do not churn.
+        assert!(matches!(
+            with_trailing_newline("int main(void) { return 0; }\n"),
+            std::borrow::Cow::Borrowed(_),
+        ));
+        // A deliberate blank final line is preserved, not collapsed.
+        assert_eq!(with_trailing_newline("body\n\n"), "body\n\n");
+        // A zero-byte artefact is a valid text file; adding a newline
+        // would turn "nothing was emitted" into a one-line file.
+        assert_eq!(with_trailing_newline(""), "");
+        // Carriage returns are not newlines: a CRLF file already ends
+        // with `\n`, a lone `\r` does not.
+        assert_eq!(with_trailing_newline("line\r\n"), "line\r\n");
+        assert_eq!(with_trailing_newline("line\r"), "line\r\n");
+    }
 
     /// Document with a single `<invoke type="sce:mesh-rpc">` site —
     /// triggers `model.has_mesh_rpc_invoke()` and exercises the

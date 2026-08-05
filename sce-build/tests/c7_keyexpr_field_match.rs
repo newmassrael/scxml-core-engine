@@ -21,6 +21,7 @@
 //! drives the projection is resolved from `element_type_candidates` —
 //! only the multi-doc orchestrator carries it.
 
+use sce_build::toolchain;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -226,20 +227,6 @@ fn field_match_projects_on_all_six_backends() {
 // filename `generate_forge` actually emits (named by the algorithm's
 // `name=` attribute, not its file stem).
 
-fn resolve_tool(name: &str) -> Option<PathBuf> {
-    let out = Command::new("which").arg(name).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let path = String::from_utf8(out.stdout).ok()?;
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(trimmed))
-    }
-}
-
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -280,8 +267,8 @@ fn c11_field_match_multi_file_compiles_werror() {
         }
     }
 
-    let Some(cc) = resolve_tool("gcc").or_else(|| resolve_tool("clang")) else {
-        eprintln!("SKIP c11_field_match_multi_file_compiles_werror: gcc/clang not on PATH");
+    let Some(cc) = toolchain::locate_any(&["gcc", "clang"]) else {
+        toolchain::skipped("c11_field_match_multi_file_compiles_werror: gcc/clang not on PATH");
         return;
     };
 
@@ -362,8 +349,8 @@ fn cpp_cross_doc_algorithm_compiles_werror() {
         }
     }
 
-    let Some(cxx) = resolve_tool("g++").or_else(|| resolve_tool("clang++")) else {
-        eprintln!("SKIP cpp_cross_doc_algorithm_compiles_werror: g++/clang++ not on PATH");
+    let Some(cxx) = toolchain::locate_any(&["g++", "clang++"]) else {
+        toolchain::skipped("cpp_cross_doc_algorithm_compiles_werror: g++/clang++ not on PATH");
         return;
     };
 
@@ -407,8 +394,8 @@ fn rust_cross_doc_algorithm_compiles() {
     )
     .expect("orchestrator codegen succeeds");
 
-    let Some(rustc) = resolve_tool("rustc") else {
-        eprintln!("SKIP rust_cross_doc_algorithm_compiles: rustc not on PATH");
+    let Some(rustc) = toolchain::locate("rustc") else {
+        toolchain::skipped("rust_cross_doc_algorithm_compiles: rustc not on PATH");
         return;
     };
 
@@ -476,8 +463,8 @@ fn go_cross_doc_algorithm_compiles() {
     )
     .expect("orchestrator codegen succeeds");
 
-    let Some(go) = resolve_tool("go") else {
-        eprintln!("SKIP go_cross_doc_algorithm_compiles: go not on PATH");
+    let Some(go) = toolchain::locate("go") else {
+        toolchain::skipped("go_cross_doc_algorithm_compiles: go not on PATH");
         return;
     };
 
@@ -534,8 +521,8 @@ fn kotlin_cross_doc_algorithm_compiles() {
     )
     .expect("orchestrator codegen succeeds");
 
-    let Some(kotlinc) = resolve_tool("kotlinc") else {
-        eprintln!("SKIP kotlin_cross_doc_algorithm_compiles: kotlinc not on PATH");
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("kotlin_cross_doc_algorithm_compiles: kotlinc not on PATH");
         return;
     };
 
@@ -586,8 +573,8 @@ fn python_cross_doc_algorithm_imports() {
     )
     .expect("orchestrator codegen succeeds");
 
-    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
-        eprintln!("SKIP python_cross_doc_algorithm_imports: python3 not on PATH");
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped("python_cross_doc_algorithm_imports: python3 not on PATH");
         return;
     };
 
@@ -667,8 +654,8 @@ fn cpp_field_match_multi_file_compiles_werror() {
         }
     }
 
-    let Some(cxx) = resolve_tool("g++").or_else(|| resolve_tool("clang++")) else {
-        eprintln!("SKIP cpp_field_match_multi_file_compiles_werror: g++/clang++ not on PATH");
+    let Some(cxx) = toolchain::locate_any(&["g++", "clang++"]) else {
+        toolchain::skipped("cpp_field_match_multi_file_compiles_werror: g++/clang++ not on PATH");
         return;
     };
 
@@ -736,8 +723,8 @@ fn rust_field_match_multi_file_compiles() {
     )
     .expect("orchestrator codegen succeeds");
 
-    let Some(cargo) = resolve_tool("cargo") else {
-        eprintln!("SKIP rust_field_match_multi_file_compiles: cargo not on PATH");
+    let Some(cargo) = toolchain::locate("cargo") else {
+        toolchain::skipped("rust_field_match_multi_file_compiles: cargo not on PATH");
         return;
     };
 
@@ -839,8 +826,8 @@ fn orchestrate_field_match(lang: Language) -> (tempfile::TempDir, Vec<(String, G
 fn go_field_match_multi_file_compiles() {
     let (dir, outputs) = orchestrate_field_match(Language::Go);
 
-    let Some(go) = resolve_tool("go") else {
-        eprintln!("SKIP go_field_match_multi_file_compiles: go not on PATH");
+    let Some(go) = toolchain::locate("go") else {
+        toolchain::skipped("go_field_match_multi_file_compiles: go not on PATH");
         return;
     };
 
@@ -893,8 +880,8 @@ fn go_field_match_multi_file_compiles() {
 fn kotlin_field_match_multi_file_compiles() {
     let (dir, outputs) = orchestrate_field_match(Language::Kotlin);
 
-    let Some(kotlinc) = resolve_tool("kotlinc") else {
-        eprintln!("SKIP kotlin_field_match_multi_file_compiles: kotlinc not on PATH");
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("kotlin_field_match_multi_file_compiles: kotlinc not on PATH");
         return;
     };
 
@@ -938,8 +925,8 @@ fn kotlin_field_match_multi_file_compiles() {
 fn python_field_match_multi_file_imports_and_calls() {
     let (dir, outputs) = orchestrate_field_match(Language::Python);
 
-    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
-        eprintln!("SKIP python_field_match_multi_file_imports_and_calls: python3 not on PATH");
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped("python_field_match_multi_file_imports_and_calls: python3 not on PATH");
         return;
     };
 

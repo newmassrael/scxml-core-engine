@@ -17,7 +17,7 @@ const DEFAULT_STYLE: &str = include_str!("../../tools/codegen/default.clang-form
 /// Errors from the formatting pipeline.
 #[derive(Debug)]
 pub enum FormatError {
-    /// `clang-format` binary not found on PATH.
+    /// No `clang-format` binary could be located.
     NotFound,
     /// User-supplied style file does not exist.
     StyleNotFound(String),
@@ -30,7 +30,11 @@ pub enum FormatError {
 impl std::fmt::Display for FormatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FormatError::NotFound => write!(f, "clang-format not found on PATH"),
+            FormatError::NotFound => write!(
+                f,
+                "clang-format not found on PATH, in a versioned LLVM \
+                 install directory, or via SCE_TOOL_CLANG_FORMAT"
+            ),
             FormatError::StyleNotFound(p) => write!(f, "style file not found: {p}"),
             FormatError::Failed(msg) => write!(f, "clang-format error: {msg}"),
             FormatError::Io(e) => write!(f, "clang-format I/O error: {e}"),
@@ -45,6 +49,11 @@ impl std::error::Error for FormatError {}
 /// Created once and reused across multiple format calls to avoid repeated
 /// availability checks and temp-file setup.
 pub struct CppFormatter {
+    /// Resolved `clang-format` binary. Held rather than re-resolved per
+    /// call so every file in a run is formatted by the same binary — a
+    /// name looked up twice can resolve differently if `PATH` changes
+    /// mid-run, which would split one build's output across two styles.
+    binary: PathBuf,
     style_path: PathBuf,
     /// Temp directory holding the default style; cleaned up on drop.
     _temp_dir: Option<PathBuf>,
@@ -56,10 +65,20 @@ impl CppFormatter {
     /// * `style_path` — explicit `.clang-format` file. When `None`, the built-in
     ///   default style is written to a temp file and used.
     ///
-    /// Returns `FormatError::NotFound` if `clang-format` is not on PATH.
+    /// Returns `FormatError::NotFound` if no `clang-format` can be located.
+    /// Discovery goes through [`crate::toolchain`], which searches past
+    /// `PATH` into the versioned install directories distributions use:
+    /// a `PATH`-only lookup reports "not installed" on any host whose
+    /// LLVM lives in `/usr/lib/llvm-<major>/bin` with no symlink, and
+    /// the caller then emits unformatted C++ that differs from every
+    /// other host's output for the same input.
     pub fn new(style_path: Option<&Path>) -> Result<Self, FormatError> {
-        // Verify clang-format availability once
-        let status = Command::new("clang-format")
+        let binary = crate::toolchain::locate("clang-format").ok_or(FormatError::NotFound)?;
+
+        // Locating proves the file is executable, not that it runs —
+        // a broken symlink or a foreign-architecture binary still has
+        // the bit set. One `--version` confirms it before the run.
+        let status = Command::new(&binary)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -80,6 +99,7 @@ impl CppFormatter {
                     return Err(FormatError::StyleNotFound(p.display().to_string()));
                 }
                 Ok(Self {
+                    binary,
                     style_path: p.to_path_buf(),
                     _temp_dir: None,
                 })
@@ -90,6 +110,7 @@ impl CppFormatter {
                 let style_file = dir.join(".clang-format");
                 std::fs::write(&style_file, DEFAULT_STYLE).map_err(FormatError::Io)?;
                 Ok(Self {
+                    binary,
                     style_path: style_file,
                     _temp_dir: Some(dir),
                 })
@@ -105,7 +126,7 @@ impl CppFormatter {
     pub fn format(&self, code: &str, assume_filename: &str) -> Result<String, FormatError> {
         let style_arg = format!("file:{}", self.style_path.display());
 
-        let mut child = Command::new("clang-format")
+        let mut child = Command::new(&self.binary)
             .arg(format!("-style={style_arg}"))
             .arg(format!("--assume-filename={assume_filename}"))
             .stdin(Stdio::piped())
