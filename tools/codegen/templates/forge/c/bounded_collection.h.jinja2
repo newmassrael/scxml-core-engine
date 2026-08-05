@@ -52,6 +52,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* `SCE_STATIC_ASSERT` for the capacity drift guard below. This header
+ * opens `extern "C"`, so a C++ consumer compiles it as C++ — where
+ * `_Static_assert` is not a keyword. Spelling the guard through the
+ * macro is what keeps it checked on both languages rather than turning
+ * the whole header into a parse error on one of them. */
+#include <sce/portability.h>
+
 #include "{{ element_snake }}.h"
 
 #ifdef __cplusplus
@@ -66,7 +73,7 @@ extern "C" {
 
 /* Drift guard per spec line 2575: N must fit in 16 bits so the
  * generation+slot pair packs into a single uint32_t Handle. */
-_Static_assert({{ capacity }} <= UINT16_MAX,
+SCE_STATIC_ASSERT({{ capacity }} <= UINT16_MAX,
     "{{ pascal }}: capacity must fit in 16 bits to preserve "
     "16/16 Handle packing (spec lines 2575 + 2621-2622).");
 

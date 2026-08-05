@@ -57,6 +57,13 @@
  * 1276-1346 + 1520-1525. */
 #include <sce/sample.h>
 
+/* `SCE_STATIC_ASSERT` for the drift guards below. This header opens
+ * `extern "C"`, so a C++ consumer compiles it as C++ — where
+ * `_Static_assert` is not a keyword. Spelling the guards through the
+ * macro is what keeps them checked on both languages rather than
+ * turning the whole header into a parse error on one of them. */
+#include <sce/portability.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -143,7 +150,7 @@ extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 /* Bitmap word count per reassembly slot — `ceil(max-fragments-per-message / 32)`.
- * Width pinned to `uint32_t` (4 bytes) at the _Static_assert below;
+ * Width pinned to `uint32_t` (4 bytes) at the SCE_STATIC_ASSERT below;
  * using platform-natural `size_t` would break the wire-shape
  * invariant the runtime metadata layer relies on. */
 #define {{ upper_name }}_FRAGMENT_BITMAP_WORDS \
@@ -188,12 +195,12 @@ typedef struct {
  * so a future port to a 16-bit / 64-bit-`size_t` core or a "smarter"
  * bitmap type does not silently re-define the per-slot wire layout
  * the author FSM and cross-language tracing observe. */
-_Static_assert(sizeof(uint32_t) == 4,
-               "fragment-index bitmap word is fixed to uint32_t (4 bytes) per RFC §synth-5-M line 2696");
-_Static_assert(sizeof(uint64_t) == 8,
-               "reassembly slot deadline is fixed to uint64_t (8 bytes) per RFC §synth-5-M line 2697");
-_Static_assert(sizeof({{ snake_name }}_peer_id_t) == 16,
-               "reassembly slot peer-id is fixed to 16-byte ZID per RFC §synth-5-M lines 2708-2714");
+SCE_STATIC_ASSERT(sizeof(uint32_t) == 4,
+                  "fragment-index bitmap word is fixed to uint32_t (4 bytes) per RFC §synth-5-M line 2696");
+SCE_STATIC_ASSERT(sizeof(uint64_t) == 8,
+                  "reassembly slot deadline is fixed to uint64_t (8 bytes) per RFC §synth-5-M line 2697");
+SCE_STATIC_ASSERT(sizeof({{ snake_name }}_peer_id_t) == 16,
+                  "reassembly slot peer-id is fixed to 16-byte ZID per RFC §synth-5-M lines 2708-2714");
 {%- endif %}
 
 /* `sce_slot_state_t` (the seven-state FSM enum + `SCE_SLOT_INVALID`
@@ -203,7 +210,7 @@ _Static_assert(sizeof({{ snake_name }}_peer_id_t) == 16,
  * across translation units — declaring them per pool would shadow the
  * runtime header's symbols, so the per-pool emit reuses the runtime
  * types directly. The runtime header pins the discriminants via
- * `_Static_assert` against this template's spec anchors. */
+ * `SCE_STATIC_ASSERT` against this template's spec anchors. */
 
 /* Sentinel returned by acquire / arm functions when no free slot
  * is available. The caller checks `handle.state == SCE_SLOT_INVALID`
@@ -215,7 +222,7 @@ _Static_assert(sizeof({{ snake_name }}_peer_id_t) == 16,
  * `__attribute__((section, aligned))`; the sidecar linker fragment
  * provides the matching SECTIONS{} entry. The §synth-5-E defense-in-depth
  * contract (lines 1066-1073): `aligned(N)` here + `ALIGN(N)` in the
- * fragment + inter-pool ALIGN sentinel + future `_Static_assert` on
+ * fragment + inter-pool ALIGN sentinel + future `SCE_STATIC_ASSERT` on
  * field layout enforce the same invariant at four layers, so a
  * single failure mode (toolchain bug, custom linker script override,
  * manual edit, master-script INCLUDE re-ordering) cannot silently

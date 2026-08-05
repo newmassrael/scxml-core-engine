@@ -51,7 +51,7 @@
 //     1-based, Coverity 0-based), which is exactly why they are
 //     generated from one origin rather than maintained as a pair.
 //
-//   * `_Static_assert` invariants — pin the Slot handle's
+//   * `SCE_STATIC_ASSERT` invariants — pin the Slot handle's
 //     discriminant ordering and `SCE_SLOT_INVALID` sentinel value
 //     against drift. Mirrored byte-for-byte in
 //     `tools/codegen/templates/forge/c/buffer_pool.h.jinja2` lines
@@ -106,6 +106,12 @@
 // definition, which lives further down.
 #include <string.h>
 
+// `SCE_STATIC_ASSERT`, used by the layout invariants at the bottom of
+// this file. Spelled through the macro rather than as `_Static_assert`
+// because this header opens `extern "C"` and is therefore compiled by
+// C++ consumers, where that keyword does not exist.
+#include "sce/portability.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -156,6 +162,25 @@ extern "C" {
 // statement of intent that the analyzer annotations and the runtime
 // boundary are derived from. They are documentation with a compiler
 // -checked spelling, not a dormant feature switch.
+//
+// The state arguments below are written as bare identifiers, not string
+// literals, because that is the only form Clang accepts. Measured
+// against Clang 19.1.7, `-std=c++17 -Wconsumed`, on declarations the
+// attributes do apply to (a consumable class and its members):
+//
+//   consumable("unconsumed")       → error: requires an identifier
+//   set_typestate("consumed")      → error: requires an identifier
+//   param_typestate("unconsumed")  → error: requires an identifier
+//   callable_when("unconsumed")    → accepted
+//   ...all four accept the identifier form
+//
+// So only `callable_when` takes either, and the identifier form is the
+// one every member of the family shares. Writing the string form here
+// would be inert today — these macros discard their argument — and
+// would become four compile errors the moment the family is spelled as
+// real attributes on a shape Clang applies them to. A contract stated
+// in syntax the tool rejects is not a contract; it is a note that will
+// not survive being taken seriously.
 #define SCE_CONSUMABLE
 #define SCE_CALLABLE_WHEN(s)
 #define SCE_SET_TYPESTATE(s)
@@ -283,8 +308,8 @@ typedef struct SCE_CONSUMABLE {
 /// `+free`: telling an analyzer this accessor consumes its argument
 /// would flag correct callers that go on to `take`.
 /*lint -sem(sce_sample_payload, 1p) */
-SCE_CALLABLE_WHEN("unconsumed")
-const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"));
+SCE_CALLABLE_WHEN(unconsumed)
+const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed));
 
 /// Consume the sample — copies its payload into the caller-owned
 /// buffer at `dst` (capacity `dst_cap`), writes the byte count to
@@ -304,16 +329,16 @@ const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE
 /*lint -sem(sce_sample_take, custodial(1), 1p, 2p, 4p) */
 /* coverity[+free : arg-0] */
 SCE_WARN_UNUSED
-SCE_CALLABLE_WHEN("unconsumed")
-SCE_SET_TYPESTATE("consumed")
-sce_result_t sce_sample_take(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), uint8_t *dst, size_t dst_cap,
+SCE_CALLABLE_WHEN(unconsumed)
+SCE_SET_TYPESTATE(consumed)
+sce_result_t sce_sample_take(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), uint8_t *dst, size_t dst_cap,
                              size_t *out_len);
 
 /// Subscriber callback typedef — consumers register a function of
 /// this signature with the link's RX path. The `sample` parameter
-/// is `param_typestate("unconsumed")` so Clang flags any callback
+/// is `param_typestate(unconsumed)` so Clang flags any callback
 /// that lets the borrow escape its scope without a `take`.
-typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void *ctx);
+typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), void *ctx);
 
 // ── Runtime ownership checking (spec lines 1367-1378 + 1462-1484)
 //
@@ -522,7 +547,7 @@ static inline void sce_ownership_callback_exit(const sce_ownership_scope_t *scop
 
 #endif  // SCE_OWNERSHIP_CHECKED
 
-// ── _Static_assert invariants ────────────────────────────────────
+// ── SCE_STATIC_ASSERT invariants ────────────────────────────────────
 //
 // Layout invariants that must hold across this header and the
 // generated buffer-pool header (`forge/c/buffer_pool.h.jinja2`). A drift on either side trips the assertion
@@ -534,24 +559,24 @@ static inline void sce_ownership_callback_exit(const sce_ownership_scope_t *scop
 // peek under the typedef-redeclaration aliasing rule resolves
 // identically across all consumer translation units.
 
-_Static_assert(SCE_SLOT_FREE == 0, "sce_slot_state_t: SCE_SLOT_FREE must be the 0 discriminant "
-                                   "(buffer_pool.h.jinja2 line 80; per-pool zero-init relies on it)");
-_Static_assert(SCE_SLOT_CPU_MUT == 1, "sce_slot_state_t: SCE_SLOT_CPU_MUT discriminant drifted from "
-                                      "buffer_pool.h.jinja2 line 81");
-_Static_assert(SCE_SLOT_DMA_ARMED_TX == 2, "sce_slot_state_t: SCE_SLOT_DMA_ARMED_TX discriminant drifted "
-                                           "from buffer_pool.h.jinja2 line 82");
-_Static_assert(SCE_SLOT_DMA_BUSY_TX == 3, "sce_slot_state_t: SCE_SLOT_DMA_BUSY_TX discriminant drifted "
-                                          "from buffer_pool.h.jinja2 line 83");
-_Static_assert(SCE_SLOT_DMA_ARMED_RX == 4, "sce_slot_state_t: SCE_SLOT_DMA_ARMED_RX discriminant drifted "
-                                           "from buffer_pool.h.jinja2 line 84");
-_Static_assert(SCE_SLOT_DMA_BUSY_RX == 5, "sce_slot_state_t: SCE_SLOT_DMA_BUSY_RX discriminant drifted "
-                                          "from buffer_pool.h.jinja2 line 85");
-_Static_assert(SCE_SLOT_CPU_REF == 6, "sce_slot_state_t: SCE_SLOT_CPU_REF discriminant drifted from "
-                                      "buffer_pool.h.jinja2 line 86");
-_Static_assert(SCE_SLOT_INVALID == 0xFF, "sce_slot_state_t: SCE_SLOT_INVALID sentinel must remain 0xFF "
-                                         "(buffer_pool.h.jinja2 line 87; consumed-handle marker)");
-_Static_assert(offsetof(sce_slot_handle_t, state) == 0, "sce_slot_handle_t: state field must be at offset 0 so "
-                                                        "tag-check peeks alias correctly across redeclared TUs");
+SCE_STATIC_ASSERT(SCE_SLOT_FREE == 0, "sce_slot_state_t: SCE_SLOT_FREE must be the 0 discriminant "
+                                      "(buffer_pool.h.jinja2 line 80; per-pool zero-init relies on it)");
+SCE_STATIC_ASSERT(SCE_SLOT_CPU_MUT == 1, "sce_slot_state_t: SCE_SLOT_CPU_MUT discriminant drifted from "
+                                         "buffer_pool.h.jinja2 line 81");
+SCE_STATIC_ASSERT(SCE_SLOT_DMA_ARMED_TX == 2, "sce_slot_state_t: SCE_SLOT_DMA_ARMED_TX discriminant drifted "
+                                              "from buffer_pool.h.jinja2 line 82");
+SCE_STATIC_ASSERT(SCE_SLOT_DMA_BUSY_TX == 3, "sce_slot_state_t: SCE_SLOT_DMA_BUSY_TX discriminant drifted "
+                                             "from buffer_pool.h.jinja2 line 83");
+SCE_STATIC_ASSERT(SCE_SLOT_DMA_ARMED_RX == 4, "sce_slot_state_t: SCE_SLOT_DMA_ARMED_RX discriminant drifted "
+                                              "from buffer_pool.h.jinja2 line 84");
+SCE_STATIC_ASSERT(SCE_SLOT_DMA_BUSY_RX == 5, "sce_slot_state_t: SCE_SLOT_DMA_BUSY_RX discriminant drifted "
+                                             "from buffer_pool.h.jinja2 line 85");
+SCE_STATIC_ASSERT(SCE_SLOT_CPU_REF == 6, "sce_slot_state_t: SCE_SLOT_CPU_REF discriminant drifted from "
+                                         "buffer_pool.h.jinja2 line 86");
+SCE_STATIC_ASSERT(SCE_SLOT_INVALID == 0xFF, "sce_slot_state_t: SCE_SLOT_INVALID sentinel must remain 0xFF "
+                                            "(buffer_pool.h.jinja2 line 87; consumed-handle marker)");
+SCE_STATIC_ASSERT(offsetof(sce_slot_handle_t, state) == 0, "sce_slot_handle_t: state field must be at offset 0 so "
+                                                           "tag-check peeks alias correctly across redeclared TUs");
 
 #ifdef __cplusplus
 }

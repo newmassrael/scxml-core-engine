@@ -32,6 +32,10 @@ get_filename_component(REPO_ROOT "${REPO_ROOT}" ABSOLUTE)
 set(SCE_CODEGEN "${REPO_ROOT}/target/release/sce-codegen")
 set(RESOURCE_DIR "${REPO_ROOT}/tests/forge/resources")
 set(RUNTIME_INCLUDE_DIR "${REPO_ROOT}/backends/c/forge-runtime/include")
+# Tier 1 header tree. Generated forge C headers reach into it for
+# `<sce/sample.h>` (ownership contract) and `<sce/portability.h>`
+# (`SCE_STATIC_ASSERT`); see backends/c/forge-runtime/CMakeLists.txt.
+set(CORE_RUNTIME_INCLUDE_DIR "${REPO_ROOT}/backends/c/runtime/include")
 
 find_program(CARGO_EXECUTABLE cargo)
 if(CARGO_EXECUTABLE)
@@ -92,6 +96,7 @@ add_dependencies(default_round_trip_test_c generate_round_trip_fixtures_c)
 
 target_include_directories(default_round_trip_test_c PRIVATE
     "${RUNTIME_INCLUDE_DIR}"
+    "${CORE_RUNTIME_INCLUDE_DIR}"
     "${GENERATED_DIR}"
 )
 

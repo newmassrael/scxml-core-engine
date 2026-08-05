@@ -35,6 +35,10 @@ set(REFERENCE_JSON "${REPO_ROOT}/tests/forge/conformance/numerical_reference.jso
 set(FIXTURE_MANIFEST "${REPO_ROOT}/tests/forge/conformance/fixtures.json")
 set(CONFORMANCE_TEMPLATE_DIR "${REPO_ROOT}/tools/codegen/templates/forge/c/conformance")
 set(RUNTIME_INCLUDE_DIR "${REPO_ROOT}/backends/c/forge-runtime/include")
+# Tier 1 header tree. Generated forge C headers reach into it for
+# `<sce/sample.h>` (ownership contract) and `<sce/portability.h>`
+# (`SCE_STATIC_ASSERT`); see backends/c/forge-runtime/CMakeLists.txt.
+set(CORE_RUNTIME_INCLUDE_DIR "${REPO_ROOT}/backends/c/runtime/include")
 
 # Rebuild sce-codegen from current sce-build sources when the Rust
 # toolchain is available (local dev). Mirrors the cpp version's
@@ -187,6 +191,7 @@ add_dependencies(numerical_conformance_test_c generate_forge_fixtures_c)
 
 target_include_directories(numerical_conformance_test_c PRIVATE
     "${RUNTIME_INCLUDE_DIR}"
+    "${CORE_RUNTIME_INCLUDE_DIR}"
     "${GENERATED_DIR}"
 )
 
