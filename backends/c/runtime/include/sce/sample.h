@@ -11,16 +11,22 @@
 //
 // ── What this header is ────────────────────────────────────────
 //
-//   * 5-macro family (`SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN(s)` /
-//     `SCE_SET_TYPESTATE(s)` / `SCE_PARAM_TYPESTATE(s)` /
-//     `SCE_WARN_UNUSED`) detected via `__has_attribute(consumable)` /
-//     `__has_attribute(callable_when)`. On Clang ≥ 9 with
-//     `-Wconsumed -Wthread-safety` the attributes diagnose
-//     use-after-take, double-take, callback-leak, and ignored
-//     `sce_sample_take` results at compile time. On non-Clang or
-//     older Clang the macros expand to nothing and the Layer 2
-//     analyzer annotations below carry the same facts to PC-lint
-//     Plus and Coverity.
+//   * `SCE_WARN_UNUSED` — the one attribute here that a compiler
+//     acts on. Ignoring `sce_sample_take`'s result is a diagnostic
+//     on GCC and Clang, in C and C++, and it is also this header's
+//     statement of MISRA C:2012 Rule 17.7.
+//
+//   * The Layer 1 typestate spelling (`SCE_CONSUMABLE` /
+//     `SCE_CALLABLE_WHEN(s)` / `SCE_SET_TYPESTATE(s)` /
+//     `SCE_PARAM_TYPESTATE(s)`), which expands to NOTHING. Clang's
+//     consumed analysis is a C++ facility keyed on classes and
+//     member functions; measured against Clang 19.1.7 it produces
+//     no diagnostic for this free-function C API. The tokens stay on
+//     the declarations as the written form of the contract that
+//     Layers 2 and 3 / 3.5 enforce — see the detection block below
+//     for the measurement and
+//     `sample_h_layer1_typestate_is_inert_in_c_and_only_warn_unused_survives`
+//     for the test that pins it.
 //
 //   * `sce_sample_t` — the read-only borrow handed to subscriber
 //     callbacks. Carries the protocol-decoded key expression, the
@@ -74,8 +80,10 @@
 //     MISRA C:2012 Rule 17.7, which `SCE_WARN_UNUSED` below states in
 //     the form every conforming MISRA checker reads.
 //
-//   * Layer 3 / 3.5 (debug-build runtime poisoning, release-mode
-//     opt-in) — not yet implemented.
+//   * A shadow slot table. Spec line 1478 budgets one byte per slot
+//     for Layer 3.5; none is allocated, because `sce_sample_t`
+//     already carries the slot handle and the boundary compares
+//     entry against exit in a scope-local.
 //
 // Pre-1.0: this contract may evolve before SCE 1.0 (per
 // `feedback_pre_release_no_compat.md`); downstream consumers re-link
@@ -87,6 +95,12 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+// `memset` backs the Layer 3 poison fill. Included unconditionally
+// and outside the `extern "C"` block below: a standard header must
+// not be pulled in under C linkage, and gating it on
+// `SCE_DEBUG_OWNERSHIP` would put the `#include` after that macro's
+// definition, which lives further down.
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -94,56 +108,88 @@ extern "C" {
 
 // ── Layer 1 typestate detection ──────────────────────────────────
 //
-// `__has_attribute` is the portable feature-test for Clang's
-// consumable + callable_when family (introduced in Clang 3.4). GCC
-// up through 13 does not implement them — the macros below expand
-// to empty there, and analyzer-driven coverage (Layer 2/3) is
-// expected to fill the gap on non-Clang toolchains. Detection is
-// a compile-time decision (`SCE_OWNERSHIP_ATTRS_AVAILABLE`) that
-// downstream tooling can read directly.
+// `__has_attribute` answers "does this compiler know the attribute
+// name", NOT "does it apply the attribute to the declaration I am
+// about to write". For Clang's consumed-analysis family those two
+// answers differ in C, and the gap is total rather than partial.
+//
+// Measured against Clang 19.1.7, `-std=c11 -Wconsumed`:
+//
+//   struct __attribute__((consumable(unconsumed))) S { int x; };
+//   → warning: 'consumable' attribute only applies to classes
+//   → same for callable_when / set_typestate
+//   → -Wconsumed diagnostics produced: none
+//
+// The same translation unit under `-std=c++17` does produce
+// -Wconsumed diagnostics. Clang's consumed analysis is a C++ facility:
+// `consumable` attaches to a class, and `callable_when` /
+// `set_typestate` attach to that class's MEMBER functions — they are
+// dropped on a free function even in C++, which is why this header's
+// free-function API cannot express Layer 1 in either language.
+//
+// So `SCE_OWNERSHIP_ATTRS_AVAILABLE` is gated on `__cplusplus`. In C
+// it is 0, and that is not a limitation being worked around: it is
+// what the compiler actually does. Reporting 1 there would claim
+// coverage that produces no diagnostic, and — because `-Werror`
+// builds see `-Wignored-attributes` — would break downstream
+// compiles while claiming to protect them.
+//
+// The consequence is deliberate and load-bearing: on the C11 backend
+// Layer 2 (analyzer annotations) and Layer 3 / 3.5 (runtime boundary)
+// are not a fallback for Layer 1, they are the entire defence. The
+// Layer 3.5 default below reads this macro rather than `__clang__`
+// precisely so that a C build gets the runtime boundary switched on.
 
-#if defined(__has_attribute)
-#if __has_attribute(consumable) && __has_attribute(callable_when) && __has_attribute(set_typestate) &&                 \
-    __has_attribute(param_typestate) && __has_attribute(warn_unused_result)
-#define SCE_OWNERSHIP_ATTRS_AVAILABLE 1
-#else
+// Pinned to 0, not probed. `__has_attribute` answers yes for every
+// name in the family and the compiler then drops all of them on these
+// declarations — probing would report coverage that does not exist.
 #define SCE_OWNERSHIP_ATTRS_AVAILABLE 0
-#endif
-#else
-#define SCE_OWNERSHIP_ATTRS_AVAILABLE 0
-#endif
 
-#if SCE_OWNERSHIP_ATTRS_AVAILABLE
-#define SCE_CONSUMABLE __attribute__((consumable(unconsumed)))
-#define SCE_CALLABLE_WHEN(s) __attribute__((callable_when(s)))
-#define SCE_SET_TYPESTATE(s) __attribute__((set_typestate(s)))
-#define SCE_PARAM_TYPESTATE(s) __attribute__((param_typestate(s)))
-#define SCE_WARN_UNUSED __attribute__((warn_unused_result))
-#else
+// The typestate family expands to nothing, in every language and on
+// every toolchain. The tokens stay on the declarations below because
+// they are the written form of the ownership contract that Layers 2
+// and 3 / 3.5 actually enforce — removing them would delete the
+// statement of intent that the analyzer annotations and the runtime
+// boundary are derived from. They are documentation with a compiler
+// -checked spelling, not a dormant feature switch.
 #define SCE_CONSUMABLE
 #define SCE_CALLABLE_WHEN(s)
 #define SCE_SET_TYPESTATE(s)
 #define SCE_PARAM_TYPESTATE(s)
+
+// `warn_unused_result` is the one member of the original five that
+// works — on C and C++, GCC and Clang alike — so it gets its own
+// detection instead of riding on the dead family above. It is also
+// how this header states MISRA C:2012 Rule 17.7, which is the only
+// Layer 2 fact Polyspace can read from source.
+#if defined(__has_attribute)
+#if __has_attribute(warn_unused_result)
+#define SCE_WARN_UNUSED __attribute__((warn_unused_result))
+#else
+#define SCE_WARN_UNUSED
+#endif
+#else
 #define SCE_WARN_UNUSED
 #endif
 
 // ── Configure-time self-check ─────────────────────────────────────
 //
-// Per the `mem/inter-pool-padding-not-emitted` precedent: if the operator's
-// build is Clang but the consumable family is missing (older Clang,
-// non-default flags such as `-fno-thread-safety`), Layer 1 silently
-// becomes inert — the failure mode the downstream
-// `pool/sample-typestate-attributes-disabled` diagnostic catches at
-// configure time. Fire a `#warning` here so single-TU
-// compiles also surface the gap; the operator can then upgrade
-// Clang, fix flags, or accept Layer 2/3 substitution.
-#if defined(__clang__) && !SCE_OWNERSHIP_ATTRS_AVAILABLE
-#warning "<sce/sample.h>: Clang detected but the consumable typestate " \
-      "attributes are unavailable; Layer 1 ownership analysis is " \
-      "silently inert. Upgrade to Clang ≥ 9 or compile with " \
-      "-fthread-safety; otherwise rely on Layer 2 (PC-Lint / " \
-      "Coverity / Polyspace) or Layer 3 debug-build poisoning."
-#endif
+// There is deliberately no `#warning` here any more.
+//
+// The previous one fired on "Clang detected but the attributes are
+// unavailable", which reads as a misconfiguration the operator can
+// fix. It is not one: the attributes are unavailable on every build
+// of this header, so the warning would fire on every Clang
+// translation unit and teach operators to silence it — the exact
+// habit that later hides a diagnostic that does matter.
+//
+// The gap it was pointing at is closed rather than announced.
+// `SCE_DEFENSIVE_OWNERSHIP` below defaults ON whenever
+// `SCE_OWNERSHIP_ATTRS_AVAILABLE` is 0, so a build with no Layer 1
+// gets the Layer 3.5 runtime boundary without the operator doing
+// anything. The `pool/sample-typestate-attributes-disabled`
+// codegen diagnostic still guards the other half — that the
+// generated pool header actually pulls this file in.
 
 // ── Opaque forward typedefs ──────────────────────────────────────
 //
@@ -264,6 +310,197 @@ sce_result_t sce_sample_take(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unc
 /// is `param_typestate("unconsumed")` so Clang flags any callback
 /// that lets the borrow escape its scope without a `take`.
 typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void *ctx);
+
+// ── Layer 3 / 3.5 ownership checking (spec lines 1367-1378 + 1462-1484)
+//
+// Layer 1 is intra-procedural: it loses the borrow at an indirect
+// call, so a subscriber callback that stores `sample` into a global
+// is the one violation class no compile-time layer can see (spec
+// lines 1464-1467). Layers 3 and 3.5 close it at runtime.
+//
+// ── Where the check lives, and why ──────────────────────────────
+//
+// The callback boundary belongs to SCE: generated code calls the
+// host's handler from `<machine>_deliver_link_<X>_sample`
+// (`tools/codegen/templates/c/state_machine.c.jinja2`). That
+// function is therefore where enter/exit verification and poisoning
+// happen — no cooperation from the host is required, so the check
+// cannot be silently skipped by a downstream that forgets to call
+// into it.
+//
+// Three of the four Layer 3 behaviours land there or in the pool:
+//
+//   * poison on callback return — the boundary (below)
+//   * use-after-callback-return — the boundary, via the poison
+//   * double `sce_sample_take` — the per-pool tag check, raised from
+//     "return false" to a trap under these macros
+//     (`forge/c/buffer_pool.h.jinja2`)
+//
+// The fourth, `dst_cap < payload_len`, sits inside `sce_sample_take`,
+// whose definition is supplied downstream: a pool-agnostic runtime
+// header cannot return a slot to a specific pool's static table, so
+// SCE declares the function and the transport binding defines it.
+// `SCE_OWNERSHIP_TRAP` is public precisely so that definition can
+// raise the same way rather than inventing its own failure mode.
+//
+// ── No shadow table ─────────────────────────────────────────────
+//
+// Spec line 1478 budgets "one `uint8_t` per slot in the shadow
+// table". None is needed: `sce_sample_t` already carries the slot's
+// handle, so the entry state is read from `sample->_slot.state` and
+// compared against the exit state in a scope-local. The check costs
+// zero bytes of RAM, which matters more on an MCU than the table
+// would have.
+
+/// Layer 3 — debug-build poisoning. Opt-in, never a release default
+/// (spec lines 1367-1370). Implies the Layer 3.5 boundary checks and
+/// adds the poison fill.
+#ifndef SCE_DEBUG_OWNERSHIP
+#define SCE_DEBUG_OWNERSHIP 0
+#endif
+
+/// Layer 3.5 — defensive boundary checks, release-safe (spec lines
+/// 1462-1484).
+///
+/// The default keys on whether Layer 1 is *actually* live, not on
+/// which compiler is running. Spec lines 1441-1443 write the default
+/// as "GCC → 1, Clang → 0", but a Clang build whose `consumable`
+/// family is unavailable (older Clang, `-fno-thread-safety`) has no
+/// Layer 1 either — the case the `#warning` above already detects.
+/// Keying on the compiler would leave that build with neither layer;
+/// keying on `SCE_OWNERSHIP_ATTRS_AVAILABLE` closes it. On a Clang
+/// build with the attributes present the two rules agree.
+#ifndef SCE_DEFENSIVE_OWNERSHIP
+#if SCE_OWNERSHIP_ATTRS_AVAILABLE
+#define SCE_DEFENSIVE_OWNERSHIP 0
+#else
+#define SCE_DEFENSIVE_OWNERSHIP 1
+#endif
+#endif
+
+/// True when either layer wants the boundary instrumented.
+#define SCE_OWNERSHIP_CHECKED (SCE_DEBUG_OWNERSHIP || SCE_DEFENSIVE_OWNERSHIP)
+
+/// Byte written over a consumed borrow's payload under Layer 3
+/// (spec line 1371). Chosen by the spec; pinned here so the
+/// generated boundary and any downstream `sce_sample_take` agree on
+/// what a poisoned read looks like.
+#define SCE_OWNERSHIP_POISON_BYTE 0xDE
+
+/// Failure action. Overridable so a target without `assert` (or one
+/// that must reach a fault handler / safe state rather than abort)
+/// can route the violation somewhere useful. The default is
+/// `assert`, which compiles out under `NDEBUG` — deliberate for
+/// Layer 3, which is debug-only. Layer 3.5 ships in release builds,
+/// where `NDEBUG` is typically defined, so a deployment that turns
+/// 3.5 on is expected to define this.
+#ifndef SCE_OWNERSHIP_TRAP
+#define SCE_OWNERSHIP_TRAP(msg) assert(0 && (msg))
+#endif
+
+/// Raise a per-pool tag-check failure (spec line 1373, "traps on
+/// double `sce_sample_take`, take-after-callback-return").
+///
+/// The generated pool API already tag-checks every transition and
+/// returns `false` / `NULL` on a mismatch; that return is the release
+/// behaviour and does not change. This macro is how Layer 3 turns the
+/// same condition into a stop, so the offending call site is the one
+/// in the debugger rather than whatever code later mishandles the
+/// failure return.
+///
+/// Debug-only on purpose: a tag mismatch always indicates a caller
+/// bug, but a release build that defensively probes state and handles
+/// the failure return must not be stopped for doing so. Layer 3.5
+/// therefore leaves this inert and instruments only the callback
+/// boundary, matching spec line 1474 ("skips the heavier checks").
+#if SCE_DEBUG_OWNERSHIP
+#define SCE_OWNERSHIP_TAG_VIOLATION(msg) SCE_OWNERSHIP_TRAP(msg)
+#else
+#define SCE_OWNERSHIP_TAG_VIOLATION(msg) ((void)0)
+#endif
+
+#if SCE_OWNERSHIP_CHECKED
+
+/// Slot state captured when a callback is entered, so the exit check
+/// has something to compare against. Scope-local at the boundary; no
+/// static storage, so nesting and re-entrancy are naturally handled.
+typedef struct {
+    /// The slot's lifecycle state on entry.
+    sce_slot_state_t entry_state;
+    /// Payload base recorded on entry, poisoned on exit under Layer 3.
+    const uint8_t *payload;
+    /// Payload length recorded on entry.
+    size_t payload_len;
+} sce_ownership_scope_t;
+
+/// Open a callback scope. Verifies the borrow arrives in a
+/// CPU-visible state: `cpu-ref` is the state the RX path hands a
+/// subscriber (spec line 1471). A sample arriving DMA-armed or
+/// DMA-busy means the link published a slot the peripheral still
+/// owns — a bug that would otherwise surface as intermittently
+/// corrupt payload bytes.
+static inline sce_ownership_scope_t sce_ownership_callback_enter(const sce_sample_t *sample) {
+    sce_ownership_scope_t scope;
+    scope.entry_state = SCE_SLOT_INVALID;
+    scope.payload = NULL;
+    scope.payload_len = 0;
+    if (sample == NULL) {
+        SCE_OWNERSHIP_TRAP("sce_sample_t borrow delivered as NULL");
+        return scope;
+    }
+    if (sample->_slot.state != SCE_SLOT_CPU_REF && sample->_slot.state != SCE_SLOT_CPU_MUT) {
+        SCE_OWNERSHIP_TRAP("sample delivered to a callback while the slot is not CPU-visible");
+    }
+    scope.entry_state = sample->_slot.state;
+    scope.payload = sample->payload;
+    scope.payload_len = sample->payload_len;
+    return scope;
+}
+
+/// Close a callback scope.
+///
+/// The borrow ends here whether the callback consumed the sample or
+/// only read it. The exit check is not "did it take?" — it cannot be:
+/// `sce_sample_take` receives a `const sce_sample_t *` and so cannot
+/// legally alter the borrow the callback was handed. What the check
+/// catches is the callback altering it anyway, by casting the `const`
+/// away or writing through an aliased copy: a changed payload
+/// pointer, length, or slot tag means the borrow the RX path
+/// published is not the one being returned, and every later
+/// conclusion drawn from it — including this function's own poison
+/// fill — would be aimed at the wrong memory.
+///
+/// Under Layer 3 the payload is then poisoned unconditionally (spec
+/// lines 1371-1372): a handler that stashed `sample` reads
+/// `SCE_OWNERSHIP_POISON_BYTE` afterwards instead of bytes that still
+/// look plausible. Doing it after a `take` is harmless — `take`
+/// copies to the caller's buffer first. Layer 3.5 skips the fill;
+/// that is the whole difference between the two (spec lines
+/// 1473-1475).
+static inline void sce_ownership_callback_exit(const sce_ownership_scope_t *scope, const sce_sample_t *sample) {
+    if (scope == NULL || sample == NULL) {
+        SCE_OWNERSHIP_TRAP("ownership scope closed against a NULL sample");
+        return;
+    }
+    if (sample->payload != scope->payload || sample->payload_len != scope->payload_len) {
+        SCE_OWNERSHIP_TRAP("callback mutated the sample borrow's payload pointer or length");
+        return;
+    }
+    if (sample->_slot.state != scope->entry_state) {
+        SCE_OWNERSHIP_TRAP("callback mutated the sample borrow's slot tag");
+        return;
+    }
+#if SCE_DEBUG_OWNERSHIP
+    // The cast drops `const` on purpose: the pointee is pool storage
+    // whose borrow ends at this line, and overwriting it is the point.
+    // Debug builds only — Layer 3.5 does not reach here.
+    if (sample->payload != NULL && sample->payload_len > 0) {
+        (void)memset((void *)(uintptr_t)sample->payload, SCE_OWNERSHIP_POISON_BYTE, sample->payload_len);
+    }
+#endif
+}
+
+#endif  // SCE_OWNERSHIP_CHECKED
 
 // ── _Static_assert invariants ────────────────────────────────────
 //

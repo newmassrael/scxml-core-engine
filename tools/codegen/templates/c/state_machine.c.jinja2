@@ -4067,6 +4067,15 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
     {{ csym_prefix }}{{ model.name }}_t *sm,
     const sce_sample_t *sample) {
+#if SCE_OWNERSHIP_CHECKED
+    /* Layer 3 / 3.5 ownership boundary (RFC §synth-5-E lines 1367-1378
+       + 1462-1484). The borrow's scope IS this function, so the scope
+       opens here and closes at the single exit below — there is no
+       early return to bypass. Layer 1 stops at the indirect call into
+       the host handler; these checks are what remains on the far side
+       of it. Compiles to nothing when both layers are off. */
+    sce_ownership_scope_t _own = sce_ownership_callback_enter(sample);
+#endif
     (void)sample;  /* borrow held; unused when no block names a c: callback */
 {% for state_id, state in model.states | dictsort %}
 {% for block in state.on_sample_blocks %}
@@ -4090,6 +4099,12 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake
 {% endif %}
 {% endfor %}
 {% endfor %}
+#if SCE_OWNERSHIP_CHECKED
+    /* Borrow ends here. Under Layer 3 the payload is poisoned, so a
+       handler that stashed `sample` reads 0xDE afterwards rather than
+       bytes that still look plausible. */
+    sce_ownership_callback_exit(&_own, sample);
+#endif
 }
 {% endfor %}
 {% endif %}

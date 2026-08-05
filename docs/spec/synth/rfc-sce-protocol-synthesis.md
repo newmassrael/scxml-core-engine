@@ -1282,11 +1282,11 @@ each layer catching what earlier layers miss. Layers 1–2 are static
 builds without an analyzer rely on the API contract being
 documented like any C library.
 
-**Layer 1 — Clang typestate + capability attributes (compile-time,
-Clang only).** When the build is Clang, codegen emits Clang's
-`consumable` typestate and Thread-Safety attributes; `-Wconsumed`
-and `-Wthread-safety` then catch ownership violations at compile
-time, **including in release builds**:
+**Layer 1 — ownership contract in attribute form (no C
+diagnostic).** Clang's consumed analysis is a C++ facility:
+`consumable` attaches to a class and `callable_when` /
+`set_typestate` to its member functions. On the free-function C
+API below all of them are dropped, so the macros expand to nothing:
 
 ```c
 /* Generated header excerpt; SCE_OWNERSHIP_ATTRS_AVAILABLE is set
@@ -1334,17 +1334,17 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t* sample
                                    void* ctx);
 ```
 
-Under Clang ≥ 9 with `-Wthread-safety -Wconsumed`, the following
-are diagnosed at compile time:
-- Calling `sce_sample_payload` after `sce_sample_take` (use after
-  consume)
-- Double `sce_sample_take` (consume of already-consumed)
-- Ignoring `sce_sample_take`'s result (`-Wunused-result`)
-- Subscriber callback that escapes `sample` into a global without
-  `take` (the `param_typestate("unconsumed")` flows out of scope
-  without being consumed → `-Wconsumed` flags the leak)
+Of the five attributes only `warn_unused_result` applies here.
+Ignoring `sce_sample_take`'s result is a hard error, and that same
+attribute is how the header states MISRA C:2012 Rule 17.7. The
+other three violations — use-after-take, double-take, and a
+callback that escapes `sample` into a global — have NO
+compile-time diagnostic on this API.
 
-This is the closest C gets to Rust's compile-time ownership.
+Layer 2 and Layer 3 / 3.5 are therefore not a fallback for Layer 1
+on the C backend; they are the entire defence. Rust gets this
+statically instead (lines 1264-1274), which is the asymmetry the
+layered contract exists to absorb.
 
 **Layer 2 — Lint / static-analyzer comments (compile-time,
 analyzer-driven).** Codegen emits PC-lint Plus `-sem` semantics and
