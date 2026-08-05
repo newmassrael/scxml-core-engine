@@ -86,10 +86,17 @@ jobs:
 
     # libxml2 backs the default `xsd` feature; without it the workspace
     # build fails at link time rather than running the suite.
+    #
+    # clang is installed explicitly rather than relied on from the runner
+    # image, because `SCE_REQUIRE_TOOLS` below turns its absence from a
+    # skip into a failure. The typestate axis it gates
+    # (`sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives`)
+    # needs Clang's `consumable` / `callable_when` attribute family, which
+    # GCC does not implement — with GCC alone the check cannot run at all.
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev
+        sudo apt-get install -y pkg-config libxml2-dev clang
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -126,5 +133,14 @@ jobs:
     - name: Build sce-codegen
       run: cargo build --bin sce-codegen --features cli -p sce-build
 
+    # `SCE_REQUIRE_TOOLS` promotes "tool not found, skipping" into a hard
+    # failure. Without it a runner image that loses a toolchain keeps
+    # reporting green while the checks that need it quietly stop running —
+    # a skip is an unrun check, not a passing one, and this lane is where
+    # that difference is invisible from the outside. Measured locally at
+    # 3349 passed / 0 failed with no skip, so the set it enforces is the
+    # set that already runs.
     - name: cargo test --workspace
+      env:
+        SCE_REQUIRE_TOOLS: "1"
       run: cargo test --workspace --no-fail-fast
