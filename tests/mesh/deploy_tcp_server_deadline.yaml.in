@@ -1,0 +1,43 @@
+# SCE Mesh §9.5 server response deadline E2E fixture (custom_tcp arm).
+#
+# Motor declares a custom_tcp server binding with `response_deadline_ms: 500`.
+# The test binds motor to a recorder engine that never emits the paired
+# response, so the only thing that can retire the stashed
+# `pending_server_links_` entry is the deadline.
+#
+# custom_tcp defines its own framing, so — unlike SOME/IP, which fills a
+# slot the protocol reserved — the notice IS an ordinary framed
+# `MeshEnvelope`, written back on the stream the request arrived on
+# (§mesh-10.4.4). That stream is the stashed link, so the notice reaches
+# the connection that asked and no other. Brake is present so the test
+# observes the notice arriving on a real client binding rather than only
+# asserting that the server released its own state.
+#
+# The port is templated (@SCE_TEST_TCP_SERVER_DEADLINE_PORT@) —
+# configure_file substitutes the cache variable so a workstation already
+# holding the default can override it, and the test binary receives the
+# same value as a macro so the codegen-baked port and the harness agree.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_tcp_server_deadline:
+        source: "@SCE_MESH_TEST_DIR_REL@/brake_tcp_server_deadline.scxml"
+        bindings:
+          "#motor_tcp_server_deadline":
+            transport: custom_tcp
+            connect: "127.0.0.1:@SCE_TEST_TCP_SERVER_DEADLINE_PORT@"
+  ecu2:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:@SCE_TEST_TCP_SERVER_DEADLINE_PORT@"
+    machines:
+      motor_tcp_server_deadline:
+        source: "@SCE_MESH_TEST_DIR_REL@/motor_tcp_server_deadline.scxml"
+        server:
+          transport: custom_tcp
+          # SCE Mesh §9.5: server-side deadline per inbound request.
+          # 500 ms is comfortably above engine macrostep latency
+          # (~tens of ms on commodity hardware) and below the observation
+          # budget the test allows.
+          response_deadline_ms: 500
