@@ -10643,7 +10643,153 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
         }
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the analyzer
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1462-1484: the default
+    /// `SCE_OWNERSHIP_TRAP` still fires in an `NDEBUG` build, so turning
+    /// the defensive layer on cannot buy a boundary that checks and then
+    /// says nothing.
+    ///
+    /// The defensive layer is the one that ships in release, and release
+    /// builds define `NDEBUG`. A bare `assert` default would compile out
+    /// exactly there — every check would run, every violation would be
+    /// found, and none would be reported. That is the silently-inert
+    /// hook the layered contract exists to prevent, so the default is
+    /// `abort()` under `NDEBUG` instead.
+    ///
+    /// Unlike the boundary-behaviour test above, this one deliberately
+    /// does NOT override `SCE_OWNERSHIP_TRAP`: the default is the thing
+    /// under test. A violating driver must die, and a clean one must
+    /// exit 0 — the second half is what keeps "it died" from being
+    /// satisfied by an unrelated crash.
+    #[test]
+    fn sample_h_trap_survives_ndebug_so_the_defensive_layer_cannot_go_quiet() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let include_dir = crate_dir.join("../backends/c/runtime/include");
+
+        let prologue = r#"#include <sce/sample.h>
+struct sce_keyexpr_t { int dummy; };
+struct sce_timestamp_t { uint64_t lo, hi; };
+
+static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_t st) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    s.payload = buf;
+    s.payload_len = len;
+    s._slot.state = st;
+    s._slot.idx = 0;
+    return s;
+}
+"#;
+
+        // (case, extra gcc flags, body, must_die)
+        let cases: &[(&str, &[&str], &str, bool)] = &[
+            (
+                // The case the old `assert` default lost: release build,
+                // defensive layer on, borrow arrives in a state the CPU
+                // does not own.
+                "ndebug-release-violation-still-traps",
+                &["-DNDEBUG", "-DSCE_DEFENSIVE_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 0 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_DMA_BUSY_RX);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    (void)sc;
+    return 0;  /* must not be reached */
+}
+"#,
+                true,
+            ),
+            (
+                // Same build, well-behaved borrow: the trap must not be
+                // trigger-happy, or the first case would prove nothing.
+                "ndebug-release-clean-borrow-exits-zero",
+                &["-DNDEBUG", "-DSCE_DEFENSIVE_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_CPU_REF);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    sce_ownership_callback_exit(&sc, &s);
+    return 0;
+}
+"#,
+                false,
+            ),
+            (
+                // Debug build keeps the `assert` path; it must fire too.
+                "debug-build-violation-traps-via-assert",
+                &["-DSCE_DEFENSIVE_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 0 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_DMA_ARMED_TX);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    (void)sc;
+    return 0;  /* must not be reached */
+}
+"#,
+                true,
+            ),
+        ];
+
+        for (case, flags, body, must_die) in cases {
+            let tmp = std::env::temp_dir().join(format!(
+                "sce-build-trap-{}-{}",
+                std::process::id(),
+                case
+            ));
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::fs::create_dir_all(&tmp).expect("create tmp dir");
+            let driver = tmp.join("driver.c");
+            std::fs::write(&driver, format!("{}{}", prologue, body)).expect("write driver.c");
+            let exe = tmp.join("driver");
+
+            let mut cmd = std::process::Command::new("gcc");
+            cmd.arg("-std=c11")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-Werror");
+            for f in *flags {
+                cmd.arg(f);
+            }
+            let build = cmd
+                .arg("-I")
+                .arg(&include_dir)
+                .arg(&driver)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .expect("gcc must be on PATH");
+            if !build.status.success() {
+                let stderr = String::from_utf8_lossy(&build.stderr).into_owned();
+                let _ = std::fs::remove_dir_all(&tmp);
+                panic!("trap case `{case}` failed to compile:\n{stderr}");
+            }
+
+            let run = std::process::Command::new(&exe)
+                .output()
+                .expect("run the compiled driver");
+            let code = run.status.code();
+            let _ = std::fs::remove_dir_all(&tmp);
+
+            if *must_die {
+                assert_ne!(
+                    code,
+                    Some(0),
+                    "trap case `{case}` returned 0: the ownership violation was \
+                     detected and then discarded. Under NDEBUG the default \
+                     SCE_OWNERSHIP_TRAP must not reduce to a no-op — that is the \
+                     silently-inert hook the defensive layer exists to avoid.",
+                );
+            } else {
+                assert_eq!(
+                    code,
+                    Some(0),
+                    "trap case `{case}` did not exit cleanly ({code:?}); a \
+                     well-formed borrow must pass the boundary untouched, or the \
+                     violating cases prove nothing.",
+                );
+            }
+        }
+    }
+
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the
     /// analyzer annotations carried by
     /// `backends/c/runtime/include/sce/sample.h` must be exactly what
     /// `forge::ownership_contract` renders — checked in both
