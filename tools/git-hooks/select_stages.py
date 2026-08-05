@@ -87,7 +87,17 @@ STAGES: dict[str, dict] = {
     "4": {"workflows": ["rust-workspace-tests.yml"],
           "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"]},
     "4b": {"workflows": ["drift-verify.yml"]},
+    # forge-conformance.yml verifies five language arms in parallel jobs,
+    # and its path filter is workflow-wide: a change under
+    # backends/*/forge-runtime/** starts all five in CI. These stages
+    # therefore fire together too, which is the parity we want. The split
+    # is for attribution — a failure names its arm — and each `extra`
+    # widens the trigger past the workflow filter rather than narrowing
+    # it, so a change outside forge-runtime still reaches the arm it
+    # could break.
     "5": {"workflows": ["forge-conformance.yml"], "extra": ["backends/go/**"]},
+    "5b": {"workflows": ["forge-conformance.yml"], "extra": ["backends/rust/**"]},
+    "5c": {"workflows": ["forge-conformance.yml"], "extra": ["backends/python/**"]},
     "6": {"workflows": ["forge-conformance.yml"], "extra": ["backends/cpp/**", "sce/**"]},
     # No CI counterpart: catches codegen breakage in the example documents
     # (the namespace migration that broke them shipped green otherwise).
