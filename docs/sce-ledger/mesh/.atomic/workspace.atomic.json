@@ -2898,6 +2898,35 @@
         }
       ]
     },
+    "mesh-9.5.1": {
+      "title": "Server response deadline — `server.response_deadline_ms`",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-9.5",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "response_deadline_validation_error",
+          "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/test_mesh_zenoh_server_timeout.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_someip_server_deadline.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_tcp_server_deadline.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_dds_server_deadline.cpp",
+          "kind": "verifies"
+        }
+      ]
+    },
     "mesh-9.6": {
       "title": "`<invoke type=\"scxml\">` — full remote SCXML session (Session F)",
       "parent_doc": "mesh",

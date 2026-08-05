@@ -2879,6 +2879,11 @@ impl ServerConfig {
     ///      silent no-op. The diagnostic names the transports that do
     ///      realise it rather than only saying "not here".
     fn response_deadline_validation_error(&self) -> Option<String> {
+        // §mesh-9.5.1 "Validation": both rejections are parse-time and
+        // both emit `mesh/deploy-invalid-server-response-deadline`. The
+        // floor is a property of macrostep latency so it applies to
+        // every transport; the notice check is per-transport and reads
+        // the registry rather than a hardcoded name.
         let ms = self.response_deadline_ms?;
         if ms < MIN_SERVER_RESPONSE_DEADLINE_MS {
             return Some(format!(

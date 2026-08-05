@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE-VERIFIES: mesh-9.5
+// SCE-VERIFIES: mesh-9.5.1
 //
 // SCE Mesh §9.5 server response deadline, custom_tcp arm.
 //
