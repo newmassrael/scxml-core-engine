@@ -2035,6 +2035,7 @@ pub(crate) fn contribute_subscription_partials(
                 source_target: source_target.clone(),
                 event: sub.event.clone(),
                 transport: binding.transport.clone(),
+                realised_transports: super::transport::machine_lifetime_subscribe_alternatives(),
             });
         }
 
@@ -4928,20 +4929,22 @@ topology:
     #[test]
     fn subscription_on_transport_without_a_subscribe_arm_rejected() {
         // The fail-closed gate, exercised on the transport that most
-        // invites a false positive: DDS is implemented and advertises
-        // PubSub, so "the mechanism looks generic" would let a
-        // subscription through — but its send path routes subscribe and
-        // unsubscribe outside `send_to_<target>` entirely (they create and
-        // destroy the notification reader), and no fixture drives that
-        // from a deploy.yaml declaration. A subscription pointed at it
-        // would build and then silently deliver nothing, which is the
-        // §mesh-13 "delivered" claim going quietly false.
+        // invites a false positive among those that still lack the arm:
+        // `local` is implemented and its descriptor lists `PubSub`, so
+        // "the mechanism looks generic" would let a subscription through
+        // — but in-process direct dispatch has no subscription lifetime
+        // to speak of, and a declaration pointed at it would build and
+        // then silently deliver nothing, which is the §mesh-13
+        // "delivered" claim going quietly false.
         //
-        // SOME/IP is deliberately *not* the case here any more: it
-        // resolves its subscribe through the same vsomeip.json the
-        // outbound path uses, so it is covered by
-        // `tests/mesh_someip_machine_lifetime_subscribe.rs` on the
-        // success side instead.
+        // DDS used to be this case and is deliberately no longer: its
+        // subscribe and unsubscribe create and destroy the notification
+        // reader, and `mesh_dds_machine_lifetime_subscribe_runtime` now
+        // drives both from a deploy.yaml declaration. SOME/IP left for
+        // the same reason earlier, covered on the success side by
+        // `tests/mesh_someip_machine_lifetime_subscribe.rs`. The gate is
+        // registry-driven, so this test follows the registry rather than
+        // pinning any particular transport.
         let scxml = r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="brake" initial="idle">
@@ -4957,8 +4960,7 @@ topology:
         source: b.scxml
         bindings:
           "#motor":
-            transport: dds
-            topic: sce/brake/motor
+            transport: local
         subscriptions:
           - event: event.notification.heartbeat
             source: "#motor"
@@ -4986,11 +4988,20 @@ topology:
                 source_target,
                 event,
                 transport,
+                realised_transports,
             } => {
                 assert_eq!(machine, "brake");
                 assert_eq!(source_target.as_str(), "#motor");
                 assert_eq!(event, "event.notification.heartbeat");
-                assert_eq!(transport, "dds");
+                assert_eq!(transport, "local");
+                // The alternatives clause is registry-derived, so the
+                // rejected transport can never appear in its own repair
+                // advice — the failure mode a hand-maintained list has.
+                assert_eq!(
+                    realised_transports,
+                    crate::mesh::transport::machine_lifetime_subscribe_alternatives()
+                );
+                assert!(!realised_transports.contains("'local'"));
             }
             other => panic!("expected MachineLifetimeSubscriptionUnsupported, got {other:?}"),
         }

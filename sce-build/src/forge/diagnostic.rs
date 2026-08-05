@@ -11507,9 +11507,14 @@ mod tests {
                     source_target: TargetId::new("#motor").unwrap(),
                     event: "event.notification.status".into(),
                     transport: "someip".into(),
+                    // Read from the registry exactly as the raise site
+                    // does, so a flag flip lands here as a golden diff
+                    // rather than as a message nobody re-read.
+                    realised_transports:
+                        crate::mesh::transport::machine_lifetime_subscribe_alternatives(),
                 }
                 .into(),
-                r##"{"v":1,"id":"fnv1a:a66a86a130ed11be","code":"mesh/topology-machine-lifetime-subscription-unsupported","stage":"mesh-topology","spec":"SCE Mesh §13","message":"machine 'brake': subscription on source '#motor' for event 'event.notification.status' uses transport 'someip', which does not support the machine-lifetime subscription path in this build. Move the binding to a transport that supports it (e.g. 'zenoh') or drop the subscription from machines.brake.subscriptions:.","actual":"someip"}"##,
+                r##"{"v":1,"id":"fnv1a:a66a86a130ed11be","code":"mesh/topology-machine-lifetime-subscription-unsupported","stage":"mesh-topology","spec":"SCE Mesh §13","message":"machine 'brake': subscription on source '#motor' for event 'event.notification.status' uses transport 'someip', which does not support the machine-lifetime subscription path in this build. Transports that do realise it: 'someip', 'zenoh', 'custom_tcp', 'dds'. Move the binding to one of those, or drop the subscription from machines.brake.subscriptions:.","actual":"someip"}"##,
             ),
             (
                 "mesh/codegen-unsupported-language",
