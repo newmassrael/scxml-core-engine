@@ -2833,16 +2833,20 @@ pub struct ServerConfig {
     /// transport-neutral — every server arm parks *something* between
     /// receiving a request and emitting the paired response
     /// (`pending_server_requests_` for vsomeip,
-    /// `pending_server_queries_` for zenoh), and each of those leaks
-    /// when the engine leaves the handling state without sending. What
-    /// differs per transport is the **notice** the requesting peer
-    /// gets on expiry, recorded in
+    /// `pending_server_queries_` for zenoh, `pending_server_links_` for
+    /// custom_tcp, `pending_server_correlations_` for dds), and each of
+    /// those leaks when the engine leaves the handling state without
+    /// sending. What differs per transport is the **notice** the
+    /// requesting peer gets on expiry, recorded in
     /// [`crate::mesh::transport::TransportDescriptor::server_deadline_notice`]:
     ///
-    /// - SOME/IP ([`ServerDeadlineNotice::ActiveError`]): the router
-    ///   answers with `MT_ERROR` / `E_TIMEOUT` carrying
-    ///   `RpcStatus::DeadlineExceeded`, so the client can tell a server
-    ///   that gave up from one that vanished.
+    /// - SOME/IP, custom_tcp, DDS
+    ///   ([`ServerDeadlineNotice::ActiveError`]): the router answers
+    ///   with an envelope carrying `RpcStatus::DeadlineExceeded`, so the
+    ///   client can tell a server that gave up from one that vanished.
+    ///   The carrier differs — a `MT_ERROR` / `E_TIMEOUT` SOME/IP
+    ///   response, a frame on the request's own TCP stream, a sample on
+    ///   the paired DDS reply topic — but what the author sees does not.
     /// - Zenoh ([`ServerDeadlineNotice::DropSilently`]): the stored
     ///   `zenoh::Query` is destructed; the client observes the drop via
     ///   the on_drop path (`RpcStatus::Unavailable`).
@@ -2892,15 +2896,21 @@ impl ServerConfig {
             .map(|d| d.server_deadline_notice)
             .unwrap_or(ServerDeadlineNotice::Unsupported);
         if notice == ServerDeadlineNotice::Unsupported {
+            // The alternatives are read out of the registry, not restated
+            // here: a prose list would go stale the moment another arm
+            // lands, and a diagnostic that names the wrong set is worse
+            // than one that names none.
+            let realised = crate::mesh::transport::server_deadline_transports()
+                .into_iter()
+                .map(|(name, notice)| format!("{name} — {}", notice.requester_outcome()))
+                .collect::<Vec<_>>()
+                .join(", ");
             return Some(format!(
                 "response_deadline_ms is not realised on `transport: {}` — its \
                  server arm arms no deadline, so the knob would be a silent \
-                 no-op. Transports that do realise it: someip (answers \
-                 MT_ERROR / E_TIMEOUT with RpcStatus::DeadlineExceeded), zenoh \
-                 (drops the stored query; the client observes \
-                 RpcStatus::Unavailable). Remove the knob, or move the server \
-                 to one of those transports",
-                self.transport,
+                 no-op. Transports that do realise it: {}. Remove the knob, or \
+                 move the server to one of those transports",
+                self.transport, realised,
             ));
         }
         None
@@ -8653,11 +8663,11 @@ topology:
 
     #[test]
     fn server_response_deadline_on_unrealised_transport_rejected() {
-        // custom_tcp holds `pending_server_links_`, so a deadline is
-        // *reachable* there — but no generated arm arms one, and
-        // accepting the knob would ship a silent no-op. The registry
-        // dimension says `Unsupported`, and the validator reads it
-        // rather than hardcoding a transport name.
+        // `local` dispatches in-process: the reply leg runs on the
+        // caller's own stack, so there is no parked request handle for a
+        // deadline to release. The registry dimension says
+        // `Unsupported`, and the validator reads it rather than
+        // hardcoding a transport name.
         let yaml = r#"
 version: "1.0"
 topology:
@@ -8666,22 +8676,62 @@ topology:
       motor:
         source: motor.scxml
         server:
-          transport: custom_tcp
+          transport: local
           response_deadline_ms: 500
 "#;
         match parse_deploy_str(yaml) {
             Err(DeployError::InvalidServerResponseDeadline { machine, reason }) => {
                 assert_eq!(machine, "motor");
                 assert!(
-                    reason.contains("custom_tcp"),
+                    reason.contains("local"),
                     "reason must cite the declared transport: {reason}"
                 );
-                assert!(
-                    reason.contains("someip") && reason.contains("zenoh"),
-                    "reason must name the transports that DO realise it: {reason}"
-                );
+                // The alternatives are enumerated from the registry, so
+                // every arm that realises the knob is named — a prose
+                // list that had drifted would fail here rather than ship
+                // a diagnostic pointing at the wrong set.
+                for realised in ["someip", "zenoh", "custom_tcp", "dds"] {
+                    assert!(
+                        reason.contains(realised),
+                        "reason must name `{realised}`, which DOES realise the knob: {reason}"
+                    );
+                }
             }
             other => panic!("expected InvalidServerResponseDeadline, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn server_response_deadline_accepted_on_custom_tcp_and_dds() {
+        // The acceptance half of the rejection above. Without it, a
+        // regression that flipped either registry entry back to
+        // `Unsupported` would still leave the negative test green — it
+        // only ever asserts that *some* transport is refused.
+        for (transport, extra) in [("custom_tcp", ""), ("dds", "\n          topic: SceMotor")] {
+            let yaml = format!(
+                r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: {transport}
+          response_deadline_ms: 500{extra}
+"#
+            );
+            let parsed = parse_deploy_str(&yaml)
+                .unwrap_or_else(|e| panic!("{transport} must accept the knob: {e:?}"));
+            let server = parsed.topology["ecu1"].machines["motor"]
+                .server
+                .as_ref()
+                .expect("server section");
+            assert_eq!(
+                server.response_deadline_ms,
+                Some(500),
+                "{transport}: the declared value must survive parsing"
+            );
         }
     }
 

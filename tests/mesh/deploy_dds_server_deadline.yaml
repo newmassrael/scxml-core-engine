@@ -1,0 +1,53 @@
+# SCE Mesh §9.5 server response deadline E2E fixture (DDS arm).
+#
+# Motor declares a DDS server binding with `response_deadline_ms: 500`.
+# The test binds motor to a recorder engine that never emits the paired
+# response, so the only thing that can retire the admitted
+# `pending_server_correlations_` entry is the deadline.
+#
+# The notice rides the reply topic derived from the request topic
+# (§mesh-8.2) — the leg a normal reply already travels, so brake needs no
+# second reader to observe it. Brake is present so the test observes the
+# notice arriving on a real client binding rather than only asserting
+# that the server released its own state.
+#
+# Isolation follows deploy_dds_multi.yaml: a non-default `domain_id`
+# separates this fixture from a developer's own deployment, a discovery
+# tag separates it from anything that happens to share the domain, and
+# the partition separates it once more — with the difference that a
+# partition mismatch is loud, so a dropped declaration fails the fixture
+# rather than quietly sharing a bus.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 73
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_server_deadline</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          partition: "sce_mesh_dds_server_deadline"
+    machines:
+      brake_dds_server_deadline:
+        source: brake_dds_server_deadline.scxml
+        bindings:
+          "#motor_dds_server_deadline":
+            transport: dds
+            topic: "SceDdsServerDeadline"
+  ecu2:
+    transports:
+      dds:
+        domain_id: 73
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_server_deadline</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          partition: "sce_mesh_dds_server_deadline"
+    machines:
+      motor_dds_server_deadline:
+        source: motor_dds_server_deadline.scxml
+        server:
+          transport: dds
+          topic: "SceDdsServerDeadline"
+          # SCE Mesh §9.5: server-side deadline per inbound request.
+          # 500 ms is comfortably above engine macrostep latency
+          # (~tens of ms on commodity hardware) and below the observation
+          # budget the test allows.
+          response_deadline_ms: 500

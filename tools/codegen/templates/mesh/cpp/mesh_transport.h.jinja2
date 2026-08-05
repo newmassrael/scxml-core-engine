@@ -399,24 +399,37 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- endmacro %}
 {#
   SCE Mesh §9.5.1 server response deadline — the arming half, shared by
-  every SOME/IP server-side stash (RPC and FieldAccess). Emitted only
-  when the machine declared `server.response_deadline_ms`; the caller
-  places it INSIDE the same `server_pending_mutex_` scope as its
-  `pending_server_requests_` insert, so `handleServerResponse`'s
-  cancel-before-erase can never observe a half-built entry.
+  every server-side stash on every transport (SOME/IP RPC and
+  FieldAccess, custom_tcp, DDS). Emitted only when the machine declared
+  `server.response_deadline_ms`; the caller places it INSIDE the same
+  `server_pending_mutex_` scope as its pending-map insert, so
+  `handleServerResponse`'s cancel-before-erase can never observe a
+  half-built entry.
 
   `registerDeadline` returns false on a duplicate cid. A retransmitted
   request re-stashes under the same key and the earlier timer is still
   live, so the second arm coalesces into it — the same benign-drop
   behaviour the zenoh arm relies on. Inbound requests otherwise carry a
   fresh UUIDv7 cid, so there is no re-arm race.
+
+  `request_event_expr` is a **C++ expression**, not a bare event name,
+  because the two shapes of call site know the name at different times.
+  A SOME/IP method handler is registered per (service, instance, method),
+  so its event is a codegen-time literal; custom_tcp and DDS route every
+  inbound request through one callback, so theirs is `env.type` — known
+  only at run time. Copying it into the closure (rather than referencing
+  the envelope) is what lets the callback name the abandoned call after
+  the envelope has been handed to the engine and the inbound frame is
+  long gone. The copy happens on the inbound thread, so nothing
+  allocates inside the `noexcept` scheduler callback.
 #}
-{%- macro arm_server_deadline(cid_expr, request_event) -%}
+{%- macro arm_server_deadline(cid_expr, request_event_expr) -%}
 (void)deadline_scheduler_.registerDeadline(
                             {{ cid_expr }},
                             std::chrono::milliseconds({{ server.response_deadline_ms }}),
-                            [this, {{ cid_expr }}]() noexcept {
-                                onServerRequestTimedOut({{ cid_expr }}, "{{ request_event }}");
+                            [this, {{ cid_expr }},
+                             sce_request_event = std::string({{ request_event_expr }})]() noexcept {
+                                onServerRequestTimedOut({{ cid_expr }}, sce_request_event);
                             });
 {%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -497,22 +510,38 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    pending map keeps entries whose engine never emits the paired
    response until process exit.
 
-   Both realised arms park state a deadline can release, so the gate is
-   the union rather than a zenoh special case:
-     - SOME/IP: `pending_server_requests_` (the inbound
-       `vsomeip::message`, needed later by `create_response`).
-     - Zenoh:   `pending_server_queries_` (the inbound `zenoh::Query`).
+   Every realised arm parks state a deadline can release, so the gate is
+   the union rather than a per-transport special case:
+     - SOME/IP:    `pending_server_requests_` (the inbound
+                   `vsomeip::message`, needed later by `create_response`).
+     - Zenoh:      `pending_server_queries_` (the inbound `zenoh::Query`).
+     - custom_tcp: `pending_server_links_` (the duplex stream that
+                   carries the return leg, §mesh-10.4.4).
+     - DDS:        `pending_server_correlations_` (the admitted
+                   correlation; the reply rides the paired topic).
 
    What the arms do NOT share is the notice on expiry, which is why the
-   two sub-gates below exist rather than one uniform emission. SOME/IP
-   answers `MT_ERROR` / `E_TIMEOUT`; zenoh drops the stored query. The
-   transport registry records that difference
-   (`TransportDescriptor::server_deadline_notice`) and parse-time
-   validation rejects the knob on transports whose arm cannot honour
-   it, so reaching this gate already implies a realised arm. #}
-{% set has_server_response_deadline = (has_server_zenoh or has_server_someip) and server.response_deadline_ms is defined %}
+   sub-gates below exist rather than one uniform emission. Three arms
+   answer actively — the requester observes an envelope stamped
+   `RpcStatus::DeadlineExceeded` — and zenoh can only drop the stored
+   query, because a `zenoh::Query` exposes `reply` and destruction with
+   no server-authored failure channel in between. The transport registry
+   records that difference (`TransportDescriptor::server_deadline_notice`)
+   and parse-time validation rejects the knob on transports whose arm
+   cannot honour it, so reaching this gate already implies a realised
+   arm.
+
+   `has_server_deadline_active` is the union of the ActiveError arms. It
+   gates everything the three share — the `request_event` parameter, the
+   notice envelope, the try/catch around a `noexcept` scheduler callback
+   — so the only per-transport emission left is the delivery call
+   itself. #}
+{% set has_server_response_deadline = (has_server_zenoh or has_server_someip or has_server_custom_tcp or has_server_dds) and server.response_deadline_ms is defined %}
 {% set has_server_deadline_zenoh = has_server_zenoh and server.response_deadline_ms is defined %}
 {% set has_server_deadline_someip = has_server_someip and server.response_deadline_ms is defined %}
+{% set has_server_deadline_custom_tcp = has_server_custom_tcp and server.response_deadline_ms is defined %}
+{% set has_server_deadline_dds = has_server_dds and server.response_deadline_ms is defined %}
+{% set has_server_deadline_active = has_server_deadline_someip or has_server_deadline_custom_tcp or has_server_deadline_dds %}
 
 {# SCE Mesh §16.7 row 8 (PEER_PARTITIONED): per-machine opt-in liveliness.
    `machine_liveliness` is null when the deploy.yaml author omitted the
@@ -576,12 +605,16 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <string>
 #include <vector>
 {% endif %}
-{% if has_mesh_rpc.v or has_server_deadline_someip %}
+{% if has_mesh_rpc.v or has_server_deadline_active or ("someip" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) %}
 {# `RpcStatus` reaches this file transitively through MeshEnvelope.h, but
-   both these paths name the enum directly — mesh-rpc for `handleReply`
-   statuses, the SOME/IP server deadline for the `DeadlineExceeded` stamp
-   on its MT_ERROR notice — so the dependency is declared rather than
-   inherited. #}
+   three paths name the enum directly, so the dependency is declared
+   rather than inherited:
+     - mesh-rpc `handleReply` statuses (`has_mesh_rpc.v`);
+     - the `DeadlineExceeded` stamp on an ActiveError server-deadline
+       notice (`has_server_deadline_active`);
+     - the client-side reply rewrite on every correlation-table
+       transport (someip / custom_tcp / dds), which refuses to rename a
+       non-`Ok` reply to the declared success event. #}
 #include "mesh/RpcStatus.h"
 {% endif %}
 {% if has_mesh_rpc.v %}
@@ -1969,7 +2002,10 @@ struct TransportRouter {
 {% endif %}
 {% if "someip" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types %}
     // Client RPC correlation: maps correlation_id → reply event name.
-    std::mutex correlation_mutex_;
+    // `mutable` so the read-only `pending_client_rpc_size` accessor can
+    // hold the mutex inside a const method — same convention the
+    // server-side `server_pending_mutex_` follows.
+    mutable std::mutex correlation_mutex_;
     /// SCE_MESH.md §14.6: a pending RPC remembers both the reply-event
     /// name to rewrite `env.type` to AND the responder set allowed to
     /// retire it. Storing the set here (rather than re-deriving it in the
@@ -2012,7 +2048,13 @@ struct TransportRouter {
     //     `server.response_deadline_ms`, releasing the stranded
 {% if has_server_deadline_someip %}
     //     `pending_server_requests_` entry and answering the requester
-    //     with the SOME/IP timeout notice.
+    //     with the SOME/IP MT_ERROR / E_TIMEOUT notice.
+{% elif has_server_deadline_custom_tcp %}
+    //     `pending_server_links_` entry and answering the requester on
+    //     that same stream with a DeadlineExceeded envelope.
+{% elif has_server_deadline_dds %}
+    //     `pending_server_correlations_` entry and publishing a
+    //     DeadlineExceeded envelope on the paired reply topic.
 {% else %}
     //     `pending_server_queries_` entry.
 {% endif %}
@@ -3509,7 +3551,14 @@ struct TransportRouter {
         {{ target.target_snake }}_ = std::make_unique<SCE::Mesh::Dds::Client>(
             *dds_participant_, DDS_TOPIC_{{ target.target_snake | upper }},
             [this](const SCE::Mesh::MeshEnvelope& env) {
-                this->onDdsClientInbound(env);
+                // The machine name is baked in per endpoint: this client
+                // reads only the reply/event topics derived from
+                // `{{ target.target }}`'s own `topic:`, so arrival here IS that
+                // target's identity (§mesh-14.6 responder check). The
+                // `#` is stripped because a responder set holds machine
+                // names, while `respondersFor` is keyed on the send
+                // target — the same split the SOME/IP arm makes.
+                this->onDdsClientInbound(env, "{{ target.target | replace("#", "") }}");
             });
         if (!{{ target.target_snake }}_->valid()) {
             shutdown();
@@ -4053,7 +4102,7 @@ struct TransportRouter {
 {% if has_server_deadline_someip %}
                         // SCE Mesh §9.5.1: arm the response deadline under
                         // the same lock as the stash.
-                        {{ arm_server_deadline("cid", pair.request_event) }}
+                        {{ arm_server_deadline("cid", '"' ~ pair.request_event ~ '"') }}
 {% endif %}
                     }
                     {{ seed_correlation("env", "cid") }}
@@ -4134,7 +4183,7 @@ struct TransportRouter {
 {% if has_server_deadline_someip %}
                         // SCE Mesh §9.5.1: arm the response deadline under
                         // the same lock as the stash.
-                        {{ arm_server_deadline("cid", fa.request_event) }}
+                        {{ arm_server_deadline("cid", '"' ~ fa.request_event ~ '"') }}
 {% endif %}
                     }
                     {{ seed_correlation("env", "cid") }}
@@ -4393,14 +4442,15 @@ struct TransportRouter {
         // callback that has already crossed the scheduler's unlock
         // boundary short-circuits on the flag. `scheduler.shutdown()`
         // is idempotent across the dtor-via-shutdown path.
-{% if has_server_deadline_someip %}
+{% if has_server_deadline_active %}
         //
-        // This block precedes every transport teardown below, and this
-        // arm depends on that order: its expiry notice is an outbound
-        // `server_app_->send`, so a timer firing after
-        // `server_app_->stop()` would be writing into a stopped
-        // application. Draining first means the last callback has
-        // already returned by the time the app stops.
+        // This block precedes every transport teardown below, and an
+        // `ActiveError` arm depends on that order: its expiry notice is
+        // an outbound send on transport state the teardown is about to
+        // destroy — a stopped vsomeip application, a shut-down TCP
+        // server, a reset DDS participant. Draining first means the
+        // last callback has already returned by the time any of them
+        // goes down.
 {% endif %}
         server_shutdown_in_progress_.store(true, std::memory_order_release);
         deadline_scheduler_.shutdown();
@@ -4695,16 +4745,98 @@ struct TransportRouter {
 {% endif %}
 
 {% if "dds" in transport_types %}
+{#- Only a dds target carrying a request/reply PAIR can ever retire a
+    correlation entry. Gating on the target's mere existence would emit a
+    reply-admission path on a FireForget-only binding, where `reply_event`
+    is empty and the branch could never fire. Mirrors the custom_tcp
+    `ns_ctcp_rpc` computation below. #}
+{%- set ns_dds_rpc = namespace(v=false) %}
+{%- for t in targets if t.state.kind == "dds" %}
+{%-   for ep in t.event_patterns if ep.reply_event %}
+{%-     set ns_dds_rpc.v = true %}
+{%-   endfor %}
+{%- endfor %}
+{%- set dds_client_rpc = ns_dds_rpc.v %}
     /// Inbound entry point for every dds client endpoint on this router:
     /// replies arriving on `<topic>_Reply` and notifications arriving on
     /// `<topic>_Event`.
     ///
-    /// Runs on a reader drain thread. Both legs terminate in the engine —
-    /// a reply is matched by the router's own correlation table, a
-    /// notification is an ordinary inbound event — so neither needs the
-    /// per-arrival handle a connection-oriented transport carries.
-    void onDdsClientInbound(const SCE::Mesh::MeshEnvelope& inbound) {
+    /// Runs on a reader drain thread. Neither leg needs the per-arrival
+    /// handle a connection-oriented transport carries — a DDS reply is
+    /// published, not written back up the request path.
+    ///
+    /// `target` names the binding whose endpoint received this envelope.
+    /// It is a codegen-time constant because one `Dds::Client` is
+    /// constructed per target and each reads only the reply/event topics
+    /// derived from that target's own `topic:`. That makes it the DDS
+    /// counterpart of the identity the sibling arms get for free — the
+    /// SOME/IP handler registered per (service, instance, method), the
+    /// custom_tcp stream a request left on — and it is what the §mesh-14.6
+    /// responder check below tests, rather than the forgeable
+    /// `env.source`.
+    void onDdsClientInbound(const SCE::Mesh::MeshEnvelope& inbound,
+                            const char* target) {
         SCE::Mesh::MeshEnvelope env = inbound;
+        (void)target;
+{% if dds_client_rpc %}
+        // ── Reply admission (SCE_MESH.md §mesh-14.6 + §mesh-8.2) ──
+        //
+        // A correlation entry is a one-shot resource: whoever matches it
+        // retires the request. Without this the entry registered by the
+        // outbound `RpcRequest` would never be retired at all — the map
+        // would grow one entry per request for the life of the process,
+        // and a reply carrying a failed `rpc_status` would reach the
+        // engine under whatever name the peer chose with nothing
+        // checking that the peer was entitled to answer.
+        //
+        // The check runs BEFORE the erase, so a rejected reply leaves the
+        // entry live and the request still answerable.
+        if (env.pattern == SCE::Mesh::PatternKind::RpcReply
+            || env.pattern == SCE::Mesh::PatternKind::FieldNotify) {
+            bool undeclared_replier = false;
+            if (env.correlation_id) {
+                std::lock_guard<std::mutex> lock(correlation_mutex_);
+                auto it = pending_rpcs_.find(CorrelationKey{*env.correlation_id});
+                if (it != pending_rpcs_.end()) {
+                    const auto& allowed = it->second.responders;
+                    if (std::find(allowed.begin(), allowed.end(), std::string(target))
+                        != allowed.end()) {
+                        // Only a SUCCESSFUL reply may be renamed to the
+                        // declared reply event. Renaming a failure would
+                        // hand the author's
+                        // `<transition event="service.response.X">` an
+                        // envelope whose payload is empty because the
+                        // call did not happen, i.e. report a false
+                        // success. SCE Mesh §9.5.1 stamps
+                        // `error.rpc.deadline` on a server response
+                        // deadline expiry; keeping that name is what
+                        // lets the author branch on it.
+                        const bool reply_ok =
+                            !env.rpc_status.has_value()
+                            || *env.rpc_status == SCE::Mesh::RpcStatus::Ok;
+                        if (reply_ok) {
+                            env.type = it->second.reply_event;
+                        }
+                        env.pattern = SCE::Mesh::PatternKind::RpcReply;
+                        pending_rpcs_.erase(it);
+                    } else {
+                        undeclared_replier = true;
+                    }
+                }
+            }
+            if (undeclared_replier) {
+                // SCE_MESH.md §mesh-16.7 row 14, raised outside the
+                // correlation mutex.
+                SCE::Mesh::CommunicationError err;
+                err.reason = SCE::Mesh::ReasonCode::RpcReplyFromUndeclaredPeer;
+                err.source = env.source;
+                err.transport = "dds";
+                err.envelope_id = env.id;
+                raiseCommunicationError(std::move(err));
+                return;
+            }
+        }
+{% endif %}
         // session_idx `0`: DDS declares no server pool, so N_SESSIONS is 1.
         (void)this->{{ dedup_or_dispatch(has_undeduped_transport, "env", "0") }};
     }
@@ -4728,6 +4860,15 @@ struct TransportRouter {
             {
                 std::lock_guard<std::mutex> lock(server_pending_mutex_);
                 pending_server_correlations_.insert(CorrelationKey{cid});
+{% if has_server_deadline_dds %}
+                // SCE Mesh §9.5.1: armed inside the same lock scope as
+                // the insert, so `handleServerResponse`'s
+                // cancel-before-erase cannot observe a half-built entry.
+                // The event name is captured for the notice's reason
+                // text — `env.type` is about to be handed to the engine
+                // and must not be read from the scheduler thread.
+                {{ arm_server_deadline("cid", "env.type") }}
+{% endif %}
             }
             {{ seed_correlation("env", "cid") }}
         }
@@ -4788,7 +4929,25 @@ struct TransportRouter {
                 auto it = pending_rpcs_.find(CorrelationKey{*env.correlation_id});
                 if (it != pending_rpcs_.end()) {
                     if (it->second.stream_id != 0 && it->second.stream_id == link.id()) {
-                        env.type = it->second.reply_event;
+                        // A reply that reports failure is still an
+                        // answer, so the one-shot entry retires either
+                        // way — but only a SUCCESSFUL reply may be
+                        // renamed to the declared reply event. Renaming
+                        // a failure would hand the author's
+                        // `<transition event="service.response.X">` an
+                        // envelope whose payload is empty because the
+                        // call did not happen, i.e. report a false
+                        // success. The server names the outcome in
+                        // `env.type` (SCE Mesh §9.5.1 stamps
+                        // `error.rpc.deadline` when a server response
+                        // deadline elapsed); keeping that name is what
+                        // lets the author branch on it.
+                        const bool reply_ok =
+                            !env.rpc_status.has_value()
+                            || *env.rpc_status == SCE::Mesh::RpcStatus::Ok;
+                        if (reply_ok) {
+                            env.type = it->second.reply_event;
+                        }
                         env.pattern = SCE::Mesh::PatternKind::RpcReply;
                         pending_rpcs_.erase(it);
                     } else {
@@ -4825,6 +4984,16 @@ struct TransportRouter {
             {
                 std::lock_guard<std::mutex> lock(server_pending_mutex_);
                 pending_server_links_[CorrelationKey{cid}] = link;
+{% if has_server_deadline_custom_tcp %}
+                // SCE Mesh §9.5.1: armed inside the same lock scope as
+                // the stash, so `handleServerResponse`'s
+                // cancel-before-erase cannot observe a half-built entry.
+                // The event name is copied into the closure because
+                // `env.type` is about to be renamed by the engine's own
+                // dispatch and the inbound frame will be gone by the
+                // time the timer fires.
+                {{ arm_server_deadline("cid", "env.type") }}
+{% endif %}
             }
             {{ seed_correlation("env", "cid") }}
         }
@@ -5344,6 +5513,23 @@ struct TransportRouter {
             std::lock_guard<std::mutex> lock(server_pending_mutex_);
             auto it = pending_server_links_.find(ckey);
             if (it == pending_server_links_.end()) return false;
+{% if has_server_deadline_custom_tcp %}
+            // SCE Mesh §9.5.1: cancel the deadline BEFORE erasing so the
+            // timer cannot fire between find() and erase() and write a
+            // timeout notice onto a stream this thread is about to
+            // answer normally. `cancelDeadline` returns false if the
+            // timer has already fired — in that case
+            // `onServerRequestTimedOut` already removed the entry,
+            // `find()` missed it, and this line is unreachable.
+            //
+            // Deadlock analysis matches the sibling arms: `cancelDeadline`
+            // is "mark-cancelled, don't wait" and takes only the
+            // scheduler's own mutex, and the scheduler unlocks before
+            // invoking a callback, so an in-flight
+            // `onServerRequestTimedOut` blocks on `server_pending_mutex_`
+            // — held here — and then erases an already-gone entry.
+            (void)deadline_scheduler_.cancelDeadline(ckey.id);
+{% endif %}
             reply_link = std::move(it->second);
             pending_server_links_.erase(it);
         }
@@ -5364,6 +5550,16 @@ struct TransportRouter {
             std::lock_guard<std::mutex> lock(server_pending_mutex_);
             auto it = pending_server_correlations_.find(ckey);
             if (it == pending_server_correlations_.end()) return false;
+{% if has_server_deadline_dds %}
+            // SCE Mesh §9.5.1: cancel the deadline BEFORE erasing so the
+            // timer cannot fire between find() and erase() and publish a
+            // timeout notice for a request this thread is about to
+            // answer normally. Same lock-ordering argument as the
+            // sibling arms: `cancelDeadline` only takes the scheduler's
+            // own mutex and never waits on an in-flight callback, which
+            // is meanwhile blocked on `server_pending_mutex_`.
+            (void)deadline_scheduler_.cancelDeadline(ckey.id);
+{% endif %}
             pending_server_correlations_.erase(it);
         }
         return dds_server_ && dds_server_->reply(env);
@@ -5959,6 +6155,22 @@ struct TransportRouter {
 {% endif %}
 {% endif %}
 
+{% if "someip" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types %}
+    /// Test-only accessor: number of outbound RPC requests still
+    /// awaiting a reply in the client-side correlation table.
+    ///
+    /// Verification role: a correlation entry is a one-shot resource,
+    /// and the failure mode this exposes is silent — a reply that is
+    /// dispatched to the engine without retiring its entry looks
+    /// completely healthy from the outside while the table grows once
+    /// per request for the life of the process. Only a direct read
+    /// distinguishes "the reply was correlated" from "the reply merely
+    /// arrived".
+    [[nodiscard]] std::size_t pending_client_rpc_size() const {
+        std::lock_guard<std::mutex> lock(correlation_mutex_);
+        return pending_rpcs_.size();
+    }
+{% endif %}
 {% if has_mesh_rpc.v or has_server_response_deadline %}
     /// Test-only accessor: number of currently-armed deadlines in
     /// `deadline_scheduler_`. Reads `active_.size()` through the
@@ -5984,31 +6196,56 @@ struct TransportRouter {
     /// emitted the paired response envelope (e.g. the handling state
     /// was left before `<send event="service.response.X">` ran).
     ///
-    /// The release is common to both realised server arms; the notice
+    /// The release is common to every realised server arm; the notice
     /// the requesting peer gets is not, and that split is recorded in
     /// the transport registry as
     /// `TransportDescriptor::server_deadline_notice`.
     ///
+{% if has_server_deadline_active %}
+    /// This arm is `ServerDeadlineNotice::ActiveError`: expiry answers
+    /// the requester with a `MeshEnvelope` stamped
+    /// `rpc_status = RpcStatus::DeadlineExceeded`, so its reply path
+    /// raises `error.invoke.<id>` with a status that says *the server
+    /// gave up* rather than the `RpcStatus::Unavailable` that a
+    /// vanished peer produces. The envelope is built once below and the
+    /// transports differ only in how it is handed to the peer.
+    ///
+{% endif %}
 {% if has_server_deadline_someip %}
-    /// SOME/IP (`ServerDeadlineNotice::ActiveError`): the protocol
-    /// carries a first-class timeout notice — message type `MT_ERROR`
-    /// (0x81) with return code `E_TIMEOUT` (0x06), per the AUTOSAR
-    /// SOME/IP Protocol Specification's message-type and return-code
-    /// tables. `create_response(original)` copies the request's
-    /// client id, session id, service, instance and method, so the
-    /// error reply correlates on the wire exactly as a normal response
-    /// would; only the type and return code differ. The payload is a
-    /// regular `MeshEnvelope` stamped
-    /// `rpc_status = RpcStatus::DeadlineExceeded`, so the requester's
-    /// existing reply path raises `error.invoke.<id>` with a status
-    /// that says *the server gave up* rather than the
-    /// `RpcStatus::Unavailable` that a vanished peer produces.
+    /// SOME/IP carries a first-class timeout notice — message type
+    /// `MT_ERROR` (0x81) with return code `E_TIMEOUT` (0x06), per the
+    /// AUTOSAR SOME/IP Protocol Specification's message-type and
+    /// return-code tables. `create_response(original)` copies the
+    /// request's client id, session id, service, instance and method,
+    /// so the error reply correlates on the wire exactly as a normal
+    /// response would; only the type and return code differ.
     ///
     /// This is the axis on which SCE leads its reference: neither
     /// vsomeip nor `ara::com` arms a server-side deadline at all —
     /// they expose only a client-side future timeout, which cannot
     /// distinguish a server that gave up from a dropped datagram, and
     /// leaves the server's own request handle parked indefinitely.
+    ///
+{% endif %}
+{% if has_server_deadline_custom_tcp %}
+    /// custom_tcp defines its own framing (§mesh-10.4.4), so there is
+    /// no foreign error slot to fill — the notice is the same framed
+    /// envelope a normal reply is, written back on the stream the
+    /// request arrived on. That stream is the stashed
+    /// `pending_server_links_` entry, which is by construction the
+    /// connection that asked, so the notice cannot reach a peer that
+    /// did not make the call. If the requester has already hung up the
+    /// stored link reports itself closed and the send fails cleanly —
+    /// the leak the deadline exists to close is shut either way.
+    ///
+{% endif %}
+{% if has_server_deadline_dds %}
+    /// DDS publishes the notice on the reply topic derived from the
+    /// request topic (§mesh-8.2) — the leg a normal reply already
+    /// travels, so the requester needs no second reader to observe it.
+    /// The admitted correlation is erased first, which is what keeps
+    /// the answer one-shot: a late engine response for the same
+    /// correlation finds nothing admitted and publishes nothing.
     ///
 {% endif %}
 {% if has_server_deadline_zenoh %}
@@ -6034,11 +6271,18 @@ struct TransportRouter {
     /// guard in case a callback is already dispatched when shutdown
     /// begins.
     void onServerRequestTimedOut(
-        const std::array<std::uint8_t, 16>& cid{% if has_server_deadline_someip %},
-        const char* request_event{% endif %}) noexcept {
+        const std::array<std::uint8_t, 16>& cid{% if has_server_deadline_active %},
+        const std::string& request_event{% endif %}) noexcept {
         if (server_shutdown_in_progress_.load(std::memory_order_acquire)) {
             return;
         }
+{# ── Release: take the parked handle out of the pending map ──
+   Every arm does the same thing with a different stash, and every arm
+   does it under `server_pending_mutex_` so `cancelDeadline` and this
+   callback can only race in the direction where the entry is already
+   gone, never where it is half-built. What is extracted (or, for DDS,
+   merely confirmed) is what the notice below needs in order to reach
+   the peer. #}
 {% if has_server_deadline_someip %}
         std::shared_ptr<vsomeip::message> original;
         {
@@ -6052,15 +6296,53 @@ struct TransportRouter {
             original = it->second;
             pending_server_requests_.erase(it);
         }
-        // Built and sent OUTSIDE the pending mutex: `send` reaches the
-        // vsomeip routing manager and must not stall a concurrent
-        // inbound handler or reply on this router.
+{% elif has_server_deadline_custom_tcp %}
+        SCE::Mesh::CustomTcp::PeerLink reply_link;
+        {
+            std::lock_guard<std::mutex> lock(server_pending_mutex_);
+            auto it = pending_server_links_.find(CorrelationKey{cid});
+            if (it == pending_server_links_.end()) return;
+            // Moved out, not copied: the stored link is the router's
+            // only handle on that stream for this correlation, and the
+            // erase below must not leave a second owner behind whose
+            // send could double-answer.
+            reply_link = std::move(it->second);
+            pending_server_links_.erase(it);
+        }
+{% elif has_server_deadline_dds %}
+        {
+            std::lock_guard<std::mutex> lock(server_pending_mutex_);
+            auto it = pending_server_correlations_.find(CorrelationKey{cid});
+            if (it == pending_server_correlations_.end()) return;
+            // Erased BEFORE publishing, so a late engine response for
+            // the same correlation finds nothing admitted and
+            // `handleServerResponse` returns false rather than putting
+            // a second answer on the reply topic.
+            pending_server_correlations_.erase(it);
+        }
+{% elif has_server_deadline_zenoh %}
+        // Zenoh (`ServerDeadlineNotice::DropSilently`): the erase IS the
+        // notice — destructing the stored `zenoh::Query` signals "query
+        // done" to the peer, whose `on_drop` closure raises
+        // `error.invoke.<id>` with `RpcStatus::Unavailable`. Nothing is
+        // built or sent, so the whole arm is this one statement and the
+        // mutex can be held across it.
+        std::lock_guard<std::mutex> lock(server_pending_mutex_);
+        pending_server_queries_.erase(CorrelationKey{cid});
+{% endif %}
+{% if has_server_deadline_active %}
+        // ── Notice (`ServerDeadlineNotice::ActiveError`) ──
+        //
+        // Built and sent OUTSIDE the pending mutex: delivery reaches a
+        // transport (a vsomeip routing manager, a blocking socket write,
+        // a DDS writer) and must not stall a concurrent inbound handler
+        // or reply on this router.
         //
         // Wrapped because this runs on the scheduler thread under
         // `noexcept`: the notice allocates (envelope, payload buffer)
-        // and calls into vsomeip, so an escaping exception would
+        // and calls into the transport, so an escaping exception would
         // `std::terminate` the process over a diagnostic message. The
-        // pending entry is already erased above, so the leak the
+        // pending entry is already released above, so the leak the
         // deadline exists to close stays closed either way — what a
         // failure costs is the notice, and the requester falls back to
         // its own timeout exactly as it would against a server with no
@@ -6088,6 +6370,7 @@ struct TransportRouter {
             std::string("'") + request_event +
             "' was not answered within the server response deadline of "
             "{{ server.response_deadline_ms }} ms";
+{% if has_server_deadline_someip %}
         auto response = vsomeip::runtime::get()->create_response(original);
         // AUTOSAR SOME/IP: MT_ERROR (0x81) is the error counterpart of
         // MT_RESPONSE (0x80) and E_TIMEOUT (0x06) is the return code
@@ -6101,16 +6384,27 @@ struct TransportRouter {
             static_cast<uint32_t>(buf.size()));
         response->set_payload(payload);
         if (server_app_) server_app_->send(response);
+{% elif has_server_deadline_custom_tcp %}
+        // §mesh-10.4.4: the return leg is the request's own stream, so
+        // the notice needs no addressing at all. A `false` here means
+        // the peer hung up first — nothing to report, since the party
+        // the notice was for is gone.
+        (void)reply_link.send(timeout_env);
+{% elif has_server_deadline_dds %}
+        // §mesh-8.2: published on the reply topic paired with the
+        // request topic — the same writer a normal reply uses, so a
+        // requester already reading replies observes the notice without
+        // a second reader. `dds_server_` is null only after shutdown,
+        // which the flag above has already short-circuited.
+        if (dds_server_) (void)dds_server_->reply(timeout_env);
+{% endif %}
         } catch (const std::exception& e) {
             SCE_LOG_ERROR(
                 "SCE Mesh server response deadline: releasing '{}' succeeded but "
-                "the MT_ERROR/E_TIMEOUT notice could not be sent ({}); the "
-                "requester will fall back to its own timeout",
+                "the timeout notice could not be sent ({}); the requester will "
+                "fall back to its own timeout",
                 request_event, e.what());
         }
-{% elif has_server_deadline_zenoh %}
-        std::lock_guard<std::mutex> lock(server_pending_mutex_);
-        pending_server_queries_.erase(CorrelationKey{cid});
 {% endif %}
     }
 
@@ -6122,6 +6416,10 @@ struct TransportRouter {
         std::lock_guard<std::mutex> lock(server_pending_mutex_);
 {% if has_server_deadline_someip %}
         return pending_server_requests_.size();
+{% elif has_server_deadline_custom_tcp %}
+        return pending_server_links_.size();
+{% elif has_server_deadline_dds %}
+        return pending_server_correlations_.size();
 {% elif has_server_deadline_zenoh %}
         return pending_server_queries_.size();
 {% endif %}
@@ -6140,6 +6438,15 @@ struct TransportRouter {
 {% if has_server_deadline_someip %}
         if (pending_server_requests_.empty()) return std::nullopt;
         return pending_server_requests_.begin()->first.id;
+{% elif has_server_deadline_custom_tcp %}
+        if (pending_server_links_.empty()) return std::nullopt;
+        return pending_server_links_.begin()->first.id;
+{% elif has_server_deadline_dds %}
+        // A set, not a map: the correlation IS the entry, so the
+        // dereference reaches the key directly rather than through
+        // `->first`.
+        if (pending_server_correlations_.empty()) return std::nullopt;
+        return pending_server_correlations_.begin()->id;
 {% elif has_server_deadline_zenoh %}
         if (pending_server_queries_.empty()) return std::nullopt;
         return pending_server_queries_.begin()->first.id;
