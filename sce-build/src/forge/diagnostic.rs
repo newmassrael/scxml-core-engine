@@ -10456,10 +10456,14 @@ mod tests {
                     machine: "brake".into(),
                     binding: "#logger".into(),
                     transport: "shm".into(),
+                    // Read from the registry exactly as the raise site
+                    // does, so a pool_shape change lands here as a
+                    // golden diff rather than as stale repair advice.
+                    realised_transports: crate::mesh::transport::pool_alternatives(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (supports_pool = false). Use a routing-capable transport (zenoh, someip) or drop the placeholder.","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (pool_shape = None). Transports that do: 'someip' (requires instances:), 'zenoh'. Move the binding to one of those, or drop the placeholder.","actual":"brake"}"#,
             ),
             (
                 "mesh/deploy-pool-missing-instance-list",

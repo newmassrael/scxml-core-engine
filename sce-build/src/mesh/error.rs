@@ -464,21 +464,29 @@ pub enum DeployError {
     DiscoveryNotSupported { content_kind: String },
 
     /// A binding carries a `{name}` placeholder value but the binding's
-    /// transport declares `supports_pool: false` in the registry
-    /// (SCE Mesh §mesh-14.4). Transports without a native routing layer
-    /// (local, shm, custom_tcp, can) cannot substitute runtime values
-    /// without SCE reimplementing transport discovery, which the §mesh-3.3
-    /// design invariant explicitly rejects.
+    /// transport declares [`crate::mesh::transport::PoolShape::None`] in
+    /// the registry (SCE Mesh §mesh-14.4). Transports without a native
+    /// routing layer cannot substitute runtime values without SCE
+    /// reimplementing transport discovery, which the §mesh-3.3 design
+    /// invariant explicitly rejects.
     #[error(
         "machine '{machine}': binding '{binding}' on transport '{transport}' carries a \
              '{{name}}' placeholder, but this transport does not support pool bindings \
-             (supports_pool = false). Use a routing-capable transport (zenoh, someip) or \
-             drop the placeholder."
+             (pool_shape = None). Transports that do: {realised_transports}. Move the \
+             binding to one of those, or drop the placeholder."
     )]
     PoolNotSupportedByTransport {
         machine: String,
         binding: String,
         transport: String,
+        /// Rendered by [`crate::mesh::transport::pool_alternatives`] at
+        /// the raise site, and annotated with the shape each one takes
+        /// so the repair advice carries the `instances:` requirement a
+        /// bounded pool would otherwise reject on the next build.
+        ///
+        /// Not part of `key_fragments` — a property of the build's
+        /// registry, not of the rejected declaration.
+        realised_transports: String,
     },
 
     /// A binding declares a `reply_from:` responder set wider than its
@@ -2678,6 +2686,11 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             machine,
             binding,
             transport,
+            // Registry state, not declaration state — see the field's
+            // doc comment. Kept out of the structured payload so two
+            // authors hitting this on the same binding get the same
+            // diagnostic id.
+            realised_transports: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployPoolNotSupportedByTransport,
             stage: Stage::MeshDeploy,
