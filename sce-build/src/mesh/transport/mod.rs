@@ -84,6 +84,92 @@ impl fmt::Display for TransportCapability {
     }
 }
 
+/// How a transport's pool (SCE_MESH.md §mesh-14.4) resolves the member a
+/// substituted address names.
+///
+/// Deliberately **not** a `supports_pool: bool`. Whether an address can
+/// carry a `{name}` placeholder and whether the member set has to be
+/// declared up front are different questions, and the second one is
+/// author-visible: it decides whether `instances:` is required alongside
+/// `instance_from:`. Collapsing them into one flag is what forced the
+/// validator to ask `transport == "someip"` — a policy about a
+/// transport's discovery model, written at the validation site instead
+/// of at the registry that knows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PoolShape {
+    /// No runtime substitution. Endpoints are fixed at build time
+    /// (local / shm: compile-time process addresses; custom_tcp: a
+    /// single static TCP endpoint, and widening it would mean SCE
+    /// implementing its own SD protocol, which the §mesh-3.3 design
+    /// invariant rejects; can: a broadcast bus with no peer-level
+    /// addressing).
+    None,
+    /// Any runtime value is a valid member. The substituted address is
+    /// dispatched directly with no pre-registration, because the
+    /// transport's routing layer resolves it per message — Zenoh's
+    /// `session.put` / `session.get` on an assembled KeyExpr.
+    Open,
+    /// The member set must be declared in `instances:` so codegen can
+    /// register each member at `init()`. Two transports, one reason
+    /// each, both about discovery rather than about addressing:
+    ///   - SOME/IP: `request_service(SERVICE, ANY_INSTANCE)` is
+    ///     interpreted as specific-instance-0xFFFF rather than as a
+    ///     wildcard, so each member needs its own `request_service`.
+    ///   - DDS: a writer created at invoke time has not finished
+    ///     discovery when the first sample is written, and a VOLATILE
+    ///     writer drops that sample with no error. Creating the member's
+    ///     endpoints at `init()` is what makes the first request
+    ///     deliverable.
+    Bounded,
+}
+
+impl PoolShape {
+    /// Whether a binding on this transport may carry a `{name}`
+    /// placeholder at all.
+    pub fn supports_pool(self) -> bool {
+        !matches!(self, PoolShape::None)
+    }
+
+    /// Whether a placeholder-bearing binding must also declare
+    /// `instances:`.
+    pub fn requires_instance_list(self) -> bool {
+        matches!(self, PoolShape::Bounded)
+    }
+}
+
+/// Transports that accept a `{name}` placeholder, each paired with the
+/// shape its pool resolves in.
+///
+/// Same contract as [`server_deadline_transports`] and
+/// [`machine_lifetime_subscribe_transports`]: the rejection diagnostic
+/// names the alternatives by reading the registry, so an arm that lands
+/// or regresses moves the message with no second edit.
+pub fn pool_transports() -> Vec<(&'static str, PoolShape)> {
+    known_names()
+        .iter()
+        .filter_map(|name| {
+            let d = lookup(name)?;
+            match d.pool_shape {
+                PoolShape::None => None,
+                shape => Some((*name, shape)),
+            }
+        })
+        .collect()
+}
+
+/// The alternatives clause the pool rejection diagnostic carries,
+/// rendered from [`pool_transports`].
+pub fn pool_alternatives() -> String {
+    pool_transports()
+        .into_iter()
+        .map(|(name, shape)| match shape {
+            PoolShape::Bounded => format!("'{name}' (requires instances:)"),
+            _ => format!("'{name}'"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// What the requesting peer observes when a server-side response
 /// deadline (`server.response_deadline_ms`, SCE_MESH.md server
 /// response deadline) elapses on this transport.
@@ -302,9 +388,14 @@ pub struct TransportDescriptor {
     ///
     /// A binding value field containing a `{name}` placeholder token is
     /// rejected at the topology stage when the transport declares
-    /// `supports_pool: false`
-    /// (`mesh/pool-not-supported-by-transport`).
-    pub supports_pool: bool,
+    /// [`PoolShape::None`] (`mesh/pool-not-supported-by-transport`).
+    ///
+    /// The open/bounded distinction lives here rather than at the
+    /// validation site because it is a property of the transport's
+    /// discovery model, not of any one deploy.yaml: a validator that
+    /// asked `transport == "someip"` would be right until the second
+    /// bounded transport landed, and then silently wrong.
+    pub pool_shape: PoolShape,
     /// Is the deploy.yaml `machines.<name>.subscriptions:` (SCE_MESH.md
     /// §mesh-13 machine-lifetime path) realised end-to-end on this transport?
     ///
@@ -538,7 +629,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         ordering_representable: true,
         // Same-process target identity is compile-time; no runtime
         // address substitution.
-        supports_pool: false,
+        pool_shape: PoolShape::None,
         // Not "no pub/sub" — the descriptor advertises `PubSub` above and
         // means it: a notification event is carried to the peer engine
         // like any other. What in-process dispatch has no room for is a
@@ -598,7 +689,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         ordering_representable: true,
         // SHM channels are pre-declared in deploy.yaml; runtime values
         // cannot address a new channel.
-        supports_pool: false,
+        pool_shape: PoolShape::None,
         // No pub/sub capability; machine-lifetime path does not apply.
         supports_machine_lifetime_subscribe: false,
         // SHM channels are pre-declared and addressed by compile-time
@@ -659,7 +750,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // routing_manager_impl treats 0xFFFF as a specific instance ID).
         // Codegen emits one `request_service(SERVICE, i)` per declared
         // instance at init().
-        supports_pool: true,
+        pool_shape: PoolShape::Bounded,
         // Both subscribe paths share one resolver: a deploy.yaml
         // `subscriptions:` entry projects the binding's eventgroup
         // declaration onto its event the same way an SCXML-driven
@@ -722,7 +813,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Open pool: KeyExpr substitution passes the assembled string to
         // Zenoh's native routing, which delivers to whichever peer has a
         // matching subscriber. No SCE-side enumeration required.
-        supports_pool: true,
+        pool_shape: PoolShape::Open,
         // Binding-wide `key:` is sufficient for dispatch — no per-event
         // external resolution needed for subscribe. SCE_MESH.md §mesh-13
         // machine-lifetime path is fully wired end-to-end.
@@ -782,7 +873,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // No native routing layer. Endpoints are static in deploy.yaml;
         // adding a pool would require SCE to implement its own SD
         // protocol (§mesh-3.3 design invariant rejects middleware SD).
-        supports_pool: false,
+        pool_shape: PoolShape::None,
         // Realised end to end. `init()` builds an `EventSubscribe`
         // envelope and hands it to the same `route_send` the SCXML-driven
         // path uses; the receiving half (registry registration keyed on
@@ -849,14 +940,20 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Per-(topic, reader) unicast delivery from each publisher
         // supports a stamped sequence domain.
         ordering_representable: true,
-        // Lowered to `false` when the transport landed. DCPS discovery
-        // would make peer-level addressing expressible, but the emitted
-        // arm bakes each binding's `topic:` into a `static constexpr`
-        // and performs no `{name}` substitution — so the capability is
-        // not realised, and advertising it would be exactly the false
-        // advertising this landing set out to remove. Raise it together
-        // with a fixture that substitutes a placeholder.
-        supports_pool: false,
+        // `None` today, and the shape it would take is already known:
+        // `Bounded`, for the same class of reason SOME/IP is. The
+        // emitted arm bakes each binding's `topic:` into a `static
+        // constexpr` and substitutes no `{name}`, but that is the
+        // symptom rather than the constraint — `Dds::Client` already
+        // takes its topic as a runtime `std::string`. What rules out an
+        // `Open` pool is discovery: a writer created at invoke time has
+        // not matched when the first sample is written, and a VOLATILE
+        // writer drops it with no error (`Client::waitForServer` exists
+        // precisely because of this). Members therefore have to be
+        // declared so their endpoints can be built at `init()`. Raise
+        // this together with that arm and a fixture that dispatches to a
+        // substituted topic.
+        pool_shape: PoolShape::None,
         // Realised end to end. A DDS subscription is its notification
         // reader, which the router creates and destroys, and
         // `mesh_dds_machine_lifetime_subscribe_runtime` drives that from
@@ -909,7 +1006,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         ordering_representable: false,
         // CAN frame IDs are compile-time allocations; the bus has no
         // peer-level addressing for placeholder substitution.
-        supports_pool: false,
+        pool_shape: PoolShape::None,
         // Unimplemented + broadcast bus; machine-lifetime subscribe
         // semantic does not apply.
         supports_machine_lifetime_subscribe: false,
@@ -1577,9 +1674,12 @@ mod tests {
         // gaining `implemented: true` must not carry flags whose "gated
         // by implemented: false" justification just evaporated.
         let d = lookup("dds").unwrap();
-        assert!(
-            !d.supports_pool,
-            "the emitted arm substitutes no placeholder"
+        assert_eq!(
+            d.pool_shape,
+            PoolShape::None,
+            "the emitted arm substitutes no placeholder yet; the shape it \
+             would take when it does is Bounded, because a writer built at \
+             invoke time drops its first sample"
         );
         assert!(
             d.supports_machine_lifetime_subscribe,

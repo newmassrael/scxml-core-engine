@@ -5560,11 +5560,20 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
             // other transports have no target for the substituted
             // value. A non-SOME/IP binding declaring `instance_from:`
             // would sink into codegen silently; reject at parse.
+            //
+            // Deliberately NOT expressed as `pool_shape == Bounded`:
+            // this is the *carrier* axis, not the pool axis. A bounded
+            // pool on a transport whose address is a string (DDS) would
+            // enumerate its members and still substitute `{name}`, so
+            // folding the two would reject a shape that is legal by
+            // construction. The registry gains a carrier dimension when
+            // a second typed-instance transport actually exists.
             if has_instance_from && binding.transport != "someip" {
                 return Err(DeployError::PoolNotSupportedByTransport {
                     machine: machine_name.to_string(),
                     binding: binding_key.as_str().to_string(),
                     transport: binding.transport.clone(),
+                    realised_transports: crate::mesh::transport::pool_alternatives(),
                 });
             }
             // Conversely, `{name}` placeholders have no wire surface
@@ -5607,18 +5616,24 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                         machine: machine_name.to_string(),
                         binding: binding_key.as_str().to_string(),
                         transport: binding.transport.clone(),
+                        realised_transports: crate::mesh::transport::pool_alternatives(),
                     }
                 })?;
-            if !descriptor.supports_pool {
+            if !descriptor.pool_shape.supports_pool() {
                 return Err(DeployError::PoolNotSupportedByTransport {
                     machine: machine_name.to_string(),
                     binding: binding_key.as_str().to_string(),
                     transport: binding.transport.clone(),
+                    realised_transports: crate::mesh::transport::pool_alternatives(),
                 });
             }
-            // SOME/IP-specific bounded-pool requirement: the
-            // `instance_from:` / `instances:` pair goes together.
-            if binding.transport == "someip" {
+            // Bounded-pool requirement: the `instance_from:` /
+            // `instances:` pair goes together. Read from the registry
+            // rather than asked as `transport == "someip"` — the reason
+            // a pool is bounded is the transport's discovery model, and
+            // a transport-name test is right only until the second
+            // bounded transport lands.
+            if descriptor.pool_shape.requires_instance_list() {
                 match &binding.instances {
                     None => {
                         return Err(DeployError::PoolMissingInstanceList {
@@ -8864,10 +8879,19 @@ topology:
                 machine,
                 binding,
                 transport,
+                realised_transports,
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#logger");
                 assert_eq!(transport, "shm");
+                // Registry-derived repair advice: the rejected transport
+                // can never appear in its own alternatives, which is the
+                // failure mode a hand-maintained prose list has.
+                assert_eq!(
+                    realised_transports,
+                    crate::mesh::transport::pool_alternatives()
+                );
+                assert!(!realised_transports.contains("'shm'"));
             }
             other => panic!("expected PoolNotSupportedByTransport, got {other:?}"),
         }
@@ -8987,10 +9011,21 @@ topology:
                 machine,
                 binding,
                 transport,
+                realised_transports,
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
                 assert_eq!(transport, "zenoh");
+                // Zenoh DOES support pools — this rejection is the
+                // carrier axis (`instance_from:` needs a typed uint16_t
+                // target), not the pool axis, so the transport legitimately
+                // appears in its own alternatives here. Pinning that keeps
+                // the two axes from being conflated later.
+                assert_eq!(
+                    realised_transports,
+                    crate::mesh::transport::pool_alternatives()
+                );
+                assert!(realised_transports.contains("'zenoh'"));
             }
             other => panic!("expected PoolNotSupportedByTransport, got {other:?}"),
         }
