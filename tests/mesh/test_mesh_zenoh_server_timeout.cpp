@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-9.5.1
+//
 // SCE Mesh gap Z2 runtime E2E: Zenoh queryable server-side deadline
 // erases stranded `pending_server_queries_` entries whose engine never
 // emits the paired response.
