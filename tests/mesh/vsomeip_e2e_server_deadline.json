@@ -1,0 +1,12 @@
+{
+  "network": "sce_someip_server_deadline",
+  "unicast": "127.0.0.1",
+  "routing": "motor_someip_server_deadline_server",
+  "applications": [
+    { "name": "brake_someip_server_deadline_app", "id": "0x1131" },
+    { "name": "motor_someip_server_deadline_server", "id": "0x2242" }
+  ],
+  "service-discovery": {
+    "enable": "false"
+  }
+}

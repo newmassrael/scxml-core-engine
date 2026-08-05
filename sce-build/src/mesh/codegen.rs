@@ -825,15 +825,16 @@ struct ServerContext {
     /// emission of `publishEventgroupNotify` and the fallback path in
     /// the mesh send callback.
     has_eventgroup: bool,
-    /// SCE Mesh §mesh-9.5 gap Z2: per-server Zenoh queryable response
-    /// deadline in milliseconds. `None` ⇒ no deadline emitted,
-    /// matching the pre-Z2 behaviour where `pending_server_queries_`
-    /// leaks entries whose engine never responds. Some ⇒ the template
-    /// gates `has_server_query_timeout`, instantiates the deadline
-    /// scheduler (gate-shared with `has_mesh_rpc.v`), and arms a
-    /// scheduler entry at every `pending_server_queries_` insert.
+    /// SCE Mesh §mesh-9.5: per-server response deadline in
+    /// milliseconds. `None` ⇒ no deadline emitted, and the server's
+    /// pending map keeps entries whose engine never responds. `Some` ⇒
+    /// the template gates `has_server_response_deadline`, instantiates
+    /// the deadline scheduler (gate-shared with `has_mesh_rpc.v`), and
+    /// arms a scheduler entry at every inbound-request stash — the
+    /// SOME/IP arm answering `MT_ERROR` / `E_TIMEOUT` on expiry, the
+    /// Zenoh arm dropping the stored query.
     #[serde(skip_serializing_if = "Option::is_none")]
-    query_timeout_ms: Option<u64>,
+    response_deadline_ms: Option<u64>,
     /// SCE_MESH.md §mesh-14.4 (Gap 7): multi-instance
     /// server pool member list. Propagated from
     /// [`crate::mesh::topology::ServerBinding::instance_pool`]. When
@@ -859,6 +860,13 @@ struct ServerContext {
 /// consumer.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ServerRpcPairContext {
+    /// Inbound request event (e.g. `"service.request.compute_force"`).
+    /// The handler is registered per (instance, method), so this names
+    /// the call at the SCXML layer even where the wire only carries a
+    /// method id — the server response-deadline notice quotes
+    /// it so the requesting author reads *which* call the server gave
+    /// up on rather than a bare hex method.
+    request_event: String,
     /// Outbound response event (e.g. `"service.response.compute_force"`).
     /// Used by `resolvePattern` to classify `<send>` of the response as
     /// `RpcReply` so the server interceptor routes it through
@@ -890,12 +898,17 @@ struct ServerFireForgetContext {
 /// ride the same transport-level reply path (`create_response` /
 /// `Query::reply`).
 ///
-/// Request/response event strings are not stored here: the decoded
-/// envelope owns `env.type`, and `resolvePattern` classifies the notify
-/// event through the deduped [`ServerContext::field_notify_events`] list
+/// The response event string is not stored here: the decoded envelope
+/// owns `env.type`, and `resolvePattern` classifies the notify event
+/// through the deduped [`ServerContext::field_notify_events`] list
 /// (getter + setter on the same suffix share one notify event).
 #[derive(Debug, Clone, serde::Serialize)]
 struct ServerFieldAccessContext {
+    /// Inbound request event (e.g. `"field.get.vehicle_speed"`). Named
+    /// for the same reason as [`ServerRpcPairContext::request_event`]:
+    /// the server response-deadline notice quotes the call it gave
+    /// up on, and a getter and its paired setter are different calls.
+    request_event: String,
     /// C++-safe upper-snake constant suffix, derived from the request
     /// event (same basis as [`ServerRpcPairContext::event_const`]).
     event_const: String,
@@ -975,6 +988,7 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
         .rpc_pairs
         .iter()
         .map(|pair| ServerRpcPairContext {
+            request_event: pair.request_event.clone(),
             response_event: pair.response_event.clone(),
             event_const: event_to_const_suffix(&pair.request_event),
             method_id: someip_id_for(&pair.request_event, SomeipFieldKind::Method),
@@ -1000,6 +1014,7 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
                 FieldAccessKind::Setter => ("setter", SomeipFieldKind::Setter),
             };
             ServerFieldAccessContext {
+                request_event: pair.request_event.clone(),
                 event_const: event_to_const_suffix(&pair.request_event),
                 kind: kind_str,
                 method_id: someip_id_for(&pair.request_event, slot),
@@ -1082,7 +1097,7 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
         field_notify_events,
         eventgroup_events,
         has_eventgroup,
-        query_timeout_ms: binding.query_timeout_ms,
+        response_deadline_ms: binding.response_deadline_ms,
         instance_pool: binding.instance_pool.clone(),
     }
 }

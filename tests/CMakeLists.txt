@@ -4953,6 +4953,82 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             TIMEOUT 30
             ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_rpc_engine.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
 
+        # ── §9.5 server response deadline over live SOME/IP ──────────
+        # Motor declares `server.response_deadline_ms: 500` and binds a
+        # recorder engine that never answers, so the deadline is the only
+        # thing that can retire the stashed request. Unlike the zenoh arm
+        # — where expiry drops the stored query and the client can only
+        # infer Unavailable — SOME/IP answers MT_ERROR / E_TIMEOUT, so
+        # brake is present to observe that the notice actually arrives.
+        set(MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_server_deadline_generated")
+
+        foreach(SD_MACHINE brake_someip_server_deadline motor_someip_server_deadline)
+            add_custom_command(
+                OUTPUT "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${SD_MACHINE}.scxml"
+                        -l cpp -o "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
+                        --write-deps "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/${SD_MACHINE}.scxml" "${SCE_CODEGEN}"
+                DEPFILE "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h.d"
+                COMMENT "Mesh someip server deadline: Generating ${SD_MACHINE}_sm.h"
+                VERBATIM
+            )
+
+            add_custom_command(
+                OUTPUT "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_transport.h"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${SD_MACHINE}.scxml"
+                        -l cpp -o "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
+                        --transport-only
+                        --write-deps "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_transport.h.d"
+                DEPENDS "${MESH_TEST_DIR}/${SD_MACHINE}.scxml"
+                        "${MESH_TEST_DIR}/deploy_someip_server_deadline.yaml"
+                        "${MESH_TEST_DIR}/vsomeip_someip_server_deadline.json"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                        "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_sm.h"
+                DEPFILE "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/${SD_MACHINE}_transport.h.d"
+                COMMENT "Mesh someip server deadline: Generating ${SD_MACHINE}_transport.h"
+                VERBATIM
+            )
+        endforeach()
+
+        add_executable(mesh_someip_server_deadline_test
+            mesh/test_mesh_someip_server_deadline.cpp
+            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/brake_someip_server_deadline_sm.h"
+            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/motor_someip_server_deadline_sm.h"
+            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/brake_someip_server_deadline_transport.h"
+            "${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}/motor_someip_server_deadline_transport.h"
+        )
+
+        target_include_directories(mesh_someip_server_deadline_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${MESH_SOMEIP_SERVER_DEADLINE_OUTPUT_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+
+        target_link_libraries(mesh_someip_server_deadline_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        # SCE_THREAD_SAFE: the scheduler thread fires
+        # onServerRequestTimedOut concurrently with the main thread
+        # reading pending_server_size().
+        target_compile_definitions(mesh_someip_server_deadline_test PRIVATE SCE_THREAD_SAFE)
+        target_compile_features(mesh_someip_server_deadline_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_server_deadline_test)
+        add_test(NAME mesh_someip_server_deadline_verification
+                 COMMAND mesh_someip_server_deadline_test)
+        set_tests_properties(mesh_someip_server_deadline_verification PROPERTIES
+            TIMEOUT 60
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_server_deadline.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
         # ── §14.6 same-target constraint adjudication over live SOME/IP ──
         # A client with two SOME/IP RPC targets, so codegen installs a
         # response handler on each service and both consult the same

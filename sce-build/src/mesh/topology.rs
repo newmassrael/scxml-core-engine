@@ -668,21 +668,22 @@ pub struct ServerBinding {
     pub state: TransportState,
     /// Per-event pattern metadata for the inbound request events.
     pub event_patterns: Vec<EventPatternInfo>,
-    /// SCE Mesh §mesh-9.5 gap Z2: per-server Zenoh queryable response
-    /// deadline. Propagated verbatim from [`super::deploy::ServerConfig`].
-    /// `None` ⇒ no deadline armed (pre-Z2 behaviour); `Some` ⇒ codegen
-    /// arms a `MeshDeadlineScheduler` entry at every
-    /// `pending_server_queries_` insert and cancels it at
+    /// SCE Mesh §mesh-9.5: per-server response deadline. Propagated
+    /// verbatim from [`super::deploy::ServerConfig`]. `None` ⇒ no
+    /// deadline armed; `Some` ⇒ codegen arms a `MeshDeadlineScheduler`
+    /// entry at every inbound-request stash and cancels it at
     /// `handleServerResponse`.
     ///
-    /// **Zenoh-only scope**: this field only has meaning when the
-    /// resolved `state` is [`TransportState::Zenoh`]. Parse-time
-    /// validation in [`super::deploy::ServerConfig`] rejects the
-    /// knob on non-zenoh transports, so by the time codegen reads
-    /// this field the transport invariant holds. SOME/IP server-side
-    /// response lifecycles are consumer-gated and would land under
-    /// their own knob rather than overloading this one.
-    pub query_timeout_ms: Option<u64>,
+    /// The stash the deadline bounds and the notice it emits are
+    /// per-transport, resolved from `state`: SOME/IP times out
+    /// `pending_server_requests_` and answers `MT_ERROR` / `E_TIMEOUT`
+    /// with `RpcStatus::DeadlineExceeded`; Zenoh times out
+    /// `pending_server_queries_` and drops the stored query. Parse-time
+    /// validation in [`super::deploy::ServerConfig`] rejects the knob
+    /// on transports whose registry entry declares
+    /// `ServerDeadlineNotice::Unsupported`, so by the time codegen
+    /// reads this field the transport invariant holds.
+    pub response_deadline_ms: Option<u64>,
     /// SCE_MESH.md §mesh-14.4 — multi-instance server pool member
     /// list. Propagated verbatim from
     /// [`super::deploy::ServerConfig::instances`] once the parse-time
@@ -1256,7 +1257,7 @@ pub fn resolve_server_binding(
         eventgroup_events: eventgroup_events.to_vec(),
         state,
         event_patterns,
-        query_timeout_ms: server_cfg.query_timeout_ms,
+        response_deadline_ms: server_cfg.response_deadline_ms,
         instance_pool: server_cfg.instances.clone(),
     })
 }

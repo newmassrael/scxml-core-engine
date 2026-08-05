@@ -154,8 +154,24 @@
             {{ method_constant }},
             [this](const std::shared_ptr<vsomeip::message>& msg) {
 {% if kind == "rpc" %}
-                if (msg->get_return_code() != vsomeip::return_code_e::E_OK
-                    && msg->get_message_type() != vsomeip::message_type_e::MT_RESPONSE) return;
+                // AUTOSAR SOME/IP separates the two outcomes of a
+                // method call: MT_RESPONSE (0x80) carries a result,
+                // MT_ERROR (0x81) carries a return code naming the
+                // failure. Both are answers to a request this router
+                // sent, and both must reach the correlation table —
+                // dropping MT_ERROR would strand the pending entry
+                // until the client-side deadline, converting an
+                // explicit server-authored failure into a silent one.
+                //
+                // A peer's MT_ERROR carries a MeshEnvelope whose
+                // `rpc_status` states the failure (SCE Mesh §9.5.1
+                // response deadline stamps `DeadlineExceeded`), so the
+                // status travels in the envelope and the wire return
+                // code stays advisory. Any other message type is not a
+                // reply to us.
+                const auto someip_reply_type = msg->get_message_type();
+                if (someip_reply_type != vsomeip::message_type_e::MT_RESPONSE
+                    && someip_reply_type != vsomeip::message_type_e::MT_ERROR) return;
 {% elif kind == "field" %}
                 if (msg->get_message_type() != vsomeip::message_type_e::MT_RESPONSE) return;
 {% endif %}
@@ -182,7 +198,29 @@
                         static constexpr const char* kThisMachine = "{{ target.target | replace("#", "") }}";
                         const auto& allowed = it->second.responders;
                         if (std::find(allowed.begin(), allowed.end(), kThisMachine) != allowed.end()) {
-                            env.type = it->second.reply_event;
+                            // A reply that reports failure is still an
+                            // answer, so the one-shot entry retires either
+                            // way — but only a SUCCESSFUL reply may be
+                            // renamed to the declared reply event.
+                            //
+                            // Renaming a failure would hand the author's
+                            // `<transition event="service.response.X">` an
+                            // envelope whose payload is empty because the
+                            // call did not happen, i.e. report a false
+                            // success. The peer named the outcome in
+                            // `env.type` (SCE Mesh §9.5.1 stamps
+                            // `error.rpc.deadline` when a server response
+                            // deadline elapsed); keeping that name is what
+                            // lets the author branch on it. An author who
+                            // declares no matching transition drops the
+                            // event under ordinary W3C semantics — the
+                            // same contract `error.communication` has.
+                            const bool reply_ok =
+                                !env.rpc_status.has_value()
+                                || *env.rpc_status == SCE::Mesh::RpcStatus::Ok;
+                            if (reply_ok) {
+                                env.type = it->second.reply_event;
+                            }
                             env.pattern = SCE::Mesh::PatternKind::RpcReply;
                             pending_rpcs_.erase(it);
                         } else {
@@ -359,6 +397,28 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {%- macro seed_correlation(env_name, cid_expr) -%}
 {{ env_name }}.correlation_id = {{ cid_expr }}; {{ env_name }}.invoke_id = {{ cid_expr }};
 {%- endmacro %}
+{#
+  SCE Mesh §9.5.1 server response deadline — the arming half, shared by
+  every SOME/IP server-side stash (RPC and FieldAccess). Emitted only
+  when the machine declared `server.response_deadline_ms`; the caller
+  places it INSIDE the same `server_pending_mutex_` scope as its
+  `pending_server_requests_` insert, so `handleServerResponse`'s
+  cancel-before-erase can never observe a half-built entry.
+
+  `registerDeadline` returns false on a duplicate cid. A retransmitted
+  request re-stashes under the same key and the earlier timer is still
+  live, so the second arm coalesces into it — the same benign-drop
+  behaviour the zenoh arm relies on. Inbound requests otherwise carry a
+  fresh UUIDv7 cid, so there is no re-arm race.
+#}
+{%- macro arm_server_deadline(cid_expr, request_event) -%}
+(void)deadline_scheduler_.registerDeadline(
+                            {{ cid_expr }},
+                            std::chrono::milliseconds({{ server.response_deadline_ms }}),
+                            [this, {{ cid_expr }}]() noexcept {
+                                onServerRequestTimedOut({{ cid_expr }}, "{{ request_event }}");
+                            });
+{%- endmacro %}
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 //
 // [generated] SCE Mesh transport routing for {{ machine_name }}
@@ -431,13 +491,28 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% endif %}
 
 
-{# SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response deadline.
-   Gate requires BOTH a zenoh server AND the deploy.yaml knob being set.
-   Absent knob ⇒ gate false ⇒ zero lines of Z2 code — matches the
-   pre-Z2 behaviour where `pending_server_queries_` leaks entries
-   whose engine never emits the paired response. Zenoh-only today;
-   SOME/IP's server-side lifecycle differs and has no gap memo yet. #}
-{% set has_server_query_timeout = has_server_zenoh and server.query_timeout_ms is defined %}
+{# SCE Mesh §9.5.1: per-server response deadline. Gate requires BOTH a
+   server arm that parks inbound requests AND the deploy.yaml knob being
+   set. Absent knob ⇒ gate false ⇒ zero lines of deadline code, and the
+   pending map keeps entries whose engine never emits the paired
+   response until process exit.
+
+   Both realised arms park state a deadline can release, so the gate is
+   the union rather than a zenoh special case:
+     - SOME/IP: `pending_server_requests_` (the inbound
+       `vsomeip::message`, needed later by `create_response`).
+     - Zenoh:   `pending_server_queries_` (the inbound `zenoh::Query`).
+
+   What the arms do NOT share is the notice on expiry, which is why the
+   two sub-gates below exist rather than one uniform emission. SOME/IP
+   answers `MT_ERROR` / `E_TIMEOUT`; zenoh drops the stored query. The
+   transport registry records that difference
+   (`TransportDescriptor::server_deadline_notice`) and parse-time
+   validation rejects the knob on transports whose arm cannot honour
+   it, so reaching this gate already implies a realised arm. #}
+{% set has_server_response_deadline = (has_server_zenoh or has_server_someip) and server.response_deadline_ms is defined %}
+{% set has_server_deadline_zenoh = has_server_zenoh and server.response_deadline_ms is defined %}
+{% set has_server_deadline_someip = has_server_someip and server.response_deadline_ms is defined %}
 
 {# SCE Mesh §16.7 row 8 (PEER_PARTITIONED): per-machine opt-in liveliness.
    `machine_liveliness` is null when the deploy.yaml author omitted the
@@ -486,7 +561,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% if has_mesh_rpc.v or has_server %}
 #include <array>
 {% endif %}
-{% if has_mesh_rpc.v or has_server_query_timeout %}
+{% if has_mesh_rpc.v or has_server_response_deadline %}
 #include <chrono>
 {% endif %}
 {% if has_mesh_rpc.v or has_server %}
@@ -501,11 +576,18 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <string>
 #include <vector>
 {% endif %}
-{% if has_mesh_rpc.v %}
-#include "mesh/InvokeCorrelation.h"
+{% if has_mesh_rpc.v or has_server_deadline_someip %}
+{# `RpcStatus` reaches this file transitively through MeshEnvelope.h, but
+   both these paths name the enum directly — mesh-rpc for `handleReply`
+   statuses, the SOME/IP server deadline for the `DeadlineExceeded` stamp
+   on its MT_ERROR notice — so the dependency is declared rather than
+   inherited. #}
 #include "mesh/RpcStatus.h"
 {% endif %}
-{% if has_mesh_rpc.v or has_server_query_timeout %}
+{% if has_mesh_rpc.v %}
+#include "mesh/InvokeCorrelation.h"
+{% endif %}
+{% if has_mesh_rpc.v or has_server_response_deadline %}
 #include "mesh/MeshDeadlineScheduler.h"
 {% endif %}
 
@@ -679,7 +761,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    `retry:` block. The wrapper drives DELIVERY_EXHAUSTED at exhaustion
    and reuses the existing MeshDeadlineScheduler for backoff timing
    (an already-emitted scheduler instance when has_mesh_rpc.v /
-   has_server_query_timeout is set; otherwise the gate below adds a
+   has_server_response_deadline is set; otherwise the gate below adds a
    dedicated one). #}
 {%- set has_any_retry = namespace(v=false) %}
 {%- for target in targets if target.retry %}
@@ -688,7 +770,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 {% if has_any_retry.v %}
 #include "mesh/RetryingDispatcher.h"
 {% endif %}
-{% if has_zenoh_mesh_rpc or has_server_query_timeout %}
+{% if has_zenoh_mesh_rpc or has_server_response_deadline %}
 // SCE Mesh gap Z3 (`has_zenoh_mesh_rpc`): shared "reply observed" flag
 // coordinates the zenoh `session.get` on_reply and on_drop closures.
 // `<atomic>` pairs with `std::shared_ptr` (from `<memory>`) so both
@@ -696,7 +778,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // `zenoh_shutdown_in_progress_` uses the same atomic to suppress
 // early-cancel raises during router teardown.
 //
-// SCE Mesh gap Z2 (`has_server_query_timeout`): `server_shutdown_in_progress_`
+// SCE Mesh §9.5.1 (`has_server_response_deadline`): `server_shutdown_in_progress_`
 // suppresses the server-side timer callback during teardown. Shares
 // the same `<atomic>` include to avoid per-gap duplication.
 #include <atomic>
@@ -1919,16 +2001,21 @@ struct TransportRouter {
     SCE::Mesh::InvokeCorrelation invoke_correlation_;
 {% endif %}
 
-{% if has_mesh_rpc.v or has_server_query_timeout or has_any_retry.v %}
+{% if has_mesh_rpc.v or has_server_response_deadline or has_any_retry.v %}
     // deadline_scheduler_: callback-based timer shared by three paths:
     //   - Client-side (`has_mesh_rpc.v`, §9.5): fires
     //     `invoke_correlation_.handleDeadline(uuid)` after
     //     `_mesh_deadline_ms`, delivering `error.invoke.<id>` via the
     //     deliver callback registered below.
-    //   - Server-side (`has_server_query_timeout`, gap Z2): fires
-    //     `onServerQueryTimedOut(cid)` after the deploy.yaml
-    //     `server.query_timeout_ms`, erasing the stranded
+    //   - Server-side (`has_server_response_deadline`, §9.5.1): fires
+    //     `onServerRequestTimedOut(cid)` after the deploy.yaml
+    //     `server.response_deadline_ms`, releasing the stranded
+{% if has_server_deadline_someip %}
+    //     `pending_server_requests_` entry and answering the requester
+    //     with the SOME/IP timeout notice.
+{% else %}
     //     `pending_server_queries_` entry.
+{% endif %}
     //   - SCE Mesh §16.7 row 3 (`has_any_retry.v`): fires
     //     `RetryingDispatcher::onRetryFire(envelope_id)` after each
     //     backoff interval, triggering the next retry attempt or the
@@ -2039,6 +2126,19 @@ struct TransportRouter {
     std::unordered_map<CorrelationKey, std::shared_ptr<vsomeip::message>,
                        CorrelationKeyHash> pending_server_requests_;
 {% endif %}
+{% if has_server_response_deadline %}
+    // SCE Mesh §9.5.1: suppress the deadline callback during router
+    // teardown. `shutdown()` sets this BEFORE it drains the scheduler
+    // (release), and `onServerRequestTimedOut` reads with acquire.
+    // Together with the scheduler's own "benign drop" semantics
+    // (MeshDeadlineScheduler::shutdown) this ensures no late callback
+    // races the pending map's destructor.
+    //
+    // Declared once for both realised server arms: the race it closes
+    // is between the scheduler thread and teardown, which is a property
+    // of the deadline rather than of the transport that answers it.
+    std::atomic<bool> server_shutdown_in_progress_{false};
+{% endif %}
 {% if has_server_zenoh %}
     // Server Zenoh queryable + pending query storage.
     // Inbound queries are stashed here keyed by correlation_id; when the
@@ -2050,14 +2150,6 @@ struct TransportRouter {
     mutable std::mutex server_pending_mutex_;
     std::unordered_map<CorrelationKey, zenoh::Query,
                        CorrelationKeyHash> pending_server_queries_;
-{% if has_server_query_timeout %}
-    // SCE Mesh gap Z2: suppress the deadline callback during router
-    // teardown. `shutdown()` sets this BEFORE it drains the scheduler
-    // (release), and `onServerQueryTimedOut` reads with acquire. Together
-    // with the scheduler's own "benign drop" semantics (MeshDeadlineScheduler::shutdown,
-    // §9.5) this ensures no late callback races the map's destructor.
-    std::atomic<bool> server_shutdown_in_progress_{false};
-{% endif %}
 {% if server.has_server_put %}
     // Server inbound-put subscriber on ZENOH_SERVER_KEY (SCE_MESH.md §8.3).
     // `session.put` from clients lands on the same key as `session.get`
@@ -3958,6 +4050,11 @@ struct TransportRouter {
                     {
                         std::lock_guard<std::mutex> lock(server_pending_mutex_);
                         pending_server_requests_[CorrelationKey{cid}] = msg;
+{% if has_server_deadline_someip %}
+                        // SCE Mesh §9.5.1: arm the response deadline under
+                        // the same lock as the stash.
+                        {{ arm_server_deadline("cid", pair.request_event) }}
+{% endif %}
                     }
                     {{ seed_correlation("env", "cid") }}
                     // SCE_MESH.md §10.5: server-side dedup gate. Today the
@@ -4034,6 +4131,11 @@ struct TransportRouter {
                     {
                         std::lock_guard<std::mutex> lock(server_pending_mutex_);
                         pending_server_requests_[CorrelationKey{cid}] = msg;
+{% if has_server_deadline_someip %}
+                        // SCE Mesh §9.5.1: arm the response deadline under
+                        // the same lock as the stash.
+                        {{ arm_server_deadline("cid", fa.request_event) }}
+{% endif %}
                     }
                     {{ seed_correlation("env", "cid") }}
                     // SCE_MESH.md §10.5: same server-side dedup gate as the
@@ -4074,21 +4176,21 @@ struct TransportRouter {
                 {
                     std::lock_guard<std::mutex> lock(server_pending_mutex_);
                     pending_server_queries_.insert_or_assign(CorrelationKey{cid}, query.clone());
-{% if has_server_query_timeout %}
-                    // SCE Mesh gap Z2: arm the deadline under the same
+{% if has_server_deadline_zenoh %}
+                    // SCE Mesh §9.5: arm the deadline under the same
                     // lock as the insert so `handleServerResponse`'s
                     // cancel-before-erase cannot observe a half-built
                     // entry. `registerDeadline` returns false on a
                     // duplicate cid — the map's `insert_or_assign` just
                     // replaced an entry, so the same cid's timer is still
                     // live and the new one is implicitly coalesced to
-                    // the earlier deadline (§9.5 benign-drop: the next
+                    // the earlier deadline (benign-drop: the next
                     // responder wins). No re-arm race because inbound
                     // queries always carry a fresh UUIDv7 cid.
                     (void)deadline_scheduler_.registerDeadline(
                         cid,
-                        std::chrono::milliseconds({{ server.query_timeout_ms }}),
-                        [this, cid]() noexcept { onServerQueryTimedOut(cid); });
+                        std::chrono::milliseconds({{ server.response_deadline_ms }}),
+                        [this, cid]() noexcept { onServerRequestTimedOut(cid); });
 {% endif %}
                 }
                 {{ seed_correlation("env", "cid") }}
@@ -4278,6 +4380,31 @@ struct TransportRouter {
         }
 {% endfor %}
 {% endif %}
+{% if has_server_response_deadline %}
+        // SCE Mesh §9.5.1: arm the server-side shutdown flag BEFORE
+        // tearing down the scheduler so any callback already dispatched
+        // on the scheduler thread observes the teardown and bails out
+        // before touching the pending map. Release pairs with the
+        // acquire load inside `onServerRequestTimedOut`. Then drain the
+        // scheduler — this joins its worker thread and drops any
+        // remaining pending timers per the "benign drop" rule (a router
+        // being destroyed cannot deliver further events). Ordering
+        // matters: the flag-set must precede the scheduler drain so a
+        // callback that has already crossed the scheduler's unlock
+        // boundary short-circuits on the flag. `scheduler.shutdown()`
+        // is idempotent across the dtor-via-shutdown path.
+{% if has_server_deadline_someip %}
+        //
+        // This block precedes every transport teardown below, and this
+        // arm depends on that order: its expiry notice is an outbound
+        // `server_app_->send`, so a timer firing after
+        // `server_app_->stop()` would be writing into a stopped
+        // application. Draining first means the last callback has
+        // already returned by the time the app stops.
+{% endif %}
+        server_shutdown_in_progress_.store(true, std::memory_order_release);
+        deadline_scheduler_.shutdown();
+{% endif %}
 {% for target in targets if target.state.kind == "someip" %}
         if ({{ target.target_snake }}_app_) {{ target.target_snake }}_app_->stop();
         if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();
@@ -4297,22 +4424,6 @@ struct TransportRouter {
         {{ someip_sce_app_field }}.reset();
 {% endif %}
 {% if has_server_zenoh %}
-{% if has_server_query_timeout %}
-        // SCE Mesh gap Z2: arm the server-side shutdown flag BEFORE
-        // tearing down the scheduler so any callback already dispatched
-        // on the scheduler thread observes the teardown and bails out
-        // before touching `pending_server_queries_`. Release pairs with
-        // the acquire load inside `onServerQueryTimedOut`. Then drain
-        // the scheduler — this joins its worker thread and drops any
-        // remaining pending timers per §9.5 "benign drop" (a router
-        // being destroyed cannot deliver further events). Ordering
-        // matters: the flag-set must precede the scheduler drain so a
-        // callback that has already crossed the scheduler's unlock
-        // boundary short-circuits on the flag. `scheduler.shutdown()`
-        // is idempotent across the dtor-via-shutdown path.
-        server_shutdown_in_progress_.store(true, std::memory_order_release);
-        deadline_scheduler_.shutdown();
-{% endif %}
 {% if server.has_server_put %}
         zenoh_server_put_sub_.reset();
 {% endif %}
@@ -5157,6 +5268,23 @@ struct TransportRouter {
             std::lock_guard<std::mutex> lock(server_pending_mutex_);
             auto it = pending_server_requests_.find(ckey);
             if (it == pending_server_requests_.end()) return false;
+{% if has_server_deadline_someip %}
+            // SCE Mesh §9.5.1: cancel the deadline BEFORE erasing so the
+            // timer cannot fire between find() and erase() and answer
+            // MT_ERROR for a request this thread is about to answer
+            // normally. `cancelDeadline` returns false if the timer has
+            // already fired — in that case `onServerRequestTimedOut`
+            // already removed the entry, `find()` missed it, and this
+            // line is unreachable.
+            //
+            // Deadlock analysis matches the zenoh arm: `cancelDeadline`
+            // is "mark-cancelled, don't wait" and takes only the
+            // scheduler's own mutex, and the scheduler unlocks before
+            // invoking a callback, so an in-flight
+            // `onServerRequestTimedOut` blocks on `server_pending_mutex_`
+            // — held here — and then erases an already-gone entry.
+            (void)deadline_scheduler_.cancelDeadline(ckey.id);
+{% endif %}
             original = it->second;
             pending_server_requests_.erase(it);
         }
@@ -5172,11 +5300,11 @@ struct TransportRouter {
         std::lock_guard<std::mutex> lock(server_pending_mutex_);
         auto it = pending_server_queries_.find(ckey);
         if (it == pending_server_queries_.end()) return false;
-{% if has_server_query_timeout %}
-        // SCE Mesh gap Z2: cancel the deadline BEFORE erasing so the
+{% if has_server_deadline_zenoh %}
+        // SCE Mesh §9.5.1: cancel the deadline BEFORE erasing so the
         // timer cannot fire between find() and erase() and race the
         // reply. `cancelDeadline` returns false if the timer has
-        // already fired — in that case `onServerQueryTimedOut`
+        // already fired — in that case `onServerRequestTimedOut`
         // already removed the entry, `find()` missed it, and this
         // line is unreachable.
         //
@@ -5185,7 +5313,7 @@ struct TransportRouter {
         // internal mutex, never blocks on in-flight callback
         // completion. When the scheduler fires a callback it
         // unlocks BEFORE invoking it (MeshDeadlineScheduler.h
-        // `run()` loop), so an in-flight `onServerQueryTimedOut`
+        // `run()` loop), so an in-flight `onServerRequestTimedOut`
         // runs outside the scheduler mutex and blocks on
         // `server_pending_mutex_` — which this thread holds — until
         // handleServerResponse releases it, then executes
@@ -5831,7 +5959,7 @@ struct TransportRouter {
 {% endif %}
 {% endif %}
 
-{% if has_mesh_rpc.v or has_server_query_timeout %}
+{% if has_mesh_rpc.v or has_server_response_deadline %}
     /// Test-only accessor: number of currently-armed deadlines in
     /// `deadline_scheduler_`. Reads `active_.size()` through the
     /// scheduler's own const-correct accessor (`MeshDeadlineScheduler.h`).
@@ -5850,60 +5978,172 @@ struct TransportRouter {
         return deadline_scheduler_.size();
     }
 {% endif %}
-{% if has_server_query_timeout %}
-    /// SCE Mesh gap Z2: fire when a stranded server queryable entry
-    /// outlives `server.query_timeout_ms` because the engine never
+{% if has_server_response_deadline %}
+    /// SCE Mesh §9.5.1: fire when a stranded inbound server request
+    /// outlives `server.response_deadline_ms` because the engine never
     /// emitted the paired response envelope (e.g. the handling state
     /// was left before `<send event="service.response.X">` ran).
     ///
-    /// Erasing the stored `zenoh::Query` destructs it; zenoh signals
-    /// "query done" to the client peer, whose `session.get` `on_drop`
-    /// closure fires. With gap Z3 wired client-side, the client raises
-    /// `error.invoke.<id>` via `RpcStatus::Unavailable` — no new
-    /// `error.communication` row is needed here (§9.5 + §16.7: all
-    /// existing rows are client-centric, a server row would be
+    /// The release is common to both realised server arms; the notice
+    /// the requesting peer gets is not, and that split is recorded in
+    /// the transport registry as
+    /// `TransportDescriptor::server_deadline_notice`.
+    ///
+{% if has_server_deadline_someip %}
+    /// SOME/IP (`ServerDeadlineNotice::ActiveError`): the protocol
+    /// carries a first-class timeout notice — message type `MT_ERROR`
+    /// (0x81) with return code `E_TIMEOUT` (0x06), per the AUTOSAR
+    /// SOME/IP Protocol Specification's message-type and return-code
+    /// tables. `create_response(original)` copies the request's
+    /// client id, session id, service, instance and method, so the
+    /// error reply correlates on the wire exactly as a normal response
+    /// would; only the type and return code differ. The payload is a
+    /// regular `MeshEnvelope` stamped
+    /// `rpc_status = RpcStatus::DeadlineExceeded`, so the requester's
+    /// existing reply path raises `error.invoke.<id>` with a status
+    /// that says *the server gave up* rather than the
+    /// `RpcStatus::Unavailable` that a vanished peer produces.
+    ///
+    /// This is the axis on which SCE leads its reference: neither
+    /// vsomeip nor `ara::com` arms a server-side deadline at all —
+    /// they expose only a client-side future timeout, which cannot
+    /// distinguish a server that gave up from a dropped datagram, and
+    /// leaves the server's own request handle parked indefinitely.
+    ///
+{% endif %}
+{% if has_server_deadline_zenoh %}
+    /// Zenoh (`ServerDeadlineNotice::DropSilently`): erasing the
+    /// stored `zenoh::Query` destructs it; zenoh signals "query done"
+    /// to the client peer, whose `session.get` `on_drop` closure
+    /// fires and raises `error.invoke.<id>` via
+    /// `RpcStatus::Unavailable`. The query model has no
+    /// server-authored failure channel, so this is the whole notice
+    /// available — no new `error.communication` row is introduced
+    /// (§16.7's rows are client-centric; a server row would be
     /// speculative operator telemetry).
     ///
+{% endif %}
     /// Thread-safety: runs on the MeshDeadlineScheduler worker thread.
-    /// `server_pending_mutex_` serializes with the queryable callback
-    /// and `handleServerResponse`; lock order matches the insert /
-    /// cancel sites (router mutex first, scheduler internal second).
+    /// `server_pending_mutex_` serializes with the inbound handler and
+    /// `handleServerResponse`; lock order matches the insert / cancel
+    /// sites (router mutex first, scheduler internal second).
     ///
     /// Shutdown semantics: `shutdown()` sets
     /// `server_shutdown_in_progress_` and drains the scheduler before
-    /// tearing down the queryable — the flag is a belt-and-braces
+    /// tearing down any transport state — the flag is a belt-and-braces
     /// guard in case a callback is already dispatched when shutdown
     /// begins.
-    void onServerQueryTimedOut(
-        const std::array<std::uint8_t, 16>& cid) noexcept {
+    void onServerRequestTimedOut(
+        const std::array<std::uint8_t, 16>& cid{% if has_server_deadline_someip %},
+        const char* request_event{% endif %}) noexcept {
         if (server_shutdown_in_progress_.load(std::memory_order_acquire)) {
             return;
         }
+{% if has_server_deadline_someip %}
+        std::shared_ptr<vsomeip::message> original;
+        {
+            std::lock_guard<std::mutex> lock(server_pending_mutex_);
+            auto it = pending_server_requests_.find(CorrelationKey{cid});
+            // Already answered (or already timed out): `cancelDeadline`
+            // and this callback can only race in the direction where
+            // the entry is gone, never where it is half-built — both
+            // sides hold `server_pending_mutex_` across find + erase.
+            if (it == pending_server_requests_.end()) return;
+            original = it->second;
+            pending_server_requests_.erase(it);
+        }
+        // Built and sent OUTSIDE the pending mutex: `send` reaches the
+        // vsomeip routing manager and must not stall a concurrent
+        // inbound handler or reply on this router.
+        //
+        // Wrapped because this runs on the scheduler thread under
+        // `noexcept`: the notice allocates (envelope, payload buffer)
+        // and calls into vsomeip, so an escaping exception would
+        // `std::terminate` the process over a diagnostic message. The
+        // pending entry is already erased above, so the leak the
+        // deadline exists to close stays closed either way — what a
+        // failure costs is the notice, and the requester falls back to
+        // its own timeout exactly as it would against a server with no
+        // deadline configured.
+        try {
+        SCE::Mesh::MeshEnvelope timeout_env;
+        timeout_env.id = SCE::uuid::v7();
+        timeout_env.source = "{{ machine_name }}";
+        timeout_env.type = "error.rpc.deadline";
+        timeout_env.pattern = SCE::Mesh::PatternKind::RpcReply;
+        timeout_env.correlation_id = cid;
+        // Both correlation fields carry the id for the same reason the
+        // §8.3 seed macro sets both: `invoke_id` is what survives into
+        // the requester's `invoke_correlation_` lookup, `correlation_id`
+        // is what its `pending_rpcs_` table keys on. A timeout notice
+        // that resolved through only one of them would strand the other
+        // kind of caller.
+        timeout_env.invoke_id = cid;
+        timeout_env.rpc_status = SCE::Mesh::RpcStatus::DeadlineExceeded;
+        // Names the call, not just the condition: a client with several
+        // outstanding requests to this server reads which one was
+        // abandoned without decoding correlation ids by hand. Surfaces
+        // as `_event.data` on the requester (MeshDispatch RpcReply arm).
+        timeout_env.rpc_error_message =
+            std::string("'") + request_event +
+            "' was not answered within the server response deadline of "
+            "{{ server.response_deadline_ms }} ms";
+        auto response = vsomeip::runtime::get()->create_response(original);
+        // AUTOSAR SOME/IP: MT_ERROR (0x81) is the error counterpart of
+        // MT_RESPONSE (0x80) and E_TIMEOUT (0x06) is the return code
+        // reserved for exactly this condition. `create_response` seeds
+        // MT_RESPONSE / E_OK, so both are overwritten here.
+        response->set_message_type(vsomeip::message_type_e::MT_ERROR);
+        response->set_return_code(vsomeip::return_code_e::E_TIMEOUT);
+        auto buf = SCE::Mesh::encodeEnvelope(timeout_env);
+        auto payload = vsomeip::runtime::get()->create_payload(
+            reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
+            static_cast<uint32_t>(buf.size()));
+        response->set_payload(payload);
+        if (server_app_) server_app_->send(response);
+        } catch (const std::exception& e) {
+            SCE_LOG_ERROR(
+                "SCE Mesh server response deadline: releasing '{}' succeeded but "
+                "the MT_ERROR/E_TIMEOUT notice could not be sent ({}); the "
+                "requester will fall back to its own timeout",
+                request_event, e.what());
+        }
+{% elif has_server_deadline_zenoh %}
         std::lock_guard<std::mutex> lock(server_pending_mutex_);
         pending_server_queries_.erase(CorrelationKey{cid});
+{% endif %}
     }
 
-    /// Test-only accessor: number of inbound server queries still
+    /// Test-only accessor: number of inbound server requests still
     /// awaiting an engine response. A verification test asserts this
-    /// drops to zero within `query_timeout_ms + slack` after the
+    /// drops to zero within `response_deadline_ms + slack` after the
     /// engine fails to emit the paired response.
     [[nodiscard]] std::size_t pending_server_size() const {
         std::lock_guard<std::mutex> lock(server_pending_mutex_);
+{% if has_server_deadline_someip %}
+        return pending_server_requests_.size();
+{% elif has_server_deadline_zenoh %}
         return pending_server_queries_.size();
+{% endif %}
     }
 
     /// Test-only accessor: the `CorrelationKey.id` (16-byte UUIDv7)
-    /// of the first inbound server query still awaiting a response,
+    /// of the first inbound server request still awaiting a response,
     /// or `std::nullopt` if none. A verification test uses this to
     /// hand-craft the matching response envelope without reaching
-    /// into `pending_server_queries_` or `server_pending_mutex_`
-    /// directly — preserves encapsulation of the pending map's
-    /// internal layout, mirroring the `pending_server_size` shape.
+    /// into the pending map or `server_pending_mutex_` directly —
+    /// preserves encapsulation of the map's internal layout,
+    /// mirroring the `pending_server_size` shape.
     [[nodiscard]] std::optional<std::array<std::uint8_t, 16>>
     server_first_cid() const {
         std::lock_guard<std::mutex> lock(server_pending_mutex_);
+{% if has_server_deadline_someip %}
+        if (pending_server_requests_.empty()) return std::nullopt;
+        return pending_server_requests_.begin()->first.id;
+{% elif has_server_deadline_zenoh %}
         if (pending_server_queries_.empty()) return std::nullopt;
         return pending_server_queries_.begin()->first.id;
+{% endif %}
     }
 {% endif %}
 

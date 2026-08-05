@@ -1,0 +1,48 @@
+# SCE Mesh §9.5 server response deadline E2E fixture (SOME/IP arm).
+#
+# Motor declares a SOME/IP server binding with `response_deadline_ms: 500`.
+# The test binds motor to a recorder engine that never emits the paired
+# response, so the only thing that can retire the stashed
+# `pending_server_requests_` entry is the deadline.
+#
+# Unlike the zenoh arm — where expiry drops the stored query and the
+# client can only infer `RpcStatus::Unavailable` — the SOME/IP arm
+# answers with the notice the protocol reserves for this condition:
+# MT_ERROR (0x81) + E_TIMEOUT (0x06), carrying an envelope stamped
+# `RpcStatus::DeadlineExceeded`. Brake is present so the test can observe
+# that notice arriving on a real client binding rather than only
+# asserting the server released its own state.
+#
+# Service ids come from vsomeip_someip_server_deadline.json; the routing
+# manager config is vsomeip_e2e_server_deadline.json (own network name so
+# concurrent SOME/IP tests cannot cross-talk).
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_someip_server_deadline.json
+        application_name: brake_someip_server_deadline_app
+    machines:
+      brake_someip_server_deadline:
+        source: brake_someip_server_deadline.scxml
+        bindings:
+          "#motor_someip_server_deadline":
+            transport: someip
+            service: motor_control
+            events:
+              "service.request.compute_force":
+                method: compute_force
+      motor_someip_server_deadline:
+        source: motor_someip_server_deadline.scxml
+        server:
+          transport: someip
+          service: motor_control
+          # SCE Mesh §9.5: server-side deadline per inbound request.
+          # 500 ms is comfortably above engine macrostep latency
+          # (~tens of ms on commodity hardware) and below the observation
+          # budget the test allows.
+          response_deadline_ms: 500
+          events:
+            "service.request.compute_force":
+              method: compute_force

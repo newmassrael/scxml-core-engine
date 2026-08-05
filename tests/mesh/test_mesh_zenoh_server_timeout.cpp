@@ -10,7 +10,7 @@
 //   §1 Leak closure — the motor engine receives an inbound RpcRequest
 //      but the test never dispatches a response. Without Z2 the entry
 //      would sit in `pending_server_queries_` until process exit; with
-//      Z2 armed at `query_timeout_ms=500 ms` the scheduler callback
+//      the deadline armed at `response_deadline_ms=500 ms` the scheduler callback
 //      erases it within `timeout + slack`. This is the gap's value
 //      claim: server-side resource release determinism.
 //
@@ -58,7 +58,7 @@ using MotorRouterT = motor_gen::TransportRouter<TestSenderEngine>;
 // motor router's queryable observes the inbound request.
 constexpr const char *kMotorListen = SCE::Generated::motor_zenoh_server_timeout::ZENOH_LISTEN_ENDPOINTS[0];
 
-// Must match deploy_zenoh_server_timeout.yaml server.query_timeout_ms.
+// Must match deploy_zenoh_server_timeout.yaml server.response_deadline_ms.
 constexpr auto kQueryTimeoutMs = std::chrono::milliseconds(500);
 // Allowance for scheduler tick + thread wakeup + map erase + test observation.
 constexpr auto kTimeoutSlack = std::chrono::milliseconds(500);
@@ -93,7 +93,7 @@ int scenario_timeout_closes_leak() {
 
     MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1, "pending_server_size should be 1 after dispatch");
 
-    // Wait out `query_timeout_ms + slack`. The scheduler callback must
+    // Wait out `response_deadline_ms + slack`. The scheduler callback must
     // erase the entry within this window.
     std::this_thread::sleep_for(kQueryTimeoutMs + kTimeoutSlack);
 

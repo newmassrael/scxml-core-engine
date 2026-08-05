@@ -229,7 +229,7 @@
         "mesh/deploy-invalid-custom-tcp-socket",
         "mesh/deploy-invalid-dds-qos",
         "mesh/deploy-invalid-liveliness",
-        "mesh/deploy-invalid-server-query-timeout",
+        "mesh/deploy-invalid-server-response-deadline",
         "mesh/deploy-invalid-outbound-buffer",
         "mesh/deploy-invalid-retry-policy",
         "mesh/deploy-invalid-auth-policy",

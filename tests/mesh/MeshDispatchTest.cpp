@@ -351,6 +351,60 @@ TEST(MeshDispatchTest, InboundEnvelopeCarriesMeshOriginFromSource) {
     }
 }
 
+TEST(MeshDispatchTest, FailedReplySurfacesTheReasonAsEventData) {
+    // SCE_MESH.md §mesh-9.5.1: a reply whose `rpc_status` is non-Ok
+    // carries no result — the payload is empty because the call did not
+    // happen — so what the author needs on `_event.data` is the reason,
+    // not an empty string. This is the only channel a plain `<send>` RPC
+    // has: the correlation table hands it the reply event, and without
+    // this arm a server-authored failure and a successful call with no
+    // payload are indistinguishable at the SCXML layer.
+    RecordingEngine engine;
+    auto env = makeRequest("service.response.compute_force");
+    env.pattern = PatternKind::RpcReply;
+    env.rpc_status = SCE::Mesh::RpcStatus::DeadlineExceeded;
+    env.rpc_error_message = "'service.request.compute_force' was not answered within 500 ms";
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].data, "'service.request.compute_force' was not answered within 500 ms");
+}
+
+TEST(MeshDispatchTest, SuccessfulReplyStillCarriesItsPayload) {
+    // The guard above must not divert the ordinary path. An absent
+    // `rpc_status` means Ok per the field's contract, and an explicit Ok
+    // must read the same way — otherwise every successful reply would
+    // start losing its payload the moment a peer began stamping the
+    // field.
+    for (auto status : {std::optional<SCE::Mesh::RpcStatus>{}, std::optional{SCE::Mesh::RpcStatus::Ok}}) {
+        RecordingEngine engine;
+        auto env = makeRequest("service.response.compute_force", {'4', '2'});
+        env.pattern = PatternKind::RpcReply;
+        env.rpc_status = status;
+        // A reason alongside a success is contradictory input; the
+        // payload still wins, because status is what decides.
+        env.rpc_error_message = "should not surface";
+
+        EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+        ASSERT_EQ(engine.events.size(), 1u);
+        EXPECT_EQ(engine.events[0].data, "42") << "rpc_status " << (status ? "Ok" : "absent");
+    }
+}
+
+TEST(MeshDispatchTest, FailedReplyWithoutAReasonFallsBackToThePayload) {
+    // `rpc_error_message` is optional. A peer that reports failure
+    // without prose must not silently blank the payload — whatever it
+    // did send is still the most informative thing available.
+    RecordingEngine engine;
+    auto env = makeRequest("service.response.compute_force", {'x'});
+    env.pattern = PatternKind::RpcReply;
+    env.rpc_status = SCE::Mesh::RpcStatus::Unavailable;
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].data, "x");
+}
+
 TEST(MeshDispatchTest, InboundEnvelopeCarriesScxmlProcessorOriginType) {
     // §mesh-10.7 pins `_event.origintype` to the W3C SCXML processor URI for
     // inter-SCXML mesh traffic. Every envelope reaching dispatchEnvelope is
