@@ -526,7 +526,7 @@ fn c11_backend_still_ignores_a_rust_callback() {
 fn c_callback_output_compiles_and_pins_the_host_signature() {
     use std::process::Command;
 
-    let Some(cc) = which("gcc").or_else(|| which("cc")) else {
+    let Some(cc) = sce_build::toolchain::locate_any(&["gcc", "cc"]) else {
         eprintln!("SKIP c_callback_output_compiles: no gcc/cc on PATH");
         return;
     };
@@ -599,22 +599,6 @@ fn c_callback_output_compiles_and_pins_the_host_signature() {
         err.contains("conflicting types") || err.contains("incompatible"),
         "expected a conflicting-declaration diagnostic, got:\n{err}"
     );
-}
-
-fn which(tool: &str) -> Option<PathBuf> {
-    let out = std::process::Command::new("which")
-        .arg(tool)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let p = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if p.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(p))
-    }
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-E lines 1367-1378 + 1462-1484:

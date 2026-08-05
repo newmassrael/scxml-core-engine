@@ -16,15 +16,19 @@
 // braces for months, hidden because no W3C test exercised that shape.
 // `final_top_literal.scxml` is the regression guard for that bug.
 //
-// Toolchain-missing behaviour: each test detects its compiler with
-// `which` and skips with an `eprintln!` if absent. CI is expected to
-// install all four; local dev machines without one toolchain should
-// not be blocked. The skip is logged so silence-versus-pass is
-// distinguishable when running with `--nocapture`.
+// Toolchain-missing behaviour: each test resolves its compiler through
+// `sce_build::toolchain`, which searches past `PATH` into the versioned
+// install directories distributions use, and reports a miss through
+// `toolchain::skipped`. CI is expected to install all four; local dev
+// machines without one toolchain should not be blocked. The skip is
+// logged so silence-versus-pass is distinguishable when running with
+// `--nocapture`, and setting `SCE_REQUIRE_TOOLS=1` turns every skip
+// into a failure so a lane can assert its checks actually ran.
 //
 // See `memory/codegen_template_strategy.md` for the rationale against
 // an AST emitter migration — this harness is the chosen gate instead.
 
+use sce_build::toolchain;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -72,21 +76,6 @@ fn fixtures_dir() -> PathBuf {
 fn scratch_for(lang: &str) -> PathBuf {
     let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("codegen_smoke");
     base.join(lang)
-}
-
-/// Resolve a tool on `PATH` via `which`. Returns `None` when the tool
-/// is missing so the caller can skip rather than fail.
-fn resolve_tool(name: &str) -> Option<PathBuf> {
-    let out = Command::new("which").arg(name).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let path = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(path))
-    }
 }
 
 /// Run `sce-codegen generate -l <lang> -o <out> <fixture>.scxml`.
@@ -140,10 +129,135 @@ fn reset_scratch(lang: &str) -> PathBuf {
     scratch
 }
 
+/// Every regular file under `dir`, recursively, in sorted order.
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Generate `fixture` for `lang`, reporting whether the backend
+/// accepted it. Unlike [`run_generate`] a rejection is not a failure:
+/// backends legitimately reject shapes they cannot lower statically,
+/// and callers that sweep the whole language × fixture cross-product
+/// need to skip those rather than assert on them.
+fn try_generate(lang: &str, out_dir: &Path, fixture: &str) -> bool {
+    std::fs::create_dir_all(out_dir).expect("create out dir");
+    Command::new(sce_codegen_bin())
+        .args(["generate", "-l", lang, "-o"])
+        .arg(out_dir)
+        .arg(fixtures_dir().join(format!("{fixture}.scxml")))
+        .output()
+        .expect("spawn sce-codegen")
+        .status
+        .success()
+}
+
+/// Every artefact this generator writes ends with a newline, for every
+/// backend.
+///
+/// POSIX defines a text file as a sequence of newline-terminated lines,
+/// and consumers enforce it: `clang -Werror -Wnewline-eof` rejects a
+/// header that ends without one, and that flag combination is a default
+/// MCU consumers build with.
+///
+/// Before this gate the contract held only where a formatter happened
+/// to run last in the pipeline — clang-format for C++, gofmt, rustfmt,
+/// ktlint. C11 has no formatter, so its headers shipped ending in
+/// `#endif  /* GUARD */` with no newline. gcc has no equivalent
+/// diagnostic and the harness prefers clang, so the defect was
+/// invisible on any host whose Clang was not on `PATH`.
+///
+/// This gate compares bytes rather than compiling, so it is independent
+/// of which toolchains the host has: it runs everywhere, including
+/// images with no C compiler at all, and it covers backends whose
+/// compile-checks skip. A backend added later is covered the moment its
+/// identifier joins `LANGUAGES`.
+#[test]
+fn every_generated_artefact_ends_with_a_newline() {
+    // Every `generator::Language` variant.
+    const LANGUAGES: &[&str] = &["cpp", "c11", "rust", "kotlin", "go", "python"];
+
+    // Collected rather than asserted per file: stopping at the first
+    // violation would hide how far the defect reaches, and would leave
+    // later backends unproven whenever an earlier one fails.
+    let mut violations: Vec<String> = Vec::new();
+
+    for lang in LANGUAGES {
+        let scratch = reset_scratch(&format!("trailing_newline_{lang}"));
+        let mut generated = 0usize;
+        let mut checked = 0usize;
+
+        for fixture in FIXTURES {
+            let out_dir = scratch.join(fixture);
+            if !try_generate(lang, &out_dir, fixture) {
+                // Statically unlowerable for this backend; other
+                // fixtures still cover it.
+                continue;
+            }
+            generated += 1;
+
+            for path in files_under(&out_dir) {
+                let bytes =
+                    std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+                if bytes.is_empty() {
+                    // A zero-byte artefact is a valid text file.
+                    continue;
+                }
+                checked += 1;
+                if bytes.last() != Some(&b'\n') {
+                    violations.push(format!(
+                        "  [{lang}] {} ends with {:?}",
+                        path.display(),
+                        *bytes.last().expect("non-empty") as char,
+                    ));
+                }
+            }
+        }
+
+        // A backend that emitted nothing would satisfy every check
+        // above without proving anything.
+        assert!(
+            generated > 0,
+            "no fixture generated for {lang}: the sweep proved nothing \
+             for this backend",
+        );
+        assert!(
+            checked > 0,
+            "{lang} generated {generated} fixture(s) but produced no \
+             non-empty artefact to check",
+        );
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{} generated artefact(s) do not end with a newline:\n{}\n\
+         `clang -Werror -Wnewline-eof` rejects a header that does not. \
+         Every write path must route through \
+         `generator::with_trailing_newline`.",
+        violations.len(),
+        violations.join("\n"),
+    );
+}
+
 #[test]
 fn smoke_cpp() {
-    let Some(gpp) = resolve_tool("g++") else {
-        eprintln!("SKIP smoke_cpp: g++ not on PATH");
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped("smoke_cpp: g++ not on PATH");
         return;
     };
     let scratch = reset_scratch("cpp");
@@ -226,8 +340,8 @@ fn smoke_cpp_namespace_prefix() {
     const FIXTURE: &str = "namespace_prefix_invoke";
     const PREFIX: &str = "ScePrefixTest";
 
-    let Some(gpp) = resolve_tool("g++") else {
-        eprintln!("SKIP smoke_cpp_namespace_prefix: g++ not on PATH");
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped("smoke_cpp_namespace_prefix: g++ not on PATH");
         return;
     };
     let scratch = reset_scratch("cpp_ns_prefix");
@@ -367,8 +481,8 @@ fn smoke_c_symbol_prefix() {
     const FIXTURE: &str = "namespace_prefix_invoke";
     const PREFIX: &str = "ScePrefixTest";
 
-    let Some(gcc) = resolve_tool("gcc").or_else(|| resolve_tool("cc")) else {
-        eprintln!("SKIP smoke_c_symbol_prefix: gcc/cc not on PATH");
+    let Some(gcc) = toolchain::locate_any(&["gcc", "cc"]) else {
+        toolchain::skipped("smoke_c_symbol_prefix: gcc/cc not on PATH");
         return;
     };
     let scratch = reset_scratch("c_sym_prefix");
@@ -487,8 +601,8 @@ fn smoke_rust() {
 
 #[test]
 fn smoke_go() {
-    let Some(gofmt) = resolve_tool("gofmt") else {
-        eprintln!("SKIP smoke_go: gofmt not on PATH");
+    let Some(gofmt) = toolchain::locate("gofmt") else {
+        toolchain::skipped("smoke_go: gofmt not on PATH");
         return;
     };
     let scratch = reset_scratch("go");
@@ -545,8 +659,8 @@ fn find_kotlin_runtime_jar() -> Option<PathBuf> {
 
 #[test]
 fn smoke_kotlin() {
-    let Some(kotlinc) = resolve_tool("kotlinc") else {
-        eprintln!("SKIP smoke_kotlin: kotlinc not on PATH");
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("smoke_kotlin: kotlinc not on PATH");
         return;
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
