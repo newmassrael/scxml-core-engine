@@ -1165,10 +1165,15 @@ pub enum DiagnosticCode {
     //    `pool/sample-take-without-stage-pool`,
     //    `pool/sample-callback-signature-non-borrow`, and
     //    `pool/cache-maintenance-misplaced` are declared below;
-    //    `pool/clang-tidy-not-configured`, `pool/ownership-violation`,
-    //    and `pool/slot-leak-on-error-path` stay unimplemented until a
-    //    consumer needs them (they gate on clang-tidy build wiring and
-    //    the §synth-5-I `<sce:call>` intrinsic registry). ──
+    //    `pool/ownership-violation` and `pool/slot-leak-on-error-path`
+    //    stay unimplemented pending the §synth-5-I `<sce:call>`
+    //    intrinsic registry. `pool/clang-tidy-not-configured` is NOT
+    //    pending — it was withdrawn from the spec: Clang-Tidy reads the
+    //    same frontend that drops the typestate attributes in C, and
+    //    the macros expand to nothing there, so it has no annotation to
+    //    parse and cannot report what the diagnostic would have
+    //    mandated it for. The defensive layer covers that gap by
+    //    defaulting on instead. ──
     /// `<sce/sample.h>` runtime header pull-through (the producer of
     /// the `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
     /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` /
