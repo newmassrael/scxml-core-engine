@@ -1,0 +1,15 @@
+{
+  "applications": [
+    { "name": "brake_someip_server_deadline_app" }
+  ],
+  "services": [
+    {
+      "name": "motor_control",
+      "service": "0x2004",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "compute_force", "method": "0x0101" }
+      ]
+    }
+  ]
+}

@@ -1836,8 +1836,8 @@ pub enum DiagnosticCode {
     MeshDeployInvalidDdsQos,
     #[serde(rename = "mesh/deploy-invalid-liveliness")]
     MeshDeployInvalidLiveliness,
-    #[serde(rename = "mesh/deploy-invalid-server-query-timeout")]
-    MeshDeployInvalidServerQueryTimeout,
+    #[serde(rename = "mesh/deploy-invalid-server-response-deadline")]
+    MeshDeployInvalidServerResponseDeadline,
     #[serde(rename = "mesh/deploy-invalid-outbound-buffer")]
     MeshDeployInvalidOutboundBuffer,
     #[serde(rename = "mesh/deploy-invalid-retry-policy")]
@@ -2816,7 +2816,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidCustomTcpSocket,
         MeshDeployInvalidDdsQos,
         MeshDeployInvalidLiveliness,
-        MeshDeployInvalidServerQueryTimeout,
+        MeshDeployInvalidServerResponseDeadline,
         MeshDeployInvalidOutboundBuffer,
         MeshDeployInvalidRetryPolicy,
         MeshDeployInvalidAuthPolicy,
@@ -3274,7 +3274,7 @@ impl DiagnosticCode {
             MeshDeployInvalidLiveliness => Some("SCE Mesh §16.7"),
 
             // ── Mesh server-side lifecycle (SCE_MESH.md §9.5) ────
-            MeshDeployInvalidServerQueryTimeout => Some("SCE Mesh §9.5"),
+            MeshDeployInvalidServerResponseDeadline => Some("SCE Mesh §9.5"),
             MeshDeployInvalidOutboundBuffer => Some("SCE Mesh §10.10"),
             MeshDeployInvalidRetryPolicy => Some("SCE Mesh §16.7"),
             MeshDeployInvalidAuthPolicy => Some("SCE Mesh §16.7"),
@@ -3876,7 +3876,9 @@ impl DiagnosticCode {
             MeshDeployInvalidCustomTcpSocket => "mesh/deploy-invalid-custom-tcp-socket",
             MeshDeployInvalidDdsQos => "mesh/deploy-invalid-dds-qos",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
-            MeshDeployInvalidServerQueryTimeout => "mesh/deploy-invalid-server-query-timeout",
+            MeshDeployInvalidServerResponseDeadline => {
+                "mesh/deploy-invalid-server-response-deadline"
+            }
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
             MeshDeployInvalidRetryPolicy => "mesh/deploy-invalid-retry-policy",
             MeshDeployInvalidAuthPolicy => "mesh/deploy-invalid-auth-policy",
@@ -10397,15 +10399,15 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:45153e0eac48ec1b","code":"mesh/deploy-invalid-liveliness","stage":"mesh-deploy","spec":"SCE Mesh §16.7","message":"machine 'brake': invalid `liveliness:` section in deploy.yaml — lease_ms (50) must be >= 100 ms — values below this floor race Zenoh's own keepalive and generate spurious DELETE/PUT churn. Either fix the value or omit the section entirely to disable liveliness.","actual":"brake"}"#,
             ),
             (
-                "mesh/deploy-invalid-server-query-timeout",
-                DeployError::InvalidServerQueryTimeout {
+                "mesh/deploy-invalid-server-response-deadline",
+                DeployError::InvalidServerResponseDeadline {
                     machine: "motor".into(),
-                    reason: "query_timeout_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would cause every inbound query to time out before the engine can respond".into(),
+                    reason: "response_deadline_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would expire every inbound request before the engine can respond".into(),
                 }
                 .into(),
                 // Hash placeholder — the byte-stability assertion patches
                 // it on first run. Shape + message are the contract.
-                r#"{"v":1,"id":"fnv1a:f3bf5c36574e7396","code":"mesh/deploy-invalid-server-query-timeout","stage":"mesh-deploy","spec":"SCE Mesh §9.5","message":"machine 'motor': invalid `server.query_timeout_ms` in deploy.yaml — query_timeout_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would cause every inbound query to time out before the engine can respond. Either fix the value or omit the knob entirely to disable the server deadline.","actual":"motor"}"#,
+                r#"{"v":1,"id":"fnv1a:57355b72c52cc9ad","code":"mesh/deploy-invalid-server-response-deadline","stage":"mesh-deploy","spec":"SCE Mesh §9.5","message":"machine 'motor': invalid `server.response_deadline_ms` in deploy.yaml — response_deadline_ms (5) must be >= 10 ms — values below this floor race typical engine macrostep latency and would expire every inbound request before the engine can respond. Either fix the value or omit the knob entirely to disable the server deadline.","actual":"motor"}"#,
             ),
             (
                 "mesh/deploy-invalid-outbound-buffer",
@@ -12424,7 +12426,7 @@ mod tests {
             | MeshDeployInvalidCustomTcpSocket
             | MeshDeployInvalidDdsQos
             | MeshDeployInvalidLiveliness
-            | MeshDeployInvalidServerQueryTimeout
+            | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
@@ -13072,7 +13074,7 @@ mod tests {
                 | MeshDeployInvalidCustomTcpSocket
                 | MeshDeployInvalidDdsQos
                 | MeshDeployInvalidLiveliness
-                | MeshDeployInvalidServerQueryTimeout
+                | MeshDeployInvalidServerResponseDeadline
                 | MeshDeployInvalidOutboundBuffer
                 | MeshDeployInvalidRetryPolicy
                 | MeshDeployInvalidAuthPolicy

@@ -379,15 +379,18 @@ pub enum DeployError {
     )]
     InvalidLiveliness { machine: String, reason: String },
 
-    /// A machine declared a `server.query_timeout_ms` whose value
-    /// violates the minimum-floor constraint (SCE Mesh §mesh-9.5 gap Z2;
-    /// see `MIN_SERVER_QUERY_TIMEOUT_MS` in deploy.rs). Rejected at
-    /// parse time so a bad value cannot reach the generated router.
+    /// A machine declared a `server.response_deadline_ms` that violates
+    /// the minimum-floor constraint (see
+    /// `MIN_SERVER_RESPONSE_DEADLINE_MS` in deploy.rs) or that names a
+    /// transport whose registry entry declares
+    /// `ServerDeadlineNotice::Unsupported` (SCE Mesh §mesh-9.5 server
+    /// response deadline). Rejected at parse time so neither a bad
+    /// value nor an unrealised knob reaches the generated router.
     #[error(
-        "machine '{machine}': invalid `server.query_timeout_ms` in deploy.yaml — {reason}. \
+        "machine '{machine}': invalid `server.response_deadline_ms` in deploy.yaml — {reason}. \
              Either fix the value or omit the knob entirely to disable the server deadline."
     )]
-    InvalidServerQueryTimeout { machine: String, reason: String },
+    InvalidServerResponseDeadline { machine: String, reason: String },
 
     /// A machine declared an `outbound_buffer:` section whose
     /// `max_pending_per_target` violates the minimum constraint
@@ -2591,8 +2594,8 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
         },
-        DeployError::InvalidServerQueryTimeout { machine, reason } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeployInvalidServerQueryTimeout,
+        DeployError::InvalidServerResponseDeadline { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidServerResponseDeadline,
             stage: Stage::MeshDeploy,
             actual: Some(machine.clone()),
             // Same author-intent shape as InvalidLiveliness: either fix
@@ -2605,7 +2608,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidOutboundBuffer,
             stage: Stage::MeshDeploy,
             actual: Some(machine.clone()),
-            // Same author-intent shape as InvalidServerQueryTimeout:
+            // Same author-intent shape as InvalidServerResponseDeadline:
             // either fix the explicit value or omit the section.
             expected: None,
             fix: None,

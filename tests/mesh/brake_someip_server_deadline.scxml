@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.5 server response deadline verification fixture (client half).
+
+     Brake is the requesting peer. The `<send>` below is what makes the
+     topology analyser emit a SOME/IP client binding, which in turn
+     installs a `register_message_handler` on motor_control/compute_force
+     — the handler that has to accept the server's MT_ERROR / E_TIMEOUT
+     notice rather than drop it as "not a response".
+
+     The test drives brake through `route_send` and observes its recorder
+     engine, so the model only needs to make the request/response pair
+     visible to pattern detection.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="brake_someip_server_deadline" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="waiting"/>
+    </state>
+    <state id="waiting">
+        <onentry>
+            <!-- RpcRequest: app.send(request) + register_message_handler
+                 for the reply. The paired reply event
+                 "service.response.compute_force" is inferred by the
+                 topology analyser. -->
+            <send target="#motor_someip_server_deadline" event="service.request.compute_force"/>
+        </onentry>
+        <transition event="service.response.compute_force" target="idle"/>
+    </state>
+</scxml>

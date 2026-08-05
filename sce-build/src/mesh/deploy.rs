@@ -21,6 +21,7 @@
 use crate::forge::model::LinkClass;
 use crate::mesh::error::{DeployError, PartitionTransportBindingFailure};
 use crate::mesh::target::TargetId;
+use crate::mesh::transport::ServerDeadlineNotice;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -1904,16 +1905,15 @@ impl Default for OrderingTimings {
 /// plan memo locked.
 pub const MIN_LIVELINESS_LEASE_MS: u64 = 100;
 
-/// Minimum `query_timeout_ms` accepted in a `server:` section.
+/// Minimum `response_deadline_ms` accepted in a `server:` section.
 ///
-/// SCE Mesh §mesh-9.5 Zenoh server queryable timeout (gap Z2): values
-/// below this floor are almost certainly typos — even a trivial
-/// engine macrostep usually takes longer than 10 ms, so a sub-floor
-/// value would cause every inbound query to time out before the
-/// engine can respond. Parse-time rejection surfaces the mistake
-/// at the offending deploy.yaml line rather than a silent runtime
-/// cleanup cascade.
-pub const MIN_SERVER_QUERY_TIMEOUT_MS: u64 = 10;
+/// SCE Mesh §mesh-9.5 server response deadline: values below this
+/// floor are almost certainly typos — even a trivial engine macrostep
+/// usually takes longer than 10 ms, so a sub-floor value would expire
+/// every inbound request before the engine can respond. Parse-time
+/// rejection surfaces the mistake at the offending deploy.yaml line
+/// rather than a silent runtime cleanup cascade.
+pub const MIN_SERVER_RESPONSE_DEADLINE_MS: u64 = 10;
 
 /// Per-machine Zenoh liveliness configuration (SCE Mesh §mesh-16.7 row 8).
 ///
@@ -2825,65 +2825,81 @@ pub struct ServerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<Vec<u16>>,
 
-    /// Per-server Zenoh queryable response deadline (SCE Mesh §mesh-9.5, gap
-    /// Z2).
+    /// Per-server response deadline (SCE Mesh §mesh-9.5): how long
+    /// this machine's engine may hold an inbound request before the
+    /// generated router releases the stored request handle.
     ///
-    /// **Zenoh-only scope**: SOME/IP (and other non-zenoh) server-side
-    /// response lifecycles use distinct transport-native state
-    /// (`pending_server_requests_` for vsomeip), not the
-    /// `pending_server_queries_` map that this knob targets. Parse-time
-    /// validation rejects the knob on non-zenoh servers so a SOME/IP
-    /// author cannot inadvertently ship a silent no-op. A SOME/IP
-    /// equivalent is consumer-gated and would land under its own knob.
+    /// Transport-neutral by name because the thing it bounds is
+    /// transport-neutral — every server arm parks *something* between
+    /// receiving a request and emitting the paired response
+    /// (`pending_server_requests_` for vsomeip,
+    /// `pending_server_queries_` for zenoh), and each of those leaks
+    /// when the engine leaves the handling state without sending. What
+    /// differs per transport is the **notice** the requesting peer
+    /// gets on expiry, recorded in
+    /// [`crate::mesh::transport::TransportDescriptor::server_deadline_notice`]:
     ///
-    /// Absent ⇒ no deadline armed per inbound query, matching the
-    /// pre-Z2 behaviour where `pending_server_queries_` leaks any entry
-    /// whose engine never emits the paired response. Present ⇒ each
-    /// inbound query arms a scheduler entry that, on expiry, silently
-    /// erases the stored `zenoh::Query`; the destructor lets the client
-    /// observe the drop via the Z3 on_drop path
-    /// (`RpcStatus::Unavailable`), so no new `error.communication` row
-    /// is introduced. Validated at parse time
-    /// (`query_timeout_ms >= MIN_SERVER_QUERY_TIMEOUT_MS` AND
-    /// `transport == "zenoh"`).
+    /// - SOME/IP ([`ServerDeadlineNotice::ActiveError`]): the router
+    ///   answers with `MT_ERROR` / `E_TIMEOUT` carrying
+    ///   `RpcStatus::DeadlineExceeded`, so the client can tell a server
+    ///   that gave up from one that vanished.
+    /// - Zenoh ([`ServerDeadlineNotice::DropSilently`]): the stored
+    ///   `zenoh::Query` is destructed; the client observes the drop via
+    ///   the on_drop path (`RpcStatus::Unavailable`).
+    ///
+    /// Absent ⇒ no deadline armed, and the pending map keeps any entry
+    /// whose engine never emits the paired response until process exit.
+    /// Present ⇒ validated at parse time against
+    /// [`MIN_SERVER_RESPONSE_DEADLINE_MS`] and against the transport's
+    /// `server_deadline_notice` — a transport that cannot arm the
+    /// deadline rejects the knob rather than ignoring it.
     #[serde(default)]
-    pub query_timeout_ms: Option<u64>,
+    pub response_deadline_ms: Option<u64>,
     /// Transport-native passthrough (e.g. `protocol: tcp`).
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml_ng::Value>,
 }
 
 impl ServerConfig {
-    /// Validate the `query_timeout_ms` field. Returns the rejection
+    /// Validate the `response_deadline_ms` field. Returns the rejection
     /// reason without the machine name — the caller wraps this into
-    /// [`DeployError::InvalidServerQueryTimeout`].
+    /// [`DeployError::InvalidServerResponseDeadline`].
     ///
     /// Two rejection paths:
-    ///   1. Value below [`MIN_SERVER_QUERY_TIMEOUT_MS`] — would race
-    ///      engine macrostep latency and cause every query to time
-    ///      out before a response is possible.
-    ///   2. Non-zenoh transport — Z2 wires the scheduler to the
-    ///      zenoh-specific `pending_server_queries_` map, so the knob
-    ///      is a silent no-op on SOME/IP and other transports today.
-    ///      Rejecting at parse time surfaces the mistake before it
-    ///      reaches the generated router.
-    fn query_timeout_validation_error(&self) -> Option<String> {
-        let ms = self.query_timeout_ms?;
-        if ms < MIN_SERVER_QUERY_TIMEOUT_MS {
+    ///   1. Value below [`MIN_SERVER_RESPONSE_DEADLINE_MS`] — would
+    ///      race engine macrostep latency and expire every request
+    ///      before a response is possible.
+    ///   2. A transport whose registry entry declares
+    ///      [`ServerDeadlineNotice::Unsupported`] — no generated arm
+    ///      arms a deadline there, so accepting the knob would ship a
+    ///      silent no-op. The diagnostic names the transports that do
+    ///      realise it rather than only saying "not here".
+    fn response_deadline_validation_error(&self) -> Option<String> {
+        let ms = self.response_deadline_ms?;
+        if ms < MIN_SERVER_RESPONSE_DEADLINE_MS {
             return Some(format!(
-                "query_timeout_ms ({}) must be >= {} ms — values below this \
-                 floor race typical engine macrostep latency and would cause \
-                 every inbound query to time out before the engine can respond",
-                ms, MIN_SERVER_QUERY_TIMEOUT_MS,
+                "response_deadline_ms ({}) must be >= {} ms — values below this \
+                 floor race typical engine macrostep latency and would expire \
+                 every inbound request before the engine can respond",
+                ms, MIN_SERVER_RESPONSE_DEADLINE_MS,
             ));
         }
-        if self.transport != "zenoh" {
+        // An unknown transport name is not this validator's error to
+        // report — `validate_transport_names` owns that diagnostic, and
+        // duplicating it here would make the deadline knob the messenger
+        // for an unrelated typo.
+        let notice = crate::mesh::transport::lookup(&self.transport)
+            .map(|d| d.server_deadline_notice)
+            .unwrap_or(ServerDeadlineNotice::Unsupported);
+        if notice == ServerDeadlineNotice::Unsupported {
             return Some(format!(
-                "query_timeout_ms is currently supported only on Zenoh servers \
-                 (transport: zenoh); this server declares `transport: {}`. \
-                 SOME/IP and other server-side response lifecycles are tracked \
-                 separately (SCE Mesh §9.5 gap Z2 does not cover them yet). \
-                 Remove the knob, or switch the server transport to zenoh",
+                "response_deadline_ms is not realised on `transport: {}` — its \
+                 server arm arms no deadline, so the knob would be a silent \
+                 no-op. Transports that do realise it: someip (answers \
+                 MT_ERROR / E_TIMEOUT with RpcStatus::DeadlineExceeded), zenoh \
+                 (drops the stored query; the client observes \
+                 RpcStatus::Unavailable). Remove the knob, or move the server \
+                 to one of those transports",
                 self.transport,
             ));
         }
@@ -3177,7 +3193,7 @@ const SERVER_TYPED_FIELDS: &[&str] = &[
     "key",
     "topic",
     "instances",
-    "query_timeout_ms",
+    "response_deadline_ms",
 ];
 
 impl BindingConfig {
@@ -3238,7 +3254,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_machine_name_uniqueness(&cfg)?;
     validate_ordering_timings(&cfg)?;
     validate_liveliness(&cfg)?;
-    validate_server_query_timeout(&cfg)?;
+    validate_server_response_deadline(&cfg)?;
     validate_server_pool_rejection(&cfg)?;
     validate_pool_capability(&cfg)?;
     validate_reply_from(&cfg)?;
@@ -5950,12 +5966,14 @@ fn validate_outbound_buffer(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// Walk every machine that declared an explicit `server.query_timeout_ms`
-/// and reject values below [`MIN_SERVER_QUERY_TIMEOUT_MS`]. Runs at parse
-/// time so the diagnostic surfaces the offending deploy.yaml line rather
-/// than a silent runtime cleanup cascade when every inbound query times
-/// out before the engine can respond.
-fn validate_server_query_timeout(cfg: &DeployConfig) -> Result<(), DeployError> {
+/// Walk every machine that declared an explicit
+/// `server.response_deadline_ms` and reject values below
+/// [`MIN_SERVER_RESPONSE_DEADLINE_MS`], or declared on a transport
+/// whose registry entry cannot arm the deadline. Runs at parse time so
+/// the diagnostic surfaces the offending deploy.yaml line rather than a
+/// silent runtime cleanup cascade — or, for the transport arm, rather
+/// than a knob the generated router quietly ignores.
+fn validate_server_response_deadline(cfg: &DeployConfig) -> Result<(), DeployError> {
     use std::collections::BTreeMap;
     let mut by_machine: BTreeMap<&str, &ServerConfig> = BTreeMap::new();
     for device in cfg.topology.values() {
@@ -5966,8 +5984,8 @@ fn validate_server_query_timeout(cfg: &DeployConfig) -> Result<(), DeployError> 
         }
     }
     for (machine, server) in by_machine {
-        if let Some(reason) = server.query_timeout_validation_error() {
-            return Err(DeployError::InvalidServerQueryTimeout {
+        if let Some(reason) = server.response_deadline_validation_error() {
+            return Err(DeployError::InvalidServerResponseDeadline {
                 machine: machine.to_string(),
                 reason,
             });
@@ -8557,7 +8575,7 @@ topology:
     }
 
     #[test]
-    fn server_query_timeout_absent_is_default_none() {
+    fn server_response_deadline_absent_is_default_none() {
         let yaml = r#"
 version: "1.0"
 topology:
@@ -8573,13 +8591,13 @@ topology:
         let machine = &cfg.topology["ecu1"].machines["motor"];
         let server = machine.server.as_ref().expect("server");
         assert!(
-            server.query_timeout_ms.is_none(),
-            "absent knob must deserialize as None (opt-in gate — Z2)"
+            server.response_deadline_ms.is_none(),
+            "absent knob must deserialize as None (opt-in gate)"
         );
     }
 
     #[test]
-    fn server_query_timeout_present_parses() {
+    fn server_response_deadline_on_zenoh_parses() {
         let yaml = r#"
 version: "1.0"
 topology:
@@ -8590,24 +8608,27 @@ topology:
         server:
           transport: zenoh
           key: "sce/motor"
-          query_timeout_ms: 500
+          response_deadline_ms: 500
 "#;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["motor"];
         let server = machine.server.as_ref().expect("server");
         assert_eq!(
-            server.query_timeout_ms,
+            server.response_deadline_ms,
             Some(500),
             "explicit knob must propagate the value verbatim"
         );
     }
 
     #[test]
-    fn server_query_timeout_on_non_zenoh_rejected() {
-        // SOME/IP server has no `pending_server_queries_` map — Z2 wires
-        // the scheduler to a zenoh-specific structure, so the knob would
-        // silently no-op on SOME/IP. Parse-time rejection prevents the
-        // silent-hook pattern at the config layer.
+    fn server_response_deadline_on_someip_parses() {
+        // The knob is transport-neutral: SOME/IP parks inbound requests
+        // in `pending_server_requests_` exactly as zenoh parks queries
+        // in `pending_server_queries_`, and both leak when the engine
+        // never emits the paired response. What differs is the notice
+        // on expiry (MT_ERROR / E_TIMEOUT here, a silent drop there),
+        // which the transport registry records — not whether the
+        // deadline can be armed at all.
         let yaml = r#"
 version: "1.0"
 topology:
@@ -8618,26 +8639,54 @@ topology:
         server:
           transport: someip
           service: motor_control
-          query_timeout_ms: 500
+          response_deadline_ms: 500
+"#;
+        let cfg = parse_deploy_str(yaml).expect("parse");
+        let machine = &cfg.topology["ecu1"].machines["motor"];
+        let server = machine.server.as_ref().expect("server");
+        assert_eq!(
+            server.response_deadline_ms,
+            Some(500),
+            "someip must accept the knob — its server arm realises the deadline"
+        );
+    }
+
+    #[test]
+    fn server_response_deadline_on_unrealised_transport_rejected() {
+        // custom_tcp holds `pending_server_links_`, so a deadline is
+        // *reachable* there — but no generated arm arms one, and
+        // accepting the knob would ship a silent no-op. The registry
+        // dimension says `Unsupported`, and the validator reads it
+        // rather than hardcoding a transport name.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: custom_tcp
+          response_deadline_ms: 500
 "#;
         match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidServerQueryTimeout { machine, reason }) => {
+            Err(DeployError::InvalidServerResponseDeadline { machine, reason }) => {
                 assert_eq!(machine, "motor");
                 assert!(
-                    reason.contains("zenoh"),
-                    "reason must cite the required transport: {reason}"
-                );
-                assert!(
-                    reason.contains("someip"),
+                    reason.contains("custom_tcp"),
                     "reason must cite the declared transport: {reason}"
                 );
+                assert!(
+                    reason.contains("someip") && reason.contains("zenoh"),
+                    "reason must name the transports that DO realise it: {reason}"
+                );
             }
-            other => panic!("expected InvalidServerQueryTimeout, got {other:?}"),
+            other => panic!("expected InvalidServerResponseDeadline, got {other:?}"),
         }
     }
 
     #[test]
-    fn server_query_timeout_below_floor_rejected() {
+    fn server_response_deadline_below_floor_rejected() {
         let yaml = r#"
 version: "1.0"
 topology:
@@ -8648,13 +8697,13 @@ topology:
         server:
           transport: zenoh
           key: "sce/motor"
-          query_timeout_ms: 5
+          response_deadline_ms: 5
 "#;
         match parse_deploy_str(yaml) {
-            Err(DeployError::InvalidServerQueryTimeout { machine, reason }) => {
+            Err(DeployError::InvalidServerResponseDeadline { machine, reason }) => {
                 assert_eq!(machine, "motor");
                 assert!(
-                    reason.contains("query_timeout_ms"),
+                    reason.contains("response_deadline_ms"),
                     "reason must cite the knob: {reason}"
                 );
                 assert!(
@@ -8662,7 +8711,37 @@ topology:
                     "reason must cite the floor: {reason}"
                 );
             }
-            other => panic!("expected InvalidServerQueryTimeout, got {other:?}"),
+            other => panic!("expected InvalidServerResponseDeadline, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn server_response_deadline_floor_applies_to_someip_too() {
+        // The floor is a property of engine macrostep latency, not of a
+        // transport. Both rejection paths must reach a someip server —
+        // otherwise widening the transport arm would have quietly
+        // widened the value arm as well.
+        let yaml = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      motor:
+        source: motor.scxml
+        server:
+          transport: someip
+          service: motor_control
+          response_deadline_ms: 5
+"#;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidServerResponseDeadline { machine, reason }) => {
+                assert_eq!(machine, "motor");
+                assert!(
+                    reason.contains("10"),
+                    "reason must cite the floor: {reason}"
+                );
+            }
+            other => panic!("expected InvalidServerResponseDeadline, got {other:?}"),
         }
     }
 
