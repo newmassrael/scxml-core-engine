@@ -100,9 +100,9 @@ pub enum PoolShape {
     /// No runtime substitution. Endpoints are fixed at build time
     /// (local / shm: compile-time process addresses; custom_tcp: a
     /// single static TCP endpoint, and widening it would mean SCE
-    /// implementing its own SD protocol, which the §mesh-3.3 design
-    /// invariant rejects; can: a broadcast bus with no peer-level
-    /// addressing).
+    /// implementing its own service discovery, which the mesh design
+    /// invariant on middleware-owned discovery rejects; can: a broadcast
+    /// bus with no peer-level addressing).
     None,
     /// Any runtime value is a valid member. The substituted address is
     /// dispatched directly with no pre-registration, because the
