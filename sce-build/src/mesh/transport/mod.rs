@@ -116,11 +116,25 @@ pub enum ServerDeadlineNotice {
     /// so the peer distinguishes a server that gave up from one that
     /// disappeared.
     ///
-    /// SOME/IP: `create_response(request)` with
-    /// `message_type_e::MT_ERROR` + `return_code_e::E_TIMEOUT`
-    /// (AUTOSAR SOME/IP Protocol Specification message-type 0x81 /
-    /// return-code 0x06), carrying a `MeshEnvelope` whose
-    /// `rpc_status` is `DeadlineExceeded`. A requester that used
+    /// What the notice *is* differs by how much of the wire format the
+    /// transport owns:
+    ///
+    /// - SOME/IP: `create_response(request)` with
+    ///   `message_type_e::MT_ERROR` + `return_code_e::E_TIMEOUT`
+    ///   (AUTOSAR SOME/IP Protocol Specification message-type 0x81 /
+    ///   return-code 0x06). The protocol reserves the slot, so the
+    ///   timeout is legible to a non-SCE peer as well.
+    /// - custom_tcp: SCE's own framed envelope written back on the
+    ///   stream the request arrived on (SCE_MESH.md section 10.4.4).
+    ///   SCE defines the framing, so there is no foreign slot to fill —
+    ///   the envelope *is* the protocol.
+    /// - DDS: the envelope published on the reply topic paired with the
+    ///   request topic (SCE_MESH.md section 8.2), i.e. the leg a normal
+    ///   reply already travels.
+    ///
+    /// What every arm carries is identical, and that is the part the
+    /// author sees: a `MeshEnvelope` whose `rpc_status` is
+    /// `DeadlineExceeded`. A requester that used
     /// `<invoke type="sce:mesh-rpc">` raises `error.invoke.<id>` with
     /// that status rather than the `Unavailable` a vanished peer
     /// produces; a plain `<send>` requester sees the server-authored
@@ -136,6 +150,27 @@ impl fmt::Display for ServerDeadlineNotice {
             Self::Unsupported => write!(f, "unsupported"),
             Self::DropSilently => write!(f, "silent drop"),
             Self::ActiveError => write!(f, "active error reply"),
+        }
+    }
+}
+
+impl ServerDeadlineNotice {
+    /// What the *requester* ends up observing, phrased for a build-time
+    /// diagnostic. [`fmt::Display`] names the mechanism ("silent drop");
+    /// this names the consequence, which is the half an author acts on
+    /// when choosing a transport for a server that needs a bounded
+    /// response.
+    pub fn requester_outcome(self) -> &'static str {
+        match self {
+            Self::Unsupported => "nothing — no deadline is armed",
+            Self::DropSilently => {
+                "the stored request handle is released and the requester \
+                 infers RpcStatus::Unavailable from the drop"
+            }
+            Self::ActiveError => {
+                "an error reply carrying RpcStatus::DeadlineExceeded, so the \
+                 requester can tell a server that gave up from one that vanished"
+            }
         }
     }
 }
@@ -424,6 +459,14 @@ pub struct TransportDescriptor {
     ///   defines `MT_ERROR` (0x81) with `E_TIMEOUT` (0x06) and vsomeip
     ///   exposes both through `message_base::set_message_type` /
     ///   `set_return_code`, so expiry is reported rather than inferred.
+    /// - `custom_tcp`: [`ServerDeadlineNotice::ActiveError`]. The
+    ///   stashed `pending_server_links_` entry IS the return leg, so the
+    ///   notice goes back on the stream that carried the request —
+    ///   the same one-shot resource a normal reply consumes.
+    /// - `dds`: [`ServerDeadlineNotice::ActiveError`]. The notice is
+    ///   published on the reply topic derived from the request topic,
+    ///   after the admitted correlation is erased so a late engine
+    ///   response cannot publish a second answer.
     /// - `zenoh`: [`ServerDeadlineNotice::DropSilently`]. A
     ///   `zenoh::Query` has `reply` but no server-authored failure
     ///   channel; dropping it is the only signal available.
@@ -432,16 +475,11 @@ pub struct TransportDescriptor {
     ///   leg is a direct call on the same stack.
     /// - `shm` / `can`: [`ServerDeadlineNotice::Unsupported`]. Neither
     ///   carries `RequestReply`, so there is no server arm at all.
-    /// - `custom_tcp` / `dds`: [`ServerDeadlineNotice::Unsupported`].
-    ///   Both hold server-side request state that a deadline could
-    ///   bound (`pending_server_links_` / `pending_server_correlations_`)
-    ///   and both could carry an `ActiveError` notice — custom_tcp
-    ///   frames SCE's own envelope on the reply stream, and dds has a
-    ///   reply topic. The dimension reads `Unsupported` because no
-    ///   generated arm arms a deadline on them today; per the
-    ///   `supports_machine_lifetime_subscribe` precedent this flag's
-    ///   contract is "realised end-to-end", not "the mechanism looks
-    ///   generic".
+    ///
+    /// Per the `supports_machine_lifetime_subscribe` precedent this
+    /// flag's contract is "realised end-to-end", not "the mechanism
+    /// looks generic": a value above `Unsupported` means a generated arm
+    /// arms the deadline and a fixture drives it.
     ///
     /// Consumed by `deploy::validate_server_response_deadline`: a
     /// machine declaring the knob on an `Unsupported` transport is
@@ -766,12 +804,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // feature. A `reply_from:` wider than the binding's own target
         // is therefore rejected at parse time.
         supports_cross_target_reply: false,
-        // `pending_server_links_` holds a reply stream a deadline could
-        // bound, and SCE frames its own envelope on that stream, so an
-        // `ActiveError` notice is reachable here. No generated arm arms
-        // it today; the flag states what is realised, not what is
-        // reachable.
-        server_deadline_notice: ServerDeadlineNotice::Unsupported,
+        // `pending_server_links_` holds the reply stream the deadline
+        // bounds, and the notice is SCE's own envelope framed on that
+        // same stream — the request's return leg (SCE_MESH.md section
+        // 10.4.4), so it reaches the requester over a connection that is
+        // by construction the one that asked. No protocol error slot is
+        // involved because custom_tcp defines the framing itself.
+        server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -829,10 +868,13 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // pair — has no entry its reply could land in. Same conclusion
         // as zenoh and custom_tcp, reached from the topic model.
         supports_cross_target_reply: false,
-        // `pending_server_correlations_` plus the paired reply topic
-        // would carry a timeout notice, on the same "reachable but not
-        // realised" footing as custom_tcp.
-        server_deadline_notice: ServerDeadlineNotice::Unsupported,
+        // The notice is published on the reply topic paired with the
+        // request topic (SCE_MESH.md section 8.2) — the same leg a
+        // normal reply takes, so a requester needs no second reader to
+        // observe it. Expiry
+        // erases the admitted correlation first, which is what keeps the
+        // notice one-shot against a late engine response.
+        server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -901,6 +943,48 @@ pub fn supports(transport: &str, capability: TransportCapability) -> bool {
 /// drift between the two is obvious in code review.
 pub fn implemented_names() -> &'static [&'static str] {
     &["local", "shm", "someip", "zenoh", "custom_tcp", "dds"]
+}
+
+/// Every transport name the registry resolves, in `lookup()` dispatch
+/// order. Unlike [`implemented_names`] this includes transports whose
+/// `implemented` flag is still `false` — it answers "what does the
+/// registry know about", not "what can codegen emit".
+///
+/// Exists so a diagnostic can enumerate a *dimension* of the registry
+/// (see [`server_deadline_transports`]) instead of restating it in prose
+/// that goes stale the moment an arm lands.
+pub fn known_names() -> &'static [&'static str] {
+    &[
+        "local",
+        "shm",
+        "someip",
+        "zenoh",
+        "custom_tcp",
+        "dds",
+        "can",
+    ]
+}
+
+/// Transports whose server arm realises `server.response_deadline_ms`,
+/// each paired with the notice its expiry emits.
+///
+/// Consumed by `deploy`'s rejection diagnostic: when the knob is
+/// declared on a transport that cannot arm it, the message names the
+/// alternatives by reading the registry rather than by carrying a
+/// hand-maintained list. A new arm therefore appears in the diagnostic
+/// the moment its descriptor changes, and an arm that regresses to
+/// `Unsupported` disappears from it — neither needs a second edit.
+pub fn server_deadline_transports() -> Vec<(&'static str, ServerDeadlineNotice)> {
+    known_names()
+        .iter()
+        .filter_map(|name| {
+            let d = lookup(name)?;
+            match d.server_deadline_notice {
+                ServerDeadlineNotice::Unsupported => None,
+                notice => Some((*name, notice)),
+            }
+        })
+        .collect()
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -1479,15 +1563,32 @@ mod tests {
     }
 
     #[test]
+    fn custom_tcp_answers_a_server_deadline_on_the_request_stream() {
+        // custom_tcp defines its own framing, so there is no foreign
+        // error slot to fill — the notice is SCE's own envelope written
+        // back on the stashed `pending_server_links_` stream, which is
+        // by construction the connection that asked.
+        let d = lookup("custom_tcp").expect("known");
+        assert_eq!(d.server_deadline_notice, ServerDeadlineNotice::ActiveError);
+    }
+
+    #[test]
+    fn dds_answers_a_server_deadline_on_the_reply_topic() {
+        // The reply topic is derived from the request topic, so the
+        // notice travels the leg a normal reply already travels and the
+        // requester needs no second reader to observe it.
+        let d = lookup("dds").expect("known");
+        assert_eq!(d.server_deadline_notice, ServerDeadlineNotice::ActiveError);
+    }
+
+    #[test]
     fn transports_with_no_realised_deadline_arm_say_so() {
-        // custom_tcp and dds both park server-side request state a
-        // deadline could bound, and both could carry a notice — but no
-        // generated arm arms one, and the flag's contract is "realised
-        // end-to-end" rather than "the mechanism looks generic" (the
-        // `supports_machine_lifetime_subscribe` precedent). Declaring
-        // the knob on them is rejected at parse time instead of being
-        // accepted into a router that ignores it.
-        for name in ["local", "shm", "custom_tcp", "dds", "can"] {
+        // `local` has no stored request handle to strand — its reply leg
+        // is a direct call on the same stack. `shm` and `can` carry no
+        // RequestReply capability at all, so there is no server arm to
+        // bound. Declaring the knob on them is rejected at parse time
+        // instead of being accepted into a router that ignores it.
+        for name in ["local", "shm", "can"] {
             let d = lookup(name).expect("known");
             assert_eq!(
                 d.server_deadline_notice,

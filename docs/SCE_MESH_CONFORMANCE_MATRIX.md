@@ -11,10 +11,10 @@ have observable backing, and so the drift between spec promises and ctest
 evidence is named rather than implied.
 
 ⚠ **The per-fixture table is itself behind the suite.** `ctest --test-dir build
--R '^mesh_' -N` reports **107** fixtures; the buckets below enumerate 47. The
+-R '^mesh_' -N` reports **109** fixtures; the buckets below enumerate 47. The
 shortfall is unaudited rather than uncovered — fixtures have been added without
 a matching row, so the table under-reports coverage rather than over-reporting
-it. Reconciling the remaining rows is a standalone pass over all 107; until it
+it. Reconciling the remaining rows is a standalone pass over all 109; until it
 runs, read the buckets as a floor and the section-coverage summary below as the
 load-bearing claim. A row's absence here is not evidence that a section is
 unverified.
@@ -125,7 +125,7 @@ and delta"; `S` = spec-only, no runtime evidence.
 | §8.2 Transport capability matrix | P | Negative path `mesh_pattern_capability_rejection` + positive paths per transport (`mesh_{someip,zenoh}_multipattern_compile_verification`). Not every (transport, pattern) cell is individually asserted. |
 | §8.3 Field get/set/notify | F (Zenoh, SOME/IP) | `mesh_zenoh_server_runtime`, `mesh_zenoh_eventgroup_engine_driven`, `mesh_someip_runtime`, `mesh_someip_eventgroup_engine_driven`. |
 | §9.5 mesh-rpc lifecycle | F | Correlation (`mesh_invoke_correlation_verification`), runtime (`mesh_invoke_rpc_runtime_verification`), deadline (`mesh_invoke_deadline_expiry_verification`), cancel (`mesh_invoke_cancel_abort_verification`), per-transport engine-driven variants. |
-| §9.5.1 Server response deadline | F (SOME/IP, Zenoh) | Both realised arms have a runtime fixture — `mesh_someip_server_deadline_verification` (leak closure, the `MT_ERROR` / `E_TIMEOUT` notice reaching the requester as `error.rpc.deadline`, cancel-before-erase, shutdown-in-flight) and `mesh_zenoh_server_timeout_verification` (leak closure, cancel, shutdown). `mesh_server_response_deadline_codegen` (4 Rust tests) pins the emission split so a zenoh arm cannot silently grow the notice nor a SOME/IP arm silently lose it, plus the client-side gates that would turn the notice back into silence. Parse-time acceptance/rejection per transport and the shared floor are covered by the `server_response_deadline_*` unit tests in `mesh::deploy`; the registry classification by `mesh::transport` tests. `Unsupported` transports have no arm to test — their coverage is the rejection. |
+| §9.5.1 Server response deadline | F (SOME/IP, custom_tcp, DDS, Zenoh) | All four realised arms have a runtime fixture. The three `ActiveError` arms each run the same four scenarios — leak closure, the notice reaching the requester as `error.rpc.deadline` (and never as the declared reply event), cancel-before-erase, shutdown-in-flight — over their own carrier: `mesh_someip_server_deadline_verification` (`MT_ERROR` / `E_TIMEOUT`), `mesh_tcp_server_deadline_verification` (the request's own stream), `mesh_dds_server_deadline_verification` (the paired reply topic). `mesh_zenoh_server_timeout_verification` covers the `DropSilently` arm (leak closure, cancel, shutdown), which has no notice to observe. `mesh_server_response_deadline_codegen` (8 Rust tests) pins the emission split so the zenoh arm cannot silently grow a notice nor an active arm silently lose one, plus the client-side gates that would turn a notice back into silence. Parse-time acceptance/rejection per transport and the shared floor are covered by the `server_response_deadline_*` unit tests in `mesh::deploy`; the registry classification by `mesh::transport` tests. `Unsupported` transports have no arm to test — their coverage is the rejection. |
 | §9.6 full remote `<invoke type="scxml">` | S | Session F scope (§16.9). Zero fixtures. |
 | §10.4 Transport Contract (per-sender FIFO, at-least-once, duplicate tolerance, fault signal) | P | FIFO: `mesh_custom_tcp_runtime_verification` (wire-level, 100 envelopes). Duplicate tolerance: §10.5 fixtures. Fault signal: bucket 5 fixtures. At-least-once: implied by underlying transport (TCP, SOME/IP-TCP, Zenoh reliable); no cross-process retry test. |
 | §10.4.1 Transport lifecycle | P | `connect()` / `send()` / `shutdown()` exercised via the runtime fixtures; `reconnect()` path not directly tested. |
@@ -168,7 +168,7 @@ exist in the tree as of commit `1c414320`:
   `mesh/partition-wire21-custom-tcp-unimplemented` diagnostic, so the
   configuration gap surfaces at build instead of as a runtime throw.
 
-None of the 44 mesh ctest fixtures satisfy the §16.8 architecture, because
+None of the mesh ctest fixtures satisfy the §16.8 architecture, because
 none spawn per-partition OS processes and none cross-compare a distributed
 run against a single-process reference run over W3C IRP documents. The
 fixtures verify mesh transport primitives and runtime machinery the IRP

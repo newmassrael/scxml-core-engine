@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.5 server response deadline verification fixture (custom_tcp).
+
+     Motor receives `service.request.compute_force` via its custom_tcp
+     server binding. Whether the engine emits the paired
+     `service.response.compute_force` is decided by the test at runtime,
+     not by the SCXML model — the test binds motor to a recorder engine
+     that never replies, so the deadline is the only thing that can
+     retire the stashed `pending_server_links_` entry.
+
+     The SCXML itself only exists so the topology analyzer detects the
+     (service.request.compute_force, service.response.compute_force) RPC
+     pair and sce-build emits the server-side custom_tcp binding.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="motor_tcp_server_deadline" initial="ready">
+    <state id="ready">
+        <transition event="service.request.compute_force" target="computing"/>
+    </state>
+    <state id="computing">
+        <onentry>
+            <raise event="service.response.compute_force"/>
+        </onentry>
+        <transition target="ready"/>
+    </state>
+</scxml>

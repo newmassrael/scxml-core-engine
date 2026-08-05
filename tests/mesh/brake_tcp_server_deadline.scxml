@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §9.5 server response deadline verification fixture (client half,
+     custom_tcp arm).
+
+     Brake is the requesting peer. The `<send>` below is what makes the
+     topology analyser emit a custom_tcp client binding, which registers
+     the correlation entry the server's timeout notice has to retire —
+     without renaming it to the declared reply event, because a renamed
+     failure reports a false success on an empty payload.
+
+     Mirrors brake_someip_server_deadline.scxml verbatim apart from the
+     target name: the SCXML shape is held constant across the transport
+     arms so a behavioural difference is attributable to the transport.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       datamodel="null" name="brake_tcp_server_deadline" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="waiting"/>
+    </state>
+    <state id="waiting">
+        <onentry>
+            <!-- RpcRequest. The paired reply event
+                 "service.response.compute_force" is inferred by the
+                 topology analyser. -->
+            <send target="#motor_tcp_server_deadline" event="service.request.compute_force"/>
+        </onentry>
+        <transition event="service.response.compute_force" target="idle"/>
+    </state>
+</scxml>

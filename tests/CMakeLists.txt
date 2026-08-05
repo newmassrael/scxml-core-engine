@@ -3664,6 +3664,76 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         TIMEOUT 60
         RESOURCE_LOCK sce_mesh_tcp_multi_${SCE_TEST_TCP_MULTI_PORT})
 
+    # ── custom_tcp server response deadline (SCE Mesh §9.5) ──
+    # The custom_tcp arm of the deadline matrix. Where SOME/IP fills a
+    # slot the protocol reserved (MT_ERROR / E_TIMEOUT), custom_tcp owns
+    # its own framing — so what makes the notice correct is not a field
+    # but its route: back on the stream the request arrived on, which is
+    # exactly the handle the deadline releases.
+    set(MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_tcp_server_deadline_generated")
+
+    # Distinct from the two custom_tcp ports above so all three fixtures
+    # can run concurrently; each takes its own RESOURCE_LOCK bucket.
+    set(SCE_TEST_TCP_SERVER_DEADLINE_PORT "55841" CACHE STRING
+        "TCP loopback port for the custom_tcp server-deadline test (IANA dynamic range)")
+
+    file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
+        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}" "${MESH_TEST_DIR}")
+    configure_file(
+        "${MESH_TEST_DIR}/deploy_tcp_server_deadline.yaml.in"
+        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
+        @ONLY)
+
+    foreach(tcp_sd_machine brake_tcp_server_deadline motor_tcp_server_deadline)
+        add_custom_command(
+            OUTPUT "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_sm.h"
+                   "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${tcp_sd_machine}.scxml"
+                    -l cpp -o "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}"
+                    --deploy "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
+                    --write-deps "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_tcp_server_deadline.scxml"
+                    "${MESH_TEST_DIR}/motor_tcp_server_deadline.scxml"
+                    "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/deploy_tcp_server_deadline.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/${tcp_sd_machine}_sm.h.d"
+            COMMENT "Mesh custom_tcp server deadline: Generating ${tcp_sd_machine}_sm.h + _transport.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_tcp_server_deadline_test
+        mesh/test_mesh_tcp_server_deadline.cpp
+        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/brake_tcp_server_deadline_sm.h"
+        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/brake_tcp_server_deadline_transport.h"
+        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/motor_tcp_server_deadline_sm.h"
+        "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}/motor_tcp_server_deadline_transport.h")
+
+    target_include_directories(mesh_tcp_server_deadline_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}
+            ${MESH_TEST_DIR}
+    )
+
+    target_link_libraries(mesh_tcp_server_deadline_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+            pthread
+    )
+
+    target_compile_features(mesh_tcp_server_deadline_test PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_tcp_server_deadline_test)
+
+    add_test(NAME mesh_tcp_server_deadline_verification
+             COMMAND mesh_tcp_server_deadline_test)
+    set_tests_properties(mesh_tcp_server_deadline_verification PROPERTIES
+        TIMEOUT 60
+        RESOURCE_LOCK sce_mesh_tcp_server_deadline_${SCE_TEST_TCP_SERVER_DEADLINE_PORT})
+
     # ── Generated mesh code compiles at C++17 (SCE_MESH.md §10.4) ──
     # `sce_mesh_common` declares `cxx_std_17` PUBLIC, so every consumer
     # linking it may build at 17 — but `target_compile_features` states a
@@ -7704,6 +7774,55 @@ if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
     apply_sce_test_policies(mesh_dds_multipattern_test)
     add_test(NAME mesh_dds_multipattern COMMAND mesh_dds_multipattern_test)
     set_tests_properties(mesh_dds_multipattern PROPERTIES
+        TIMEOUT 90
+    )
+
+    # ── DDS server response deadline (SCE Mesh §9.5) ──
+    # The DDS arm of the deadline matrix. Sibling of the SOME/IP and
+    # custom_tcp arms; what it adds is the transport that parks the least
+    # state — only the admitted correlation, because the reply rides the
+    # paired topic rather than the request — so erase-before-publish IS
+    # the one-shot guarantee here and has to be proven, not inferred.
+    set(MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_server_deadline_generated")
+
+    foreach(_dds_sd_machine brake_dds_server_deadline motor_dds_server_deadline)
+        add_custom_command(
+            OUTPUT "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h"
+                   "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml" -l cpp
+                    -o "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
+                    --write-deps "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml"
+                    "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
+                    "${MESH_TEST_DIR}/brake_dds_server_deadline.scxml"
+                    "${MESH_TEST_DIR}/motor_dds_server_deadline.scxml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
+            COMMENT "Mesh dds server deadline: Generating ${_dds_sd_machine}_sm.h + _transport.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_dds_server_deadline_test
+        mesh/test_mesh_dds_server_deadline.cpp
+        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_sm.h"
+        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_transport.h"
+        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_sm.h"
+        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_transport.h"
+    )
+    target_include_directories(mesh_dds_server_deadline_test
+        PRIVATE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(mesh_dds_server_deadline_test
+        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+    )
+    target_compile_features(mesh_dds_server_deadline_test PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_dds_server_deadline_test)
+    add_test(NAME mesh_dds_server_deadline_verification COMMAND mesh_dds_server_deadline_test)
+    set_tests_properties(mesh_dds_server_deadline_verification PROPERTIES
         TIMEOUT 90
     )
 endif()
