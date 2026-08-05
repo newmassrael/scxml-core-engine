@@ -1155,11 +1155,11 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/cache-pre-arm-invalidate-missing-on-speculative-core")]
     PoolCachePreArmInvalidateMissingOnSpeculativeCore,
 
-    // ── §synth-5-E pool kind Layer 1 ownership (SCE Protocol-Synthesis RFC §synth-5-E,
-    //    item B7). Layer 1 typestate-attribute family is exposed to
+    // ── §synth-5-E pool kind ownership contract (SCE Protocol-Synthesis RFC §synth-5-E,
+    //    item B7). The attribute family is exposed to
     //    consumer builds through `backends/c/runtime/include/sce/sample.h`,
     //    pulled in by the generated pool header. The diagnostic catches
-    //    a future template edit that drops the `#include` — Layer 1
+    //    a future template edit that drops the `#include` — the
     //    coverage would silently disappear without it. Stage =
     //    Validation. Of the related `pool/...` family,
     //    `pool/sample-take-without-stage-pool`,
@@ -1170,7 +1170,7 @@ pub enum DiagnosticCode {
     //    consumer needs them (they gate on clang-tidy build wiring and
     //    the §synth-5-I `<sce:call>` intrinsic registry). ──
     /// `<sce/sample.h>` runtime header pull-through (the producer of
-    /// the Layer 1 `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
+    /// the `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
     /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` /
     /// `SCE_WARN_UNUSED` family) is missing from the generated C11
     /// pool header. Codegen-invariant violation — fires only when the
@@ -2729,7 +2729,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolCacheMaintenanceMisplaced,
         PoolSpeculativePrefetchFlagMissing,
         PoolCachePreArmInvalidateMissingOnSpeculativeCore,
-        // BufferPool §synth-5-E Layer 1 ownership pull-through (SCE Protocol-Synthesis RFC §synth-5-E, item B7)
+        // BufferPool §synth-5-E ownership pull-through (SCE Protocol-Synthesis RFC §synth-5-E, item B7)
         PoolSampleTypestateAttributesDisabled,
         // Sample API §synth-5-E sample-callback application-layer ownership (SCE Protocol-Synthesis RFC §synth-5-E)
         PoolSampleTakeWithoutStagePool,
@@ -3120,7 +3120,7 @@ impl DiagnosticCode {
             | LinkClassUnsupportedOnTarget
             | LinkPoolSlotSmallerThanFramerMax => Some("SCE Protocol-Synthesis RFC §5.C"),
 
-            // ── BufferPool §synth-5-E DMA-aligned slot table + Layer 1
+            // ── BufferPool §synth-5-E DMA-aligned slot table + the
             //    ownership pull-through + sample-callback Sample API
             //    application-layer ownership (item B7) ──────────────
             MemPoolSectionConflict
@@ -9969,14 +9969,14 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f3d92b158c62567b","code":"mem/inter-pool-padding-not-emitted","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
-            // ── §synth-5-E pool header Layer 1 ownership pull-through self-check ─
+            // ── §synth-5-E pool header ownership pull-through self-check ─
             (
                 "forge/pool-sample-typestate-attributes-disabled",
                 ValidationError::BufferPoolSampleTypestateAttributesDisabled {
                     name: "rx_pool_sram1".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:43b2c0bb267f73f5","code":"pool/sample-typestate-attributes-disabled","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+                r#"{"v":1,"id":"fnv1a:43b2c0bb267f73f5","code":"pool/sample-typestate-attributes-disabled","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated C11 header is missing the `#include <sce/sample.h>` directive — the ownership contract the analyzer and defensive layers rest on will be absent from consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             // ── §synth-5-E C5 cache-maintenance validation: alignment vs platform.dcache_line_size ─
             (
