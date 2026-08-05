@@ -882,3 +882,36 @@ set_tests_properties(c11_headers_are_cxx_consumable PROPERTIES
     TIMEOUT 300
     LABELS "unit;c11"
 )
+
+# ============================================================
+# Aggregate build target for the whole C11 test surface.
+# ============================================================
+#
+# `ctest -L c11` runs 218 tests across 215 separate executables. Building
+# them needs a target: `cmake --build build` with no target builds the
+# entire project — the C++ engine, mesh, forge, the examples — which is
+# most of the cost for a lane that only exercises the C backend, and the
+# C backend links none of it (`sce_c_runtime` + `sce_c_runtime_posix`,
+# plus lua54 / sce_c_base / sce_c_scripting where a fixture needs them).
+#
+# The dependency list is derived from the directory rather than written
+# out. A hand-maintained list of 215 names would be wrong the first time
+# someone adds a fixture and forgets it, and the failure mode is the one
+# this whole lane exists to remove: the test is registered, the binary is
+# never built, and the lane reports on a smaller set than its name
+# claims. `BUILDSYSTEM_TARGETS` cannot omit a target defined here.
+#
+# Placed at the end of the file so every `add_executable` above it has
+# already run — a target defined after this block would be missed, which
+# is why nothing may be appended below.
+get_property(_sce_c_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+add_custom_target(sce_c11_tests
+    COMMENT "Building the C11 test surface (ctest -L c11)"
+)
+foreach(_sce_c_target ${_sce_c_test_targets})
+    if(NOT _sce_c_target STREQUAL sce_c11_tests)
+        add_dependencies(sce_c11_tests ${_sce_c_target})
+    endif()
+endforeach()
+list(LENGTH _sce_c_test_targets _sce_c_test_target_count)
+message(STATUS "sce_c11_tests aggregates ${_sce_c_test_target_count} target(s)")
