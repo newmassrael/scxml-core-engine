@@ -616,3 +616,64 @@ fn which(tool: &str) -> Option<PathBuf> {
         Some(PathBuf::from(p))
     }
 }
+
+/// SCE Protocol-Synthesis RFC §synth-5-E lines 1367-1378 + 1462-1484:
+/// the Layer 3 / 3.5 ownership boundary must enclose the host callback
+/// in the generated delivery function.
+///
+/// This is the position that makes the layers work at all. Clang's
+/// consumed analysis stops at the indirect call into host code — and
+/// on the C API it never started, since the typestate attributes do
+/// not apply there. The generated dispatch is the one place SCE still
+/// controls when the borrow crosses into code it did not write, so the
+/// enter/exit pair has to bracket that call rather than sit anywhere
+/// else in the function.
+///
+/// Ordering is the assertion: an exit emitted before the callback
+/// would poison a payload the handler is about to read, and an enter
+/// emitted after it would validate a borrow that has already been
+/// handed over.
+#[test]
+fn c11_deliver_function_brackets_the_callback_with_the_ownership_boundary() {
+    let (_header, source) = render_c11(C_CALLBACK_FIXTURE);
+
+    let enter = source
+        .find("sce_ownership_callback_enter(sample)")
+        .expect("delivery function must open an ownership scope");
+    let callback = source
+        .find("app_on_scout(sample, sm);")
+        .expect("callback dispatch");
+    let exit = source
+        .find("sce_ownership_callback_exit(&_own, sample)")
+        .expect("delivery function must close the ownership scope");
+
+    assert!(
+        enter < callback && callback < exit,
+        "the boundary must bracket the callback (enter={enter}, \
+         callback={callback}, exit={exit}):\n{source}"
+    );
+
+    // Exactly one pair per delivery function: a duplicated enter would
+    // re-read a borrow already validated, and a duplicated exit would
+    // poison twice — the second time against memory the pool may have
+    // handed to another slot holder.
+    assert_eq!(
+        source.matches("sce_ownership_callback_enter(").count(),
+        1,
+        "exactly one scope open per delivery function:\n{source}"
+    );
+    assert_eq!(
+        source.matches("sce_ownership_callback_exit(").count(),
+        1,
+        "exactly one scope close per delivery function:\n{source}"
+    );
+
+    // Both sides sit behind the same switch, so a build with the
+    // layers off gets neither half — a lone enter would leave `_own`
+    // set and unused, which `-Werror` consumers reject.
+    assert_eq!(
+        source.matches("#if SCE_OWNERSHIP_CHECKED").count(),
+        2,
+        "enter and exit must each be gated on SCE_OWNERSHIP_CHECKED:\n{source}"
+    );
+}

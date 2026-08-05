@@ -286,9 +286,18 @@ static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
 {{ layer2["_link_arm_tx"] }}
 static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
     if (handle == NULL) return false;
-    if (handle->state != SCE_SLOT_CPU_MUT) return false;
-    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return false;
-    if ({{ snake_name }}_slot_states[handle->idx] != SCE_SLOT_CPU_MUT) return false;
+    if (handle->state != SCE_SLOT_CPU_MUT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_link_arm_tx: handle is not cpu-mut (reused after a prior transition?)");
+        return false;
+    }
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_link_arm_tx: handle index out of range");
+        return false;
+    }
+    if ({{ snake_name }}_slot_states[handle->idx] != SCE_SLOT_CPU_MUT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_link_arm_tx: pool state disagrees with the handle tag");
+        return false;
+    }
 {% if cache_maintain %}
     /* C5 cache-clean before TX descriptor publish (spec lines 1186-1188). */
     sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx],
@@ -313,10 +322,19 @@ static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
 static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
     if (handle == NULL) return false;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
+        /* The double-take shape: a handle already invalidated by a
+           prior return / arm is being returned again. */
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_pool_return: handle is not CPU-owned (returned twice?)");
         return false;
     }
-    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return false;
-    if ({{ snake_name }}_slot_states[handle->idx] != handle->state) return false;
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_pool_return: handle index out of range");
+        return false;
+    }
+    if ({{ snake_name }}_slot_states[handle->idx] != handle->state) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_pool_return: pool state disagrees with the handle tag");
+        return false;
+    }
     {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_FREE;
     handle->state = SCE_SLOT_INVALID;
     handle->idx = SIZE_MAX;
@@ -336,9 +354,14 @@ static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
 static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t *handle) {
     if (handle == NULL) return NULL;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
+        /* The use-after shape: reading a slot the CPU no longer owns. */
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_read: slot is not CPU-visible (read after return / arm?)");
         return NULL;
     }
-    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return NULL;
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_read: handle index out of range");
+        return NULL;
+    }
     return {{ snake_name }}_storage[handle->idx];
 }
 
@@ -350,8 +373,17 @@ static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t 
 {{ layer2["_slot_write"] }}
 static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
     if (handle == NULL) return NULL;
-    if (handle->state != SCE_SLOT_CPU_MUT) return NULL;
-    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) return NULL;
+    if (handle->state != SCE_SLOT_CPU_MUT) {
+        /* `cpu-ref` is shared-read per spec line 1135 and reaches here
+           too: mutating a slot another holder is reading is the same
+           ownership violation as writing one the DMA owns. */
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_write: slot is not cpu-mut (write to a shared or DMA-owned slot?)");
+        return NULL;
+    }
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_write: handle index out of range");
+        return NULL;
+    }
     return {{ snake_name }}_storage[handle->idx];
 }
 

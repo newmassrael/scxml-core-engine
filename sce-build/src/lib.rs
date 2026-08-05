@@ -9735,28 +9735,43 @@ topology:
         None
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E: Clang `-Wconsumed`
-    /// `-Wthread-safety` rejects three Layer 1 typestate misuse
-    /// patterns against the runtime header
-    /// `backends/c/runtime/include/sce/sample.h`:
+    /// SCE Protocol-Synthesis RFC §synth-5-E: Layer 1 as the spec
+    /// describes it does not exist on this API's shape. This test pins
+    /// the measured behaviour, not the claim.
     ///
-    /// 1. **use-after-take** — `sce_sample_payload` (callable_when
-    ///    "unconsumed") on a sample whose typestate has already
-    ///    transitioned to "consumed" by a prior `sce_sample_take`.
-    /// 2. **double-take** — `sce_sample_take` (param_typestate
-    ///    "unconsumed") on a sample whose typestate has already been
-    ///    consumed by a prior take.
-    /// 3. **warn_unused_result ignored** — `sce_sample_take` carries
-    ///    `__attribute__((warn_unused_result))`; discarding the
-    ///    `sce_result_t` return surfaces under `-Werror=unused-result`.
+    /// Measured against Clang 19.1.7:
     ///
-    /// All three drivers are compiled with `-Werror=consumed
-    /// -Werror=unused-result` so each diagnostic flips to a hard
-    /// failure. The test asserts each compilation FAILS — the
-    /// diagnostic firing IS the success signal. Skips informatively
-    /// on build environments without Clang.
+    /// * `consumable` applies to C++ *classes* — dropped on a C struct
+    ///   with `-Wignored-attributes`.
+    /// * `callable_when` / `set_typestate` apply to *member* functions
+    ///   — dropped on a free function in C and in C++ alike.
+    /// * `param_typestate` requires an identifier; the string form the
+    ///   spec writes (`param_typestate("unconsumed")`) is a hard error
+    ///   in C++ and dropped in C.
+    ///
+    /// So `-Wconsumed` produces nothing for these declarations, and
+    /// two things must hold:
+    ///
+    /// 1. the typestate misuse patterns **compile** — no diagnostic
+    ///    exists to catch them, which is exactly why Layer 2 and
+    ///    Layer 3 / 3.5 carry the whole contract on this backend;
+    /// 2. the `warn_unused_result` pattern is still **rejected** — that
+    ///    attribute is the one member of the original five that works.
+    ///
+    /// The previous version of this test asserted all three were
+    /// rejected, and passed. It was measuring its own fixture: the
+    /// attribute-syntax errors made compilation fail, and the echoed
+    /// source line containing `"unconsumed"` satisfied its substring
+    /// check for `"consumed"`. Both signals it read were artefacts.
+    ///
+    /// If case 1 ever starts failing, Clang has gained C support for
+    /// the family — at which point `SCE_OWNERSHIP_ATTRS_AVAILABLE`'s
+    /// pin to 0 and the Layer 3.5 default that reads it both need
+    /// revisiting. That is the drift this direction guards.
+    ///
+    /// Skips informatively on build environments without Clang.
     #[test]
-    fn sample_h_layer1_typestate_clang_rejects_misuse() {
+    fn sample_h_layer1_typestate_is_inert_in_c_and_only_warn_unused_survives() {
         let Some(clang) = locate_clang_binary() else {
             eprintln!(
                 "sample_h_layer1_typestate_clang_rejects_misuse: skipped — \
@@ -9771,16 +9786,15 @@ topology:
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let runtime_include = crate_dir.join("../backends/c/runtime/include");
 
-        // Each entry: (case-name, driver source, substring stderr must
-        // contain so a diagnostic regression on the wrong axis is
-        // visible). All three drivers share the same prologue + struct
-        // bodies so `sce_sample_t` can be instantiated locally without
-        // a runtime crate link.
+        // Each entry: (case-name, driver source, must_be_rejected).
+        // All three drivers share the same prologue + struct bodies so
+        // `sce_sample_t` can be instantiated locally without a runtime
+        // crate link.
         let prologue = r#"#include <sce/sample.h>
 struct sce_keyexpr_t { int dummy; };
 struct sce_timestamp_t { uint64_t lo, hi; };
 "#;
-        let cases: &[(&str, &str, &str)] = &[
+        let cases: &[(&str, &str, bool)] = &[
             (
                 "use-after-take",
                 r#"
@@ -9796,7 +9810,9 @@ int main(void) {
     return 0;
 }
 "#,
-                "consumed",
+                // No diagnostic exists: callable_when is dropped on a
+                // free function, so the use-after-take compiles.
+                false,
             ),
             (
                 "double-take",
@@ -9812,7 +9828,8 @@ int main(void) {
     return 0;
 }
 "#,
-                "consumed",
+                // Same reason: param_typestate never attached.
+                false,
             ),
             (
                 "warn-unused-result-ignored",
@@ -9828,11 +9845,13 @@ int main(void) {
     return 0;
 }
 "#,
-                "unused",
+                // warn_unused_result is real on both compilers and
+                // both languages; this one must still be rejected.
+                true,
             ),
         ];
 
-        for (case, body, stderr_substr) in cases {
+        for (case, body, must_be_rejected) in cases {
             let tmp = std::env::temp_dir().join(format!(
                 "sce-build-eps-clang-reject-{}-{}",
                 std::process::id(),
@@ -9863,19 +9882,43 @@ int main(void) {
             let stderr = String::from_utf8_lossy(&out.stderr);
             let _ = std::fs::remove_dir_all(&tmp);
 
-            assert!(
-                !out.status.success(),
-                "clang must REJECT the {case} misuse pattern under \
-                 `-Werror=consumed -Werror=unused-result`; compilation \
-                 succeeded which means Layer 1 typestate is silently \
-                 inert. stderr:\n{stderr}",
-            );
-            assert!(
-                stderr.to_lowercase().contains(stderr_substr),
-                "clang's diagnostic for {case} must mention `{stderr_substr}` \
-                 so a future regression on the wrong axis is visible. \
-                 stderr:\n{stderr}",
-            );
+            if *must_be_rejected {
+                assert!(
+                    !out.status.success(),
+                    "clang must REJECT the {case} pattern: it rests on \
+                     `warn_unused_result`, which is the one attribute of \
+                     the original family that applies to these \
+                     declarations. Compilation succeeding means \
+                     SCE_WARN_UNUSED stopped expanding. stderr:\n{stderr}",
+                );
+                assert!(
+                    stderr.to_lowercase().contains("unused"),
+                    "the {case} diagnostic must be the unused-result one, \
+                     so a rejection arriving from some other axis is \
+                     visible. stderr:\n{stderr}",
+                );
+            } else {
+                assert!(
+                    out.status.success(),
+                    "the {case} pattern must COMPILE. Clang's consumed \
+                     analysis does not apply to this header's \
+                     free-function C API — `consumable` is class-only and \
+                     `callable_when` / `set_typestate` are member-only — \
+                     so no diagnostic exists to catch it, and Layers 2 and \
+                     3 / 3.5 carry the contract instead. A rejection here \
+                     means the family became applicable: revisit the \
+                     SCE_OWNERSHIP_ATTRS_AVAILABLE pin to 0 and the Layer \
+                     3.5 default that reads it. stderr:\n{stderr}",
+                );
+                assert!(
+                    !stderr.to_lowercase().contains("ignored-attributes"),
+                    "the {case} driver compiled but Clang warned that \
+                     attributes were ignored — the typestate family must \
+                     expand to nothing rather than to something the \
+                     compiler then drops, or `-Werror` consumers break. \
+                     stderr:\n{stderr}",
+                );
+            }
         }
     }
 
@@ -10408,6 +10451,196 @@ int main(void) {
             );
         }
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1367-1378 + 1462-1484:
+    /// the Layer 3 / 3.5 ownership boundary is compiled AND RUN under
+    /// gcc, so the assertions are about behaviour rather than about
+    /// text appearing in a header.
+    ///
+    /// Each case is a self-contained driver whose exit status encodes
+    /// which assertion failed; `SCE_OWNERSHIP_TRAP` is overridden to
+    /// count hits instead of aborting, which is what makes the trap
+    /// paths observable at all. The cases pin the three facts that
+    /// would otherwise be silently wrong: the default layer selection,
+    /// that Layer 3 actually writes the poison byte, and that Layer 3.5
+    /// actually does not.
+    #[test]
+    fn sample_h_layer3_ownership_boundary_behaves_under_gcc() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let include_dir = crate_dir.join("../backends/c/runtime/include");
+
+        // Overriding the trap before the include is the documented
+        // extension point; the header's `#ifndef` honours it.
+        let prologue = r#"static int sce_trap_hits = 0;
+#define SCE_OWNERSHIP_TRAP(msg) (sce_trap_hits++, (void)(msg))
+#include <sce/sample.h>
+struct sce_keyexpr_t { int dummy; };
+struct sce_timestamp_t { uint64_t lo, hi; };
+
+static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_t st) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    s.payload = buf;
+    s.payload_len = len;
+    s._slot.state = st;
+    s._slot.idx = 0;
+    return s;
+}
+"#;
+
+        // (case, extra gcc flags, body). Exit 0 = every assertion in
+        // the body held.
+        let cases: &[(&str, &[&str], &str)] = &[
+            (
+                // Host gcc has no `consumable` family, so Layer 1 is
+                // inert and 3.5 must pick up the slack. This is the
+                // case the spec's compiler-keyed default gets wrong
+                // on a Clang build with the attributes missing.
+                "defaults-where-layer1-is-inert",
+                &[],
+                r#"int main(void) {
+    _Static_assert(SCE_OWNERSHIP_ATTRS_AVAILABLE == 0, "host gcc has no consumable family");
+    _Static_assert(SCE_DEBUG_OWNERSHIP == 0, "Layer 3 must never default on");
+    _Static_assert(SCE_DEFENSIVE_OWNERSHIP == 1, "Layer 3.5 must default on where Layer 1 is inert");
+    _Static_assert(SCE_OWNERSHIP_CHECKED == 1, "the boundary must be instrumented");
+    return sce_trap_hits;
+}
+"#,
+            ),
+            (
+                "layer3-poisons-the-payload",
+                &["-DSCE_DEBUG_OWNERSHIP=1"],
+                r#"int main(void) {
+    /* Pin the spec's value, not the macro's own definition. Comparing
+       the buffer against SCE_OWNERSHIP_POISON_BYTE alone would let a
+       changed macro rewrite both sides of the check and stay green. */
+    _Static_assert(SCE_OWNERSHIP_POISON_BYTE == 0xDE, "spec line 1371 fixes the poison byte at 0xDE");
+    uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_CPU_REF);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    /* a well-behaved borrow-only callback runs here */
+    sce_ownership_callback_exit(&sc, &s);
+    if (sce_trap_hits != 0) return 2;
+    for (size_t i = 0; i < sizeof buf; ++i) {
+        if (buf[i] != 0xDE) return 3;
+    }
+    return 0;
+}
+"#,
+            ),
+            (
+                // The single behavioural difference between the two
+                // layers. If this ever poisons, Layer 3.5 has silently
+                // become a debug build in production.
+                "layer35-leaves-the-payload-intact",
+                &["-DSCE_DEFENSIVE_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_CPU_REF);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    sce_ownership_callback_exit(&sc, &s);
+    if (sce_trap_hits != 0) return 2;
+    for (size_t i = 0; i < sizeof buf; ++i) {
+        if (buf[i] != (uint8_t)(i + 1)) return 3;
+    }
+    return 0;
+}
+"#,
+            ),
+            (
+                // The RX path published a slot the peripheral still
+                // owns — payload bytes would be whatever DMA has
+                // written so far.
+                "enter-traps-on-a-dma-owned-slot",
+                &["-DSCE_DEBUG_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 0 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_DMA_BUSY_RX);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    (void)sc;
+    if (sce_trap_hits != 1) return 2;
+    return 0;
+}
+"#,
+            ),
+            (
+                // A callback that casts the `const` away and reshapes
+                // the borrow would otherwise redirect the poison fill
+                // at memory it does not own.
+                "exit-traps-on-a-mutated-borrow-and-skips-the-fill",
+                &["-DSCE_DEBUG_OWNERSHIP=1"],
+                r#"int main(void) {
+    uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_CPU_REF);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    s.payload_len = 4;  /* the tamper a hostile or buggy callback does */
+    sce_ownership_callback_exit(&sc, &s);
+    if (sce_trap_hits != 1) return 2;
+    /* the fill must not have run against the reshaped borrow */
+    if (buf[0] == 0xDE) return 3;
+    return 0;
+}
+"#,
+            ),
+            (
+                // Turning both off must remove the instrumentation
+                // rather than leave a zero-cost-looking call behind.
+                "both-layers-off-elides-the-boundary",
+                &["-DSCE_DEFENSIVE_OWNERSHIP=0"],
+                r#"int main(void) {
+    _Static_assert(SCE_OWNERSHIP_CHECKED == 0, "both layers off must elide the boundary");
+    return sce_trap_hits;
+}
+"#,
+            ),
+        ];
+
+        for (case, flags, body) in cases {
+            let tmp = std::env::temp_dir().join(format!(
+                "sce-build-layer3-{}-{}",
+                std::process::id(),
+                case,
+            ));
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::fs::create_dir_all(&tmp).expect("create tmp dir");
+            let driver = tmp.join("driver.c");
+            std::fs::write(&driver, format!("{}{}", prologue, body)).expect("write driver.c");
+            let exe = tmp.join("driver");
+
+            let mut cmd = std::process::Command::new("gcc");
+            cmd.arg("-std=c11")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-Werror");
+            for f in *flags {
+                cmd.arg(f);
+            }
+            let build = cmd
+                .arg("-I")
+                .arg(&include_dir)
+                .arg(&driver)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .expect("gcc must be on PATH");
+
+            if !build.status.success() {
+                let stderr = String::from_utf8_lossy(&build.stderr).into_owned();
+                let _ = std::fs::remove_dir_all(&tmp);
+                panic!("Layer 3 case `{case}` failed to compile:\n{stderr}");
+            }
+
+            let run = std::process::Command::new(&exe)
+                .output()
+                .expect("run the compiled driver");
+            let code = run.status.code().unwrap_or(-1);
+            let _ = std::fs::remove_dir_all(&tmp);
+            assert_eq!(
+                code, 0,
+                "Layer 3 case `{case}` compiled but failed at runtime with exit {code}; \
+                 the body's return values name which assertion broke",
+            );
+        }
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the Layer 2
