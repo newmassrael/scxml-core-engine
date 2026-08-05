@@ -1419,6 +1419,51 @@ Rule: the `<param>` value, if present, **overrides** any deploy.yaml binding-lev
 
 **Graceful degradation**: a foreign W3C SCXML 1.0 processor that does not understand `sce:mesh-rpc` raises `error.execution` per §6.4.1. The document author may catch this with `<transition event="error.execution">` for local fallback logic. The structured `_event.data` payload for such errors follows the convention in §10.7.
 
+#### 9.5.1 Server response deadline — `server.response_deadline_ms`
+
+Everything above bounds the *requester's* patience. This clause bounds the *responder's*, and the two are different resources: the deadlines above decide when a caller gives up waiting, while this one decides when the server stops holding the state it needs in order to answer at all.
+
+Every server arm parks something between receiving a request and emitting the paired response — the inbound `vsomeip::message` that `create_response` will need, the inbound `zenoh::Query` that `reply` will consume. That entry is retired by `handleServerResponse`. If the engine never emits the paired response — the handling state was left before `<send event="service.response.X">` ran, a guard rejected the request, the document simply has no transition for it — nothing retires it, and the entry lives until process exit. A long-running server accumulates one leak per abandoned request.
+
+```yaml
+machines:
+  motor:
+    server:
+      transport: someip
+      service: motor_control
+      response_deadline_ms: 500     # opt-in; absent ⇒ no deadline armed
+```
+
+The knob is **transport-neutral by name because what it bounds is transport-neutral**. What differs per transport is the *notice* the requesting peer gets when the deadline elapses, recorded in the transport registry as `TransportDescriptor::server_deadline_notice`:
+
+| Transport | Notice | What the requester observes |
+|---|---|---|
+| `someip` | `ActiveError` | SOME/IP `MT_ERROR` (0x81) with return code `E_TIMEOUT` (0x06), carrying a `MeshEnvelope` whose `rpc_status` is `DeadlineExceeded` and whose `rpc_error_message` names the abandoned call |
+| `zenoh` | `DropSilently` | The stored `zenoh::Query` is destructed; the client's `session.get` `on_drop` closure fires and delivers `RpcStatus::Unavailable` |
+| `local`, `shm`, `custom_tcp`, `dds`, `can` | `Unsupported` | The knob is rejected at parse time (`mesh/deploy-invalid-server-response-deadline`) rather than accepted into a router that would ignore it |
+
+The `someip` / `zenoh` split is a property of the protocols, not a policy choice. A `zenoh::Query` exposes `reply` and destruction with nothing in between, so dropping it is the strongest signal the query model admits. SOME/IP reserves a message type and a return code for exactly this condition, so the timeout is *reported* rather than inferred — which is what lets the requester distinguish "the server gave up" from "the server vanished". Two conditions that a silent drop renders identical.
+
+**Reference position.** Neither vsomeip nor AUTOSAR `ara::com` arms a server-side deadline at all: both offer only a client-side future timeout, so in both the server's request handle stays parked indefinitely and the caller cannot tell an abandoned call from a lost datagram. SCE arms the deadline from a deploy.yaml declaration and, where the protocol provides a slot for it, answers through that slot.
+
+**Requester-side delivery.** A reply carrying a non-Ok `rpc_status` is still an answer, so it retires the correlation entry — but it is **not** renamed to the binding's declared reply event. Renaming it would hand the author's `<transition event="service.response.X">` an envelope whose payload is empty because the call never happened, i.e. report a false success. The peer names the outcome in the envelope's `type`, and that name survives:
+
+```xml
+<transition event="service.response.compute_force" target="done"/>
+<transition event="error.rpc.deadline"             target="giving_up"/>
+```
+
+`_event.data` carries `rpc_error_message` (which call was abandoned, and the deadline it exceeded); `_event.invokeid` carries the correlation id. An author who declares no matching transition drops the event under ordinary W3C semantics — the same contract `error.communication` has. A request issued through `<invoke type="sce:mesh-rpc">` instead resolves through the correlation table and surfaces as `error.invoke.<id>` with `rpc_status = DeadlineExceeded`, per the reply mapping above.
+
+**Validation.** Two parse-time rejections, both emitting `mesh/deploy-invalid-server-response-deadline`:
+
+1. Below the floor (10 ms). A value under it races typical engine macrostep latency and would expire every inbound request before the engine could respond. The floor is a property of macrostep latency, so it applies to every transport.
+2. On a transport whose registry entry reads `Unsupported`. The diagnostic names the transports that do realise the deadline rather than only stating that this one does not.
+
+`custom_tcp` and `dds` both hold server-side request state a deadline could bound, and both could carry an active notice — custom_tcp frames SCE's own envelope on the reply stream, dds has a paired reply topic. They read `Unsupported` because no generated arm arms one today; the dimension states what is realised end-to-end, not what is reachable.
+
+**Cancel ordering.** `handleServerResponse` cancels the timer *before* erasing the pending entry, so a timer cannot fire between the lookup and the erase and answer `MT_ERROR` for a request that is being answered normally. On shutdown the flag-set and scheduler drain precede every transport teardown: the SOME/IP notice is an outbound `send`, so a timer firing after `server_app_->stop()` would be writing into a stopped application.
+
 ### 9.6 `<invoke type="scxml">` — full remote SCXML session (Session F)
 
 When `type="scxml"` (or the default, which equals `"http://www.w3.org/TR/scxml/"`) is used with `src="#<machine_id>"` referring to a mesh-registered peer, SCE Mesh provides **full W3C SCXML 1.0 invoke semantics across a transport**. This is not an abbreviation — the parent/child session lifecycle and all its derived behaviors (`<finalize>`, `autoforward`, child→parent events, inline content) are preserved end-to-end.
@@ -1757,6 +1802,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `supports_multi_instance_server` | `bool` | Inbound messages carry a peer-identifying instance dimension, so the machine can host a multi-instance server pool (§14.4). |
 | `supports_inter_partition_ipc` | `bool` | Transport may carry traffic between the OS processes a `partitions:` split creates (§14). |
 | `supports_cross_target_reply` | `bool` | An RpcReply for a request sent to target A can arrive from a different target B, because correlation goes through a lookup table keyed on a sender-minted identifier. `false` where the reply path is bound to the request at the protocol layer (Zenoh `session.get`) or where there is no `RequestReply` capability. Gates a `reply_from:` set wider than the binding's own target (§14.6). |
+| `server_deadline_notice` | `Unsupported \| DropSilently \| ActiveError` | What the requesting peer observes when `server.response_deadline_ms` elapses (§9.5.1). Deliberately **not** a boolean: whether the deadline can be armed and what the peer learns when it fires are different questions, and the second is author-visible — it decides which `RpcStatus` the requester's failure carries, and therefore what the client document can branch on. `ActiveError` where the protocol reserves a slot for the notice (SOME/IP `MT_ERROR` / `E_TIMEOUT`); `DropSilently` where releasing the parked handle is the only signal available (Zenoh `Query`); `Unsupported` where no generated arm arms a deadline, which makes the knob a parse-time reject rather than a silent no-op. |
 
 Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time. §6.4 is the step-by-step form of the same procedure.
 
@@ -3723,6 +3769,8 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 **Scope of synthesis**: `error.execution` events arising from invoke setup (§9.3) or document-level faults retain their W3C-standard semantics. Distribution does NOT synthesize new `error.execution` occurrences beyond what a single-process engine would raise — the only new event class distribution introduces is `error.communication` from the catalogue above.
 
 **Out of scope — mesh-rpc author-level deadline expiry**: `<invoke type="sce:mesh-rpc">` with a `_mesh_deadline_ms` (§9.5 L1318) that elapses before the reply arrives is **not** a §16.7 condition. Per §9.5 L1347 it surfaces as `error.invoke.<id>` with `rpc_status = DeadlineExceeded`, matching the W3C invoke lifecycle. The catalogue above lists transport-layer faults the runtime synthesizes on the peer-observing side; a scheduler-fired local deadline on the caller side is an author-level RPC lifecycle event, not a transport fault, and reaches the document through the invoke-lifecycle channel the author already wires for non-`Ok` `rpc_status`.
+
+**Out of scope — server response deadline expiry**: `server.response_deadline_ms` (§9.5.1) elapsing is likewise **not** a §16.7 condition, on the same reasoning read from the other end. On the server it is not a fault at all — the transport is healthy and the router is releasing state its own engine declined to use. On the requester it arrives as an RPC outcome, carried by the reply channel: `rpc_status = DeadlineExceeded` on the envelope, surfacing as `error.invoke.<id>` for an `<invoke type="sce:mesh-rpc">` caller and as the server-authored `error.rpc.deadline` event for a plain `<send>` caller. Adding a catalogue row would give one outcome two names and force authors to wire both.
 
 **Unknown transport errors**: A transport impl MUST map native errors to one of the catalogue reasons. Unclassifiable errors map to `SEND_FAILED` with `transport_error` carrying the raw transport-native string; `detail` carries a human-readable description. The catalogue is closed at this section — new reasons require a spec revision.
 

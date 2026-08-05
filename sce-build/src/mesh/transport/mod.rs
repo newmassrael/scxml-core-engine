@@ -84,6 +84,62 @@ impl fmt::Display for TransportCapability {
     }
 }
 
+/// What the requesting peer observes when a server-side response
+/// deadline (`server.response_deadline_ms`, SCE_MESH.md server
+/// response deadline) elapses on this transport.
+///
+/// This is deliberately **not** a `supports_server_response_deadline:
+/// bool`. Whether the deadline can be armed and what the peer learns
+/// when it fires are different questions, and the second one is
+/// author-visible: it decides which `RpcStatus` reaches the requester
+/// and therefore what the client SCXML document can branch on.
+/// Collapsing the two into one flag would hide a semantic difference
+/// behind a capability that reads as uniform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ServerDeadlineNotice {
+    /// The transport cannot arm a server-side response deadline at
+    /// all. `server.response_deadline_ms` is rejected at parse time
+    /// (`DeployError::InvalidServerResponseDeadline`) rather than
+    /// accepted into a generated router that would ignore it.
+    Unsupported,
+    /// Expiry releases the stored request handle and nothing is sent.
+    /// The peer learns only that the exchange ended — it cannot tell
+    /// "the server gave up" from "the server vanished".
+    ///
+    /// Zenoh: destructing the stored `zenoh::Query` signals query-done
+    /// to the client, whose `session.get` `on_drop` closure delivers
+    /// `RpcStatus::Unavailable`. The query model carries no
+    /// server-authored failure channel, so this is the strongest
+    /// notice the transport admits, not a design choice SCE made.
+    DropSilently,
+    /// Expiry sends a protocol-native error reply naming the timeout,
+    /// so the peer distinguishes a server that gave up from one that
+    /// disappeared.
+    ///
+    /// SOME/IP: `create_response(request)` with
+    /// `message_type_e::MT_ERROR` + `return_code_e::E_TIMEOUT`
+    /// (AUTOSAR SOME/IP Protocol Specification message-type 0x81 /
+    /// return-code 0x06), carrying a `MeshEnvelope` whose
+    /// `rpc_status` is `DeadlineExceeded`. A requester that used
+    /// `<invoke type="sce:mesh-rpc">` raises `error.invoke.<id>` with
+    /// that status rather than the `Unavailable` a vanished peer
+    /// produces; a plain `<send>` requester sees the server-authored
+    /// event name (`error.rpc.deadline`) instead of its declared reply
+    /// event, because renaming a failure to the success event would
+    /// report a false success on an empty payload.
+    ActiveError,
+}
+
+impl fmt::Display for ServerDeadlineNotice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unsupported => write!(f, "unsupported"),
+            Self::DropSilently => write!(f, "silent drop"),
+            Self::ActiveError => write!(f, "active error reply"),
+        }
+    }
+}
+
 // ── Unified descriptor ──────────────────────────────────────
 
 /// Complete metadata for a known transport. Codegen reads `shape`;
@@ -354,6 +410,45 @@ pub struct TransportDescriptor {
     /// (`DeployError::CrossTargetReplyNotSupported`). The default
     /// responder set — the binding's own target — is always legal.
     pub supports_cross_target_reply: bool,
+    /// What a requesting peer observes when this transport's server
+    /// arm lets `server.response_deadline_ms` elapse (SCE_MESH.md
+    /// server response deadline).
+    ///
+    /// The knob is transport-neutral by name because the thing it
+    /// bounds — how long a server may hold an inbound request handle
+    /// before the router releases it — is transport-neutral. What
+    /// differs is the notice, which is exactly what this dimension
+    /// records:
+    ///
+    /// - `someip`: [`ServerDeadlineNotice::ActiveError`]. The protocol
+    ///   defines `MT_ERROR` (0x81) with `E_TIMEOUT` (0x06) and vsomeip
+    ///   exposes both through `message_base::set_message_type` /
+    ///   `set_return_code`, so expiry is reported rather than inferred.
+    /// - `zenoh`: [`ServerDeadlineNotice::DropSilently`]. A
+    ///   `zenoh::Query` has `reply` but no server-authored failure
+    ///   channel; dropping it is the only signal available.
+    /// - `local`: [`ServerDeadlineNotice::Unsupported`]. In-process
+    ///   dispatch has no stored request handle to strand — the reply
+    ///   leg is a direct call on the same stack.
+    /// - `shm` / `can`: [`ServerDeadlineNotice::Unsupported`]. Neither
+    ///   carries `RequestReply`, so there is no server arm at all.
+    /// - `custom_tcp` / `dds`: [`ServerDeadlineNotice::Unsupported`].
+    ///   Both hold server-side request state that a deadline could
+    ///   bound (`pending_server_links_` / `pending_server_correlations_`)
+    ///   and both could carry an `ActiveError` notice — custom_tcp
+    ///   frames SCE's own envelope on the reply stream, and dds has a
+    ///   reply topic. The dimension reads `Unsupported` because no
+    ///   generated arm arms a deadline on them today; per the
+    ///   `supports_machine_lifetime_subscribe` precedent this flag's
+    ///   contract is "realised end-to-end", not "the mechanism looks
+    ///   generic".
+    ///
+    /// Consumed by `deploy::validate_server_response_deadline`: a
+    /// machine declaring the knob on an `Unsupported` transport is
+    /// rejected at parse time with the transport name and its notice
+    /// semantics in the diagnostic, rather than shipping a knob the
+    /// generated router silently ignores.
+    pub server_deadline_notice: ServerDeadlineNotice,
 }
 
 impl TransportDescriptor {
@@ -418,6 +513,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // `dispatchToSession`, which keys on `invoke_id` alone and
         // never consults the arrival path.
         supports_cross_target_reply: true,
+        // In-process dispatch never parks a request handle: the reply
+        // leg runs on the caller's own stack, so there is no stranded
+        // server-side state for a deadline to release.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -465,6 +564,9 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: true,
         // No RequestReply capability; the question does not arise.
         supports_cross_target_reply: false,
+        // One-way ring with no reverse path — no server arm exists to
+        // bound.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -537,6 +639,14 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // `register_message_handler` resolves it against the same
         // router-scoped `pending_rpcs_` table.
         supports_cross_target_reply: true,
+        // AUTOSAR SOME/IP defines the timeout notice the request
+        // originator needs: message type `MT_ERROR` (0x81) with return
+        // code `E_TIMEOUT` (0x06). `create_response` copies the
+        // request's client/session/service/method header, so the error
+        // reply correlates on the wire exactly as a normal response
+        // would, and the envelope it carries stamps
+        // `RpcStatus::DeadlineExceeded`.
+        server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -589,6 +699,12 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // query with no shared correlation table. Same-target by
         // construction.
         supports_cross_target_reply: false,
+        // `zenoh::Query` exposes `reply` and destruction, nothing in
+        // between: there is no server-authored failure channel to put
+        // a timeout on. Dropping the stored query is the whole notice,
+        // and the client reads it as `RpcStatus::Unavailable` through
+        // the `session.get` `on_drop` closure.
+        server_deadline_notice: ServerDeadlineNotice::DropSilently,
     };
     // SCE Mesh §mesh-16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
@@ -650,6 +766,12 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // feature. A `reply_from:` wider than the binding's own target
         // is therefore rejected at parse time.
         supports_cross_target_reply: false,
+        // `pending_server_links_` holds a reply stream a deadline could
+        // bound, and SCE frames its own envelope on that stream, so an
+        // `ActiveError` notice is reachable here. No generated arm arms
+        // it today; the flag states what is realised, not what is
+        // reachable.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -707,6 +829,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // pair — has no entry its reply could land in. Same conclusion
         // as zenoh and custom_tcp, reached from the topic model.
         supports_cross_target_reply: false,
+        // `pending_server_correlations_` plus the paired reply topic
+        // would carry a timeout notice, on the same "reachable but not
+        // realised" footing as custom_tcp.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
         shape: TransportShape {
@@ -742,6 +868,8 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         supports_inter_partition_ipc: false,
         // Broadcast bus, no RequestReply capability.
         supports_cross_target_reply: false,
+        // Unimplemented, and a broadcast bus carries no server arm.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
 
     match transport {
@@ -1326,11 +1454,93 @@ mod tests {
         assert!(supports("custom_ipc", RequestReply));
     }
 
+    // ── server response deadline ────────────────────────────
+
+    #[test]
+    fn someip_answers_a_server_deadline_with_a_protocol_error() {
+        // AUTOSAR SOME/IP reserves MT_ERROR (0x81) / E_TIMEOUT (0x06)
+        // for this condition, so expiry is reported rather than
+        // inferred. The distinction is author-visible — it decides
+        // whether the requester sees `DeadlineExceeded` or the
+        // `Unavailable` a vanished peer produces — which is why this
+        // dimension is an enum and not a `supports_…: bool`.
+        let d = lookup("someip").expect("known");
+        assert_eq!(d.server_deadline_notice, ServerDeadlineNotice::ActiveError);
+    }
+
+    #[test]
+    fn zenoh_can_only_drop_on_a_server_deadline() {
+        // A `zenoh::Query` exposes `reply` and destruction, nothing in
+        // between. This is a property of the query model, not a choice
+        // SCE made, so a future arm that started emitting a notice here
+        // would have to move this entry first.
+        let d = lookup("zenoh").expect("known");
+        assert_eq!(d.server_deadline_notice, ServerDeadlineNotice::DropSilently);
+    }
+
+    #[test]
+    fn transports_with_no_realised_deadline_arm_say_so() {
+        // custom_tcp and dds both park server-side request state a
+        // deadline could bound, and both could carry a notice — but no
+        // generated arm arms one, and the flag's contract is "realised
+        // end-to-end" rather than "the mechanism looks generic" (the
+        // `supports_machine_lifetime_subscribe` precedent). Declaring
+        // the knob on them is rejected at parse time instead of being
+        // accepted into a router that ignores it.
+        for name in ["local", "shm", "custom_tcp", "dds", "can"] {
+            let d = lookup(name).expect("known");
+            assert_eq!(
+                d.server_deadline_notice,
+                ServerDeadlineNotice::Unsupported,
+                "{name} advertises a server deadline notice it does not emit"
+            );
+        }
+    }
+
+    #[test]
+    fn every_transport_that_arms_a_deadline_can_serve() {
+        // A deadline bounds the gap between receiving a request and
+        // answering it, so a transport with no RequestReply capability
+        // has nothing to bound. An entry that claimed otherwise would
+        // let parse-time validation admit a knob that codegen has no
+        // handler to attach to.
+        for name in [
+            "local",
+            "shm",
+            "someip",
+            "zenoh",
+            "custom_tcp",
+            "dds",
+            "can",
+        ] {
+            let d = lookup(name).expect("known");
+            if d.server_deadline_notice != ServerDeadlineNotice::Unsupported {
+                assert!(
+                    d.capabilities.contains(&RequestReply),
+                    "{name} arms a server response deadline without a request/reply leg"
+                );
+            }
+        }
+    }
+
     // ── Display ─────────────────────────────────────────────
 
     #[test]
     fn capability_display() {
         assert_eq!(RequestReply.to_string(), "request/reply");
         assert_eq!(PubSub.to_string(), "pub/sub");
+    }
+
+    #[test]
+    fn server_deadline_notice_display() {
+        assert_eq!(ServerDeadlineNotice::Unsupported.to_string(), "unsupported");
+        assert_eq!(
+            ServerDeadlineNotice::DropSilently.to_string(),
+            "silent drop"
+        );
+        assert_eq!(
+            ServerDeadlineNotice::ActiveError.to_string(),
+            "active error reply"
+        );
     }
 }

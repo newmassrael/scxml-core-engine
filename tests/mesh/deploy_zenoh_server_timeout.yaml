@@ -1,6 +1,6 @@
 # SCE Mesh gap Z2 E2E fixture (zenoh server-side queryable deadline).
 #
-# Motor declares a zenoh server binding with `query_timeout_ms: 500`.
+# Motor declares a zenoh server binding with `response_deadline_ms: 500`.
 # The test dispatches inbound requests via a raw zenoh peer and verifies
 # that `pending_server_queries_` entries are erased within timeout +
 # slack when the engine never emits the paired response — closing the
@@ -27,4 +27,4 @@ topology:
           # Chosen at 500 ms — comfortably above engine macrostep latency
           # (~tens of ms on commodity hardware) and below the 2 s observation
           # budget the test allows.
-          query_timeout_ms: 500
+          response_deadline_ms: 500

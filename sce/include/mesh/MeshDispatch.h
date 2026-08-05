@@ -265,7 +265,22 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         // here would duplicate that classification in a second place.
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
-        meta.data = std::string(env.data.begin(), env.data.end());
+        // SCE_MESH.md §mesh-9.5: a reply whose `rpc_status` is present and
+        // non-Ok carries no result — the payload is empty by construction
+        // and the thing the author needs is the reason. Surfacing
+        // `rpc_error_message` through `EventWithMetadata::data` matches
+        // the InvokeError arm below, so both failure shapes read the same
+        // way regardless of whether the request went out through
+        // `<invoke type="sce:mesh-rpc">` or a plain `<send>`.
+        //
+        // Absent `rpc_status` means "Ok" per the field's contract, so the
+        // ordinary success path is unchanged.
+        const bool reply_failed = env.rpc_status.has_value() && *env.rpc_status != RpcStatus::Ok;
+        if (reply_failed && env.rpc_error_message) {
+            meta.data = *env.rpc_error_message;
+        } else {
+            meta.data = std::string(env.data.begin(), env.data.end());
+        }
         meta.origin = meshOriginUri(env.source);
         // Every envelope reaching this helper is SCE's own CBOR MeshEnvelope
         // (§mesh-7.5), so the traffic is inter-SCXML by construction and takes
