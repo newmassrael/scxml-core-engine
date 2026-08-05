@@ -18,6 +18,13 @@
 #include <string.h>
 {% endif %}
 
+{% if has_dma_aligned_fields %}
+{# `SCE_STATIC_ASSERT` for the DMA-alignment drift guards below.
+   `_Static_assert` is a C11 keyword with no C++ spelling, so writing it
+   directly would make this header a parse error for any C++ consumer
+   that includes it. #}
+#include <sce/portability.h>
+{% endif %}
 #include "sce/forge/codec.h"
 {% if all_imports %}
 {% for imp in all_imports %}
@@ -31,11 +38,11 @@
 /* RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
  * Build-time validation already guaranteed `byte_offset % burst_align
  * == 0` and that all preceding fields are Fixed bit-size. These
- * `_Static_assert` declarations catch any future hand-edit to the
+ * `SCE_STATIC_ASSERT` declarations catch any future hand-edit to the
  * byte_offset that would break the wire-layout invariant. */
 {% for field in fields %}{% if field.dma_burst_align -%}
-_Static_assert({{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
-               "RFC §synth-5-B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned");
+SCE_STATIC_ASSERT({{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
+                  "RFC §synth-5-B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned");
 {% endif %}{% endfor %}
 {% endif %}
 

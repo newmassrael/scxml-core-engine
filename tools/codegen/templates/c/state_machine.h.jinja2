@@ -27,6 +27,12 @@
 #include <stddef.h>
 
 #include "sce/types.h"
+{# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the
+   bottom of this header. This header opens `extern "C"`, so a C++
+   application linking the generated machine compiles it as C++ —
+   where `_Static_assert` is not a keyword. See
+   backends/c/runtime/include/sce/portability.h. #}
+#include "sce/portability.h"
 
 {% if model.on_sample_links %}
 /* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
@@ -81,7 +87,7 @@ extern "C" {
    (see SM struct below). The sentinel `_STATE_COUNT` is the first value
    past the last real state and is the array dimension for any future
    per-state codegen-time table; today it gates the 32-state bitmap
-   width via _Static_assert at the bottom of this header.                #}
+   width via SCE_STATIC_ASSERT at the bottom of this header.             #}
 enum {{ csym_prefix }}{{ model.name }}_state_e {
     {% for state_name in model.states | sort %}
     {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }},
@@ -301,7 +307,7 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        leaf bit simultaneously. Mirrors cpp `StaticExecutionEngine::activeStates_`
        (std::set<State>) — single truth source for the configuration,
        no parallel `current_state` shadow that would drift in parallel
-       fixtures. _Static_assert at the bottom of the header pins the
+       fixtures. SCE_STATIC_ASSERT at the bottom of the header pins the
        state count below the bitmap width (32 today, multi-word array
        lands when a fixture forces it). */
     uint32_t active;
@@ -551,7 +557,7 @@ void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake_case }}_s
 {% set cb = block.callback | extern_callback_path %}
 {% if cb not in seen_c_callbacks.names %}
 {% set seen_c_callbacks.names = seen_c_callbacks.names + [cb] %}
-void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void *ctx);
+void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), void *ctx);
 {% endif %}
 {% endif %}
 {% endfor %}
@@ -559,10 +565,10 @@ void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void
 
 {% endif %}
 /* ── Compile-time invariants ──────────────────────────────────────── */
-_Static_assert(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
-_Static_assert(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
-_Static_assert((unsigned){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT <= 32u,
-               "Configuration bitmap is uint32_t; multi-word array lands when a fixture exceeds 32 states");
+SCE_STATIC_ASSERT(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
+SCE_STATIC_ASSERT(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
+SCE_STATIC_ASSERT((unsigned){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT <= 32u,
+                  "Configuration bitmap is uint32_t; multi-word array lands when a fixture exceeds 32 states");
 
 #ifdef __cplusplus
 }

@@ -1315,22 +1315,22 @@ typedef struct SCE_CONSUMABLE {
 } sce_sample_t;
 
 /* Accessor — only valid while sample is unconsumed */
-SCE_CALLABLE_WHEN("unconsumed")
+SCE_CALLABLE_WHEN(unconsumed)
 const uint8_t* sce_sample_payload(const sce_sample_t* sample
-                                  SCE_PARAM_TYPESTATE("unconsumed"));
+                                  SCE_PARAM_TYPESTATE(unconsumed));
 
 /* Take — transitions sample to consumed; subsequent access is a
  * compile error under -Wconsumed */
 SCE_WARN_UNUSED
-SCE_CALLABLE_WHEN("unconsumed")
-SCE_SET_TYPESTATE("consumed")
+SCE_CALLABLE_WHEN(unconsumed)
+SCE_SET_TYPESTATE(consumed)
 sce_result_t sce_sample_take(const sce_sample_t* sample
-                             SCE_PARAM_TYPESTATE("unconsumed"),
+                             SCE_PARAM_TYPESTATE(unconsumed),
                              uint8_t* dst, size_t dst_cap,
                              size_t* out_len);
 
 typedef void (*sce_sub_callback_t)(const sce_sample_t* sample
-                                   SCE_PARAM_TYPESTATE("unconsumed"),
+                                   SCE_PARAM_TYPESTATE(unconsumed),
                                    void* ctx);
 ```
 

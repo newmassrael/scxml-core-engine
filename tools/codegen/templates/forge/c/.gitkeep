@@ -7,7 +7,7 @@
 #   M5: §5.O traceability (#line + sce_sourcemap.json) integration
 #
 # Per RFC §5.J.1 the C11 emitter generates `.h` + `.c` pairs using
-# `<stdint.h>` integer types, `_Static_assert` for invariants, no
+# `<stdint.h>` integer types, `SCE_STATIC_ASSERT` for invariants, no
 # varargs in generated code, and no `malloc`. A small
 # `sce_forge_runtime.h` (M3+) hosts shared helpers (cursor, Result
 # enum, pool API).

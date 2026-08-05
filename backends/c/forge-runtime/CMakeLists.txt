@@ -18,8 +18,27 @@ cmake_minimum_required(VERSION 3.16)
 add_library(sce_forge_runtime_c INTERFACE)
 add_library(SCE::forge_runtime_c ALIAS sce_forge_runtime_c)
 
+# The second entry is the C11 backend's Tier 1 header tree
+# (`backends/c/runtime/include`, the `sce_c_runtime` INTERFACE target).
+# Generated forge C headers reach into it for two things:
+#
+#   * `<sce/sample.h>` — the ownership contract `buffer_pool.h.jinja2`
+#     has always pulled through, so this dependency predates the entry
+#     below; it was simply carried implicitly by whichever consumer
+#     happened to have both trees on its include path.
+#
+#   * `<sce/portability.h>` — `SCE_STATIC_ASSERT`, the one spelling of a
+#     compile-time assertion that is valid in both C and C++. Every
+#     generated header here opens `extern "C"` and is therefore compiled
+#     by C++ consumers; a second copy of the macro in this tree would
+#     make the two definitions free to drift.
+#
+# Tier 1 is header-only with no link dependency and no POSIX in its
+# public headers, so naming it here costs a bare-metal consumer an
+# include path and nothing else — the freestanding policy above holds.
 target_include_directories(sce_forge_runtime_c INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../runtime/include>
     $<INSTALL_INTERFACE:include>
 )
 

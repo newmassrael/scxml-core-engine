@@ -146,7 +146,12 @@ fn c11_happy_compile_const_no_index_by() {
 
     // Capacity literal + drift guard (spec line 2575 + 2583-2585).
     assert!(code.contains("#define LOCAL_SUB_TABLE_CAPACITY ((uint32_t)8)"));
-    assert!(code.contains("_Static_assert(8 <= UINT16_MAX,"));
+    // Spelled `SCE_STATIC_ASSERT`, not `_Static_assert`: this header
+    // opens `extern "C"` and so claims to be consumable from C++, where
+    // `_Static_assert` is not a keyword. The macro (`sce/portability.h`)
+    // lowers to `static_assert` there and `_Static_assert` in C11.
+    assert!(code.contains("#include <sce/portability.h>"));
+    assert!(code.contains("SCE_STATIC_ASSERT(8 <= UINT16_MAX,"));
 
     // POD Handle struct + 16/16 split (C11 ABI parity).
     assert!(code.contains("typedef struct {\n    uint32_t raw;\n} local_sub_table_handle_t;"));

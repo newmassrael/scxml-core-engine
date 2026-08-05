@@ -22,7 +22,7 @@
 //!   anchored constants + ZID typedef + ReassemblySlot struct + drift
 //!   guard asserts.
 //! - Positive emit-shape (C11): same shape with macro + typedef +
-//!   `_Static_assert` mirrors.
+//!   `SCE_STATIC_ASSERT` mirrors.
 //! - Variant exclusivity (Rust + C11): the reassembly state ONLY
 //!   emits under `<sce:variant>reassembly`; default-variant pools
 //!   never carry the bitmap/deadline/peer-id machinery.
@@ -292,15 +292,15 @@ fn c11_reassembly_variant_emits_static_assert_drift_guards() {
     let scxml = reassembly_scxml("rx_reassembly_pool", 4, 4096, 16, 500, 2);
     let body = compile_for(Language::C11, &scxml, "rx_reassembly_pool");
     assert!(
-        body.contains("_Static_assert(sizeof(uint32_t) == 4"),
+        body.contains("SCE_STATIC_ASSERT(sizeof(uint32_t) == 4"),
         "uint32_t width drift guard must emit;\n{body}"
     );
     assert!(
-        body.contains("_Static_assert(sizeof(uint64_t) == 8"),
+        body.contains("SCE_STATIC_ASSERT(sizeof(uint64_t) == 8"),
         "uint64_t width drift guard must emit;\n{body}"
     );
     assert!(
-        body.contains("_Static_assert(sizeof(rx_reassembly_pool_peer_id_t) == 16"),
+        body.contains("SCE_STATIC_ASSERT(sizeof(rx_reassembly_pool_peer_id_t) == 16"),
         "peer-id 16-byte drift guard must emit;\n{body}"
     );
 }

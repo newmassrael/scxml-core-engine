@@ -293,10 +293,19 @@ fn c11_field_match_multi_file_compiles_werror() {
     .expect("write driver");
 
     let runtime_inc = repo_root().join("backends/c/forge-runtime/include");
+    // Tier 1 header tree. Generated forge C headers reach into it for
+    // `<sce/portability.h>` (`SCE_STATIC_ASSERT`, the one spelling of a
+    // compile-time assertion valid in both C and C++) and, for pool
+    // headers, `<sce/sample.h>`. `sce_forge_runtime_c` names the same
+    // path in its INTERFACE include directories; this test drives the
+    // compiler directly, so it states the dependency itself.
+    let core_runtime_inc = repo_root().join("backends/c/runtime/include");
     let output = Command::new(&cc)
         .args(["-std=c11", "-c", "-Wall", "-Wextra", "-Werror"])
         .arg("-I")
         .arg(&runtime_inc)
+        .arg("-I")
+        .arg(&core_runtime_inc)
         .arg("-I")
         .arg(&out_dir)
         .arg("-o")
