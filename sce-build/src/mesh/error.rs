@@ -2355,15 +2355,27 @@ pub enum TopologyError {
     #[error(
         "machine '{machine}': subscription on source '{source_target}' for event \
              '{event}' uses transport '{transport}', which does not support the \
-             machine-lifetime subscription path in this build. Move the binding to a \
-             transport that supports it (e.g. 'zenoh') or drop the subscription from \
-             machines.{machine}.subscriptions:."
+             machine-lifetime subscription path in this build. Transports that do \
+             realise it: {realised_transports}. Move the binding to one of those, or \
+             drop the subscription from machines.{machine}.subscriptions:."
     )]
     MachineLifetimeSubscriptionUnsupported {
         machine: String,
         source_target: super::target::TargetId,
         event: String,
         transport: String,
+        /// Rendered by
+        /// [`super::transport::machine_lifetime_subscribe_alternatives`]
+        /// at the raise site. Read out of the registry rather than
+        /// restated in prose: the message used to say "e.g. 'zenoh'"
+        /// while three transports realised the path, and a diagnostic
+        /// that names the wrong set is worse than one that names none.
+        ///
+        /// Not part of `key_fragments` — it is a property of the build's
+        /// registry, not of the rejected declaration, so two authors
+        /// hitting this on the same binding must get the same
+        /// diagnostic id.
+        realised_transports: String,
     },
 }
 
@@ -4185,6 +4197,11 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             source_target,
             event,
             transport,
+            // Deliberately not projected onto the payload: the realised
+            // set describes this build's registry, not the rejected
+            // declaration, so it belongs in the prose the author reads
+            // and not in the structured fields a tool keys on.
+            realised_transports: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshTopologyMachineLifetimeSubscriptionUnsupported,
             stage: Stage::MeshTopology,

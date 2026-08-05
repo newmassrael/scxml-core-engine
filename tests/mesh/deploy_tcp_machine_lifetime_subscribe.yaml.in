@@ -1,0 +1,50 @@
+# SCE Mesh §13 machine-lifetime subscription over custom_tcp.
+#
+# Sibling of deploy_zenoh_machine_lifetime_subscribe.yaml with the
+# transport swapped, so a difference in generated behaviour is
+# attributable to custom_tcp alone.
+#
+# brake declares no <send> at all, so every framed envelope its router
+# writes originates in the `subscriptions:` block below. That is what lets
+# the runtime test read a subscribe frame off the wire and attribute it to
+# the deploy.yaml path with no second candidate source.
+#
+# motor's `server:` declares the `status` axis the subscription names. The
+# per-axis registry on the server side is what turns the subscribe frame
+# into a delivery route; a peer that never subscribed receives nothing,
+# which is the property the runtime test's negative assertion pins.
+#
+# The port is templated (@SCE_TEST_TCP_MACHINE_LIFETIME_PORT@) —
+# configure_file substitutes the cache variable so a workstation already
+# holding the default can override it, and the test binary receives the
+# same value as a macro so the codegen-baked port and the harness agree.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake_tcp_machine_lifetime_subscribe:
+        source: "@SCE_MESH_TEST_DIR_REL@/brake_tcp_machine_lifetime_subscribe.scxml"
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:@SCE_TEST_TCP_MACHINE_LIFETIME_PORT@"
+        subscriptions:
+          - event: event.notification.status
+            source: "#motor"
+  ecu2:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:@SCE_TEST_TCP_MACHINE_LIFETIME_PORT@"
+    machines:
+      # deploy.yaml key "motor" matches the `#motor` subscription source;
+      # codegen resolves the document by `source:`, so the SCXML `name`
+      # may differ.
+      motor:
+        source: "@SCE_MESH_TEST_DIR_REL@/motor_tcp_machine_lifetime_subscribe.scxml"
+        server:
+          transport: custom_tcp
+          events:
+            # Spontaneous push (SCE_MESH.md §8.1). custom_tcp has no
+            # eventgroup concept — the event name's prefix is the
+            # declaration, as with Zenoh.
+            "event.notification.status": {}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §13 machine-lifetime subscription fixture over custom_tcp
+     (subscriber side).
+
+     Subscriptions-only by construction: the document carries ZERO <send>
+     elements. Every framed envelope this machine's router puts on the wire
+     therefore traces back to deploy.yaml
+     `machines.brake_tcp_machine_lifetime_subscribe.subscriptions:` — which
+     is what makes the runtime test's wire assertions attributable to the
+     deploy-originated path and to nothing else.
+
+     Sibling of brake_zenoh_machine_lifetime_subscribe.scxml with the bound
+     transport swapped, so a behavioural difference is a custom_tcp
+     property rather than a subscription-vocabulary property. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_tcp_machine_lifetime_subscribe" initial="armed">
+    <state id="armed">
+        <transition event="event.notification.status" target="armed"/>
+    </state>
+</scxml>

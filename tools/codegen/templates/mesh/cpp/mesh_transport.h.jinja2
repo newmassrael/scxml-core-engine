@@ -817,6 +817,16 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <atomic>
 #include <memory>
 {% endif %}
+{% if machine_subscriptions and not (has_ordered_binding or has_any_auth.v or has_zenoh_mesh_rpc or has_server_response_deadline) %}
+// SCE_MESH.md §13: `machine_subscriptions_armed_` makes the
+// machine-lifetime unsubscribe idempotent across the dtor-via-shutdown
+// path. The gates above already pull `<atomic>` in for their own
+// teardown flags; this one covers the subscriptions-only machine, which
+// declares no ordered binding, no auth, and no deadline — the shape the
+// §13 fixtures deliberately use so a frame on the wire has exactly one
+// possible producer.
+#include <atomic>
+{% endif %}
 
 {# SCE_MESH §16.8 arch-debt #4: mirror the per-partition inner namespace
    emitted by state_machine.jinja2 so transport types live in the same
@@ -1793,6 +1803,21 @@ struct TransportRouter {
     std::mutex ordering_tick_mutex_;
     std::condition_variable ordering_tick_cv_;
     std::thread ordering_tick_thread_;
+{% endif %}
+{% if machine_subscriptions %}
+    // SCE_MESH.md §13: guards the machine-lifetime unsubscribe against
+    // the dtor-via-shutdown path, the same hazard the ordering tick
+    // answers with `joinable()`, the deadline scheduler with its own
+    // idempotent `shutdown()`, and the SOME/IP applications with a
+    // `shared_ptr` reset. Without it, every router that is shut down
+    // properly puts a second unsubscribe frame on the wire, because
+    // `~TransportRouter` calls `shutdown()` after the explicit call.
+    //
+    // Set at the end of the init()-time subscribe fan-out and consumed
+    // with `exchange(false)`, so an init() that failed earlier never
+    // unsubscribes what it did not subscribe, and an init() → shutdown()
+    // → init() cycle re-arms exactly like the members above.
+    std::atomic<bool> machine_subscriptions_armed_{false};
 {% endif %}
 {# SCE_MESH.md §10.6.3: per-target monotonic sequence counter. One
    counter per binding that has `needs_ordering = true`; counter is
@@ -4329,6 +4354,10 @@ struct TransportRouter {
             (void)route_send("{{ sub.source }}", sub_env);
         }
 {% endfor %}
+        // Arm the paired unsubscribe. Release pairs with the acquire in
+        // `shutdown()`'s `exchange` so a teardown on another thread sees
+        // the sends above as complete.
+        machine_subscriptions_armed_.store(true, std::memory_order_release);
 {% endif %}
 {% if has_ordered_binding %}
         // SCE_MESH.md §10.6.4 periodic tick. Started last so a partial
@@ -4416,18 +4445,27 @@ struct TransportRouter {
 {% endif %}
 {% if machine_subscriptions %}
         // Machine-lifetime unsubscribe (reverse of init subscriptions).
+        // Runs at most once per init(): `~TransportRouter` calls
+        // shutdown() after any explicit call, and a second unsubscribe is
+        // a frame the peer must not have to tolerate — over a transport
+        // where hanging up is itself an unsubscribe (custom_tcp,
+        // SCE_MESH.md §mesh-10.4.4) the duplicate is indistinguishable
+        // from the first in the server's registry, so it would go
+        // unnoticed while still being written.
+        if (machine_subscriptions_armed_.exchange(false, std::memory_order_acquire)) {
 {% for sub in machine_subscriptions %}
-        {
-            SCE::Mesh::MeshEnvelope unsub_env;
-            unsub_env.id = SCE::uuid::v7();
-            unsub_env.source = "{{ machine_name }}";
-            unsub_env.routing_id = routing_id_;
-            unsub_env.type = "{{ sub.event }}";
-            unsub_env.pattern = SCE::Mesh::PatternKind::EventUnsubscribe;
-            unsub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
-            (void)route_send("{{ sub.source }}", unsub_env);
-        }
+            {
+                SCE::Mesh::MeshEnvelope unsub_env;
+                unsub_env.id = SCE::uuid::v7();
+                unsub_env.source = "{{ machine_name }}";
+                unsub_env.routing_id = routing_id_;
+                unsub_env.type = "{{ sub.event }}";
+                unsub_env.pattern = SCE::Mesh::PatternKind::EventUnsubscribe;
+                unsub_env.datacontenttype = SCE::Mesh::PayloadCodec::None;
+                (void)route_send("{{ sub.source }}", unsub_env);
+            }
 {% endfor %}
+        }
 {% endif %}
 {% if has_server_response_deadline %}
         // SCE Mesh §9.5.1: arm the server-side shutdown flag BEFORE

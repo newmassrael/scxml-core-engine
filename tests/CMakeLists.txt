@@ -3734,6 +3734,80 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         TIMEOUT 60
         RESOURCE_LOCK sce_mesh_tcp_server_deadline_${SCE_TEST_TCP_SERVER_DEADLINE_PORT})
 
+    # ── custom_tcp machine-lifetime subscription (SCE Mesh §13) ──
+    # The fixture the registry's `supports_machine_lifetime_subscribe` flag
+    # waited on. Its subscriber document carries zero SCXML `<send>`s, so
+    # every frame the router writes is attributable to deploy.yaml
+    # `machines.<name>.subscriptions:` and to nothing else — which is what
+    # lets the test assert on frame identity rather than on a delivery that
+    # several paths could have produced.
+    set(MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_tcp_machine_lifetime_generated")
+
+    # Distinct from the custom_tcp ports above so all four fixtures can run
+    # concurrently; each takes its own RESOURCE_LOCK bucket.
+    set(SCE_TEST_TCP_MACHINE_LIFETIME_PORT "55851" CACHE STRING
+        "TCP loopback port for the custom_tcp machine-lifetime subscribe test (IANA dynamic range)")
+
+    file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
+        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}" "${MESH_TEST_DIR}")
+    configure_file(
+        "${MESH_TEST_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml.in"
+        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
+        @ONLY)
+
+    foreach(tcp_mls_machine brake_tcp_machine_lifetime_subscribe motor_tcp_machine_lifetime_subscribe)
+        add_custom_command(
+            OUTPUT "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_sm.h"
+                   "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${tcp_mls_machine}.scxml"
+                    -l cpp -o "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}"
+                    --deploy "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
+                    --write-deps "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/brake_tcp_machine_lifetime_subscribe.scxml"
+                    "${MESH_TEST_DIR}/motor_tcp_machine_lifetime_subscribe.scxml"
+                    "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/deploy_tcp_machine_lifetime_subscribe.yaml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/${tcp_mls_machine}_sm.h.d"
+            COMMENT "Mesh custom_tcp machine-lifetime: Generating ${tcp_mls_machine}_sm.h + _transport.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_tcp_machine_lifetime_subscribe_test
+        mesh/test_mesh_tcp_machine_lifetime_subscribe.cpp
+        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/brake_tcp_machine_lifetime_subscribe_sm.h"
+        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/brake_tcp_machine_lifetime_subscribe_transport.h"
+        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/motor_tcp_machine_lifetime_subscribe_sm.h"
+        "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}/motor_tcp_machine_lifetime_subscribe_transport.h")
+
+    target_include_directories(mesh_tcp_machine_lifetime_subscribe_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}
+            ${MESH_TEST_DIR}
+    )
+
+    target_link_libraries(mesh_tcp_machine_lifetime_subscribe_test
+        PRIVATE
+            sce_base
+            sce_mesh_common
+            pthread
+    )
+
+    target_compile_features(mesh_tcp_machine_lifetime_subscribe_test PRIVATE cxx_std_17)
+    target_compile_definitions(mesh_tcp_machine_lifetime_subscribe_test PRIVATE
+        SCE_TEST_TCP_MACHINE_LIFETIME_PORT=${SCE_TEST_TCP_MACHINE_LIFETIME_PORT})
+
+    apply_sce_test_policies(mesh_tcp_machine_lifetime_subscribe_test)
+
+    add_test(NAME mesh_tcp_machine_lifetime_subscribe_runtime
+             COMMAND mesh_tcp_machine_lifetime_subscribe_test)
+    set_tests_properties(mesh_tcp_machine_lifetime_subscribe_runtime PROPERTIES
+        TIMEOUT 60
+        RESOURCE_LOCK sce_mesh_tcp_machine_lifetime_${SCE_TEST_TCP_MACHINE_LIFETIME_PORT})
+
     # ── Generated mesh code compiles at C++17 (SCE_MESH.md §10.4) ──
     # `sce_mesh_common` declares `cxx_std_17` PUBLIC, so every consumer
     # linking it may build at 17 — but `target_compile_features` states a
@@ -7823,6 +7897,58 @@ if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
     apply_sce_test_policies(mesh_dds_server_deadline_test)
     add_test(NAME mesh_dds_server_deadline_verification COMMAND mesh_dds_server_deadline_test)
     set_tests_properties(mesh_dds_server_deadline_verification PROPERTIES
+        TIMEOUT 90
+    )
+
+    # ── DDS machine-lifetime subscription (SCE Mesh §13) ──
+    # The DDS arm of the machine-lifetime axis, sibling of
+    # mesh_tcp_machine_lifetime_subscribe_runtime. What it adds over the
+    # custom_tcp arm is the teardown half: on DDS a subscription is a
+    # notification reader the router destroys while the participant stays
+    # up, so a publish issued after `shutdown()` is still a real publish
+    # and whether it arrives is a fact about the reader. A control
+    # subscriber that is never shut down keeps the negative attributable.
+    set(MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_machine_lifetime_generated")
+
+    foreach(_dds_mls_machine brake_dds_machine_lifetime_subscribe motor_dds_machine_lifetime_subscribe)
+        add_custom_command(
+            OUTPUT "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h"
+                   "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml" -l cpp
+                    -o "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
+                    --write-deps "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml"
+                    "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
+                    "${MESH_TEST_DIR}/brake_dds_machine_lifetime_subscribe.scxml"
+                    "${MESH_TEST_DIR}/motor_dds_machine_lifetime_subscribe.scxml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
+            COMMENT "Mesh dds machine-lifetime: Generating ${_dds_mls_machine}_sm.h + _transport.h"
+            VERBATIM
+        )
+    endforeach()
+
+    add_executable(mesh_dds_machine_lifetime_subscribe_test
+        mesh/test_mesh_dds_machine_lifetime_subscribe.cpp
+        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_sm.h"
+        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_transport.h"
+        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_sm.h"
+        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_transport.h"
+    )
+    target_include_directories(mesh_dds_machine_lifetime_subscribe_test
+        PRIVATE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(mesh_dds_machine_lifetime_subscribe_test
+        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+    )
+    target_compile_features(mesh_dds_machine_lifetime_subscribe_test PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_dds_machine_lifetime_subscribe_test)
+    add_test(NAME mesh_dds_machine_lifetime_subscribe_runtime
+             COMMAND mesh_dds_machine_lifetime_subscribe_test)
+    set_tests_properties(mesh_dds_machine_lifetime_subscribe_runtime PROPERTIES
         TIMEOUT 90
     )
 endif()

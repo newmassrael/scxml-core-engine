@@ -1,0 +1,60 @@
+# SCE Mesh §13 machine-lifetime subscription over DDS.
+#
+# The orthogonal sibling of deploy_tcp_machine_lifetime_subscribe.yaml.in
+# and deploy_zenoh_machine_lifetime_subscribe.yaml: the SCXML shape is held
+# constant and only the transport changes, so a difference in behaviour is
+# attributable to DDS rather than to the subscription vocabulary.
+#
+# brake declares no <send> at all, so its notification reader can only have
+# come from the `subscriptions:` block below. On DDS that reader IS the
+# subscription (SCE_MESH.md §mesh-8.2) — there is no subscribe message a
+# peer could be observed sending, and equally none that could be lost in
+# flight. What the runtime test reads instead is the reader's effect: the
+# publisher's samples arrive while it exists and stop when `shutdown()`
+# destroys it, which is the delivery-side evidence custom_tcp cannot give
+# because there hanging up is itself an unsubscribe.
+#
+# Isolation follows deploy_dds_multi.yaml: a non-default `domain_id`, a
+# discovery tag, and a partition. Domain 75 is distinct from 71
+# (dds_multi) and 73 (dds_server_deadline) so the three fixtures can run
+# concurrently.
+version: "1.0"
+topology:
+  ecu_brake:
+    transports:
+      dds:
+        domain_id: 75
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_machine_lifetime</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          partition: "sce_mesh_dds_machine_lifetime"
+    machines:
+      brake_dds_machine_lifetime_subscribe:
+        source: brake_dds_machine_lifetime_subscribe.scxml
+        bindings:
+          "#motor":
+            transport: dds
+            topic: "SceDdsMachineLifetime"
+        subscriptions:
+          - event: event.notification.status
+            source: "#motor"
+  ecu_motor:
+    transports:
+      dds:
+        domain_id: 75
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_machine_lifetime</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          partition: "sce_mesh_dds_machine_lifetime"
+    machines:
+      # deploy.yaml key "motor" matches the `#motor` subscription source;
+      # codegen resolves the document by `source:`, so the SCXML `name`
+      # may differ.
+      motor:
+        source: motor_dds_machine_lifetime_subscribe.scxml
+        server:
+          transport: dds
+          topic: "SceDdsMachineLifetime"
+          events:
+            # Server-initiated notification (SCE_MESH.md §mesh-8.1),
+            # published on the `_Event` topic derived from the request
+            # topic above.
+            "event.notification.status": {}
