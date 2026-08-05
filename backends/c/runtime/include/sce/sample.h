@@ -95,6 +95,10 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+// `abort` is the release-build default for `SCE_OWNERSHIP_TRAP`, where
+// `assert` would compile out. A freestanding target that has neither
+// takes a link error rather than losing the check silently.
+#include <stdlib.h>
 // `memset` backs the debug-poison fill. Included unconditionally
 // and outside the `extern "C"` block below: a standard header must
 // not be pulled in under C linkage, and gating it on
@@ -388,15 +392,30 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 /// what a poisoned read looks like.
 #define SCE_OWNERSHIP_POISON_BYTE 0xDE
 
-/// Failure action. Overridable so a target without `assert` (or one
-/// that must reach a fault handler / safe state rather than abort)
-/// can route the violation somewhere useful. The default is
-/// `assert`, which compiles out under `NDEBUG` — deliberate for
-/// the debug-poison layer, which is debug-only. The defensive layer
-/// ships in release builds, where `NDEBUG` is typically defined, so a
-/// deployment that turns it on is expected to define this.
+/// Failure action. Overridable so a target that must reach a fault
+/// handler or a safe state, rather than stop, can route the violation
+/// somewhere useful.
+///
+/// The default is deliberately not a bare `assert`. `assert` compiles
+/// out under `NDEBUG`, which release builds define, and the defensive
+/// layer is the one that *ships* in release — leaving `assert` as the
+/// default there would mean the boundary runs every check and then
+/// reports nothing, which is the silently-inert hook this contract
+/// exists to prevent. Documenting "the deployment is expected to
+/// define this" would not close it either: an expectation is not an
+/// enforcement.
+///
+/// So under `NDEBUG` the default is `abort()`, which cannot be
+/// optimised into silence. A freestanding target with no `abort` gets
+/// a link error — also loud, and the intended way to discover that
+/// this macro needs defining. Every failure mode here is noisy; none
+/// of them is a quiet pass.
 #ifndef SCE_OWNERSHIP_TRAP
+#if defined(NDEBUG)
+#define SCE_OWNERSHIP_TRAP(msg) ((void)(msg), abort())
+#else
 #define SCE_OWNERSHIP_TRAP(msg) assert(0 && (msg))
+#endif
 #endif
 
 /// Raise a per-pool tag-check failure (spec line 1373, "traps on
