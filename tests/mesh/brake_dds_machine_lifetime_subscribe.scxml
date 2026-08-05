@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §13 machine-lifetime subscription fixture over DDS
+     (subscriber side).
+
+     Subscriptions-only by construction: the document carries ZERO <send>
+     elements. On DDS a subscription is not an announcement but the
+     notification reader itself (SCE_MESH.md §mesh-8.2), so what the
+     runtime test observes is not a frame but a reader that exists — and
+     the only thing that can have created it is deploy.yaml
+     `machines.brake_dds_machine_lifetime_subscribe.subscriptions:`.
+
+     Sibling of brake_tcp_machine_lifetime_subscribe.scxml and
+     brake_zenoh_machine_lifetime_subscribe.scxml with the bound transport
+     swapped, so a behavioural difference is a DDS property rather than a
+     subscription-vocabulary property. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake_dds_machine_lifetime_subscribe" initial="armed">
+    <state id="armed">
+        <transition event="event.notification.status" target="armed"/>
+    </state>
+</scxml>

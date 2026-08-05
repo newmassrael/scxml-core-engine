@@ -539,7 +539,14 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Same-process target identity is compile-time; no runtime
         // address substitution.
         supports_pool: false,
-        // No pub/sub capability at all — machine-lifetime is moot.
+        // Not "no pub/sub" — the descriptor advertises `PubSub` above and
+        // means it: a notification event is carried to the peer engine
+        // like any other. What in-process dispatch has no room for is a
+        // subscription *lifetime*. There is no reader to create, no
+        // registration to key on, and nothing an unsubscribe could
+        // retire, so a `subscriptions:` entry pointed here would have
+        // nothing to take effect on. Exercised as the fail-closed case by
+        // `topology::tests::subscription_on_transport_without_a_subscribe_arm_rejected`.
         supports_machine_lifetime_subscribe: false,
         // In-process direct dispatch: one process hosts one identity
         // per machine; a second instance would be a second process.
@@ -776,17 +783,17 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // adding a pool would require SCE to implement its own SD
         // protocol (§mesh-3.3 design invariant rejects middleware SD).
         supports_pool: false,
-        // The mechanism is transport-generic — `init()` builds an
-        // `EventSubscribe` envelope and hands it to the same `route_send`
-        // the SCXML-driven path uses, and the receiving half (registry
-        // registration keyed on the event's axis) is covered by
-        // `mesh_tcp_multipattern_verification`. What is NOT covered is the
-        // deploy.yaml-originated half end to end, and this flag's contract
-        // is precisely "realised end-to-end", so claiming it on a
-        // structural argument would advertise a capability no test backs.
-        // Flip it together with a fixture that drives
+        // Realised end to end. `init()` builds an `EventSubscribe`
+        // envelope and hands it to the same `route_send` the SCXML-driven
+        // path uses; the receiving half (registry registration keyed on
+        // the event's axis) is the one
+        // `mesh_tcp_multipattern_verification` already covered. What was
+        // missing was the deploy.yaml-originated half, which
+        // `mesh_tcp_machine_lifetime_subscribe_runtime` now drives on a
+        // brake carrying zero SCXML `<send>`s: every framed envelope that
+        // reaches the wire traces back to
         // `machines.<name>.subscriptions:`.
-        supports_machine_lifetime_subscribe: false,
+        supports_machine_lifetime_subscribe: true,
         // Single static client→server TCP endpoint — no peer-identity
         // dimension on the inbound side.
         supports_multi_instance_server: false,
@@ -850,12 +857,16 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // advertising this landing set out to remove. Raise it together
         // with a fixture that substitutes a placeholder.
         supports_pool: false,
-        // The flag's contract is "realised end-to-end". A DDS
-        // subscription is its notification reader, which the router
-        // creates and destroys, so the mechanism looks generic — but no
-        // fixture drives deploy.yaml `subscriptions:` over dds, so this
-        // stays `false` on the same grounds custom_tcp does.
-        supports_machine_lifetime_subscribe: false,
+        // Realised end to end. A DDS subscription is its notification
+        // reader, which the router creates and destroys, and
+        // `mesh_dds_machine_lifetime_subscribe_runtime` drives that from
+        // deploy.yaml on a brake carrying zero SCXML `<send>`s. The DDS
+        // arm is where the teardown half is observable at all: the
+        // participant stays up when the reader goes, so a publish issued
+        // after `shutdown()` is still a real publish and a control
+        // subscriber proves it landed — over custom_tcp, hanging up is
+        // itself the unsubscribe and that distinction cannot be drawn.
+        supports_machine_lifetime_subscribe: true,
         // SCE_MESH.md section 14.4 scopes the multi-instance server pool to SOME/IP.
         // The dds arm emits one server endpoint per router and reads
         // `session_idx` 0 throughout.
@@ -985,6 +996,36 @@ pub fn server_deadline_transports() -> Vec<(&'static str, ServerDeadlineNotice)>
             }
         })
         .collect()
+}
+
+/// Transports whose send path realises the deploy.yaml-originated
+/// machine-lifetime subscribe (`machines.<name>.subscriptions:`).
+///
+/// Same contract as [`server_deadline_transports`] and consumed the same
+/// way: the topology stage's rejection diagnostic names the alternatives
+/// by reading this dimension of the registry, so an arm that lands or
+/// regresses moves the message without a second edit. The custom_tcp
+/// landing is exactly the case a prose list would have gone stale on —
+/// the message said "e.g. 'zenoh'" while three transports realised it.
+pub fn machine_lifetime_subscribe_transports() -> Vec<&'static str> {
+    known_names()
+        .iter()
+        .filter(|name| lookup(name).is_some_and(|d| d.supports_machine_lifetime_subscribe))
+        .copied()
+        .collect()
+}
+
+/// The alternatives clause the machine-lifetime rejection diagnostic
+/// carries, rendered from [`machine_lifetime_subscribe_transports`].
+///
+/// Lives beside the registry rather than at the raise site so the one
+/// place that knows the dimension also owns how it reads.
+pub fn machine_lifetime_subscribe_alternatives() -> String {
+    machine_lifetime_subscribe_transports()
+        .into_iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -1483,6 +1524,54 @@ mod tests {
     }
 
     #[test]
+    fn custom_tcp_realises_machine_lifetime_subscribe() {
+        // Flipped together with `mesh_tcp_machine_lifetime_subscribe_runtime`,
+        // which drives `machines.<name>.subscriptions:` on a subscriber
+        // document carrying zero SCXML `<send>`s — so the subscribe frame it
+        // reads off the wire has exactly one possible producer. Lowering this
+        // back to `false` without removing that fixture would under-advertise
+        // a path the tree proves; raising a sibling flag without one would be
+        // the false advertising this axis exists to prevent.
+        let d = lookup("custom_tcp").unwrap();
+        assert!(d.supports_machine_lifetime_subscribe);
+    }
+
+    #[test]
+    fn machine_lifetime_alternatives_are_read_from_the_registry() {
+        // The rejection diagnostic used to name "e.g. 'zenoh'" in prose while
+        // three transports realised the path. This pins the replacement to the
+        // descriptor set rather than to any list: a flag flip in either
+        // direction has to move the message, and no second edit can be
+        // forgotten because there is no second place to edit.
+        let derived = machine_lifetime_subscribe_transports();
+        let expected: Vec<&str> = known_names()
+            .iter()
+            .filter(|n| lookup(n).unwrap().supports_machine_lifetime_subscribe)
+            .copied()
+            .collect();
+        assert_eq!(derived, expected);
+
+        // A transport the registry knows nothing about cannot appear, and the
+        // rendered clause must name each entry the way an author would type it
+        // into `transport:`.
+        let rendered = machine_lifetime_subscribe_alternatives();
+        for name in &derived {
+            assert!(
+                rendered.contains(&format!("'{name}'")),
+                "{name} realises the path but is missing from the diagnostic clause"
+            );
+        }
+        for name in known_names() {
+            if !derived.contains(name) {
+                assert!(
+                    !rendered.contains(&format!("'{name}'")),
+                    "{name} does not realise the path but the diagnostic offers it"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn dds_does_not_advertise_unrealised_dimensions() {
         // Guards the direction this landing had to resist: a transport
         // gaining `implemented: true` must not carry flags whose "gated
@@ -1493,8 +1582,9 @@ mod tests {
             "the emitted arm substitutes no placeholder"
         );
         assert!(
-            !d.supports_machine_lifetime_subscribe,
-            "no fixture drives it"
+            d.supports_machine_lifetime_subscribe,
+            "mesh_dds_machine_lifetime_subscribe_runtime drives deploy.yaml \
+             `subscriptions:` over dds and observes the reader's teardown"
         );
         assert!(
             !d.supports_multi_instance_server,

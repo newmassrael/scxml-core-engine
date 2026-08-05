@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §13 machine-lifetime subscription fixture over custom_tcp
+     (publisher side).
+
+     Counterpart to brake_tcp_machine_lifetime_subscribe.scxml. The
+     spontaneous notification has no preceding getter or request, so
+     `handleServerResponse` finds no pending link and the send falls
+     through to the brokerless per-axis fan-out over whichever peers
+     registered on the `status` axis — here, exactly one, and it
+     registered from deploy.yaml rather than from an SCXML <send>.
+
+     `inject_server_response_sends` appends the synthetic <send> that
+     routes the raise through that fan-out. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_tcp_machine_lifetime_subscribe" initial="ready">
+    <state id="ready">
+        <transition event="sensor.update" target="ready">
+            <raise event="event.notification.status"/>
+        </transition>
+    </state>
+</scxml>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §13 machine-lifetime subscription fixture over DDS
+     (publisher side).
+
+     Counterpart to brake_dds_machine_lifetime_subscribe.scxml. The
+     spontaneous notification has no preceding getter or request, so
+     `handleServerResponse` finds no pending correlation and the send falls
+     through to a publish on the derived `_Event` topic
+     (SCE_MESH.md §mesh-8.1).
+
+     `inject_server_response_sends` appends the synthetic <send> that
+     routes the raise through that publish. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="motor_dds_machine_lifetime_subscribe" initial="ready">
+    <state id="ready">
+        <transition event="sensor.update" target="ready">
+            <raise event="event.notification.status"/>
+        </transition>
+    </state>
+</scxml>
