@@ -1277,13 +1277,13 @@ same accounting (`link/stage-copy-invoked` increments).
 
 C lacks Rust's lifetime + Drop machinery, so a single mechanism
 cannot cover all cases. The contract is therefore **layered**, with
-each layer catching what earlier layers miss. Layers 1–2 are static
-(release-build effective); layer 3 is runtime debug-only; release
-builds without an analyzer rely on the API contract being
-documented like any C library.
+each layer catching what the others miss. The typestate and
+analyzer layers are static; debug-poison is debug-only and
+defensive is release-safe; a build with neither an analyzer nor
+the defensive layer relies on the documented contract alone.
 
-**Layer 1 — ownership contract in attribute form (no C
-diagnostic).** Clang's consumed analysis is a C++ facility:
+**The typestate layer — ownership contract in attribute form (no
+C diagnostic).** Clang's consumed analysis is a C++ facility:
 `consumable` attaches to a class and `callable_when` /
 `set_typestate` to its member functions. On the free-function C
 API below all of them are dropped, so the macros expand to nothing:
@@ -1341,13 +1341,13 @@ other three violations — use-after-take, double-take, and a
 callback that escapes `sample` into a global — have NO
 compile-time diagnostic on this API.
 
-Layer 2 and Layer 3 / 3.5 are therefore not a fallback for Layer 1
-on the C backend; they are the entire defence. Rust gets this
-statically instead (lines 1264-1274), which is the asymmetry the
-layered contract exists to absorb.
+The analyzer, debug-poison and defensive layers are therefore not
+a fallback for the typestate layer on the C backend; they are the
+entire defence. Rust gets this statically instead (lines
+1264-1274), the asymmetry the layered contract exists to absorb.
 
-**Layer 2 — Lint / static-analyzer comments (compile-time,
-analyzer-driven).** Codegen emits PC-lint Plus `-sem` semantics and
+**The analyzer layer — lint / static-analyzer comments
+(compile-time).** Codegen emits PC-lint Plus `-sem` semantics and
 Coverity function-model primitives. Polyspace is excluded: its
 in-source comments justify findings, not function behaviour —
 that is `-code-behavior-specifications`, a separate XML file.
@@ -1364,29 +1364,29 @@ Coverity's `+free : arg-0` says the same 0-based. Per-pool
 accessors add `r_null` / `inout(1)`. Both forms render from one
 contract table (`forge::ownership_contract`), never by hand.
 
-**Layer 3 — Debug-build runtime poisoning (test/QA builds only).**
-When `-DSCE_DEBUG_OWNERSHIP=1` is defined (recommended for test
-and QA builds, NOT release), the runtime maintains a slot-state
-shadow table and:
+**The debug-poison layer — runtime poisoning (test/QA builds
+only).** When `-DSCE_DEBUG_OWNERSHIP=1` is defined (recommended
+for test and QA builds, NOT release), the generated callback
+boundary:
 - Poisons `sample->payload` to `0xDE` on callback return — any
   use-after-callback dereference lands on the poison byte
 - Traps on double `sce_sample_take`, take-after-callback-return
-- Traps on `dst_cap < payload_len`
+- Traps on `dst_cap < payload_len` (in the downstream definition)
 
-This catches what Layers 1–2 miss (e.g. dynamic indirection through
-function pointers that confuses static analysis). Release builds
-elide the shadow table for zero overhead.
+This catches what static analysis misses (e.g. dynamic indirection
+through function pointers). No shadow table is allocated: the
+sample already carries its slot handle.
 
-**GCC ecosystem fallback (Clang-Tidy mandatory + auto-on Layer 3.5).**
-The ARM embedded ecosystem default toolchain is `arm-none-eabi-gcc`,
-which does **not** support Clang's `consumable` typestate or
-Thread-Safety attributes. On a bare GCC build the Layer 1
-attributes silently no-op via `__has_attribute()`, which by itself
-would leave Layer 2 (commercial analyzers) and Layer 3 (debug-only
-poisoning) as the only static / runtime defenses. That outcome
-is **not an accepted release configuration** — silently-inert hooks
-are exactly the failure mode §2.4 invariant 1 ("static-first") and
-the kind contracts forbid.
+**GCC ecosystem fallback (Clang-Tidy mandatory + auto-on defensive
+layer).** The ARM embedded ecosystem default toolchain is
+`arm-none-eabi-gcc`, which does **not** support Clang's
+`consumable` typestate or Thread-Safety attributes. Neither does
+Clang when compiling C, so on this backend the typestate
+attributes are inert on every build regardless of compiler,
+leaving the analyzer layer and the debug-poison layer as the only
+static / debug defenses. That outcome on its own is **not an
+accepted release configuration** — silently-inert hooks are the
+failure mode §2.4 invariant 1 and the kind contracts forbid.
 
 Codegen therefore emits a `out/mcu/CMakeLists.txt` fragment that
 **mandates Clang-Tidy as a parallel verification stage** for every
@@ -1404,110 +1404,110 @@ set_target_properties(${SCE_MCU_LIB} PROPERTIES
     CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-warnings-as-errors=*")
 ```
 
-Clang-Tidy runs against the same source as the GCC build, parses
-the Clang `consumable` / `callable_when` annotations (which are
-preserved in the headers via `__has_attribute()` macros even when
-the build compiler ignores them), and reports use-after-take /
-double-take violations as build errors. The build compiler remains
-GCC; Clang-Tidy is a side-channel verification.
+Clang-Tidy runs against the same source as the GCC build and
+reports what the Clang frontend can see. On a C++ target that
+includes the `consumable` / `callable_when` annotations; on the C
+backend those attributes do not apply at all, which is why the
+defensive layer below is the load-bearing substitute rather than
+this side-channel. The build compiler remains GCC.
 
 The accepted release configurations are therefore:
-1. Clang ≥ 9 build (Layer 1 active natively).
-2. GCC build **plus** Clang-Tidy parallel verification (Layer 1
-   restored via side-channel).
+1. A build where the typestate attributes apply — a C++ target on
+   Clang ≥ 9.
+2. GCC build **plus** Clang-Tidy parallel verification.
 3. GCC or Clang build **plus** a recognized commercial analyzer
-   integrated in CI (PC-Lint, Coverity, Polyspace — Layer 2).
+   integrated in CI (PC-Lint, Coverity, Polyspace — analyzer layer).
 
 GCC alone, without Clang-Tidy and without a recognized analyzer,
 is **not an accepted release configuration**. It fails at build
 time with `pool/clang-tidy-not-configured` (hard error) unless
-the deploy descriptor explicitly opts into Layer 2 by declaring
+the deploy descriptor opts into the analyzer layer by declaring
 `build.static_analyzer: pc_lint | coverity | polyspace` (which
-SCE then treats as Layer 1's substitute and lets the build pass
+SCE then accepts as the substitute and lets the build pass
 with Clang-Tidy unconfigured). Treating "GCC alone" as a typo of
 "GCC + Clang-Tidy" rather than a valid configuration is the
 defense against the silently-inert hook class.
 
-To further hedge against bugs that elude static analysis even on
-Clang or analyzer-equipped builds, **Layer 3.5 (defensive runtime
-check) is default-on for GCC builds and default-off for Clang
-builds** — Clang users have Layer 1 statically, GCC users have
-Clang-Tidy statically PLUS Layer 3.5 dynamically (the parallel
-pass and the runtime check are complementary; Clang-Tidy catches
-intra-procedural escapes, Layer 3.5 catches indirect-call
-callback escapes). Authors override per build via:
+To further hedge against bugs that elude static analysis, the
+**defensive layer is default-on wherever the typestate attributes
+do not apply** — which on the C backend is every build. The
+default keys on `SCE_OWNERSHIP_ATTRS_AVAILABLE`, not on the
+compiler: keying on the compiler would leave a Clang C build with
+neither the compile-time layer nor the runtime one. Clang-Tidy
+catches intra-procedural escapes where it applies; the defensive
+layer catches indirect-call callback escapes. Authors override:
 
 ```c
-/* GCC build defaults: SCE_DEFENSIVE_OWNERSHIP=1 (Layer 3.5 active)
-   Clang build defaults: SCE_DEFENSIVE_OWNERSHIP=0 (Layer 1 covers it)
+/* Typestate attributes inert (every C build): DEFENSIVE_OWNERSHIP=1
+   Typestate attributes applicable:            DEFENSIVE_OWNERSHIP=0
    Override either default by passing the macro explicitly. */
 ```
 
 The recommended posture by toolchain:
 
-| Build compiler | Static (Layer 1+2) | Runtime (Layer 3.5) | Cost |
+| Build compiler | Static | Runtime (defensive) | Cost |
 |---|---|---|---|
-| Clang ≥ 9 | active (consumable + Wthread-safety) | off by default | compile-time only |
+| C++ target on Clang ≥ 9 | typestate + analyzer | off by default | compile-time only |
 | GCC + Clang-Tidy in CI | Clang-Tidy active (parallel) | on by default | compile-time + ≈10 cyc/callback |
-| GCC + recognized commercial analyzer (PC-Lint / Coverity / Polyspace) | active (Layer 2) | on by default | analyzer pass + ≈10 cyc/callback |
+| GCC + recognized commercial analyzer (PC-Lint / Coverity / Polyspace) | analyzer layer | on by default | analyzer pass + ≈10 cyc/callback |
 | GCC, no Clang-Tidy, no commercial analyzer | **not accepted** — `pool/clang-tidy-not-configured` is a hard error at configure time | n/a | n/a |
 
 This matrix matches the reality that most embedded teams ship
 GCC binaries; the build refusal on the bare-GCC row is what closes
 the silently-inert hook class. Adopting Clang-Tidy is the
 zero-cost path (open-source, no build-compiler swap, no commercial
-license) that lets a GCC team stay on GCC for binary distribution
-while still getting Layer 1 coverage.
+license) that lets a GCC team stay on GCC for distribution while
+still getting what the frontend can check.
 
-**Layer 3.5 — Release-mode opt-in defensive checks
-(`SCE_DEFENSIVE_OWNERSHIP=1`).** Clang typestate (Layer 1) is
-intra-procedural and loses context across function pointers — a
+**The defensive layer — release-safe boundary checks
+(`SCE_DEFENSIVE_OWNERSHIP=1`).** Compile-time ownership analysis
+is intra-procedural and loses context across function pointers — a
 subscriber callback that stores `sample` into a global cannot
-reliably be diagnosed at compile time. For deployments where
-this escape class matters (safety-critical, untrusted callback
-authors, third-party plugins), defining
-`-DSCE_DEFENSIVE_OWNERSHIP=1` enables a reduced subset of the
-Layer 3 shadow table in release builds:
-- Slot-state shadow update on callback enter/exit (verifies state
-  is `cpu-ref` on entry, `consumed` or back-to-`free` on exit)
-- Trap on use-after-callback-return (the global-escape case)
-- Skips the heavier checks (poison fill, full state diff) that
-  Layer 3 enables in debug
+reliably be diagnosed at compile time, and on the C backend there
+is no compile-time analysis to lose it in the first place.
+Defining `-DSCE_DEFENSIVE_OWNERSHIP=1` instruments the generated
+callback boundary in release builds:
+- Verifies the borrow arrives CPU-visible and leaves with its
+  payload pointer, length, and slot tag unaltered
+- Traps when a callback reshapes the borrow it was handed
+- Skips the heavier work (poison fill) the debug-poison layer
+  does
 
 The cost is a per-callback compare-and-branch (≈10 cycles on
-Cortex-M7) and one `uint8_t` per slot in the shadow table. This
-is the recommended setting for deployments that link
-third-party subscriber code, host scripted callbacks, or operate
-in adversarial environments where Layer 4's "trust the API
+Cortex-M7) and no RAM at all — the sample carries its own slot
+handle, so entry state is compared against exit in a scope-local
+rather than in a table. This is the recommended setting for
+deployments that link third-party subscriber code, host scripted
+callbacks, or operate where the unchecked layer's "trust the API
 contract" stance is insufficient. Disable
-(`-DSCE_DEFENSIVE_OWNERSHIP=0`, default) for tightest-loop
-hot-path deployments where the per-callback overhead matters.
+(`-DSCE_DEFENSIVE_OWNERSHIP=0`) for tightest-loop hot paths where
+the per-callback branch measurably matters.
 
-**Layer 4 — Release runtime (no checking).** Release builds without
-defensive opt-in have no runtime ownership enforcement; the API
-contract is documented and trusted, same as any other C library.
-Layers 1–2 do the heavy lifting in release builds — provided the
-build is Clang or a recognized analyzer is in use.
+**The unchecked layer — release runtime, no checking.** Builds
+that switch the defensive layer off have no runtime ownership
+enforcement; the API contract is documented and trusted, same as
+any other C library. The analyzer layer does the heavy lifting
+there — provided a recognized analyzer is actually in use.
 
 **Layer trade-off summary:**
 
 | Layer | Build mode | Toolchain | Catches | Cost |
 |---|---|---|---|---|
-| 1 Clang typestate | release + debug | Clang ≥ 9 | use-after-take, double-take, intra-procedural leak | compile-time only |
-| 2 Lint annotations | release + debug | PC-Lint, Coverity, Polyspace, etc. | use-after-take, similar to Layer 1 | analyzer pass only |
-| 3 Debug poisoning | debug only (`-DSCE_DEBUG_OWNERSHIP=1`) | any | runtime use-after-callback, double-take, undersized dst, full poison-fill | small RAM + per-callback shadow update + memory writes |
-| 3.5 Release defensive opt-in | release (`-DSCE_DEFENSIVE_OWNERSHIP=1`) | any | callback-escape (sample stored to global, deref after callback returns) | ≈10 cycles per callback + `uint8_t` per slot |
-| 4 Release runtime | release (default) | any | nothing | zero |
+| typestate | release + debug | C++ target on Clang ≥ 9 | use-after-take, double-take, intra-procedural leak | compile-time only |
+| analyzer | release + debug | PC-lint Plus, Coverity | use-after-take, custody transfer, null returns | analyzer pass only |
+| debug-poison | debug only (`-DSCE_DEBUG_OWNERSHIP=1`) | any | runtime use-after-callback, double-take, undersized dst, poison-fill | per-callback check + memory writes |
+| defensive | release (`-DSCE_DEFENSIVE_OWNERSHIP=1`) | any | callback-escape (sample stored to global, deref after callback returns) | ≈10 cycles per callback, zero RAM |
+| unchecked | release | any | nothing | zero |
 
-Authors ship release builds with **Clang + `-Wconsumed
--Wthread-safety` as a hard error**, OR with a GCC build and
-Clang-Tidy parallel verification active, OR with a recognized
-analyzer (PC-Lint / Coverity / Polyspace) in CI. The bare-GCC,
-no-analyzer configuration is rejected at configure time
-(`pool/clang-tidy-not-configured`, hard error) — Layer 4 is the
-*runtime* row of the table only, not a release configuration on
-its own. RFC §6.2.6 (drift detection) preserves the requirement
-that emitted attributes/comments stay in sync with the kind source.
+Authors ship release builds with a recognized analyzer (PC-lint
+Plus / Coverity) in CI, OR with a GCC build and Clang-Tidy
+parallel verification active, OR — on a C++ target — with Clang
+and `-Wconsumed` as a hard error. The bare-GCC, no-analyzer
+configuration is rejected at configure time
+(`pool/clang-tidy-not-configured`, hard error); the unchecked
+layer is the *runtime* row of the table only, not a release
+configuration on its own. RFC §6.2.6 (drift detection) keeps
+emitted attributes/comments in sync with the kind source.
 
 **Application-layer ownership diagnostics:**
 - `pool/sample-take-without-stage-pool` — generated `sce_sample_take`
@@ -1517,21 +1517,21 @@ that emitted attributes/comments stay in sync with the kind source.
   callback signature in SCXML does not match the borrow-mode
   contract (e.g. takes `sample` by value, attempting to move
   ownership across a callback that has none)
-- `pool/sample-typestate-attributes-disabled` — Clang build detected
-  but `__has_attribute(consumable)` evaluates false (Clang too old,
-  or `-fno-thread-safety` set). Layer 1 protection is silently
-  inert; build succeeds with a warning so the operator can decide
-  whether Layer 2 / Layer 3 coverage is sufficient or whether to
-  upgrade the compiler
-- `pool/clang-tidy-not-configured` — GCC build detected (no Clang
-  typestate at compile time) and the generated CMakeLists.txt's
-  Clang-Tidy parallel verification stage cannot find a `clang-tidy`
-  executable, AND the deploy descriptor has not declared
-  `build.static_analyzer: pc_lint | coverity | polyspace` as a
-  Layer 1 substitute. **Hard error at configure time.** Layer 1
-  coverage cannot be silently absent in a release configuration;
-  the operator must install Clang-Tidy, switch build compiler to
-  Clang ≥ 9, or declare a recognized commercial analyzer
+- `pool/sample-typestate-attributes-disabled` — the generated C11
+  pool header is missing its `#include <sce/sample.h>`, so the
+  ownership contract the analyzer and defensive layers rest on is
+  absent from the consumer build. Codegen-invariant violation: it
+  fires only when the buffer-pool template drops the directive,
+  never in response to the operator's compiler
+- `pool/clang-tidy-not-configured` — GCC build detected and the
+  generated CMakeLists.txt's Clang-Tidy parallel verification
+  stage cannot find a `clang-tidy` executable, AND the deploy
+  descriptor has not declared
+  `build.static_analyzer: pc_lint | coverity | polyspace` as the
+  analyzer-layer substitute. **Hard error at configure time.**
+  Static coverage cannot be silently absent in a release
+  configuration; the operator must install Clang-Tidy or declare
+  a recognized commercial analyzer
 
 **Diagnostics:**
 - `mem/pool-section-conflict` — section declared but not in deploy memory map

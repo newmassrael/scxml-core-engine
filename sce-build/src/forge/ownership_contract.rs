@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Forge: Layer 2 analyzer-annotation contract (SCE Protocol-Synthesis
+// SCE Forge: analyzer-layer annotation contract (SCE Protocol-Synthesis
 // RFC §synth-5-E lines 1349-1365). Single source of truth for the
 // pointer-ownership facts that commercial static analyzers consume on
-// toolchains where Layer 1 (Clang `consumable` typestate) is inert.
+// toolchains where the typestate layer is inert — which, on C, is all
+// of them.
 //
 // ── Why this is data rather than hand-written comments ─────────────
 //
@@ -19,7 +20,7 @@
 // PC-lint's `-function(f1, f2)` copies *all* of f1's semantics onto f2.
 // Applied to this pair it would tell the analyzer that the borrow
 // accessor `sce_sample_payload` also takes custody of its argument —
-// the precise opposite of the borrow contract Layer 1 encodes with
+// the precise opposite of the borrow contract the header states with
 // `callable_when("unconsumed")`, and a false-positive source on
 // correct caller code. Rendering both syntaxes from one contract makes
 // that class of divergence unrepresentable: `Custodial` appears in the
@@ -63,7 +64,7 @@ pub enum PointerEffect {
     /// `sce_sample_payload(sample)` in the same scope is flagged".
     Custodial,
     /// The callee reads through the pointer and returns; the caller
-    /// retains ownership. This is the Layer 1
+    /// retains ownership. This is the
     /// `callable_when("unconsumed")` accessor shape.
     Borrow,
     /// The callee writes through the pointer (an out-parameter). The
@@ -108,7 +109,7 @@ pub struct ParamContract {
     pub caller_guarantees_non_null: bool,
 }
 
-/// The Layer 2 contract for one C function.
+/// The analyzer-layer contract for one C function.
 ///
 /// The name borrows rather than owning so per-pool contracts — whose
 /// names are assembled at codegen time from the pool's snake_case name
@@ -215,13 +216,13 @@ impl OwnershipContract<'_> {
     }
 }
 
-/// Layer 2 contracts for the three `<sce/sample.h>` runtime
+/// Analyzer-layer contracts for the three `<sce/sample.h>` runtime
 /// declarations (spec §synth-5-E lines 1318-1334).
 ///
 /// `sce_sub_callback_t` is a typedef rather than a declaration and
 /// therefore carries no annotation: PC-lint's `-sem` and Coverity's
 /// model primitives both key on a *function* name, and the callback's
-/// ownership contract is stated at Layer 1 via
+/// ownership contract is stated in the typestate spelling via
 /// `param_typestate("unconsumed")` on the typedef's parameter.
 pub const RUNTIME_CONTRACTS: [OwnershipContract<'static>; 2] = [
     // `const uint8_t *sce_sample_payload(const sce_sample_t *sample)`.
@@ -266,7 +267,7 @@ pub const RUNTIME_CONTRACTS: [OwnershipContract<'static>; 2] = [
     },
 ];
 
-/// A per-pool function's Layer 2 contract. The pool's snake_case name
+/// A per-pool function's contract. The pool's snake_case name
 /// is a codegen-time value, so the contract stores the suffix and
 /// [`pool_contract`] assembles the full name at render time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,7 +282,7 @@ pub struct PoolFnContract {
     pub may_return_null: bool,
 }
 
-/// Layer 2 contracts for the tag-checked per-pool author API
+/// Analyzer-layer contracts for the tag-checked per-pool author API
 /// (spec §synth-5-E lines 1239-1242).
 ///
 /// The transition functions declare `InOut`, not `Custodial`: they
@@ -293,7 +294,7 @@ pub struct PoolFnContract {
 /// The accessors (`_slot_read` / `_slot_write`) declare `Borrow` — they
 /// read the handle's tag and return a pointer into pool storage without
 /// touching the handle — plus `may_return_null`, which is the fact
-/// Layer 1 cannot state at all: Clang's typestate family has no
+/// the typestate layer cannot state at all: Clang's family has no
 /// return-nullability attribute, so on a Clang build this contract is
 /// strictly additive rather than a fallback.
 ///
@@ -569,7 +570,8 @@ mod tests {
     }
 
     /// The null-returning pool accessors must render `r_null` so a
-    /// caller that skips the check is flagged. This is the fact Layer 1
+    /// caller that skips the check is flagged. This is the fact the
+    /// typestate layer
     /// cannot state — Clang's typestate family has no return-nullability
     /// attribute.
     #[test]
@@ -598,7 +600,7 @@ mod tests {
     /// Every contract must render at least one line. A contract whose
     /// effects happen to map to no analyzer semantic renders nothing,
     /// the codegen self-check passes vacuously, and the declaration
-    /// ships with no Layer 2 coverage while looking covered — the
+    /// ships with no analyzer coverage while looking covered — the
     /// failure this table exists to prevent. `_link_arm_tx` and
     /// `_pool_return` sat in exactly that state until `InOut` was
     /// separated from `OutParam`.
@@ -608,7 +610,7 @@ mod tests {
             assert!(
                 !c.rendered_lines().is_empty(),
                 "{}: contract renders no annotation — the declaration would ship \
-                 with no Layer 2 coverage while the tables claim it is covered",
+                 with no analyzer coverage while the tables claim it is covered",
                 c.name
             );
         }
@@ -617,7 +619,7 @@ mod tests {
             assert!(
                 !lines.is_empty(),
                 "{}: contract renders no annotation — the declaration would ship \
-                 with no Layer 2 coverage while the tables claim it is covered",
+                 with no analyzer coverage while the tables claim it is covered",
                 c.suffix
             );
         }

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Protocol-Synthesis RFC §synth-5-E lines 1276-1346 — application-facing Sample
-// API + Layer 1 Clang typestate + capability-attribute family. Lives
+// API + typestate spelling + capability-attribute family. Lives
 // in the C11 backend's Tier 1 INTERFACE (sce_c_runtime per
 // `c11_4tier_layering.md`) so generated code, downstream consumer
 // crates, and the buffer-pool codegen integration
@@ -16,16 +16,16 @@
 //     on GCC and Clang, in C and C++, and it is also this header's
 //     statement of MISRA C:2012 Rule 17.7.
 //
-//   * The Layer 1 typestate spelling (`SCE_CONSUMABLE` /
+//   * The typestate spelling (`SCE_CONSUMABLE` /
 //     `SCE_CALLABLE_WHEN(s)` / `SCE_SET_TYPESTATE(s)` /
 //     `SCE_PARAM_TYPESTATE(s)`), which expands to NOTHING. Clang's
 //     consumed analysis is a C++ facility keyed on classes and
 //     member functions; measured against Clang 19.1.7 it produces
 //     no diagnostic for this free-function C API. The tokens stay on
 //     the declarations as the written form of the contract that
-//     Layers 2 and 3 / 3.5 enforce — see the detection block below
-//     for the measurement and
-//     `sample_h_layer1_typestate_is_inert_in_c_and_only_warn_unused_survives`
+//     the analyzer and runtime layers enforce — see the detection
+//     block below for the measurement and
+//     `sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives`
 //     for the test that pins it.
 //
 //   * `sce_sample_t` — the read-only borrow handed to subscriber
@@ -39,12 +39,12 @@
 //     `sce_sub_callback_t` (typedef for the subscriber-side
 //     callback signature).
 //
-//   * Layer 2 analyzer annotations (spec lines 1349-1365) on the two
+//   * the analyzer annotations (spec lines 1349-1365) on the two
 //     function declarations — PC-lint Plus `-sem` semantics and
 //     Coverity function-model primitives. Both are rendered from
 //     `sce-build/src/forge/ownership_contract.rs`, which is also what
 //     the per-pool C11 template renders from; the
-//     `sample_h_layer2_annotations_match_the_ownership_contract` test
+//     `sample_h_analyzer_annotations_match_the_ownership_contract` test
 //     pins this file against that contract. Hand-editing an
 //     annotation here without editing the contract fails that test.
 //     The two syntaxes disagree on argument numbering (PC-lint is
@@ -81,7 +81,7 @@
 //     the form every conforming MISRA checker reads.
 //
 //   * A shadow slot table. Spec line 1478 budgets one byte per slot
-//     for Layer 3.5; none is allocated, because `sce_sample_t`
+//     for the defensive layer; none is allocated, because `sce_sample_t`
 //     already carries the slot handle and the boundary compares
 //     entry against exit in a scope-local.
 //
@@ -95,7 +95,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-// `memset` backs the Layer 3 poison fill. Included unconditionally
+// `memset` backs the debug-poison fill. Included unconditionally
 // and outside the `extern "C"` block below: a standard header must
 // not be pulled in under C linkage, and gating it on
 // `SCE_DEBUG_OWNERSHIP` would put the `#include` after that macro's
@@ -106,7 +106,7 @@
 extern "C" {
 #endif
 
-// ── Layer 1 typestate detection ──────────────────────────────────
+// ── Typestate detection ──────────────────────────────────
 //
 // `__has_attribute` answers "does this compiler know the attribute
 // name", NOT "does it apply the attribute to the declaration I am
@@ -125,7 +125,7 @@ extern "C" {
 // `consumable` attaches to a class, and `callable_when` /
 // `set_typestate` attach to that class's MEMBER functions — they are
 // dropped on a free function even in C++, which is why this header's
-// free-function API cannot express Layer 1 in either language.
+// free-function API cannot express the typestate layer in either language.
 //
 // So `SCE_OWNERSHIP_ATTRS_AVAILABLE` is gated on `__cplusplus`. In C
 // it is 0, and that is not a limitation being worked around: it is
@@ -135,9 +135,9 @@ extern "C" {
 // compiles while claiming to protect them.
 //
 // The consequence is deliberate and load-bearing: on the C11 backend
-// Layer 2 (analyzer annotations) and Layer 3 / 3.5 (runtime boundary)
-// are not a fallback for Layer 1, they are the entire defence. The
-// Layer 3.5 default below reads this macro rather than `__clang__`
+// the analyzer layer and the runtime boundary are not a fallback
+// for the typestate layer, they are the entire defence. The
+// defensive default below reads this macro rather than `__clang__`
 // precisely so that a C build gets the runtime boundary switched on.
 
 // Pinned to 0, not probed. `__has_attribute` answers yes for every
@@ -147,8 +147,8 @@ extern "C" {
 
 // The typestate family expands to nothing, in every language and on
 // every toolchain. The tokens stay on the declarations below because
-// they are the written form of the ownership contract that Layers 2
-// and 3 / 3.5 actually enforce — removing them would delete the
+// they are the written form of the ownership contract that the
+// analyzer and runtime layers enforce — removing them would delete the
 // statement of intent that the analyzer annotations and the runtime
 // boundary are derived from. They are documentation with a compiler
 // -checked spelling, not a dormant feature switch.
@@ -161,7 +161,7 @@ extern "C" {
 // works — on C and C++, GCC and Clang alike — so it gets its own
 // detection instead of riding on the dead family above. It is also
 // how this header states MISRA C:2012 Rule 17.7, which is the only
-// Layer 2 fact Polyspace can read from source.
+// The analyzer layer fact Polyspace can read from source.
 #if defined(__has_attribute)
 #if __has_attribute(warn_unused_result)
 #define SCE_WARN_UNUSED __attribute__((warn_unused_result))
@@ -185,8 +185,8 @@ extern "C" {
 //
 // The gap it was pointing at is closed rather than announced.
 // `SCE_DEFENSIVE_OWNERSHIP` below defaults ON whenever
-// `SCE_OWNERSHIP_ATTRS_AVAILABLE` is 0, so a build with no Layer 1
-// gets the Layer 3.5 runtime boundary without the operator doing
+// `SCE_OWNERSHIP_ATTRS_AVAILABLE` is 0, so a build with no the typestate layer
+// gets the defensive layer runtime boundary without the operator doing
 // anything. The `pool/sample-typestate-attributes-disabled`
 // codegen diagnostic still guards the other half — that the
 // generated pool header actually pulls this file in.
@@ -247,7 +247,7 @@ typedef enum { SCE_RESULT_OK = 0, SCE_RESULT_ERR_BUFFER_TOO_SMALL = 1, SCE_RESUL
 // ── sce_sample_t ─────────────────────────────────────────────────
 //
 // The borrow handed to subscriber callbacks. The `SCE_CONSUMABLE`
-// attribute on the struct (Layer 1 only) marks it as a typestate-
+// attribute on the struct (the typestate layer only) marks it as a typestate-
 // tracked value: callbacks that exit without calling
 // `sce_sample_take` invalidate the borrow at scope-end, and Clang's
 // `-Wconsumed` flags any attempt to re-use a `consumed` sample.
@@ -274,7 +274,7 @@ typedef struct SCE_CONSUMABLE {
 /// `-Wconsumed -Wthread-safety` and undefined behaviour without
 /// the analyzer.
 ///
-/// Layer 2: the sample is borrowed, not consumed — `1p` states only
+/// Analyzer layer: the sample is borrowed, not consumed — `1p` says only
 /// that the argument is dereferenced. No `custodial` and no Coverity
 /// `+free`: telling an analyzer this accessor consumes its argument
 /// would flag correct callers that go on to `take`.
@@ -285,14 +285,14 @@ const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE
 /// Consume the sample — copies its payload into the caller-owned
 /// buffer at `dst` (capacity `dst_cap`), writes the byte count to
 /// `*out_len`, and transitions the sample's typestate to `consumed`
-/// so subsequent borrow accesses surface as Layer 1 diagnostics.
+/// so subsequent borrow accesses surface as the typestate layer diagnostics.
 /// Returns `SCE_RESULT_OK` on success, or one of the documented
 /// `SCE_RESULT_ERR_*` values otherwise. `SCE_WARN_UNUSED` makes
 /// ignoring the result a Clang/GCC warning — and states MISRA C:2012
 /// Rule 17.7 in the form every conforming checker reads, which is the
-/// only Layer 2 fact Polyspace can consume from source.
+/// only the analyzer layer fact Polyspace can consume from source.
 ///
-/// Layer 2: `custodial(1)` is the whole point of the layer — after the
+/// Analyzer layer: `custodial(1)` is the point of the layer — after the
 /// call argument 1 is invalid, so PC-lint flags a subsequent
 /// `sce_sample_payload(sample)` in the same scope (issue 429 / 449).
 /// Coverity's `+free : arg-0` states the same fact 0-based. `2p` and
@@ -311,12 +311,13 @@ sce_result_t sce_sample_take(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unc
 /// that lets the borrow escape its scope without a `take`.
 typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void *ctx);
 
-// ── Layer 3 / 3.5 ownership checking (spec lines 1367-1378 + 1462-1484)
+// ── Runtime ownership checking (spec lines 1367-1378 + 1462-1484)
 //
-// Layer 1 is intra-procedural: it loses the borrow at an indirect
-// call, so a subscriber callback that stores `sample` into a global
+// The typestate layer is intra-procedural: it loses the borrow at an
+// indirect
+// call, so a subscriber callback that stores `sample` in a global
 // is the one violation class no compile-time layer can see (spec
-// lines 1464-1467). Layers 3 and 3.5 close it at runtime.
+// lines 1464-1467). the debug-poison and defensive layers close it at runtime.
 //
 // ── Where the check lives, and why ──────────────────────────────
 //
@@ -328,7 +329,7 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 // cannot be silently skipped by a downstream that forgets to call
 // into it.
 //
-// Three of the four Layer 3 behaviours land there or in the pool:
+// Three of the four debug-poison behaviours land there or in the pool:
 //
 //   * poison on callback return — the boundary (below)
 //   * use-after-callback-return — the boundary, via the poison
@@ -352,21 +353,21 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 // zero bytes of RAM, which matters more on an MCU than the table
 // would have.
 
-/// Layer 3 — debug-build poisoning. Opt-in, never a release default
-/// (spec lines 1367-1370). Implies the Layer 3.5 boundary checks and
-/// adds the poison fill.
+/// Debug-poison layer. Opt-in, never a release default (spec lines
+/// 1367-1370). Implies the defensive boundary checks and adds the
+/// poison fill.
 #ifndef SCE_DEBUG_OWNERSHIP
 #define SCE_DEBUG_OWNERSHIP 0
 #endif
 
-/// Layer 3.5 — defensive boundary checks, release-safe (spec lines
+/// The defensive layer — defensive boundary checks, release-safe (spec lines
 /// 1462-1484).
 ///
-/// The default keys on whether Layer 1 is *actually* live, not on
+/// The default keys on whether the typestate layer is *actually* live, not on
 /// which compiler is running. Spec lines 1441-1443 write the default
 /// as "GCC → 1, Clang → 0", but a Clang build whose `consumable`
 /// family is unavailable (older Clang, `-fno-thread-safety`) has no
-/// Layer 1 either — the case the `#warning` above already detects.
+/// typestate layer either — the case the removed `#warning` covered.
 /// Keying on the compiler would leave that build with neither layer;
 /// keying on `SCE_OWNERSHIP_ATTRS_AVAILABLE` closes it. On a Clang
 /// build with the attributes present the two rules agree.
@@ -381,7 +382,7 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 /// True when either layer wants the boundary instrumented.
 #define SCE_OWNERSHIP_CHECKED (SCE_DEBUG_OWNERSHIP || SCE_DEFENSIVE_OWNERSHIP)
 
-/// Byte written over a consumed borrow's payload under Layer 3
+/// Byte written over a consumed borrow's payload under the debug-poison layer
 /// (spec line 1371). Chosen by the spec; pinned here so the
 /// generated boundary and any downstream `sce_sample_take` agree on
 /// what a poisoned read looks like.
@@ -391,9 +392,9 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 /// that must reach a fault handler / safe state rather than abort)
 /// can route the violation somewhere useful. The default is
 /// `assert`, which compiles out under `NDEBUG` — deliberate for
-/// Layer 3, which is debug-only. Layer 3.5 ships in release builds,
-/// where `NDEBUG` is typically defined, so a deployment that turns
-/// 3.5 on is expected to define this.
+/// the debug-poison layer, which is debug-only. The defensive layer
+/// ships in release builds, where `NDEBUG` is typically defined, so a
+/// deployment that turns it on is expected to define this.
 #ifndef SCE_OWNERSHIP_TRAP
 #define SCE_OWNERSHIP_TRAP(msg) assert(0 && (msg))
 #endif
@@ -403,14 +404,14 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 ///
 /// The generated pool API already tag-checks every transition and
 /// returns `false` / `NULL` on a mismatch; that return is the release
-/// behaviour and does not change. This macro is how Layer 3 turns the
+/// behaviour and does not change. This macro is how the debug-poison layer turns the
 /// same condition into a stop, so the offending call site is the one
 /// in the debugger rather than whatever code later mishandles the
 /// failure return.
 ///
 /// Debug-only on purpose: a tag mismatch always indicates a caller
 /// bug, but a release build that defensively probes state and handles
-/// the failure return must not be stopped for doing so. Layer 3.5
+/// the failure return must not be stopped for doing so. the defensive layer
 /// therefore leaves this inert and instruments only the callback
 /// boundary, matching spec line 1474 ("skips the heavier checks").
 #if SCE_DEBUG_OWNERSHIP
@@ -427,7 +428,7 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTAT
 typedef struct {
     /// The slot's lifecycle state on entry.
     sce_slot_state_t entry_state;
-    /// Payload base recorded on entry, poisoned on exit under Layer 3.
+    /// Payload base recorded on entry, poisoned on exit under the debug-poison layer.
     const uint8_t *payload;
     /// Payload length recorded on entry.
     size_t payload_len;
@@ -470,11 +471,11 @@ static inline sce_ownership_scope_t sce_ownership_callback_enter(const sce_sampl
 /// conclusion drawn from it — including this function's own poison
 /// fill — would be aimed at the wrong memory.
 ///
-/// Under Layer 3 the payload is then poisoned unconditionally (spec
+/// Under the debug-poison layer the payload is then poisoned unconditionally (spec
 /// lines 1371-1372): a handler that stashed `sample` reads
 /// `SCE_OWNERSHIP_POISON_BYTE` afterwards instead of bytes that still
 /// look plausible. Doing it after a `take` is harmless — `take`
-/// copies to the caller's buffer first. Layer 3.5 skips the fill;
+/// copies to the caller's buffer first. the defensive layer skips the fill;
 /// that is the whole difference between the two (spec lines
 /// 1473-1475).
 static inline void sce_ownership_callback_exit(const sce_ownership_scope_t *scope, const sce_sample_t *sample) {
@@ -493,7 +494,7 @@ static inline void sce_ownership_callback_exit(const sce_ownership_scope_t *scop
 #if SCE_DEBUG_OWNERSHIP
     // The cast drops `const` on purpose: the pointee is pool storage
     // whose borrow ends at this line, and overwriting it is the point.
-    // Debug builds only — Layer 3.5 does not reach here.
+    // Debug builds only — the defensive layer does not reach here.
     if (sample->payload != NULL && sample->payload_len > 0) {
         (void)memset((void *)(uintptr_t)sample->payload, SCE_OWNERSHIP_POISON_BYTE, sample->payload_len);
     }

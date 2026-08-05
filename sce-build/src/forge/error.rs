@@ -1481,16 +1481,17 @@ pub enum ValidationError {
     /// RFC §synth-5-E codegen self-check: the rendered C11 buffer-pool
     /// header is missing the `#include <sce/sample.h>` directive. The
     /// generated pool header surfaces the runtime Sample API
-    /// (typestate-tracked `sce_sample_t` + Layer 1 attribute family) by
+    /// (typestate-tracked `sce_sample_t` + the attribute family) by
     /// pulling in `backends/c/runtime/include/sce/sample.h`; without the
     /// include, downstream consumers building against the pool header
-    /// silently lose Layer 1 typestate coverage even on Clang ≥ 9
+    /// silently lose the ownership contract the analyzer and defensive
+    /// layers rest on
     /// because the macro family is unreachable. The diagnostic fires
     /// only when the template itself drops the include — it is a
     /// codegen invariant, not an authoring mistake. RFC §synth-5-E lines
     /// 1276-1346 + 1520-1525 spec anchors.
     #[error(
-        "buffer-pool '{name}': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"
+        "buffer-pool '{name}': generated C11 header is missing the `#include <sce/sample.h>` directive — the ownership contract the analyzer and defensive layers rest on will be absent from consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"
     )]
     BufferPoolSampleTypestateAttributesDisabled {
         /// Buffer-pool document name (root `name=` attribute).
