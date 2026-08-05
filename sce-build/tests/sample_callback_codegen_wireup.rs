@@ -618,7 +618,7 @@ fn which(tool: &str) -> Option<PathBuf> {
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-E lines 1367-1378 + 1462-1484:
-/// the Layer 3 / 3.5 ownership boundary must enclose the host callback
+/// the runtime ownership boundary must enclose the host callback
 /// in the generated delivery function.
 ///
 /// This is the position that makes the layers work at all. Clang's

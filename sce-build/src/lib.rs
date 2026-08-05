@@ -9273,7 +9273,7 @@ topology:
             header.contains("#include <sce/sample.h>"),
             "Sample-runtime integration: pool header must `#include <sce/sample.h>` so \
              the runtime header's seven-state FSM + tag-checked handle + \
-             Layer 1 typestate family reach consumer builds; full header:\n{header}",
+             typestate family reach consumer builds; full header:\n{header}",
         );
         assert!(
             header.contains("static sce_slot_state_t rx_pool_sram1_slot_states["),
@@ -9653,7 +9653,7 @@ topology:
     /// The `pool/sample-typestate-attributes-disabled` self-check
     /// guards the `#include <sce/sample.h>` directive in
     /// `tools/codegen/templates/forge/c/buffer_pool.h.jinja2`. The
-    /// runtime header is the producer of the Layer 1 typestate macro
+    /// runtime header is the producer of the typestate macro
     /// family (`SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
     /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`) +
     /// the `sce_sample_t` borrow type; consumer builds compiling
@@ -9702,7 +9702,7 @@ topology:
         );
     }
 
-    /// Locate a Clang ≥ 9 binary on PATH. Layer 1 typestate analysis
+    /// Locate a Clang ≥ 9 binary on PATH. Typestate analysis
     /// requires Clang's `consumable` / `callable_when` /
     /// `param_typestate` / `set_typestate` / `warn_unused_result`
     /// attribute family which GCC does not implement. Returns `None`
@@ -9735,7 +9735,7 @@ topology:
         None
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E: Layer 1 as the spec
+    /// SCE Protocol-Synthesis RFC §synth-5-E: the typestate layer as the spec
     /// describes it does not exist on this API's shape. This test pins
     /// the measured behaviour, not the claim.
     ///
@@ -9753,8 +9753,8 @@ topology:
     /// two things must hold:
     ///
     /// 1. the typestate misuse patterns **compile** — no diagnostic
-    ///    exists to catch them, which is exactly why Layer 2 and
-    ///    Layer 3 / 3.5 carry the whole contract on this backend;
+    ///    exists to catch them, which is exactly why the analyzer
+    ///    and runtime layers carry the whole contract on this backend;
     /// 2. the `warn_unused_result` pattern is still **rejected** — that
     ///    attribute is the one member of the original five that works.
     ///
@@ -9766,16 +9766,16 @@ topology:
     ///
     /// If case 1 ever starts failing, Clang has gained C support for
     /// the family — at which point `SCE_OWNERSHIP_ATTRS_AVAILABLE`'s
-    /// pin to 0 and the Layer 3.5 default that reads it both need
+    /// pin to 0 and the defensive default that reads it both need
     /// revisiting. That is the drift this direction guards.
     ///
     /// Skips informatively on build environments without Clang.
     #[test]
-    fn sample_h_layer1_typestate_is_inert_in_c_and_only_warn_unused_survives() {
+    fn sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives() {
         let Some(clang) = locate_clang_binary() else {
             eprintln!(
-                "sample_h_layer1_typestate_clang_rejects_misuse: skipped — \
-                 no clang binary on PATH; Layer 1 typestate analysis \
+                "sample_h_typestate_is_inert_in_c: skipped — \
+                 no clang binary on PATH; typestate analysis \
                  requires Clang ≥ 9. Spec lines 1444-1453 document the \
                  silently-inert path on non-Clang toolchains; this test \
                  only enforces Clang's rejection contract.",
@@ -9803,7 +9803,7 @@ int main(void) {
     uint8_t buf[16];
     size_t n = 0;
     (void)sce_sample_take(&s, buf, sizeof buf, &n);
-    /* Layer 1 violation: payload accessor is callable_when("unconsumed")
+    /* Typestate violation: payload accessor is callable_when("unconsumed")
      * but the prior take transitioned the sample to "consumed". */
     const uint8_t *p = sce_sample_payload(&s);
     (void)p;
@@ -9822,7 +9822,7 @@ int main(void) {
     uint8_t buf[16];
     size_t n = 0;
     (void)sce_sample_take(&s, buf, sizeof buf, &n);
-    /* Layer 1 violation: param_typestate("unconsumed") but the prior
+    /* Typestate violation: param_typestate("unconsumed") but the prior
      * take has already transitioned the sample to "consumed". */
     (void)sce_sample_take(&s, buf, sizeof buf, &n);
     return 0;
@@ -9853,7 +9853,7 @@ int main(void) {
 
         for (case, body, must_be_rejected) in cases {
             let tmp = std::env::temp_dir().join(format!(
-                "sce-build-eps-clang-reject-{}-{}",
+                "sce-build-typestate-probe-{}-{}",
                 std::process::id(),
                 case,
             ));
@@ -9904,7 +9904,7 @@ int main(void) {
                      analysis does not apply to this header's \
                      free-function C API — `consumable` is class-only and \
                      `callable_when` / `set_typestate` are member-only — \
-                     so no diagnostic exists to catch it, and Layers 2 and \
+                     so no diagnostic exists to catch it, and the analyzer \
                      3 / 3.5 carry the contract instead. A rejection here \
                      means the family became applicable: revisit the \
                      SCE_OWNERSHIP_ATTRS_AVAILABLE pin to 0 and the Layer \
@@ -9923,7 +9923,7 @@ int main(void) {
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E: the silently-inert axis.
-    /// On non-Clang toolchains the Layer 1 attribute family (per
+    /// On non-Clang toolchains the typestate attribute family (per
     /// `<sce/sample.h>`) expands to empty per spec lines 1444-1453;
     /// the emitted pool header + transitively pulled-in sample.h must
     /// still compile under host gcc with strict flags including
@@ -9987,7 +9987,7 @@ int main(void) { (void)0; return 0; }
             // pool storage table (`.sram1_rx_pool_sram1` does not exist
             // on the host toolchain). The same suppression neutralises
             // any `__attribute__` payload elsewhere in the include
-            // chain — Layer 1 attributes are already empty under gcc
+            // chain — the typestate attributes are already empty under gcc
             // per the silently-inert path.
             .arg("-D__attribute__(x)=")
             .arg("-I")
@@ -10038,7 +10038,7 @@ int main(void) { (void)0; return 0; }
         assert!(
             body.contains("#include <sce/sample.h>"),
             "buffer_pool.h.jinja2 must `#include <sce/sample.h>` so consumer \
-             builds inherit the Layer 1 typestate attribute family + \
+             builds inherit the typestate attribute family + \
              sce_sample_t; missing this is the codegen-invariant violation \
              pool/sample-typestate-attributes-disabled guards against \
              (RFC §5.E lines 1276-1346)",
@@ -10355,7 +10355,7 @@ int main(void) { (void)0; return 0; }
     /// gcc under `-std=c11 -Wall -Wextra -Werror` against a tiny
     /// translation unit that `#include`s the header and exercises the
     /// `_Static_assert` invariants + macro expansions. The clang-axis
-    /// Layer 1 typestate verification (`-Wconsumed -Wthread-safety`
+    /// Typestate verification (`-Wconsumed -Wthread-safety`
     /// rejecting use-after-take + double-take + callback-leak) is
     /// covered by the dedicated Clang typestate tests above. This smoke test is
     /// the runtime-header-side prereq's silent-broken-hook guard:
@@ -10431,7 +10431,7 @@ int main(void) {
             // header's `#warning` (Clang-detected + attributes
             // unavailable) only fires under Clang, so gcc compiles
             // cleanly. The empty-macro path is the silently-inert
-            // Layer 1 surface the spec calls out at lines 1444-1453.
+            // typestate surface the spec calls out at lines 1444-1453.
             .arg("-I")
             .arg(&include_dir)
             .arg(&driver_path)
@@ -10454,7 +10454,7 @@ int main(void) {
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E lines 1367-1378 + 1462-1484:
-    /// the Layer 3 / 3.5 ownership boundary is compiled AND RUN under
+    /// the runtime ownership boundary is compiled AND RUN under
     /// gcc, so the assertions are about behaviour rather than about
     /// text appearing in a header.
     ///
@@ -10463,10 +10463,10 @@ int main(void) {
     /// count hits instead of aborting, which is what makes the trap
     /// paths observable at all. The cases pin the three facts that
     /// would otherwise be silently wrong: the default layer selection,
-    /// that Layer 3 actually writes the poison byte, and that Layer 3.5
+    /// that debug-poison actually writes the poison byte, and that defensive
     /// actually does not.
     #[test]
-    fn sample_h_layer3_ownership_boundary_behaves_under_gcc() {
+    fn sample_h_ownership_boundary_behaves_under_gcc() {
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let include_dir = crate_dir.join("../backends/c/runtime/include");
 
@@ -10492,23 +10492,23 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
         // the body held.
         let cases: &[(&str, &[&str], &str)] = &[
             (
-                // Host gcc has no `consumable` family, so Layer 1 is
+                // Host gcc has no `consumable` family, so the typestate layer is
                 // inert and 3.5 must pick up the slack. This is the
                 // case the spec's compiler-keyed default gets wrong
                 // on a Clang build with the attributes missing.
-                "defaults-where-layer1-is-inert",
+                "defaults-where-typestate-is-inert",
                 &[],
                 r#"int main(void) {
     _Static_assert(SCE_OWNERSHIP_ATTRS_AVAILABLE == 0, "host gcc has no consumable family");
-    _Static_assert(SCE_DEBUG_OWNERSHIP == 0, "Layer 3 must never default on");
-    _Static_assert(SCE_DEFENSIVE_OWNERSHIP == 1, "Layer 3.5 must default on where Layer 1 is inert");
+    _Static_assert(SCE_DEBUG_OWNERSHIP == 0, "debug-poison must never default on");
+    _Static_assert(SCE_DEFENSIVE_OWNERSHIP == 1, "defensive must default on where typestate is inert");
     _Static_assert(SCE_OWNERSHIP_CHECKED == 1, "the boundary must be instrumented");
     return sce_trap_hits;
 }
 "#,
             ),
             (
-                "layer3-poisons-the-payload",
+                "debug-poison-fills-the-payload",
                 &["-DSCE_DEBUG_OWNERSHIP=1"],
                 r#"int main(void) {
     /* Pin the spec's value, not the macro's own definition. Comparing
@@ -10530,9 +10530,9 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
             ),
             (
                 // The single behavioural difference between the two
-                // layers. If this ever poisons, Layer 3.5 has silently
+                // layers. If this ever poisons, the defensive layer has silently
                 // become a debug build in production.
-                "layer35-leaves-the-payload-intact",
+                "defensive-leaves-the-payload-intact",
                 &["-DSCE_DEFENSIVE_OWNERSHIP=1"],
                 r#"int main(void) {
     uint8_t buf[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
@@ -10597,7 +10597,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
 
         for (case, flags, body) in cases {
             let tmp = std::env::temp_dir().join(format!(
-                "sce-build-layer3-{}-{}",
+                "sce-build-boundary-{}-{}",
                 std::process::id(),
                 case,
             ));
@@ -10627,7 +10627,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
             if !build.status.success() {
                 let stderr = String::from_utf8_lossy(&build.stderr).into_owned();
                 let _ = std::fs::remove_dir_all(&tmp);
-                panic!("Layer 3 case `{case}` failed to compile:\n{stderr}");
+                panic!("boundary case `{case}` failed to compile:\n{stderr}");
             }
 
             let run = std::process::Command::new(&exe)
@@ -10637,13 +10637,13 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
             let _ = std::fs::remove_dir_all(&tmp);
             assert_eq!(
                 code, 0,
-                "Layer 3 case `{case}` compiled but failed at runtime with exit {code}; \
+                "boundary case `{case}` compiled but failed at runtime with exit {code}; \
                  the body's return values name which assertion broke",
             );
         }
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the Layer 2
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the analyzer
     /// analyzer annotations carried by
     /// `backends/c/runtime/include/sce/sample.h` must be exactly what
     /// `forge::ownership_contract` renders — checked in both
@@ -10663,7 +10663,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
     /// from its declaration silently applies to the wrong function or
     /// to none.
     #[test]
-    fn sample_h_layer2_annotations_match_the_ownership_contract() {
+    fn sample_h_analyzer_annotations_match_the_ownership_contract() {
         use crate::forge::ownership_contract::RUNTIME_CONTRACTS;
 
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -10680,7 +10680,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
                     .position(|l| *l == rendered)
                     .unwrap_or_else(|| {
                         panic!(
-                            "sce/sample.h is missing the Layer 2 annotation the \
+                            "sce/sample.h is missing the analyzer annotation the \
                          ownership contract renders for `{}`:\n  {rendered}\n\
                          Edit sce-build/src/forge/ownership_contract.rs and \
                          mirror the rendered line here.",
@@ -10696,7 +10696,7 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
                 let window = lines[at + 1..lines.len().min(at + 11)].join("\n");
                 assert!(
                     window.contains(contract.name),
-                    "Layer 2 annotation for `{}` is not immediately above its \
+                    "analyzer annotation for `{}` is not immediately above its \
                      declaration; both PC-lint and Coverity key on the \
                      following declaration.\nannotation: {rendered}\n\
                      following lines:\n{window}",

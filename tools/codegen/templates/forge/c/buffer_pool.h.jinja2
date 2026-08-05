@@ -45,13 +45,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Layer 1 ownership pull-through (item B7, RFC §synth-5-E). `backends/c/runtime/include/sce/
+/* Ownership-contract pull-through (item B7, RFC §synth-5-E). `backends/c/runtime/include/sce/
  * sample.h` provides the `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
  * `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`
  * attribute family + `sce_sample_t` borrow type + 3 function decls
  * downstream subscriber callbacks build against. Removing this
- * include silently disables Layer 1 typestate analysis on consumer
- * builds (Clang ≥ 9 with `-Wconsumed -Wthread-safety`); the
+ * include silently removes the contract the analyzer and defensive
+ * layers rest on from consumer builds; the
  * `pool/sample-typestate-attributes-disabled` codegen-invariant
  * diagnostic guards against template regression. RFC §synth-5-E lines
  * 1276-1346 + 1520-1525. */
@@ -279,11 +279,11 @@ static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
  * C5: when `cache-policy: maintain`, emits `sce_dcache_clean_by_addr`
  * before the state transition (spec lines 1186-1188) so the DMA
  * controller reads the latest CPU writes from main memory.
- * Layer 2 (spec lines 1349-1365): `inout(1)` — the handle's tag is
+ * Analyzer layer (spec lines 1349-1365): `inout(1)` — the tag is
  * read to decide the transition, then invalidated. Rendered from
- * `forge::ownership_contract`; `check_layer2_annotations_emitted_c11`
+ * `forge::ownership_contract`; `check_analyzer_annotations_emitted_c11`
  * fails the render if this lookup goes missing. */
-{{ layer2["_link_arm_tx"] }}
+{{ analyzer["_link_arm_tx"] }}
 static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
     if (handle == NULL) return false;
     if (handle->state != SCE_SLOT_CPU_MUT) {
@@ -316,9 +316,9 @@ static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
  * the pool's internal state transitions to `SCE_SLOT_FREE` and the
  * handle is marked `SCE_SLOT_INVALID`. Returns `false` on tag
  * mismatch (no state change).
- * Layer 2 (spec lines 1349-1365): `inout(1)` — same read-then-
+ * Analyzer layer (spec lines 1349-1365): same read-then-
  * invalidate shape as `link_arm_tx`. */
-{{ layer2["_pool_return"] }}
+{{ analyzer["_pool_return"] }}
 static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
     if (handle == NULL) return false;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
@@ -346,11 +346,11 @@ static inline bool {{ snake_name }}_pool_return(sce_slot_handle_t *handle) {
  * mismatch — DMA-armed and DMA-busy states must not expose their
  * contents to author code while the descriptor or peripheral owns
  * them.
- * Layer 2 (spec lines 1349-1365): `r_null` — the NULL return is a
+ * Analyzer layer (spec lines 1349-1365): `r_null` — the NULL return is a
  * documented failure signal, so a caller that dereferences without
- * checking is flagged. Layer 1 cannot state this: Clang's typestate
+ * checking is flagged. The typestate layer cannot state this: Clang's
  * family has no return-nullability attribute. */
-{{ layer2["_slot_read"] }}
+{{ analyzer["_slot_read"] }}
 static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t *handle) {
     if (handle == NULL) return NULL;
     if (handle->state != SCE_SLOT_CPU_MUT && handle->state != SCE_SLOT_CPU_REF) {
@@ -368,9 +368,9 @@ static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t 
 /* Mutable view of the slot's bytes. Tag check: handle must be in
  * `SCE_SLOT_CPU_MUT`. Returns NULL on tag mismatch — `cpu-ref` is a
  * shared-read state per spec line 1135 and must not be mutated.
- * Layer 2 (spec lines 1349-1365): `r_null`, same rationale as
+ * Analyzer layer (spec lines 1349-1365): `r_null`, same rationale as
  * `slot_read`. The handle is read but not written, so no `inout`. */
-{{ layer2["_slot_write"] }}
+{{ analyzer["_slot_write"] }}
 static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
     if (handle == NULL) return NULL;
     if (handle->state != SCE_SLOT_CPU_MUT) {
