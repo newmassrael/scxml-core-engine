@@ -124,7 +124,11 @@ C++ Pass Rate: {pass_rate:.1f}%
 
     # Multi-backend summary
     if backend_results:
-        html += '<h4 style="margin-bottom:12px;color:#24292f">All Backend Results (202 W3C Tests Each)</h4>\n'
+        # Each card carries its own total. The heading used to claim "202
+        # W3C Tests Each", which stopped being true once backends diverged
+        # in fixture count (C11 registers 204 W3C cases); a fixed number in
+        # the heading contradicts the cards below it.
+        html += '<h4 style="margin-bottom:12px;color:#24292f">All Backend Results</h4>\n'
         html += '<div class="backend-grid">\n'
 
         # Extract C++ results: merge all testsuites, deduplicate by test name
@@ -140,7 +144,8 @@ C++ Pass Rate: {pass_rate:.1f}%
                     all_cpp_passed.add(name)
         backends.append(('C++', len(all_cpp_passed), len(all_cpp_tests)))
 
-        for name, key in [('Rust', 'rust'), ('Kotlin', 'kotlin'), ('Python', 'python'), ('Go', 'go')]:
+        for name, key in [('Rust', 'rust'), ('Kotlin', 'kotlin'), ('Python', 'python'),
+                          ('Go', 'go'), ('C11', 'c11')]:
             if key in backend_results:
                 br = backend_results[key]
                 backends.append((name, br.get('passed', 0), br.get('total', 0)))

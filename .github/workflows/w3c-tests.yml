@@ -854,12 +854,173 @@ jobs:
         if-no-files-found: ignore
 
   # ============================================================
+  # C11 (MCU backend) — 218 ctest cases
+  #   204 W3C + 11 integration + 3 unit (+2 HTTP fixtures)
+  #
+  # This backend had no CI job at all: `w3c-tests.yml` covered
+  # cpp/rust/kotlin/python/go, and the only workflow that ran ctest was
+  # forge-conformance.yml. The pre-push hook does not run the W3C ctest
+  # suite either — deliberately, and its comment says so — so the entire
+  # C11 surface was verified by whoever happened to run `ctest` locally.
+  # "C11 W3C 204/204" was a local measurement that no push re-confirmed,
+  # while `watching-zenoh` ships C11 on an MCU.
+  #
+  # The lane is cheap. Measured on a clean tree: configure 4.5s, codegen
+  # for 271 translation units plus 215 executables 9s, the 218 tests 4s.
+  # The expensive step is `sce-codegen`, which the cargo cache shared with
+  # the other jobs already pays for.
+  # ============================================================
+  test-c11:
+    name: C11 W3C Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          ccache \
+          pkg-config \
+          libxml2-dev \
+          libspdlog-dev \
+          libfmt-dev \
+          libboost-dev
+
+    - name: Setup Problem Matchers
+      run: |
+        echo "::add-matcher::.github/problem-matchers/gcc.json"
+        echo "::add-matcher::.github/problem-matchers/cmake.json"
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    - name: Setup ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-c11-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-c11-
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -G Ninja
+
+    # `sce_c11_tests` aggregates every target this directory defines, so a
+    # fixture added later is built without anyone updating a list. Building
+    # it instead of the default target skips the C++ engine, mesh, forge
+    # and the examples, none of which the C backend links.
+    - name: Build C11 Test Surface
+      run: |
+        time cmake --build build --target sce_c11_tests --parallel "$(nproc)"
+
+    - name: Run C11 ctest Suite
+      run: |
+        set -o pipefail
+
+        # A lane named for the C11 surface must not quietly report on a
+        # subset of it. These tests are registered by CMake loops over
+        # fixture lists, so a configure that drops them — a renamed
+        # variable, a guard that stops matching — leaves ctest with
+        # nothing to run and every assertion below trivially satisfied.
+        # The floor is 200 against a current 218; the 204 W3C cases are
+        # the core, so anything under 200 is a regression rather than
+        # routine churn.
+        registered=$(ctest --test-dir build -N -L c11 | grep -cE '^ *Test +#')
+        echo "Registered c11 tests: $registered"
+        if [ "$registered" -lt 200 ]; then
+          echo "::error::only $registered c11 tests registered (expected at least 200) — the lane would report on a smaller set than its name claims"
+          exit 1
+        fi
+
+        # `--no-tests=error` covers the zero case even if the floor above
+        # is ever loosened; the count comparison covers a partial run.
+        ctest --test-dir build -L c11 \
+          --output-on-failure \
+          --no-tests=error \
+          -j "$(nproc)" | tee c11_ctest.log
+
+        executed=$(grep -oE 'out of [0-9]+' c11_ctest.log | tail -1 | grep -oE '[0-9]+')
+        if [ "$executed" != "$registered" ]; then
+          echo "::error::ran $executed of $registered registered c11 tests"
+          exit 1
+        fi
+        echo "Ran all $executed registered c11 tests"
+
+    - name: Upload Test Log
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: w3c-test-output-c11
+        path: c11_ctest.log
+        retention-days: 30
+
+    - name: Generate Test Summary
+      if: always()
+      run: |
+        echo "## W3C SCXML Test Results (C11)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -f c11_ctest.log ]; then
+          total=$(grep -oE 'out of [0-9]+' c11_ctest.log | tail -1 | grep -oE '[0-9]+')
+          failed=$(grep -oE '[0-9]+ tests failed' c11_ctest.log | tail -1 | grep -oE '[0-9]+')
+          total=${total:-0}
+          failed=${failed:-0}
+          passed=$((total - failed))
+          if [ "$total" -gt 0 ] 2>/dev/null; then
+            echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $passed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $failed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total | $total |" >> $GITHUB_STEP_SUMMARY
+            echo "{\"passed\":$passed,\"failed\":$failed,\"total\":$total}" > c11_results.json
+          else
+            echo "Could not parse ctest results" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+
+    - name: Upload Results JSON
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: backend-results-c11
+        path: c11_results.json
+        retention-days: 7
+        if-no-files-found: ignore
+
+  # ============================================================
   # Unified HTML Report + GitHub Pages Deploy
   # ============================================================
   report:
     name: Unified Report
     runs-on: ubuntu-latest
-    needs: [test-cpp, test-rust, test-kotlin, test-python-bindings, test-python, test-go]
+    needs: [test-cpp, test-rust, test-kotlin, test-python-bindings, test-python, test-go, test-c11]
     if: always()
     permissions:
       contents: write
@@ -881,7 +1042,7 @@ jobs:
         # special pybind11 → C++ Interpreter channel.
         echo '{' > backend_results.json
         first=true
-        for backend in rust kotlin python python-bindings go; do
+        for backend in rust kotlin python python-bindings go c11; do
           # Result files use the same key the artifact uses (e.g.
           # python_bindings_results.json). The artifact directory
           # follows the same hyphen convention.
