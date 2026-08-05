@@ -118,7 +118,7 @@
     {
       "file": "tests/mesh/test_mesh_dds_server_deadline.cpp",
       "section_ids": [
-        "mesh-9.5"
+        "mesh-9.5.1"
       ]
     },
     {
@@ -197,6 +197,12 @@
       ]
     },
     {
+      "file": "tests/mesh/test_mesh_someip_server_deadline.cpp",
+      "section_ids": [
+        "mesh-9.5.1"
+      ]
+    },
+    {
       "file": "tests/mesh/test_mesh_synth_invoke_override_e2e.cpp",
       "section_ids": [
         "mesh-9.6.6"
@@ -211,7 +217,13 @@
     {
       "file": "tests/mesh/test_mesh_tcp_server_deadline.cpp",
       "section_ids": [
-        "mesh-9.5"
+        "mesh-9.5.1"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_zenoh_server_timeout.cpp",
+      "section_ids": [
+        "mesh-9.5.1"
       ]
     }
   ]
