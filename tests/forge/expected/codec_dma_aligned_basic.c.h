@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include <sce/portability.h>
 #include "sce/forge/codec.h"
 
 #define CODEC_DMA_ALIGNED_BASIC_MIN_BYTES 2
@@ -19,10 +20,10 @@
 /* RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
  * Build-time validation already guaranteed `byte_offset % burst_align
  * == 0` and that all preceding fields are Fixed bit-size. These
- * `_Static_assert` declarations catch any future hand-edit to the
+ * `SCE_STATIC_ASSERT` declarations catch any future hand-edit to the
  * byte_offset that would break the wire-layout invariant. */
-_Static_assert(32 % 32 == 0,
-               "RFC §synth-5-B B3: codec field 'aligned_payload' offset must be 32-aligned");
+SCE_STATIC_ASSERT(32 % 32 == 0,
+                  "RFC §synth-5-B B3: codec field 'aligned_payload' offset must be 32-aligned");
 
 typedef struct {
     uint8_t msg_id;

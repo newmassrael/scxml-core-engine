@@ -305,8 +305,8 @@ sce_generate_static_w3c_c_test(216 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE NEEDS_L
 sce_generate_static_w3c_c_test(530 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE NEEDS_LUA)  # W3C SCXML 6.4.4 (test530): `<invoke><content expr="Var1"/></invoke>` runtime evaluation — Var1 reassigned in onentry from integer 1 to a literal SCXML scriptlet, codegen lowers a luaL_dostring eval-validation gate then spawns the pre-generated `test530_hybrid0` stub child (byte-equivalent to the original inline `<scxml><final/></scxml>`). cpp `test530_sm.inl:166-185` is the equivalent pattern.
 
 # One CTest binary per fixture. Compiled with the C11 dialect explicitly so
-# `_Static_assert` and stdint/stdbool are first-class regardless of the
-# compiler's default standard. Lua54 is linked only into fixtures flagged
+# `SCE_STATIC_ASSERT`'s C11 lowering and stdint/stdbool are first-class
+# regardless of the compiler's default standard. Lua54 is linked only into fixtures flagged
 # NEEDS_LUA so datamodel-less fixtures preserve their MCU-relevant
 # zero-deps profile.
 foreach(TEST_NUM ${W3C_C_AOT_TESTS})
@@ -846,4 +846,39 @@ set_tests_properties(c11_unit_http_client PROPERTIES
     # CPU-heavy peers under `ctest -j` starve scheduling and flake the
     # bound. Force serial so the round-trip runs unimpeded.
     RUN_SERIAL TRUE
+)
+
+# ─── C++ consumption gate ───────────────────────────────────────────
+#
+# Every header the C11 backend publishes (`backends/c/runtime/include/sce`,
+# `backends/c/forge-runtime/include/sce/forge`) and every header it
+# generates opens `#ifdef __cplusplus extern "C"`. That is a contract
+# with C++ consumers — an AP-side application links the same generated
+# machine an MCU compiles — and nothing checked it until this gate.
+#
+# It was not being met. `_Static_assert` is a C11 keyword with no C++
+# spelling, and it appeared in `sce/sample.h` and in every generated
+# `_sm.h`, so a C++ translation unit including any of them failed to
+# parse. GCC rejected them; Clang accepted them as an extension and
+# rejected them again under `-Werror`. The headers are now written
+# through `SCE_STATIC_ASSERT` (`sce/portability.h`), and this gate is
+# what keeps them that way — a fix without it regresses the first time
+# someone writes the keyword back.
+#
+# The gate scans directories at test time rather than taking a
+# registered file list, so a header added later is covered without
+# anyone remembering to add it, and a root that resolves to zero
+# headers fails rather than passing over an empty set.
+add_test(NAME c11_headers_are_cxx_consumable
+    COMMAND ${CMAKE_COMMAND}
+        -DSCE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DSCE_CXX_STANDARD=17
+        -DSCE_SCAN_ROOTS=${CMAKE_SOURCE_DIR}/backends/c/runtime/include/sce|${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include/sce/forge|${SCE_C_GENERATED_DIR}|${SCE_C_INTEGRATION_GENERATED_DIR}
+        -DSCE_INCLUDE_DIRS=${CMAKE_SOURCE_DIR}/backends/c/runtime/include|${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include|${SCE_C_GENERATED_DIR}|${SCE_C_INTEGRATION_GENERATED_DIR}|${CMAKE_SOURCE_DIR}/third_party/lua/src
+        -DSCE_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cxx_consumption
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cxx_consumption_gate.cmake
+)
+set_tests_properties(c11_headers_are_cxx_consumable PROPERTIES
+    TIMEOUT 300
+    LABELS "unit;c11"
 )
