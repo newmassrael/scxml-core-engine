@@ -150,24 +150,148 @@ fn steps_only(text: &str) -> String {
     out
 }
 
-/// Repo-relative `scripts/*.sh` paths a body invokes.
-fn scripts_invoked(text: &str) -> BTreeSet<String> {
+/// One verification a body invokes, reduced to a key that survives both
+/// spellings.
+///
+/// A workflow step and a hook line describe the same check differently:
+/// flag order, quoting, a `./` prefix, a `cd` into a subdirectory, a
+/// `| tee` on the end, a `2>&1`. The key keeps what identifies the
+/// verification — the tool plus the argument naming its target — and
+/// drops the rest.
+///
+/// Recognition deliberately over-approximates. A token that merely looks
+/// like a check is better surfaced and then declared CI-only in
+/// [`CI_ONLY`] than silently dropped, because a dropped one is exactly
+/// the divergence this gate exists to catch. The previous version of
+/// this function matched `scripts/*.sh` and nothing else, so
+/// `cargo`, `go`, `ctest`, `gradlew` and every `python3 tools/...`
+/// invocation were outside its field of view — the test asserted
+/// "the hook runs every script the workflows run" and meant something
+/// far narrower than its name.
+fn verification_invocations(text: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in text.lines() {
         if line.trim_start().starts_with('#') {
             continue;
         }
-        for token in line.split_whitespace() {
-            let token = token
-                .trim_matches(|c| c == '"' || c == '\'' || c == ';' || c == ')')
-                .trim_start_matches("./");
-            if token.starts_with("scripts/") && token.ends_with(".sh") {
-                out.insert(token.to_string());
+        let tokens: Vec<&str> = line
+            .split_whitespace()
+            .map(|t| {
+                t.trim_matches(|c| c == '"' || c == '\'' || c == ';' || c == ')')
+                    .trim_start_matches("./")
+            })
+            .collect();
+
+        for (i, token) in tokens.iter().enumerate() {
+            let after = |n: usize| tokens.get(i + n).copied();
+            match *token {
+                // `scripts/foo.sh` — the original axis.
+                t if t.starts_with("scripts/") && t.ends_with(".sh") => {
+                    out.insert(t.to_string());
+                }
+                // `python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity`
+                // keys on basename + the flag that picks which check runs,
+                // since one script can be two gates.
+                t if t.ends_with(".py") => {
+                    let name = t.rsplit('/').next().unwrap_or(t);
+                    let mut key = name.to_string();
+                    for j in 1..4 {
+                        match after(j) {
+                            Some("--mode") => {
+                                if let Some(m) = after(j + 1) {
+                                    key = format!("{name} --mode {m}");
+                                }
+                                break;
+                            }
+                            Some("--check") => {
+                                key = format!("{name} --check");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    out.insert(key);
+                }
+                // `cargo test --release -p X --features Y --test Z` keys on
+                // the test target; the profile is asserted separately by
+                // `the_workspace_suite_runs_with_debug_assertions_in_hook_and_ci`.
+                "cargo" if matches!(after(1), Some("test")) => {
+                    for (j, t) in tokens.iter().enumerate() {
+                        if *t == "--test" {
+                            if let Some(target) = tokens.get(j + 1) {
+                                out.insert(format!("cargo test --test {target}"));
+                            }
+                        }
+                    }
+                }
+                // `go test ./conformance/ -count=1` — the package path is
+                // what distinguishes the two Go arms.
+                "go" if matches!(after(1), Some("test")) => {
+                    if let Some(pkg) = after(2) {
+                        out.insert(format!("go test ./{}", pkg.trim_start_matches("./")));
+                    }
+                }
+                // `./gradlew :project:task`
+                "gradlew" => {
+                    for t in &tokens[i + 1..] {
+                        if t.starts_with(':') {
+                            out.insert(format!("gradlew {t}"));
+                        }
+                    }
+                }
+                // `ctest --test-dir <dir>` — the directory is a scratch path
+                // in the hook and a fixed name in CI, so it is not part of
+                // the key.
+                "ctest" => {
+                    out.insert("ctest".to_string());
+                }
+                // `python3 -m unittest discover -s <dir>` / `... tests.test_x`
+                "unittest" => {
+                    let mut key = "unittest".to_string();
+                    if let Some(target) = tokens[i + 1..].iter().find(|t| !t.starts_with('-')) {
+                        key = format!("unittest {target}");
+                    }
+                    if let Some(j) = tokens[i..].iter().position(|t| *t == "-s") {
+                        if let Some(dir) = tokens.get(i + j + 1) {
+                            key = format!("{key} -s {dir}");
+                        }
+                    }
+                    out.insert(key);
+                }
+                _ => {}
             }
         }
     }
     out
 }
+
+/// Verifications the mirrored workflows run that the hook deliberately
+/// does not, each with the reason it stays behind.
+///
+/// This is the honest statement of what a green hook does not cover. Its
+/// absence was the real defect: the hook skipped eight CI commands and
+/// nothing said so, because saying so required diffing two files by hand.
+///
+/// In the manifest design this list disappears — `runs-in: ci` becomes a
+/// field on the gate itself, and the set is derived rather than
+/// maintained. Until then the test below pins it in both directions, so
+/// an entry cannot go stale and a new skip cannot go undeclared.
+const CI_ONLY: &[(&str, &str)] = &[
+    (
+        "check_spec_drift.py --mode upstream",
+        "fetches the upstream spec over the network. A push-time gate must \
+         not depend on an external host being reachable — in CI a fetch \
+         failure is a retry, at push time it is a blocked push. CI runs it \
+         on a schedule for the same reason.",
+    ),
+    (
+        "gradlew :sce-forge-runtime-kotlin:jvmTest",
+        "the Gradle task rewrites the committed trees' `generated-at` pins \
+         as a side effect, so running it from the hook would dirty the very \
+         tree being pushed. Startup cost is the secondary objection; the \
+         side effect is the disqualifying one.",
+    ),
+];
 
 /// Workflows the hook declares it mirrors, read from the stage table so
 /// this cannot drift from the selector's own mapping.
@@ -197,7 +321,7 @@ fn mirrored_workflows(selector: &str) -> BTreeSet<String> {
 }
 
 #[test]
-fn the_hook_runs_every_script_the_workflows_it_mirrors_run() {
+fn the_hook_runs_every_verification_the_workflows_it_mirrors_run() {
     let selector = read("tools/git-hooks/select_stages.py");
     let mirrored = mirrored_workflows(&selector);
     assert!(
@@ -207,27 +331,69 @@ fn the_hook_runs_every_script_the_workflows_it_mirrors_run() {
         mirrored.len()
     );
 
-    let hook_scripts = scripts_invoked(&read("tools/git-hooks/pre-push"));
+    let hook = verification_invocations(&read("tools/git-hooks/pre-push"));
+    assert!(
+        hook.len() > 5,
+        "read only {} verification(s) from the hook — the extractor is \
+         broken, not the hook",
+        hook.len()
+    );
 
-    let mut missing = Vec::new();
+    // What the mirrored workflows run that the hook does not.
+    let mut unmirrored: BTreeSet<(String, String)> = BTreeSet::new();
     for workflow in &mirrored {
         let text = read(&format!(".github/workflows/{workflow}"));
-        for script in scripts_invoked(&steps_only(&text)) {
-            if !hook_scripts.contains(&script) {
-                missing.push(format!("  {workflow} runs {script}; the hook does not"));
+        for v in verification_invocations(&steps_only(&text)) {
+            if !hook.contains(&v) {
+                unmirrored.insert((v, workflow.clone()));
             }
         }
     }
 
+    let declared: BTreeSet<&str> = CI_ONLY.iter().map(|(k, _)| *k).collect();
+    let found: BTreeSet<&str> = unmirrored.iter().map(|(v, _)| v.as_str()).collect();
+
+    // Direction 1 — a skip nobody declared. This is the silent-divergence
+    // case: the stage fires, reports green, and CI fails on something the
+    // hook never looked at.
+    let undeclared: Vec<String> = unmirrored
+        .iter()
+        .filter(|(v, _)| !declared.contains(v.as_str()))
+        .map(|(v, w)| format!("  {w} runs `{v}`; the hook does not, and CI_ONLY does not say why"))
+        .collect();
     assert!(
-        missing.is_empty(),
-        "stage(s) mirror a workflow but skip part of what it runs, so the \
-         hook reports green on a change CI will fail:\n{}\n\
-         Either invoke the script from the mirroring stage, or stop \
-         claiming the workflow in the stage table — a partial mirror is \
-         the harder failure to notice, because the stage does fire.",
-        missing.join("\n")
+        undeclared.is_empty(),
+        "a mirrored workflow runs a verification the hook skips without \
+         declaring it:\n{}\n\
+         Either invoke it from the mirroring stage, or add it to CI_ONLY \
+         with the reason it stays behind. A partial mirror is the harder \
+         failure to notice, because the stage does fire.",
+        undeclared.join("\n")
     );
+
+    // Direction 2 — a declaration that no longer describes anything. Dead
+    // exemptions accumulate silently and each one widens the gap between
+    // what the list claims to document and what it does.
+    let stale: Vec<&&str> = declared.difference(&found).collect();
+    assert!(
+        stale.is_empty(),
+        "CI_ONLY declares verification(s) that the mirrored workflows no \
+         longer skip: {stale:?}\n\
+         Either the hook now runs them (remove the entry) or CI stopped \
+         running them (remove it too). An exemption that describes nothing \
+         is worse than none: it reads as coverage of a decision that has \
+         already been reversed."
+    );
+
+    // Every declaration carries a reason someone can act on.
+    for (key, why) in CI_ONLY {
+        assert!(
+            why.len() > 60,
+            "CI_ONLY entry `{key}` needs a reason a reader can weigh, not \
+             a label; got {} chars",
+            why.len()
+        );
+    }
 }
 
 #[test]
