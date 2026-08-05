@@ -21,6 +21,7 @@
 // backend's toolchain; local dev machines without one toolchain
 // should not be blocked.
 
+use sce_build::toolchain;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -53,19 +54,6 @@ fn fixtures_dir() -> PathBuf {
 fn scratch_for(lang: &str) -> PathBuf {
     let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("forge_event_schema_smoke");
     base.join(lang)
-}
-
-fn resolve_tool(name: &str) -> Option<PathBuf> {
-    let out = Command::new("which").arg(name).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let path = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(path))
-    }
 }
 
 /// Run `sce-codegen generate -l <lang> -o <out> <fixture>.scxml`. Adds
@@ -120,8 +108,8 @@ fn reset_scratch(lang: &str) -> PathBuf {
 
 #[test]
 fn smoke_cpp() {
-    let Some(gpp) = resolve_tool("g++") else {
-        eprintln!("SKIP smoke_cpp: g++ not on PATH");
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped("smoke_cpp: g++ not on PATH");
         return;
     };
     let scratch = reset_scratch("cpp");
@@ -271,8 +259,8 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
 // scripts/regen_event_schema_native_go.sh).
 #[test]
 fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
-    let Some(gofmt) = resolve_tool("gofmt") else {
-        eprintln!("SKIP statechart_native_lowering_go: gofmt not on PATH");
+    let Some(gofmt) = toolchain::locate("gofmt") else {
+        toolchain::skipped("statechart_native_lowering_go: gofmt not on PATH");
         return;
     };
     let scratch = reset_scratch("go_statechart");
@@ -406,8 +394,8 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
     );
 
     // Syntactic gate: compile the native-lowered SM against the runtime jar.
-    let Some(kotlinc) = resolve_tool("kotlinc") else {
-        eprintln!("SKIP statechart_native_lowering_kotlin compile: kotlinc not on PATH");
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("statechart_native_lowering_kotlin compile: kotlinc not on PATH");
         return;
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
@@ -493,8 +481,8 @@ fn statechart_native_lowering_python_emits_engine_free_typed_guard() {
     );
 
     // Syntactic gate: py_compile the native-lowered SM.
-    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
-        eprintln!("SKIP statechart_native_lowering_python compile: python3/python not on PATH");
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped("statechart_native_lowering_python compile: python3/python not on PATH");
         return;
     };
     let output = Command::new(&python)
@@ -568,8 +556,8 @@ fn statechart_native_lowering_cpp_compiles_and_runs() {
     // Real compile + run. The generated SM is header-only template code; a
     // typed-guard machine has needs_script_engine == false, so it links no
     // runtime (the MCU-relevant property, proven here for C++ too).
-    let Some(gpp) = resolve_tool("g++") else {
-        eprintln!("SKIP statechart_native_lowering_cpp compile: g++ not on PATH");
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped("statechart_native_lowering_cpp compile: g++ not on PATH");
         return;
     };
     let driver = out_dir.join("driver.cpp");
@@ -634,8 +622,8 @@ int main() {
 // target. That freestanding compile is the A5 MCU acceptance gate.
 #[test]
 fn statechart_native_lowering_c11_compiles_freestanding() {
-    let Some(cc) = resolve_tool("clang").or_else(|| resolve_tool("gcc")) else {
-        eprintln!("SKIP statechart_native_lowering_c11: clang/gcc not on PATH");
+    let Some(cc) = toolchain::locate_any(&["clang", "gcc"]) else {
+        toolchain::skipped("statechart_native_lowering_c11: clang/gcc not on PATH");
         return;
     };
     let scratch = reset_scratch("c11_statechart");
@@ -708,8 +696,8 @@ fn statechart_native_lowering_c11_compiles_freestanding() {
     // the downstream consumer targets. Skipped (not failed) when the
     // cross toolchain is absent, mirroring the host-compiler skips above —
     // CI installs `gcc-arm-none-eabi`.
-    let Some(arm_cc) = resolve_tool("arm-none-eabi-gcc") else {
-        eprintln!("SKIP arm-none-eabi cross-compile: arm-none-eabi-gcc not on PATH");
+    let Some(arm_cc) = toolchain::locate("arm-none-eabi-gcc") else {
+        toolchain::skipped("arm-none-eabi cross-compile: arm-none-eabi-gcc not on PATH");
         return;
     };
     let mut arm = Command::new(&arm_cc);
@@ -742,8 +730,8 @@ fn statechart_native_lowering_c11_compiles_freestanding() {
 
 #[test]
 fn smoke_go() {
-    let Some(gofmt) = resolve_tool("gofmt") else {
-        eprintln!("SKIP smoke_go: gofmt not on PATH");
+    let Some(gofmt) = toolchain::locate("gofmt") else {
+        toolchain::skipped("smoke_go: gofmt not on PATH");
         return;
     };
     let scratch = reset_scratch("go");
@@ -790,8 +778,8 @@ fn find_kotlin_runtime_jar() -> Option<PathBuf> {
 
 #[test]
 fn smoke_kotlin() {
-    let Some(kotlinc) = resolve_tool("kotlinc") else {
-        eprintln!("SKIP smoke_kotlin: kotlinc not on PATH");
+    let Some(kotlinc) = toolchain::locate("kotlinc") else {
+        toolchain::skipped("smoke_kotlin: kotlinc not on PATH");
         return;
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
@@ -835,8 +823,8 @@ fn smoke_kotlin() {
 
 #[test]
 fn smoke_python() {
-    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
-        eprintln!("SKIP smoke_python: python3/python not on PATH");
+    let Some(python) = toolchain::locate_any(&["python3", "python"]) else {
+        toolchain::skipped("smoke_python: python3/python not on PATH");
         return;
     };
     let scratch = reset_scratch("python");
@@ -867,8 +855,8 @@ fn smoke_python() {
 
 #[test]
 fn smoke_c11() {
-    let Some(cc) = resolve_tool("clang").or_else(|| resolve_tool("gcc")) else {
-        eprintln!("SKIP smoke_c11: clang/gcc not on PATH");
+    let Some(cc) = toolchain::locate_any(&["clang", "gcc"]) else {
+        toolchain::skipped("smoke_c11: clang/gcc not on PATH");
         return;
     };
     let scratch = reset_scratch("c11");

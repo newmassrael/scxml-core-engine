@@ -11660,19 +11660,20 @@ fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Probe whether a toolchain binary is present on PATH.
+/// Probe whether a toolchain binary can be located.
 ///
 /// Used by the per-backend compile harnesses (`compile_codec_set_*`)
 /// to decide between hard-fail (toolchain required) and skip-with-
-/// warn (toolchain optional for local dev). `which` is preferred
-/// over `<tool> --version` so we don't pay the spawn cost on every
-/// fixture; PATH-only probe is enough for the gating decision.
+/// warn (toolchain optional for local dev).
+///
+/// Resolution goes through [`sce_build::toolchain`], which searches
+/// past `PATH` into the versioned install directories distributions
+/// use. A `PATH`-only probe reports "absent" for a Clang installed as
+/// `/usr/lib/llvm-19/bin/clang`, and this function's answer decides
+/// whether a whole backend's compile harness runs — so a wrong "absent"
+/// silently removes coverage rather than failing.
 fn toolchain_present(binary: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(binary)
-        .output()
-        .ok()
-        .is_some_and(|o| o.status.success())
+    sce_build::toolchain::locate(binary).is_some()
 }
 
 /// Skip-with-warn vs hard-fail decision for absent toolchains.

@@ -28,6 +28,7 @@
 // generated TU under the strict freestanding MCU profile so the
 // bounded-buffer + memcmp lowering builds with no hosted-libc guarantee.
 
+use sce_build::toolchain;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -63,15 +64,6 @@ fn out_dir(scope: &str, lang: &str) -> PathBuf {
         .join(lang);
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     dir
-}
-
-fn resolve_tool(name: &str) -> Option<PathBuf> {
-    let out = Command::new("which").arg(name).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let path = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    (!path.is_empty()).then(|| PathBuf::from(path))
 }
 
 /// Generate the bytes fixture for `lang` into a fresh dir and return both
@@ -156,8 +148,8 @@ fn every_backend_lowers_bytes_guard_to_byte_identical_equality() {
 #[test]
 fn cpp_bytes_guard_compiles_and_runs() {
     let (dir, _code) = generate("cpp_run", "cpp");
-    let Some(gpp) = resolve_tool("g++") else {
-        eprintln!("SKIP cpp_bytes_guard_compiles_and_runs: g++ not on PATH");
+    let Some(gpp) = toolchain::locate("g++") else {
+        toolchain::skipped("cpp_bytes_guard_compiles_and_runs: g++ not on PATH");
         return;
     };
     let driver = dir.join("driver.cpp");
@@ -221,8 +213,8 @@ fn c11_bytes_guard_compiles_freestanding() {
         code.contains("uint8_t raw[8];") && code.contains("size_t raw_len;"),
         "expected the no-alloc bounded-buffer payload field (CAP from sce:max-size=8)",
     );
-    let Some(cc) = resolve_tool("clang").or_else(|| resolve_tool("gcc")) else {
-        eprintln!("SKIP c11_bytes_guard_compiles_freestanding: clang/gcc not on PATH");
+    let Some(cc) = toolchain::locate_any(&["clang", "gcc"]) else {
+        toolchain::skipped("c11_bytes_guard_compiles_freestanding: clang/gcc not on PATH");
         return;
     };
     let c_files: Vec<PathBuf> = std::fs::read_dir(&dir)

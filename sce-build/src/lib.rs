@@ -87,6 +87,10 @@ pub mod template;
 /// `tools/codegen/templates/` by `build.rs`. Serves callers with no
 /// filesystem (WASM) from the same tree the filesystem loader walks.
 pub mod template_registry;
+/// Discovery of the external toolchain binaries the generated-code
+/// verification harness compiles with. Searches beyond `PATH` because a
+/// tool it cannot find is a check that silently does not run.
+pub mod toolchain;
 /// `<sce:unresolved>` placeholder
 /// detection — strict-mode build gate + NDJSON report. Drives
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
@@ -499,7 +503,10 @@ pub fn compile_scxml_with_derives(
             .expect("compile_scxml(Rust) must emit exactly one file");
 
         let out_path = Path::new(&out_dir).join(format!("{stem}_sm.rs"));
-        std::fs::write(&out_path, &code)
+        // Same file-boundary contract the `sce-codegen` writers apply:
+        // this facade writes its own artefact, so it must guarantee the
+        // trailing newline itself rather than inherit it.
+        std::fs::write(&out_path, generator::with_trailing_newline(&code).as_ref())
             .unwrap_or_else(|e| panic!("Cannot write {}: {e}", out_path.display()));
 
         println!("cargo::rerun-if-changed={scxml_path}");
@@ -9702,37 +9709,29 @@ topology:
         );
     }
 
-    /// Locate a Clang ≥ 9 binary on PATH. Typestate analysis
-    /// requires Clang's `consumable` / `callable_when` /
-    /// `param_typestate` / `set_typestate` / `warn_unused_result`
-    /// attribute family which GCC does not implement. Returns `None`
-    /// when no clang binary is on PATH so build environments without
-    /// Clang skip the typestate-axis tests informatively rather than
-    /// failing — the gcc compile-check above already covers the
-    /// silently-inert path mandated by spec lines 1444-1453.
+    /// Locate a Clang ≥ 9 binary. Typestate analysis requires Clang's
+    /// `consumable` / `callable_when` / `param_typestate` /
+    /// `set_typestate` / `warn_unused_result` attribute family which
+    /// GCC does not implement.
+    ///
+    /// Discovery is delegated to [`crate::toolchain`], which searches
+    /// past `PATH` into the versioned install directories distributions
+    /// use. This function previously probed a hardcoded
+    /// `clang`..`clang-9` name list against `PATH` only, so a host with
+    /// Clang under `/usr/lib/llvm-19/bin` and no `clang` symlink
+    /// reported "no Clang" and skipped the whole typestate axis.
+    ///
+    /// A miss still skips rather than fails — the gcc compile-check
+    /// above already covers the silently-inert path mandated by spec
+    /// lines 1444-1453 — unless `SCE_REQUIRE_TOOLS` is set, which a CI
+    /// lane uses to assert this axis actually ran.
     #[cfg(test)]
-    fn locate_clang_binary() -> Option<String> {
-        // `clang` is the canonical name; distros often install only a
-        // versioned binary (`clang-19` etc). Try unversioned first then
-        // descend through the version range that supports the
-        // consumable family (Clang 3.4+, but only Clang 9+ ships both
-        // the warn_unused_result combination + thread-safety analysis
-        // we depend on).
-        let candidates: &[&str] = &[
-            "clang", "clang-19", "clang-18", "clang-17", "clang-16", "clang-15", "clang-14",
-            "clang-13", "clang-12", "clang-11", "clang-10", "clang-9",
-        ];
-        for name in candidates {
-            if std::process::Command::new(name)
-                .arg("--version")
-                .output()
-                .ok()
-                .is_some_and(|out| out.status.success())
-            {
-                return Some((*name).to_string());
-            }
-        }
-        None
+    fn locate_clang_binary() -> Option<std::path::PathBuf> {
+        crate::toolchain::require_or_skip(
+            "clang",
+            "check that the typestate attribute family stays inert in C \
+             (spec lines 1444-1453)",
+        )
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E: the typestate layer as the spec
@@ -9773,13 +9772,6 @@ topology:
     #[test]
     fn sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives() {
         let Some(clang) = locate_clang_binary() else {
-            eprintln!(
-                "sample_h_typestate_is_inert_in_c: skipped — \
-                 no clang binary on PATH; typestate analysis \
-                 requires Clang ≥ 9. Spec lines 1444-1453 document the \
-                 silently-inert path on non-Clang toolchains; this test \
-                 only enforces Clang's rejection contract.",
-            );
             return;
         };
 

@@ -352,16 +352,11 @@ fn funcs_outside_section(files: &[(String, String)], expect_section: &str) -> Op
     Some(escaped)
 }
 
+/// Locate a toolchain binary, searching past `PATH` into the versioned
+/// install directories distributions use. See [`sce_build::toolchain`]
+/// for why a `PATH`-only probe silently narrows what these tests check.
 fn resolve(tool: &str) -> Option<PathBuf> {
-    let out = std::process::Command::new("which")
-        .arg(tool)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let p = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    (!p.is_empty()).then(|| PathBuf::from(p))
+    sce_build::toolchain::locate(tool)
 }
 
 /// Render every C11 file for `FIXTURE_NO_DRIVER` with the given

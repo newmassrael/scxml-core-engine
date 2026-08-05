@@ -25,6 +25,8 @@ use sce_build::filters;
 use sce_build::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
 
+use sce_build::generator::with_trailing_newline;
+
 /// Write `contents` to `path` or emit a structured `WriteOutput`
 /// diagnostic and terminate. Centralising the write+exit pattern
 /// keeps every file-writing call-site one line and guarantees
@@ -245,8 +247,9 @@ fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String 
 /// carries a drift-detectable header.
 fn write_drift_aware<P: AsRef<Path>>(fmt: ErrorFormat, path: P, content: &str, ctx: &DriftContext) {
     let path_ref = path.as_ref();
-    let final_content = apply_drift_header(content, path_ref, ctx);
-    if let Err(e) = fs::write(path_ref, &final_content) {
+    let headered = apply_drift_header(content, path_ref, ctx);
+    let final_content = with_trailing_newline(&headered);
+    if let Err(e) = fs::write(path_ref, final_content.as_ref()) {
         fmt.emit_and_exit(
             &CliError::WriteOutput {
                 path: path_ref.display().to_string(),
@@ -1991,6 +1994,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         })
         .collect();
     for (stem, xml) in &synth_scxml_writes {
+        // A synthesised child is an artefact like any other: it is read
+        // back by the next codegen pass and by humans, so it carries
+        // the same trailing-newline contract as the sources beside it.
+        let xml = with_trailing_newline(xml);
+        let xml = xml.as_ref();
         let dst = out_path.join(format!("{stem}.scxml"));
         if let Err(e) = fs::write(&dst, xml) {
             eprintln!(
@@ -5004,7 +5012,7 @@ fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &Path) {
 
 /// Create a C++ formatter if language is C++ and formatting is not disabled.
 /// Returns `None` for non-C++ languages, when `--no-format` is set, or when
-/// `clang-format` is not available on PATH.
+/// no `clang-format` binary can be located.
 fn create_cpp_formatter(
     lang: Language,
     format_style: Option<&str>,
@@ -5016,7 +5024,10 @@ fn create_cpp_formatter(
     match sce_build::formatter::CppFormatter::new(format_style.map(Path::new)) {
         Ok(f) => Some(f),
         Err(sce_build::formatter::FormatError::NotFound) => {
-            eprintln!("  Note: clang-format not found on PATH, skipping C++ formatting");
+            eprintln!(
+                "  Note: no clang-format located, skipping C++ formatting \
+                 (set SCE_TOOL_CLANG_FORMAT to point at one)"
+            );
             None
         }
         Err(sce_build::formatter::FormatError::StyleNotFound(p)) => {
@@ -5042,7 +5053,13 @@ fn maybe_format_files(
 }
 
 /// Write file only if content differs (preserves timestamps).
+///
+/// Normalisation runs before the comparison so a rerun that changes
+/// nothing stays a no-op, preserving the mtime contract this function
+/// exists for.
 fn write_if_changed(path: &Path, content: &str) -> bool {
+    let content = with_trailing_newline(content);
+    let content = content.as_ref();
     if path.exists() {
         if let Ok(existing) = fs::read_to_string(path) {
             if existing == content {
