@@ -1226,7 +1226,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
 {% for param in action.params %}
 {% if param.is_static_literal %}
                     (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
-                                                    "{{ param.name }}", "{{ param.static_value }}");
+                                                    "{{ param.name | escape_c }}", "{{ param.static_value | escape_c }}");
 {% else %}
                     {
                         char _param_buf[256];
@@ -1234,7 +1234,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                         {{ se.lua_eval_to_string(param.expr, "_param_buf", "256", "_param_ok") }}
                         if (_param_ok) {
                             (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
-                                                            "{{ param.name }}", _param_buf);
+                                                            "{{ param.name | escape_c }}", _param_buf);
                         }
                     }
 {% endif %}

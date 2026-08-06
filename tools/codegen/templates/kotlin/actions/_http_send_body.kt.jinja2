@@ -24,13 +24,13 @@
                 val httpParams = mutableMapOf<String, List<String>>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
-                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
+                httpParams["{{ param.name | escape_kotlin }}"] = listOf("{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
                 try {
                     val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ param.expr | escape_kotlin }}")
-                    httpParams["{{ param.name }}"] = listOf(v?.toString() ?: "")
+                    httpParams["{{ param.name | escape_kotlin }}"] = listOf(v?.toString() ?: "")
                 } catch (_: Exception) {
-                    httpParams["{{ param.name }}"] = listOf("")
+                    httpParams["{{ param.name | escape_kotlin }}"] = listOf("")
                 }
 {% endif %}
 {% endfor %}
@@ -90,7 +90,7 @@
 {% endif %}
                 val httpParams = mutableMapOf<String, List<String>>()
 {% for param in action.params %}
-                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
+                httpParams["{{ param.name | escape_kotlin }}"] = listOf("{{ param.static_value | escape_kotlin }}")
 {% endfor %}
 {% if action.delay %}
                 scheduleHttpSend({{ action.delay_ms | default(0) }}L, {{ http_target }}, "{{ action.event }}", "", httpParams, "{{ action.auto_send_id }}")

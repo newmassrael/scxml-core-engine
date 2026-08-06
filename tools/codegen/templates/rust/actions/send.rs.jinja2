@@ -63,14 +63,14 @@
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-        parts.push(format!("[{:?}]={:?}", "{{ param.name }}", "{{ param.static_value | escape_rust }}"));
+        parts.push(format!("[{:?}]={:?}", "{{ param.name | escape_rust }}", "{{ param.static_value | escape_rust }}"));
 {% elif param.expr %}
         match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
             Ok(val) => {
-                parts.push(format!("[{:?}]={}", "{{ param.name }}", val.to_lua_literal()));
+                parts.push(format!("[{:?}]={}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
             }
             Err(e) => {
-                log::error!("send param '{{ param.name }}' eval failed: {}", e);
+                log::error!("send param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
@@ -79,10 +79,10 @@
 {% elif param.location %}
         match se.evaluate_expression(&sid, "{{ param.location }}") {
             Ok(val) => {
-                parts.push(format!("[{:?}]={}", "{{ param.name }}", val.to_lua_literal()));
+                parts.push(format!("[{:?}]={}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
             }
             Err(e) => {
-                log::error!("send param '{{ param.name }}' location read failed: {}", e);
+                log::error!("send param '{{ param.name | escape_rust }}' location read failed: {}", e);
 {% if 'error.execution' in model.events %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
@@ -279,7 +279,7 @@
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-        http_params.entry("{{ param.name }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+        http_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
 {% elif param.expr and model.needs_script_engine %}
         {
             self.ensure_script_engine();
@@ -290,7 +290,7 @@
                 Ok(val) => {
                     let s = val.to_lua_literal();
                     let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                    http_params.entry("{{ param.name }}".to_string()).or_default().push(trimmed.to_string());
+                    http_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
                 }
                 Err(_) => {}
             }
@@ -305,7 +305,7 @@
                 Ok(val) => {
                     let s = val.to_lua_literal();
                     let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                    http_params.entry("{{ param.name }}".to_string()).or_default().push(trimmed.to_string());
+                    http_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
                 }
                 Err(_) => {}
             }

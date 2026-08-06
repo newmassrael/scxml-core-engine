@@ -226,16 +226,16 @@
 {% endif %}
 {% for param in invoke_info.params %}
 {% if param.is_static_literal %}
-                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name }}"].push_back("{{ param.static_value }}");
+                    _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value }}");
 {% else %}
                     {
-                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+                        auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
                         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-                            _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name }}"] = paramResult.getInternalValue();
+                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+                            _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
                         } else {
-                            SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name }}' expr evaluation failed: {{ param.expr }}");
-                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name }}"].push_back("");
+                            SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name | escape_cpp }}' expr evaluation failed: {{ param.expr | escape_cpp }}");
+                            _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("");
                         }
                     }
 {% endif %}
@@ -413,7 +413,7 @@
                     auto& scriptEngine = getScriptEngine();
                     std::vector<std::pair<std::string, std::string>> params = {
 {% for param in state.donedata.params %}
-                        {"{{ param.name }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
+                        {"{{ param.name | escape_cpp }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
 {% endfor %}
                     };
 

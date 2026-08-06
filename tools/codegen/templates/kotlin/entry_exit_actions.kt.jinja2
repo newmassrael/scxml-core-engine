@@ -152,7 +152,7 @@
 {% if param.expr %}
                     // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
                     try {
-                        invokeParams["{{ param.name }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
+                        invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
                     } catch (_: Exception) {
                         return@run  // C++ pattern: invoke cancelled on param error
                     }
@@ -226,7 +226,7 @@
 {% for param in state.donedata.params %}
 {% if param.expr is not none %}
                     try {
-                        doneParams["{{ param.name }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
+                        doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
@@ -235,7 +235,7 @@
 {% if param.location %}
                     try {
                         val locVal = engineDD.evaluateExpr(sidDD, "{{ param.location }}")
-                        doneParams["{{ param.name }}"] = locVal
+                        doneParams["{{ param.name | escape_kotlin }}"] = locVal
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
