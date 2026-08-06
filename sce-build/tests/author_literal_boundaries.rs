@@ -58,18 +58,72 @@ use std::path::PathBuf;
 use sce_build::compile_scxml_lang;
 use sce_build::generator::Language;
 
-/// Fixture stems under `tests/fixtures/codegen_smoke/`, shared with
-/// `codegen_smoke`. The pair exists because `needs_script_engine`
-/// selects mutually exclusive emission blocks: one document cannot
-/// reach both, so one document cannot prove both.
-const FIXTURES: &[&str] = &[
-    "send_param_adversarial_literals",
-    "send_param_adversarial_literals_scripted",
+/// A document to compile, and what has to be in scope for its paste
+/// sites to render.
+struct Fixture {
+    /// Stem of the SCXML file, resolved by [`fixture_path`].
+    stem: &'static str,
+    /// Directory under `tests/fixtures/` holding it.
+    dir: &'static str,
+    /// Deploy document that must be in scope, as a file name in the same
+    /// directory. `None` compiles the document alone.
+    ///
+    /// A deploy is not decoration here: it is the only way to reach the
+    /// emission blocks a backend selects on topology. Without one,
+    /// `is_remote_invoke_target` is false by construction and the mesh
+    /// send site cannot render, however the document is written.
+    deploy: Option<&'static str>,
+}
+
+/// Documents the value gate compiles.
+///
+/// The first pair sits under `codegen_smoke/` and is shared with that
+/// gate, which compiles the same text instead of reading it. The pair
+/// exists because `needs_script_engine` selects mutually exclusive
+/// emission blocks: one document cannot reach both, so one document
+/// cannot prove both.
+///
+/// The third is deploy-scoped and not shared: `codegen_smoke` compiles
+/// single documents, so registering it there would exercise the local
+/// send block under a mesh fixture's name — the opposite of what it is
+/// for. Its C++ output goes unchecked by a compiler as a result, which
+/// is a real gap and a narrow one: the block differs from its already-
+/// compiled sibling in the call it makes, not in how it pastes literals.
+const FIXTURES: &[Fixture] = &[
+    Fixture {
+        stem: "send_param_adversarial_literals",
+        dir: "codegen_smoke",
+        deploy: None,
+    },
+    Fixture {
+        stem: "send_param_adversarial_literals_scripted",
+        dir: "codegen_smoke",
+        deploy: None,
+    },
+    Fixture {
+        stem: "mesh_worker",
+        dir: "author_literal_mesh",
+        deploy: Some("deploy.yaml"),
+    },
 ];
 
 /// `<send>` shape prefixes used by the fixtures' param names.
+///
+/// `meshparent` is the deploy-scoped send-to-parent site; `parent` is the
+/// single-document one. They are separate prefixes because they are
+/// separate paste sites, and a shared prefix would let either one's count
+/// stand in for the other.
 const SHAPES: &[&str] = &[
-    "internal", "parent", "pdelay", "http", "httpmix", "texpr", "mix", "delay", "plain",
+    "internal",
+    "parent",
+    "meshparent",
+    "pdelay",
+    "http",
+    "httpmix",
+    "texpr",
+    "mix",
+    "delay",
+    "plain",
 ];
 
 /// The adversarial value set, applied to every shape in both fixtures.
@@ -217,24 +271,43 @@ const PASTE_BACKENDS: &[Backend] = &[
 /// below its floor and fails, which is the only thing standing between
 /// "the gate is green" and "the gate read nothing".
 const MIN_CHECKS_PER_BACKEND: &[(&str, usize)] =
-    &[("cpp", 56), ("rust", 119), ("go", 119), ("kotlin", 98)];
+    &[("cpp", 63), ("rust", 126), ("go", 126), ("kotlin", 105)];
 
-fn fixture_path(stem: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/codegen_smoke")
-        .join(format!("{stem}.scxml"))
+fn fixtures_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+fn fixture_path(dir: &str, stem: &str) -> PathBuf {
+    fixtures_root().join(dir).join(format!("{stem}.scxml"))
 }
 
 /// Every generated file for `lang`, concatenated. Backends split output
 /// across several files (cpp emits `_sm.h` + `_sm.inl`); the paste site
 /// may live in any of them.
-fn generate(lang: Language, stem: &str) -> String {
-    let fixture = fixture_path(stem);
-    let output = compile_scxml_lang(
-        fixture.to_str().expect("fixture path is UTF-8"),
-        &sce_build::find_template_dir_for(lang),
-        lang,
-    )
+///
+/// Deploy-scoped fixtures go through `compile_scxml_lang_with_deploy`,
+/// which applies the same model mutations the CLI applies, through the
+/// same function. That sharing is not tidiness: passing the deploy to a
+/// call that only *reads* it is not enough — `is_remote_invoke_target` is
+/// set by the mutation pass, and without it the mesh send site does not
+/// render at all. A first attempt here did exactly that and the site
+/// count still rose by seven, because other sites in the same fixture
+/// supplied them; only mutating the site and watching this gate stay
+/// green revealed it.
+fn generate(lang: Language, fixture: &Fixture) -> String {
+    let stem = fixture.stem;
+    let path = fixture_path(fixture.dir, stem);
+    let path = path.to_str().expect("fixture path is UTF-8");
+    let template_dir = sce_build::find_template_dir_for(lang);
+
+    let output = match fixture.deploy {
+        None => compile_scxml_lang(path, &template_dir, lang),
+        Some(deploy_name) => {
+            let deploy_path = fixtures_root().join(fixture.dir).join(deploy_name);
+            sce_build::compile_scxml_lang_with_deploy(path, &template_dir, lang, &deploy_path, None)
+                .map_err(|e| e.to_string())
+        }
+    }
     .unwrap_or_else(|e| panic!("codegen succeeds for {stem}: {e}"));
 
     output
@@ -468,8 +541,9 @@ fn author_param_literals_survive_every_boundary() {
         let name = backend.name;
         counts.insert(name, 0);
 
-        for stem in FIXTURES {
-            let source = generate(backend.lang, stem);
+        for fixture in FIXTURES {
+            let stem = fixture.stem;
+            let source = generate(backend.lang, fixture);
 
             for extractor in backend.extractors {
                 let (pairs, errors) = match extractor {
@@ -706,7 +780,16 @@ fn donedata_param_names_survive_the_embedded_lua_boundary() {
             .map(|(suffix, _)| format!("{prefix}{suffix}"))
             .collect();
 
-        let source = generate(*lang, fixture);
+        // Every Lua-key site lives in a single-document fixture; none of
+        // them is topology-dependent.
+        let source = generate(
+            *lang,
+            &Fixture {
+                stem: fixture,
+                dir: "codegen_smoke",
+                deploy: None,
+            },
+        );
         let (keys, errors) = extract_lua_keys(&source, marker);
         violations.extend(errors.into_iter().map(|why| format!("{name}: {why}")));
 

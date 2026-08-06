@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<!--
+  Structural fixture for the one `<send>` paste site that only exists
+  when a deploy topology is in scope.
+
+  `mesh_parent` invokes this machine as `#mesh_worker`, so the compiler
+  marks it `is_remote_invoke_target`. C++ then lowers
+  `<send target="#_parent">` through the SCE_MESH.md §9.6.2 wire-16 block
+  rather than the local invoke-callback block — a different paste site,
+  reached only this way. Every other fixture in the value gate compiles as
+  a single document, where that flag is false by construction, so the site
+  stayed unguarded after it was fixed.
+
+  The `meshparent_` prefix keeps these params distinct from the `parent_`
+  ones in `codegen_smoke/send_param_adversarial_literals.scxml`: both
+  documents describe a send to the parent, and only the topology
+  distinguishes which block emits them. Sharing a prefix would let a count
+  from one site cover a regression at the other.
+
+  Values match that fixture's set exactly — the gate's `VALUES` table is
+  the single source for both.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="mesh_worker" initial="s0">
+  <state id="s0">
+    <onentry>
+      <send event="e_meshparent" target="#_parent">
+        <param name="meshparent_dquote" expr="'a&quot;b'"/>
+        <param name="meshparent_backslash" expr="'c\d'"/>
+        <param name="meshparent_both" expr="'e\&quot;f'"/>
+        <param name="meshparent_luaclose" expr="'g&quot;}h'"/>
+        <param name="meshparent_tab" expr="'i&#9;j'"/>
+        <param name="meshparent_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="meshparent_odd&quot;name" expr="'plain'"/>
+      </send>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

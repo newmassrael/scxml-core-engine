@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!--
+  The invoking half of the mesh topology. Present so `#mesh_worker`
+  resolves to a declared machine and the worker is classified as a remote
+  invoke target; it is never itself the document under test.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="mesh_parent" initial="s0">
+  <state id="s0">
+    <invoke type="scxml" src="#mesh_worker" id="inv0"/>
+  </state>
+</scxml>

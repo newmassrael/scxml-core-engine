@@ -723,10 +723,75 @@ pub fn compile_scxml_lang_typed_with_section(
     section_class: Option<&str>,
     options: &generator::StatechartCodegenOptions,
 ) -> Result<generator::GeneratedOutput, CompileError> {
+    compile_scxml_lang_typed_mutated(
+        scxml_path,
+        template_dir,
+        language,
+        driver_root,
+        section_class,
+        options,
+        |_| Ok(()),
+    )
+}
+
+/// SCE_MESH.md §9.6 — compile with a `deploy.yaml` in scope.
+///
+/// Some emission blocks exist only under a topology: C++ lowers
+/// `<send target="#_parent">` through the wire-16 mesh path instead of
+/// the local invoke callback once the machine is a remote invoke target,
+/// and that flag is set by [`apply_deploy_model_mutations`], never by
+/// parsing. A caller that holds a deploy and compiles through the
+/// deploy-unaware entries therefore gets source for a *different shape*
+/// of machine, silently — same document, same templates, wrong block.
+///
+/// This is that entry: it applies the same mutations the CLI applies, in
+/// the same order, through the same function, so a caller with a deploy
+/// has one obvious way to honour it.
+pub fn compile_scxml_lang_with_deploy(
+    scxml_path: &str,
+    template_dir: &Path,
+    language: generator::Language,
+    deploy_path: &Path,
+    for_partition: Option<&str>,
+) -> Result<generator::GeneratedOutput, CompileError> {
+    compile_scxml_lang_typed_mutated(
+        scxml_path,
+        template_dir,
+        language,
+        None,
+        None,
+        &generator::StatechartCodegenOptions::default(),
+        |model| {
+            apply_deploy_model_mutations(model, deploy_path, for_partition).map_err(|e| {
+                forge::error::Located::new(
+                    forge::error::ForgeError::from(e.source),
+                    deploy_path.display().to_string(),
+                    None,
+                    None,
+                )
+            })
+        },
+    )
+}
+
+/// Shared body of the compile entries: parse, let the caller mutate the
+/// model, emit. The hook is where deploy-derived state enters; without
+/// it the deploy-aware path would be a second copy of the language
+/// dispatch below, and the two would drift.
+fn compile_scxml_lang_typed_mutated(
+    scxml_path: &str,
+    template_dir: &Path,
+    language: generator::Language,
+    driver_root: Option<&Path>,
+    section_class: Option<&str>,
+    options: &generator::StatechartCodegenOptions,
+    mutate: impl FnOnce(&mut SCXMLModel) -> Result<(), CompileError>,
+) -> Result<generator::GeneratedOutput, CompileError> {
     let ParsedSCXML {
         mut model,
         preprocessor_deps,
     } = compile_model(scxml_path)?;
+    mutate(&mut model)?;
     if !model.driver_refs.is_empty() {
         match driver_root {
             Some(root) => resolve_driver_refs_with_root(&mut model, scxml_path, root)?,
@@ -4825,6 +4890,81 @@ pub fn inject_partition_context_flag(
     deploy_path: &Path,
 ) -> Result<bool, mesh::error::MeshError> {
     inject_partition_context_for(model, deploy_path, None)
+}
+
+/// Which deploy-derived mutation failed, so a caller can keep reporting
+/// it the way it always has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeployMutationStage {
+    /// Synthetic server-response `<send>` injection.
+    ServerModel,
+    /// SCE_MESH.md §14 rule 12 partition context, and the remote-invoke
+    /// classification that rides with it.
+    PartitionContext,
+    /// `default_event_queue_capacity` fallback.
+    EventQueueCapacity,
+}
+
+impl DeployMutationStage {
+    /// Prefix this stage's failures have always been reported under.
+    /// Kept with the stage rather than at the call site so the wording
+    /// cannot drift per caller.
+    pub fn error_prefix(self) -> &'static str {
+        match self {
+            Self::ServerModel => "Server model injection error: ",
+            Self::PartitionContext => "Partition context injection error: ",
+            Self::EventQueueCapacity => "Event-queue capacity injection error: ",
+        }
+    }
+}
+
+/// A deploy-derived mutation that failed, tagged with which one.
+#[derive(Debug)]
+pub struct DeployMutationError {
+    /// The mutation that failed.
+    pub stage: DeployMutationStage,
+    /// Why it failed.
+    pub source: mesh::error::MeshError,
+}
+
+/// Apply every deploy-derived mutation a model needs before codegen.
+///
+/// Order is load-bearing and is the reason this is one function rather
+/// than three calls each caller repeats: the server-response sends must
+/// exist before partition context classifies them, and the capacity
+/// fallback must run last so an explicit `sce:capacity` still wins.
+///
+/// Whether these run at all decides *which emission block* a template
+/// selects — `inject_partition_context_for` is what sets
+/// `is_remote_invoke_target`, and C++ lowers `<send target="#_parent">`
+/// through an entirely different site depending on it. A caller holding
+/// a deploy that skips this does not get slightly different output; it
+/// gets code for a machine that is not the one deployed. That was a real
+/// gap: the value gate over author `<param>` literals compiled its
+/// fixtures without a deploy and so could never see the mesh send site,
+/// which stayed unguarded after being fixed.
+pub fn apply_deploy_model_mutations(
+    model: &mut SCXMLModel,
+    deploy_path: &Path,
+    for_partition: Option<&str>,
+) -> Result<(), DeployMutationError> {
+    inject_server_model_mutations(model, deploy_path).map_err(|source| DeployMutationError {
+        stage: DeployMutationStage::ServerModel,
+        source,
+    })?;
+    inject_partition_context_for(model, deploy_path, for_partition).map_err(|source| {
+        DeployMutationError {
+            stage: DeployMutationStage::PartitionContext,
+            source,
+        }
+    })?;
+    populate_event_queue_capacity_from_deploy(model, deploy_path).map_err(|source| {
+        DeployMutationError {
+            stage: DeployMutationStage::EventQueueCapacity,
+            source,
+        }
+    })?;
+    Ok(())
 }
 
 /// Partition-aware form of [`inject_partition_context_flag`]. Pass
