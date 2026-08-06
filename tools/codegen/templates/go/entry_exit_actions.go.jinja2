@@ -89,8 +89,12 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 				doneDataOk = false
 {% else %}
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ param_expr | to_lua_expr | escape_go }}`); err == nil {
-					jsonParts = append(jsonParts, `["{{ param.name }}"] = ` + sce.ToLuaLiteral(val))
+{# A Go raw string cannot escape its own terminator, so author text in
+   one is unfixable by any filter. Interpreted strings take the same
+   two-boundary composition the other backends use: escape once for the
+   Lua source being assembled, once for the Go literal carrying it. #}
+				if val, err := se.EvaluateExpression(p.SessionID, "{{ param_expr | to_lua_expr | escape_go }}"); err == nil {
+					jsonParts = append(jsonParts, "[\"{{ param.name | escape_lua | escape_go }}\"] = " + sce.ToLuaLiteral(val))
 				} else {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))

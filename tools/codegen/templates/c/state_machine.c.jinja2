@@ -541,7 +541,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
                 {% endif %}
                 {
-                    static const char *_pn = "{{ param.name }} = ";
+                    static const char *_pn = "{{ param.name | escape_c }} = ";
                     int _pnl = (int)strlen(_pn);
                     if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
                         memcpy(_ed + _ed_len, _pn, (size_t)_pnl);

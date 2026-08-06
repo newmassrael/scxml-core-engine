@@ -526,3 +526,146 @@ fn author_param_literals_survive_every_boundary() {
         shortfalls.join("\n"),
     );
 }
+
+// ── `<donedata>` param names ────────────────────────────────────────
+//
+// A separate axis from the `<send>` values above, and separate because
+// its failure mode is the mirror image.
+//
+// Three backends lower `<donedata>` by assembling *Lua source* — a table
+// assignment whose key is the author's param name — and embedding that
+// source in a host string literal. The value is an expression evaluated
+// at runtime, so there is no authored value to compare; the name is the
+// only author text that crosses the boundary, and it crosses two.
+//
+// C11 additionally puts that name in Lua *index* position
+// (`_pending_donedata["k"]`). It used to sit in field position
+// (`_pending_donedata.k`), where no escaping can help because an
+// arbitrary string is not an identifier — the fix was index syntax, and
+// this gate is what holds it there.
+//
+// Measured, not assumed: mutating away the Lua layer while leaving the
+// host layer in place keeps `codegen_smoke` fully green on Rust and Go,
+// because the host source still compiles and the Lua it carries is never
+// handed to a compiler. Only parsing that Lua catches it.
+//
+// Coverage, measured per site by mutating each one individually:
+//   rust / go                       — covered
+//   c11 static-expr path            — covered, including a regression
+//                                     back to field syntax
+//   c11 dynamic path (`= _v;` and
+//   its `= '';` fallback)           — NOT covered. Neither an expr- nor a
+//     location-sourced donedata param reaches it, so the shape that does
+//     is still unidentified. The escaping there is fixed but unguarded;
+//     do not read this gate as proof of it.
+
+/// Backends assembling Lua source for `<donedata>`, with the marker that
+/// identifies the line and the number of param names each must yield.
+const DONEDATA_LUA_BACKENDS: &[(Language, &str, &str, usize)] = &[
+    (Language::Rust, "rust", "let mut part = String::from(", 7),
+    (Language::Go, "go", "jsonParts = append(jsonParts,", 7),
+    (Language::C11, "c11", "_pending_donedata[", 7),
+];
+
+/// Fixture whose `<donedata>` params carry literal-breaking names.
+const DONEDATA_FIXTURE: &str = "donedata_adversarial_literals";
+
+/// Param-name prefix used by that fixture.
+const DONEDATA_PREFIX: &str = "dd_";
+
+/// Pull `["<key>"]` keys out of Lua source embedded in host literals on
+/// lines carrying `marker`, evaluating each key with the real Lua parser.
+fn extract_lua_keys(source: &str, marker: &str) -> (Vec<String>, Vec<String>) {
+    let mut keys = Vec::new();
+    let mut errors = Vec::new();
+    let lua = mlua::Lua::new();
+
+    for line in source.lines() {
+        if !line.contains(marker) {
+            continue;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        for raw in literals_after(&chars, 0) {
+            let lua_source = match unescape_host(&raw) {
+                Ok(source) => source,
+                Err(why) => {
+                    errors.push(format!("host literal (raw {raw:?}): {why}"));
+                    continue;
+                }
+            };
+            let mut rest = lua_source.as_str();
+            while let Some(at) = rest.find("[\"") {
+                let tail: Vec<char> = rest[at + 1..].chars().collect();
+                match scan_literal(&tail, 0) {
+                    Some((raw_key, _)) => {
+                        // The key is a Lua literal, so Lua decides what it
+                        // means. Re-implementing that decision here would
+                        // let the check drift from the grammar it guards.
+                        match lua.load(format!("return \"{raw_key}\"")).eval::<String>() {
+                            Ok(key) => keys.push(key),
+                            Err(e) => errors.push(format!(
+                                "emitted Lua key does not parse — host source still \
+                                 compiles: {e}\n  Lua key literal was: \"{raw_key}\""
+                            )),
+                        }
+                    }
+                    None => errors.push(format!(
+                        "unterminated Lua string in emitted source: {lua_source}"
+                    )),
+                }
+                rest = &rest[at + 2..];
+            }
+        }
+    }
+    (keys, errors)
+}
+
+/// Every `<donedata>` param name must arrive at the Lua layer intact.
+#[test]
+fn donedata_param_names_survive_the_embedded_lua_boundary() {
+    let expected: Vec<String> = VALUES
+        .iter()
+        .map(|(suffix, _)| format!("{DONEDATA_PREFIX}{suffix}"))
+        .collect();
+
+    let mut violations: Vec<String> = Vec::new();
+
+    for (lang, name, marker, floor) in DONEDATA_LUA_BACKENDS {
+        let source = generate(*lang, DONEDATA_FIXTURE);
+        let (keys, errors) = extract_lua_keys(&source, marker);
+        violations.extend(errors.into_iter().map(|why| format!("{name}: {why}")));
+
+        let authored: BTreeMap<&String, ()> = keys
+            .iter()
+            .filter(|k| k.starts_with(DONEDATA_PREFIX))
+            .map(|k| (k, ()))
+            .collect();
+
+        for want in &expected {
+            if !authored.contains_key(want) {
+                violations.push(format!(
+                    "{name}: donedata param {want:?} did not survive to the Lua layer\n  \
+                     names that did: {:?}",
+                    authored.keys().collect::<Vec<_>>(),
+                ));
+            }
+        }
+
+        // Floor for the same reason as the send gate: a marker that stops
+        // matching would otherwise read every bit as green as a correct
+        // backend.
+        if authored.len() < *floor {
+            violations.push(format!(
+                "{name}: recovered {} donedata names, floor {floor} — the paste site \
+                 moved or stopped emitting",
+                authored.len(),
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "`<donedata>` param names did not survive the embedded Lua boundary:\n\n{}",
+        violations.join("\n\n"),
+    );
+}
