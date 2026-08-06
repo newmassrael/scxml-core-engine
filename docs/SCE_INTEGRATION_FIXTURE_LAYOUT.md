@@ -11,8 +11,8 @@ The stems under `integration_resources/` today are
 `autoforward_dequeue_point`, `autoforward_done_invoke`,
 `autoforward_event_fields`, `autoforward_internal_queue`,
 `donedata_late_completion`, `donedata_local_invoke`,
-`invoke_precedes_dequeue_midrun`, `invoke_precedes_external_dequeue` and
-`nested_final_not_terminal`.
+`invoke_precedes_dequeue_midrun`, `invoke_precedes_external_dequeue`,
+`nested_final_not_terminal` and `send_param_payload`.
 
 A fixture placed under `integration_resources/` is a **five-backend
 commitment**, not merely a shared file: `sce-codegen generate-integration`
@@ -49,6 +49,20 @@ there. Deleting the late-completion lift from
 `c11_integration_donedata_late_completion` while
 `c11_integration_donedata_local_invoke` stays green — the sibling is
 structurally blind to that site.
+
+`send_param_payload` covers W3C §6.2's `<param>` payload contract on the two
+send paths that had no runtime witness — one `<send target="#_parent">` from a
+`datamodel="null"` child, which needs no script engine, and one
+`<send target="#_internal">` whose params must arrive as `_event.data`. Both
+were fixed at the template layer while no committed fixture had a machine of
+either shape, so every suite could show was that nothing regressed. The two
+land in distinct final states (`failChildPayload` / `failInternalPayload`) so a
+failure names the path rather than reporting "payload lost". Adding it closed
+two C11 parity gaps that the missing fixture had hidden: a literal param was
+formatted through the runtime Lua formatter, which does not compile in a
+machine with no `lua_State`; and `<send target="#_internal">` with `<param>`
+children fell through to the unenumerated-shape fallback and raised
+`error.execution`.
 
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in

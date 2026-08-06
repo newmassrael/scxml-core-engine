@@ -641,6 +641,38 @@ set_tests_properties(c11_integration_donedata_late_completion PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML 6.2: a <send> carries its <param> payload on both the paths that
+# had no runtime witness — from a datamodel="null" child (which needs no
+# script engine, so param emission must be judged per send rather than per
+# machine) and to #_internal (whose raise used to take no event data). The
+# two land in distinct final states so a failure names the path.
+sce_generate_static_integration_c_test(send_param_payload "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_emitter
+)
+
+add_executable(sce_c_integration_send_param_payload
+    integration/test_send_param_payload.c
+    ${INTEGRATION_C_TEST_send_param_payload_SOURCES}
+)
+target_link_libraries(sce_c_integration_send_param_payload PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_send_param_payload PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_send_param_payload PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_send_param_payload
+    COMMAND sce_c_integration_send_param_payload
+)
+set_tests_properties(c11_integration_send_param_payload PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime
