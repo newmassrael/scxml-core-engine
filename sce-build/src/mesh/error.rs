@@ -557,27 +557,87 @@ pub enum DeployError {
         candidates: Vec<String>,
     },
 
-    /// A SOME/IP binding uses a placeholder but does not declare the
-    /// required `instances:` list (SCE Mesh §mesh-14.4). vsomeip's
-    /// `request_service(SERVICE, ANY_INSTANCE)` is interpreted as
-    /// specific-instance-0xFFFF, not a wildcard, so codegen must know
-    /// the finite set of instance IDs to pre-request at init().
+    /// A binding requests a pool on a transport whose
+    /// [`PoolShape`](crate::mesh::transport::PoolShape) is `Bounded` but
+    /// does not enumerate its members (SCE Mesh §mesh-14.4). Both
+    /// bounded transports need the set at build time, for the same
+    /// class of reason and through different keys:
+    ///
+    /// * SOME/IP (`instances:`) — `request_service(SERVICE,
+    ///   ANY_INSTANCE)` is interpreted as specific-instance-0xFFFF, not
+    ///   a wildcard, so codegen must pre-request each id at `init()`.
+    /// * DDS (`members:`) — a writer built at invoke time has not
+    ///   matched when the first sample is written and a VOLATILE writer
+    ///   drops it with no error, so each member's endpoints must exist
+    ///   by `init()`.
+    ///
+    /// `expected_field` is read from the transport's carrier so the
+    /// diagnostic names the key the author actually has to write.
     #[error(
-        "machine '{machine}': SOME/IP binding '{binding}' uses a '{{name}}' placeholder \
-             but is missing the required `instances:` list. vsomeip does not support \
-             open-ended instance subscription; declare the expected instance IDs explicitly."
+        "machine '{machine}': binding '{binding}' on transport '{transport}' requests a \
+             runtime pool but is missing the required `{expected_field}:` list. This \
+             transport cannot discover members on demand; declare the expected set \
+             explicitly."
     )]
-    PoolMissingInstanceList { machine: String, binding: String },
+    PoolMissingMemberList {
+        machine: String,
+        binding: String,
+        transport: String,
+        expected_field: String,
+    },
 
-    /// A binding declared an empty `instances: []` list (SCE Mesh §mesh-14.4).
-    /// An empty pool would generate zero `request_service` calls and the
-    /// runtime would refuse every placeholder value, so the
-    /// configuration is silently broken.
+    /// A binding declared an empty member list (SCE Mesh §mesh-14.4).
+    /// An empty pool registers no members at `init()` and the runtime
+    /// would refuse every placeholder value, so the configuration is
+    /// silently broken.
     #[error(
-        "machine '{machine}': binding '{binding}' has an empty `instances: []` list. \
-             Declare at least one instance ID or remove the list entirely."
+        "machine '{machine}': binding '{binding}' has an empty `{declared_field}: []` list. \
+             Declare at least one member or remove the list entirely."
     )]
-    PoolEmptyInstanceList { machine: String, binding: String },
+    PoolEmptyMemberList {
+        machine: String,
+        binding: String,
+        declared_field: String,
+    },
+
+    /// A binding declared a pool key that its transport's
+    /// [`PoolMemberCarrier`](crate::mesh::transport::PoolMemberCarrier)
+    /// does not read (SCE Mesh §mesh-14.4). One code for the whole
+    /// carrier-mismatch axis, because every case is the same mistake —
+    /// the author wrote the *other* carrier's syntax:
+    ///
+    /// * `instances:` on a string-segment transport (Zenoh, DDS), whose
+    ///   members are topic/key names rather than typed instance ids.
+    /// * `members:` on a typed-instance transport (SOME/IP).
+    /// * `instance_from:` on a string-segment transport, which selects
+    ///   via a `{name}` embed in the address instead.
+    /// * any of the three on a transport with no pool at all.
+    ///
+    /// Rejected rather than ignored because a declaration nothing reads
+    /// is indistinguishable from one that took effect: before this
+    /// gate, `instances: [1, 2]` on a Zenoh binding parsed, was stored
+    /// on the config, and reached no consumer — the author would have
+    /// shipped believing the pool was bounded.
+    ///
+    /// `expected_mechanism` is `None` when the transport supports no
+    /// pool at all, which is a different repair (change transport) from
+    /// writing the other carrier's syntax (rewrite the key).
+    #[error(
+        "machine '{machine}': binding '{binding}' on transport '{transport}' declares \
+             `{declared_field}:`, which this transport does not read.{}",
+        match expected_mechanism {
+            Some(m) => format!(" {m}"),
+            None => " This transport supports no runtime pool; remove the key or move \
+                     the binding to a transport that does.".to_string(),
+        }
+    )]
+    PoolBindingFieldNotSupported {
+        machine: String,
+        binding: String,
+        transport: String,
+        declared_field: String,
+        expected_mechanism: Option<String>,
+    },
 
     /// A binding value field contains a malformed placeholder (unbalanced
     /// braces, empty name, invalid characters). Rejected at parse time
@@ -2744,21 +2804,72 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             }),
             key_fragments: vec![location.clone(), transport.clone(), field.clone()],
         },
-        DeployError::PoolMissingInstanceList { machine, binding } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeployPoolMissingInstanceList,
+        DeployError::PoolMissingMemberList {
+            machine,
+            binding,
+            transport,
+            expected_field,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolMissingMemberList,
             stage: Stage::MeshDeploy,
             actual: Some(machine.clone()),
+            // The key to add is deterministic once the transport is
+            // known, but its *values* are the author's deployment
+            // topology — an agent cannot synthesise them, so the prose
+            // names the key and no structured fix claims to repair it.
+            // `expected` stays absent per the §3.2 non-overlap rule.
             expected: None,
             fix: None,
-            key_fragments: vec![machine.clone(), binding.clone()],
+            key_fragments: vec![
+                machine.clone(),
+                binding.clone(),
+                transport.clone(),
+                expected_field.clone(),
+            ],
         },
-        DeployError::PoolEmptyInstanceList { machine, binding } => DiagnosticPayload {
-            code: DiagnosticCode::MeshDeployPoolEmptyInstanceList,
+        DeployError::PoolEmptyMemberList {
+            machine,
+            binding,
+            declared_field,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolEmptyMemberList,
             stage: Stage::MeshDeploy,
             actual: Some(machine.clone()),
             expected: None,
             fix: None,
-            key_fragments: vec![machine.clone(), binding.clone()],
+            key_fragments: vec![machine.clone(), binding.clone(), declared_field.clone()],
+        },
+        DeployError::PoolBindingFieldNotSupported {
+            machine,
+            binding,
+            transport,
+            declared_field,
+            // The carrier's own syntax is named in the prose (see the
+            // `#[error]` attribute); the structured repair is the
+            // removal below, which does not need it.
+            expected_mechanism: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolBindingFieldNotSupported,
+            stage: Stage::MeshDeploy,
+            actual: Some(declared_field.clone()),
+            // Same split the sibling `ServerPoolNotSupported` makes:
+            // the mechanical repair is "remove the key nothing reads",
+            // which is deterministic and safe. Renaming it to the
+            // carrier's own key is a *different* deployment (it turns
+            // the binding into a bounded pool), so that path stays in
+            // the prose rather than riding a structured fix an agent
+            // would apply unattended.
+            expected: None,
+            fix: Some(Fix::RemoveFields {
+                location: format!("topology.*.machines.{machine}.bindings.{binding}"),
+                fields: vec![declared_field.clone()],
+            }),
+            key_fragments: vec![
+                machine.clone(),
+                binding.clone(),
+                transport.clone(),
+                declared_field.clone(),
+            ],
         },
         DeployError::PoolInvalidPlaceholder {
             machine,

@@ -1,0 +1,45 @@
+# SCE Mesh §14.4 DDS bounded pool, runtime.
+#
+# The compile gate (deploy_pool.yaml) proves the three carriers render
+# together; this fixture proves the DDS one dispatches. One sender, one
+# binding, two declared members — the smallest shape in which "the
+# runtime <param> picked the endpoint" is distinguishable from "every
+# send goes to the same place".
+#
+# `{corner}` is substituted at BUILD time, once per member, and each
+# substituted topic gets its own `Dds::Client` at init(). That is the
+# whole reason the DDS pool is bounded: a writer created at invoke time
+# has not finished discovery when the first sample is written, and a
+# VOLATILE writer drops it with no error.
+#
+# Isolation follows the sibling DDS fixtures: a non-default `domain_id`,
+# a discovery tag, and a partition. Domain 79 is distinct from 71
+# (dds_multi), 73 (dds_server_deadline), 75 (dds_machine_lifetime) and
+# 77 (the §14.4 compile fixture) so all of them can run concurrently.
+version: "1.0"
+topology:
+  ecu_pool_sender:
+    transports:
+      dds:
+        domain_id: 79
+        config: '<CycloneDDS><Domain id="any"><Discovery><Tag>sce_mesh_dds_pool</Tag></Discovery></Domain></CycloneDDS>'
+        qos:
+          partition: "sce_mesh_dds_pool"
+    machines:
+      pool_sender_dds:
+        source: pool_sender_dds.scxml
+        bindings:
+          "#sensor":
+            transport: dds
+            topic: "SceDdsPool/{corner}/Data"
+            # Two members, not one: with a single member every dispatch
+            # would land on the right endpoint by construction and the
+            # test could not tell selection from a hardcoded slot.
+            members: [front_left, rear]
+      # The receiver end of the `#sensor` target. One declaration stands
+      # for the whole pool — `members:` enumerates addresses of the same
+      # machine, not distinct machines — and the runtime observers are
+      # raw `Dds::Server`s in the test rather than generated routers, so
+      # each member topic can be watched independently.
+      sensor:
+        source: sensor_dds_pool.scxml

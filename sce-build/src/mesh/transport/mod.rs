@@ -130,10 +130,101 @@ impl PoolShape {
         !matches!(self, PoolShape::None)
     }
 
-    /// Whether a placeholder-bearing binding must also declare
-    /// `instances:`.
-    pub fn requires_instance_list(self) -> bool {
+    /// Whether a placeholder-bearing binding must also enumerate its
+    /// members up front. *Which* deploy.yaml key carries that
+    /// enumeration is the carrier's question, not the shape's — see
+    /// [`PoolMemberCarrier::member_list_field`].
+    pub fn requires_member_list(self) -> bool {
         matches!(self, PoolShape::Bounded)
+    }
+}
+
+/// SCE_MESH.md §mesh-14.4 — the *type* of a pool member on this
+/// transport, which decides both how the author selects one at runtime
+/// and which deploy.yaml key enumerates the set.
+///
+/// Orthogonal to [`PoolShape`]. The shape answers "must the member set
+/// be declared up front"; the carrier answers "what is a member". Both
+/// combinations of the two realised axes exist today, which is why they
+/// cannot be folded into one enum:
+///
+/// | transport | shape | carrier |
+/// |---|---|---|
+/// | `zenoh` | `Open` | `StringSegment` |
+/// | `dds` | `Bounded` | `StringSegment` |
+/// | `someip` | `Bounded` | `TypedInstanceId` |
+///
+/// This is the dimension the pool validator used to ask as
+/// `binding.transport != "someip"` with a comment promising the registry
+/// would grow it "when a second typed-instance transport actually
+/// exists". DDS made the promise due the other way round — a second
+/// *bounded* transport whose members are strings — so the axis lands
+/// here rather than at the validation site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PoolMemberCarrier {
+    /// No pool; the binding address is fixed at build time.
+    None,
+    /// A member is a typed `uint16_t` service instance id. The address
+    /// has no string slot to substitute into, so the selecting
+    /// `<param>` is named by an explicit `instance_from:` key and the
+    /// set is enumerated as `instances: [<int>, ...]`.
+    TypedInstanceId,
+    /// A member is a string segment of the binding's own address
+    /// (Zenoh `key:`, DDS `topic:`). The selecting `<param>` is named
+    /// syntactically by a `{name}` placeholder embedded in that
+    /// address; a bounded set is enumerated as `members: [<string>, ...]`.
+    StringSegment,
+}
+
+impl PoolMemberCarrier {
+    /// The deploy.yaml key that enumerates the member set for this
+    /// carrier, or `None` when the transport has no pool at all.
+    ///
+    /// A [`PoolShape::Open`] carrier still answers here: the key is
+    /// what the author *would* write if the shape required it, and
+    /// naming it is how the "you declared a member list on a transport
+    /// that does not read one" rejection stays specific.
+    pub fn member_list_field(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::TypedInstanceId => Some("instances"),
+            Self::StringSegment => Some("members"),
+        }
+    }
+
+    /// Whether the selecting `<param>` is named by an explicit
+    /// `instance_from:` key rather than by a `{name}` embed.
+    pub fn selects_via_instance_from(self) -> bool {
+        matches!(self, Self::TypedInstanceId)
+    }
+
+    /// One sentence describing how an author selects a member on this
+    /// carrier, for the diagnostic that rejects the *other* carrier's
+    /// syntax. `None` when there is no pool to describe.
+    ///
+    /// Rendered from the registry rather than written into each
+    /// rejection site: a carrier that lands moves every message that
+    /// offers it, which is the same contract `pool_alternatives` and
+    /// `machine_lifetime_subscribe_alternatives` hold.
+    pub fn selection_mechanism(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::TypedInstanceId => Some(
+                "Its pool members are typed service instance ids: enumerate them in \
+                 `instances:` and name the selecting <param> with `instance_from:`.",
+            ),
+            Self::StringSegment => Some(
+                "Its pool members are string segments of the binding address: embed a \
+                 `{name}` placeholder naming the selecting <param>, and — on a bounded \
+                 pool — enumerate the values in `members:`.",
+            ),
+        }
+    }
+
+    /// Whether a `{name}` placeholder embedded in the binding address
+    /// has a substitution target on this carrier.
+    pub fn accepts_placeholder(self) -> bool {
+        matches!(self, Self::StringSegment)
     }
 }
 
@@ -144,14 +235,14 @@ impl PoolShape {
 /// [`machine_lifetime_subscribe_transports`]: the rejection diagnostic
 /// names the alternatives by reading the registry, so an arm that lands
 /// or regresses moves the message with no second edit.
-pub fn pool_transports() -> Vec<(&'static str, PoolShape)> {
+pub fn pool_transports() -> Vec<(&'static str, PoolShape, PoolMemberCarrier)> {
     known_names()
         .iter()
         .filter_map(|name| {
             let d = lookup(name)?;
             match d.pool_shape {
                 PoolShape::None => None,
-                shape => Some((*name, shape)),
+                shape => Some((*name, shape, d.pool_member_carrier)),
             }
         })
         .collect()
@@ -159,13 +250,20 @@ pub fn pool_transports() -> Vec<(&'static str, PoolShape)> {
 
 /// The alternatives clause the pool rejection diagnostic carries,
 /// rendered from [`pool_transports`].
+///
+/// The "requires" hint names the carrier's own enumeration key rather
+/// than a fixed `instances:`, so an author who is told to move a
+/// placeholder binding onto DDS is told to write `members:` — the key
+/// DDS actually reads.
 pub fn pool_alternatives() -> String {
     pool_transports()
         .into_iter()
-        .map(|(name, shape)| match shape {
-            PoolShape::Bounded => format!("'{name}' (requires instances:)"),
-            _ => format!("'{name}'"),
-        })
+        .map(
+            |(name, shape, carrier)| match (shape, carrier.member_list_field()) {
+                (PoolShape::Bounded, Some(field)) => format!("'{name}' (requires {field}:)"),
+                _ => format!("'{name}'"),
+            },
+        )
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -396,6 +494,18 @@ pub struct TransportDescriptor {
     /// asked `transport == "someip"` would be right until the second
     /// bounded transport landed, and then silently wrong.
     pub pool_shape: PoolShape,
+    /// SCE_MESH.md §mesh-14.4 — what a pool member *is* on this
+    /// transport, which decides the selecting syntax (`{name}` embed vs
+    /// `instance_from:`) and the enumerating key (`members:` vs
+    /// `instances:`).
+    ///
+    /// Independent of [`Self::pool_shape`]: DDS and SOME/IP are both
+    /// `Bounded` but enumerate different things, while DDS and Zenoh
+    /// share a carrier and differ only in shape. `PoolMemberCarrier::None`
+    /// iff `pool_shape` is `PoolShape::None` — a transport that admits
+    /// no substitution has nothing to carry, and
+    /// `pool_axes_agree_on_absence` locks the biconditional.
+    pub pool_member_carrier: PoolMemberCarrier,
     /// Is the deploy.yaml `machines.<name>.subscriptions:` (SCE_MESH.md
     /// §mesh-13 machine-lifetime path) realised end-to-end on this transport?
     ///
@@ -630,6 +740,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Same-process target identity is compile-time; no runtime
         // address substitution.
         pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
         // Not "no pub/sub" — the descriptor advertises `PubSub` above and
         // means it: a notification event is carried to the peer engine
         // like any other. What in-process dispatch has no room for is a
@@ -690,6 +801,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // SHM channels are pre-declared in deploy.yaml; runtime values
         // cannot address a new channel.
         pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
         // No pub/sub capability; machine-lifetime path does not apply.
         supports_machine_lifetime_subscribe: false,
         // SHM channels are pre-declared and addressed by compile-time
@@ -751,6 +863,11 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Codegen emits one `request_service(SERVICE, i)` per declared
         // instance at init().
         pool_shape: PoolShape::Bounded,
+        // A member is the typed `uint16_t` passed to
+        // `message->set_instance(...)`. The SOME/IP address has no
+        // string slot a `{name}` embed could substitute into, so the
+        // selecting `<param>` is named by `instance_from:` instead.
+        pool_member_carrier: PoolMemberCarrier::TypedInstanceId,
         // Both subscribe paths share one resolver: a deploy.yaml
         // `subscriptions:` entry projects the binding's eventgroup
         // declaration onto its event the same way an SCXML-driven
@@ -814,6 +931,10 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Zenoh's native routing, which delivers to whichever peer has a
         // matching subscriber. No SCE-side enumeration required.
         pool_shape: PoolShape::Open,
+        // A member is a string segment of the `key:` KeyExpr, selected
+        // by a `{name}` embed. Same carrier as DDS; the two differ on
+        // the shape axis only.
+        pool_member_carrier: PoolMemberCarrier::StringSegment,
         // Binding-wide `key:` is sufficient for dispatch — no per-event
         // external resolution needed for subscribe. SCE_MESH.md §mesh-13
         // machine-lifetime path is fully wired end-to-end.
@@ -874,6 +995,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // adding a pool would require SCE to implement its own SD
         // protocol (§mesh-3.3 design invariant rejects middleware SD).
         pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
         // Realised end to end. `init()` builds an `EventSubscribe`
         // envelope and hands it to the same `route_send` the SCXML-driven
         // path uses; the receiving half (registry registration keyed on
@@ -940,20 +1062,23 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Per-(topic, reader) unicast delivery from each publisher
         // supports a stamped sequence domain.
         ordering_representable: true,
-        // `None` today, and the shape it would take is already known:
-        // `Bounded`, for the same class of reason SOME/IP is. The
-        // emitted arm bakes each binding's `topic:` into a `static
-        // constexpr` and substitutes no `{name}`, but that is the
-        // symptom rather than the constraint — `Dds::Client` already
-        // takes its topic as a runtime `std::string`. What rules out an
-        // `Open` pool is discovery: a writer created at invoke time has
-        // not matched when the first sample is written, and a VOLATILE
-        // writer drops it with no error (`Client::waitForServer` exists
-        // precisely because of this). Members therefore have to be
-        // declared so their endpoints can be built at `init()`. Raise
-        // this together with that arm and a fixture that dispatches to a
-        // substituted topic.
-        pool_shape: PoolShape::None,
+        // Bounded, for the same class of reason SOME/IP is, but arrived
+        // at from the other side: what rules out an `Open` pool is
+        // discovery. A writer created at invoke time has not matched
+        // when the first sample is written, and a VOLATILE writer drops
+        // it with no error (`Client::waitForServer` exists precisely
+        // because of this). Declaring the members lets codegen build
+        // every member's `Dds::Client` at `init()` and settle discovery
+        // before any request is dispatched, which is what makes the
+        // first request to each member deliverable rather than silently
+        // lost.
+        pool_shape: PoolShape::Bounded,
+        // A member is a string segment substituted into `topic:` by a
+        // `{name}` embed — the same carrier Zenoh uses, which is why
+        // `members:` and not `instances:` enumerates the set: a DDS
+        // topic segment is a name (`front_left`), not a service
+        // instance id.
+        pool_member_carrier: PoolMemberCarrier::StringSegment,
         // Realised end to end. A DDS subscription is its notification
         // reader, which the router creates and destroys, and
         // `mesh_dds_machine_lifetime_subscribe_runtime` drives that from
@@ -1007,6 +1132,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // CAN frame IDs are compile-time allocations; the bus has no
         // peer-level addressing for placeholder substitution.
         pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
         // Unimplemented + broadcast bus; machine-lifetime subscribe
         // semantic does not apply.
         supports_machine_lifetime_subscribe: false,
@@ -1669,6 +1795,34 @@ mod tests {
     }
 
     #[test]
+    fn pool_axes_agree_on_absence() {
+        // The two pool axes are independent in what they say but not in
+        // whether they say anything: a transport that admits no
+        // substitution has no member type, and a transport that has a
+        // member type must admit substitution. Either half alone would
+        // let a descriptor advertise a carrier nothing can reach, or a
+        // pool whose members have no declared type — both of which the
+        // validator would then read and act on.
+        for name in known_names() {
+            let d = lookup(name).unwrap();
+            assert_eq!(
+                d.pool_shape == PoolShape::None,
+                d.pool_member_carrier == PoolMemberCarrier::None,
+                "{name}: pool_shape and pool_member_carrier disagree on whether \
+                 this transport has a pool at all"
+            );
+            // A bounded shape has to name the key that enumerates its
+            // members, or the validator has nothing to demand.
+            if d.pool_shape.requires_member_list() {
+                assert!(
+                    d.pool_member_carrier.member_list_field().is_some(),
+                    "{name}: bounded pool with no enumerating deploy.yaml key"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn dds_does_not_advertise_unrealised_dimensions() {
         // Guards the direction this landing had to resist: a transport
         // gaining `implemented: true` must not carry flags whose "gated
@@ -1676,10 +1830,14 @@ mod tests {
         let d = lookup("dds").unwrap();
         assert_eq!(
             d.pool_shape,
-            PoolShape::None,
-            "the emitted arm substitutes no placeholder yet; the shape it \
-             would take when it does is Bounded, because a writer built at \
-             invoke time drops its first sample"
+            PoolShape::Bounded,
+            "a writer built at invoke time drops its first sample, so members \
+             are declared and their endpoints built at init()"
+        );
+        assert_eq!(
+            d.pool_member_carrier,
+            PoolMemberCarrier::StringSegment,
+            "a DDS topic segment is a name, not a service instance id"
         );
         assert!(
             d.supports_machine_lifetime_subscribe,

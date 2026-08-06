@@ -122,6 +122,12 @@
       ]
     },
     {
+      "file": "tests/mesh/test_mesh_dds_pool.cpp",
+      "section_ids": [
+        "mesh-14.4"
+      ]
+    },
+    {
       "file": "tests/mesh/test_mesh_dds_server_deadline.cpp",
       "section_ids": [
         "mesh-9.5.1"

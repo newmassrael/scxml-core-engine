@@ -1,19 +1,30 @@
 # SCE Mesh §14.4 pool compile verification.
 #
-# A single `pool_client` machine that exercises both pool kinds:
-#   * `#gamer` — Zenoh open pool. `{id}` placeholder in `key:` is
+# A single `pool_client` machine that exercises all three pool shapes,
+# one per cell of the (shape x member carrier) registry matrix:
+#   * `#gamer` — Zenoh, Open + StringSegment. `{id}` in `key:` is
 #     substituted at invoke time from the `id` <param> value, and the
 #     generated router bypasses the literal-KeyExpr path to assemble the
-#     runtime address directly.
-#   * `#controller` — SOME/IP bounded pool. The `inst` <param> value is
-#     validated against `instances: [1, 2, 3]` (each request_service'd at
-#     init so vsomeip's SD actually subscribes), then fed to
-#     `set_instance()` before the vsomeip send.
+#     runtime address directly. Nothing is declared up front.
+#   * `#controller` — SOME/IP, Bounded + TypedInstanceId. The `inst`
+#     <param> value is validated against `instances: [1, 2, 3]` (each
+#     request_service'd at init so vsomeip's SD actually subscribes),
+#     then fed to `set_instance()` before the vsomeip send.
+#   * `#sensor` — DDS, Bounded + StringSegment. `{corner}` in `topic:`
+#     is substituted at BUILD time, once per `members:` entry, and each
+#     substituted topic gets its own `Dds::Client` at init(). The
+#     runtime `corner` <param> then selects among endpoints that already
+#     exist, because a writer created at invoke time has not finished
+#     discovery and a VOLATILE writer drops its first sample with no
+#     error.
 #
-# Both bindings co-exist on the same machine so the generated transport
-# header renders the pool includes (`<algorithm>`, `<charconv>`,
-# `common/EventDataHelper.h`) exactly once, and both Jinja2 pool branches
-# (WO7.A / WO7.B) are exercised in a single byte-golden / compile gate.
+# All three co-exist on one machine so the generated transport header
+# renders the shared pool helpers (`readPoolParam`, `selectPoolMember`,
+# `common/EventDataHelper.h`) exactly once, and every Jinja2 pool branch
+# is exercised in a single byte-golden / compile gate. The DDS binding
+# also proves the two axes are independent: it shares a shape with
+# SOME/IP and a carrier with Zenoh, so a validator that folded them
+# would have to reject it.
 version: "1.0"
 topology:
   ecu1:
@@ -23,6 +34,8 @@ topology:
       someip:
         config: vsomeip_pool_controller.json
         application_name: pool_client_app
+      dds:
+        domain_id: 77
     machines:
       pool_client:
         source: pool_client.scxml
@@ -38,7 +51,15 @@ topology:
             events:
               "service.request.ping":
                 method: ping
+          "#sensor":
+            transport: dds
+            # Member values are names, not ids — the reason DDS cannot
+            # reuse `instances:` and enumerates through `members:`.
+            topic: "SceSensors/{corner}/Data"
+            members: [front_left, front_right, rear]
       gamer:
         source: gamer.scxml
       controller:
         source: controller.scxml
+      sensor:
+        source: sensor.scxml

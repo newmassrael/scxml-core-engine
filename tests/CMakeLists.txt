@@ -6900,16 +6900,34 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         message(STATUS "zenohcxx not found — skipping mesh_zenoh_compile_test")
     endif()
 
+    # DDS discovery is hoisted here from the §8.2 multi-pattern block
+    # below: the §14.4 pool fixture binds a DDS target too, and a gate
+    # that reads `CycloneDDS_FOUND` before `find_package` has run would
+    # silently take the else-branch on a machine that HAS Cyclone
+    # installed — skipping the very fixture that proves the DDS pool
+    # arm. `find_package(... QUIET)` is idempotent, so the later block
+    # is unaffected.
+    find_package(CycloneDDS QUIET)
+    find_package(CycloneDDS-CXX QUIET)
+
     # ── SCE_MESH.md §14.4 pool compile verification ──────────────
-    # pool_client exercises both pool branches of the mesh_transport.h
-    # Jinja2 template in a single generated header:
-    #   * Zenoh open pool — runtime KeyExpr assembled from the `id`
-    #     <param> and the binding's `sce/player/{id}` key.
-    #   * SOME/IP bounded pool — runtime instance id selected from the
-    #     `inst` <param>, validated against `instances: [1, 2, 3]`.
-    # Gated on both vsomeip3 and zenohcxx being discovered because the
-    # fixture's deploy.yaml binds each transport for exactly one target.
-    if(vsomeip3_FOUND AND zenohc_FOUND AND zenohcxx_FOUND)
+    # pool_client exercises every cell of the (pool shape x member
+    # carrier) registry matrix in a single generated header:
+    #   * Zenoh, Open + StringSegment — runtime KeyExpr assembled from
+    #     the `id` <param> and the binding's `sce/player/{id}` key.
+    #   * SOME/IP, Bounded + TypedInstanceId — runtime instance id
+    #     selected from `inst`, validated against `instances: [1, 2, 3]`.
+    #   * DDS, Bounded + StringSegment — one `Dds::Client` per `members:`
+    #     entry built at init() on a build-time-substituted topic, with
+    #     the runtime `corner` <param> selecting among them.
+    # The DDS binding is what makes this a matrix rather than a list: it
+    # shares a shape with SOME/IP and a carrier with Zenoh, so a template
+    # that keyed emission off the transport name instead of the two axes
+    # would fail here.
+    # Gated on all three stacks being discovered because the fixture's
+    # deploy.yaml binds each transport for at least one target.
+    if(vsomeip3_FOUND AND zenohc_FOUND AND zenohcxx_FOUND
+       AND CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
         set(MESH_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_pool_generated")
 
         add_custom_command(
@@ -6932,6 +6950,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                     --write-deps "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h.d"
             DEPENDS "${MESH_TEST_DIR}/pool_client.scxml" "${MESH_TEST_DIR}/deploy_pool.yaml"
                     "${MESH_TEST_DIR}/vsomeip_pool_controller.json"
+                    "${MESH_TEST_DIR}/sensor.scxml"
                     "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
                     "${MESH_POOL_OUTPUT_DIR}/pool_client_sm.h"
             DEPFILE "${MESH_POOL_OUTPUT_DIR}/pool_client_transport.h.d"
@@ -6955,8 +6974,10 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             PRIVATE
                 sce_base
                 sce_mesh_common
+                sce_mesh_dds_types
                 vsomeip3
                 zenohcxx::zenohc
+                CycloneDDS-CXX::ddscxx
         )
 
         target_compile_features(mesh_pool_compile_test PRIVATE cxx_std_17)
@@ -6966,7 +6987,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
         add_test(NAME mesh_pool_compile_verification COMMAND mesh_pool_compile_test)
     else()
-        message(STATUS "vsomeip3 / zenohcxx not both found — skipping mesh_pool_compile_test")
+        message(STATUS "vsomeip3 / zenohcxx / CycloneDDS not all found — skipping mesh_pool_compile_test")
     endif()
 
     # ── SCE_MESH.md §14.4 server-pool compile verification ──
@@ -7949,6 +7970,54 @@ if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
     add_test(NAME mesh_dds_machine_lifetime_subscribe_runtime
              COMMAND mesh_dds_machine_lifetime_subscribe_test)
     set_tests_properties(mesh_dds_machine_lifetime_subscribe_runtime PROPERTIES
+        TIMEOUT 90
+    )
+
+    # ── DDS bounded pool dispatch (SCE Mesh §14.4) ──
+    # The runtime half of the DDS pool arm. The §14.4 compile fixture
+    # (deploy_pool.yaml) proves the three carriers render together; this
+    # one proves the runtime `<param>` value selects WHICH declared
+    # member endpoint a send lands on, and that a value outside the
+    # declared set is refused rather than dispatched through an endpoint
+    # that was never built.
+    #
+    # The observers are raw `Dds::Server`s rather than generated routers
+    # because a generated router binds one topic and the claim is about
+    # telling two apart.
+    set(MESH_DDS_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_pool_generated")
+
+    add_custom_command(
+        OUTPUT "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
+               "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_POOL_OUTPUT_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_dds.scxml" -l cpp
+                -o "${MESH_DDS_POOL_OUTPUT_DIR}"
+                --deploy "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
+                --write-deps "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
+        DEPENDS "${MESH_TEST_DIR}/pool_sender_dds.scxml"
+                "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
+                "${MESH_TEST_DIR}/sensor_dds_pool.scxml"
+                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+        DEPFILE "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
+        COMMENT "Mesh dds pool: Generating pool_sender_dds_sm.h + _transport.h"
+        VERBATIM
+    )
+
+    add_executable(mesh_dds_pool_test
+        mesh/test_mesh_dds_pool.cpp
+        "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
+        "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
+    )
+    target_include_directories(mesh_dds_pool_test
+        PRIVATE "${MESH_DDS_POOL_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(mesh_dds_pool_test
+        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+    )
+    target_compile_features(mesh_dds_pool_test PRIVATE cxx_std_17)
+    apply_sce_test_policies(mesh_dds_pool_test)
+    add_test(NAME mesh_dds_pool_runtime COMMAND mesh_dds_pool_test)
+    set_tests_properties(mesh_dds_pool_runtime PROPERTIES
         TIMEOUT 90
     )
 endif()

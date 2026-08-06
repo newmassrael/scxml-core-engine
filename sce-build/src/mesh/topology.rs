@@ -428,20 +428,46 @@ pub struct ResolvedTarget {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PoolPlan {
-    /// Zenoh open pool: `key:` carries one or more `{name}` placeholder
-    /// tokens; codegen emits `zenoh::KeyExpr(std::string(prefix) + ...)`
-    /// assembling the runtime address from named `<param>` values.
-    Zenoh {
+    /// Open string-segment pool (Zenoh): the address carries one or
+    /// more `{name}` placeholder tokens and codegen emits
+    /// `zenoh::KeyExpr(std::string(prefix) + ...)`, assembling the
+    /// runtime address from named `<param>` values. Nothing is
+    /// registered up front — the transport's routing layer resolves
+    /// whatever string the send site produces.
+    OpenString {
         /// Placeholder identifiers in declaration order (sorted). Each
         /// must be supplied as a `<param name="<id>">` on every using
         /// invoke / send site — enforced by
         /// [`validate_pool_param_names`].
         placeholders: Vec<String>,
     },
-    /// SOME/IP bounded pool: `instance_from: <param-name>` names the
-    /// `<param>` whose runtime value feeds `message->set_instance(...)`,
-    /// validated against the finite `instances:` list before dispatch.
-    Someip {
+    /// Bounded string-segment pool (DDS): the address carries exactly
+    /// one `{name}` placeholder and `members:` enumerates the values it
+    /// may take. Codegen substitutes each member at build time and
+    /// builds that member's endpoints at `init()`, because a writer
+    /// created at invoke time has not finished discovery and a VOLATILE
+    /// writer drops its first sample with no error.
+    ///
+    /// Distinct from [`Self::OpenString`] by the axis that matters to
+    /// the emitter: open assembles an address per send, bounded selects
+    /// among endpoints that already exist.
+    BoundedString {
+        /// The single placeholder identifier whose value set is
+        /// `members`. Bounded pools reject multi-placeholder addresses
+        /// at parse time — the member list could not say which factor
+        /// of the product it enumerates.
+        placeholder: String,
+        /// The substituted addresses, one per declared member, in
+        /// declaration order. Pre-substituted here rather than in the
+        /// template so the emitter never re-implements placeholder
+        /// syntax.
+        members: Vec<PoolMember>,
+    },
+    /// Bounded typed-instance pool (SOME/IP): `instance_from:
+    /// <param-name>` names the `<param>` whose runtime value feeds
+    /// `message->set_instance(...)`, validated against the finite
+    /// `instances:` list before dispatch.
+    TypedInstance {
         /// `<param>` name whose value becomes the instance_id at send
         /// time. Enforced present on every using invoke / send site by
         /// [`validate_pool_param_names`].
@@ -453,14 +479,34 @@ pub enum PoolPlan {
     },
 }
 
+/// One member of a [`PoolPlan::BoundedString`] pool: the value the
+/// author declared and the address it substitutes into.
+///
+/// Both halves reach the template because they answer different
+/// questions — `value` is what a runtime `<param>` is matched against,
+/// `address` is what the endpoint is built on — and deriving one from
+/// the other in the template would put placeholder syntax into Jinja.
+#[derive(Debug, Clone, Serialize)]
+pub struct PoolMember {
+    /// The declared member value, e.g. `front_left`.
+    pub value: String,
+    /// The binding address with the placeholder replaced by `value`,
+    /// e.g. `sensors/front_left/data`.
+    pub address: String,
+    /// `value` lowered to a C identifier fragment, for naming the
+    /// member's generated endpoint member variable.
+    pub ident: String,
+}
+
 impl PoolPlan {
     /// The set of `<param>` names that every using invoke / send site
     /// must supply for this pool to resolve. Consumed by
     /// [`validate_pool_param_names`]; a missing name is a build error.
     pub fn required_param_names(&self) -> Vec<&str> {
         match self {
-            Self::Zenoh { placeholders } => placeholders.iter().map(String::as_str).collect(),
-            Self::Someip { instance_from, .. } => vec![instance_from.as_str()],
+            Self::OpenString { placeholders } => placeholders.iter().map(String::as_str).collect(),
+            Self::BoundedString { placeholder, .. } => vec![placeholder.as_str()],
+            Self::TypedInstance { instance_from, .. } => vec![instance_from.as_str()],
         }
     }
 }
@@ -1648,6 +1694,12 @@ pub(crate) struct PartialTarget {
     /// SCE_MESH.md §mesh-14.4 — raw `BindingConfig.instances` copied for
     /// SOME/IP pool resolution. `None` / empty means no bounded pool.
     pub instances: Option<Vec<u16>>,
+    /// SCE_MESH.md §mesh-14.4 — raw `BindingConfig.members` copied for
+    /// string-segment pool resolution (DDS). `None` / empty means no
+    /// bounded pool. The typed-instance counterpart is
+    /// [`Self::instances`]; a binding carries at most one of the two,
+    /// enforced at parse time by `validate_pool_capability`.
+    pub members: Option<Vec<String>>,
 }
 
 /// SCXML-outbound contributor (SCE_MESH.md §mesh-9.5 `<invoke>` + §mesh-13 `<send>`).
@@ -1743,6 +1795,7 @@ pub(crate) fn contribute_send_partials(
                     auth: binding.auth.clone(),
                     instance_from: binding.instance_from.clone(),
                     instances: binding.instances.clone(),
+                    members: binding.members.clone(),
                     // Machine-lifetime subscription interest is layered
                     // on by `contribute_subscription_partials` via the
                     // `build_resolved_targets` merge step; SCXML-send
@@ -2059,6 +2112,7 @@ pub(crate) fn contribute_subscription_partials(
                 auth: binding.auth.clone(),
                 instance_from: binding.instance_from.clone(),
                 instances: binding.instances.clone(),
+                members: binding.members.clone(),
                 subscription_events: vec![sub.event.clone()],
             },
         );
@@ -2330,11 +2384,33 @@ pub(crate) fn finalize_targets(
 /// Invalid combinations are parse-time errors and do not reach this
 /// function.
 fn derive_pool_plan(pt: &PartialTarget) -> Option<PoolPlan> {
-    match pt.transport.as_str() {
-        "zenoh" => {
-            // Zenoh placeholders live inside string `extra` values
-            // (today: `key:`). Collect every `{name}` in insertion
-            // order, de-duplicate, sort — the template's
+    use crate::mesh::transport::{PoolMemberCarrier, PoolShape};
+    // Which plan a binding resolves to is a function of the two
+    // registry axes, not of the transport's name: the carrier decides
+    // where the members come from, the shape decides whether they are
+    // enumerated. A `match pt.transport.as_str()` here was correct only
+    // while each axis had exactly one transport.
+    let descriptor = crate::mesh::transport::lookup(&pt.transport)?;
+    match descriptor.pool_member_carrier {
+        PoolMemberCarrier::None => None,
+        PoolMemberCarrier::TypedInstanceId => {
+            // `instance_from` + `instances` pair gated by
+            // `validate_pool_capability`. Either both present or both
+            // absent by that point.
+            match (pt.instance_from.as_ref(), pt.instances.as_ref()) {
+                (Some(instance_from), Some(list)) if !list.is_empty() => {
+                    Some(PoolPlan::TypedInstance {
+                        instance_from: instance_from.clone(),
+                        instances: list.clone(),
+                    })
+                }
+                _ => None,
+            }
+        }
+        PoolMemberCarrier::StringSegment => {
+            // Placeholders live inside string `extra` values (Zenoh
+            // `key:`, DDS `topic:`). Collect every `{name}` in
+            // insertion order, de-duplicate, sort — an open pool's
             // substitution plan is position-independent.
             let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
             for value in pt.extra.values() {
@@ -2345,27 +2421,70 @@ fn derive_pool_plan(pt: &PartialTarget) -> Option<PoolPlan> {
                 }
             }
             if names.is_empty() {
-                None
-            } else {
-                Some(PoolPlan::Zenoh {
+                return None;
+            }
+            match descriptor.pool_shape {
+                PoolShape::Open => Some(PoolPlan::OpenString {
                     placeholders: names.into_iter().collect(),
-                })
-            }
-        }
-        "someip" => {
-            // SOME/IP bounded pool: `instance_from` + `instances`
-            // pair gated by `validate_pool_capability`. Either both
-            // present or both absent by that point.
-            match (pt.instance_from.as_ref(), pt.instances.as_ref()) {
-                (Some(instance_from), Some(list)) if !list.is_empty() => Some(PoolPlan::Someip {
-                    instance_from: instance_from.clone(),
-                    instances: list.clone(),
                 }),
-                _ => None,
+                PoolShape::Bounded => {
+                    // `validate_pool_capability` has already pinned
+                    // both preconditions: exactly one placeholder, and
+                    // a non-empty `members:` list. Substituting here
+                    // rather than in the template keeps placeholder
+                    // syntax in one place.
+                    let placeholder = names.into_iter().next()?;
+                    let declared = pt.members.as_ref()?;
+                    let address_field = string_extra_with_placeholder(pt)?;
+                    let members = declared
+                        .iter()
+                        .map(|value| PoolMember {
+                            value: value.clone(),
+                            address: address_field.replace(&format!("{{{placeholder}}}"), value),
+                            ident: sanitize_ident(value),
+                        })
+                        .collect();
+                    Some(PoolPlan::BoundedString {
+                        placeholder,
+                        members,
+                    })
+                }
+                // `PoolShape::None` cannot pair with a carrier —
+                // `pool_axes_agree_on_absence` pins the biconditional.
+                PoolShape::None => None,
             }
         }
-        _ => None,
     }
+}
+
+/// The one `extra` string value carrying a placeholder — the binding's
+/// address field (Zenoh `key:`, DDS `topic:`).
+///
+/// Returned by search rather than by field name so the helper does not
+/// re-encode which key each transport addresses on; the registry's
+/// `required_binding_fields` already owns that, and a binding is
+/// rejected upstream if more than one field carries placeholders on a
+/// bounded pool.
+fn string_extra_with_placeholder(pt: &PartialTarget) -> Option<String> {
+    pt.extra.values().find_map(|value| {
+        let s = value.as_str()?;
+        match crate::mesh::deploy::extract_placeholders(s) {
+            Ok(ids) if !ids.is_empty() => Some(s.to_string()),
+            _ => None,
+        }
+    })
+}
+
+/// Lower a declared member value to a C identifier fragment for naming
+/// its generated endpoint. DDS topic segments admit characters a C
+/// identifier does not (`-`, `.`), so every non-alphanumeric byte
+/// collapses to `_`.
+fn sanitize_ident(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .to_lowercase()
 }
 
 /// Construct the [`TransportState`] variant for a partial target.

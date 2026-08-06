@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology-only counterpart for pool_sender_dds's `#sensor` binding.
+     Codegen requires the receiver end of every target to be declared so
+     target resolution completes. It is never instantiated: the runtime
+     test observes each pool member's topic with a raw
+     `SCE::Mesh::Dds::Server`, because a generated router binds one
+     topic and the point of the test is to watch two of them at once. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="sensor_dds_pool" initial="ready">
+    <state id="ready">
+        <transition event="service.request.ping" target="replying"/>
+    </state>
+    <state id="replying"/>
+</scxml>

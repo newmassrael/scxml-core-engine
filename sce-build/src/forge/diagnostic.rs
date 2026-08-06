@@ -1848,10 +1848,12 @@ pub enum DiagnosticCode {
     MeshDeployDiscoveryNotSupported,
     #[serde(rename = "mesh/deploy-pool-not-supported-by-transport")]
     MeshDeployPoolNotSupportedByTransport,
-    #[serde(rename = "mesh/deploy-pool-missing-instance-list")]
-    MeshDeployPoolMissingInstanceList,
-    #[serde(rename = "mesh/deploy-pool-empty-instance-list")]
-    MeshDeployPoolEmptyInstanceList,
+    #[serde(rename = "mesh/deploy-pool-missing-member-list")]
+    MeshDeployPoolMissingMemberList,
+    #[serde(rename = "mesh/deploy-pool-empty-member-list")]
+    MeshDeployPoolEmptyMemberList,
+    #[serde(rename = "mesh/deploy-pool-binding-field-not-supported")]
+    MeshDeployPoolBindingFieldNotSupported,
     #[serde(rename = "mesh/deploy-pool-invalid-placeholder")]
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
@@ -2822,8 +2824,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidAuthPolicy,
         MeshDeployDiscoveryNotSupported,
         MeshDeployPoolNotSupportedByTransport,
-        MeshDeployPoolMissingInstanceList,
-        MeshDeployPoolEmptyInstanceList,
+        MeshDeployPoolMissingMemberList,
+        MeshDeployPoolEmptyMemberList,
+        MeshDeployPoolBindingFieldNotSupported,
         MeshDeployPoolInvalidPlaceholder,
         MeshDeployServerPoolNotSupported,
         MeshDeployCrossTargetReplyNotSupported,
@@ -3303,8 +3306,9 @@ impl DiagnosticCode {
 
             // ── Mesh binding placeholder + server pool (SCE_MESH.md §14.4) ──
             MeshDeployPoolNotSupportedByTransport
-            | MeshDeployPoolMissingInstanceList
-            | MeshDeployPoolEmptyInstanceList
+            | MeshDeployPoolMissingMemberList
+            | MeshDeployPoolEmptyMemberList
+            | MeshDeployPoolBindingFieldNotSupported
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
             | MeshTopologyPoolParamNameMissing => Some("SCE Mesh §14.4"),
@@ -3884,8 +3888,11 @@ impl DiagnosticCode {
             MeshDeployInvalidAuthPolicy => "mesh/deploy-invalid-auth-policy",
             MeshDeployDiscoveryNotSupported => "mesh/deploy-discovery-not-supported",
             MeshDeployPoolNotSupportedByTransport => "mesh/deploy-pool-not-supported-by-transport",
-            MeshDeployPoolMissingInstanceList => "mesh/deploy-pool-missing-instance-list",
-            MeshDeployPoolEmptyInstanceList => "mesh/deploy-pool-empty-instance-list",
+            MeshDeployPoolMissingMemberList => "mesh/deploy-pool-missing-member-list",
+            MeshDeployPoolEmptyMemberList => "mesh/deploy-pool-empty-member-list",
+            MeshDeployPoolBindingFieldNotSupported => {
+                "mesh/deploy-pool-binding-field-not-supported"
+            }
             MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
             MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
             MeshDeployCrossTargetReplyNotSupported => {
@@ -10463,25 +10470,51 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (pool_shape = None). Transports that do: 'someip' (requires instances:), 'zenoh'. Move the binding to one of those, or drop the placeholder.","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:d6c4a65cf22dfccc","code":"mesh/deploy-pool-not-supported-by-transport","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#logger' on transport 'shm' carries a '{name}' placeholder, but this transport does not support pool bindings (pool_shape = None). Transports that do: 'someip' (requires instances:), 'zenoh', 'dds' (requires members:). Move the binding to one of those, or drop the placeholder.","actual":"brake"}"#,
             ),
             (
-                "mesh/deploy-pool-missing-instance-list",
-                DeployError::PoolMissingInstanceList {
+                "mesh/deploy-pool-missing-member-list",
+                DeployError::PoolMissingMemberList {
                     machine: "brake".into(),
                     binding: "#player".into(),
+                    transport: "dds".into(),
+                    // Carrier-derived: the DDS arm demands `members:`,
+                    // the SOME/IP arm `instances:`, and the golden pins
+                    // that the message quotes whichever the transport
+                    // actually reads.
+                    expected_field: "members".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0bcba658bc670781","code":"mesh/deploy-pool-missing-instance-list","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': SOME/IP binding '#player' uses a '{name}' placeholder but is missing the required `instances:` list. vsomeip does not support open-ended instance subscription; declare the expected instance IDs explicitly.","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:e38c83d89b136e7a","code":"mesh/deploy-pool-missing-member-list","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'dds' requests a runtime pool but is missing the required `members:` list. This transport cannot discover members on demand; declare the expected set explicitly.","actual":"brake"}"#,
             ),
             (
-                "mesh/deploy-pool-empty-instance-list",
-                DeployError::PoolEmptyInstanceList {
+                "mesh/deploy-pool-empty-member-list",
+                DeployError::PoolEmptyMemberList {
                     machine: "brake".into(),
                     binding: "#player".into(),
+                    declared_field: "instances".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1bacaac533ee1cea","code":"mesh/deploy-pool-empty-instance-list","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' has an empty `instances: []` list. Declare at least one instance ID or remove the list entirely.","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:80e7e4b37861e924","code":"mesh/deploy-pool-empty-member-list","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' has an empty `instances: []` list. Declare at least one member or remove the list entirely.","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-pool-binding-field-not-supported",
+                DeployError::PoolBindingFieldNotSupported {
+                    machine: "brake".into(),
+                    binding: "#player".into(),
+                    transport: "zenoh".into(),
+                    declared_field: "instances".into(),
+                    // Zenoh has a pool, so its carrier does describe a
+                    // mechanism — the rejection is "other carrier's
+                    // syntax", not "no pool at all".
+                    expected_mechanism: crate::mesh::transport::lookup("zenoh")
+                        .unwrap()
+                        .pool_member_carrier
+                        .selection_mechanism()
+                        .map(str::to_string),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5506845f9af45993","code":"mesh/deploy-pool-binding-field-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh' declares `instances:`, which this transport does not read. Its pool members are string segments of the binding address: embed a `{name}` placeholder naming the selecting <param>, and — on a bounded pool — enumerate the values in `members:`.","actual":"instances","fix":{"kind":"remove_fields","location":"topology.*.machines.brake.bindings.#player","fields":["instances"]}}"#,
             ),
             (
                 "mesh/deploy-pool-invalid-placeholder",
@@ -12441,8 +12474,9 @@ mod tests {
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
             | MeshDeployPoolNotSupportedByTransport
-            | MeshDeployPoolMissingInstanceList
-            | MeshDeployPoolEmptyInstanceList
+            | MeshDeployPoolMissingMemberList
+            | MeshDeployPoolEmptyMemberList
+            | MeshDeployPoolBindingFieldNotSupported
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
             | MeshDeployCrossTargetReplyNotSupported
@@ -13089,8 +13123,9 @@ mod tests {
                 | MeshDeployInvalidAuthPolicy
                 | MeshDeployDiscoveryNotSupported
                 | MeshDeployPoolNotSupportedByTransport
-                | MeshDeployPoolMissingInstanceList
-                | MeshDeployPoolEmptyInstanceList
+                | MeshDeployPoolMissingMemberList
+                | MeshDeployPoolEmptyMemberList
+                | MeshDeployPoolBindingFieldNotSupported
                 | MeshDeployPoolInvalidPlaceholder
                 | MeshDeployServerPoolNotSupported
                 | MeshDeployCrossTargetReplyNotSupported
@@ -13232,9 +13267,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            333,
+            334,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 333 distinct variants to match the DiagnosticCode \
+             expected 334 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
