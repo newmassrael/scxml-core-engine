@@ -10429,7 +10429,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:a62483a5bfc65457","code":"mesh/deploy-invalid-outbound-buffer","stage":"mesh-deploy","spec":"SCE Mesh §10.10","message":"machine 'brake': invalid `outbound_buffer:` section in deploy.yaml — max_pending_per_target (0) must be >= 1 — a zero-capacity buffer cannot hold any envelope, which is indistinguishable from the pre-§10.10 silent-drop behaviour; omit the section entirely to opt out of buffering instead. Either fix the value or omit the section entirely to opt out of §10.10 buffering.","actual":"brake"}"#,
+                r#"{"v":1,"id":"fnv1a:a62483a5bfc65457","code":"mesh/deploy-invalid-outbound-buffer","stage":"mesh-deploy","spec":"SCE Mesh §10.10","message":"machine 'brake': invalid `outbound_buffer:` section in deploy.yaml — max_pending_per_target (0) must be >= 1 — a zero-capacity buffer cannot hold any envelope, which is indistinguishable from the pre-§10.10 silent-drop behaviour; omit the section entirely to opt out of buffering instead. Either correct the section or omit it entirely to opt out of §10.10 buffering.","actual":"brake"}"#,
             ),
             (
                 "mesh/deploy-invalid-retry-policy",
