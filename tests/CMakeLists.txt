@@ -4413,6 +4413,48 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         add_test(NAME mesh_someip_machine_lifetime_subscribe_verification
                  COMMAND mesh_someip_machine_lifetime_subscribe_test)
 
+        # ── §mesh-13 machine-lifetime unsubscribe: the frame itself ──
+        # Runtime sibling of the compile test above. The DDS and
+        # custom_tcp fixtures assert the unsubscribe by watching delivery
+        # stop, which cannot see the `machine_subscriptions_armed_`
+        # guard's actual claim — that there is exactly ONE retraction.
+        # A duplicate is invisible from the receiving end because
+        # delivery has already stopped.
+        #
+        # SOME/IP is where it is observable: a subscription is an SD
+        # SubscribeEventgroup addressed to the offering application, and
+        # vsomeip reports every transition to it through
+        # register_subscription_handler. This test counts them, so §3's
+        # "a second shutdown() emits nothing" is a direct read of the
+        # wire rather than an inference.
+        add_executable(mesh_someip_machine_lifetime_unsubscribe_test
+            mesh/test_mesh_someip_machine_lifetime_unsubscribe.cpp
+            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_sm.h"
+            "${MESH_SOMEIP_MLSUB_OUTPUT_DIR}/brake_someip_machine_lifetime_subscribe_transport.h"
+        )
+
+        target_include_directories(mesh_someip_machine_lifetime_unsubscribe_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+                ${MESH_SOMEIP_MLSUB_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_machine_lifetime_unsubscribe_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_machine_lifetime_unsubscribe_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_machine_lifetime_unsubscribe_test)
+        add_test(NAME mesh_someip_machine_lifetime_unsubscribe
+                 COMMAND mesh_someip_machine_lifetime_unsubscribe_test)
+        set_tests_properties(mesh_someip_machine_lifetime_unsubscribe PROPERTIES
+            TIMEOUT 30
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_machine_lifetime.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+
         # ── Session F: SOME/IP runtime E2E ────────────────────────────
         # Exercises both client and server TransportRouters end-to-end
         # via vsomeip internal routing (single process, no daemon).

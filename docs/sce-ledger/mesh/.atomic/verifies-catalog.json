@@ -209,6 +209,12 @@
       ]
     },
     {
+      "file": "tests/mesh/test_mesh_someip_machine_lifetime_unsubscribe.cpp",
+      "section_ids": [
+        "mesh-13"
+      ]
+    },
+    {
       "file": "tests/mesh/test_mesh_someip_pool.cpp",
       "section_ids": [
         "mesh-14.4"
