@@ -75,7 +75,7 @@ concurrency:
 
 jobs:
   test:
-    name: cargo test --workspace
+    name: cargo test --workspace --features cli
     runs-on: ubuntu-latest
 
     steps:
@@ -137,10 +137,16 @@ jobs:
     # failure. Without it a runner image that loses a toolchain keeps
     # reporting green while the checks that need it quietly stop running —
     # a skip is an unrun check, not a passing one, and this lane is where
-    # that difference is invisible from the outside. Measured locally at
-    # 3349 passed / 0 failed with no skip, so the set it enforces is the
-    # set that already runs.
-    - name: cargo test --workspace
+    # that difference is invisible from the outside.
+    #
+    # `--features cli` is what makes the step's name true. Targets declaring
+    # `required-features = ["cli"]` in sce-build/Cargo.toml are silently
+    # omitted without it: cargo does not report them as skipped, it never
+    # builds them, so the lane was running a strictly smaller set than the
+    # one a developer runs locally while calling itself "--workspace".
+    # That is the same failure mode SCE_REQUIRE_TOOLS exists to prevent,
+    # one level up.
+    - name: cargo test --workspace --features cli
       env:
         SCE_REQUIRE_TOOLS: "1"
-      run: cargo test --workspace --no-fail-fast
+      run: cargo test --workspace --features cli --no-fail-fast
