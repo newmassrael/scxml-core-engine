@@ -392,16 +392,22 @@ pub enum DeployError {
     )]
     InvalidServerResponseDeadline { machine: String, reason: String },
 
-    /// A machine declared an `outbound_buffer:` section whose
-    /// `max_pending_per_target` violates the minimum constraint
-    /// (SCE Mesh §mesh-10.10; see `MIN_OUTBOUND_BUFFER_MAX_PENDING` in
-    /// deploy.rs). Rejected at parse time so a zero-capacity buffer —
-    /// semantically equivalent to no buffer — cannot reach the
-    /// generated router under the guise of opting into §mesh-10.10
-    /// readiness gating.
+    /// A machine declared an `outbound_buffer:` section that cannot
+    /// buffer anything (SCE Mesh §mesh-10.10). Two ways to get there,
+    /// both rejected at parse time because both let the author opt into
+    /// readiness gating and silently receive the opt-out path:
+    ///
+    /// * `max_pending_per_target` below the minimum (see
+    ///   `MIN_OUTBOUND_BUFFER_MAX_PENDING` in deploy.rs) — a
+    ///   zero-capacity buffer is semantically no buffer.
+    /// * no binding on the machine is on a transport whose registry entry
+    ///   sets `buffers_outbound`. Buffering is per-target and needs a
+    ///   readiness edge to gate on, so on such a machine the generated
+    ///   router emits the `OutboundBuffer.h` include and not one buffer
+    ///   member.
     #[error(
         "machine '{machine}': invalid `outbound_buffer:` section in deploy.yaml — {reason}. \
-             Either fix the value or omit the section entirely to opt out of §10.10 buffering."
+             Either correct the section or omit it entirely to opt out of §10.10 buffering."
     )]
     InvalidOutboundBuffer { machine: String, reason: String },
 

@@ -6111,25 +6111,68 @@ fn validate_auth_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// Walk every machine that declared an explicit `outbound_buffer:`
-/// section and reject capacity-zero values (SCE Mesh §mesh-10.10). Runs at
-/// parse time so the diagnostic surfaces the offending deploy.yaml
-/// line rather than generating a router whose buffer behaves
-/// identically to the opt-out path.
+/// section and reject the two ways it can fail to buffer anything
+/// (SCE Mesh §mesh-10.10): a capacity-zero value, and a machine with no
+/// binding the buffer instruments. Runs at parse time so the diagnostic
+/// surfaces the offending deploy.yaml line rather than generating a
+/// router whose buffer behaves identically to the opt-out path.
 fn validate_outbound_buffer(cfg: &DeployConfig) -> Result<(), DeployError> {
     use std::collections::BTreeMap;
-    let mut by_machine: BTreeMap<&str, &OutboundBufferConfig> = BTreeMap::new();
+    // The bindings travel with the buffer: the second check below needs
+    // the machine's transports, and looking them up again by name would
+    // reintroduce the duplicate-machine hazard `validate_pool_capability`
+    // documents.
+    let mut by_machine: BTreeMap<&str, (&OutboundBufferConfig, &MachineConfig)> = BTreeMap::new();
     for device in cfg.topology.values() {
         for (machine_name, machine) in &device.machines {
             if let Some(b) = &machine.outbound_buffer {
-                by_machine.insert(machine_name.as_str(), b);
+                by_machine.insert(machine_name.as_str(), (b, machine));
             }
         }
     }
-    for (machine, buffer) in by_machine {
+    for (machine, (buffer, machine_cfg)) in by_machine {
         if let Some(reason) = buffer.validation_error() {
             return Err(DeployError::InvalidOutboundBuffer {
                 machine: machine.to_string(),
                 reason,
+            });
+        }
+        // §10.10 buffering is per-target and only exists for transports
+        // that expose a readiness edge to gate on
+        // (`TransportDescriptor::buffers_outbound`). On a machine with no
+        // such binding the section reaches nothing at all — the generated
+        // router emits the `OutboundBuffer.h` include and not one buffer
+        // member — so the author opted into readiness gating and got the
+        // opt-out path, with nothing saying so.
+        //
+        // Asked of the registry, which is also where the template's
+        // emission loop asks, so the two cannot disagree about which
+        // bindings are buffered.
+        let buffered: Vec<&str> = machine_cfg
+            .bindings
+            .values()
+            .filter(|b| {
+                crate::mesh::transport::lookup(&b.transport).is_some_and(|d| d.buffers_outbound)
+            })
+            .map(|b| b.transport.as_str())
+            .collect();
+        if buffered.is_empty() {
+            // Name the transports that do buffer, derived rather than
+            // spelled out, so the list cannot drift from the registry.
+            let mut candidates: Vec<&str> = crate::mesh::transport::known_names()
+                .iter()
+                .copied()
+                .filter(|n| crate::mesh::transport::lookup(n).is_some_and(|d| d.buffers_outbound))
+                .collect();
+            candidates.sort_unstable();
+            return Err(DeployError::InvalidOutboundBuffer {
+                machine: machine.to_string(),
+                reason: format!(
+                    "no binding on this machine is on a transport that buffers outbound \
+                     sends, so the section gates nothing — §10.10 readiness gating needs a \
+                     transport that reports when a peer becomes reachable ({})",
+                    candidates.join(", ")
+                ),
             });
         }
     }
@@ -8051,22 +8094,113 @@ topology:
 
     #[test]
     fn outbound_buffer_section_present_parses() {
-        let yaml = r#"
+        // The zenoh binding is load-bearing, not scenery: §10.10
+        // buffering is per-target, so a machine with no binding the
+        // buffer instruments is rejected by
+        // `validate_outbound_buffer`. Without it this test asserted the
+        // field propagated on a machine that could never use it.
+        let yaml = r##"
 version: "1.0"
 topology:
   ecu1:
+    transports:
+      zenoh:
+        mode: peer
     machines:
       brake:
         source: brake.scxml
         outbound_buffer:
           max_pending_per_target: 64
-"#;
+        bindings:
+          "#motor":
+            transport: zenoh
+            key: "sce/brake/motor"
+"##;
         let cfg = parse_deploy_str(yaml).expect("parse");
         let machine = &cfg.topology["ecu1"].machines["brake"];
         assert_eq!(
             machine.outbound_buffer.unwrap().max_pending_per_target,
             64,
             "explicit section must propagate the max_pending_per_target value"
+        );
+    }
+
+    #[test]
+    fn outbound_buffer_on_a_machine_that_buffers_nothing_rejected() {
+        // §10.10 buffering is per-target and exists only for transports
+        // that report when a peer becomes reachable. On a DDS-only
+        // machine the generated router emits the `OutboundBuffer.h`
+        // include and not one buffer member, so the author opted into
+        // readiness gating and silently got the opt-out path.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#sink":
+            transport: dds
+            topic: "SceProbe/Sink"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::InvalidOutboundBuffer { machine, reason }) => {
+                assert_eq!(machine, "brake");
+                assert!(
+                    reason.contains("buffers outbound"),
+                    "reason must say the machine has no buffered binding: {reason}"
+                );
+                // The repair names the transports that do buffer, and it
+                // is derived from the registry rather than spelled out.
+                assert!(
+                    reason.contains("someip") && reason.contains("zenoh"),
+                    "reason must list the transports whose registry entry buffers: {reason}"
+                );
+            }
+            other => panic!("expected InvalidOutboundBuffer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn outbound_buffer_with_one_buffered_binding_among_many_accepted() {
+        // The gate is "at least one binding the buffer instruments", not
+        // "every binding". A machine that buffers its SOME/IP target and
+        // also talks DDS is a deployment the generator honours in full,
+        // and rejecting it would lock out a legal topology to make the
+        // diagnostic simpler.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+      someip:
+        config: vsomeip.json
+        application_name: brake_app
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#sink":
+            transport: dds
+            topic: "SceProbe/Sink"
+          "#motor":
+            transport: someip
+            service: motor_service
+            method: activate
+"##;
+        assert!(
+            parse_deploy_str(yaml).is_ok(),
+            "one buffered binding is enough to make the section meaningful"
         );
     }
 
