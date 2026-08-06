@@ -1,0 +1,22 @@
+# Minimal two-machine topology whose only job is to make one machine a
+# mesh invoke target.
+#
+# `mesh_worker` is invoked by `mesh_parent` via `#mesh_worker`, which sets
+# `is_remote_invoke_target` on the worker. The C++ `<send target="#_parent">`
+# lowering branches on that flag into a separate emission block — the mesh
+# wire-16 path — that a single-document compile cannot reach at all. That
+# block pastes author `<param>` text into host literals like every other
+# send site, and it was the one site `author_literal_boundaries.rs` could
+# not see before this fixture existed.
+#
+# Nothing here is about transport behaviour: one device, default transport,
+# no bindings. The topology exists only to flip the codegen shape.
+version: "1.0"
+topology:
+  ecu1:
+    platform: linux-x86_64
+    machines:
+      mesh_parent:
+        source: mesh_parent.scxml
+      mesh_worker:
+        source: mesh_worker.scxml

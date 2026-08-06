@@ -2020,40 +2020,27 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         }
     }
 
-    // SCE Mesh: inject server-response synthetic sends BEFORE SM
-    // generation. The SM generator must see the injected <send> actions
-    // to emit raiseExternal calls that trigger the mesh send callback
-    // for handleServerResponse routing. Idempotent — safe even if
-    // compile_mesh_transport re-runs the injection later.
+    // SCE Mesh: every deploy-derived model mutation, before SM
+    // generation. The SM generator must see the injected server-response
+    // <send> actions to emit the raiseExternal calls that drive
+    // handleServerResponse routing, and must see the partition context
+    // (SCE_MESH.md §14 rule 12) to pick the right `<parallel>`-final
+    // branch and the right `<send target="#_parent">` site.
+    //
+    // The sequence lives in `apply_deploy_model_mutations` rather than
+    // here so that anything else compiling with a deploy in scope — the
+    // library entry `compile_scxml_lang_with_deploy`, and the gates that
+    // use it — applies the same mutations in the same order. When it sat
+    // inline in this function it was, in practice, unavailable to
+    // everything else, and the value gate over author `<param>` literals
+    // silently compiled a different shape of machine as a result.
     if let Some(deploy_file) = deploy_path {
-        if let Err(e) = sce_build::inject_server_model_mutations(&mut model, Path::new(deploy_file))
-        {
-            error_format.emit_and_exit(&e, "Server model injection error: ");
-        }
-        // SCE_MESH.md §14 rule 12: surface partition context. The
-        // `partition_context_present` flag toggles the template's
-        // delegation into `mesh/cpp/parallel_final.jinja2`; the
-        // per-`<parallel>` `partition_parallel_roles` map drives the
-        // delegate's Root / NonRoot / SinglePartition branch selection
-        // when `--partition` is supplied.
-        if let Err(e) = sce_build::inject_partition_context_for(
+        if let Err(e) = sce_build::apply_deploy_model_mutations(
             &mut model,
             Path::new(deploy_file),
             for_partition,
         ) {
-            error_format.emit_and_exit(&e, "Partition context injection error: ");
-        }
-        // Apply the deploy.yaml
-        // `default_event_queue_capacity` fallback for models that did
-        // not declare `<scxml sce:capacity="N">` on the root. The
-        // populator is a no-op when the model carries an explicit
-        // capacity or when the deploy lacks the field — matching the
-        // cache_platform / worker_placement precedent of silent-skip
-        // on partial deploy data.
-        if let Err(e) =
-            sce_build::populate_event_queue_capacity_from_deploy(&mut model, Path::new(deploy_file))
-        {
-            error_format.emit_and_exit(&e, "Event-queue capacity injection error: ");
+            error_format.emit_and_exit(&e.source, e.stage.error_prefix());
         }
     }
 
