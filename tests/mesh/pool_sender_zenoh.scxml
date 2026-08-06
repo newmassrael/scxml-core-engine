@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §14.4 Zenoh open pool on the `<send>` path, runtime.
+
+     The sibling fixture pool_zenoh_client.scxml drives the pool through
+     `<invoke type="sce:mesh-rpc">`; this one drives it through `<send>`.
+     §14.4 names both ("resolved at `<send>` / `<invoke>` time"), and a
+     KeyExpr that keeps its literal `{id}` chunk is put with no error —
+     Zenoh reports nothing when no peer subscribes to a key — so the
+     `<send>` half is exactly the half a compile gate cannot see.
+
+     One `<send>` site, entered twice with different `playerId` values.
+     Two sites carrying two literals would also pass against a generator
+     that baked the substituted key in at build time; re-entering the
+     same site cannot, because there is only one emitted call.
+
+     `datamodel="lua"` for the same reason: the placeholder value
+     reaches the transport as a typed `<param>` read out of the
+     datamodel, which is how an author writes it. A string literal in
+     the `<send>` would leave "the value is a build-time constant"
+     open.
+
+     `player.ping` carries no request/reply convention, so it resolves
+     to PatternKind::FireForget and takes the Zenoh put path — the leg
+     with no reply channel to surface a misaddressed key. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="lua" name="pool_sender_zenoh" initial="idle">
+    <datamodel>
+        <data id="playerId" expr="'42'"/>
+    </datamodel>
+    <state id="idle">
+        <transition event="ping.send" target="pinging"/>
+        <!-- Rotates the pool member without leaving `idle`, so the next
+             `ping.send` re-enters the same onentry with a different
+             runtime value. -->
+        <transition event="ping.rotate">
+            <assign location="playerId" expr="'7'"/>
+        </transition>
+        <transition event="ping.forget" target="forgetting"/>
+    </state>
+    <state id="pinging">
+        <onentry>
+            <send target="#gamer_pool" event="player.ping">
+                <param name="id" expr="playerId"/>
+            </send>
+        </onentry>
+        <transition event="ping.reset" target="idle"/>
+    </state>
+    <!-- The author who forgot the placeholder `<param>`. There is no
+         value to substitute, so the only address the send could take is
+         one nobody subscribes to; it must not reach the wire at all. -->
+    <state id="forgetting">
+        <onentry>
+            <send target="#gamer_pool" event="player.ping"/>
+        </onentry>
+        <transition event="ping.reset" target="idle"/>
+    </state>
+</scxml>

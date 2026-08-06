@@ -1,0 +1,41 @@
+# SCE Mesh §14.4 SOME/IP bounded pool on the `<send>` path, runtime.
+#
+# The §14.4 compile fixture (deploy_pool.yaml) renders all three pool
+# carriers into one header; this one proves the SOME/IP carrier
+# DISPATCHES on the `<send>` path, which is the leg whose failure mode
+# is misdelivery rather than loss: an unresolved instance id is not
+# absent, it is the binding default, so the request arrives at the
+# wrong member with nothing reported on either end.
+#
+# Two members, not three: with a single member every dispatch would
+# land on the right instance by construction and the test could not
+# tell selection from a hardcoded id.
+#
+# `vsomeip_pool_send.json` supplies the build-time service / method ids.
+# The runtime routing configuration is separate
+# (`vsomeip_e2e_pool_send.json`, injected through VSOMEIP_CONFIGURATION
+# by ctest) because the harness — not the generated client — is the
+# routing manager, and its own `network:` namespace keeps
+# /tmp/sce_someip_pool_send-* clear of the sibling SOME/IP fixtures so
+# ctest -j can run them together.
+version: "1.0"
+topology:
+  ecu_pool_sender_someip:
+    transports:
+      someip:
+        config: vsomeip_pool_send.json
+        application_name: pool_send_client
+    machines:
+      pool_sender_someip:
+        source: pool_sender_someip.scxml
+        bindings:
+          "#controller_pool":
+            transport: someip
+            service: controller_svc
+            instances: [1, 2]
+            instance_from: inst
+            events:
+              "service.fire_forget.ping":
+                method: ping
+      controller_pool:
+        source: controller_someip_pool.scxml

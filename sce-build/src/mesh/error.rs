@@ -639,6 +639,48 @@ pub enum DeployError {
         expected_mechanism: Option<String>,
     },
 
+    /// A machine combined a §mesh-14.4 pool binding with a feature that
+    /// dispatches on that binding without an author-supplied member
+    /// value.
+    ///
+    /// A pool resolves its member from a `<param>` on the `<send>` or
+    /// `<invoke>` that triggered the dispatch. Two deploy.yaml features
+    /// dispatch with no such trigger to read, and each one silently
+    /// picks a member the author never named:
+    ///
+    /// * `outbound_buffer:` — the buffer defers the send and releases it
+    ///   when the target is "ready", but readiness is one signal per
+    ///   binding (a SOME/IP `(service, instance)` availability handler, a
+    ///   Zenoh publisher's matching status) and a pool has one address
+    ///   per member. The buffer would gate every member on the first
+    ///   one's readiness and dispatch through the endpoint declared for
+    ///   it.
+    /// * `subscriptions:` — a machine-lifetime subscription is issued at
+    ///   `init()` from an envelope the router builds itself. There is no
+    ///   `<param>` on it, so the member is unresolvable and the
+    ///   subscription would attach to whichever address the unresolved
+    ///   binding names.
+    ///
+    /// Rejected rather than ignored for the reason every pool diagnostic
+    /// is: the author sees a declaration that parsed, and nothing
+    /// downstream says it did not take effect.
+    ///
+    /// `feature` names the deploy.yaml key that conflicts, so the repair
+    /// is unambiguous — drop the key, or move the pool to its own
+    /// machine.
+    #[error(
+        "machine '{machine}': binding '{binding}' on transport '{transport}' declares a \
+             §14.4 pool, which cannot be combined with `{feature}:` on the same machine — \
+             {reason}. Remove `{feature}:`, or move the pool binding to a machine without it."
+    )]
+    PoolDispatchWithoutMember {
+        machine: String,
+        binding: String,
+        transport: String,
+        feature: String,
+        reason: String,
+    },
+
     /// A binding value field contains a malformed placeholder (unbalanced
     /// braces, empty name, invalid characters). Rejected at parse time
     /// so a malformed placeholder cannot be confused with a literal
@@ -2869,6 +2911,37 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 binding.clone(),
                 transport.clone(),
                 declared_field.clone(),
+            ],
+        },
+        DeployError::PoolDispatchWithoutMember {
+            machine,
+            binding,
+            transport,
+            feature,
+            // Why the two cannot coexist is the prose's job (see the
+            // `#[error]` attribute); the structured repair is the removal
+            // below, which does not need it.
+            reason: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployPoolDispatchWithoutMember,
+            stage: Stage::MeshDeploy,
+            actual: Some(feature.clone()),
+            expected: None,
+            // The mechanical repair is dropping the conflicting key: it
+            // is deterministic, and it leaves the pool — the feature the
+            // author wrote a `<param>` for — in place. The other repair
+            // (move the pool binding to its own machine) restructures the
+            // topology, so it stays in the prose rather than riding a
+            // structured fix an agent would apply unattended.
+            fix: Some(Fix::RemoveFields {
+                location: format!("topology.*.machines.{machine}"),
+                fields: vec![feature.clone()],
+            }),
+            key_fragments: vec![
+                machine.clone(),
+                binding.clone(),
+                transport.clone(),
+                feature.clone(),
             ],
         },
         DeployError::PoolInvalidPlaceholder {

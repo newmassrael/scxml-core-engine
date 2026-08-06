@@ -448,6 +448,15 @@ struct TargetContext {
     /// initializer? Data-driven — removes transport-name hardcoding from
     /// the template's field/ctor sections.
     has_per_target_field: bool,
+    /// Route this target's outbound sends through the machine's §10.10
+    /// `OutboundBuffer`, when one is declared?
+    ///
+    /// Registry-derived (`TransportDescriptor::buffers_outbound`) rather
+    /// than a `kind in ("someip", "zenoh")` test in the template: the
+    /// question is whether the transport exposes a readiness edge to gate
+    /// on, which is a property of the transport, and a name list in the
+    /// template is a second place to update when a transport gains one.
+    buffers_outbound: bool,
     /// Does THIS binding need the runtime DedupWindow on inbound envelopes?
     ///
     /// Per-binding refinement of the transport-level `supplies_dedup`
@@ -1505,6 +1514,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 events: t.events.clone(),
                 state: TargetStateView::from_topology(&t.state),
                 has_per_target_field: desc.shape.has_per_target_field,
+                buffers_outbound: desc.buffers_outbound,
                 needs_dedup,
                 needs_ordering,
                 responders: t.responders.clone(),
@@ -2443,6 +2453,7 @@ mod tests {
             events: Vec::new(),
             state,
             has_per_target_field: false,
+            buffers_outbound: false,
             needs_dedup: false,
             needs_ordering: false,
             // §14.6 same-target default: the probe target answers for

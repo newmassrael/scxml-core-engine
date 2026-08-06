@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology stub for the `#gamer_pool` target of pool_sender_zenoh.
+     An open pool has no single receiver document — every substituted
+     KeyExpr addresses a different peer — so the runtime test observes
+     the wire with a raw wildcard subscriber instead. Codegen still
+     requires the receiver end of every binding to be declared for
+     event-coverage validation, which is the whole of this file's job;
+     it is never instantiated. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="gamer_zenoh_pool" initial="ready">
+    <state id="ready">
+        <transition event="player.ping" target="pinged"/>
+    </state>
+    <state id="pinged"/>
+</scxml>

@@ -531,10 +531,9 @@ pub struct TransportDescriptor {
     ///   dispatched into the "unknown event" arm.
     /// - `zenoh`: binding-wide `key:` is sufficient for subscribe
     ///   dispatch — no per-event resolution needed. `true`.
-    /// - `dds`: implemented, but no fixture drives deploy.yaml
-    ///   `subscriptions:` over it, so this stays `false` on the same
-    ///   grounds custom_tcp does — the flag's contract is "realised
-    ///   end-to-end", not "the mechanism looks generic".
+    /// - `custom_tcp` / `dds`: `true`. Both were realised end-to-end
+    ///   after this doc first listed them as `false` — the flag's
+    ///   contract is "driven by a fixture", and each now has one.
     /// - `can`: unimplemented; set `false`.
     ///
     /// Consumed by the topology-stage contributor
@@ -542,6 +541,38 @@ pub struct TransportDescriptor {
     /// binding transport has this set to `false` is rejected with
     /// `mesh/topology-machine-lifetime-subscription-unsupported`.
     pub supports_machine_lifetime_subscribe: bool,
+    /// Does the generated router route this transport's outbound sends
+    /// through a §10.10 `OutboundBuffer` when the machine declares one?
+    ///
+    /// The buffer exists for one failure mode: a send issued before the
+    /// peer can receive it is lost with no error. Only a transport that
+    /// exposes a *readiness signal* to gate on qualifies —
+    ///
+    /// - `someip`: `true`. `register_availability_handler` reports the
+    ///   (service, instance) pair going available, which drives
+    ///   `markReady` / `markNotReady`.
+    /// - `zenoh`: `true`. A declared publisher's matching-status listener
+    ///   reports the first subscriber, which is the publisher-first-lost
+    ///   window the buffer closes.
+    /// - `local` / `shm`: `false`. Delivery is a synchronous enqueue into
+    ///   a channel that exists for the process's lifetime; there is no
+    ///   not-yet-ready state.
+    /// - `custom_tcp`: `false`. `link()` dials on demand, so the send
+    ///   itself establishes the connection it needs.
+    /// - `dds`: `false`. Discovery matches readers and writers
+    ///   asynchronously with no edge the router can observe; the shape
+    ///   that solves it there is the bounded pool's build-time endpoint
+    ///   construction, not a buffer.
+    /// - `can`: unimplemented; set `false`.
+    ///
+    /// Two consumers, which is the point of having the flag rather than a
+    /// transport-name list in each: `mesh_transport.h.jinja2` iterates
+    /// the targets whose flag is set to emit the per-target buffer
+    /// members, and `deploy::validate_pool_capability` rejects a
+    /// §14.4 pool binding on such a transport when the machine declares
+    /// `outbound_buffer:` — a buffer gates on ONE address and a pool has
+    /// many, so the two cannot both be honoured.
+    pub buffers_outbound: bool,
     /// Can this transport host an SCE machine as a multi-instance
     /// server? (SCE_MESH.md §mesh-14.4 multi-instance server pool, Gap 7.)
     ///
@@ -750,6 +781,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // nothing to take effect on. Exercised as the fail-closed case by
         // `topology::tests::subscription_on_transport_without_a_subscribe_arm_rejected`.
         supports_machine_lifetime_subscribe: false,
+        buffers_outbound: false,
         // In-process direct dispatch: one process hosts one identity
         // per machine; a second instance would be a second process.
         supports_multi_instance_server: false,
@@ -804,6 +836,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         pool_member_carrier: PoolMemberCarrier::None,
         // No pub/sub capability; machine-lifetime path does not apply.
         supports_machine_lifetime_subscribe: false,
+        buffers_outbound: false,
         // SHM channels are pre-declared and addressed by compile-time
         // names — no peer-identity inbound distinguisher.
         supports_multi_instance_server: false,
@@ -875,6 +908,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // request_event + subscribe pair against vsomeip.json-resolved
         // ids (SCE_MESH.md §mesh-13).
         supports_machine_lifetime_subscribe: true,
+        buffers_outbound: true,
         // SOME/IP's routing_manager tracks per-(service, instance) state
         // independently: `offer_service(SERVICE, i)` advertises one
         // instance, `register_message_handler(SERVICE, i, METHOD, ...)`
@@ -939,6 +973,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // external resolution needed for subscribe. SCE_MESH.md §mesh-13
         // machine-lifetime path is fully wired end-to-end.
         supports_machine_lifetime_subscribe: true,
+        buffers_outbound: true,
         // Zenoh KeyExpr identifies a subject, not a peer. There is no
         // server-side inbound distinguisher between two instances of
         // the same hosted machine (a subscriber/queryable on the same
@@ -1007,6 +1042,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // reaches the wire traces back to
         // `machines.<name>.subscriptions:`.
         supports_machine_lifetime_subscribe: true,
+        buffers_outbound: false,
         // Single static client→server TCP endpoint — no peer-identity
         // dimension on the inbound side.
         supports_multi_instance_server: false,
@@ -1089,6 +1125,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // subscriber proves it landed — over custom_tcp, hanging up is
         // itself the unsubscribe and that distinction cannot be drawn.
         supports_machine_lifetime_subscribe: true,
+        buffers_outbound: false,
         // SCE_MESH.md section 14.4 scopes the multi-instance server pool to SOME/IP.
         // The dds arm emits one server endpoint per router and reads
         // `session_idx` 0 throughout.
@@ -1136,6 +1173,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // Unimplemented + broadcast bus; machine-lifetime subscribe
         // semantic does not apply.
         supports_machine_lifetime_subscribe: false,
+        buffers_outbound: false,
         // Broadcast bus — every frame reaches every participant; the
         // concept of a per-peer server instance does not map.
         supports_multi_instance_server: false,
@@ -1871,14 +1909,14 @@ mod tests {
         let mut rendered = String::new();
         rendered.push_str(
             "| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr \
-             | Pool shape | Pool member | §13 subscribe | Multi-inst server | Inter-partition IPC \
-             | Cross-target reply | Server deadline |\n",
+             | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server \
+             | Inter-partition IPC | Cross-target reply | Server deadline |\n",
         );
-        rendered.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+        rendered.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
         for name in ORDER {
             let d = lookup(name).unwrap_or_else(|| panic!("{name} is not in the registry"));
             rendered.push_str(&format!(
-                "| `{name}` | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {:?} |\n",
+                "| `{name}` | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {} | {:?} |\n",
                 yn(d.implemented),
                 patterns(d),
                 fields(d.required_binding_fields),
@@ -1888,6 +1926,7 @@ mod tests {
                 d.pool_shape,
                 d.pool_member_carrier,
                 yn(d.supports_machine_lifetime_subscribe),
+                yn(d.buffers_outbound),
                 yn(d.supports_multi_instance_server),
                 yn(d.supports_inter_partition_ipc),
                 yn(d.supports_cross_target_reply),
