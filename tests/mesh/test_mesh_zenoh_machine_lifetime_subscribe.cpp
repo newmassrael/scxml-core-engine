@@ -26,6 +26,34 @@
 //   - The TestSenderEngine observes all five — drop count must be
 //     zero for the machine-lifetime column of the §13 trade-off
 //     table to reflect delivered semantics.
+//
+// Three scenarios, one binary:
+//
+//   §1 The deploy.yaml-driven subscribe delivers the whole burst.
+//
+//   §2 The unsubscribe ARM stops delivery, driven on its own rather
+//      than through `shutdown()`. The distinction is the one the DDS
+//      sibling found by mutation: deleting the machine-lifetime
+//      unsubscribe from the template leaves a shutdown()-routed
+//      assertion green, because the teardown that follows it in the
+//      same call removes the subscriber anyway. Routing an
+//      `EventUnsubscribe` through `route_send` isolates the arm.
+//
+//      A control subscriber on the same key pins WHY delivery stopped:
+//      it keeps receiving, so the subject's silence is its undeclared
+//      subscriber and not a publish that failed or a peer that went
+//      away.
+//
+//   §3 `shutdown()` is safe to run twice, which every properly torn
+//      down router does (`~TransportRouter` calls it after any explicit
+//      call). Note what this does NOT claim: on Zenoh the unsubscribe
+//      is `zenoh_subscribers_.erase(target)`, and erasing an absent key
+//      is a no-op, so a duplicate is unobservable here however the
+//      `machine_subscriptions_armed_` guard behaves. The frame-level
+//      claim the guard exists for — "a second unsubscribe is a frame the
+//      peer must not have to tolerate" — is observable only where
+//      unsubscribe travels the wire, which is what
+//      `mesh_someip_machine_lifetime_unsubscribe` asserts.
 
 #include "brake_zenoh_machine_lifetime_subscribe_transport.h"
 
@@ -51,6 +79,24 @@ constexpr const char *kMotorKey = "sce/brake_lifetime/motor/status";
 constexpr int kBurstCount = 5;
 constexpr auto kBurstCadence = std::chrono::milliseconds(30);
 constexpr auto kSubscribePropagation = std::chrono::milliseconds(200);
+// Bounds the §2 negative assertion. Anything the post-unsubscribe burst
+// could deliver arrives well inside it, since §1's burst crossed the
+// same already-converged link.
+constexpr auto kUnsubscribeSettle = std::chrono::milliseconds(300);
+
+/// Publish `count` distinct `event.notification.status` envelopes on the
+/// subscribed key. Distinct UUIDs (via `make_envelope`) keep the dedup
+/// layer from collapsing them into one.
+void publish_burst(zenoh::Session &motor_session, int count) {
+    for (int i = 0; i < count; ++i) {
+        auto notify = make_envelope("event.notification.status", SCE::Mesh::PatternKind::FireForget);
+        auto bytes = SCE::Mesh::encodeEnvelope(notify);
+        motor_session.put(zenoh::KeyExpr(kMotorKey), zenoh::Bytes(std::move(bytes)));
+        if (i + 1 < count) {
+            std::this_thread::sleep_for(kBurstCadence);
+        }
+    }
+}
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_zenoh_machine_lifetime_subscribe;
@@ -80,19 +126,28 @@ int run_test() {
     // asynchronous. 200 ms matches the base_subscribe fixture.
     std::this_thread::sleep_for(kSubscribePropagation);
 
-    // Publish five distinct envelopes on the subscribed key.
+    // Control subscriber on the same key. §2's negative assertion needs a
+    // witness that the publish still happens, or "the subject received
+    // nothing" would also be satisfied by a motor that stopped
+    // publishing or a link that went down.
+    CapturedEvents control_inbox;
+    auto control_subscriber = handshake_session.declare_subscriber(
+        zenoh::KeyExpr(kMotorKey),
+        [&control_inbox](const zenoh::Sample &sample) {
+            auto bytes = sample.get_payload().as_vector();
+            SCE::Mesh::MeshEnvelope env;
+            if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
+                control_inbox.push(env);
+            }
+        },
+        []() noexcept {});
+
+    // ── §1 the deploy.yaml-driven subscribe delivers ───────────
     // Distinctness verifies this is not a single-sample fluke — each
     // envelope carries a fresh UUID via make_envelope, so dedup cannot
     // collapse them, and each arrives through the same subscriber
     // callback declared at init() time.
-    for (int i = 0; i < kBurstCount; ++i) {
-        auto notify = make_envelope("event.notification.status", SCE::Mesh::PatternKind::FireForget);
-        auto bytes = SCE::Mesh::encodeEnvelope(notify);
-        motor_session.put(zenoh::KeyExpr(kMotorKey), zenoh::Bytes(std::move(bytes)));
-        if (i + 1 < kBurstCount) {
-            std::this_thread::sleep_for(kBurstCadence);
-        }
-    }
+    publish_burst(motor_session, kBurstCount);
 
     MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto &v) {
         if (v.size() < static_cast<std::size_t>(kBurstCount)) {
@@ -108,7 +163,49 @@ int run_test() {
                       "machine-lifetime subscription did not deliver the full burst "
                       "through route_send synthesised from deploy.yaml");
 
+    // ── §2 the unsubscribe arm, isolated from shutdown() ───────
+    std::size_t delivered_before_unsub = 0;
+    {
+        std::lock_guard<std::mutex> lk(sender.received_.m);
+        delivered_before_unsub = sender.received_.events.size();
+    }
+    std::size_t control_before_unsub = 0;
+    {
+        std::lock_guard<std::mutex> lk(control_inbox.m);
+        control_before_unsub = control_inbox.envelopes.size();
+    }
+
+    auto unsub = make_envelope("event.notification.status", SCE::Mesh::PatternKind::EventUnsubscribe);
+    MESH_TEST_REQUIRE(router.route_send("#motor", unsub),
+                      "the zenoh EventUnsubscribe arm refused the machine-lifetime retraction");
+
+    publish_burst(motor_session, kBurstCount);
+    // The control must observe the burst first — that is what turns the
+    // subject's silence below into evidence about the subscriber.
+    MESH_TEST_REQUIRE(control_inbox.wait_for([control_before_unsub](const auto &v) {
+        return v.size() >= control_before_unsub + static_cast<std::size_t>(kBurstCount);
+    }),
+                      "the control subscriber did not receive the post-unsubscribe burst — the "
+                      "publish itself failed, so the subject's silence proves nothing");
+    std::this_thread::sleep_for(kUnsubscribeSettle);
+    {
+        std::lock_guard<std::mutex> lk(sender.received_.m);
+        MESH_TEST_REQUIRE(sender.received_.events.size() == delivered_before_unsub,
+                          "envelopes kept reaching the sender after the machine-lifetime "
+                          "unsubscribe — the zenoh arm did not undeclare the subscriber");
+    }
+
+    // ── §3 shutdown() twice, which every teardown does ─────────
     router.shutdown();
+    router.shutdown();
+    publish_burst(motor_session, 1);
+    std::this_thread::sleep_for(kUnsubscribeSettle);
+    {
+        std::lock_guard<std::mutex> lk(sender.received_.m);
+        MESH_TEST_REQUIRE(sender.received_.events.size() == delivered_before_unsub,
+                          "a publish reached the sender after two shutdown() calls");
+    }
+
     std::printf("SCE Mesh zenoh machine-lifetime subscribe runtime E2E: PASS\n");
     return 0;
 }
