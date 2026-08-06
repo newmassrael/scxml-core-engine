@@ -3078,6 +3078,24 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<Vec<u16>>,
 
+    /// SCE Mesh §mesh-14.4 — bounded member set for a pool binding whose
+    /// members are *string segments* of the binding's own address
+    /// (`PoolMemberCarrier::StringSegment`), i.e. the values the
+    /// binding's `{name}` placeholder may take. This is the
+    /// string-carrier counterpart of [`Self::instances`]: same axis
+    /// (enumerate the members of a bounded pool), different member type.
+    ///
+    /// Required on DDS placeholder bindings, where each member's
+    /// endpoints are built at `init()` so DDS discovery settles before
+    /// the first sample — a writer created at invoke time has not
+    /// matched yet and a VOLATILE writer drops that sample with no
+    /// error. Rejected on transports whose carrier is not
+    /// `StringSegment` (nothing reads it) and on open pools such as
+    /// Zenoh, where native routing resolves any runtime value and a
+    /// declared set would be enumerated by no one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members: Option<Vec<String>>,
+
     /// SCE Mesh §mesh-14.4 — names the `<param>` whose runtime value feeds
     /// `message->set_instance(...)` on a SOME/IP pool binding. Unified
     /// with the Zenoh `{name}` KeyExpr mechanism: both describe "the
@@ -3193,6 +3211,7 @@ const BINDING_TYPED_FIELDS: &[&str] = &[
     "deadline_ms",
     "ordering",
     "instances",
+    "members",
     "instance_from",
     "reply_from",
     "stage_pool",
@@ -5515,7 +5534,26 @@ fn validate_server_pool_rejection(cfg: &DeployConfig) -> Result<(), DeployError>
 /// precondition explicitly — a debug build that reorders
 /// `parse_deploy_str`'s validator chain will trip this assertion rather
 /// than ship a misleading diagnostic.
+/// Every member-enumerating key this binding declares, as
+/// `(deploy.yaml key, is_empty)` pairs in a fixed order.
+///
+/// Returned as data rather than branched on inline so the "declared a
+/// list this transport does not read" gate is exhaustive by
+/// construction: a future carrier adds its key here and every rejection
+/// below covers it without a second edit.
+fn declared_pool_member_lists(binding: &BindingConfig) -> Vec<(&'static str, bool)> {
+    let mut out = Vec::new();
+    if let Some(list) = &binding.instances {
+        out.push(("instances", list.is_empty()));
+    }
+    if let Some(list) = &binding.members {
+        out.push(("members", list.is_empty()));
+    }
+    out
+}
+
 fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use crate::mesh::transport::PoolMemberCarrier;
     use std::collections::BTreeMap;
     let mut by_machine: BTreeMap<&str, &MachineConfig> = BTreeMap::new();
     for device in cfg.topology.values() {
@@ -5553,72 +5591,104 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
             let has_placeholder = !placeholders.is_empty();
             let has_instance_from = binding.instance_from.is_some();
 
-            // Transport-specific mechanism constraints.
+            // The descriptor answers every question below. An unknown
+            // transport carries no pool of any shape, and its own
+            // rejection (`validate_transport_names`) is the accurate
+            // one — here it only means "no pool", so a binding that
+            // requests none passes through to that validator.
+            let descriptor = crate::mesh::transport::lookup(&binding.transport);
+            let carrier = descriptor
+                .map(|d| d.pool_member_carrier)
+                .unwrap_or(crate::mesh::transport::PoolMemberCarrier::None);
+            let declared_member_lists = declared_pool_member_lists(binding);
+
+            // Mechanism constraints, both read off the carrier axis.
             //
-            // `instance_from:` is a SOME/IP-only field because the
-            // typed `uint16_t` instance_id is not a string carrier —
-            // other transports have no target for the substituted
-            // value. A non-SOME/IP binding declaring `instance_from:`
-            // would sink into codegen silently; reject at parse.
+            // `instance_from:` names a `<param>` whose value becomes a
+            // typed `uint16_t`; a transport whose members are string
+            // segments has no such argument to pass it to. Conversely a
+            // `{name}` embed needs a string slot in the address, which
+            // a typed instance id is not. Either mix-up would sink into
+            // codegen and emit a binding that silently ignores the
+            // author's selection, so both are parse-time rejects.
             //
-            // Deliberately NOT expressed as `pool_shape == Bounded`:
-            // this is the *carrier* axis, not the pool axis. A bounded
-            // pool on a transport whose address is a string (DDS) would
-            // enumerate its members and still substitute `{name}`, so
-            // folding the two would reject a shape that is legal by
-            // construction. The registry gains a carrier dimension when
-            // a second typed-instance transport actually exists.
-            if has_instance_from && binding.transport != "someip" {
+            // Asked of the registry rather than as
+            // `transport != "someip"`: the carrier is a property of the
+            // transport's addressing model, and the name test was right
+            // only until a second carrier landed.
+            if has_instance_from && !carrier.selects_via_instance_from() {
+                return Err(DeployError::PoolBindingFieldNotSupported {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                    declared_field: "instance_from".to_string(),
+                    expected_mechanism: carrier.selection_mechanism().map(str::to_string),
+                });
+            }
+            // A carrier of `None` is skipped here on purpose: it means the
+            // transport has no pool at all, which the capability gate
+            // below reports as `PoolNotSupportedByTransport` — the
+            // accurate answer, and a different repair from "you wrote
+            // the other carrier's syntax".
+            if has_placeholder
+                && !carrier.accepts_placeholder()
+                && carrier != PoolMemberCarrier::None
+            {
+                return Err(DeployError::PoolBindingFieldNotSupported {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                    // The `{name}` embed is the declaration here: it is
+                    // written inside the address rather than as its own
+                    // key, but it is the same mistake as `instances:` on
+                    // a string carrier — the other carrier's syntax.
+                    declared_field: "{name} placeholder".to_string(),
+                    expected_mechanism: carrier.selection_mechanism().map(str::to_string),
+                });
+            }
+
+            // A member list nobody reads is indistinguishable from one
+            // that took effect, which is exactly the failure `members:`
+            // was at risk of reproducing: before this gate, `instances:`
+            // on a Zenoh binding parsed, stored, and was never read by
+            // anything. Reject any list whose key is not the one this
+            // transport's carrier enumerates.
+            for (field, is_empty) in &declared_member_lists {
+                if carrier.member_list_field() != Some(*field) {
+                    return Err(DeployError::PoolBindingFieldNotSupported {
+                        machine: machine_name.to_string(),
+                        binding: binding_key.as_str().to_string(),
+                        transport: binding.transport.clone(),
+                        declared_field: (*field).to_string(),
+                        expected_mechanism: carrier.selection_mechanism().map(str::to_string),
+                    });
+                }
+                // An empty list is a member set of size zero: the
+                // binding declares a pool that can never resolve. Held
+                // here rather than under the bounded branch so a
+                // declared-but-poolless binding is rejected too.
+                if *is_empty {
+                    return Err(DeployError::PoolEmptyMemberList {
+                        machine: machine_name.to_string(),
+                        binding: binding_key.as_str().to_string(),
+                        declared_field: (*field).to_string(),
+                    });
+                }
+            }
+
+            let pool_requested = has_placeholder || has_instance_from;
+            if !pool_requested {
+                continue;
+            }
+            // Transport capability gate.
+            let Some(descriptor) = descriptor else {
                 return Err(DeployError::PoolNotSupportedByTransport {
                     machine: machine_name.to_string(),
                     binding: binding_key.as_str().to_string(),
                     transport: binding.transport.clone(),
                     realised_transports: crate::mesh::transport::pool_alternatives(),
                 });
-            }
-            // Conversely, `{name}` placeholders have no wire surface
-            // on SOME/IP: the only SOME/IP-side substitution target
-            // (`set_instance`) is a typed integer, not a string
-            // carrier. A SOME/IP binding declaring `{name}` is
-            // therefore an author-facing mechanism mix-up; the
-            // uniform answer is "use instance_from for SOME/IP".
-            if has_placeholder && binding.transport == "someip" {
-                return Err(DeployError::PoolInvalidPlaceholder {
-                    machine: machine_name.to_string(),
-                    binding: binding_key.as_str().to_string(),
-                    reason: "SOME/IP bindings express runtime instance selection via \
-                         `instance_from: <param-name>`, not `{name}` placeholders \
-                         — the instance_id is a typed uint16_t, not a string carrier"
-                        .to_string(),
-                });
-            }
-
-            let pool_requested = has_placeholder || has_instance_from;
-            // SOME/IP `instances:` without a pool request still needs
-            // the list to be non-empty if the author declared one,
-            // but the transport-capability gate below only fires when
-            // runtime substitution is actually requested.
-            if !pool_requested {
-                if let Some(list) = &binding.instances {
-                    if list.is_empty() {
-                        return Err(DeployError::PoolEmptyInstanceList {
-                            machine: machine_name.to_string(),
-                            binding: binding_key.as_str().to_string(),
-                        });
-                    }
-                }
-                continue;
-            }
-            // Transport capability gate.
-            let descriptor =
-                crate::mesh::transport::lookup(&binding.transport).ok_or_else(|| {
-                    DeployError::PoolNotSupportedByTransport {
-                        machine: machine_name.to_string(),
-                        binding: binding_key.as_str().to_string(),
-                        transport: binding.transport.clone(),
-                        realised_transports: crate::mesh::transport::pool_alternatives(),
-                    }
-                })?;
+            };
             if !descriptor.pool_shape.supports_pool() {
                 return Err(DeployError::PoolNotSupportedByTransport {
                     machine: machine_name.to_string(),
@@ -5627,28 +5697,48 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                     realised_transports: crate::mesh::transport::pool_alternatives(),
                 });
             }
-            // Bounded-pool requirement: the `instance_from:` /
-            // `instances:` pair goes together. Read from the registry
-            // rather than asked as `transport == "someip"` — the reason
-            // a pool is bounded is the transport's discovery model, and
-            // a transport-name test is right only until the second
-            // bounded transport lands.
-            if descriptor.pool_shape.requires_instance_list() {
-                match &binding.instances {
-                    None => {
-                        return Err(DeployError::PoolMissingInstanceList {
-                            machine: machine_name.to_string(),
-                            binding: binding_key.as_str().to_string(),
-                        });
-                    }
-                    Some(list) if list.is_empty() => {
-                        return Err(DeployError::PoolEmptyInstanceList {
-                            machine: machine_name.to_string(),
-                            binding: binding_key.as_str().to_string(),
-                        });
-                    }
-                    Some(_) => {}
+            // Bounded-pool requirement: the selecting mechanism and the
+            // member enumeration go together. Both halves are read from
+            // the registry — the shape decides *whether* a list is
+            // required, the carrier decides *which key* carries it.
+            if descriptor.pool_shape.requires_member_list() {
+                let expected = carrier.member_list_field().expect(
+                    "bounded pool without an enumerating key: \
+                             pool_axes_agree_on_absence pins this",
+                );
+                if !declared_member_lists.iter().any(|(f, _)| *f == expected) {
+                    return Err(DeployError::PoolMissingMemberList {
+                        machine: machine_name.to_string(),
+                        binding: binding_key.as_str().to_string(),
+                        transport: binding.transport.clone(),
+                        expected_field: expected.to_string(),
+                    });
                 }
+            }
+            // A bounded string-segment pool enumerates the values of
+            // exactly one placeholder: the member list *is* that
+            // placeholder's value set. Two placeholders would make the
+            // member set a cartesian product the list cannot express,
+            // and codegen would have to guess which factor it holds.
+            // (An open pool is unaffected — it enumerates nothing.)
+            if descriptor.pool_shape.requires_member_list()
+                && carrier.accepts_placeholder()
+                && placeholders.len() > 1
+            {
+                return Err(DeployError::PoolInvalidPlaceholder {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    reason: format!(
+                        "a bounded pool on transport '{}' enumerates the values of one \
+                         placeholder in `{}:`, but this binding embeds {} ({}) — \
+                         the member set of a multi-placeholder address is a product \
+                         the list cannot express",
+                        binding.transport,
+                        carrier.member_list_field().unwrap_or("members"),
+                        placeholders.len(),
+                        placeholders.join(", ")
+                    ),
+                });
             }
         }
     }
@@ -8916,11 +9006,21 @@ topology:
             instance_from: id
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolMissingInstanceList { machine, binding }) => {
+            Err(DeployError::PoolMissingMemberList {
+                machine,
+                binding,
+                transport,
+                expected_field,
+            }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
+                assert_eq!(transport, "someip");
+                // Carrier-derived: SOME/IP members are typed instance
+                // ids, so the key demanded here is `instances:` — the
+                // same rejection on DDS demands `members:`.
+                assert_eq!(expected_field, "instances");
             }
-            other => panic!("expected PoolMissingInstanceList, got {other:?}"),
+            other => panic!("expected PoolMissingMemberList, got {other:?}"),
         }
     }
 
@@ -8942,11 +9042,16 @@ topology:
             instances: []
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolEmptyInstanceList { machine, binding }) => {
+            Err(DeployError::PoolEmptyMemberList {
+                machine,
+                binding,
+                declared_field,
+            }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
+                assert_eq!(declared_field, "instances");
             }
-            other => panic!("expected PoolEmptyInstanceList, got {other:?}"),
+            other => panic!("expected PoolEmptyMemberList, got {other:?}"),
         }
     }
 
@@ -8971,25 +9076,45 @@ topology:
             key: "unused-{id}"
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolInvalidPlaceholder {
+            Err(DeployError::PoolBindingFieldNotSupported {
                 machine,
                 binding,
-                reason,
+                transport,
+                declared_field,
+                expected_mechanism,
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
+                assert_eq!(transport, "someip");
+                // A `{name}` embed is a declaration too — written inside
+                // the address rather than as its own key, but the same
+                // mistake as `instances:` on a string carrier. One code
+                // covers the whole carrier-mismatch axis so the four
+                // shapes of it cannot drift apart in their advice.
+                assert_eq!(declared_field, "{name} placeholder");
                 assert!(
-                    reason.contains("instance_from") && reason.contains("uint16"),
-                    "reason should steer author to instance_from for SOME/IP; got: {reason}"
+                    expected_mechanism
+                        .as_deref()
+                        .is_some_and(|m| m.contains("instance_from") && m.contains("instances")),
+                    "the repair must steer the author to the typed-instance carrier's syntax"
                 );
             }
-            other => panic!("expected PoolInvalidPlaceholder, got {other:?}"),
+            other => panic!("expected PoolBindingFieldNotSupported, got {other:?}"),
         }
     }
 
     #[test]
-    fn pool_instance_from_on_non_someip_rejected() {
-        // `instance_from:` has no wire surface outside SOME/IP.
+    fn pool_instance_from_on_string_carrier_rejected() {
+        // `instance_from:` is the typed-instance carrier's selector; a
+        // transport whose members are string segments has no
+        // `set_instance` argument to pass it to.
+        //
+        // The rejection is `PoolBindingFieldNotSupported`, not
+        // `PoolNotSupportedByTransport`: Zenoh *does* support pools, and
+        // a code that says otherwise sends the author to change
+        // transport when the actual repair is to write the other
+        // carrier's syntax. The message names that syntax by asking the
+        // registry, so a carrier landing moves this advice with it.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -9007,27 +9132,293 @@ topology:
             instance_from: id
 "##;
         match parse_deploy_str(yaml) {
-            Err(DeployError::PoolNotSupportedByTransport {
+            Err(DeployError::PoolBindingFieldNotSupported {
                 machine,
                 binding,
                 transport,
-                realised_transports,
+                declared_field,
+                expected_mechanism,
             }) => {
                 assert_eq!(machine, "brake");
                 assert_eq!(binding, "#player");
                 assert_eq!(transport, "zenoh");
-                // Zenoh DOES support pools — this rejection is the
-                // carrier axis (`instance_from:` needs a typed uint16_t
-                // target), not the pool axis, so the transport legitimately
-                // appears in its own alternatives here. Pinning that keeps
-                // the two axes from being conflated later.
+                assert_eq!(declared_field, "instance_from");
+                // Present, not absent: the repair is a rewrite on this
+                // transport, not a move to another one.
                 assert_eq!(
-                    realised_transports,
-                    crate::mesh::transport::pool_alternatives()
+                    expected_mechanism.as_deref(),
+                    crate::mesh::transport::lookup("zenoh")
+                        .unwrap()
+                        .pool_member_carrier
+                        .selection_mechanism()
                 );
-                assert!(realised_transports.contains("'zenoh'"));
             }
-            other => panic!("expected PoolNotSupportedByTransport, got {other:?}"),
+            other => panic!("expected PoolBindingFieldNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_dds_bounded_string_accepted() {
+        // The canonical DDS pool shape, and the one that makes the two
+        // registry axes provably independent: it shares a shape with
+        // SOME/IP (Bounded) and a carrier with Zenoh (StringSegment), so
+        // a validator that folded the axes into one would have to reject
+        // it. Accepting it is the positive half of that claim; the
+        // rejections below are the negative half.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#sensor":
+            transport: dds
+            topic: "SceSensors/{corner}/Data"
+            members: [front_left, rear]
+"##;
+        let cfg = parse_deploy_str(yaml).expect("dds bounded pool must parse");
+        let binding = cfg.topology["ecu1"].machines["brake"]
+            .bindings
+            .get(&TargetId::new("#sensor").expect("non-empty target id"))
+            .expect("#sensor binding");
+        assert_eq!(
+            binding.members.as_ref().map(|m| m.len()),
+            Some(2),
+            "the declared member set must reach the config"
+        );
+        assert!(
+            binding.instances.is_none(),
+            "a string-segment carrier must not populate the typed-instance field"
+        );
+    }
+
+    #[test]
+    fn pool_dds_without_members_rejected() {
+        // Bounded means the set is known at build time. Without it,
+        // codegen would have to create an endpoint at invoke time —
+        // exactly the writer whose first sample a VOLATILE writer drops
+        // with no error.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#sensor":
+            transport: dds
+            topic: "SceSensors/{corner}/Data"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolMissingMemberList {
+                machine,
+                binding,
+                transport,
+                expected_field,
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#sensor");
+                assert_eq!(transport, "dds");
+                // The carrier decides the key: `members:` here, where
+                // the same rejection on SOME/IP demands `instances:`.
+                // A shared code that named one key for both would be
+                // wrong for one of them.
+                assert_eq!(expected_field, "members");
+            }
+            other => panic!("expected PoolMissingMemberList, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_dds_multi_placeholder_rejected() {
+        // A bounded member list enumerates the values of ONE
+        // placeholder. Two would make the member set a cartesian
+        // product the list cannot express, and codegen would have to
+        // guess which factor it holds.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#sensor":
+            transport: dds
+            topic: "Sce/{axle}/{corner}/Data"
+            members: [front_left, rear]
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolInvalidPlaceholder { reason, .. }) => {
+                assert!(
+                    reason.contains("axle") && reason.contains("corner"),
+                    "the rejection must name the placeholders it found, got: {reason}"
+                );
+            }
+            other => panic!("expected PoolInvalidPlaceholder, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stray_instances_on_string_carrier_rejected() {
+        // Found by measurement, not by review: before the carrier axis
+        // landed, `instances: [1, 2]` on a Zenoh binding parsed, was
+        // stored on the config, and reached no consumer at all. Nothing
+        // read it and nothing said so, which is indistinguishable from
+        // a pool that took effect — the author would have shipped
+        // believing the binding was bounded.
+        //
+        // Zenoh, not shm, on purpose: this transport HAS a pool, so the
+        // rejection is about the carrier's key rather than about pool
+        // support, and a gate that only checked "does this transport
+        // pool at all" would let it through.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: zenoh
+            key: "sce/player"
+            instances: [1, 2]
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolBindingFieldNotSupported {
+                machine,
+                binding,
+                transport,
+                declared_field,
+                expected_mechanism,
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(binding, "#player");
+                assert_eq!(transport, "zenoh");
+                assert_eq!(declared_field, "instances");
+                assert!(
+                    expected_mechanism
+                        .as_deref()
+                        .is_some_and(|m| m.contains("members")),
+                    "the repair must name the key this carrier does read"
+                );
+            }
+            other => panic!("expected PoolBindingFieldNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stray_members_on_typed_instance_carrier_rejected() {
+        // The mirror image, so the gate is not one-directional: a
+        // SOME/IP binding enumerating string members is the same
+        // mistake written the other way round.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: someip
+            service: player_service
+            method: handle_request
+            members: [front_left]
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolBindingFieldNotSupported {
+                declared_field,
+                expected_mechanism,
+                ..
+            }) => {
+                assert_eq!(declared_field, "members");
+                assert!(
+                    expected_mechanism
+                        .as_deref()
+                        .is_some_and(|m| m.contains("instances")),
+                    "the repair must name the typed-instance carrier's key"
+                );
+            }
+            other => panic!("expected PoolBindingFieldNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stray_member_list_on_poolless_transport_rejected() {
+        // A transport with no pool at all gets the other repair: there
+        // is no key to rewrite to, so `expected_mechanism` is absent and
+        // the prose says "move the binding".
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#logger":
+            transport: shm
+            shm_channel: "ch"
+            members: [a, b]
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolBindingFieldNotSupported {
+                transport,
+                declared_field,
+                expected_mechanism,
+                ..
+            }) => {
+                assert_eq!(transport, "shm");
+                assert_eq!(declared_field, "members");
+                assert!(
+                    expected_mechanism.is_none(),
+                    "a transport with no pool has no alternative key to offer"
+                );
+            }
+            other => panic!("expected PoolBindingFieldNotSupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_dds_empty_members_rejected() {
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#sensor":
+            transport: dds
+            topic: "SceSensors/{corner}/Data"
+            members: []
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolEmptyMemberList { declared_field, .. }) => {
+                assert_eq!(declared_field, "members");
+            }
+            other => panic!("expected PoolEmptyMemberList, got {other:?}"),
         }
     }
 

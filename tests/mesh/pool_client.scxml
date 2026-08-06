@@ -14,6 +14,7 @@
     <state id="idle">
         <transition event="query.gamer" target="calling_gamer"/>
         <transition event="query.controller" target="calling_controller"/>
+        <transition event="query.sensor" target="calling_sensor"/>
     </state>
     <state id="calling_gamer">
         <invoke type="sce:mesh-rpc" src="#gamer">
@@ -35,6 +36,17 @@
                  strips quotes then std::from_chars the numeric value,
                  so "1" parses as 1 and matches instances: [1, 2, 3]. -->
             <param name="inst" expr="'1'"/>
+        </invoke>
+        <transition event="done.invoke" target="ok"/>
+        <transition event="error.invoke" target="failed"/>
+    </state>
+    <state id="calling_sensor">
+        <invoke type="sce:mesh-rpc" src="#sensor">
+            <param name="_mesh_event" expr="'service.request.ping'"/>
+            <!-- The member name selects among endpoints built at init();
+                 unlike the Zenoh pool no address is assembled here, and
+                 unlike the SOME/IP pool the value stays a string. -->
+            <param name="corner" expr="'front_left'"/>
         </invoke>
         <transition event="done.invoke" target="ok"/>
         <transition event="error.invoke" target="failed"/>

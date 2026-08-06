@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §14.4 DDS bounded pool fixture (sender side).
+
+     One `<send>` to the pooled `#sensor` target is all the document
+     needs: it is what makes the binding reachable so codegen emits the
+     pool's endpoints and its dispatch arm. The runtime test then drives
+     `route_send` directly with an explicit member value, because the
+     claim under test is "which endpoint did the value select" — a fact
+     about the transport router, not about how the engine reached it.
+     Driving it from an onentry would test the same arm through a longer
+     path and make a failure ambiguous between the two. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="pool_sender_dds" initial="idle">
+    <state id="idle">
+        <transition event="ping.sensor" target="sending"/>
+    </state>
+    <state id="sending">
+        <onentry>
+            <send target="#sensor" event="service.request.ping">
+                <param name="corner" expr="'front_left'"/>
+            </send>
+        </onentry>
+        <transition event="service.response.ping" target="idle"/>
+    </state>
+</scxml>

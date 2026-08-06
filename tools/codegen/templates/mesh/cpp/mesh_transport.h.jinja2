@@ -140,7 +140,7 @@
 {% macro someip_receive_handler(target, method_constant, pattern_kind, kind) -%}
         {{ target.target_snake }}_app_->register_message_handler(
             SOMEIP_SERVICE_{{ target.target_snake | upper }},
-{% if target.pool_plan and target.pool_plan.kind == "someip" %}
+{% if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
             // SCE_MESH.md §14.4 SOME/IP pool: register once for every
             // instance in the set. vsomeip application_impl.cpp:683/700/745
             // treats ANY_INSTANCE as a wildcard for handler-side APIs
@@ -1000,10 +1000,19 @@ inline SCE::Mesh::Dds::QosOverlay sceDdsQosOverlay() {
 static constexpr const char* DDS_CONFIG = {{ dds_transport.config }};
 {% endif %}
 {% for target in targets if target.state.kind == "dds" %}
+{% if target.pool_plan and target.pool_plan.kind == "bounded_string" %}
+// {{ target.target }} is a §14.4 bounded pool: its `topic:` carries a
+// placeholder, so there is no single request-leg topic to name here.
+// The per-member topics are substituted at build time and appear at
+// each endpoint's construction site in init(); a constant holding the
+// unsubstituted form would address nothing and could only be used by
+// mistake.
+{% else %}
 // Request-leg topic for {{ target.target }}. The reply and notification
 // topics are derived from it inside DdsTransport.h rather than declared
 // here, so the three names cannot drift apart.
 static constexpr const char* DDS_TOPIC_{{ target.target_snake | upper }} = {{ target.state.topic }};
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if "zenoh" in transport_types %}
@@ -1264,6 +1273,71 @@ inline void send_to_{{ target.target_snake }}(
 #error "SCE Mesh: unsupported transport '{{ target.state.kind }}' for target '{{ target.target }}'. Update codegen::transport_shape() and mesh_transport.h.jinja2."
 {% endif %}
 {% endfor %}
+{% if targets | selectattr('pool_plan') | list | length > 0 %}
+/// SCE_MESH.md §14.4 — read one pool placeholder value out of an
+/// invoke's JSON payload.
+///
+/// Every pool carrier needs the same two steps before it can do
+/// anything carrier-specific: decode `env.data` as a JSON object, then
+/// read one named `<param>` as a raw string. Emitted once and shared by
+/// all three dispatch arms (Zenoh KeyExpr assembly, DDS member
+/// selection, SOME/IP instance parsing) so the decode contract cannot
+/// drift between them.
+///
+/// @return false when the payload is not a JSON object or the named
+///         property is absent — both of which are pre-envelope setup
+///         faults the caller reports as `INVOKE_SRC_NOT_FOUND`.
+[[nodiscard]] inline bool readPoolParam(const SCE::Mesh::MeshEnvelope& env,
+                                        const char* name,
+                                        std::string& out) {
+    std::string pool_json(env.data.begin(), env.data.end());
+    auto parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
+    if (!parsed) return false;
+    auto* obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*parsed);
+    if (!obj_sp || !*obj_sp) return false;
+    auto& obj = **obj_sp;
+    auto it = obj.properties.find(name);
+    if (it == obj.properties.end()) return false;
+    // scriptValueToJsonString wraps strings in quotes; strip them so
+    // the caller sees the raw token value.
+    std::string value = ::SCE::EventDataHelper::scriptValueToJsonString(it->second);
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+        value = value.substr(1, value.size() - 2);
+    }
+    out = std::move(value);
+    return true;
+}
+{% endif %}
+{% if targets | selectattr('pool_plan') | selectattr('pool_plan.kind', 'equalto', 'bounded_string') | list | length > 0 %}
+/// SCE_MESH.md §14.4 — resolve a bounded string pool's runtime
+/// `<param>` value to the index of its declared member.
+///
+/// Shared by both dispatch paths (`route_send` for `<send>`,
+/// `invokeMeshRpc` for `<invoke type="sce:mesh-rpc">`) so a value that
+/// one path accepts cannot be one the other rejects.
+///
+/// @return false when the payload lacks the param or its value is
+///         outside the declared `members:` set — fail-closed, because
+///         the endpoint for an undeclared member was never built and
+///         its first sample would be dropped by a VOLATILE writer with
+///         no error.
+template <std::size_t N>
+[[nodiscard]] inline bool selectPoolMember(const SCE::Mesh::MeshEnvelope& env,
+                                           const char* param,
+                                           const std::array<const char*, N>& members,
+                                           std::size_t& out) {
+    std::string value;
+    if (!readPoolParam(env, param, value)) return false;
+    for (std::size_t i = 0; i < N; ++i) {
+        if (value == members[i]) {
+            out = i;
+            return true;
+        }
+    }
+    return false;
+}
+{% endif %}
+
 /// Build-time resolved routing table from deploy.yaml.
 /// Each <send target="..."> in the SCXML is dispatched to the
 /// corresponding transport function. Supports mixed transports
@@ -1320,7 +1394,25 @@ struct TransportRouter {
     // domain once init() runs. `unique_ptr` keeps the field declarable
     // before that (SCE::Mesh::Dds::Client is non-movable — it owns
     // reader threads).
+{% if target.pool_plan and target.pool_plan.kind == "bounded_string" %}
+    // SCE_MESH.md §14.4 bounded pool: one endpoint per declared
+    // `members:` entry, all built at init(). A writer created at invoke
+    // time has not finished discovery when the first sample is written,
+    // and a VOLATILE writer drops that sample with no error — building
+    // every member up front is what gives discovery the time it needs.
+    std::array<std::unique_ptr<SCE::Mesh::Dds::Client>,
+               {{ target.pool_plan.members | length }}> {{ target.target_snake }}_pool_;
+    // Member values in the same order as the endpoints above; a runtime
+    // `<param>` value is matched against this to pick a slot.
+    static constexpr std::array<const char*, {{ target.pool_plan.members | length }}>
+        {{ target.target_snake | upper }}_POOL_MEMBERS = {
+{% for m in target.pool_plan.members %}
+            "{{ m.value }}",
+{% endfor %}
+    };
+{% else %}
     std::unique_ptr<SCE::Mesh::Dds::Client> {{ target.target_snake }}_;
+{% endif %}
 {% endif %}
 {% endfor %}
 
@@ -3150,7 +3242,7 @@ struct TransportRouter {
             shutdown();
             return false;
         }
-{% if target.pool_plan and target.pool_plan.kind == "someip" %}
+{% if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
         // SCE_MESH.md §14.4 SOME/IP pool: request every member of the
         // instance set at init so vsomeip opens an SD subscription for
         // each. Runtime selection between them happens in invokeMeshRpc
@@ -3569,12 +3661,30 @@ struct TransportRouter {
             [this]() {{ raise_envelope_corrupt_lambda("dds") }});
 {% endif %}
 {% for target in targets if target.state.kind == "dds" %}
+{# One endpoint for a plain binding, one per declared member for a
+   §14.4 bounded pool. Built as a list so the body below — callback,
+   validity gate, decode-error hook, QoS hook — is written once: a pool
+   member's endpoint is an ordinary client that happens to address a
+   substituted topic, and duplicating the body would let the two drift. #}
+{% set ns_dds_eps = namespace(v=[]) %}
+{% if target.pool_plan and target.pool_plan.kind == "bounded_string" %}
+{% for m in target.pool_plan.members %}
+{% set ns_dds_eps.v = ns_dds_eps.v + [{
+     "slot": target.target_snake ~ "_pool_[" ~ loop.index0 ~ "]",
+     "topic": '"' ~ m.address ~ '"'}] %}
+{% endfor %}
+{% else %}
+{% set ns_dds_eps.v = [{
+     "slot": target.target_snake ~ "_",
+     "topic": "DDS_TOPIC_" ~ (target.target_snake | upper)}] %}
+{% endif %}
+{% for ep in ns_dds_eps.v %}
         // Client endpoints dispatch straight to the engine: a reply is
         // correlated by the router's own pending table, and a
         // notification is an ordinary inbound event. session_idx is `0`
         // — DDS has no server pool, so N_SESSIONS is 1 here.
-        {{ target.target_snake }}_ = std::make_unique<SCE::Mesh::Dds::Client>(
-            *dds_participant_, DDS_TOPIC_{{ target.target_snake | upper }},
+        {{ ep.slot }} = std::make_unique<SCE::Mesh::Dds::Client>(
+            *dds_participant_, {{ ep.topic }},
             [this](const SCE::Mesh::MeshEnvelope& env) {
                 // The machine name is baked in per endpoint: this client
                 // reads only the reply/event topics derived from
@@ -3585,11 +3695,11 @@ struct TransportRouter {
                 // target — the same split the SOME/IP arm makes.
                 this->onDdsClientInbound(env, "{{ target.target | replace("#", "") }}");
             });
-        if (!{{ target.target_snake }}_->valid()) {
+        if (!{{ ep.slot }}->valid()) {
             shutdown();
             return false;
         }
-        {{ target.target_snake }}_->setDecodeErrorHandler(
+        {{ ep.slot }}->setDecodeErrorHandler(
             [this]() {{ raise_envelope_corrupt_lambda("dds") }});
 {% if dds_transport.qos and (dds_transport.qos.deadline_ms or dds_transport.qos.liveliness_lease_ms) %}
         // §8.2: a declared DEADLINE / LIVELINESS is a promise about the
@@ -3598,7 +3708,7 @@ struct TransportRouter {
         // nothing reads. Deadline is its own row 16; a liveliness loss is
         // row 8 PEER_PARTITIONED, the same row zenoh and someip raise for
         // the same condition through their own mechanisms.
-        {{ target.target_snake }}_->setQosViolationHandler(
+        {{ ep.slot }}->setQosViolationHandler(
             [this](SCE::Mesh::Dds::QosViolation violation) {
                 SCE::Mesh::CommunicationError err;
                 err.transport = "dds";
@@ -3613,6 +3723,7 @@ struct TransportRouter {
                 this->raiseCommunicationError(std::move(err));
             });
 {% endif %}
+{% endfor %}
 {% endfor %}
 {% endif %}
 {% if "zenoh" in transport_types %}
@@ -4579,8 +4690,18 @@ struct TransportRouter {
         dds_server_.reset();
 {% endif %}
 {% for target in targets if target.state.kind == "dds" %}
+{% if target.pool_plan and target.pool_plan.kind == "bounded_string" %}
+        // §14.4 bounded pool: every member endpoint is torn down, not
+        // just the first — each owns its own reader threads, and a
+        // participant reset with live readers is a use-after-free.
+        for (auto& pool_endpoint : {{ target.target_snake }}_pool_) {
+            if (pool_endpoint) pool_endpoint->shutdown();
+            pool_endpoint.reset();
+        }
+{% else %}
         if ({{ target.target_snake }}_) {{ target.target_snake }}_->shutdown();
         {{ target.target_snake }}_.reset();
+{% endif %}
 {% endfor %}
         dds_participant_.reset();
 {% endif %}
@@ -4695,7 +4816,23 @@ struct TransportRouter {
 {% elif target.state.kind == "custom_tcp" %}
             return send_to_{{ target.target_snake }}({{ target.target_snake }}_, env);
 {% elif target.state.kind == "dds" %}
-            if (!{{ target.target_snake }}_) {
+{% if target.pool_plan and target.pool_plan.kind == "bounded_string" %}
+            // §14.4 bounded pool: the endpoint is chosen by the runtime
+            // `{{ target.pool_plan.placeholder }}` <param> rather than being the
+            // binding's single client. Subscribe / unsubscribe select a
+            // member the same way a send does — a subscription on this
+            // binding is a reader on one member's notification topic,
+            // not on all of them.
+            std::size_t pool_idx = 0;
+            if (!selectPoolMember(env, "{{ target.pool_plan.placeholder }}",
+                                  {{ target.target_snake | upper }}_POOL_MEMBERS, pool_idx)) {
+                return false;
+            }
+            auto& dds_endpoint = {{ target.target_snake }}_pool_[pool_idx];
+{% else %}
+            auto& dds_endpoint = {{ target.target_snake }}_;
+{% endif %}
+            if (!dds_endpoint) {
                 return false;  // init() has not joined the domain
             }
             {
@@ -4707,14 +4844,14 @@ struct TransportRouter {
                 // is why there is no unsubscribe message that could be
                 // lost in flight (SCE_MESH.md §mesh-8.2).
                 if (env.pattern == PK::EventSubscribe) {
-                    return {{ target.target_snake }}_->subscribe();
+                    return dds_endpoint->subscribe();
                 }
                 if (env.pattern == PK::EventUnsubscribe) {
-                    {{ target.target_snake }}_->unsubscribe();
+                    dds_endpoint->unsubscribe();
                     return true;
                 }
             }
-            return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_, env);
+            return send_to_{{ target.target_snake }}(*dds_endpoint, env);
 {% endif %}
         }
 {% endfor %}
@@ -5918,7 +6055,7 @@ struct TransportRouter {
                 ActiveInvokeRecord{invoke_uuid, envelope_uuid};
         }
 
-{% for target in targets if target.pool_plan and target.pool_plan.kind == "someip" %}
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
         // SCE_MESH.md §14.4: SOME/IP bounded pool — runtime instance selection.
         // The instance id is read from the `{{ target.pool_plan.instance_from }}`
         // <param> value on the invoking <invoke>, validated against the
@@ -5928,29 +6065,11 @@ struct TransportRouter {
         // RpcStatus::Unavailable — vsomeip would silently drop them
         // otherwise because no request_service was ever issued for the id.
         if (target == "{{ target.target }}") {
-            std::string pool_json(env.data.begin(), env.data.end());
-            auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
-            if (!pool_parsed) {
+            std::string inst_str;
+            if (!readPoolParam(env, "{{ target.pool_plan.instance_from }}", inst_str)) {
                 cleanupAbandonedMeshInvoke(invoke_uuid,
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
-            }
-            auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
-            if (!pool_obj_sp || !*pool_obj_sp) {
-                cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                return false;
-            }
-            auto& pool_obj = **pool_obj_sp;
-            auto inst_it = pool_obj.properties.find("{{ target.pool_plan.instance_from }}");
-            if (inst_it == pool_obj.properties.end()) {
-                cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                return false;
-            }
-            std::string inst_str = ::SCE::EventDataHelper::scriptValueToJsonString(inst_it->second);
-            if (inst_str.size() >= 2 && inst_str.front() == '"' && inst_str.back() == '"') {
-                inst_str = inst_str.substr(1, inst_str.size() - 2);
             }
             unsigned long long inst_ul = 0;
             const char* inst_begin = inst_str.data();
@@ -6000,7 +6119,7 @@ struct TransportRouter {
             return true;
         }
 {% endfor %}
-{% for target in targets if target.pool_plan and target.pool_plan.kind == "zenoh" %}
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "open_string" %}
         // SCE_MESH.md §14.4: Zenoh open pool — bind-time `key:` carries
         // `{name}` placeholders. Substituted at invoke time from the
         // JSON envelope payload (populated by the generator from the
@@ -6016,34 +6135,14 @@ struct TransportRouter {
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
-            std::string pool_json(env.data.begin(), env.data.end());
-            auto pool_parsed = ::SCE::EventDataHelper::jsonStringToScriptValue(pool_json);
-            if (!pool_parsed) {
-                cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                return false;
-            }
-            auto* pool_obj_sp = std::get_if<std::shared_ptr<::ScriptObject>>(&*pool_parsed);
-            if (!pool_obj_sp || !*pool_obj_sp) {
-                cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                return false;
-            }
-            auto& pool_obj = **pool_obj_sp;
             std::string pool_key = "{{ target.state.key }}";
 {% for ph in target.pool_plan.placeholders %}
             {
-                auto it = pool_obj.properties.find("{{ ph }}");
-                if (it == pool_obj.properties.end()) {
+                std::string pv;
+                if (!readPoolParam(env, "{{ ph }}", pv)) {
                     cleanupAbandonedMeshInvoke(invoke_uuid,
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                     return false;
-                }
-                // scriptValueToJsonString wraps strings in quotes; strip
-                // them so the substitution yields the raw token value.
-                std::string pv = ::SCE::EventDataHelper::scriptValueToJsonString(it->second);
-                if (pv.size() >= 2 && pv.front() == '"' && pv.back() == '"') {
-                    pv = pv.substr(1, pv.size() - 2);
                 }
                 const std::string token = "{{ '{' }}{{ ph }}{{ '}' }}";
                 auto pos = pool_key.find(token);
@@ -6097,6 +6196,29 @@ struct TransportRouter {
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
+        }
+{% endfor %}
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "bounded_string" %}
+        // SCE_MESH.md §14.4: DDS bounded pool — runtime member selection.
+        // Unlike the Zenoh arm, nothing is assembled here: every member's
+        // endpoints were built at init() so DDS discovery had time to
+        // match them, and this path only picks the slot whose declared
+        // `members:` value equals the runtime `{{ target.pool_plan.placeholder }}`
+        // <param>. A value outside the declared set fails closed rather
+        // than creating an endpoint whose first sample a VOLATILE writer
+        // would drop with no error.
+        if (target == "{{ target.target }}") {
+            std::size_t member_idx = 0;
+            if (!selectPoolMember(env, "{{ target.pool_plan.placeholder }}",
+                                  {{ target.target_snake | upper }}_POOL_MEMBERS, member_idx)
+                || !{{ target.target_snake }}_pool_[member_idx]) {
+                cleanupAbandonedMeshInvoke(invoke_uuid,
+{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
+                return false;
+            }
+            // Same call the non-pool DDS route takes; the only difference
+            // is which endpoint it lands on.
+            return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_pool_[member_idx], env);
         }
 {% endfor %}
         return route_send(target, env);
