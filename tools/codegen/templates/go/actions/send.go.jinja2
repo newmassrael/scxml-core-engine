@@ -31,10 +31,10 @@
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-		parts = append(parts, fmt.Sprintf("[%q]=%q", "{{ param.name }}", "{{ param.static_value | escape_go }}"))
+		parts = append(parts, fmt.Sprintf("[%q]=%q", "{{ param.name | escape_go }}", "{{ param.static_value | escape_go }}"))
 {% elif param.expr %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name }}", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -42,7 +42,7 @@
 		}
 {% elif param.location %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name }}", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -170,16 +170,16 @@
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-			httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], "{{ param.static_value | escape_go }}")
+			httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
 {% elif param.expr and model.needs_script_engine %}
 			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); httpParamErr == nil {
 				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
-				httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], trimmed)
+				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], trimmed)
 			}
 {% elif param.location and model.needs_script_engine %}
 			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
 				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
-				httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], trimmed)
+				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], trimmed)
 			}
 {% endif %}
 {% endfor %}

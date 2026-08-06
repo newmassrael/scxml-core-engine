@@ -6,42 +6,50 @@
 //
 // A `<send>` whose params are all static literals is lowered at codegen
 // time: the author's text is pasted into a string literal in the
-// generated file. How many literal boundaries that text crosses differs
-// per backend, and the count is what makes this gate necessary rather
-// than a compile check:
+// generated file. Two things vary per paste site, and both are axes of
+// this gate rather than assumptions:
 //
-//   cpp   — one boundary. The value lands in `params["k"].push_back("v")`,
-//           a C++ literal handed straight to the runtime.
-//   rust  — two. The backend assembles a Lua table constructor
-//   go      (`{ ["k"]="v" }`) and embeds *that* in a host string literal
-//           which the script engine later parses as Lua source.
+//   how many boundaries — cpp pastes into one host literal; the Rust and
+//     Go event-data path assembles a Lua table constructor and embeds
+//     *that* in a host literal, so the text crosses two. A host-only
+//     escape is correct for the first and wrong for the second: it
+//     yields source that compiles and Lua that does not parse.
 //
-// A host-only escape is therefore correct for cpp and wrong for
-// rust/go: it produces host source that compiles and Lua source that
-// does not parse — or worse, parses to a different value. No syntax
-// checker can see this. `codegen_smoke` compiles every backend and
-// would stay green while the emitted Lua was unparseable, because the
-// Lua never reaches a compiler. That is precisely the gap this file
-// covers: it asserts the *value*, not the syntax.
+//   which site is reached — the backends route `#_internal` / `#_parent`
+//     / delayed-parent / BasicHTTP / delayed / immediate sends through
+//     separate emission blocks, and select different blocks again on
+//     `needs_script_engine`. Those blocks were measured to escape
+//     inconsistently. Before the fixtures below crossed both axes this
+//     gate held exactly one of C++'s six paste sites, while the other
+//     five were fixed but unguarded — a fix without a witness.
+//
+// No syntax checker can cover the first axis. `codegen_smoke` compiles
+// every backend and was measured to stay 7/7 green while the emitted Lua
+// was unparseable, because that Lua never reaches a compiler. This file
+// asserts the *value*, not the syntax; the two gates are complementary
+// and share fixtures so one document feeds both.
 //
 // The Lua side is evaluated by the real Lua 5.4 interpreter (`mlua`) —
 // the same one the Rust and Go runtimes use — rather than by a
 // hand-rolled parser here, so the check cannot drift from the grammar
 // it asserts about.
 //
-// Backends deliberately absent, each measured rather than assumed:
-//   c11    — rejects this `<send>` shape at codegen time and emits a
-//            loud `error.execution` arm, so no author text is pasted.
-//   kotlin — emits no `<send>` param payload at all (under either
-//            datamodel), so there is no literal to check.
-//   python — passes the author *expression* through for runtime
-//            evaluation instead of pasting a static value.
-// Should any of them start pasting static values, add it to
-// `PASTE_BACKENDS` with its extraction shape.
+// What this gate deliberately does not model: which backend emits which
+// shape. That cross-product is real (Kotlin drops non-HTTP params unless
+// a script engine is needed; C++ routes some shapes to runtime
+// evaluation once one is) but encoding it here would be a second,
+// unverified copy of the templates' branching. Instead every paste site
+// found is checked, and `MIN_CHECKS_PER_BACKEND` keeps a site that stops
+// being emitted from silently reducing coverage.
 //
-// Fixture: `tests/fixtures/codegen_smoke/send_param_adversarial_literals.scxml`,
-// shared with `codegen_smoke` so one fixture feeds both the syntax gate
-// and this value gate.
+// Backends deliberately absent, each measured rather than assumed:
+//   c11    — pastes param names into Lua *identifier* position
+//            (`_pending_donedata.<name>`), which no escaping fixes; it
+//            needs index syntax. Tracked separately; its compile break
+//            is caught by `codegen_smoke`.
+//   python — already correct, and the reference the others were brought
+//            up to: `py_string_literal` is applied at every param slot,
+//            name and value alike, and the emitted module compiles.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -49,17 +57,31 @@ use std::path::PathBuf;
 use sce_build::compile_scxml_lang;
 use sce_build::generator::Language;
 
-/// The author `<param>` set of the shared fixture, as the values the
-/// runtime must observe — post-XML-decode, post-quote-strip.
+/// Fixture stems under `tests/fixtures/codegen_smoke/`, shared with
+/// `codegen_smoke`. The pair exists because `needs_script_engine`
+/// selects mutually exclusive emission blocks: one document cannot
+/// reach both, so one document cannot prove both.
+const FIXTURES: &[&str] = &[
+    "send_param_adversarial_literals",
+    "send_param_adversarial_literals_scripted",
+];
+
+/// `<send>` shape prefixes used by the fixtures' param names.
+const SHAPES: &[&str] = &[
+    "internal", "parent", "pdelay", "http", "httpmix", "texpr", "mix", "delay", "plain",
+];
+
+/// The adversarial value set, applied to every shape in both fixtures.
+/// Generated keys are `<shape>_<suffix>`.
 ///
-/// This is asserted to match the emitted key set *exactly*, so adding a
-/// param to the fixture without extending this table fails rather than
-/// silently going unchecked.
-const EXPECTED_PARAMS: &[(&str, &str)] = &[
+/// The suffix doubles as the param *name*, so `odd"name` also proves the
+/// name slot is escaped — the SCXML parser admits a quote there, which
+/// was measured rather than assumed.
+const VALUES: &[(&str, &str)] = &[
     // Closes the host literal mid-token when unescaped.
     ("dquote", "a\"b"),
-    // `\d` is an unknown escape in C/C++/Rust/Go and in Lua: pasted raw
-    // it is a warning at best and a changed value at worst.
+    // `\d` is an unknown escape in C/C++/Rust/Go/Kotlin and in Lua:
+    // pasted raw it is a warning at best and a changed value at worst.
     ("backslash", "c\\d"),
     // Backslash immediately before a quote — escaping one of the two
     // leaves the literal unbalanced.
@@ -69,61 +91,145 @@ const EXPECTED_PARAMS: &[(&str, &str)] = &[
     ("tab", "i\tj"),
     // A raw newline is illegal inside a Lua short literal.
     ("newline", "k\nl"),
-    // The name slot is interpolated into the same literal as the value,
-    // and the SCXML parser does admit a quote there.
+    // A quote inside the name slot itself.
     ("odd\"name", "plain"),
 ];
 
-/// How a backend pastes static params into its output.
+/// How a paste site presents itself in generated source.
 #[derive(Clone, Copy)]
-enum PasteShape {
-    /// One host literal pair per param: `params["k"].push_back("v");`.
-    HostPairs { marker: &'static str },
-    /// A Lua table constructor carried inside one host literal.
-    LuaTableInHostLiteral { marker: &'static str },
+enum Extractor {
+    /// A line carrying key and value as separate host literals.
+    /// `key_at` / `value_at` index the literals following `marker`,
+    /// which differs per backend: Go's HTTP form repeats the key
+    /// (`m["k"] = append(m["k"], "v")`), so its value sits at index 2.
+    HostPairs {
+        marker: &'static str,
+        key_at: usize,
+        value_at: usize,
+    },
+    /// A Lua table constructor carried inside one host string literal.
+    LuaTable { marker: &'static str },
 }
 
-/// Backends that lower a static `<param>` by pasting author text into
-/// generated source. Extending this list is the whole cost of covering
-/// a new backend.
-const PASTE_BACKENDS: &[(Language, &str, PasteShape)] = &[
-    (
-        Language::Cpp,
-        "cpp",
-        PasteShape::HostPairs { marker: "params[" },
-    ),
-    (
-        Language::Rust,
-        "rust",
-        PasteShape::LuaTableInHostLiteral {
-            marker: "let event_data",
-        },
-    ),
-    (
-        Language::Go,
-        "go",
-        PasteShape::LuaTableInHostLiteral {
-            marker: "eventDataStr",
-        },
-    ),
+struct Backend {
+    lang: Language,
+    name: &'static str,
+    extractors: &'static [Extractor],
+}
+
+const PASTE_BACKENDS: &[Backend] = &[
+    Backend {
+        lang: Language::Cpp,
+        name: "cpp",
+        extractors: &[
+            Extractor::HostPairs {
+                marker: "params[",
+                key_at: 0,
+                value_at: 1,
+            },
+            Extractor::HostPairs {
+                marker: "httpParams[",
+                key_at: 0,
+                value_at: 1,
+            },
+        ],
+    },
+    Backend {
+        lang: Language::Rust,
+        name: "rust",
+        extractors: &[
+            Extractor::LuaTable {
+                marker: "let event_data",
+            },
+            Extractor::HostPairs {
+                marker: "http_params.entry(",
+                key_at: 0,
+                value_at: 1,
+            },
+            // Runtime-assembled event data: the format string occupies
+            // literal 0, so key and value shift to 1 and 2.
+            Extractor::HostPairs {
+                marker: "parts.push(format!(",
+                key_at: 1,
+                value_at: 2,
+            },
+        ],
+    },
+    Backend {
+        lang: Language::Go,
+        name: "go",
+        extractors: &[
+            Extractor::LuaTable {
+                marker: "eventDataStr",
+            },
+            Extractor::HostPairs {
+                marker: "httpParams[",
+                key_at: 0,
+                value_at: 2,
+            },
+            // Runtime-assembled event data: the format string occupies
+            // literal 0, so key and value shift to 1 and 2.
+            Extractor::HostPairs {
+                marker: "fmt.Sprintf(",
+                key_at: 1,
+                value_at: 2,
+            },
+        ],
+    },
+    Backend {
+        lang: Language::Kotlin,
+        name: "kotlin",
+        extractors: &[
+            Extractor::HostPairs {
+                marker: "httpParams[",
+                key_at: 0,
+                value_at: 1,
+            },
+            Extractor::HostPairs {
+                marker: "paramsP[",
+                key_at: 0,
+                value_at: 1,
+            },
+            Extractor::HostPairs {
+                marker: "paramsT[",
+                key_at: 0,
+                value_at: 1,
+            },
+            Extractor::HostPairs {
+                marker: "paramsE[",
+                key_at: 0,
+                value_at: 1,
+            },
+        ],
+    },
 ];
 
-fn fixture_path() -> PathBuf {
+/// Per-backend floor on how many `<param>` values this gate must have
+/// verified across both fixtures. Measured, not guessed: it is the count
+/// the current templates produce. A paste site that stops being emitted
+/// — renamed marker, branch removed, shape dropped — pushes the count
+/// below its floor and fails, which is the only thing standing between
+/// "the gate is green" and "the gate read nothing".
+const MIN_CHECKS_PER_BACKEND: &[(&str, usize)] =
+    &[("cpp", 56), ("rust", 119), ("go", 119), ("kotlin", 63)];
+
+fn fixture_path(stem: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/codegen_smoke/send_param_adversarial_literals.scxml")
+        .join("tests/fixtures/codegen_smoke")
+        .join(format!("{stem}.scxml"))
 }
 
 /// Every generated file for `lang`, concatenated. Backends split output
 /// across several files (cpp emits `_sm.h` + `_sm.inl`); the paste site
 /// may live in any of them.
-fn generate(lang: Language) -> String {
-    let fixture = fixture_path();
+fn generate(lang: Language, stem: &str) -> String {
+    let fixture = fixture_path(stem);
     let output = compile_scxml_lang(
         fixture.to_str().expect("fixture path is UTF-8"),
         &sce_build::find_template_dir_for(lang),
         lang,
     )
-    .expect("codegen succeeds for the adversarial-literal fixture");
+    .unwrap_or_else(|e| panic!("codegen succeeds for {stem}: {e}"));
 
     output
         .files
@@ -166,12 +272,33 @@ fn scan_literal(chars: &[char], start: usize) -> Option<(String, usize)> {
     None
 }
 
+/// Every `"`-delimited literal on a line at or after char offset `from`,
+/// in source order, escapes intact.
+fn literals_after(chars: &[char], from: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = from;
+    while i < chars.len() {
+        if chars[i] == '"' {
+            match scan_literal(chars, i) {
+                Some((body, next)) => {
+                    out.push(body);
+                    i = next;
+                }
+                None => break,
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 /// Undo one host-language string-literal escaping layer.
 ///
-/// C++, Rust and Go share the escape set the generator produces
+/// C++, Rust, Go and Kotlin share the escape set the generator produces
 /// (`\\ \" \n \r \t`). An escape outside that set means author text was
 /// pasted without escaping — `\d` from the fixture is not a valid escape
-/// in any of the three — so it is reported rather than passed through.
+/// in any of them — so it is reported rather than passed through.
 fn unescape_host(raw: &str) -> Result<String, String> {
     let mut out = String::new();
     let mut chars = raw.chars();
@@ -198,70 +325,92 @@ fn unescape_host(raw: &str) -> Result<String, String> {
     Ok(out)
 }
 
-/// Extract `params["k"].push_back("v")` pairs from a host-pairs backend.
+fn char_offset_past(line: &str, byte_at: usize, marker: &str) -> usize {
+    line[..byte_at].chars().count() + marker.chars().count()
+}
+
+/// Is this a key the fixtures authored — `<shape>_<suffix>`?
 ///
-/// Per-param failures are accumulated rather than returned on the first
-/// one: each pair is an independent paste site, and stopping at the
-/// earliest would leave the rest of them unproven in exactly the run
-/// that shows the defect exists.
-fn extract_host_pairs(source: &str, marker: &str) -> (BTreeMap<String, String>, Vec<String>) {
-    let mut found = BTreeMap::new();
+/// Generated code carries plenty of other string pairs; only the ones
+/// traceable to a fixture `<param>` are this gate's business.
+fn authored_value_for(key: &str) -> Option<&'static str> {
+    let rest = SHAPES
+        .iter()
+        .find_map(|shape| key.strip_prefix(shape)?.strip_prefix('_'))?;
+    VALUES
+        .iter()
+        .find(|(suffix, _)| *suffix == rest)
+        .map(|(_, value)| *value)
+}
+
+/// Collected `(key, observed value, where)` triples plus extraction
+/// failures, from every line carrying `marker`.
+///
+/// A line whose literal at `value_at` is absent, or is empty, is
+/// skipped rather than reported: the same marker also matches
+/// runtime-evaluation lines — `push_back(resultToString(...))` and its
+/// `push_back("")` error fallback — which paste no author text at all.
+/// No fixture value is empty, so an empty literal is unambiguously that
+/// fallback and never a lost value. Missing coverage is the floor's job;
+/// this function only judges what it can actually read.
+fn extract_host_pairs(
+    source: &str,
+    marker: &str,
+    key_at: usize,
+    value_at: usize,
+) -> (Vec<(String, String)>, Vec<String>) {
+    let mut found = Vec::new();
     let mut errors = Vec::new();
     for line in source.lines() {
         let Some(at) = line.find(marker) else {
             continue;
         };
         let chars: Vec<char> = line.chars().collect();
-        // Byte offset → char offset: the marker is ASCII, and so is
-        // everything before it on these generated lines.
-        let key_quote = line[..at].chars().count() + marker.chars().count();
-        let Some((raw_key, after_key)) = scan_literal(&chars, key_quote) else {
+        let literals = literals_after(&chars, char_offset_past(line, at, marker));
+        let (Some(raw_key), Some(raw_value)) = (literals.get(key_at), literals.get(value_at))
+        else {
             continue;
         };
-        let Some(value_quote) = chars[after_key..].iter().position(|c| *c == '"') else {
-            continue;
-        };
-        let Some((raw_value, _)) = scan_literal(&chars, after_key + value_quote) else {
-            continue;
-        };
-        let key = match unescape_host(&raw_key) {
+        let key = match unescape_host(raw_key) {
             Ok(key) => key,
             Err(why) => {
                 errors.push(format!("param name (raw {raw_key:?}): {why}"));
                 continue;
             }
         };
-        match unescape_host(&raw_value) {
-            Ok(value) => {
-                found.insert(key, value);
-            }
+        if authored_value_for(&key).is_none() {
+            continue;
+        }
+        match unescape_host(raw_value) {
+            Ok(value) if value.is_empty() => continue,
+            Ok(value) => found.push((key, value)),
             Err(why) => errors.push(format!("param value {key:?} (raw {raw_value:?}): {why}")),
         }
     }
     (found, errors)
 }
 
-/// Extract the Lua table a backend embedded in a host literal, undo the
-/// host escaping, then evaluate the result with the real Lua parser.
+/// Extract every Lua table a backend embedded in a host literal, undo the
+/// host escaping, then evaluate each with the real Lua parser.
 ///
-/// Unlike the host-pairs shape this one is all-or-nothing by nature: the
-/// params share a single table constructor, so one bad value makes the
-/// whole thing unparseable and there is no per-param verdict to give.
-/// The error carries the emitted Lua source so the failing run shows
-/// what was actually written rather than only that something was wrong.
-fn extract_lua_table(source: &str, marker: &str) -> (BTreeMap<String, String>, Vec<String>) {
-    let mut tables: Vec<String> = Vec::new();
+/// Per-table this is all-or-nothing by nature: the params of one `<send>`
+/// share a single constructor, so one bad value makes the whole thing
+/// unparseable and there is no per-param verdict to give. The error
+/// carries the emitted Lua so a failing run shows what was written.
+fn extract_lua_tables(source: &str, marker: &str) -> (Vec<(String, String)>, Vec<String>) {
     let mut errors: Vec<String> = Vec::new();
+    let mut found = Vec::new();
+    let lua = mlua::Lua::new();
+
     for line in source.lines() {
         let Some(at) = line.find(marker) else {
             continue;
         };
         let chars: Vec<char> = line.chars().collect();
-        let after_marker = line[..at].chars().count() + marker.chars().count();
-        let Some(offset) = chars[after_marker..].iter().position(|c| *c == '"') else {
-            continue;
-        };
-        let Some((raw, _)) = scan_literal(&chars, after_marker + offset) else {
+        let Some(raw) = literals_after(&chars, char_offset_past(line, at, marker))
+            .into_iter()
+            .next()
+        else {
             continue;
         };
         let lua_source = match unescape_host(&raw) {
@@ -272,99 +421,87 @@ fn extract_lua_table(source: &str, marker: &str) -> (BTreeMap<String, String>, V
             }
         };
         let trimmed = lua_source.trim();
-        if trimmed.starts_with('{') && trimmed.ends_with('}') {
-            tables.push(lua_source);
+        if !(trimmed.starts_with('{') && trimmed.ends_with('}')) {
+            continue;
         }
-    }
 
-    if tables.len() != 1 {
-        errors.push(format!(
-            "expected exactly one embedded Lua table constructor, found {}",
-            tables.len()
-        ));
-        return (BTreeMap::new(), errors);
-    }
-
-    let lua = mlua::Lua::new();
-    let table: mlua::Table = match lua.load(format!("return {}", tables[0])).eval() {
-        Ok(table) => table,
-        Err(e) => {
-            errors.push(format!(
-                "the emitted Lua does not parse — host source may still compile: {e}\n  \
-                 Lua source was: {}",
-                tables[0]
-            ));
-            return (BTreeMap::new(), errors);
-        }
-    };
-
-    let mut found = BTreeMap::new();
-    for pair in table.pairs::<String, String>() {
-        match pair {
-            Ok((k, v)) => {
-                found.insert(k, v);
+        let table: mlua::Table = match lua.load(format!("return {lua_source}")).eval() {
+            Ok(table) => table,
+            Err(e) => {
+                errors.push(format!(
+                    "the emitted Lua does not parse — host source may still compile: {e}\n  \
+                     Lua source was: {lua_source}"
+                ));
+                continue;
             }
-            Err(e) => errors.push(format!("Lua table entry is not string→string: {e}")),
+        };
+        for pair in table.pairs::<String, String>() {
+            match pair {
+                Ok((k, v)) => {
+                    if authored_value_for(&k).is_some() {
+                        found.push((k, v));
+                    }
+                }
+                Err(e) => errors.push(format!("Lua table entry is not string→string: {e}")),
+            }
         }
     }
     (found, errors)
 }
 
 /// Every static `<param>` value must reach the runtime byte-identical to
-/// what the author wrote, on every backend that pastes it into source.
-///
-/// Violations are collected rather than asserted one at a time:
-/// stopping at the first would hide how far a defect reaches and leave
-/// the remaining backends unproven, which is exactly how the C++ break
-/// and the Rust/Go break stayed separable for as long as they did.
+/// what the author wrote, on every backend that pastes it into source,
+/// for every `<send>` shape and datamodel branch that backend lowers.
 #[test]
 fn author_param_literals_survive_every_boundary() {
-    let expected: BTreeMap<String, String> = EXPECTED_PARAMS
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-        .collect();
-
+    let floors: BTreeMap<&str, usize> = MIN_CHECKS_PER_BACKEND.iter().copied().collect();
     let mut violations: Vec<String> = Vec::new();
-    let mut checked = 0usize;
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
 
-    for (lang, name, shape) in PASTE_BACKENDS {
-        let source = generate(*lang);
-        let (found, errors) = match shape {
-            PasteShape::HostPairs { marker } => extract_host_pairs(&source, marker),
-            PasteShape::LuaTableInHostLiteral { marker } => extract_lua_table(&source, marker),
-        };
+    for backend in PASTE_BACKENDS {
+        let name = backend.name;
+        counts.insert(name, 0);
 
-        violations.extend(errors.into_iter().map(|why| format!("{name}: {why}")));
+        for stem in FIXTURES {
+            let source = generate(backend.lang, stem);
 
-        if found.keys().ne(expected.keys()) {
-            violations.push(format!(
-                "{name}: param name set diverged\n  expected: {:?}\n  emitted:  {:?}",
-                expected.keys().collect::<Vec<_>>(),
-                found.keys().collect::<Vec<_>>(),
-            ));
-        }
+            for extractor in backend.extractors {
+                let (pairs, errors) = match extractor {
+                    Extractor::HostPairs {
+                        marker,
+                        key_at,
+                        value_at,
+                    } => extract_host_pairs(&source, marker, *key_at, *value_at),
+                    Extractor::LuaTable { marker } => extract_lua_tables(&source, marker),
+                };
+                violations.extend(
+                    errors
+                        .into_iter()
+                        .map(|why| format!("{name} / {stem}: {why}")),
+                );
 
-        // Deliberately not gated on the two checks above. An unescaped
-        // quote truncates one param and drops the next, so bailing out
-        // on a key-set mismatch would report only the damage's edge and
-        // leave the params that *were* extracted — and are wrong —
-        // unexamined. Keys that failed extraction are already named
-        // above; the rest still get a value verdict.
-        for (key, want) in &expected {
-            let Some(got) = found.get(key) else {
-                continue;
-            };
-            checked += 1;
-            if got != want {
-                violations.push(format!(
-                    "{name}: param {key:?} value changed crossing the literal boundary\n  \
-                     authored: {want:?}\n  observed: {got:?}",
-                ));
+                // Every occurrence is judged, not just the first per key:
+                // the same param reaches the runtime through more than
+                // one site (Rust and Go emit the HTTP shape into both the
+                // event-data table and the form-field map), and those
+                // sites were measured to escape differently. Deduplicating
+                // would let one correct site vouch for a broken sibling.
+                for (key, observed) in pairs {
+                    let authored =
+                        authored_value_for(&key).expect("filtered to authored keys already");
+                    *counts.get_mut(name).expect("counter seeded") += 1;
+                    if observed != authored {
+                        violations.push(format!(
+                            "{name} / {stem}: param {key:?} value changed crossing the \
+                             literal boundary\n  authored: {authored:?}\n  observed: {observed:?}",
+                        ));
+                    }
+                }
             }
         }
     }
 
-    // Asserted before the floor: a diverged key set both suppresses the
+    // Asserted before the floors: a truncated literal both suppresses the
     // count and explains why, so reporting the count first would replace
     // the diagnosis with its symptom.
     assert!(
@@ -373,14 +510,19 @@ fn author_param_literals_survive_every_boundary() {
         violations.join("\n\n"),
     );
 
-    // A source-derived gate that reads nothing passes vacuously. The
-    // floor pins the full cross-product so a backend whose paste site
-    // is renamed (and therefore no longer found) fails loudly instead of
-    // quietly dropping out of coverage.
-    let floor = PASTE_BACKENDS.len() * EXPECTED_PARAMS.len();
-    assert_eq!(
-        checked, floor,
-        "expected to check {floor} backend×param pairs, checked {checked} — \
-         a paste site went unread"
+    let shortfalls: Vec<String> = counts
+        .iter()
+        .filter_map(|(name, got)| {
+            let want = floors
+                .get(name)
+                .unwrap_or_else(|| panic!("{name} has no floor in MIN_CHECKS_PER_BACKEND"));
+            (got < want).then(|| format!("  {name}: checked {got}, floor {want}"))
+        })
+        .collect();
+    assert!(
+        shortfalls.is_empty(),
+        "fewer `<param>` values were verified than the templates emit — a paste site \
+         went unread:\n{}",
+        shortfalls.join("\n"),
     );
 }

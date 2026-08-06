@@ -1,53 +1,91 @@
 <?xml version="1.0"?>
 <!--
-  Structural smoke fixture: <send> with static <param> literals whose
-  author values contain the characters that terminate or re-open a
-  string literal.
+  Structural smoke fixture: every `<send>` shape that pastes a static
+  `<param>` into generated source, each carrying values that terminate
+  or re-open a string literal.
 
-  The existing param fixture (final_top_params.scxml) uses safe values,
-  so every backend's param emission looked correct while pasting author
-  text straight into a literal. A double quote in the value closed the
-  emitted C++ string mid-token; a backslash silently changed the value.
+  Two axes, deliberately crossed rather than sampled:
 
-  `datamodel="null"` keeps every param on the *static* branch — the
-  codegen-time paste — rather than the runtime-evaluation branch. That
-  is the branch that interpolates author text into generated source.
+    shape — which paste site in the backend template is reached. The
+      backends route `#_internal` / `#_parent` / BasicHTTP / delayed /
+      immediate sends through separate emission blocks, and those blocks
+      were measured to escape inconsistently. A fixture exercising one
+      shape leaves the others unproven: before this file covered all
+      five, the value gate held exactly one of the six C++ paste sites.
 
-  The values are also the fixture for `author_literal_boundaries.rs`,
-  which checks the *value* survives rather than the source parsing:
-  the Rust and Go backends wrap this table in a Lua table constructor
-  inside a host string literal, so a value crossing two literal
-  boundaries compiles cleanly while the Lua it carries does not parse.
-  Keep the param set there and here in step — that gate asserts the key
-  sets match exactly.
+    value — the characters that break a literal. `param` *names* carry
+      them too: the SCXML parser admits a quote in `name`, so the name
+      slot is as exposed as the value slot and is escaped alongside it.
+
+  `datamodel="null"` keeps every param on the static branch — the
+  codegen-time paste — rather than the runtime-evaluation branch.
+
+  Shared with `author_literal_boundaries.rs`, which asserts the values
+  survive rather than that the source parses. Keep the param set there
+  and here in step: that gate asserts the key sets match exactly.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null"
        name="send_param_adversarial_literals" initial="s0">
   <state id="s0">
     <onentry>
-      <send event="probe" target="#_internal">
-        <!-- Closes the emitted host string literal mid-token. -->
-        <param name="dquote" expr="'a&quot;b'"/>
-        <!-- `\d` is an unknown escape: a warning, not an error, and the
-             backslash vanishes from the value. -->
-        <param name="backslash" expr="'c\d'"/>
-        <!-- Backslash immediately before a quote: escaping only one of
-             the two leaves the literal unbalanced. -->
-        <param name="both" expr="'e\&quot;f'"/>
-        <!-- Terminates the Lua table constructor the Rust/Go backends
-             assemble around these params. -->
-        <param name="luaclose" expr="'g&quot;}h'"/>
-        <param name="tab" expr="'i&#9;j'"/>
-        <!-- A raw newline is illegal inside a Lua short literal, so this
-             one must be escaped rather than merely quoted. -->
-        <param name="newline" expr="'k&#10;l'"/>
-        <!-- The name slot is interpolated into the same literal as the
-             value, and the parser does admit a quote here. -->
-        <param name="odd&quot;name" expr="'plain'"/>
+      <!-- internal event queue -->
+      <send event="e_internal" target="#_internal">
+        <param name="internal_dquote" expr="'a&quot;b'"/>
+        <param name="internal_backslash" expr="'c\d'"/>
+        <param name="internal_both" expr="'e\&quot;f'"/>
+        <param name="internal_luaclose" expr="'g&quot;}h'"/>
+        <param name="internal_tab" expr="'i&#9;j'"/>
+        <param name="internal_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="internal_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- parent session via invoke callback -->
+      <send event="e_parent" target="#_parent">
+        <param name="parent_dquote" expr="'a&quot;b'"/>
+        <param name="parent_backslash" expr="'c\d'"/>
+        <param name="parent_both" expr="'e\&quot;f'"/>
+        <param name="parent_luaclose" expr="'g&quot;}h'"/>
+        <param name="parent_tab" expr="'i&#9;j'"/>
+        <param name="parent_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="parent_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- BasicHTTP form fields -->
+      <send event="e_http" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost:8080/probe">
+        <param name="http_dquote" expr="'a&quot;b'"/>
+        <param name="http_backslash" expr="'c\d'"/>
+        <param name="http_both" expr="'e\&quot;f'"/>
+        <param name="http_luaclose" expr="'g&quot;}h'"/>
+        <param name="http_tab" expr="'i&#9;j'"/>
+        <param name="http_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="http_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- delayed external queue -->
+      <send event="e_delay" delay="20ms">
+        <param name="delay_dquote" expr="'a&quot;b'"/>
+        <param name="delay_backslash" expr="'c\d'"/>
+        <param name="delay_both" expr="'e\&quot;f'"/>
+        <param name="delay_luaclose" expr="'g&quot;}h'"/>
+        <param name="delay_tab" expr="'i&#9;j'"/>
+        <param name="delay_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="delay_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- immediate external queue -->
+      <send event="e_plain">
+        <param name="plain_dquote" expr="'a&quot;b'"/>
+        <param name="plain_backslash" expr="'c\d'"/>
+        <param name="plain_both" expr="'e\&quot;f'"/>
+        <param name="plain_luaclose" expr="'g&quot;}h'"/>
+        <param name="plain_tab" expr="'i&#9;j'"/>
+        <param name="plain_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="plain_odd&quot;name" expr="'plain'"/>
       </send>
     </onentry>
-    <transition event="probe" target="done"/>
+    <transition event="e_internal" target="done"/>
   </state>
   <final id="done"/>
 </scxml>

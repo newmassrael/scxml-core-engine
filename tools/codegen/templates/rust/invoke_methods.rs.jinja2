@@ -115,7 +115,7 @@
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
 {% for param in invoke_info.params %}
                     if let Ok(val) = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
-                        child_policy.set_param_in_script_engine("{{ param.name }}", &val.to_lua_literal());
+                        child_policy.set_param_in_script_engine("{{ param.name | escape_rust }}", &val.to_lua_literal());
                     }
 {% endfor %}
                 }
