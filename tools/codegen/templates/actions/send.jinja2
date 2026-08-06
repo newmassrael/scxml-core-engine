@@ -30,7 +30,7 @@ this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
 ::SCE::SendHelper::storeInIdLocation(scriptEngine, sessionId_.value(), "{{ action.idlocation }}", sendId);
 {% else %}
-{{ action.idlocation }} = sendId;
+#error "SCE codegen drift: `<send idlocation=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
 {% endif %}
 
@@ -51,7 +51,7 @@ std::string dynamicType;
         AOT_DEBUG("Evaluated typeexpr='{{ action.typeexpr }}' → type='{}'", dynamicType);
     }
 {% else %}
-    dynamicType = {{ action.typeexpr }};
+#error "SCE codegen drift: `<send typeexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
 }
 
@@ -82,7 +82,7 @@ dynamicTarget = ::SCE::ScriptResultUtils::resultToString(targetResult, &scriptEn
 {% if action.targetexpr == '_event.origin' %}
 dynamicTarget = pendingEventOrigin_;
 {% else %}
-dynamicTarget = {{ action.targetexpr }};
+#error "SCE codegen drift: `<send targetexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
 {% endif %}
 // W3C SCXML 6.2 (test 159, 194): Invalid target raises error.execution and stops subsequent content
@@ -176,7 +176,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
         delayStr = ::SCE::ScriptResultUtils::resultToString(delayResult);
     }
 {% else %}
-    delayStr = {{ action.delayexpr }};
+#error "SCE codegen drift: `<send delayexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
     auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString(delayStr);
 {% else %}
@@ -447,7 +447,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
     } else {
     std::string eventName = ::SCE::ScriptResultUtils::resultToString(eventResult);
 {% else %}
-    std::string eventName = {{ action.eventexpr }};
+#error "SCE codegen drift: `<send eventexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
     // Map event name to enum
     {% for event_name in model.events | sort %}
@@ -507,8 +507,16 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
             params["{{ param.name }}"].push_back("");
         }
     }
+{% elif param.is_static_literal %}
+    // W3C SCXML Appendix B.2: static string literal. The value is known at
+    // build time, so it is emitted as a C++ string literal read from
+    // `static_value` (outer quotes already stripped by the parser). The
+    // author's `expr` is never pasted into C++ here — a quoted SCXML
+    // literal is not a C++ expression, and the sibling param blocks in
+    // this file read `static_value` for the same reason.
+    params["{{ param.name }}"].push_back("{{ param.static_value }}");
 {% else %}
-    params["{{ param.name }}"].push_back(std::to_string({{ param.expr }}));
+#error "SCE codegen drift: <send> param '{{ param.name }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -523,7 +531,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
         delayStr = ::SCE::ScriptResultUtils::resultToString(delayResult);
     }
 {% else %}
-    delayStr = {{ action.delayexpr }};
+#error "SCE codegen drift: `<send delayexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
     auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString(delayStr);
 {% else %}
@@ -577,8 +585,13 @@ std::map<std::string, ScriptValue> typedParams;
         params["{{ param.name }}"].push_back("");
     }
 }
+{% elif param.is_static_literal %}
+// W3C SCXML Appendix B.2: static string literal — see the delayed-send
+// counterpart above for why this reads `static_value` instead of pasting
+// the author's `expr` into C++.
+params["{{ param.name }}"].push_back("{{ param.static_value }}");
 {% else %}
-params["{{ param.name }}"].push_back(std::to_string({{ param.expr }}));
+#error "SCE codegen drift: <send> param '{{ param.name }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
 {% endif %}
 {% endfor %}
 {% endif %}

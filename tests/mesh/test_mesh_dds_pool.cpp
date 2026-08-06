@@ -36,6 +36,7 @@
 //      drops with no error, which is exactly the silent-loss failure
 //      the bounded shape exists to prevent.
 
+#include "pool_sender_dds_sm.h"
 #include "pool_sender_dds_transport.h"
 
 #include "MeshTestUtils.h"
@@ -130,8 +131,14 @@ int run_test() {
     });
     MESH_TEST_REQUIRE(rear_server.valid(), "rear observer failed to build its endpoints");
 
-    TestSenderEngine engine;
-    sender_gen::TransportRouter<TestSenderEngine> router({&engine});
+    // The real generated machine, not a test double: §4 below drives its
+    // `<send>` through the engine, and a double has no state graph to
+    // enter. §1-§3 call `route_send` on it directly, which is engine
+    // agnostic, so one sender serves both.
+    sender_gen::pool_sender_dds sender;
+    sender.initialize();
+
+    sender_gen::TransportRouter<sender_gen::pool_sender_dds> router({&sender});
     MESH_TEST_REQUIRE(router.init(), "sender router init failed — the pool endpoints were not built");
 
     std::this_thread::sleep_for(kDiscovery);
@@ -176,6 +183,33 @@ int run_test() {
     std::this_thread::sleep_for(kDiscovery);
     MESH_TEST_REQUIRE(front_left.received.load() == front_left_before && rear.received.load() == rear_before,
                       "a refused send still put a sample on a member topic");
+
+    // ── §4 the engine's own `<send>` reaches the named member ──
+    //
+    // §1-§3 hand `route_send` an envelope this file built, which proves
+    // the arm and nothing above it. This drives the fixture's `<onentry>
+    // <send target="#sensor"><param name="corner" expr="'front_left'"/>`
+    // instead, so the member value travels the path an author's does:
+    // param evaluation → buildEventDataJson → the mesh send callback →
+    // route_send → the pool arm.
+    //
+    // That segment shipped broken and compiled clean. Under
+    // `datamodel="null"` the param emitted
+    // `std::to_string('front_left')` — a C++ multi-character literal, so
+    // the member value on the wire was a number. `selectPoolMember`
+    // then correctly refused it and the send vanished, which is
+    // indistinguishable from "no send happened" unless something drives
+    // the engine. Nothing did: this fixture's own comment used to argue
+    // that driving from `<onentry>` would only test the same arm through
+    // a longer path.
+    const int front_left_before_engine = front_left.received.load();
+    const int rear_before_engine = rear.received.load();
+    sender.processEvent(sender_gen::pool_sender_dds::Event::Ping_sensor);
+    MESH_TEST_REQUIRE(wait_for([&] { return front_left.received.load() > front_left_before_engine; }),
+                      "the engine's <send> never reached the `front_left` member — the `corner` "
+                      "<param> value did not survive the path from param evaluation to the pool arm");
+    MESH_TEST_REQUIRE(rear.received.load() == rear_before_engine,
+                      "the engine's <send> for `front_left` also reached `rear`");
 
     router.shutdown();
     // Idempotent teardown: `~TransportRouter` calls shutdown() again on

@@ -2316,4 +2316,129 @@ mod tests {
             panic!("plain SCXML must not trip the mesh-rpc gate")
         }
     }
+
+    /// A `<send>` `<param>` whose `expr` is a quoted string literal, on a
+    /// machine that emits no script engine. Both the immediate and the
+    /// delayed send path carry a params block, and each had its own copy
+    /// of the emission, so both are exercised here.
+    const STATIC_PARAM_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="sp_fixture" initial="idle">
+  <state id="idle">
+    <onentry>
+      <send event="now.fired">
+        <param name="corner" expr="'front_left'"/>
+      </send>
+      <send event="later.fired" delay="10ms">
+        <param name="wheel" expr="'rear_right'"/>
+      </send>
+    </onentry>
+    <transition event="now.fired" target="done"/>
+    <transition event="later.fired" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+
+    /// A static string literal `<param>` must be emitted as its value.
+    ///
+    /// The regression it guards: with no script engine on the machine,
+    /// both params blocks pasted `expr` verbatim into
+    /// `std::to_string(...)`, so `expr="'front_left'"` became
+    /// `std::to_string('front_left')` — a C++ multi-character literal.
+    /// That is a *number* (`'42'` is 13362), and for a literal longer
+    /// than an `int` it is "character constant too long for its type",
+    /// which `-Werror` rejects outright. Four sibling param blocks in
+    /// `send.jinja2` already read `static_value`; these two did not.
+    ///
+    /// Asserted at the render layer rather than only through the DDS pool
+    /// runtime test that found it, because that test needs CycloneDDS and
+    /// this path has nothing to do with any transport.
+    #[test]
+    fn static_literal_send_param_emits_its_value_not_a_char_literal() {
+        let mut model = parse(STATIC_PARAM_SCXML);
+        crate::analyzer::analyze(&mut model, "sp_fixture.scxml");
+        assert!(
+            !model.needs_script_engine,
+            "fixture precondition: a static-literal param must not pull in the script \
+             engine, or the branch under test is not the one being rendered"
+        );
+        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("tools")
+            .join("codegen")
+            .join("templates");
+        let out = generate_cpp(&model, &template_dir, "sp_fixture", None).expect("render");
+        let body = out
+            .files
+            .into_iter()
+            .map(|(_, body)| body)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            body.contains(r#"params["corner"].push_back("front_left")"#),
+            "the immediate send's static literal param must emit its value; body was:\n{body}"
+        );
+        assert!(
+            body.contains(r#"params["wheel"].push_back("rear_right")"#),
+            "the delayed send's static literal param must emit its value; body was:\n{body}"
+        );
+        // The shape of the defect, independent of which param tripped it:
+        // no `<send>` param value may reach C++ inside a character
+        // literal, whatever the emission around it looks like.
+        assert!(
+            !body.contains("std::to_string('"),
+            "a param expr was pasted into a C++ character literal; body was:\n{body}"
+        );
+    }
+
+    /// Every dynamic `<send>` attribute must force the script engine.
+    ///
+    /// `send.jinja2` renders each of these attributes through the engine
+    /// and leaves a `#error` on the other side of the branch, because the
+    /// alternative — pasting the author's SCXML expression into C++ — is
+    /// what made the static-literal `<param>` above emit a character
+    /// literal. Those `#error`s are only correct while this invariant
+    /// holds, so the invariant is asserted here rather than assumed:
+    /// `send_has_dynamic_attr` names the same six attributes, and a
+    /// future exemption (the shape the `<param>` path took, via
+    /// `is_static_literal`) would turn a `#error` into a build break on
+    /// valid input.
+    #[test]
+    fn every_dynamic_send_attribute_forces_the_script_engine() {
+        // `contentexpr` is the sixth attribute `send_has_dynamic_attr`
+        // names; it has no C++ paste site, so the five with one are
+        // covered here and `idlocation` rides along as an attribute
+        // rather than an expression.
+        for (label, attrs) in [
+            (
+                "typeexpr",
+                r#"typeexpr="'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'" event="e.x""#,
+            ),
+            ("targetexpr", r#"targetexpr="'#_internal'" event="e.x""#),
+            ("delayexpr", r#"delayexpr="'10ms'" event="e.x""#),
+            ("eventexpr", r#"eventexpr="'e.x'""#),
+            ("idlocation", r#"event="e.x" idlocation="slot""#),
+        ] {
+            let doc = format!(
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="dyn_fixture" initial="idle">
+  <state id="idle">
+    <onentry><send {attrs}/></onentry>
+    <transition event="e.x" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"##
+            );
+            let mut model = parse(&doc);
+            crate::analyzer::analyze(&mut model, "dyn_fixture.scxml");
+            assert!(
+                model.needs_script_engine,
+                "`{label}` did not force the script engine — send.jinja2's `#error` for it \
+                 would now fire on valid input"
+            );
+        }
+    }
 }
