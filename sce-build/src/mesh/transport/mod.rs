@@ -1794,6 +1794,83 @@ mod tests {
         }
     }
 
+    /// SCE_MESH.md may only name `TransportDescriptor::` fields that the
+    /// registry actually declares.
+    ///
+    /// The spec is where an author learns which knobs exist, so a field
+    /// named there is a promise the registry has it. Two had gone stale
+    /// by the time this landed: `supports_pool`, renamed to `pool_shape`
+    /// when the open/bounded distinction became author-visible, and
+    /// `degraded_aspects`, which describes a schema for degraded
+    /// transports that has no field because every in-tree transport is
+    /// conformance-complete. Neither was caught by anything — the
+    /// diagnostic-slug gate reads codes, not symbols.
+    #[test]
+    fn spec_names_only_registry_fields_that_exist() {
+        const SPEC: &str = include_str!("../../../../SCE_MESH.md");
+        let src = include_str!("mod.rs");
+
+        // Fields of `TransportDescriptor` ONLY — read from this file so a
+        // rename moves both sides, and scoped to the struct body because
+        // the spec's `TransportDescriptor::x` names a field of that
+        // struct. Scanning every `pub` item in the module instead would
+        // accept `TransportDescriptor::supports_pool` on the strength of
+        // the unrelated `PoolShape::supports_pool()` method — which is
+        // exactly the stale name this gate exists to reject.
+        let mut declared: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let body = src
+            .split_once("pub struct TransportDescriptor {")
+            .expect("TransportDescriptor struct declaration")
+            .1;
+        let body = body
+            .split_once("\n}")
+            .expect("TransportDescriptor struct terminator")
+            .0;
+        for line in body.lines() {
+            let t = line.trim();
+            if let Some(rest) = t.strip_prefix("pub ") {
+                if let Some((n, _)) = rest.split_once(':') {
+                    declared.insert(n);
+                }
+            }
+        }
+        assert!(
+            declared.len() >= 10,
+            "extracted only {} descriptor field(s) — the struct-body scan broke, and a gate \
+             that reads no fields would pass on anything",
+            declared.len()
+        );
+
+        let mut stale: Vec<&str> = Vec::new();
+        for (_, after) in SPEC
+            .match_indices("TransportDescriptor::")
+            .map(|(i, m)| (i, &SPEC[i + m.len()..]))
+        {
+            let name: String = after
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || *c == '_')
+                .collect();
+            if name.is_empty() {
+                continue;
+            }
+            if !declared.contains(name.as_str()) {
+                // Leak-free lookup into the spec's own text.
+                if let Some(pos) = SPEC.find(&format!("TransportDescriptor::{name}")) {
+                    let _ = pos;
+                }
+                stale.push(Box::leak(name.into_boxed_str()));
+            }
+        }
+        stale.sort_unstable();
+        stale.dedup();
+        assert!(
+            stale.is_empty(),
+            "SCE_MESH.md names TransportDescriptor fields the registry does not declare: {stale:?}\n\
+             Either the field was renamed (update the spec) or it was never built (say so — a \
+             `TransportDescriptor::x` in the spec is a claim that an author can rely on x)."
+        );
+    }
+
     #[test]
     fn pool_axes_agree_on_absence() {
         // The two pool axes are independent in what they say but not in

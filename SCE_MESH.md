@@ -447,7 +447,7 @@ bindings:
 
 Codegen emits `zenoh::KeyExpr("sce/player/" + std::to_string(targetPlayerId))` and calls `session.put` or `session.get`. Zenoh's native routing delivers the envelope to whichever peer has declared a matching subscriber; SCE does not enumerate peers.
 
-Transports without a native routing layer (local, shm, custom_tcp, can) do not support placeholder bindings — see §4.3 and §16.8.3. The spec-level capability flag is `TransportDescriptor::supports_pool`.
+Transports without a native routing layer (local, shm, custom_tcp, can) do not support placeholder bindings — see §4.3 and §16.8.3. The spec-level capability axes are `TransportDescriptor::pool_shape` (None / Open / Bounded) and `::pool_member_carrier` (None / TypedInstanceId / StringSegment); see §10.4.2.
 
 Cross-transport automatic bridging is explicitly rejected (not deferred) — see §14.5. A machine that receives over one transport and forwards over another does so through explicit SCXML transitions, not middleware-level envelope translation.
 
@@ -1787,7 +1787,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 | **Disconnected → Active** (`reconnect()`) | Transparent to SCXML author. Pending RPC correlation entries survive reconnection; the deadline timer (§10.8) is unaffected by transport-layer reconnect. A successful reconnect does NOT raise an event. |
 | **Active/Disconnected → Shutdown** (`shutdown()`) | Transport releases resources. Outstanding RPC entries are cancelled with `reason: INVOKE_CHILD_LOST`. The mesh runtime calls `shutdown()` exactly once per engine lifetime; double-shutdown is a programming error. |
 
-**Best-effort transports** (`conformance: degraded`) relax the `send → error.communication` guarantee: `send` may return success for a payload that is silently dropped. The `Disconnected` state may never be entered if the transport has no connection concept (UDP). These relaxations must be declared in `TransportDescriptor::degraded_aspects`.
+**Best-effort transports** (`conformance: degraded`) relax the `send → error.communication` guarantee: `send` may return success for a payload that is silently dropped. The `Disconnected` state may never be entered if the transport has no connection concept (UDP). Declaring these relaxations needs a `degraded_aspects` registry field, which does not exist: every in-tree transport is conformance-complete, so the field would be read by nothing. It lands with the first degraded transport, alongside the `conformance: degraded` deploy.yaml schema that is likewise unparsed today.
 
 #### 10.4.2 Transport Descriptor Interface
 
@@ -2764,7 +2764,7 @@ Runtime selection of a remote target *instance* within an already-declared bindi
 
 **Foundation (landed)**:
 - **Binding value-field placeholder grammar** (§14.4) — `{name}` tokens in Zenoh `key:` / DDS `topic:` and the `instance_from: <param-name>` binding field for SOME/IP are parsed, capability-gated on the `pool_shape` x `pool_member_carrier` axes, and substituted at runtime. Zenoh emits `zenoh::KeyExpr(std::string(...) + ...)` at the send site; DDS substitutes each `members:` entry at build time and builds that member's `Dds::Client` at init, then selects among the pre-built endpoints; SOME/IP emits a `request_service(SERVICE, i)` loop over `instances:` at init and validates runtime values against the list before `set_instance`. Placeholder substitution failures (SOME/IP instance out-of-set, missing placeholder name, malformed payload) are pre-envelope setup faults and raise `error.execution` with `reason=INVOKE_SRC_NOT_FOUND` per §10.7.1 — no wire envelope is emitted, so no `RpcStatus` applies (§9.5 three-tier error table).
-- **Transport capability gating** — `TransportDescriptor::supports_pool` registry field; custom_tcp / shm / local / can do not support placeholders and a binding on them carrying a placeholder is rejected at parse time (`mesh/deploy-pool-not-supported-by-transport`).
+- **Transport capability gating** — the `TransportDescriptor::pool_shape` and `::pool_member_carrier` registry axes; custom_tcp / shm / local / can carry `pool_shape: None` and a binding on them carrying a placeholder is rejected at parse time (`mesh/deploy-pool-not-supported-by-transport`).
 - **`<invoke type="sce:mesh-rpc" srcexpr>`** (§9.5) — parser accepts `srcexpr` with the exactly-one rule against `src`, typed as the `MeshRpcTarget` sum type so "both empty" and "both set" are structurally impossible. `srcexpr` is evaluated at `<invoke>` entry through the datamodel; the resolved `#<name>` is looked up in static topology. A miss is a pre-envelope setup fault — `error.execution` with `reason=INVOKE_SRC_NOT_FOUND` per §10.7.1 (§9.5 three-tier error table). No retry, no wait.
 
 **Rejected (explicitly, not deferred)**:
