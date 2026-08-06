@@ -1183,17 +1183,36 @@ SCE does **not** introduce continuous cross-session state sharing, synchronous r
 
 ### 8.2 Transport Capability Matrix
 
-Not all transports support all communication patterns. sce-build validates pattern compatibility at build time:
+Not all transports support all communication patterns, and pattern support is
+only one of the dimensions on which they differ. sce-build validates every
+dimension below at build time.
 
-| Pattern | Req/Reply transports | Pub/Sub transports | Signal transports |
-|---|---|---|---|
-| `service.request` (req/resp) | Supported | N/A | N/A |
-| `service.fire_forget` | Supported | Supported | Supported |
-| `event.subscribe` | N/A | Supported | N/A |
-| `field.get` / `field.set` | Supported | Via topic read/write | Via signal read/write |
-| Reliable delivery | Transport-dependent | Transport-dependent | N/A |
+The rows are transports and the columns are dimensions, which is the direction
+an author reads it: the question at a binding site is "what does *this*
+transport give me", not "which transports supply req/reply". Each cell is the
+corresponding field of that transport's `TransportDescriptor`
+(`sce-build/src/mesh/transport/mod.rs`), and `mesh::transport::tests::spec_matrix_matches_the_registry`
+renders this table from the registry and fails if the two disagree — a
+capability table maintained by hand drifts the first time a flag flips.
 
-If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch.
+Patterns are abbreviated **R**equestReply, **F**ireForget, **P**ubSub,
+Field**A**ccess. "Order-repr" is whether a per-receiver sequence is meaningful
+on the wire at all (CAN broadcast has no such notion), which is a different
+question from whether the transport *supplies* ordering.
+
+<!-- BEGIN transport-capability-matrix (generated from the registry) -->
+| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | Multi-inst server | Inter-partition IPC | Cross-target reply | Server deadline |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `local` | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | yes | Unsupported |
+| `shm` | yes | F | — | yes | yes | yes | None | None | no | no | yes | no | Unsupported |
+| `custom_tcp` | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | yes | no | ActiveError |
+| `someip` | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | no | yes | ActiveError |
+| `zenoh` | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | no | no | no | DropSilently |
+| `dds` | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | ActiveError |
+| `can` | no | FA | — | no | no | no | None | None | no | no | no | no | Unsupported |
+<!-- END transport-capability-matrix -->
+
+If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch. The same holds for every other column: a deploy.yaml asking for something the row does not offer is rejected at parse or codegen time, never silently degraded.
 
 **DDS realization.** DDS is the one in-tree transport whose patterns ride a *derived* set of topics rather than a single addressable endpoint. A binding names one topic; the reply leg is `<topic>_Reply` and the notification leg is `<topic>_Event`, derived at emission time. A request topic therefore cannot be paired with an unrelated reply topic — there is no field in which to express that.
 

@@ -1794,6 +1794,125 @@ mod tests {
         }
     }
 
+    /// §8.2's capability matrix is rendered from this registry, and must
+    /// match it byte for byte.
+    ///
+    /// The table used to have patterns as rows and *categories* of
+    /// transport as columns ("Req/Reply transports", "Pub/Sub
+    /// transports"), which cannot answer the question an author actually
+    /// has at a binding site — "what does zenoh give me" — because no row
+    /// names a transport. Transposing it makes every cell a specific
+    /// claim about a specific descriptor field, and a specific claim in
+    /// prose drifts the first time a flag flips unless something compares
+    /// the two. This is that something.
+    ///
+    /// The rendering lives here rather than in a doc generator so the
+    /// failure lands on whoever changes the registry, in the same test
+    /// run, with the corrected table in the message.
+    #[test]
+    fn spec_matrix_matches_the_registry() {
+        const SPEC: &str = include_str!("../../../../SCE_MESH.md");
+        const BEGIN: &str =
+            "<!-- BEGIN transport-capability-matrix (generated from the registry) -->";
+        const END: &str = "<!-- END transport-capability-matrix -->";
+
+        fn yn(b: bool) -> &'static str {
+            if b {
+                "yes"
+            } else {
+                "no"
+            }
+        }
+        fn patterns(d: &TransportDescriptor) -> String {
+            let mut s = String::new();
+            for (cap, letter) in [
+                (RequestReply, 'R'),
+                (FireForget, 'F'),
+                (PubSub, 'P'),
+                (FieldAccess, 'A'),
+            ] {
+                if d.capabilities.contains(&cap) {
+                    s.push(letter);
+                }
+            }
+            s
+        }
+        fn fields(f: &[&str]) -> String {
+            if f.is_empty() {
+                "—".to_string()
+            } else {
+                f.iter()
+                    .map(|x| format!("`{x}:`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        }
+
+        // Author-facing order: the three that need no middleware, then the
+        // three that route through one, then the unimplemented bus.
+        const ORDER: &[&str] = &[
+            "local",
+            "shm",
+            "custom_tcp",
+            "someip",
+            "zenoh",
+            "dds",
+            "can",
+        ];
+        assert_eq!(
+            ORDER.len(),
+            known_names().len(),
+            "the matrix row order lists {} transport(s) but the registry has {} — \
+             a transport that lands must appear in the table",
+            ORDER.len(),
+            known_names().len()
+        );
+
+        let mut rendered = String::new();
+        rendered.push_str(
+            "| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr \
+             | Pool shape | Pool member | §13 subscribe | Multi-inst server | Inter-partition IPC \
+             | Cross-target reply | Server deadline |\n",
+        );
+        rendered.push_str("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
+        for name in ORDER {
+            let d = lookup(name).unwrap_or_else(|| panic!("{name} is not in the registry"));
+            rendered.push_str(&format!(
+                "| `{name}` | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {:?} |\n",
+                yn(d.implemented),
+                patterns(d),
+                fields(d.required_binding_fields),
+                yn(d.supplies_dedup),
+                yn(d.supplies_ordering),
+                yn(d.ordering_representable),
+                d.pool_shape,
+                d.pool_member_carrier,
+                yn(d.supports_machine_lifetime_subscribe),
+                yn(d.supports_multi_instance_server),
+                yn(d.supports_inter_partition_ipc),
+                yn(d.supports_cross_target_reply),
+                d.server_deadline_notice,
+            ));
+        }
+
+        let start = SPEC
+            .find(BEGIN)
+            .expect("SCE_MESH.md §8.2 lost its matrix BEGIN marker")
+            + BEGIN.len();
+        let end = SPEC
+            .find(END)
+            .expect("SCE_MESH.md §8.2 lost its matrix END marker");
+        let in_spec = SPEC[start..end].trim();
+
+        assert_eq!(
+            in_spec,
+            rendered.trim(),
+            "\n\nSCE_MESH.md §8.2 disagrees with the transport registry. Replace the \
+             table between the BEGIN/END markers with:\n\n{}\n",
+            rendered.trim()
+        );
+    }
+
     /// SCE_MESH.md may only name `TransportDescriptor::` fields that the
     /// registry actually declares.
     ///
