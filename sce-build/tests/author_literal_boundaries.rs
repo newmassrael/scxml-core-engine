@@ -581,11 +581,16 @@ const DONEDATA_FIXTURE: &str = "donedata_adversarial_literals";
 /// Sites that assemble Lua source inside a host literal, as
 /// `(language, label, fixture, line marker, param-name prefix, floor)`.
 ///
-/// The C11 backend appears twice because two different macros write to
-/// the same Lua table: one lowers `<donedata>` params, the other lowers a
-/// `<send>` param whose expression is evaluated at runtime. They share a
-/// marker but not a call path, so covering one proves nothing about the
-/// other — the send one sat unguarded until its row was added here.
+/// The C11 backend appears several times because separate emission
+/// paths each assemble Lua source. Two macros write to the same
+/// `_pending_donedata` table — one lowers `<donedata>` params, the other
+/// a `<send>` param evaluated at runtime — and they share a marker but
+/// not a call path, so covering one proves nothing about the other. The
+/// `<send target="#_parent">` path builds its own table constructor in a
+/// C buffer instead and needs its own marker; it was writing names in
+/// Lua *field* position (`name = v`, where no escaping can help) long
+/// after the donedata path had moved to index syntax, and no row here
+/// looked at it.
 const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
     (
         Language::Rust,
@@ -618,6 +623,28 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
         "_pending_donedata[",
         "delay_",
         14,
+    ),
+    // `<send target="#_parent">` with params. Both fixtures reach it:
+    // the payload is assembled from a C buffer either way, so unlike the
+    // sites above this one does not branch on `needs_script_engine`.
+    // Kept as two rows rather than one because that independence is the
+    // claim — if either fixture stops reaching the site, only the row
+    // for that fixture goes red and says which.
+    (
+        Language::C11,
+        "c11/parent-send-param",
+        "send_param_adversarial_literals",
+        "*_pn = ",
+        "parent_",
+        7,
+    ),
+    (
+        Language::C11,
+        "c11/parent-send-param-scripted",
+        "send_param_adversarial_literals_scripted",
+        "*_pn = ",
+        "parent_",
+        7,
     ),
 ];
 

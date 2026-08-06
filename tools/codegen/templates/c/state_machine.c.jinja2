@@ -512,8 +512,16 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             /* W3C SCXML 6.4 (test233): static-event + target="#_parent" +
                <param> children. Each param expr is evaluated in this
                (child) SM's lua_State, then formatted into a Lua-source
-               table literal `{name1 = v1, name2 = v2, ...}`. The string
-               travels via the parent_dispatch shim's `event_data` arg,
+               table literal `{["name1"] = v1, ["name2"] = v2, ...}`. The
+               name goes in index position, never field position: a
+               `<param name>` is an arbitrary string (the parser admits
+               `odd"name`) and no escaping turns an arbitrary string into
+               a Lua identifier, so field position is unrepresentable
+               rather than merely unescaped. `escape_lua | escape_c` then
+               composes once per boundary — the Lua literal first, the C
+               literal that carries it second. Same contract as the
+               `_pending_donedata["..."]` sites in scriptengine.jinja2.
+               The string travels via the parent_dispatch shim's `event_data` arg,
                lands on `event_with_meta_t.data` in the parent, and the
                parent's external dequeue runs `_event.data = <table>`
                before transition matching + finalize.
@@ -541,7 +549,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
                 {% endif %}
                 {
-                    static const char *_pn = "{{ param.name | escape_c }} = ";
+                    static const char *_pn = "[\"{{ param.name | escape_lua | escape_c }}\"] = ";
                     int _pnl = (int)strlen(_pn);
                     if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
                         memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
