@@ -401,9 +401,10 @@ pub enum FixtureSpec {
         /// algorithm root. RFC §synth-5-B test-vector support (item B2) emits a
         /// per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11
         /// only; the conformance filter drops the fixture from
-        /// Cpp/Kotlin/Go/Python harnesses — those sidecars are
-        /// consumer-gated (mirrors codec_variant_dispatch's
-        /// per-language gate).
+        /// Cpp/Kotlin/Go/Python harnesses, because no sidecar format
+        /// is defined for those backends — the filter reflects which
+        /// emitters exist, not a deferral (mirrors
+        /// codec_variant_dispatch's per-language gate).
         /// Empty in fixtures.json (manifest-side override is rejected);
         /// computed by `has_test_vectors_in_file` so the SCXML
         /// stays the single source of truth.

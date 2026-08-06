@@ -4116,7 +4116,10 @@ fn validate_on_sample_event_names(
 /// signature-shape check (borrow vs owned) flows through rustc at
 /// user-crate compile time. Both shapes raise the
 /// same spec-verbatim diagnostic code; today only the path-syntax arm
-/// is reachable — SCE-side signature inspection is consumer-gated.
+/// is reachable. SCE does not inspect the signature itself because
+/// rustc already rejects the mismatch when the user crate compiles —
+/// a second implementation here could only duplicate or drift from
+/// the compiler's answer.
 ///
 /// `feedback_silently_broken_hooks.md` compliance: every variant of
 /// the syntax check is reachable from authoring inputs (an unknown

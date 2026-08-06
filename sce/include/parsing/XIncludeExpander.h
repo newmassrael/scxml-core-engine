@@ -87,8 +87,8 @@ struct XIncludeExpandResult {
 // `XIncludeUnsupported`) carrying a diagnostic-ready message
 // (href, search trail, cycle chain, depth limit). Pre-expansion
 // (row, col) of the offending `<xi:include>` is currently embedded
-// in the message text only; typed location stamping is deferred
-// behind a separate consumer signal.
+// in the message text only; typed location stamping waits on the
+// parse layer carrying a position the throw sites can read.
 // `includeDirs` is the operator-configured `--include-dir` search
 // path, tried after `baseDir` and before the cwd fallback (mirrors
 // the Rust `extra_dirs` parameter of `xinclude::expand`). Pass an

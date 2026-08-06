@@ -4,7 +4,7 @@
 // SCE Protocol-Synthesis RFC §synth-5-E lines 1276-1346 — application-facing Sample
 // API + typestate spelling + capability-attribute family. Lives
 // in the C11 backend's Tier 1 INTERFACE (sce_c_runtime per
-// `c11_4tier_layering.md`) so generated code, downstream consumer
+// ARCHITECTURE.md §"C11 Backend Layering") so generated code, downstream consumer
 // crates, and the buffer-pool codegen integration
 // (`tools/codegen/templates/forge/c/buffer_pool.h.jinja2`) all see
 // one contract.

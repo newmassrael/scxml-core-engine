@@ -101,9 +101,11 @@ compile_error!(
 // Pattern mirrors the §synth-5-D event-queue capacity (`EVENT_QUEUE_CAPACITY`
 // emitted from codegen via `<sce:capacity>` per B-γ1) plus B-γ2b's
 // microstep-dedup cap (`heapless::FnvIndexSet<_, 64>` reasoned
-// constant). When the no_std consumer signals a per-document
-// requirement, the codegen can grow a parallel `EVENT_STRING_CAPACITY`
-// const and this alias becomes generic over the const.
+// constant). A per-document override is a codegen change, not a
+// runtime one: the codegen would grow a parallel
+// `EVENT_STRING_CAPACITY` const and this alias becomes generic over
+// it. Fixing the constant here keeps every no_std document at one
+// size until a document actually needs two.
 
 /// Default no_std FIFO depth for a machine that declares no event-queue
 /// capacity (internal + external queues).
@@ -150,9 +152,11 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// margin. Profiler-driven per-document tunable (via a future
 /// `StatePolicy::SCHEDULER_CAPACITY: usize` associated const + matching
 /// `<sce:scheduler-capacity>` parser surface, mirroring B-γ1's `<sce:capacity>`
-/// architecture) is deferred until an MCU consumer surfaces a concrete
-/// over/under-fit signal — per `feedback_planned_not_yagni` discipline
-/// (capacities ride consumer signal, not speculation).
+/// architecture) is not built because its input does not exist: the
+/// right per-document number comes from a profile of that document's
+/// in-flight timer count, and the corpus measurement above is the only
+/// profile SCE has. A tunable whose value would still be guessed adds
+/// a knob without adding an answer.
 ///
 /// ## Per-entry footprint (no_std)
 ///
