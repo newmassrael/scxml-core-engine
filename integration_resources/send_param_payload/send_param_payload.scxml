@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.2 `<send>` `<param>` payload delivery on the two paths that
+     had no runtime witness.
+
+     Both were fixed at the template layer and both stayed unproven, for the
+     same reason: no committed fixture had a machine of the required shape, so
+     the suites could only show that nothing regressed. The absence is also
+     why the defects survived — a shape nobody generates is a shape nobody
+     breaks and nobody fixes.
+
+     Two independent paths, deliberately reaching different final states so a
+     failure names which one broke rather than reporting "payload lost":
+
+       child -> parent, from a machine with no script engine
+         The child is `datamodel="null"`: every param folds to a literal at
+         codegen time and the machine needs no script engine at all. Kotlin
+         used to gate param emission on the *machine* needing one, so this
+         shape shipped a `<send>` with its params dropped. The right question
+         is whether *this send* needs an engine, which is what the C++
+         template had always asked. Reaching `passChild` means the payload
+         crossed the invoke boundary from an engine-less child.
+
+       #_internal, from a machine that does have an engine
+         Sends to `#_internal` used to drop their payload unconditionally —
+         the internal-raise path took no event data, so params were built and
+         then discarded. Reaching `pass` means an internal raise now carries
+         its params to the receiving transition's `_event.data`.
+
+     The parent is `datamodel="ecmascript"` because it has to *read* the
+     payload to judge it; the child is `datamodel="null"` because being
+     engine-less is precisely the property under test. The two cannot be one
+     machine.
+
+     Values are strings on both paths: `<param>` payload marshalling is not
+     the axis here, and a numeric literal would additionally assert how each
+     backend maps number types across the boundary.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="awaitChild"
+       name="send_param_payload">
+
+    <state id="awaitChild">
+        <invoke type="scxml" id="inv_emitter">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="null" initial="emit">
+                    <state id="emit">
+                        <onentry>
+                            <send target="#_parent" event="fromChild">
+                                <param name="value" expr="'42'"/>
+                            </send>
+                        </onentry>
+                        <transition target="sent"/>
+                    </state>
+                    <final id="sent"/>
+                </scxml>
+            </content>
+        </invoke>
+
+        <transition event="fromChild"
+                    cond="_event.data &amp;&amp; _event.data.value === '42'"
+                    target="internalPhase"/>
+        <!-- Same event, no cond: the payload did not arrive intact. -->
+        <transition event="fromChild" target="failChildPayload"/>
+    </state>
+
+    <state id="internalPhase">
+        <onentry>
+            <send target="#_internal" event="loopback">
+                <param name="carried" expr="'kept'"/>
+            </send>
+        </onentry>
+        <transition event="loopback"
+                    cond="_event.data &amp;&amp; _event.data.carried === 'kept'"
+                    target="pass"/>
+        <transition event="loopback" target="failInternalPayload"/>
+    </state>
+
+    <final id="pass"/>
+    <final id="failChildPayload"/>
+    <final id="failInternalPayload"/>
+</scxml>

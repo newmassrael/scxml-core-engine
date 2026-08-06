@@ -13,6 +13,96 @@
 {%- import 'c/scriptengine.jinja2' as se %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+
+{# W3C SCXML 6.2 — build `{["k1"] = v1, ["k2"] = v2}` in `_ed` from a
+   `<send>`'s `<param>` children, as Lua source the receiving side
+   assigns to `_event.data`.
+
+   Shared by the `#_parent` and `#_internal` send paths. They differ only
+   in where `_ed` goes afterwards — the dispatch shim or the raised
+   event's `data` field — so keeping one definition is what stops the two
+   from escaping differently, which is exactly how the `#_parent` site
+   came to be the last one writing names in Lua field position.
+
+   Names go in index position, never field position: a `<param name>` is
+   an arbitrary string (the parser admits `odd"name`), and no escaping
+   turns an arbitrary string into a Lua identifier, so field position is
+   unrepresentable rather than merely unescaped. `escape_lua | escape_c`
+   composes once per boundary — the Lua literal first, then the C literal
+   carrying it. Same contract as the `_pending_donedata["..."]` sites in
+   scriptengine.jinja2.
+
+   A literal value is formatted at codegen time rather than through the
+   runtime formatter, because that formatter needs `sm->L` and a machine
+   whose every expression folds has no Lua state to offer — emitting the
+   call anyway does not degrade, it fails to compile. Whether an engine
+   is needed is a property of the param, not of the machine. `escape_lua`
+   yields the same quoted Lua string `string.format('%q', ...)` would.
+
+   The runtime formatter quotes strings (`%q`-style), serialises
+   numbers/booleans verbatim, and emits `nil` otherwise. Tables and
+   functions are rejected: no W3C corpus fixture forces a nested send
+   param payload, and the first one lifts this to the recursive
+   cpp-`Json::Value::toStyledString` shape.
+
+   Buffer overflow drops the rest of the payload per W3C 6.2 ("if the
+   value of any param cannot be marshalled..."). cpp cancels the message
+   wholesale on serialisation error; C11 stops appending after capacity
+   and still ships the truncated prefix — a stricter cancel-and-raise
+   lands when a fixture forces it.                                        #}
+{% macro lua_table_from_params(params) %}
+                char _ed[SCE_MAX_DATA_LEN];
+                int _ed_len = 0;
+                _ed[_ed_len++] = '{';
+                {% for param in params %}
+                {% if not loop.first %}
+                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
+                {% endif %}
+                {
+                    static const char *_pn = "[\"{{ param.name | escape_lua | escape_c }}\"] = ";
+                    int _pnl = (int)strlen(_pn);
+                    if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
+                        memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
+                        _ed_len += _pnl;
+                    }
+                }
+{% if param.is_static_literal %}
+                {
+                    static const char *_pv = "\"{{ param.static_value | escape_lua | escape_c }}\"";
+                    int _pvl = (int)strlen(_pv);
+                    if (_ed_len + _pvl < (int)SCE_MAX_DATA_LEN - 1) {
+                        memcpy(_ed + _ed_len, _pv, (size_t)_pvl);
+                        _ed_len += _pvl;
+                    }
+                }
+{% else %}
+                if (luaL_dostring(sm->L,
+                    "local _v = ({{ param.expr | to_lua_expr | escape_c }}); "
+                    "if type(_v) == 'string' then return string.format('%q', _v) "
+                    "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
+                    "else return 'nil' end") == 0) {
+                    const char *_v = lua_tostring(sm->L, -1);
+                    if (_v != NULL) {
+                        int _vl = (int)strlen(_v);
+                        if (_ed_len + _vl < (int)SCE_MAX_DATA_LEN - 1) {
+                            memcpy(_ed + _ed_len, _v, (size_t)_vl);
+                            _ed_len += _vl;
+                        }
+                    }
+                    lua_pop(sm->L, 1);
+                } else {
+                    lua_pop(sm->L, 1);
+                    /* Param eval failure: insert `nil` placeholder. */
+                    if (_ed_len + 3 < (int)SCE_MAX_DATA_LEN - 1) {
+                        memcpy(_ed + _ed_len, "nil", 3);
+                        _ed_len += 3;
+                    }
+                }
+{% endif %}
+                {% endfor %}
+                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
+                _ed[_ed_len] = '\0';
+{% endmacro %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 implementation. Module-level form is a comment per
    the same rationale as the header — per-function emission switches
@@ -541,47 +631,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                prefix — a stricter cancel-and-raise lift lands when a
                fixture forces it. */
             if (sm->parent_dispatch != NULL) {
-                char _ed[SCE_MAX_DATA_LEN];
-                int _ed_len = 0;
-                _ed[_ed_len++] = '{';
-                {% for param in action.params %}
-                {% if not loop.first %}
-                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
-                {% endif %}
-                {
-                    static const char *_pn = "[\"{{ param.name | escape_lua | escape_c }}\"] = ";
-                    int _pnl = (int)strlen(_pn);
-                    if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
-                        memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
-                        _ed_len += _pnl;
-                    }
-                }
-                /* Per-param value formatter (number/string/bool → Lua source). */
-                if (luaL_dostring(sm->L,
-                    "local _v = ({{ param.expr | to_lua_expr | escape_c }}); "
-                    "if type(_v) == 'string' then return string.format('%q', _v) "
-                    "elseif type(_v) == 'number' or type(_v) == 'boolean' then return tostring(_v) "
-                    "else return 'nil' end") == 0) {
-                    const char *_v = lua_tostring(sm->L, -1);
-                    if (_v != NULL) {
-                        int _vl = (int)strlen(_v);
-                        if (_ed_len + _vl < (int)SCE_MAX_DATA_LEN - 1) {
-                            memcpy(_ed + _ed_len, _v, (size_t)_vl);
-                            _ed_len += _vl;
-                        }
-                    }
-                    lua_pop(sm->L, 1);
-                } else {
-                    lua_pop(sm->L, 1);
-                    /* Param eval failure: insert `nil` placeholder. */
-                    if (_ed_len + 3 < (int)SCE_MAX_DATA_LEN - 1) {
-                        memcpy(_ed + _ed_len, "nil", 3);
-                        _ed_len += 3;
-                    }
-                }
-                {% endfor %}
-                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
-                _ed[_ed_len] = '\0';
+{{ lua_table_from_params(action.params) }}
                 sm->parent_dispatch(sm->parent_sm, "{{ action.event }}", sm->invoke_id, _ed);
             }
 {% elif action.event and action.target and action.target.startswith('#_') and action.target not in ('#_parent', '#_internal') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
@@ -609,7 +659,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                because the invoke id is known at codegen time). */
             {{ _matching.invoke.child_name }}_raise_external_by_name(&sm->child_{{ _matching.invoke.field_suffix }}, "{{ action.event }}");
 {% endif %}
-{% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
+{% elif action.event and action.target == '#_internal' and not action.eventexpr and not action.delay and not action.delayexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML C.1 (test189): static-event + target="#_internal"
                routes to the internal (high-priority) queue per
                `SendHelper::isInternalTarget` (`sce/include/common/SendHelper.h:88`).
@@ -619,10 +669,29 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                cpp `actions/send.jinja2` lines 598/628/664/694/784/806
                (`isInternalTarget(action.target)` true-branch) — cpp emits
                a runtime if/else around isInternalTarget; C11 inlines the
-               codegen-time decision. */
+               codegen-time decision.
+
+               W3C SCXML 6.2: an internal send carries `<param>` data just
+               as an external one does. `<param>` children used to send
+               this shape to the unenumerated-shape fallback, which raises
+               error.execution — a machine whose author wrote an internal
+               send with params got a runtime error instead of a payload.
+               The table is assembled by the same macro the `#_parent`
+               path uses, so the two cannot escape author text
+               differently. */
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+{% if action.params %}
+            {
+{{ lua_table_from_params(action.params) }}
+                /* Truncating here would ship a table that does not parse,
+                   so the payload is copied only when it fits whole. */
+                if ((size_t)_ed_len < sizeof(_send_evt.data)) {
+                    memcpy(_send_evt.data, _ed, (size_t)_ed_len + 1u);
+                }
+            }
+{% endif %}
             {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
 {% elif action.event and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test189): static-event with no `target` attribute
@@ -3453,6 +3522,30 @@ SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
     default:
         break;
     }
+    /* W3C SCXML 6.2 / 6.4 (test233): hydrate `_event.data` from the
+       payload the event itself carried. The per-enum chunk above binds
+       `_event.data = _pending_donedata`, which is the right shape when
+       the payload was staged in that slot by a same-SM `<send>` /
+       `<raise>` / HTTP response (test176/179/519). It is not the right
+       shape when the payload rode on the event's own `data` field: a
+       cross-SM `parent_dispatch`, or an internal `<send>` with `<param>`
+       children. Those carry a Lua table literal, so load it as a return
+       expression and override.
+
+       This sits inside `set_current_event` rather than beside one call
+       site because every dequeue must apply the same rule. It lived in
+       the external drain alone, and the internal drain — reached by
+       exactly the `<send target="#_internal">` params path — silently
+       kept `_pending_donedata`, which is nil there. Same defect class as
+       the sibling emission blocks: one path learned the rule and its
+       siblings did not. cpp's equivalent is `EventWithMetadata.data`
+       set in `Event::setData`, surfaced via `LuaEngine::setCurrentEvent`
+       (LuaEngine.cpp:1138-1159), which is likewise per-dequeue. */
+    if (evt->data[0] != '\0') {
+        char _setbuf[SCE_MAX_DATA_LEN + 64];
+        (void)snprintf(_setbuf, sizeof(_setbuf), "_event.data = (%s)", evt->data);
+        (void)luaL_dostring(L, _setbuf);
+    }
 }
 {% endif %}
 
@@ -3617,28 +3710,10 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
                             "_pending_event_origin = _sessionid; "
                             "_pending_event_origintype = "
                               "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'");
+        /* `_event.data` hydration from `evt.data` now happens inside
+           `set_current_event`, so the internal drain gets the same rule
+           this site used to hold alone. */
         set_current_event(sm->L, &evt);
-        /* W3C SCXML 6.4 (test233): hydrate `_event.data` from the
-           cross-SM payload string the child shipped via parent_dispatch's
-           `event_data` arg. The string is a Lua table literal (e.g.
-           `{aParam = 2}`); load it as a return expression and override
-           `_event.data` with the cross-SM payload. set_current_event
-           above already established `_event.data = _pending_donedata`
-           per-event-enum case (correct shape for same-SM `<send>` /
-           `<raise>` / HTTP-response paths that pre-populate the
-           `_pending_donedata` slot — test176/179/519/etc); the override
-           below only fires for the cross-SM case where the receiver's
-           `_pending_donedata` is locally nil and the payload arrived on
-           the dequeued event's `data` field instead. cpp's equivalent
-           is `EventWithMetadata.data` member set in `Event::setData`
-           and surfaced via `LuaEngine::setCurrentEvent`
-           (LuaEngine.cpp:1138-1159). */
-        if (evt.data[0] != '\0') {
-            char _setbuf[SCE_MAX_DATA_LEN + 64];
-            (void)snprintf(_setbuf, sizeof(_setbuf),
-                "_event.data = (%s)", evt.data);
-            (void)luaL_dostring(sm->L, _setbuf);
-        }
         {% endif %}
 
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {

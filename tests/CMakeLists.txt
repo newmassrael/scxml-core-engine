@@ -492,6 +492,8 @@ add_executable(integration_tests
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
     integration/NestedFinalNotTerminalAotTest.cpp
+    integration/SendParamPayloadTest.cpp
+    integration/SendParamPayloadAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -840,6 +842,15 @@ sce_generate_static_integration_test(nested_final_not_terminal ${STATIC_INTEGRAT
 # event first and reaches `<final>` two macrosteps in.
 sce_generate_static_integration_test(donedata_late_completion ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_late
+)
+
+# W3C SCXML 6.2: a `<send>` carries its `<param>` payload on both the paths
+# that had no runtime witness — from a `datamodel="null"` child (which needs
+# no script engine, so param emission must be judged per send rather than per
+# machine) and to `#_internal` (whose raise used to take no event data). The
+# two land in distinct final states so a failure names the path.
+sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_emitter
 )
 
 # Wire the integration headers + include path into the integration_tests
