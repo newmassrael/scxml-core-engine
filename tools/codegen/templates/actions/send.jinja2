@@ -135,7 +135,7 @@ return;
 {% endif %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-    params["{{ param.name }}"].push_back("{{ param.static_value }}");
+    params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
     {
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
@@ -213,7 +213,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
 {% for param in action.params %}
 {% if param.is_static_literal %}
     // W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
-    params["{{ param.name }}"].push_back("{{ param.static_value }}");
+    params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
     // W3C SCXML 5.10: Dynamic param expr evaluation
     {
@@ -372,7 +372,7 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     std::map<std::string, std::vector<std::string>> httpParams;
 {% for param in action.params %}
 {% if param.is_static_literal %}
-    httpParams["{{ param.name }}"].push_back("{{ param.static_value }}");
+    httpParams["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
     {
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
@@ -420,7 +420,7 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 {
     std::map<std::string, std::vector<std::string>> httpParams;
 {% for param in action.params %}
-    httpParams["{{ param.name }}"].push_back("{{ param.static_value }}");
+    httpParams["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% endfor %}
     engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "", httpParams, sendId);
 }
@@ -514,7 +514,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
     // author's `expr` is never pasted into C++ here — a quoted SCXML
     // literal is not a C++ expression, and the sibling param blocks in
     // this file read `static_value` for the same reason.
-    params["{{ param.name }}"].push_back("{{ param.static_value }}");
+    params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
 #error "SCE codegen drift: <send> param '{{ param.name }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
 {% endif %}
@@ -589,7 +589,7 @@ std::map<std::string, ScriptValue> typedParams;
 // W3C SCXML Appendix B.2: static string literal — see the delayed-send
 // counterpart above for why this reads `static_value` instead of pasting
 // the author's `expr` into C++.
-params["{{ param.name }}"].push_back("{{ param.static_value }}");
+params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
 #error "SCE codegen drift: <send> param '{{ param.name }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
 {% endif %}

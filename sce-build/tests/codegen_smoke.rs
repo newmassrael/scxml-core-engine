@@ -45,6 +45,7 @@ const FIXTURES: &[&str] = &[
     "invoke_inline_content",
     "parallel_final",
     "sce_annotations",
+    "send_param_adversarial_literals",
 ];
 
 /// Path to the `sce-codegen` binary built for this integration test.

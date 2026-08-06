@@ -76,6 +76,14 @@ schemars = "0.8"
 # emit paths never validate, only produce.
 jsonschema = { version = "0.18", default-features = false }
 syn = { version = "2", features = ["parsing", "full"] }
+# Lua 5.4 — the very interpreter the Rust and Go backends emit for. Those
+# backends embed a Lua table constructor inside a host string literal, so
+# an author value crosses two literal boundaries and a host-only escape
+# yields source that compiles and Lua that does not parse. The
+# `author_literal_boundaries` gate hands the emitted table to this parser
+# instead of re-implementing one, so the check cannot drift from the
+# grammar it is asserting about. Dev-only: codegen never links Lua.
+mlua = { workspace = true }
 # Sandboxed directories for XInclude expansion tests. Lets each
 # `#[test]` build a transient file tree without touching the crate's
 # own files (avoids race conditions under `cargo test -- --test-threads`).

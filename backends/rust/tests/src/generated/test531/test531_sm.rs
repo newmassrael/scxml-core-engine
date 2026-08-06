@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 68681672197f6dd374cca8d9d5846bb9f25c1cd0277222ecf9f6bf02adbac43e
+// template-hash: dbfa9cca1428438cf4178bb8fcf463f9b9d0c7c649f4bf0e0f3de90abcfd2a47
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -588,7 +588,12 @@ impl StatePolicy for Test531Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time
+                        // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time.
+                        // The author name/value cross two literal boundaries — the Lua table
+                        // constructor this line assembles, then the Rust string literal that
+                        // carries it — so each is escaped once per boundary
+                        // (`escape_lua | escape_rust`). Applying only the host filter produces
+                        // Rust source that compiles and Lua source that does not parse.
                         let event_data: &str = "{ [\"_scxmleventname\"]=\"test\" }";
 
                         // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")

@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: <send> with static <param> literals whose
+  author values contain the characters that terminate or re-open a
+  string literal.
+
+  The existing param fixture (final_top_params.scxml) uses safe values,
+  so every backend's param emission looked correct while pasting author
+  text straight into a literal. A double quote in the value closed the
+  emitted C++ string mid-token; a backslash silently changed the value.
+
+  `datamodel="null"` keeps every param on the *static* branch — the
+  codegen-time paste — rather than the runtime-evaluation branch. That
+  is the branch that interpolates author text into generated source.
+
+  The values are also the fixture for `author_literal_boundaries.rs`,
+  which checks the *value* survives rather than the source parsing:
+  the Rust and Go backends wrap this table in a Lua table constructor
+  inside a host string literal, so a value crossing two literal
+  boundaries compiles cleanly while the Lua it carries does not parse.
+  Keep the param set there and here in step — that gate asserts the key
+  sets match exactly.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null"
+       name="send_param_adversarial_literals" initial="s0">
+  <state id="s0">
+    <onentry>
+      <send event="probe" target="#_internal">
+        <!-- Closes the emitted host string literal mid-token. -->
+        <param name="dquote" expr="'a&quot;b'"/>
+        <!-- `\d` is an unknown escape: a warning, not an error, and the
+             backslash vanishes from the value. -->
+        <param name="backslash" expr="'c\d'"/>
+        <!-- Backslash immediately before a quote: escaping only one of
+             the two leaves the literal unbalanced. -->
+        <param name="both" expr="'e\&quot;f'"/>
+        <!-- Terminates the Lua table constructor the Rust/Go backends
+             assemble around these params. -->
+        <param name="luaclose" expr="'g&quot;}h'"/>
+        <param name="tab" expr="'i&#9;j'"/>
+        <!-- A raw newline is illegal inside a Lua short literal, so this
+             one must be escaped rather than merely quoted. -->
+        <param name="newline" expr="'k&#10;l'"/>
+        <!-- The name slot is interpolated into the same literal as the
+             value, and the parser does admit a quote here. -->
+        <param name="odd&quot;name" expr="'plain'"/>
+      </send>
+    </onentry>
+    <transition event="probe" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

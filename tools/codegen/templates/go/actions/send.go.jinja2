@@ -80,8 +80,14 @@
 		_ = eventDataStr
 {% elif has_params %}
 	{
-		// W3C SCXML B.2: All params are static literals
-		eventDataStr := "{ {% for param in action.params %}[\"{{ param.name | escape_go }}\"]=\"{{ param.static_value | escape_go }}\"{% if not loop.last %},{% endif %}{% endfor %} }"
+		// W3C SCXML B.2: All params are static literals.
+		// The author name/value cross two literal boundaries — the Lua
+		// table constructor this line assembles, then the Go string
+		// literal that carries it — so each is escaped once per
+		// boundary (`escape_lua | escape_go`). Applying only the host
+		// filter produces Go source that compiles and Lua source that
+		// does not parse.
+		eventDataStr := "{ {% for param in action.params %}[\"{{ param.name | escape_lua | escape_go }}\"]=\"{{ param.static_value | escape_lua | escape_go }}\"{% if not loop.last %},{% endif %}{% endfor %} }"
 		_ = eventDataStr
 {% elif action.content %}
 	{
