@@ -413,7 +413,7 @@
                     auto& scriptEngine = getScriptEngine();
                     std::vector<std::pair<std::string, std::string>> params = {
 {% for param in state.donedata.params %}
-                        {"{{ param.name | escape_cpp }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
+                        {"{{ param.name | escape_cpp }}", "{{ (param.location if param.location else param.expr) | escape_cpp }}"}{{ "," if not loop.last }}
 {% endfor %}
                     };
 

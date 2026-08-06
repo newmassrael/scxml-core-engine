@@ -45,6 +45,7 @@ const FIXTURES: &[&str] = &[
     "invoke_inline_content",
     "parallel_final",
     "sce_annotations",
+    "donedata_adversarial_literals",
     "send_param_adversarial_literals",
     "send_param_adversarial_literals_scripted",
 ];

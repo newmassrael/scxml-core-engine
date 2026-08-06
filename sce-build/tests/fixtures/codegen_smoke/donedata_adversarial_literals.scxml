@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: `<donedata>` params carrying the characters
+  that terminate or re-open a literal.
+
+  Distinct from the `<send>` fixtures because the C11 backend lowers
+  donedata through a *different* mechanism: it builds Lua source
+  (`_pending_donedata[...] = (...)`) and embeds it in a C string
+  literal. That puts the param name in Lua index position inside a C
+  literal — two boundaries, and until this fixture existed neither was
+  exercised with a name that needs escaping.
+
+  The failure modes are asymmetric and that is the point: an unescaped
+  quote breaks the C literal, which a compiler catches; escaping only
+  for C leaves Lua source that no compiler ever sees. Hence both this
+  fixture (compile) and `author_literal_boundaries` (Lua parse).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript"
+       name="donedata_adversarial_literals" initial="s0">
+  <datamodel>
+    <data id="live" expr="1"/>
+  </datamodel>
+  <state id="s0"><transition target="done"/></state>
+  <final id="done">
+    <donedata>
+      <param name="dd_dquote" expr="'a&quot;b'"/>
+      <param name="dd_backslash" expr="'c\d'"/>
+      <param name="dd_both" expr="'e\&quot;f'"/>
+      <param name="dd_luaclose" expr="'g&quot;}h'"/>
+      <param name="dd_tab" expr="'i&#9;j'"/>
+      <param name="dd_newline" expr="'k&#10;l'"/>
+      <!-- a quote inside the name slot, which lands in Lua index position -->
+      <param name="dd_odd&quot;name" expr="'plain'"/>
+      <!-- a location-sourced param takes a different lowering path in the
+           C11 backend than an expr-sourced one -->
+      <param name="dd_loc&quot;name" location="live"/>
+    </donedata>
+  </final>
+</scxml>
