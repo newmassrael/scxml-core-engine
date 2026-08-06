@@ -42,11 +42,12 @@
 // found is checked, and `MIN_CHECKS_PER_BACKEND` keeps a site that stops
 // being emitted from silently reducing coverage.
 //
-// Backends deliberately absent, each measured rather than assumed:
-//   c11    — pastes param names into Lua *identifier* position
-//            (`_pending_donedata.<name>`), which no escaping fixes; it
-//            needs index syntax. Tracked separately; its compile break
-//            is caught by `codegen_smoke`.
+// Backends absent from the *value* gate, each measured rather than
+// assumed:
+//   c11    — never pastes a static value; it assembles Lua source whose
+//            values are evaluated at runtime, so there is no authored
+//            value to compare. Its param *names* are covered by the
+//            second test in this file.
 //   python — already correct, and the reference the others were brought
 //            up to: `py_string_literal` is applied at every param slot,
 //            name and value alike, and the emitted module compiles.
@@ -549,29 +550,71 @@ fn author_param_literals_survive_every_boundary() {
 // because the host source still compiles and the Lua it carries is never
 // handed to a compiler. Only parsing that Lua catches it.
 //
-// Coverage, measured per site by mutating each one individually:
-//   rust / go                       — covered
-//   c11 static-expr path            — covered, including a regression
-//                                     back to field syntax
-//   c11 dynamic path (`= _v;` and
-//   its `= '';` fallback)           — NOT covered. Neither an expr- nor a
-//     location-sourced donedata param reaches it, so the shape that does
-//     is still unidentified. The escaping there is fixed but unguarded;
-//     do not read this gate as proof of it.
-
-/// Backends assembling Lua source for `<donedata>`, with the marker that
-/// identifies the line and the number of param names each must yield.
-const DONEDATA_LUA_BACKENDS: &[(Language, &str, &str, usize)] = &[
-    (Language::Rust, "rust", "let mut part = String::from(", 7),
-    (Language::Go, "go", "jsonParts = append(jsonParts,", 7),
-    (Language::C11, "c11", "_pending_donedata[", 7),
-];
+// Coverage, measured per site by mutating each one individually — all
+// five Lua-assembling sites go red: rust donedata, go donedata, and all
+// three C11 macros (donedata static-expr, send dynamic-param, and that
+// one's empty-string error fallback). The C11 rows also go red when
+// reverted to field syntax, which is the regression guard for the defect
+// that motivated the index-syntax rewrite.
+//
+// Two things had to be true before that held, and neither was obvious:
+//
+//   count occurrences, not distinct names — C11 writes the same key from
+//     two lines (`= _v;` and its `= '';` fallback). Deduplicating let an
+//     intact line vouch for a mutated sibling.
+//
+//   check both directions — asserting only that every authored name
+//     appears misses the case that matters, because a truncated name is
+//     an *extra* key, not a missing one. An unescaped quote cut
+//     `delay_odd"name` down to `delay_odd` while the correct spelling
+//     still arrived from the other line, and presence-only checking
+//     stayed green.
 
 /// Fixture whose `<donedata>` params carry literal-breaking names.
 const DONEDATA_FIXTURE: &str = "donedata_adversarial_literals";
 
-/// Param-name prefix used by that fixture.
-const DONEDATA_PREFIX: &str = "dd_";
+/// Sites that assemble Lua source inside a host literal, as
+/// `(language, label, fixture, line marker, param-name prefix, floor)`.
+///
+/// The C11 backend appears twice because two different macros write to
+/// the same Lua table: one lowers `<donedata>` params, the other lowers a
+/// `<send>` param whose expression is evaluated at runtime. They share a
+/// marker but not a call path, so covering one proves nothing about the
+/// other — the send one sat unguarded until its row was added here.
+const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
+    (
+        Language::Rust,
+        "rust/donedata",
+        DONEDATA_FIXTURE,
+        "let mut part = String::from(",
+        "dd_",
+        7,
+    ),
+    (
+        Language::Go,
+        "go/donedata",
+        DONEDATA_FIXTURE,
+        "jsonParts = append(jsonParts,",
+        "dd_",
+        7,
+    ),
+    (
+        Language::C11,
+        "c11/donedata",
+        DONEDATA_FIXTURE,
+        "_pending_donedata[",
+        "dd_",
+        7,
+    ),
+    (
+        Language::C11,
+        "c11/send-dynamic-param",
+        "send_param_adversarial_literals_scripted",
+        "_pending_donedata[",
+        "delay_",
+        14,
+    ),
+];
 
 /// Pull `["<key>"]` keys out of Lua source embedded in host literals on
 /// lines carrying `marker`, evaluating each key with the real Lua parser.
@@ -623,30 +666,46 @@ fn extract_lua_keys(source: &str, marker: &str) -> (Vec<String>, Vec<String>) {
 /// Every `<donedata>` param name must arrive at the Lua layer intact.
 #[test]
 fn donedata_param_names_survive_the_embedded_lua_boundary() {
-    let expected: Vec<String> = VALUES
-        .iter()
-        .map(|(suffix, _)| format!("{DONEDATA_PREFIX}{suffix}"))
-        .collect();
-
     let mut violations: Vec<String> = Vec::new();
 
-    for (lang, name, marker, floor) in DONEDATA_LUA_BACKENDS {
-        let source = generate(*lang, DONEDATA_FIXTURE);
+    for (lang, name, fixture, marker, prefix, floor) in LUA_KEY_SITES {
+        let expected: Vec<String> = VALUES
+            .iter()
+            .map(|(suffix, _)| format!("{prefix}{suffix}"))
+            .collect();
+
+        let source = generate(*lang, fixture);
         let (keys, errors) = extract_lua_keys(&source, marker);
         violations.extend(errors.into_iter().map(|why| format!("{name}: {why}")));
 
-        let authored: BTreeMap<&String, ()> = keys
-            .iter()
-            .filter(|k| k.starts_with(DONEDATA_PREFIX))
-            .map(|k| (k, ()))
-            .collect();
+        // Occurrences, not distinct names: a backend can write the same
+        // key from more than one line (C11's `= _v;` and its `= '';`
+        // error fallback both do). Deduplicating lets one intact line
+        // vouch for a broken sibling — measured, after a mutation to a
+        // single line left this gate green.
+        let authored: Vec<&String> = keys.iter().filter(|k| k.starts_with(*prefix)).collect();
+        let distinct: BTreeMap<&String, ()> = authored.iter().map(|k| (*k, ())).collect();
 
         for want in &expected {
-            if !authored.contains_key(want) {
+            if !distinct.contains_key(want) {
                 violations.push(format!(
-                    "{name}: donedata param {want:?} did not survive to the Lua layer\n  \
+                    "{name}: param {want:?} did not survive to the Lua layer\n  \
                      names that did: {:?}",
-                    authored.keys().collect::<Vec<_>>(),
+                    distinct.keys().collect::<Vec<_>>(),
+                ));
+            }
+        }
+
+        // The converse, and the half that matters more: a name the author
+        // never wrote means a name was truncated on its way here. Checking
+        // only for presence lets a correct line vouch for a broken one —
+        // an unescaped quote cut `delay_odd"name` down to `delay_odd`,
+        // both keys were emitted, and presence-only checking stayed green.
+        for got in distinct.keys() {
+            if !expected.contains(got) {
+                violations.push(format!(
+                    "{name}: emitted param name {got:?} is not one the fixture wrote — \
+                     an unescaped character truncated it\n  authored: {expected:?}",
                 ));
             }
         }
@@ -656,8 +715,8 @@ fn donedata_param_names_survive_the_embedded_lua_boundary() {
         // backend.
         if authored.len() < *floor {
             violations.push(format!(
-                "{name}: recovered {} donedata names, floor {floor} — the paste site \
-                 moved or stopped emitting",
+                "{name}: recovered {} param-name occurrences, floor {floor} — a paste \
+                 site moved or stopped emitting",
                 authored.len(),
             ));
         }
