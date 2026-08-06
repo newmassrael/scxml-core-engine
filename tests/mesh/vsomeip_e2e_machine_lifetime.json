@@ -1,0 +1,26 @@
+{
+  "network": "sce_someip_ml_unsub",
+  "unicast": "127.0.0.1",
+  "routing": "ml_unsub_harness",
+  "applications": [
+    { "name": "brake_someip_machine_lifetime_app", "id": "0x5555" },
+    { "name": "ml_unsub_harness", "id": "0x6666" }
+  ],
+  "services": [
+    {
+      "name": "motor_control",
+      "service": "0x3100",
+      "instance": "0x0007",
+      "eventgroups": [
+        {
+          "name": "speed_group",
+          "eventgroup": "0x0021",
+          "events": ["0x8042"]
+        }
+      ]
+    }
+  ],
+  "service-discovery": {
+    "enable": "false"
+  }
+}
