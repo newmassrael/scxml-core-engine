@@ -63,6 +63,7 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_lua_expr", to_lua_expr);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
+    env.add_filter("escape_lua", escape_lua);
     // Cross-engine compatibility filters (replace Python-specific string methods)
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
@@ -563,6 +564,7 @@ pub fn register_go_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_lua_expr", to_lua_expr);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
+    env.add_filter("escape_lua", escape_lua);
     // Cross-engine compatibility filters
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
@@ -694,6 +696,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_lua_expr", to_lua_expr);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
+    env.add_filter("escape_lua", escape_lua);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("read_data_src", read_data_src);
@@ -711,6 +714,35 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
 /// Escape C string literals (identical escaping rules to Rust/C++).
 fn escape_c(text: String) -> String {
     escape_rust(text)
+}
+
+/// Escape characters for embedding inside a Lua short string literal
+/// (Lua 5.4 §3.1). Only the inner escapes are produced — the surrounding
+/// `"..."` quotes belong to the Lua source the template assembles.
+///
+/// This is a *different layer* from `escape_rust` / `escape_go` /
+/// `escape_c` even though the rule sets coincide. Those escape a value
+/// into the host language's literal; this one escapes a value into the
+/// Lua source that the host literal *carries*. The Rust/Go `<send>`
+/// backends embed a Lua table constructor
+/// (`{ ["name"]="value" }`) inside a host string literal and hand it to
+/// the script engine, so an author value reaching that site crosses two
+/// literal boundaries and must be escaped once per boundary:
+/// `static_value | escape_lua | escape_rust`. Applying only the host
+/// filter yields host source that compiles but Lua source that does not
+/// parse — the same composed shape `escape_json_string | escape_c`
+/// already uses for the C11 JSON wire form.
+///
+/// The replace order is fixed: backslash first so the `\` introduced by
+/// the subsequent escapes is not double-escaped. A raw newline is
+/// illegal inside a Lua short literal, so `\n`/`\r` are mandatory rather
+/// than cosmetic.
+pub fn escape_lua(text: String) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 /// Escape characters for embedding inside a JSON string literal (RFC 8259 §7).
