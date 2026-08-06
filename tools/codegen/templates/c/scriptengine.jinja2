@@ -843,7 +843,7 @@
           "if _base and not _scxml_declared[_base] and rawget(_G, _base) == nil then "
             "error('ReferenceError: ' .. _base .. ' is not defined') "
           "end; "
-          "_pending_donedata.{{ param_name }} = ({{ chosen_expr | to_lua_expr | escape_c }}) "
+          "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ({{ chosen_expr | to_lua_expr | escape_c }}) "
         "end") != 0) {
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
@@ -1039,12 +1039,12 @@
 {% macro lua_eval_send_param_expr(param_name, expr) %}
     if (luaL_dostring(sm->L,
         "do local _v = ({{ expr | to_lua_expr | escape_c }}); "
-        "_pending_donedata.{{ param_name }} = _v; "
-        "table.insert(_sce_send_data_pairs, {'{{ param_name }}', _v}) end") != 0) {
+        "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = _v; "
+        "table.insert(_sce_send_data_pairs, {\"{{ param_name | escape_lua | escape_c }}\", _v}) end") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L,
-            "_pending_donedata.{{ param_name }} = ''; "
-            "table.insert(_sce_send_data_pairs, {'{{ param_name }}', ''})");
+            "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ''; "
+            "table.insert(_sce_send_data_pairs, {\"{{ param_name | escape_lua | escape_c }}\", ''})");
     }
 {% endmacro %}
 

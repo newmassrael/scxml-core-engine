@@ -159,7 +159,7 @@
 {% else %}
                     match se.evaluate_expression(&sid, "{{ param_expr | to_lua_expr | escape_rust }}") {
                         Ok(val) => {
-                            let mut part = String::from("[\"{{ param.name }}\"] = ");
+                            let mut part = String::from("[\"{{ param.name | escape_lua | escape_rust }}\"] = ");
                             part.push_str(&val.to_lua_literal());
                             json_parts.push(part);
                         }
