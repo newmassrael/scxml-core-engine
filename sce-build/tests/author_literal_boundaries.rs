@@ -211,7 +211,7 @@ const PASTE_BACKENDS: &[Backend] = &[
 /// below its floor and fails, which is the only thing standing between
 /// "the gate is green" and "the gate read nothing".
 const MIN_CHECKS_PER_BACKEND: &[(&str, usize)] =
-    &[("cpp", 56), ("rust", 119), ("go", 119), ("kotlin", 63)];
+    &[("cpp", 56), ("rust", 119), ("go", 119), ("kotlin", 84)];
 
 fn fixture_path(stem: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
