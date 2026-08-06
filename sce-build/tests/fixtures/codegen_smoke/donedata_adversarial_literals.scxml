@@ -32,9 +32,13 @@
       <param name="dd_newline" expr="'k&#10;l'"/>
       <!-- a quote inside the name slot, which lands in Lua index position -->
       <param name="dd_odd&quot;name" expr="'plain'"/>
-      <!-- a location-sourced param takes a different lowering path in the
-           C11 backend than an expr-sourced one -->
-      <param name="dd_loc&quot;name" location="live"/>
+      <!-- A location-sourced param takes a different lowering path than an
+           expr-sourced one, so it stays in the fixture for the compile
+           gate. Its name is deliberately outside the `dd_` prefix the
+           value gate matches on: both paths run the same name-escaping
+           loop, so checking the name once (above) is enough, and a second
+           spelling would only have to be kept in step by hand. -->
+      <param name="locsourced&quot;name" location="live"/>
     </donedata>
   </final>
 </scxml>
