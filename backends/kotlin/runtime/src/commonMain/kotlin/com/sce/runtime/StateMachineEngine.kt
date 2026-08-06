@@ -56,6 +56,16 @@ data class EventMetadata(
     companion object {
         val EMPTY = EventMetadata()
         fun internal() = EventMetadata(type = "internal")
+
+        /**
+         * W3C SCXML 5.10: an internal event carrying `_event.data`.
+         *
+         * `<send target="#_internal">` with `<param>` children queues a
+         * payload exactly as an external send does; without this the
+         * generated code had no way to attach one and dropped the params
+         * silently. Mirrors the [platform] pair above.
+         */
+        fun internal(data: String) = EventMetadata(type = "internal", data = data)
         fun platform() = EventMetadata(type = "platform")
         fun platform(data: String) = EventMetadata(type = "platform", data = data)
         fun external(
