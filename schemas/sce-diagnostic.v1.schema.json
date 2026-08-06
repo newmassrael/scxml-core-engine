@@ -238,6 +238,7 @@
         "mesh/deploy-pool-missing-member-list",
         "mesh/deploy-pool-empty-member-list",
         "mesh/deploy-pool-binding-field-not-supported",
+        "mesh/deploy-pool-dispatch-without-member",
         "mesh/deploy-pool-invalid-placeholder",
         "mesh/deploy-server-pool-not-supported",
         "mesh/deploy-cross-target-reply-not-supported",

@@ -5701,6 +5701,51 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
                     realised_transports: crate::mesh::transport::pool_alternatives(),
                 });
             }
+            // A pool reads its member from a `<param>` on the `<send>` /
+            // `<invoke>` that triggered the dispatch. Two deploy.yaml
+            // features dispatch on this binding with no such trigger to
+            // read, so each would silently address a member the author
+            // never named — the same class of silent-success the sibling
+            // pool diagnostics exist to prevent.
+            //
+            // `outbound_buffer:` gates on ONE readiness signal per
+            // binding (a SOME/IP (service, instance) availability
+            // handler, a Zenoh publisher's matching status) while a pool
+            // has one address per member. Asked of the registry rather
+            // than as `transport in ("someip", "zenoh")`: whether a
+            // transport is buffered at all is the registry's answer, and
+            // the template's emission loop reads the same flag.
+            if machine.outbound_buffer.is_some() && descriptor.buffers_outbound {
+                return Err(DeployError::PoolDispatchWithoutMember {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                    feature: "outbound_buffer".to_string(),
+                    reason: "the buffer holds sends until ONE readiness signal for this \
+                             binding fires, and a pool has one address per member"
+                        .to_string(),
+                });
+            }
+            // A machine-lifetime subscription is issued at `init()` from
+            // an envelope the router builds itself, so there is no
+            // `<param>` on it and no member to resolve. Matched against
+            // this binding's own key: a pool binding on `#a` says nothing
+            // about a subscription whose source is a non-pool `#b`.
+            if machine
+                .subscriptions
+                .iter()
+                .any(|s| s.source == binding_key.as_str())
+            {
+                return Err(DeployError::PoolDispatchWithoutMember {
+                    machine: machine_name.to_string(),
+                    binding: binding_key.as_str().to_string(),
+                    transport: binding.transport.clone(),
+                    feature: "subscriptions".to_string(),
+                    reason: "the subscribe is issued at init() from a router-built envelope \
+                             that carries no <param>, so no member can be resolved"
+                        .to_string(),
+                });
+            }
             // Bounded-pool requirement: the selecting mechanism and the
             // member enumeration go together. Both halves are read from
             // the registry — the shape decides *whether* a list is
@@ -9399,6 +9444,155 @@ topology:
             }
             other => panic!("expected PoolBindingFieldNotSupported, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn pool_with_outbound_buffer_rejected() {
+        // §14.4 + §10.10. Before this gate the pair parsed and codegen
+        // emitted `declare_publisher(zenoh::KeyExpr("sce/player/{id}"))`
+        // — a publisher pinned to the UNSUBSTITUTED address, whose
+        // matching status therefore never fires, so every send buffered
+        // until it aged out. The author sees two features that both
+        // parsed.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#player":
+            transport: zenoh
+            key: "sce/player/{id}"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolDispatchWithoutMember {
+                binding,
+                transport,
+                feature,
+                ..
+            }) => {
+                assert_eq!(binding, "#player");
+                assert_eq!(transport, "zenoh");
+                assert_eq!(feature, "outbound_buffer");
+            }
+            other => panic!("expected PoolDispatchWithoutMember, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pool_on_unbuffered_transport_keeps_outbound_buffer() {
+        // The gate is registry-driven, not "any pool anywhere on the
+        // machine". DDS declares `buffers_outbound: false` — the
+        // template emits no buffer members for it — so a DDS pool
+        // alongside a buffered SOME/IP binding is a deployment the
+        // generator can honour in full, and rejecting it would lock out
+        // a legal topology to make the diagnostic simpler.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 42
+      someip:
+        config: vsomeip.json
+        application_name: brake_app
+    machines:
+      brake:
+        source: brake.scxml
+        outbound_buffer:
+          max_pending_per_target: 8
+        bindings:
+          "#sensor":
+            transport: dds
+            topic: "SceSensors/{corner}/Data"
+            members: [front_left, rear]
+          "#motor":
+            transport: someip
+            service: motor_service
+            method: activate
+"##;
+        assert!(
+            parse_deploy_str(yaml).is_ok(),
+            "a pool on a transport the buffer does not instrument must stay legal"
+        );
+    }
+
+    #[test]
+    fn pool_with_machine_lifetime_subscription_rejected() {
+        // A pool binding named as the source of a machine-lifetime
+        // subscription. The init()-time subscribe is built by the
+        // router, not by an author `<send>`, so it carries no `<param>`
+        // and no member can be resolved. Before this gate it reached
+        // `route_send` with the unresolved binding address and attached
+        // a reader to it.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: zenoh
+            key: "sce/player/{id}"
+        subscriptions:
+          - event: event.notification.status
+            source: "#player"
+"##;
+        match parse_deploy_str(yaml) {
+            Err(DeployError::PoolDispatchWithoutMember {
+                binding, feature, ..
+            }) => {
+                assert_eq!(binding, "#player");
+                assert_eq!(feature, "subscriptions");
+            }
+            other => panic!("expected PoolDispatchWithoutMember, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subscription_on_a_sibling_binding_leaves_the_pool_alone() {
+        // The subscription conflict is matched per binding, not per
+        // machine: a pool on `#player` says nothing about a subscription
+        // whose source is the non-pool `#chassis`. A machine-wide test
+        // would reject this, which is a legal deployment.
+        let yaml = r##"
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#player":
+            transport: zenoh
+            key: "sce/player/{id}"
+          "#chassis":
+            transport: zenoh
+            key: "sce/chassis/state"
+        subscriptions:
+          - event: event.notification.status
+            source: "#chassis"
+"##;
+        assert!(
+            parse_deploy_str(yaml).is_ok(),
+            "a subscription on a sibling non-pool binding must stay legal"
+        );
     }
 
     #[test]

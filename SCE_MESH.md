@@ -1201,15 +1201,15 @@ on the wire at all (CAN broadcast has no such notion), which is a different
 question from whether the transport *supplies* ordering.
 
 <!-- BEGIN transport-capability-matrix (generated from the registry) -->
-| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | Multi-inst server | Inter-partition IPC | Cross-target reply | Server deadline |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `local` | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | yes | Unsupported |
-| `shm` | yes | F | — | yes | yes | yes | None | None | no | no | yes | no | Unsupported |
-| `custom_tcp` | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | yes | no | ActiveError |
-| `someip` | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | no | yes | ActiveError |
-| `zenoh` | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | no | no | no | DropSilently |
-| `dds` | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | ActiveError |
-| `can` | no | FA | — | no | no | no | None | None | no | no | no | no | Unsupported |
+| Transport | Impl | Patterns | Required fields | Dedup | Ordering | Order-repr | Pool shape | Pool member | §13 subscribe | §10.10 buffer | Multi-inst server | Inter-partition IPC | Cross-target reply | Server deadline |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `local` | yes | RFPA | — | yes | yes | yes | None | None | no | no | no | no | yes | Unsupported |
+| `shm` | yes | F | — | yes | yes | yes | None | None | no | no | no | yes | no | Unsupported |
+| `custom_tcp` | yes | RFPA | `connect:` | yes | yes | yes | None | None | yes | no | no | yes | no | ActiveError |
+| `someip` | yes | RFPA | — | no | no | yes | Bounded | TypedInstanceId | yes | yes | yes | no | yes | ActiveError |
+| `zenoh` | yes | RFPA | `key:` | no | no | yes | Open | StringSegment | yes | yes | no | no | no | DropSilently |
+| `dds` | yes | RFPA | `topic:` | no | no | yes | Bounded | StringSegment | yes | no | no | no | no | ActiveError |
+| `can` | no | FA | — | no | no | no | None | None | no | no | no | no | no | Unsupported |
 <!-- END transport-capability-matrix -->
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch. The same holds for every other column: a deploy.yaml asking for something the row does not offer is rejected at parse or codegen time, never silently degraded.
@@ -3002,6 +3002,13 @@ All three mechanisms converge on "binding references a `<param>` name". Zenoh an
 **Carrier mismatch is a parse-time reject.** Writing one carrier's syntax on the other carrier's transport — `instances:` on Zenoh or DDS, `members:` on SOME/IP, `instance_from:` on a string-segment transport — is rejected with `mesh/deploy-pool-binding-field-not-supported`, whose message names the syntax that transport does read. The rejection exists because the alternative is silence: the key parses, is stored on the binding, and reaches no consumer, so the author ships believing the pool took effect.
 
 **Bounded client pool schema.** A bounded pool must enumerate its members, through the key its carrier reads: `instances: [<int>, ...]` on SOME/IP (paired with `instance_from:`), `members: [<string>, ...]` on DDS (paired with the `{name}` embed in `topic:`). Missing list is `mesh/deploy-pool-missing-member-list`, whose message names the key the transport expects; empty list is `mesh/deploy-pool-empty-member-list`. The runtime send path validates the resolved placeholder is a member of the declared set before dispatch — SOME/IP before `message->set_instance`, DDS before selecting the member's pre-built `Dds::Client`; out-of-range values raise `error.execution` with `reason=INVOKE_SRC_NOT_FOUND` per §10.7.1 (pre-envelope setup fault — see the §9.5 three-tier error table). Both are *client-side* pools — the sender selects which member to invoke among the declared set.
+
+**Both dispatch paths resolve the placeholder, through one resolver.** §3.3 and §14 say a placeholder is resolved at `<send>` / `<invoke>` time, and both are dispatch paths in the generated router: `<invoke type="sce:mesh-rpc">` enters `invokeMeshRpc`, a plain `<send target="#X">` enters `route_send`. Codegen emits one resolver per pool binding — `buildPoolKey_<target>` for a string-segment carrier, `resolvePoolInstance_<target>` for a typed-instance one — and both paths call it, so a member value one path accepts cannot be one the other rejects. The `<send>` leg is the one that cannot be caught by inspection: an unresolved Zenoh KeyExpr keeps its literal `{name}` chunk and is `put` to an address no peer subscribes to, which Zenoh accepts and drops without reporting; an unresolved SOME/IP instance id is not absent but the binding's declared default, so the request is delivered in full to a member the author did not address. Both are proven at runtime rather than at compile time (`mesh_zenoh_pool_send_runtime`, `mesh_someip_pool_send_runtime`), because a header that renders correctly is exactly what both failures look like.
+
+**A pool cannot be combined with a dispatch that has no member to read.** Two deploy.yaml features dispatch on a binding without an author `<send>` / `<invoke>` to take the member from, and each is rejected at parse time with `mesh/deploy-pool-dispatch-without-member`, naming the conflicting key:
+
+- `outbound_buffer:` (§10.10) holds sends until a readiness signal fires, but readiness is *one* signal per binding — a SOME/IP `(service, instance)` availability handler, a Zenoh publisher's matching status — and a pool has one address per member. The gate asks the registry (`TransportDescriptor::buffers_outbound`) rather than testing the transport name, so a pool on a transport the buffer does not instrument (DDS today) stays legal.
+- `subscriptions:` (§mesh-13) issues its subscribe at `init()` from an envelope the router builds itself. It carries no `<param>`, so no member is resolvable. Matched per binding: a pool on `#a` says nothing about a subscription whose source is a non-pool `#b`.
 
 **Server-side multi-instance — SOME/IP pool.** A machine acting as a SOME/IP server may declare `server.instances: [<int>, ...]` to host N independent offered instances of the same service on one router. Codegen emits a fixed-size `SOMEIP_SERVER_INSTANCES` array, `TransportRouter::N_SESSIONS` matches that cardinality, and the `sessions_` pointer array is sized accordingly (caller supplies N `SenderEngine*` pointers at construction). Non-pool deployments keep `N_SESSIONS == 1` and behave exactly as before. At `init()` every declared instance gets its own `offer_service` and per-method `register_message_handler`; inbound callbacks resolve `msg->get_instance()` to a session slot via `session_index_for_instance()` and dispatch there. Spontaneous notifications (`field.notify.*` / `event.notification.*`) emit on the raising session's own offered instance via `publishEventgroupNotify(env, session_idx)`, so client subscribers pinned to a specific instance see only their bound session's events.
 

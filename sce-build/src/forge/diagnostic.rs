@@ -1854,6 +1854,8 @@ pub enum DiagnosticCode {
     MeshDeployPoolEmptyMemberList,
     #[serde(rename = "mesh/deploy-pool-binding-field-not-supported")]
     MeshDeployPoolBindingFieldNotSupported,
+    #[serde(rename = "mesh/deploy-pool-dispatch-without-member")]
+    MeshDeployPoolDispatchWithoutMember,
     #[serde(rename = "mesh/deploy-pool-invalid-placeholder")]
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
@@ -2827,6 +2829,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployPoolMissingMemberList,
         MeshDeployPoolEmptyMemberList,
         MeshDeployPoolBindingFieldNotSupported,
+        MeshDeployPoolDispatchWithoutMember,
         MeshDeployPoolInvalidPlaceholder,
         MeshDeployServerPoolNotSupported,
         MeshDeployCrossTargetReplyNotSupported,
@@ -3309,6 +3312,7 @@ impl DiagnosticCode {
             | MeshDeployPoolMissingMemberList
             | MeshDeployPoolEmptyMemberList
             | MeshDeployPoolBindingFieldNotSupported
+            | MeshDeployPoolDispatchWithoutMember
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
             | MeshTopologyPoolParamNameMissing => Some("SCE Mesh §14.4"),
@@ -3893,6 +3897,7 @@ impl DiagnosticCode {
             MeshDeployPoolBindingFieldNotSupported => {
                 "mesh/deploy-pool-binding-field-not-supported"
             }
+            MeshDeployPoolDispatchWithoutMember => "mesh/deploy-pool-dispatch-without-member",
             MeshDeployPoolInvalidPlaceholder => "mesh/deploy-pool-invalid-placeholder",
             MeshDeployServerPoolNotSupported => "mesh/deploy-server-pool-not-supported",
             MeshDeployCrossTargetReplyNotSupported => {
@@ -10517,6 +10522,20 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:5506845f9af45993","code":"mesh/deploy-pool-binding-field-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh' declares `instances:`, which this transport does not read. Its pool members are string segments of the binding address: embed a `{name}` placeholder naming the selecting <param>, and — on a bounded pool — enumerate the values in `members:`.","actual":"instances","fix":{"kind":"remove_fields","location":"topology.*.machines.brake.bindings.#player","fields":["instances"]}}"#,
             ),
             (
+                "mesh/deploy-pool-dispatch-without-member",
+                DeployError::PoolDispatchWithoutMember {
+                    machine: "brake".into(),
+                    binding: "#player".into(),
+                    transport: "zenoh".into(),
+                    feature: "outbound_buffer".into(),
+                    reason: "the buffer holds sends until ONE readiness signal for this \
+                             binding fires, and a pool has one address per member"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:47d4496873dd770d","code":"mesh/deploy-pool-dispatch-without-member","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'brake': binding '#player' on transport 'zenoh' declares a §14.4 pool, which cannot be combined with `outbound_buffer:` on the same machine — the buffer holds sends until ONE readiness signal for this binding fires, and a pool has one address per member. Remove `outbound_buffer:`, or move the pool binding to a machine without it.","actual":"outbound_buffer","fix":{"kind":"remove_fields","location":"topology.*.machines.brake","fields":["outbound_buffer"]}}"#,
+            ),
+            (
                 "mesh/deploy-pool-invalid-placeholder",
                 DeployError::PoolInvalidPlaceholder {
                     machine: "brake".into(),
@@ -12477,6 +12496,7 @@ mod tests {
             | MeshDeployPoolMissingMemberList
             | MeshDeployPoolEmptyMemberList
             | MeshDeployPoolBindingFieldNotSupported
+            | MeshDeployPoolDispatchWithoutMember
             | MeshDeployPoolInvalidPlaceholder
             | MeshDeployServerPoolNotSupported
             | MeshDeployCrossTargetReplyNotSupported
@@ -13126,6 +13146,7 @@ mod tests {
                 | MeshDeployPoolMissingMemberList
                 | MeshDeployPoolEmptyMemberList
                 | MeshDeployPoolBindingFieldNotSupported
+                | MeshDeployPoolDispatchWithoutMember
                 | MeshDeployPoolInvalidPlaceholder
                 | MeshDeployServerPoolNotSupported
                 | MeshDeployCrossTargetReplyNotSupported
@@ -13267,9 +13288,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            334,
+            335,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 334 distinct variants to match the DiagnosticCode \
+             expected 335 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Topology stub for the `#controller_pool` target of
+     pool_sender_someip. One declaration stands for the whole pool:
+     `instances:` enumerates addresses of the same machine, not distinct
+     machines. Codegen requires the receiver end of every binding to be
+     declared for event-coverage validation, which is this file's only
+     job — the runtime test offers both instances from a raw vsomeip
+     application so each member's arrivals can be counted separately,
+     which a single generated router cannot do. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" name="controller_someip_pool" initial="ready">
+    <state id="ready">
+        <transition event="service.fire_forget.ping" target="pinged"/>
+    </state>
+    <state id="pinged"/>
+</scxml>

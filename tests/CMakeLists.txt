@@ -7102,6 +7102,91 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         message(STATUS "vsomeip3 not found — skipping mesh_someip_server_pool_compile_test")
     endif()
 
+    # ── SCE_MESH.md §14.4 SOME/IP pool `<send>` runtime verification ──
+    # The server-pool tests above cover the receiving end (one router
+    # hosting N instances). This covers the CLIENT end on the `<send>`
+    # path: which declared member a send addressed to a pool binding
+    # actually lands on.
+    #
+    #   engine onentry → <param inst> evaluated against the Lua datamodel
+    #     → buildEventDataJson → mesh send callback → route_send
+    #     → SOME/IP pool arm → set_instance(runtime id) → app.send
+    #     → raw harness offering BOTH instances counts per member
+    #
+    # It is the pool leg with the worst failure mode: an unresolved
+    # instance id is not absent, it is the binding default, so the
+    # request is delivered to the wrong member with no error on either
+    # end. A generated router cannot be the observer — it binds one
+    # instance, and the claim is about telling two apart.
+    #
+    # The harness owns routing (`routing: pool_send_harness` in
+    # vsomeip_e2e_pool_send.json) and the fixture declares its own
+    # `network:` so /tmp/sce_someip_pool_send-* never collides with a
+    # sibling SOME/IP fixture under ctest -j.
+    if(vsomeip3_FOUND)
+        set(MESH_SOMEIP_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_someip_pool_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_SOMEIP_POOL_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_someip.scxml" -l cpp
+                    -o "${MESH_SOMEIP_POOL_OUTPUT_DIR}"
+                    --write-deps "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/pool_sender_someip.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h.d"
+            COMMENT "Mesh someip pool send: Generating pool_sender_someip_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_someip.scxml" -l cpp
+                    -o "${MESH_SOMEIP_POOL_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_someip_pool.yaml"
+                    --transport-only
+                    --write-deps "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/pool_sender_someip.scxml" "${MESH_TEST_DIR}/deploy_someip_pool.yaml"
+                    "${MESH_TEST_DIR}/controller_someip_pool.scxml"
+                    "${MESH_TEST_DIR}/vsomeip_pool_send.json"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h"
+            DEPFILE "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h.d"
+            COMMENT "Mesh someip pool send: Generating pool_sender_someip_transport.h (§14.4)"
+            VERBATIM
+        )
+
+        add_executable(mesh_someip_pool_test
+            mesh/test_mesh_someip_pool.cpp
+            "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_sm.h"
+            "${MESH_SOMEIP_POOL_OUTPUT_DIR}/pool_sender_someip_transport.h"
+        )
+
+        target_include_directories(mesh_someip_pool_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+                ${MESH_SOMEIP_POOL_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_someip_pool_test
+            PRIVATE
+                sce_base
+                sce_runtime
+                sce_mesh_common
+                vsomeip3
+        )
+
+        target_compile_features(mesh_someip_pool_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_someip_pool_test)
+
+        add_test(NAME mesh_someip_pool_send_runtime COMMAND mesh_someip_pool_test)
+        set_tests_properties(mesh_someip_pool_send_runtime PROPERTIES
+            TIMEOUT 30
+            ENVIRONMENT "VSOMEIP_CONFIGURATION=${CMAKE_CURRENT_SOURCE_DIR}/mesh/vsomeip_e2e_pool_send.json;LD_LIBRARY_PATH=${vsomeip3_DIR}:$ENV{LD_LIBRARY_PATH}")
+    else()
+        message(STATUS "vsomeip3 not found — skipping mesh_someip_pool_test")
+    endif()
+
     # ── SCE_MESH.md §14.4 Zenoh pool runtime verification ──────────
     # Compile-only pool_client verifies the generated pool branches
     # instantiate; this test drives the Zenoh pool path end-to-end:
@@ -7186,6 +7271,87 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         )
     else()
         message(STATUS "zenohcxx not found — skipping mesh_pool_zenoh_runtime_test")
+    endif()
+
+    # ── SCE_MESH.md §14.4 Zenoh pool `<send>` runtime verification ──
+    # The sibling test above drives the open pool through `<invoke>`;
+    # this one drives it through `<send>`, the other dispatch path
+    # §14.4 names. The two fail differently: a misaddressed `<invoke>`
+    # eventually surfaces as error.invoke, while a misaddressed `<send>`
+    # is a Zenoh put nobody subscribes to — lost with no error anywhere.
+    #
+    #   engine onentry → <param id> evaluated against the Lua datamodel
+    #     → buildEventDataJson → mesh send callback → route_send
+    #     → Zenoh pool arm → put on the substituted KeyExpr
+    #     → raw WILDCARD subscriber records which address it took
+    #
+    # The subscriber is a wildcard rather than one bound to the expected
+    # key so a regression names the address it actually used instead of
+    # only reporting an absence. Port 17457 is this fixture's own
+    # (17447-17456 are taken by the sibling Zenoh runtime fixtures).
+    if(zenohc_FOUND AND zenohcxx_FOUND)
+        set(MESH_ZENOH_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_pool_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_ZENOH_POOL_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" -l cpp
+                    -o "${MESH_ZENOH_POOL_OUTPUT_DIR}"
+                    --write-deps "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" "${SCE_CODEGEN}"
+            DEPFILE "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h.d"
+            COMMENT "Mesh zenoh pool send: Generating pool_sender_zenoh_sm.h"
+            VERBATIM
+        )
+
+        add_custom_command(
+            OUTPUT "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" -l cpp
+                    -o "${MESH_ZENOH_POOL_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_zenoh_pool.yaml"
+                    --transport-only
+                    --write-deps "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h.d"
+            DEPENDS "${MESH_TEST_DIR}/pool_sender_zenoh.scxml" "${MESH_TEST_DIR}/deploy_zenoh_pool.yaml"
+                    "${MESH_TEST_DIR}/gamer_zenoh_pool.scxml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                    "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h"
+            DEPFILE "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h.d"
+            COMMENT "Mesh zenoh pool send: Generating pool_sender_zenoh_transport.h (§14.4)"
+            VERBATIM
+        )
+
+        add_executable(mesh_zenoh_pool_test
+            mesh/test_mesh_zenoh_pool.cpp
+            "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_sm.h"
+            "${MESH_ZENOH_POOL_OUTPUT_DIR}/pool_sender_zenoh_transport.h"
+        )
+
+        target_include_directories(mesh_zenoh_pool_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+                ${MESH_ZENOH_POOL_OUTPUT_DIR}
+        )
+
+        target_link_libraries(mesh_zenoh_pool_test
+            PRIVATE
+                sce_base
+                sce_runtime
+                sce_mesh_common
+                zenohcxx::zenohc
+                pthread
+        )
+
+        target_compile_features(mesh_zenoh_pool_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_zenoh_pool_test)
+
+        add_test(NAME mesh_zenoh_pool_send_runtime COMMAND mesh_zenoh_pool_test)
+        set_tests_properties(mesh_zenoh_pool_send_runtime PROPERTIES
+            TIMEOUT 30
+            RESOURCE_LOCK zenoh_pool_send_port_17457
+        )
+    else()
+        message(STATUS "zenohcxx not found — skipping mesh_zenoh_pool_test")
     endif()
 
     # ── SCE_TEMPLATE_DIR injection for mesh rejection ctests ───────────
