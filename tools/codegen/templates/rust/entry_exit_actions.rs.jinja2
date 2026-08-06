@@ -151,7 +151,7 @@
 {% set param_expr = param.expr if param.expr else param.location %}
 {% if not param_expr %}
                     // W3C SCXML 5.7: Empty location raises error.execution (structural error)
-                    log::error!("Donedata param '{{ param.name }}': empty location (structural error)");
+                    log::error!("Donedata param '{{ param.name | escape_rust }}': empty location (structural error)");
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
@@ -164,7 +164,7 @@
                             json_parts.push(part);
                         }
                         Err(e) => {
-                            log::error!("Donedata param '{{ param.name }}' eval failed: {}", e);
+                            log::error!("Donedata param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
                             engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}

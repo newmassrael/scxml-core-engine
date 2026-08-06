@@ -86,7 +86,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 {% for param in invoke_info.params %}
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr | escape_go }}`); err == nil {
-					childPolicy.SetParamInScriptEngine("{{ param.name }}", sce.ToLuaLiteral(val))
+					childPolicy.SetParamInScriptEngine("{{ param.name | escape_go }}", sce.ToLuaLiteral(val))
 				}
 {% endfor %}
 			}

@@ -144,10 +144,10 @@
                         // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
                         {% for param in invoke_info.params %}
                         {% if invoke_info.child_needs_script_engine %}
-                        child_{{ invoke_info.field_suffix }}_->setParamInScriptEngine("{{ param.name }}", "{{ param.expr }}");
+                        child_{{ invoke_info.field_suffix }}_->setParamInScriptEngine("{{ param.name | escape_cpp }}", "{{ param.expr | escape_cpp }}");
                         {% else %}
                         // Child does not use JSEngine - params handled via static datamodel
-                        AOT_DEBUG("Param {{ param.name }}={{ param.expr }} - child uses static datamodel");
+                        AOT_DEBUG("Param {{ param.name | escape_cpp }}={{ param.expr | escape_cpp }} - child uses static datamodel");
                         {% endif %}
                         {% endfor %}
                         {% endif %}

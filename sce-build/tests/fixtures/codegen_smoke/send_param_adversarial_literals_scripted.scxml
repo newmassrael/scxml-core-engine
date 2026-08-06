@@ -1,0 +1,142 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: every `<send>` shape that pastes a static
+  `<param>` into generated source, each carrying values that terminate
+  or re-open a string literal.
+
+  Two axes, deliberately crossed rather than sampled:
+
+    shape — which paste site in the backend template is reached. The
+      backends route `#_internal` / `#_parent` / BasicHTTP / delayed /
+      immediate sends through separate emission blocks, and those blocks
+      were measured to escape inconsistently. A fixture exercising one
+      shape leaves the others unproven: before this file covered all
+      five, the value gate held exactly one of the six C++ paste sites.
+
+    value — the characters that break a literal. `param` *names* carry
+      them too: the SCXML parser admits a quote in `name`, so the name
+      slot is as exposed as the value slot and is escaped alongside it.
+
+  `datamodel="ecmascript"` keeps every param on the static branch — the
+  codegen-time paste — rather than the runtime-evaluation branch.
+
+  Shared with `author_literal_boundaries.rs`, which asserts the values
+  survive rather than that the source parses. Keep the param set there
+  and here in step: that gate asserts the key sets match exactly.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript"
+       name="send_param_adversarial_literals_scripted" initial="s0">
+  <datamodel>
+    <data id="live" expr="1"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <!-- internal event queue -->
+      <send event="e_internal" target="#_internal">
+        <param name="internal_dquote" expr="'a&quot;b'"/>
+        <param name="internal_backslash" expr="'c\d'"/>
+        <param name="internal_both" expr="'e\&quot;f'"/>
+        <param name="internal_luaclose" expr="'g&quot;}h'"/>
+        <param name="internal_tab" expr="'i&#9;j'"/>
+        <param name="internal_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="internal_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- parent session via invoke callback -->
+      <send event="e_parent" target="#_parent">
+        <param name="parent_dquote" expr="'a&quot;b'"/>
+        <param name="parent_backslash" expr="'c\d'"/>
+        <param name="parent_both" expr="'e\&quot;f'"/>
+        <param name="parent_luaclose" expr="'g&quot;}h'"/>
+        <param name="parent_tab" expr="'i&#9;j'"/>
+        <param name="parent_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="parent_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- BasicHTTP form fields -->
+      <send event="e_http" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost:8080/probe">
+        <param name="http_dquote" expr="'a&quot;b'"/>
+        <param name="http_backslash" expr="'c\d'"/>
+        <param name="http_both" expr="'e\&quot;f'"/>
+        <param name="http_luaclose" expr="'g&quot;}h'"/>
+        <param name="http_tab" expr="'i&#9;j'"/>
+        <param name="http_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="http_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- delayed external queue -->
+      <send event="e_delay" delay="20ms">
+        <param name="delay_dquote" expr="'a&quot;b'"/>
+        <param name="delay_backslash" expr="'c\d'"/>
+        <param name="delay_both" expr="'e\&quot;f'"/>
+        <param name="delay_luaclose" expr="'g&quot;}h'"/>
+        <param name="delay_tab" expr="'i&#9;j'"/>
+        <param name="delay_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="delay_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- immediate external queue -->
+      <send event="e_plain">
+        <param name="plain_dquote" expr="'a&quot;b'"/>
+        <param name="plain_backslash" expr="'c\d'"/>
+        <param name="plain_both" expr="'e\&quot;f'"/>
+        <param name="plain_luaclose" expr="'g&quot;}h'"/>
+        <param name="plain_tab" expr="'i&#9;j'"/>
+        <param name="plain_newline" expr="'k&#10;l'"/>
+        <!-- a quote inside the name slot itself -->
+        <param name="plain_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- delayed parent send: a distinct emission block from the immediate one -->
+      <send event="e_pdelay" target="#_parent" delay="30ms">
+        <param name="pdelay_dquote" expr="'a&quot;b'"/>
+        <param name="pdelay_backslash" expr="'c\d'"/>
+        <param name="pdelay_both" expr="'e\&quot;f'"/>
+        <param name="pdelay_luaclose" expr="'g&quot;}h'"/>
+        <param name="pdelay_tab" expr="'i&#9;j'"/>
+        <param name="pdelay_newline" expr="'k&#10;l'"/>
+        <param name="pdelay_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- BasicHTTP with one non-static param: `http_needs_script` flips the
+           block onto its script-engine path, whose static siblings are pasted
+           by a paste site no all-static send can reach. Kept as its own send
+           so the all-static one above still exercises the other path. -->
+      <send event="e_httpmix" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" target="http://localhost:8080/mixed">
+        <param name="httpmix_dquote" expr="'a&quot;b'"/>
+        <param name="httpmix_backslash" expr="'c\d'"/>
+        <param name="httpmix_both" expr="'e\&quot;f'"/>
+        <param name="httpmix_luaclose" expr="'g&quot;}h'"/>
+        <param name="httpmix_tab" expr="'i&#9;j'"/>
+        <param name="httpmix_newline" expr="'k&#10;l'"/>
+        <param name="httpmix_odd&quot;name" expr="'plain'"/>
+        <param name="dynamic_probe" expr="live"/>
+      </send>
+      <!-- dynamically resolved target: a third emission block again, reached
+           only when the target is an expression rather than a literal -->
+      <send event="e_texpr" targetexpr="'#_internal'">
+        <param name="texpr_dquote" expr="'a&quot;b'"/>
+        <param name="texpr_backslash" expr="'c\d'"/>
+        <param name="texpr_both" expr="'e\&quot;f'"/>
+        <param name="texpr_luaclose" expr="'g&quot;}h'"/>
+        <param name="texpr_tab" expr="'i&#9;j'"/>
+        <param name="texpr_newline" expr="'k&#10;l'"/>
+        <param name="texpr_odd&quot;name" expr="'plain'"/>
+      </send>
+      <!-- ordinary send with one non-static param: Rust and Go switch the
+           whole event-data assembly from a codegen-time Lua table to a
+           runtime-built one, and paste the static siblings there instead -->
+      <send event="e_mix">
+        <param name="mix_dquote" expr="'a&quot;b'"/>
+        <param name="mix_backslash" expr="'c\d'"/>
+        <param name="mix_both" expr="'e\&quot;f'"/>
+        <param name="mix_luaclose" expr="'g&quot;}h'"/>
+        <param name="mix_tab" expr="'i&#9;j'"/>
+        <param name="mix_newline" expr="'k&#10;l'"/>
+        <param name="mix_odd&quot;name" expr="'plain'"/>
+        <param name="dynamic_probe2" expr="live"/>
+      </send>
+    </onentry>
+    <transition event="e_internal" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

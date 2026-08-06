@@ -138,13 +138,13 @@ return;
     params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-            params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-            typedParams["{{ param.name }}"] = paramResult.getInternalValue();
+            params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
         } else {
-            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
-            params["{{ param.name }}"].push_back("");
+            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
+            params["{{ param.name | escape_cpp }}"].push_back("");
         }
     }
 {% endif %}
@@ -217,13 +217,13 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
 {% else %}
     // W3C SCXML 5.10: Dynamic param expr evaluation
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-            params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-            typedParams["{{ param.name }}"] = paramResult.getInternalValue();
+            params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
         } else {
-            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
-            params["{{ param.name }}"].push_back("");
+            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
+            params["{{ param.name | escape_cpp }}"].push_back("");
         }
     }
 {% endif %}
@@ -375,11 +375,11 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     httpParams["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
     {
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-            httpParams["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            httpParams["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         } else {
-            httpParams["{{ param.name }}"].push_back("");
+            httpParams["{{ param.name | escape_cpp }}"].push_back("");
         }
     }
 {% endif %}
@@ -498,13 +498,13 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
     {
         this->ensureScriptEngine();
         auto& scriptEngine = getScriptEngine();
-        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-            params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-            typedParams["{{ param.name }}"] = paramResult.getInternalValue();
+            params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
         } else {
-            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
-            params["{{ param.name }}"].push_back("");
+            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
+            params["{{ param.name | escape_cpp }}"].push_back("");
         }
     }
 {% elif param.is_static_literal %}
@@ -516,7 +516,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
     // this file read `static_value` for the same reason.
     params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
-#error "SCE codegen drift: <send> param '{{ param.name }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
+#error "SCE codegen drift: <send> param '{{ param.name | escape_cpp }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -576,13 +576,13 @@ std::map<std::string, ScriptValue> typedParams;
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();
-    auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+    auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
     if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-        params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-        typedParams["{{ param.name }}"] = paramResult.getInternalValue();
+        params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+        typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
     } else {
-        SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
-        params["{{ param.name }}"].push_back("");
+        SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
+        params["{{ param.name | escape_cpp }}"].push_back("");
     }
 }
 {% elif param.is_static_literal %}
@@ -591,7 +591,7 @@ std::map<std::string, ScriptValue> typedParams;
 // the author's `expr` into C++.
 params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
 {% else %}
-#error "SCE codegen drift: <send> param '{{ param.name }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
+#error "SCE codegen drift: <send> param '{{ param.name | escape_cpp }}' is not a static literal, yet this machine emits no script engine. script_engine_analyzer::collect_action_causes must raise SendParamExpr for every non-literal param."
 {% endif %}
 {% endfor %}
 {% endif %}
