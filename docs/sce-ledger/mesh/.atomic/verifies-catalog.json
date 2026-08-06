@@ -209,6 +209,12 @@
       ]
     },
     {
+      "file": "tests/mesh/test_mesh_someip_pool.cpp",
+      "section_ids": [
+        "mesh-14.4"
+      ]
+    },
+    {
       "file": "tests/mesh/test_mesh_someip_server_deadline.cpp",
       "section_ids": [
         "mesh-9.5.1"
@@ -236,6 +242,12 @@
       "file": "tests/mesh/test_mesh_tcp_server_deadline.cpp",
       "section_ids": [
         "mesh-9.5.1"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_zenoh_pool.cpp",
+      "section_ids": [
+        "mesh-14.4"
       ]
     },
     {

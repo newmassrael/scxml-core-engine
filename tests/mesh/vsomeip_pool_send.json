@@ -1,0 +1,15 @@
+{
+  "applications": [
+    { "name": "pool_send_client" }
+  ],
+  "services": [
+    {
+      "name": "controller_svc",
+      "service": "0x4570",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "ping", "method": "0x0102" }
+      ]
+    }
+  ]
+}

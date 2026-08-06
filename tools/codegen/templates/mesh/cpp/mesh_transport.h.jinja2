@@ -96,7 +96,7 @@
         auto request = vsomeip::runtime::get()->create_request(
             {% if target.state.extra.protocol is defined and target.state.extra.protocol == "tcp" %}true{% else %}false{% endif %});
         request->set_service(SOMEIP_SERVICE_{{ target.target_snake | upper }});
-        request->set_instance(SOMEIP_INSTANCE_{{ target.target_snake | upper }});
+        request->set_instance(instance);
         request->set_method({{ method_constant }});
         auto buf = SCE::Mesh::encodeEnvelope(env);
         auto payload = vsomeip::runtime::get()->create_payload(
@@ -118,19 +118,19 @@
         if (env.pattern == PK::EventSubscribe) {
             app.request_event(
                 SOMEIP_SERVICE_{{ target.target_snake | upper }},
-                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                instance,
                 SOMEIP_EVENT_{{ target.target_snake | upper }}_{{ event_const }},
                 {SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ event_const }}});
             app.subscribe(
                 SOMEIP_SERVICE_{{ target.target_snake | upper }},
-                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                instance,
                 SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ event_const }});
             return true;
         }
         if (env.pattern == PK::EventUnsubscribe) {
             app.unsubscribe(
                 SOMEIP_SERVICE_{{ target.target_snake | upper }},
-                SOMEIP_INSTANCE_{{ target.target_snake | upper }},
+                instance,
                 SOMEIP_EVENT_GROUP_{{ target.target_snake | upper }}_{{ event_const }});
             return true;
         }
@@ -690,6 +690,9 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <optional>
 #include <stdexcept>
 #include <string>
+// `send_zenoh` takes its key expression as a view so the §14.4 pool arm
+// can hand it a per-send address alongside the binding's constant.
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <zenoh.hxx>
@@ -1179,10 +1182,28 @@ inline void send_to_{{ target.target_snake }}(
 /// numeric IDs at build time, so the function reads `env.type` to pick
 /// the right per-event constants. Unknown event names return false.
 ///
+{% if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
+/// `instance` has no default on this binding: SCE_MESH.md §14.4 makes
+/// the member a per-dispatch decision, and a defaulted parameter is
+/// exactly how a caller that forgot to resolve it would deliver the
+/// message to the wrong member without saying so. Callers resolve it
+/// through `resolvePoolInstance_{{ target.target_snake }}` first.
+{% else %}
+/// `instance` defaults to the binding's declared id; the parameter
+/// exists so a §14.4 pool binding can supply a per-dispatch member
+/// (SOME/IP is the typed-instance carrier). A non-pool binding has one
+/// address and never passes it.
+{% endif %}
+///
 /// @return true if the request was submitted to vsomeip.
 [[nodiscard]] inline bool send_to_{{ target.target_snake }}(
     vsomeip::application& app,
-    const SCE::Mesh::MeshEnvelope& env
+    const SCE::Mesh::MeshEnvelope& env,
+{% if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
+    vsomeip::instance_t instance
+{% else %}
+    vsomeip::instance_t instance = SOMEIP_INSTANCE_{{ target.target_snake | upper }}
+{% endif %}
 ) {
 {% set has_any_event_ids = namespace(v=false) %}
 {% for ep in target.event_patterns if ep.field_kind %}
@@ -1195,7 +1216,7 @@ inline void send_to_{{ target.target_snake }}(
 {% set has_any_event_ids.v = true %}
 {% endif %}
 {% if not has_any_event_ids.v %}
-    (void)app; (void)env;
+    (void)app; (void)env; (void)instance;
     return false;  // no per-event SOME/IP IDs configured for this target
 {% else %}
 {% for ep in target.event_patterns %}
@@ -1230,7 +1251,7 @@ inline void send_to_{{ target.target_snake }}(
 {{ someip_eventgroup_dispatch(target, se.event_const) }}
     }
 {% endfor %}
-    (void)app;
+    (void)app; (void)instance;
     return false;  // unknown event name for this target
 {% endif %}
 }
@@ -1340,6 +1361,80 @@ template <std::size_t N>
     return false;
 }
 {% endif %}
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "open_string" %}
+/// SCE_MESH.md §14.4 — assemble {{ target.target }}'s runtime address
+/// from the binding's `key:` template and the envelope's pool params.
+///
+/// An open pool enumerates nothing: the member set is unbounded, so the
+/// address is built per dispatch instead of selected among endpoints
+/// declared up front. Emitted once per binding and called from BOTH
+/// dispatch paths (`route_send` for `<send>`, `invokeMeshRpc` for
+/// `<invoke type="sce:mesh-rpc">`) — §14.4 resolves the placeholder at
+/// either, and a second copy of the substitution is a second thing to
+/// keep in step.
+///
+/// @return false when a placeholder has no `<param>` value or its token
+///         is absent from the key template. Fail-closed on purpose: the
+///         only other address available is one carrying an unresolved
+///         `{name}` chunk, which no peer subscribes to and which Zenoh
+///         accepts and drops without reporting anything.
+[[nodiscard]] inline bool buildPoolKey_{{ target.target_snake }}(const SCE::Mesh::MeshEnvelope& env,
+                                                                std::string& out) {
+    std::string pool_key = "{{ target.state.key }}";
+{% for ph in target.pool_plan.placeholders %}
+    {
+        std::string pv;
+        if (!readPoolParam(env, "{{ ph }}", pv)) return false;
+        const std::string token = "{{ '{' }}{{ ph }}{{ '}' }}";
+        auto pos = pool_key.find(token);
+        if (pos == std::string::npos) return false;
+        pool_key.replace(pos, token.size(), pv);
+    }
+{% endfor %}
+    out = std::move(pool_key);
+    return true;
+}
+{% endfor %}
+{% for target in targets if target.pool_plan and target.pool_plan.kind == "typed_instance" %}
+/// SCE_MESH.md §14.4 — resolve {{ target.target }}'s runtime SOME/IP
+/// instance id from the envelope's `{{ target.pool_plan.instance_from }}` param.
+///
+/// Emitted once per binding and called from BOTH dispatch paths
+/// (`route_send` for `<send>`, `invokeMeshRpc` for
+/// `<invoke type="sce:mesh-rpc">`), so an id one path accepts cannot be
+/// one the other rejects.
+///
+/// @return false when the param is absent, is not a whole number in
+///         range, or names an id outside the declared `instances:` set.
+///         Fail-closed matters more here than on any other pool carrier:
+///         an unresolved id is not missing, it is the binding's default,
+///         so the alternative to refusing is delivering the message in
+///         full to a member the author did not address — and vsomeip
+///         reports nothing either way, having never been asked to
+///         request_service an undeclared id.
+[[nodiscard]] inline bool resolvePoolInstance_{{ target.target_snake }}(
+    const SCE::Mesh::MeshEnvelope& env,
+    vsomeip::instance_t& out) {
+    std::string inst_str;
+    if (!readPoolParam(env, "{{ target.pool_plan.instance_from }}", inst_str)) return false;
+    unsigned long long inst_ul = 0;
+    const char* inst_begin = inst_str.data();
+    const char* inst_end = inst_begin + inst_str.size();
+    auto parse = std::from_chars(inst_begin, inst_end, inst_ul);
+    if (parse.ec != std::errc() || parse.ptr != inst_end || inst_ul > 0xFFFFu) return false;
+    const auto candidate = static_cast<vsomeip::instance_t>(inst_ul);
+    static constexpr vsomeip::instance_t pool_instances[] = {
+{% for i in target.pool_plan.instances %}        {{ i }}{% if not loop.last %},{% endif %}
+{% endfor %}
+    };
+    if (std::find(std::begin(pool_instances), std::end(pool_instances), candidate)
+        == std::end(pool_instances)) {
+        return false;
+    }
+    out = candidate;
+    return true;
+}
+{% endfor %}
 
 /// Build-time resolved routing table from deploy.yaml.
 /// Each <send target="..."> in the SCXML is dispatched to the
@@ -1942,7 +2037,10 @@ struct TransportRouter {
    Ordering note: declared after seq_counter_ so the ctor initializer
    list below honours member declaration order (-Wreorder safe). #}
 {% if machine_outbound_buffer %}
-{% for target in targets if target.state.kind in ("someip", "zenoh") %}
+{#- Same registry-derived predicate as the ctor-initializer loop below;
+    the two must select the same targets or -Wreorder fires on a member
+    that was declared but never initialised. #}
+{% for target in targets if target.buffers_outbound %}
 {% if target.retry %}
     // SCE Mesh §16.7 row 3 — per-target retry wrapper. Wraps the
     // transport-send closure with backoff/exhaustion logic; the
@@ -2448,7 +2546,14 @@ struct TransportRouter {
     the lifetime contract is identical to every other generated
     runtime primitive. #}
 {%- if machine_outbound_buffer %}
-{%-   for target in targets if target.state.kind in ("someip", "zenoh") %}
+{#- Registry-derived (`TransportDescriptor::buffers_outbound`) rather than
+    a transport-name list: the question is whether the transport exposes a
+    readiness edge for the buffer to gate on, and a name list here is a
+    second place to update when one gains it. Pool bindings never appear
+    in this loop — `deploy::validate_pool_capability` rejects
+    `outbound_buffer:` on a pool binding whose transport buffers, because
+    a buffer gates on one address and a pool has many. #}
+{%-   for target in targets if target.buffers_outbound %}
 {#- SCE_MESH.md §16.7 row 2 SEND_FAILED Stage 2: the dispatcher lambda
     returns a `SendResult` whose `transport_error` (when populated)
     surfaces through `OutboundBuffer` into
@@ -4782,6 +4887,20 @@ struct TransportRouter {
             // (§16.7 row 9). The buffer owns the app-pointer null check
             // identically to the pre-§10.10 direct path.
             return {{ target.target_snake }}_outbound_.admit(env);
+{% elif target.pool_plan and target.pool_plan.kind == "typed_instance" %}
+            // §14.4 bounded pool: the member is chosen by the runtime
+            // `{{ target.pool_plan.instance_from }}` <param> rather than being the
+            // binding's declared default. Same resolver `invokeMeshRpc`
+            // uses, so a `<send>` and an `<invoke>` on this binding
+            // cannot disagree about which ids are addressable.
+            if ({{ target.target_snake }}_app_) {
+                vsomeip::instance_t pool_instance = 0;
+                if (!resolvePoolInstance_{{ target.target_snake }}(env, pool_instance)) {
+                    return false;
+                }
+                return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, env, pool_instance);
+            }
+            return false;
 {% else %}
             if ({{ target.target_snake }}_app_) {
                 return send_to_{{ target.target_snake }}(*{{ target.target_snake }}_app_, env);
@@ -4807,6 +4926,20 @@ struct TransportRouter {
                 return send_zenoh(env,
                                   ZENOH_KEY_{{ target.target_snake | upper }},
                                   "{{ target.target }}");
+            }
+{% elif target.pool_plan and target.pool_plan.kind == "open_string" %}
+            // §14.4 open pool: the address is assembled per send from
+            // the binding's `key:` template and the runtime <param>
+            // values, so there is no build-time constant to hand
+            // `send_zenoh`. Same assembler `invokeMeshRpc` uses, so a
+            // `<send>` and an `<invoke>` on this binding cannot resolve
+            // the same placeholder differently.
+            if (zenoh_session_) {
+                std::string pool_key;
+                if (!buildPoolKey_{{ target.target_snake }}(env, pool_key)) {
+                    return false;
+                }
+                return send_zenoh(env, pool_key, "{{ target.target }}");
             }
 {% else %}
             if (zenoh_session_) {
@@ -6068,29 +6201,8 @@ struct TransportRouter {
         // RpcStatus::Unavailable — vsomeip would silently drop them
         // otherwise because no request_service was ever issued for the id.
         if (target == "{{ target.target }}") {
-            std::string inst_str;
-            if (!readPoolParam(env, "{{ target.pool_plan.instance_from }}", inst_str)) {
-                cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                return false;
-            }
-            unsigned long long inst_ul = 0;
-            const char* inst_begin = inst_str.data();
-            const char* inst_end = inst_begin + inst_str.size();
-            auto parse = std::from_chars(inst_begin, inst_end, inst_ul);
-            if (parse.ec != std::errc() || parse.ptr != inst_end || inst_ul > 0xFFFFu) {
-                cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                return false;
-            }
-            vsomeip::instance_t runtime_instance = static_cast<vsomeip::instance_t>(inst_ul);
-            static constexpr vsomeip::instance_t pool_instances_{{ target.target_snake }}[] = {
-{% for i in target.pool_plan.instances %}                {{ i }}{% if not loop.last %},{% endif %}
-{% endfor %}
-            };
-            if (std::find(std::begin(pool_instances_{{ target.target_snake }}),
-                          std::end(pool_instances_{{ target.target_snake }}),
-                          runtime_instance) == std::end(pool_instances_{{ target.target_snake }})) {
+            vsomeip::instance_t runtime_instance = 0;
+            if (!resolvePoolInstance_{{ target.target_snake }}(env, runtime_instance)) {
                 cleanupAbandonedMeshInvoke(invoke_uuid,
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
@@ -6127,36 +6239,24 @@ struct TransportRouter {
         // `{name}` placeholders. Substituted at invoke time from the
         // JSON envelope payload (populated by the generator from the
         // author's `<param>` entries), yielding a per-invoke KeyExpr.
-        // route_send cannot see placeholder values (it only accepts
-        // `env`), so the pool path bypasses it and dispatches directly
-        // via `zenoh_session_->get` with the same reply / on_drop
-        // closures as the literal-key path (see `send_zenoh` RpcRequest
-        // branch — semantics must stay in sync).
+        // The address comes from the same `buildPoolKey_*` the
+        // `route_send` arm uses; what this arm adds is the mesh-rpc
+        // machinery `send_zenoh` has no place for — the invoke-scoped
+        // on_drop early-cancel (gap Z3) keyed on `env.invoke_id`. The
+        // reply handling below mirrors `send_zenoh`'s RpcRequest branch
+        // and the two must stay in sync.
         if (target == "{{ target.target }}") {
             if (!zenoh_session_) {
                 cleanupAbandonedMeshInvoke(invoke_uuid,
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
                 return false;
             }
-            std::string pool_key = "{{ target.state.key }}";
-{% for ph in target.pool_plan.placeholders %}
-            {
-                std::string pv;
-                if (!readPoolParam(env, "{{ ph }}", pv)) {
-                    cleanupAbandonedMeshInvoke(invoke_uuid,
+            std::string pool_key;
+            if (!buildPoolKey_{{ target.target_snake }}(env, pool_key)) {
+                cleanupAbandonedMeshInvoke(invoke_uuid,
 {%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                    return false;
-                }
-                const std::string token = "{{ '{' }}{{ ph }}{{ '}' }}";
-                auto pos = pool_key.find(token);
-                if (pos == std::string::npos) {
-                    cleanupAbandonedMeshInvoke(invoke_uuid,
-{%- if has_any_retry.v %} envelope_uuid,{% endif %} target, fieldSuffix);
-                    return false;
-                }
-                pool_key.replace(pos, token.size(), pv);
+                return false;
             }
-{% endfor %}
             try {
                 zenoh::KeyExpr pool_kexpr(pool_key);
                 auto encoded = SCE::Mesh::encodeEnvelope(env);
@@ -6647,7 +6747,11 @@ struct TransportRouter {
     /// native API. Called by route_send() with the target's key expression.
     ///
     /// @param env           outbound envelope (pattern-discriminated)
-    /// @param key_expr_str  Zenoh key expression for the target (null-terminated)
+    /// @param key_expr_str  Zenoh key expression for the target. A view
+    ///                      rather than a `const char*` because a §14.4
+    ///                      open pool assembles its address per send —
+    ///                      the binding constant is one of two callers,
+    ///                      not the only one.
     /// @param target_name   SCXML target string — key into zenoh_subscribers_
     /// @return true if the zenoh primitive accepted the operation; false if
     ///         the pattern is not outbound on this transport (inbound-only
@@ -6681,7 +6785,7 @@ struct TransportRouter {
     }
 
     [[nodiscard]] bool send_zenoh(const SCE::Mesh::MeshEnvelope& env,
-                                  const char* key_expr_str,
+                                  std::string_view key_expr_str,
                                   const std::string& target_name) {
         using PK = SCE::Mesh::PatternKind;
         if (!zenoh_session_) return false;

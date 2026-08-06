@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh §14.4 SOME/IP bounded pool on the `<send>` path, runtime.
+
+     §14.4 resolves a pool placeholder at `<send>` and `<invoke>` time
+     alike. The SOME/IP failure mode on the `<send>` leg is worse than a
+     drop: an unresolved instance id is not absent, it is the binding's
+     default, so the request is delivered — to the wrong member. Nothing
+     reports an error on either end.
+
+     One `<send>` site, entered repeatedly with different `unitId`
+     values. Two sites carrying two literals would also pass against a
+     generator that baked one instance in at build time; re-entering the
+     same site cannot, because there is only one emitted call.
+
+     `datamodel="lua"` so the instance id reaches the transport as a
+     typed numeric `<param>` read out of the datamodel — the shape an
+     author writes, and the shape whose JSON encoding the pool parser
+     has to accept.
+
+     `service.fire_forget.ping` rather than an RPC method: the claim is
+     about which member a request lands on, and a reply channel would
+     let a correct-looking round trip mask the wrong member answering. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="lua" name="pool_sender_someip" initial="idle">
+    <datamodel>
+        <data id="unitId" expr="1"/>
+    </datamodel>
+    <state id="idle">
+        <transition event="ping.send" target="pinging"/>
+        <!-- Rotates the pool member without leaving `idle`, so the next
+             `ping.send` re-enters the same onentry with a different
+             runtime value. -->
+        <transition event="ping.rotate">
+            <assign location="unitId" expr="2"/>
+        </transition>
+        <!-- Outside the declared `instances: [1, 2]` set. vsomeip was
+             never asked to request_service this id, so it would drop the
+             message without a trace — the send has to fail closed
+             before that. -->
+        <transition event="ping.stray">
+            <assign location="unitId" expr="9"/>
+        </transition>
+    </state>
+    <state id="pinging">
+        <onentry>
+            <send target="#controller_pool" event="service.fire_forget.ping">
+                <param name="inst" expr="unitId"/>
+            </send>
+        </onentry>
+        <transition event="ping.reset" target="idle"/>
+    </state>
+</scxml>

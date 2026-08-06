@@ -1,0 +1,22 @@
+{
+  "network": "sce_someip_pool_send",
+  "unicast": "127.0.0.1",
+  "routing": "pool_send_harness",
+  "applications": [
+    { "name": "pool_send_client", "id": "0x3333" },
+    { "name": "pool_send_harness", "id": "0x4444" }
+  ],
+  "services": [
+    {
+      "name": "controller_svc",
+      "service": "0x4570",
+      "instance": "0x0001",
+      "methods": [
+        { "name": "ping", "method": "0x0102" }
+      ]
+    }
+  ],
+  "service-discovery": {
+    "enable": "false"
+  }
+}

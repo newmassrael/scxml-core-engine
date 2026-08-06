@@ -1,0 +1,35 @@
+# SCE Mesh §14.4 Zenoh open pool on the `<send>` path, runtime.
+#
+# The §14.4 compile fixture (deploy_pool.yaml) renders all three pool
+# carriers into one header, and deploy_pool_zenoh.yaml drives the Zenoh
+# carrier through `<invoke>`. This one drives it through `<send>`, the
+# other dispatch path §14.4 names.
+#
+# `key:` carries one `{id}` placeholder and nothing is enumerated: an
+# open pool's member set is unbounded by construction, which is why the
+# address has to be assembled per send rather than selected among
+# endpoints built at init (the bounded DDS shape).
+#
+# Port 17457 is this fixture's own (see tests/CMakeLists.txt
+# RESOURCE_LOCK zenoh_pool_send_port_17457); 17447-17456 are taken by
+# the sibling Zenoh runtime fixtures. peer mode with an explicit TCP
+# locator and multicast scouting off keeps the test hermetic.
+version: "1.0"
+topology:
+  ecu_pool_sender_zenoh:
+    transports:
+      zenoh:
+        mode: peer
+        connect: ["tcp/127.0.0.1:17457"]
+    machines:
+      pool_sender_zenoh:
+        source: pool_sender_zenoh.scxml
+        bindings:
+          "#gamer_pool":
+            transport: zenoh
+            key: "sce/zenoh_pool/player/{id}"
+      # The receiver end of `#gamer_pool`. One declaration stands for the
+      # whole pool: an open pool's members are addresses of the same
+      # machine, not distinct machines.
+      gamer_pool:
+        source: gamer_zenoh_pool.scxml
