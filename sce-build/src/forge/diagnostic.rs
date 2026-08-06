@@ -13302,6 +13302,77 @@ mod tests {
     /// tables — "Acceptance boundary" if the author can prevent it by
     /// writing better SCXML, "Diagnostic-only" if it is an I/O or
     /// infrastructure failure.
+    /// The other direction of `acceptance_doc_covers_every_code`: every
+    /// diagnostic slug a **contract document** quotes must be a code that
+    /// exists.
+    ///
+    /// The appendix gate proves code → doc (no variant ships
+    /// undocumented). Nothing proved doc → code, so a document could name
+    /// a slug that had been renamed, or one that was deleted along with
+    /// the feature it belonged to, and no test disagreed. That is not
+    /// hypothetical: `SCE_MESH.md` described
+    /// `validate_someip_scxml_invoke_service_id_collisions` and the slug
+    /// `mesh/deploy-someip-scxml-invoke-service-id-collision` across three
+    /// paragraphs and a roadmap row marked LANDED, months after RFC F.X-1
+    /// replaced the FNV-1a derivation with a counter allocator and deleted
+    /// both. Three pool slugs were stale the same way, from a rename.
+    ///
+    /// **Scope is contract documents only**, and deliberately so. Design
+    /// drafts and rejected-design ADRs quote slugs for codes that are
+    /// *proposed* or *refused* — a phantom slug there is the document
+    /// doing its job. The two files below are the ones that describe what
+    /// SCE does today, so a phantom slug in them is a false claim about
+    /// shipped behaviour.
+    #[test]
+    fn contract_docs_cite_only_real_codes() {
+        const CONTRACT_DOCS: &[(&str, &str)] = &[
+            ("SCE_MESH.md", include_str!("../../../SCE_MESH.md")),
+            (
+                "docs/SCE_ACCEPTED_SUBSET.md",
+                include_str!("../../../docs/SCE_ACCEPTED_SUBSET.md"),
+            ),
+        ];
+        let real: std::collections::BTreeSet<&str> =
+            ALL_DIAGNOSTIC_CODES.iter().map(|c| c.as_str()).collect();
+        // Only tokens whose prefix is a stage SCE actually emits are
+        // candidates — a backticked `foo/bar` that is a path, a URL
+        // fragment, or a config key must not be read as a slug.
+        let stages: std::collections::BTreeSet<&str> =
+            real.iter().filter_map(|s| s.split('/').next()).collect();
+
+        let mut phantom: Vec<String> = Vec::new();
+        for (name, text) in CONTRACT_DOCS {
+            for token in text.split('`') {
+                let Some((stage, rest)) = token.split_once('/') else {
+                    continue;
+                };
+                if !stages.contains(stage) || rest.is_empty() {
+                    continue;
+                }
+                if !rest
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                {
+                    continue;
+                }
+                if !real.contains(token) {
+                    phantom.push(format!("{name}: `{token}`"));
+                }
+            }
+        }
+        phantom.sort();
+        phantom.dedup();
+        assert!(
+            phantom.is_empty(),
+            "contract document(s) quote diagnostic slugs that do not exist:\n  {}\n\n\
+             Either the code was renamed (update the document) or the feature was \
+             removed (rewrite the paragraph — a slug is a claim that SCE emits it). \
+             Only contract documents are in scope: they describe shipped behaviour, \
+             while design drafts legitimately name proposed or refused codes.",
+            phantom.join("\n  ")
+        );
+    }
+
     #[test]
     fn acceptance_doc_covers_every_code() {
         let doc = include_str!("../../../docs/SCE_ACCEPTED_SUBSET.md");

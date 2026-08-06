@@ -4096,8 +4096,9 @@ impl W3cBackend for CppBackend {
 // at this layer and is reported as a generation failure rather than a
 // silent skip. Tests that pass the codegen filter land at
 // `backends/python/tests/generated/test{id}/test{id}_sm.py` and can be
-// driven by an external pytest harness (the harness wrapper itself
-// is consumer-gated).
+// driven by an external pytest harness. SCE emits the tests, not the
+// runner: a wrapper would pin one invocation style for a backend
+// whose users already have one.
 
 struct PythonBackend {
     sm_base: PathBuf,

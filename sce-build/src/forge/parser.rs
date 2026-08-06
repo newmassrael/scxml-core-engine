@@ -7070,9 +7070,12 @@ fn reject_param_assignment(
 // ── Link kind parser (RFC §synth-5-C, item B6) ───────────────────────
 //
 // Byte-stream link endpoint surface with the parse-time pair of
-// the §synth-5-C negative-coverage diagnostics (the OS-axis pair is
-// consumer-gated on forge × deploy.yaml integration — `platform.os`
-// lives per-machine in deploy.yaml per RFC §synth-5-C lines 702-704).
+// the §synth-5-C negative-coverage diagnostics. The OS-axis pair is
+// not emitted here because the parser cannot see the value it would
+// judge: `platform.os` lives per-machine in deploy.yaml (RFC
+// §synth-5-C lines 702-704), which this parser never reads. Emitting
+// it requires the forge × deploy.yaml join, not a change to this
+// surface.
 // Surface: `<sce:link-class>` enum (5 classes; unknown values
 // raise the dedicated `link/link-class-unknown`) +
 // `<sce:framer ref="..."/>` required (`link/framer-missing` if
@@ -7245,8 +7248,9 @@ fn parse_link(
 // FSM is declared canonically in `buffer_pool_fsm.rs` (consumed by
 // the Rust + C11 templates); cache maintenance pinning rides the
 // §synth-5-I `<sce:call>` intrinsic registry
-// (`pool/cache-maintenance-misplaced`); burst absorption analysis is
-// consumer-gated (§synth-5-K deploy.yaml fields).
+// (`pool/cache-maintenance-misplaced`). Burst absorption analysis is
+// absent because its inputs are: it reads the §synth-5-K deploy.yaml
+// fields, and those fields have no parser surface yet.
 //
 // Schema validation here is intentionally narrow: parser rejects only
 // the load-bearing absences (missing element, malformed body text,
@@ -8149,7 +8153,10 @@ fn parse_bounded_collection(
 ///   * Send-side payload validation against the schema (event_schema_check).
 ///   * Mesh cross-machine schema match (mesh/deploy validator).
 ///   * Per-backend payload struct lowering (generator).
-///   * The inline `<sce:event-schema>` form is consumer-gated.
+///   * The inline `<sce:event-schema>` form, which is a second
+///     authoring syntax for what the named form already expresses —
+///     one surface stays one surface until the named form proves
+///     insufficient, not until someone asks.
 fn parse_event_schema(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,

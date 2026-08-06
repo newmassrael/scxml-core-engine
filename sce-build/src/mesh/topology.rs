@@ -1880,8 +1880,8 @@ pub(crate) fn contribute_send_partials(
 /// [`build_resolved_targets`].
 ///
 /// Each field is consumed by exactly one contributor function. Adding a
-/// new contributor (e.g. a consumer-gated runtime `<invoke srcexpr>`
-/// target binding, or reply-source routing) extends this struct with a
+/// new contributor (e.g. a runtime `<invoke srcexpr>` target binding,
+/// or reply-source routing) extends this struct with a
 /// new field rather than growing `build_resolved_targets`' positional
 /// argument list — the pattern that was pushing the signature from
 /// five parameters toward seven before this struct was introduced.

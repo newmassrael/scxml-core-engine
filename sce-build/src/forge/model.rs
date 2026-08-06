@@ -3548,7 +3548,10 @@ impl std::fmt::Display for InboxOrdering {
 /// wire realizes the spec "warning, codegen defaults to acq/rel" as
 /// a required-when-worker-exists error so the author makes an
 /// explicit choice before codegen emits ambiguous atomic ops).
-/// MPSC variant deferred until consumer signal (RFC §6 tracked).
+/// The MPSC variant is not modelled: `ordering` is a per-worker
+/// property here, and MPSC would make it a property of the queue
+/// shared by N producers — a different type, not a value of this one
+/// (RFC §6 tracked).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InboxConfig {

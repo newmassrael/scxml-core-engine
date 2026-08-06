@@ -753,7 +753,6 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // route rides an inherently-ordered transport (local, shm, custom_tcp,
 // SOME/IP `protocol: tcp`) pay zero overhead.
 #include "mesh/OrderingBuffer.h"
-#include <atomic>
 #include <condition_variable>
 #include <thread>
 {% endif %}
@@ -776,7 +775,6 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // the rule is unit-testable in isolation rather than locked inside
 // the codegen template).
 #include "mesh/third_party/AuthClassifier.h"
-#include <atomic>
 {% endif %}
 {% if machine_outbound_buffer %}
 // SCE Mesh §10.10: per-target readiness-gated outbound admit layer for
@@ -812,19 +810,24 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // early-cancel raises during router teardown.
 //
 // SCE Mesh §9.5.1 (`has_server_response_deadline`): `server_shutdown_in_progress_`
-// suppresses the server-side timer callback during teardown. Shares
-// the same `<atomic>` include to avoid per-gap duplication.
-#include <atomic>
+// suppresses the server-side timer callback during teardown.
 #include <memory>
 {% endif %}
-{% if machine_subscriptions and not (has_ordered_binding or has_any_auth.v or has_zenoh_mesh_rpc or has_server_response_deadline) %}
-// SCE_MESH.md §13: `machine_subscriptions_armed_` makes the
-// machine-lifetime unsubscribe idempotent across the dtor-via-shutdown
-// path. The gates above already pull `<atomic>` in for their own
-// teardown flags; this one covers the subscriptions-only machine, which
-// declares no ordered binding, no auth, and no deadline — the shape the
-// §13 fixtures deliberately use so a frame on the wire has exactly one
-// possible producer.
+{# ── `<atomic>`, once, for every feature that owns an atomic member ──
+   Each of these emits at least one `std::atomic` member: §10.6 ordering
+   (`ordering_tick_running_`), §16.7 row 10 auth (`*_auth_unauthorized_fired_`),
+   gap Z3 zenoh RPC (`zenoh_shutdown_in_progress_`), §9.5.1 server deadline
+   (`server_shutdown_in_progress_`), §13 subscriptions
+   (`machine_subscriptions_armed_`).
+
+   Kept as ONE union rather than an include beside each member: those
+   blocks pull in different companions (`<thread>`, `<memory>`,
+   `AuthClassifier.h`), so they cannot merge wholesale — but a per-block
+   `<atomic>` made the last one a negated list of the other four, and
+   adding a fifth atomic member meant editing that negation. Missing it
+   broke exactly one shape (subscriptions-only), which is the shape with
+   the fewest other reasons to include anything. #}
+{% if has_ordered_binding or has_any_auth.v or has_zenoh_mesh_rpc or has_server_response_deadline or machine_subscriptions %}
 #include <atomic>
 {% endif %}
 

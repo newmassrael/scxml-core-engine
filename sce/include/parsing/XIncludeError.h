@@ -35,8 +35,8 @@ namespace SCE::parsing {
 // `XIncludeExpansionError` implements `SCE::parsing::Diagnostic`
 // (§wire-W3). Each subtype overrides `code()` with its
 // `xml/xinclude-*` wire string; the shared base contributes
-// `location()` (currently always `nullopt` — expander throw sites
-// do not stamp source locations; consumer-gated per §wire-W3) and
+// `location()` (currently always `nullopt`: expander throw sites have
+// no captured source position to stamp, per §wire-W3) and
 // `to_json()` (the v1 schema NDJSON record). Subtype field shape is
 // unchanged — the existing message-string ctor stays the throw-site
 // API so the 10 expander throw sites read as before.

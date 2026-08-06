@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
 # backends/c/runtime — C11 backend 4-tier layout (RFC §5.J.1, downstream MCU
-# consumer; ARCHITECTURE.md §"C11 backend layering").
+# consumer; ARCHITECTURE.md §"C11 Backend Layering").
 #
 # Mirrors the cpp 4-tier shape (sce_core / sce_base / sce_scripting /
 # sce_runtime) adapted to the C11 backend reality: generated code carries
