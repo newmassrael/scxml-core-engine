@@ -123,9 +123,12 @@ pub struct DeployConfig {
     pub variant_defaults: BTreeMap<String, u64>,
 }
 
-/// `extern_symbols:` block in deploy.yaml. Today carries one
-/// field; `ordering_default` (spec line 1851 and the cross-core inbox
-/// companion `worker/inbox-ordering-*` family) is consumer-gated.
+/// `extern_symbols:` block in deploy.yaml. Today carries one field.
+/// `ordering_default` (spec line 1851 and the cross-core inbox
+/// companion `worker/inbox-ordering-*` family) is absent because the
+/// per-symbol `ordering` it would default is already required at every
+/// declaration site — a default has nothing to fill in until that
+/// requirement is relaxed.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternSymbolsConfig {
@@ -792,9 +795,10 @@ impl StageCopyPolicy {
 }
 
 /// Machine-wide pool-defaults block (SCE Protocol-Synthesis RFC §synth-5-K
-/// lines 2350-2369). Today carries only `stage_copy_policy`; further
-/// pool-default fields are consumer-gated and land here additively
-/// (each gated on its consumer per `[[feedback-silently-broken-hooks]]`).
+/// lines 2350-2369). Today carries only `stage_copy_policy`, which is
+/// the one pool default the RFC names with a defined effect. Further
+/// fields land here additively; the block exists precisely so that
+/// adding one is a field rather than a new schema shape.
 ///
 /// `#[serde(deny_unknown_fields)]` parse-rejects unknown nested keys
 /// — future fields (`cache_default_policy`, `dma_alignment_floor`,
@@ -2650,8 +2654,8 @@ pub struct MachineConfig {
 
     /// Machine-wide pool-defaults block (SCE Protocol-Synthesis RFC §synth-5-K
     /// lines 2350-2369). Today carries only
-    /// `stage_copy_policy`; further consumer-gated fields land additively per
-    /// `[[feedback-silently-broken-hooks]]`. Absent ⇒
+    /// `stage_copy_policy` — the one pool default the RFC gives a
+    /// defined effect; further fields land additively. Absent ⇒
     /// `stage_copy_policy = Warn` (existing
     /// `reassembly/expected-fragmentation-rate-high` warning
     /// semantic preserved).
@@ -5854,8 +5858,9 @@ fn validate_reply_from(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// Currently empty. The mesh RPC transports SCE knows today (zenoh,
 /// someip, dds, shm, local, custom_tcp) route logical events rather
 /// than allocating from a slot table — none of them actually surface
-/// `Sample::take()` semantics. Entries are consumer-gated on
-/// concrete transport-side wiring landing.
+/// `Sample::take()` semantics. The list is empty because no transport
+/// has that wiring, not because none has been requested: an entry
+/// without it would name a transport whose `take()` returns nothing.
 /// The empty list keeps the diagnostic strict — every
 /// `stage_pool` declaration today fails loud, matching the
 /// `feedback_silently_broken_hooks.md` invariant. See SCE Protocol-Synthesis

@@ -48,8 +48,10 @@ namespace SCE::parsing {
 //
 // Stage = "validation" for ALL four leaves: SCXML semantic validation
 // IS post-parse semantic validation, the same analytical stage as
-// forge `validation/*`. Adding a `Stage::ScxmlSemantic` for separate-
-// stage routing is consumer-gated (§wire-W5 anti-pattern #7).
+// forge `validation/*`. A separate `Stage::ScxmlSemantic` is
+// deliberately not added: routing by stage would split one analytical
+// stage across two wire values, which §wire-W5 anti-pattern #7 names
+// as the mistake.
 //
 // NEW wire codes are declared only where a matching Rust producer
 // exists; producer-less leaves reuse existing codes (§wire-W5).
@@ -60,8 +62,8 @@ public:
 
     // Reserved for location stamping. No throw site populates
     // this today (`parseScxmlNode` / `validateModel` callsites have
-    // SCXML-element node pointers but no captured source position —
-    // stamping is consumer-gated).
+    // SCXML-element node pointers but no captured source position, so
+    // there is nothing to stamp until the parse layer carries one).
     void setLocation(SourcePos pos) {
         location_ = std::move(pos);
     }

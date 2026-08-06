@@ -1526,9 +1526,12 @@ pub fn compile_forge_with_deploy(
 ///   (existing `io/filesystem` code). The plugin file lives outside
 ///   the SCXML pipeline; treating its load failures as I/O on the
 ///   pipeline's input set keeps the wire-code surface bounded
-///   to the spec-verbatim conflict axis. Promotion to a dedicated
-///   `extern/target-plugin-load` family is consumer-gated on UX
-///   feedback warranting the split.
+///   to the spec-verbatim conflict axis. A dedicated
+///   `extern/target-plugin-load` family is deliberately not minted: a
+///   new diagnostic code is a wire-surface addition, and these are
+///   ordinary I/O failures on a file the pipeline reads. Splitting
+///   them would widen that surface without telling the author
+///   anything the I/O code does not already say.
 fn load_target_plugin_for_compile(
     cfg: &mesh::deploy::DeployConfig,
     diag_label: &str,
@@ -1877,9 +1880,12 @@ pub fn compile_forge_from_parsed(
     // the import file contents rather than depending on enrichment
     // data, but the order matters because the cycle detector inside
     // `cross_kind_check::check` is what guarantees the surface
-    // re-walk terminates). Today wired only on the Forge→Forge path —
-    // see the module-level scope comment for why Statechart→Forge is
-    // consumer-gated.
+    // re-walk terminates). Today wired only on the Forge→Forge path:
+    // a Statechart→Forge binding has zero call sites in the tree, so a
+    // second call here would have nothing to validate. The
+    // module-level scope comment in `cross_kind_check` records that its
+    // public API is already kind-agnostic, so wiring one is a call site
+    // rather than a redesign if such a binding lands.
     forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
 
     // Physical-quantity unit-mismatch
@@ -4403,9 +4409,10 @@ fn discover_stateful_member_fields(
         // exposes no SCXML-expression-visible typed fields — the rx /
         // tx surface is method-only, and no consumer
         // calls them from authored expressions. Empty Vec keeps the
-        // exhaustive match honest; exposing method-typed members is
-        // consumer-gated and would add the method discovery to
-        // `discover_stateful_member_methods`, not field discovery.
+        // exhaustive match honest. Exposing method-typed members is a
+        // different axis, not a deferral of this one: it belongs in
+        // `discover_stateful_member_methods`, and returning them here
+        // would put methods into a field-discovery result.
         ForgeDocument::Link(_) => {}
         // RFC §synth-5-E: BufferPool is stateful (owns slot table + freelist)
         // but exposes no SCXML-expression-visible typed fields

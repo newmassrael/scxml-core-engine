@@ -511,8 +511,8 @@ no typed interpretation or are explicitly excluded:
   `expression/unsupported-construct`, `expression/unexpected-token`,
   `expression/invalid-lvalue`, `expression/type-coercion`,
   `expression/parse-mismatch`, `expression/lex`,
-  `expression/empty`, `expression/numeric-parse` (on integer literal
-  overflow, dispatched as `validation/numeric-parse`).
+  `expression/empty`, and numeric-parse failures on integer literal
+  overflow, which dispatch as `validation/numeric-parse`.
 
 ### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
 
