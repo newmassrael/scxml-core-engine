@@ -128,8 +128,13 @@
     let event_data: &str = &event_data_string;
 {% endif %}
 {% elif has_params %}
-    // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time
-    let event_data: &str = "{ {% for param in action.params %}[\"{{ param.name | escape_rust }}\"]=\"{{ param.static_value | escape_rust }}\"{% if not loop.last %},{% endif %}{% endfor %} }";
+    // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time.
+    // The author name/value cross two literal boundaries — the Lua table
+    // constructor this line assembles, then the Rust string literal that
+    // carries it — so each is escaped once per boundary
+    // (`escape_lua | escape_rust`). Applying only the host filter produces
+    // Rust source that compiles and Lua source that does not parse.
+    let event_data: &str = "{ {% for param in action.params %}[\"{{ param.name | escape_lua | escape_rust }}\"]=\"{{ param.static_value | escape_lua | escape_rust }}\"{% if not loop.last %},{% endif %}{% endfor %} }";
 {% elif action.content %}
     let event_data: &str = "{{ action.content | escape_rust }}";
 {% else %}
