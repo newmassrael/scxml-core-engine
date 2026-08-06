@@ -508,9 +508,15 @@ if stage_on "4"; then
     # artifacts with the tree and rebuilt the workspace every push.
     # Release bought no parity — CI never runs this suite optimised.
     # `hook_ci_parity` (Stage 1d) fails if either side drifts back.
-    log_step "Stage 4/8 — cargo test --workspace"
-    cargo test --workspace \
-        || fail_step "Stage 4 (cargo test --workspace)"
+    # `--features cli` is load-bearing, not decoration. sce-build declares
+    # 15 test targets with `required-features = ["cli"]`; cargo excludes an
+    # unmet-features target SILENTLY — it is never built, never reported as
+    # skipped — so without the flag this stage ran a strictly smaller suite
+    # than its own name claims. Stage 4b below used to carry two of those
+    # fifteen explicitly; the other thirteen ran in neither the hook nor CI.
+    log_step "Stage 4/8 — cargo test --workspace --features cli"
+    cargo test --workspace --features cli \
+        || fail_step "Stage 4 (cargo test --workspace --features cli)"
 
     # Stage 2 done — release the HTTP server before the heavier later
     # stages so a stuck node process cannot survive into Stages 3-5.
@@ -520,17 +526,13 @@ if stage_on "4"; then
 fi
 if stage_on "4b"; then
     # ── Stage 4b: cli-gated drift + sourcemap suites ──────────────────
-    # Stage 4's `cargo test --workspace` runs with default features, and
-    # `cli` is not a default feature of sce-build (nor enabled by any other
-    # workspace member). Cargo SILENTLY excludes a test target whose
-    # `required-features` are unmet — no warning, no compile — so
-    # b9_drift_detection (and the other cli-gated integration tests) never
-    # ran here. That is why a §6.2.6 template-hash drift across the
-    # committed generated trees sailed past this hook and only failed in
-    # the dedicated drift-verify.yml CI lane. Mirror that lane explicitly,
-    # with --features cli, so the drift gate fails locally as intended.
-    # --test-threads=1 matches drift-verify.yml (real-tree verify steps
-    # invoke the freshly built binary and must not race).
+    # Stage 4 now runs with `--features cli`, so these two are already in
+    # its set. They are re-run here for one property that stage cannot
+    # give them: `--test-threads=1`. Both invoke the freshly built binary
+    # against the real committed tree, and drift-verify.yml runs them
+    # serially for that reason — a parallel run has two verify steps
+    # reading and rebuilding the same tree. The duplicate cost is seconds;
+    # the alternative is a drift gate that passes or fails by scheduling.
     log_step "Stage 4b/8 — cli-gated B9 drift + §5.O sourcemap suites"
     cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1 \
         || fail_step "Stage 4b (b9_drift_detection — committed-tree §6.2.6 drift)"

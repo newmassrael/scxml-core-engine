@@ -79,6 +79,92 @@ fn disables_debug_assertions(manifest: &str, section: &str) -> bool {
     false
 }
 
+/// Both lanes must invoke the workspace suite with the same feature set.
+///
+/// Profile parity was gated from the start; feature parity was not, and
+/// that is the gap this closes. `sce-build` declares 15 test targets with
+/// `required-features = ["cli"]`, and cargo excludes an unmet-features
+/// target **silently** — it is never built and never reported as skipped.
+/// A lane without the flag therefore runs a strictly smaller suite while
+/// its step name still says `--workspace`, which is indistinguishable from
+/// the outside from a lane that runs everything and passes.
+///
+/// The gate compares the two lanes to each other rather than to a pinned
+/// string: adding a second feature is fine as long as both lanes get it,
+/// and pinning `cli` here would just move the drift to the pin.
+#[test]
+fn the_workspace_suite_runs_with_the_same_features_in_hook_and_ci() {
+    /// Feature names a `cargo test` command line enables, sorted.
+    fn features(cmd: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        for (i, t) in tokens.iter().enumerate() {
+            let list = if let Some(rest) = t.strip_prefix("--features=") {
+                rest
+            } else if *t == "--features" {
+                match tokens.get(i + 1) {
+                    Some(next) => next,
+                    None => continue,
+                }
+            } else {
+                continue;
+            };
+            // `log_step` / `fail_step` labels are deliberately part of the
+            // scanned set (a label naming a feature the command below does
+            // not pass is its own defect), so trim the shell quoting and
+            // parenthesis they carry before comparing.
+            out.extend(
+                list.split(',')
+                    .map(|f| {
+                        f.trim()
+                            .trim_matches(|c| c == '"' || c == ')' || c == '(')
+                            .to_string()
+                    })
+                    .filter(|f| !f.is_empty()),
+            );
+        }
+        if cmd.contains("--all-features") {
+            out.push("*all*".to_string());
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    let hook = read("tools/git-hooks/pre-push");
+    let ci = read(".github/workflows/rust-workspace-tests.yml");
+
+    let hook_cmds = workspace_suite_invocations(&hook);
+    let ci_cmds = workspace_suite_invocations(&ci);
+    assert!(
+        !hook_cmds.is_empty() && !ci_cmds.is_empty(),
+        "no `cargo test --workspace` invocation found in one of the lanes — \
+         this gate is reading the wrong file or the suite moved"
+    );
+
+    let hook_features: Vec<Vec<String>> = hook_cmds.iter().map(|c| features(c)).collect();
+    let ci_features: Vec<Vec<String>> = ci_cmds.iter().map(|c| features(c)).collect();
+
+    for (label, sets) in [("pre-push", &hook_features), ("CI", &ci_features)] {
+        if let Some(first) = sets.first() {
+            assert!(
+                sets.iter().all(|s| s == first),
+                "{label} invokes the workspace suite with differing feature sets: {sets:?}"
+            );
+        }
+    }
+
+    assert_eq!(
+        hook_features.first(),
+        ci_features.first(),
+        "the hook and CI run the workspace suite with different features.\n\
+         hook: {hook_cmds:?}\n  CI: {ci_cmds:?}\n\n\
+         A target whose `required-features` are unmet is dropped without a \
+         warning, so the lane with fewer features runs a smaller suite under \
+         the same name."
+    );
+}
+
 #[test]
 fn the_workspace_suite_runs_with_debug_assertions_in_hook_and_ci() {
     let sources = [
