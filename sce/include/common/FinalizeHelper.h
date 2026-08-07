@@ -73,10 +73,18 @@ public:
 
         // §scxml-6.5: Set _event BEFORE finalize execution
         // Finalize scripts need access to _event.data.fieldName (test 233)
-        jsEngine
-            .setCurrentEvent(
-                sessionId, SetCurrentEventArgs{eventName, eventData, "external", sendId, origin, originType, invokeId})
-            .get();
+        //
+        // Checked rather than discarded: if the binding fails the finalize
+        // script still runs, against a stale or absent `_event`, and reports
+        // success. That is the same failure the sibling call below refuses.
+        auto eventResult = jsEngine
+                               .setCurrentEvent(sessionId, SetCurrentEventArgs{eventName, eventData, "external", sendId,
+                                                                               origin, originType, invokeId})
+                               .get();
+        if (!eventResult.isSuccess()) {
+            SCE_LOG_ERROR("FinalizeHelper: Failed to bind _event before finalize: {}", eventResult.getErrorMessage());
+            return false;
+        }
 
         // Execute finalize script
         auto result = jsEngine.executeScript(sessionId, finalizeScript).get();
