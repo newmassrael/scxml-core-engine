@@ -15222,3 +15222,194 @@ fn strip_xml_comments(src: &str) -> String {
     out.push_str(rest);
     out
 }
+
+// ── §synth-5 transform kind — computed values, not emitted text ──
+
+/// The transform kind is "input -> computation -> output", and until
+/// now nothing checked the computation.
+///
+/// Measured: rewriting `rust_binop`'s `Add` arm to `"-"` makes
+/// `forge_rust_transform_multi_output` fail as an **Output mismatch**
+/// and nothing else — refresh the golden and a Celsius-to-Fahrenheit
+/// converter that subtracts 32 ships green. That is the state the
+/// algorithm kind was in before its declared vectors were run.
+///
+/// `<sce:test-vector>` cannot express this yet: the parser accepts it
+/// on `Algorithm | Codec` only, and its sidecar binds one scalar
+/// return rather than a transform's named outputs. Widening it is a
+/// schema change, so the assertions are injected here instead — the
+/// same route `forge_rust_algorithm_cobs_encode_runtime` takes.
+///
+/// Two of the three fixtures are checkable against something outside
+/// this repository, which is why they carry the load: the
+/// Celsius/Fahrenheit/Kelvin relations are defined, and nibble
+/// extraction is fixed by what a nibble is. `transform_temperature`'s
+/// sensor scaling is the fixture's own contract, so its case restates
+/// the arithmetic independently rather than importing a constant —
+/// if someone edits that fixture's `expr`, this must be updated with
+/// it, and failing loudly is the intended behaviour.
+#[test]
+fn transform_rust_emit_computes_the_declared_conversions() {
+    const CASES: &str = r#"
+#[cfg(test)]
+mod transform_value_cases {
+    use crate::transform_multi_output::{compute_fahrenheit, compute_kelvin};
+    use crate::transform_bitwise::{compute_high_nibble, compute_low_nibble};
+    use crate::transform_temperature::compute_temperature;
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn celsius_to_fahrenheit_matches_the_defined_scale() {
+        // Water's freezing and boiling points, and the point where the
+        // two scales read alike — three points pin slope and offset,
+        // so a wrong multiplier and a wrong constant cannot cancel.
+        assert!(close(compute_fahrenheit(0.0), 32.0));
+        assert!(close(compute_fahrenheit(100.0), 212.0));
+        assert!(close(compute_fahrenheit(-40.0), -40.0));
+    }
+
+    #[test]
+    fn celsius_to_kelvin_matches_the_defined_offset() {
+        assert!(close(compute_kelvin(0.0), 273.15));
+        assert!(close(compute_kelvin(-273.15), 0.0));
+    }
+
+    #[test]
+    fn nibble_extraction_splits_the_byte() {
+        assert_eq!(compute_high_nibble(0xAB), 0x0A);
+        assert_eq!(compute_low_nibble(0xAB), 0x0B);
+        // A high bit set must not leak across the split.
+        assert_eq!(compute_high_nibble(0xF0), 0x0F);
+        assert_eq!(compute_low_nibble(0xF0), 0x00);
+    }
+
+    #[test]
+    fn sensor_scaling_applies_gain_then_offset() {
+        // `raw * 0.1 - 40.0`, restated: 400 sits at the offset, and a
+        // 250-count step is 25 degrees. Order matters — applying the
+        // offset first would put these at -39.96 and -14.96.
+        assert!(close(compute_temperature(400), 0.0));
+        assert!(close(compute_temperature(650), 25.0));
+        assert!(close(compute_temperature(0), -40.0));
+    }
+}
+"#;
+
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &[
+            "transform_multi_output.scxml",
+            "transform_bitwise.scxml",
+            "transform_temperature.scxml",
+        ],
+        &[("transform_value_cases.rs", CASES)],
+        "transform_values",
+    )
+    .unwrap_or_else(|e| panic!("the emitted transforms must compute their declared values\n{e}"));
+}
+
+// ── §synth-5 procedure kind — the retry bound, exercised ────────
+
+/// The procedure kind's contract is which branch it takes and how
+/// many times, and until now only its emitted text was checked.
+///
+/// `procedure_security_access` is a UDS security-access exchange with
+/// `maxRetries` = 3 and a guard pair (`retryCount < maxRetries` /
+/// `retryCount >= maxRetries`). Getting that bound wrong is not a
+/// cosmetic defect on a real ECU — retrying past the limit is how a
+/// security-access attempt counter locks the module out.
+///
+/// Both arms are exercised because either alone is satisfiable by a
+/// broken machine: a procedure that never retries reaches `error`
+/// too, and one that ignores the guard entirely still reaches `done`
+/// on the happy path. Pinning the request *count* is what separates
+/// them, and it is derived from the fixture's own `maxRetries` rather
+/// than from anything codegen emitted.
+#[test]
+fn procedure_rust_emit_honours_the_declared_retry_bound() {
+    const CASES: &str = r#"
+#[cfg(test)]
+mod procedure_retry_cases {
+    use crate::procedure_security_access::execute;
+    use ::sce_forge_runtime::procedure::ProcedureServiceResponse;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// `maxRetries` in the fixture. The first SecurityAccess attempt is
+    /// not a retry, so a bound of N permits N + 1 attempts in total.
+    const MAX_RETRIES: usize = 3;
+
+    #[test]
+    fn a_failing_seed_request_stops_at_the_retry_bound() {
+        let seed_requests = Rc::new(RefCell::new(0usize));
+        let counter = Rc::clone(&seed_requests);
+        let result = execute(
+            move |req| {
+                let ok = req.service != "SecurityAccess";
+                if req.service == "SecurityAccess" && req.subfunc.as_deref() == Some("0x01") {
+                    *counter.borrow_mut() += 1;
+                }
+                ProcedureServiceResponse { success: ok, data: String::new() }
+            },
+            |seed| seed.to_vec(),
+            0x7E0,
+        );
+        assert!(result.completed, "the procedure must reach a final state");
+        assert_eq!(result.final_state, "error");
+        assert_eq!(result.done_data.get("result").map(String::as_str), Some("failure"));
+        assert_eq!(
+            *seed_requests.borrow(),
+            MAX_RETRIES + 1,
+            "the seed request must be attempted once plus MAX_RETRIES times; a \
+             different count means the guard pair is not bounding the loop"
+        );
+    }
+
+    #[test]
+    fn a_succeeding_exchange_reaches_done_without_retrying() {
+        let seed_requests = Rc::new(RefCell::new(0usize));
+        let key_payloads: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+        let counter = Rc::clone(&seed_requests);
+        let payloads = Rc::clone(&key_payloads);
+        let result = execute(
+            move |req| {
+                if req.service == "SecurityAccess" && req.subfunc.as_deref() == Some("0x01") {
+                    *counter.borrow_mut() += 1;
+                    return ProcedureServiceResponse { success: true, data: "SEED".into() };
+                }
+                if req.service == "SecurityAccess" && req.subfunc.as_deref() == Some("0x02") {
+                    payloads.borrow_mut().push(req.payload.clone().unwrap_or_default());
+                }
+                ProcedureServiceResponse { success: true, data: String::new() }
+            },
+            |seed| {
+                let mut key = seed.to_vec();
+                key.push(0xFF);
+                key
+            },
+            0x7E0,
+        );
+        assert!(result.completed);
+        assert_eq!(result.final_state, "done");
+        assert_eq!(result.done_data.get("result").map(String::as_str), Some("success"));
+        assert_eq!(*seed_requests.borrow(), 1, "a clean exchange must not retry");
+        // The key is computed from the seed the ECU returned, not from
+        // an empty buffer — the `computeKey(seed)` binding is the point.
+        let sent = key_payloads.borrow();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0], b"SEED\xFF".to_vec());
+    }
+}
+"#;
+
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &["procedure_security_access.scxml"],
+        &[("procedure_retry_cases.rs", CASES)],
+        "procedure_retry",
+    )
+    .unwrap_or_else(|e| panic!("the emitted procedure must honour its retry bound\n{e}"));
+}
