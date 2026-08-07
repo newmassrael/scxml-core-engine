@@ -152,6 +152,7 @@
         "codec/repeat-count-refs-later-field",
         "algorithm/test-vector-unsupported-kind",
         "codec/tlv-chain-depth-unspecified",
+        "codec/tlv-chain-truncate-under-entry-flag",
         "codec/dma-alignment-unsatisfiable",
         "codec/peek-byte-flag-layout-mismatch",
         "link/framer-missing",

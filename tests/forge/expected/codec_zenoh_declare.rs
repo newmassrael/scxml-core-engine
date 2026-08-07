@@ -103,6 +103,9 @@ impl<'a> CodecZenohDeclare<'a> {
                 if cursor.remaining() == 0 { break; }
                 let _entry = CodecZenohExtEntry::decode(cursor)?;
                 _more = _entry.z();
+                // Bounded by max-depth on both sides — loop count and `_vec`
+                // capacity are the same literal — so this push cannot fail. An
+                // over-long chain is refused by the guard after the loop.
                 _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
                 if !_more { break; }
             }

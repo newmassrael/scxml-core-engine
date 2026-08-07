@@ -8099,6 +8099,23 @@ struct TlvChainDecode<'a> {
     lang: crate::generator::Language,
 }
 
+/// Rust chain emit — the note that rides above `_vec.push(...)`.
+///
+/// On the repeat path `CodecError::TooManyElements` is live: the loop bound
+/// is a runtime count and the capacity is the declared `sce:max-count`, so
+/// the wire can outrun the container. On the chain path it cannot — the loop
+/// count and `_vec`'s capacity are the same `max-depth` literal — and the
+/// arm is there only because `push` returns a `Result`. Saying so in the
+/// emit keeps a reader from reading that arm as the chain's overflow
+/// handling, which lives in the guard after the loop.
+///
+/// Rendered at the 16-space body indent both chain emits use, and closing on
+/// the same indent so the caller can concatenate it straight onto the push.
+const RUST_CHAIN_PUSH_NOTE: &str =
+    "// Bounded by max-depth on both sides — loop count and `_vec`\n                \
+     // capacity are the same literal — so this push cannot fail. An\n                \
+     // over-long chain is refused by the guard after the loop.\n                ";
+
 /// "The cursor has no bytes left", in each backend's runtime spelling.
 fn chain_cursor_empty(lang: crate::generator::Language) -> &'static str {
     use crate::generator::Language;
@@ -8186,6 +8203,13 @@ fn more_decl_line(
 ///   - the cursor still holds bytes: `max-depth` refused an entry the peer
 ///     did send. This is precisely what `on-overflow` governs — `reject`
 ///     raises, `truncate` keeps its declared silence.
+///
+/// That last combination — `truncate` under entry-flag — cannot arrive from
+/// SCXML: the parser refuses it with
+/// `codec/tlv-chain-truncate-under-entry-flag`, because keeping the silence
+/// there means leaving the dropped entry's bytes where the next field reads
+/// them. The arm stays because this function answers for any IR, not only
+/// parser-built IR, and the short-frame guard it emits is correct either way.
 fn tlv_chain_guard(
     lang: crate::generator::Language,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
@@ -8275,14 +8299,14 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor)?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
                 Some(acc) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      let _entry = {body_type}::decode(cursor)?;\n                \
                      _more = _entry.{acc}();\n                \
-                     _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
+                     {RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
                      if !_more {{ break; }}\n            "
                 ),
             };
@@ -8649,14 +8673,14 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     {RUST_CHAIN_PUSH_NOTE}_vec.push({body_type}::decode(cursor)?)\n                    \
                      .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
                 Some(acc) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      let _entry = {body_type}::decode(cursor)?;\n                \
                      _more = _entry.{acc}();\n                \
-                     _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
+                     {RUST_CHAIN_PUSH_NOTE}_vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
                      if !_more {{ break; }}\n            "
                 ),
             };
@@ -23385,5 +23409,57 @@ mod tests {
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);
         assert!(has);
+    }
+
+    /// RFC §synth-5-B — the four answers [`tlv_chain_guard`] gives, one per
+    /// (termination, policy) pair.
+    ///
+    /// The `truncate` + entry-flag pair is unreachable from SCXML — the
+    /// parser refuses it with `codec/tlv-chain-truncate-under-entry-flag` —
+    /// so this is the only place that says what the emit does when an IR
+    /// arrives carrying it anyway: the short-frame guard, which is correct
+    /// regardless of policy, and no overflow guard, which is the silence
+    /// `truncate` asks for.
+    #[test]
+    fn tlv_chain_guard_answers_each_termination_and_policy_pair() {
+        use crate::forge::model::TlvOverflowPolicy;
+        use crate::generator::Language;
+
+        let guard =
+            |entry_flag, policy| tlv_chain_guard(Language::Rust, policy, entry_flag, "    ");
+
+        // Exhaust-or-depth: the chain owns the tail, so leftover bytes are
+        // the overflow signal, and `truncate` has nothing to say.
+        let exhaust_reject = guard(false, TlvOverflowPolicy::Reject);
+        assert!(
+            exhaust_reject.contains("cursor.remaining() > 0"),
+            "{exhaust_reject}"
+        );
+        assert!(
+            exhaust_reject.contains("TlvChainOverflow"),
+            "{exhaust_reject}"
+        );
+        assert!(!exhaust_reject.contains("_more"), "{exhaust_reject}");
+        assert_eq!(guard(false, TlvOverflowPolicy::Truncate), "");
+
+        // Entry-flag: the flag is the evidence, and the cursor decides which
+        // of the two failures it was.
+        let flag_reject = guard(true, TlvOverflowPolicy::Reject);
+        assert!(flag_reject.contains("NeedMoreBytes"), "{flag_reject}");
+        assert!(flag_reject.contains("TlvChainOverflow"), "{flag_reject}");
+        assert!(
+            !flag_reject.contains("cursor.remaining() > 0"),
+            "{flag_reject}"
+        );
+
+        // Entry-flag + truncate: the short frame still refuses (no policy
+        // asks a decoder to invent the entry the wire promised); the
+        // depth-cap case keeps the declared silence.
+        let flag_truncate = guard(true, TlvOverflowPolicy::Truncate);
+        assert!(flag_truncate.contains("NeedMoreBytes"), "{flag_truncate}");
+        assert!(
+            !flag_truncate.contains("TlvChainOverflow"),
+            "{flag_truncate}"
+        );
     }
 }

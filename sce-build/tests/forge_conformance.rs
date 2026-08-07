@@ -3344,6 +3344,96 @@ fn forge_codec_tlv_chain_diagnostic_event_overflow_rejects() {
     );
 }
 
+/// RFC §synth-5-B B3: `on-overflow="truncate"` under
+/// `terminate-on="entry-flag"` rejects at declaration time.
+///
+/// The two attributes contradict each other. `entry-flag` termination is
+/// the author saying the wire after this chain is not the chain's — that
+/// is the whole reason to pick it over `exhaust-or-depth`. `truncate` is
+/// the author saying entries past `max-depth` may be dropped silently.
+/// Dropping them does not consume their bytes, so what the next field
+/// reads is the middle of the chain, and the decode returns `Ok` with
+/// fields built from another field's bytes.
+///
+/// Consuming them instead is not available: the number of entries to skip
+/// is whatever the peer sent, so the skip loop has no bound derivable
+/// from the declaration — which is exactly what `max-depth` lowering to a
+/// `max-iter` (RFC line 533) and the `max-depth × per-entry-WCET` budget
+/// (line 647) exist to forbid.
+#[test]
+fn forge_codec_tlv_chain_truncate_under_entry_flag_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="truncate_entry_flag">
+  <sce:import src="codec_zenoh_ext_entry.scxml" kind="codec" as="codec_zenoh_ext_entry"/>
+  <datamodel>
+    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="1"
+                   max-depth="4" on-overflow="truncate"
+                   terminate-on="entry-flag" entry-flag-name="Z"/>
+    <sce:field id="trailer" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("truncate_entry_flag"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!(
+            "on-overflow=\"truncate\" with terminate-on=\"entry-flag\" must reject with \
+             codec/tlv-chain-truncate-under-entry-flag"
+        ),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(
+            &err.error,
+            ForgeError::Validation(boxed)
+                if matches!(
+                    boxed.as_ref(),
+                    ValidationError::CodecTlvChainTruncateUnderEntryFlag { codec, field }
+                        if codec == "truncate_entry_flag" && field == "extensions"
+                )
+        ),
+        "must surface CodecTlvChainTruncateUnderEntryFlag naming the codec + field; got: {:?}",
+        err.error
+    );
+}
+
+/// The other side of the rule above: `truncate` stays legal under
+/// `exhaust-or-depth`, where the chain owns the codec's remaining wire and
+/// the post-cap bytes belong to nobody else. Without this case the
+/// rejection could be widened to all of `truncate` and no test would say
+/// so.
+#[test]
+fn forge_codec_tlv_chain_truncate_under_exhaust_or_depth_compiles() {
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="truncate_exhaust">
+  <sce:import src="codec_tlv_entry.scxml" kind="codec" as="codec_tlv_entry"/>
+  <datamodel>
+    <sce:field id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:tlv-chain id="extensions" type="codec_tlv_entry" sce:byte="1"
+                   max-depth="4" on-overflow="truncate"/>
+  </datamodel>
+</scxml>"#;
+    sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("truncate_exhaust"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .expect("truncate under exhaust-or-depth stays legal");
+}
+
 // ── RFC §synth-5-B B3 DMA alignment primitive (Cpp/Rust trunk) ────
 // `codec_dma_aligned_basic` declares a uint8 msg_id + uint8 reserved
 // at bytes 0-1, then a tail-bytes aligned_payload at byte 32 with

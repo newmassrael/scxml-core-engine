@@ -3577,6 +3577,26 @@ fn parse_codec_tlv_chain_from_node(
         }
     };
 
+    // RFC §synth-5-B — `truncate` and `entry-flag` contradict each other,
+    // and the contradiction is decidable from the two attributes alone.
+    // `entry-flag` says the wire after the chain is not the chain's;
+    // `truncate` says post-cap entries may be dropped. A dropped entry's
+    // bytes are not consumed, so they are what the next field reads. See
+    // `CodecTlvChainTruncateUnderEntryFlag` for why consuming them
+    // instead is not available under the RFC's bounded-parse contract.
+    if matches!(on_overflow, TlvOverflowPolicy::Truncate)
+        && matches!(terminate_on, TlvTerminateStrategy::EntryFlag { .. })
+    {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::CodecTlvChainTruncateUnderEntryFlag {
+                codec: label.identifier.to_string(),
+                field: id.clone(),
+            },
+        ));
+    }
+
     // RFC §synth-5-B gated tlv-chain — `<sce:tlv-chain sce:present-if="P">`
     // gates the entire chain field on a flag predicate, mirroring
     // the repeat-with-present-if lift. Required by zenoh

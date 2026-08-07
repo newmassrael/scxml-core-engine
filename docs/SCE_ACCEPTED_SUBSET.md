@@ -1086,7 +1086,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (335 codes)
+## Appendix — `DiagnosticCode` index (336 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1202,6 +1202,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `codec/repeat-count-refs-later-field` | Validation |
 | `algorithm/test-vector-unsupported-kind` | Validation |
 | `codec/tlv-chain-depth-unspecified` | Validation |
+| `codec/tlv-chain-truncate-under-entry-flag` | Validation |
 | `codec/dma-alignment-unsatisfiable` | Validation |
 | `codec/peek-byte-flag-layout-mismatch` | Validation |
 | `link/framer-missing` | Validation |
