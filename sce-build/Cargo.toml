@@ -155,6 +155,16 @@ name = "codegen_depfile_content"
 path = "tests/codegen_depfile_content.rs"
 required-features = ["cli"]
 
+# Relocation gate: the same document rendered from a template tree
+# reached through a path built out of every backend directory name must
+# declare the same templates as one rendered from the canonical path.
+# Drives the real binary for the same reason `codegen_depfile_content`
+# does — the property under test is what `--write-deps` writes.
+[[test]]
+name = "codegen_depfile_path_independence"
+path = "tests/codegen_depfile_path_independence.rs"
+required-features = ["cli"]
+
 # Reader gate for the descriptive `build.static_analyzer` deploy key.
 # The property under test is what reaches the stdout manifest, so it
 # drives the real binary and takes the same `cli` feature gate.
