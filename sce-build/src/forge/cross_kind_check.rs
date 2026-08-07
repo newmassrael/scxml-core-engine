@@ -593,7 +593,7 @@ pub(crate) fn check_imports_acyclic(
     entry_imports: &[ForgeImport],
     entry_label: &str,
     base_dir: &Path,
-) -> Result<(), Located<crate::forge::error::ForgeError>> {
+) -> Result<Vec<PathBuf>, Located<crate::forge::error::ForgeError>> {
     // `visited` holds documents fully processed (no cycle through them);
     // `on_stack` holds the current DFS frontier so a back-edge into it
     // is the cycle signal. `path` mirrors `on_stack` but as a Vec so we
@@ -601,6 +601,14 @@ pub(crate) fn check_imports_acyclic(
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut on_stack: HashSet<PathBuf> = HashSet::new();
     let mut path: Vec<String> = Vec::new();
+    // Every document this walk read, in traversal order. The walk
+    // already visits the transitive closure of `<sce:import>` to decide
+    // acyclicity; returning what it read costs nothing and is the only
+    // place in the pipeline that knows the whole set. Deriving it a
+    // second time from `parsed.imports` yields the *direct* imports
+    // alone, and a build told only those ships a stale artefact after a
+    // grandchild edit — `codegen_depfile_content` measures exactly that.
+    let mut sources: Vec<PathBuf> = Vec::new();
 
     fn dfs(
         doc_label: &str,
@@ -609,6 +617,7 @@ pub(crate) fn check_imports_acyclic(
         visited: &mut HashSet<PathBuf>,
         on_stack: &mut HashSet<PathBuf>,
         path: &mut Vec<String>,
+        sources: &mut Vec<PathBuf>,
     ) -> Result<(), Located<crate::forge::error::ForgeError>> {
         for imp in imports {
             let child_path = base_dir.join(&imp.src);
@@ -644,6 +653,15 @@ pub(crate) fn check_imports_acyclic(
             // child imports" so the cycle detector does not double-
             // emit on a separately-diagnosed failure.
             let content = std::fs::read_to_string(&child_path).ok();
+            if content.is_some() {
+                // Recorded on the read, not on the edge: a prerequisite
+                // is a file that was opened. An import naming a file
+                // that does not exist is diagnosed by the enrichment
+                // pass; listing it here would put a path nothing writes
+                // into the depfile and leave the target permanently
+                // dirty.
+                sources.push(canonical.clone());
+            }
             let child_imports: Vec<ForgeImport> = if let Some(content) = content {
                 let stem = child_path
                     .file_stem()
@@ -680,6 +698,7 @@ pub(crate) fn check_imports_acyclic(
                 visited,
                 on_stack,
                 path,
+                sources,
             )?;
             on_stack.remove(&canonical);
             path.pop();
@@ -695,7 +714,9 @@ pub(crate) fn check_imports_acyclic(
         &mut visited,
         &mut on_stack,
         &mut path,
-    )
+        &mut sources,
+    )?;
+    Ok(sources)
 }
 
 /// Cross-kind binding validator entry point. Runs after
@@ -707,14 +728,28 @@ pub(crate) fn check_imports_acyclic(
 /// Today wired only on the Forge→Forge path. A future Statechart→Forge
 /// binding extends the same function with a Statechart arm; the
 /// diagnostic shape stays identical.
+///
+/// Returns every forge document the import walk read, sorted — the
+/// transitive closure of `<sce:import>` below `parsed`, which callers
+/// surface as [`crate::generator::GeneratedOutput::deps`] so a build
+/// system can invalidate on any of them.
 pub fn check(
     parsed: &ParsedForge,
     base_dir: &Path,
     label: &str,
-) -> Result<(), Located<crate::forge::error::ForgeError>> {
+) -> Result<Vec<PathBuf>, Located<crate::forge::error::ForgeError>> {
     // Step 1 — defensive cycle detection. Runs first so a cyclic
     // import does not infinite-loop the surface-table builder below.
-    check_imports_acyclic(&parsed.imports, label, base_dir)?;
+    // The walk it performs is also the only enumeration of the import
+    // closure in the pipeline, so its reads are what the caller reports
+    // as dependencies.
+    let mut sources = check_imports_acyclic(&parsed.imports, label, base_dir)?;
+    // Deterministic and duplicate-free: a depfile that reorders between
+    // runs defeats a "regenerate and expect no diff" gate as surely as a
+    // changing timestamp, and a diamond import graph reaches the same
+    // document by two paths.
+    sources.sort();
+    sources.dedup();
 
     // Step 2 — build per-alias member surface table. Empty when no
     // imports (typical for standalone fixtures) — the field walker
@@ -722,7 +757,7 @@ pub fn check(
     // ever a hit.
     let surface = build_surface_table(&parsed.imports, base_dir)?;
     if surface.is_empty() {
-        return Ok(());
+        return Ok(sources);
     }
 
     // Step 3 — per-kind expression walker. v1 covers Algorithm only;
@@ -753,7 +788,7 @@ pub fn check(
         }
         check_algorithm_return_type(algo, &surface, label)?;
     }
-    Ok(())
+    Ok(sources)
 }
 
 #[cfg(test)]

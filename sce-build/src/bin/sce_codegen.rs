@@ -1642,6 +1642,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 &forge_opts,
             ) {
                 Ok(output) => {
+                    let import_deps = output.deps;
                     let files = maybe_format_files(output.files, &cpp_formatter);
                     let out = Path::new(output_dir);
                     for (filename, code) in &files {
@@ -1663,14 +1664,18 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                         // document's `source-hash` covers them: editing
                         // an imported document demonstrably changes this
                         // document's output.
+                        //
+                        // They come from `GeneratedOutput::deps` — what
+                        // the compile read — rather than from
+                        // `parsed.imports`, which is the *direct* imports
+                        // only. Re-deriving them here was the same
+                        // second-source defect one layer over: in an
+                        // `algorithm → codec → codec` chain the leaf went
+                        // undeclared while widening it still changed this
+                        // document's `source-hash`.
                         let out = Path::new(output_dir);
                         let targets: Vec<PathBuf> =
                             files.iter().map(|(f, _)| out.join(f)).collect();
-                        let import_deps: Vec<PathBuf> = parsed
-                            .imports
-                            .iter()
-                            .map(|imp| base_dir.join(&imp.src))
-                            .collect();
                         // The forge scope, not the statechart one:
                         // `forge::generator::generate_*` loads
                         // `templates/forge/<lang>`.
