@@ -9516,9 +9516,41 @@ topology:
             ld.contains("> SRAM1"),
             "MEMORY region directive must uppercase the section name; full ld:\n{ld}",
         );
+        // The sentinel has to sit *inside* the output section body
+        // (§5.E lines 1059-1064). Written after the closing brace it
+        // advances only the location counter, which a `> SRAM1`
+        // successor ignores in favour of the region cursor — it would
+        // link clean and constrain nothing.
+        // `buffer_pool_linker_fragment_aligns_the_post_pool_boundary`
+        // links this fragment and proves the effect; this assertion
+        // keeps the placement pinned on hosts with no linker.
+        // Measure the directives, not the prose. The fragment's header
+        // block quotes the sentinel token while explaining it, and that
+        // quotation precedes the SECTIONS body — matching it would
+        // report the documentation's placement and pass either way.
+        let directives = {
+            let mut out = String::with_capacity(ld.len());
+            let mut rest = ld;
+            while let Some(open) = rest.find("/*") {
+                out.push_str(&rest[..open]);
+                rest = match rest[open..].find("*/") {
+                    Some(close) => &rest[open + close + 2..],
+                    None => "",
+                };
+            }
+            out.push_str(rest);
+            out
+        };
+        let sentinel = directives
+            .find(". = ALIGN(32);")
+            .unwrap_or_else(|| panic!("inter-pool sentinel must be emitted; full ld:\n{ld}"));
+        let body_close = directives.find("} > SRAM1").unwrap_or_else(|| {
+            panic!("output section must close onto the MEMORY region; full ld:\n{ld}")
+        });
         assert!(
-            ld.contains(". = ALIGN(32);"),
-            "inter-pool sentinel must follow the SECTIONS body per §5.E lines 1059-1064; full ld:\n{ld}",
+            sentinel < body_close,
+            "inter-pool sentinel must sit inside the output section body, \
+             before `}} > SRAM1`, per §5.E lines 1059-1064; full ld:\n{ld}",
         );
     }
 
@@ -9795,6 +9827,212 @@ topology:
         )
         .expect("pool footprint fitting region must pass and emit c11 (.h, .ld) pair");
         assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment");
+    }
+
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1059-1064: the inter-pool
+    /// sentinel is *linked*, not grepped.
+    ///
+    /// The spec's claim is a placement claim — the sentinel constrains
+    /// "the byte distance from the previous section's tail" so a master
+    /// script that splices an unaligned section after the pool still
+    /// starts it on the boundary. Only a linker can decide whether that
+    /// holds: `mem/inter-pool-padding-not-emitted` sees the emit marker,
+    /// and a golden test sees the token, but neither can tell a working
+    /// sentinel from a decorative one.
+    ///
+    /// Two facts make the probe able to fail:
+    ///
+    /// 1. **The pool footprint is deliberately not a multiple of the
+    ///    alignment** (3 × 100 = 300 bytes, alignment 32). A pool whose
+    ///    size already divides the alignment lands the next section on
+    ///    the boundary with or without a sentinel, so the assertion
+    ///    would hold against a fragment that does nothing.
+    /// 2. **The trailing section carries no `ALIGN()` of its own.** The
+    ///    spec notes the sentinel is redundant when the next section is
+    ///    another pool; the splice case is the one it is *for*.
+    ///
+    /// The negative control links the same objects against a
+    /// hand-written fragment with the sentinel removed and requires the
+    /// link to fail. Without it a linker that ignored `ASSERT` — or a
+    /// master script that never reached it — would report success for
+    /// both arms and certify nothing.
+    #[test]
+    fn buffer_pool_linker_fragment_aligns_the_post_pool_boundary() {
+        let Some(cc) = crate::toolchain::require_or_skip(
+            "gcc",
+            "compile the buffer-pool storage table so the linker has a \
+             `.section` input to place (spec §synth-5-E lines 1059-1064)",
+        ) else {
+            return;
+        };
+        let Some(linker) = crate::toolchain::require_or_skip(
+            "ld",
+            "link the generated buffer-pool linker fragment and decide \
+             whether the inter-pool sentinel aligns the post-pool boundary",
+        ) else {
+            return;
+        };
+
+        // 300 bytes of storage against a 32-byte boundary: 300 % 32 == 12,
+        // so the post-pool boundary moves only if the fragment moves it.
+        const SLOT_COUNT: usize = 3;
+        const SLOT_SIZE: usize = 100;
+        const ALIGNMENT: usize = 32;
+        assert_ne!(
+            (SLOT_COUNT * SLOT_SIZE) % ALIGNMENT,
+            0,
+            "the fixture must not divide the alignment, or a fragment that \
+             emits no sentinel at all would satisfy this test",
+        );
+
+        let scxml = format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="odd_pool" version="1.0">
+  <sce:slot-count>{SLOT_COUNT}</sce:slot-count>
+  <sce:slot-size>{SLOT_SIZE}</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>{ALIGNMENT}</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##
+        );
+        let label = DocumentLabel {
+            identifier: "odd_pool",
+            diagnostic_label: "odd_pool.scxml",
+        };
+        let out = compile_forge_from_string(&scxml, label, generator::Language::C11)
+            .expect("forge c11 codegen must succeed for a well-formed buffer-pool");
+
+        let tmp = std::env::temp_dir().join(format!("sce-pool-link-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).expect("create link fixture dir");
+        for (name, body) in &out.files {
+            std::fs::write(tmp.join(name), body).expect("write generated artifact");
+        }
+
+        // The storage table is `static`, so a translation unit that never
+        // reaches it leaves the compiler free to drop the whole section
+        // and the linker with nothing to place. `odd_pool_slot_write`
+        // is the shortest path that takes its address.
+        std::fs::write(
+            tmp.join("driver.c"),
+            r#"#include <stdint.h>
+#include <stddef.h>
+#include "odd_pool.h"
+
+/* The spliced section: no ALIGN() of its own, so its base is whatever
+   the region cursor holds when the pool's output section ends. */
+__attribute__((section(".after_pool"), used)) uint8_t author_buf[4];
+
+volatile uint8_t *sce_test_sink;
+
+void _start(void) {
+    sce_slot_handle_t h = odd_pool_pool_acquire_for_encode();
+    sce_test_sink = odd_pool_slot_write(&h);
+}
+"#,
+        )
+        .expect("write driver.c");
+
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let runtime_include = crate_dir.join("../backends/c/runtime/include");
+        let obj = tmp.join("driver.o");
+        let compile = std::process::Command::new(&cc)
+            .arg("-c")
+            .arg("-std=c11")
+            .arg("-ffreestanding")
+            .arg("-Os")
+            .arg("-I")
+            .arg(&tmp)
+            .arg("-I")
+            .arg(&runtime_include)
+            .arg(tmp.join("driver.c"))
+            .arg("-o")
+            .arg(&obj)
+            .output()
+            .expect("gcc must be runnable for the build environment");
+        assert!(
+            compile.status.success(),
+            "the generated pool header must compile.\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&compile.stdout),
+            String::from_utf8_lossy(&compile.stderr),
+        );
+
+        // A master script in the shape §synth-5-E documents: a MEMORY
+        // region, the fragment spliced in by INCLUDE, then an unaligned
+        // author section. The ASSERTs are the observation — they read
+        // linker-resolved addresses, so no object-file reader is needed.
+        let master = |splice: &str| {
+            format!(
+                r#"MEMORY {{
+  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 256K
+  SRAM1 (rw)  : ORIGIN = 0x20000000, LENGTH = 128K
+}}
+SECTIONS {{ .text : {{ *(.text*) }} > FLASH }}
+{splice}
+SECTIONS {{
+  .after_pool (NOLOAD) : {{ KEEP(*(.after_pool*)) }} > SRAM1
+  ASSERT(ADDR(.sram1_odd_pool) >= ORIGIN(SRAM1), "pool escaped its MEMORY region")
+  ASSERT(ADDR(.sram1_odd_pool) % {ALIGNMENT} == 0, "pool section base is not aligned")
+  ASSERT(ADDR(.after_pool) % {ALIGNMENT} == 0, "post-pool boundary is not aligned")
+}}
+"#
+            )
+        };
+
+        let link = |script_name: &str, script: &str| {
+            std::fs::write(tmp.join(script_name), script).expect("write master linker script");
+            std::process::Command::new(&linker)
+                // `-L` must precede `-T`: ld processes the command line in
+                // order and resolves the script's `INCLUDE` while parsing
+                // `-T`, so a search path given afterwards arrives too late.
+                .arg("-L")
+                .arg(&tmp)
+                .arg("-T")
+                .arg(tmp.join(script_name))
+                .arg("-o")
+                .arg(tmp.join(format!("{script_name}.elf")))
+                .arg(&obj)
+                .output()
+                .expect("ld must be runnable for the build environment")
+        };
+
+        let live = link("live.ld", &master("INCLUDE odd_pool_pool.ld"));
+
+        // Negative control: the same link with the sentinel taken out.
+        // It must fail, or the ASSERTs above are not being evaluated and
+        // the positive arm proves nothing.
+        let control = link(
+            "control.ld",
+            &master(&format!(
+                "SECTIONS {{ .sram1_odd_pool (NOLOAD) : ALIGN({ALIGNMENT}) \
+                 {{ KEEP(*(.sram1_odd_pool*)) }} > SRAM1 }}"
+            )),
+        );
+
+        let live_ok = live.status.success();
+        let control_ok = control.status.success();
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(
+            !control_ok,
+            "the sentinel-free control must fail to link; it succeeded, so the \
+             ASSERT directives are not deciding anything and the positive arm \
+             below is vacuous",
+        );
+        assert!(
+            live_ok,
+            "the generated linker fragment must align the post-pool boundary. \
+             An `ALIGN()` on the pool's own output section constrains only that \
+             section's base; a `. = ALIGN(N);` written *after* the section's \
+             closing brace does not move a region-allocated successor, because \
+             the linker advances `> SRAM1` from the region cursor rather than \
+             from the location counter. The sentinel has to be inside the \
+             output section body, where it grows the section itself.\
+             \nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&live.stdout),
+            String::from_utf8_lossy(&live.stderr),
+        );
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E codegen-invariant force-fixture (linker
