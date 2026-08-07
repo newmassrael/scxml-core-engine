@@ -66,7 +66,7 @@
         }
 {% endif %}
 
-{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+{# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. Kotlin constructs no typed runtime codec error (the null-sentinel
    convention), so the assertion is that the decode refused. Byte literals
    go through `.toByte()` because Kotlin's Byte is signed and a header with

@@ -61,7 +61,7 @@
 {% endfor %}
 {% endif %}
 
-{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+{# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. The generated Python `decode` funnels every `CodecError` through
    one `except` into `None`, so the failure is raised by name inside the
    codec but is not observable by name outside it; the assertion is that
