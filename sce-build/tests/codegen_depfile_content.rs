@@ -25,9 +25,17 @@
 //      shared `_macros/` family, which `state_machine.<lang>.jinja2`
 //      includes on line 5. Deleting the undeclared set and re-rendering
 //      failed outright: `template not found: _macros/sce_map_marker.jinja2`.
+//   4. once (2) was fixed by listing `parsed.imports`, the depfile named
+//      the *direct* imports and stopped: in an `algorithm → codec →
+//      codec` chain, widening the leaf changed `route_msg.h` and nothing
+//      declared the leaf. Found because this gate's fixture grew a second
+//      level — a one-level chain cannot tell "direct" from "reachable".
 //
-// All three have one cause: the depfile computed its template set with
-// a second walk of its own instead of asking the loader what it loads.
+// The first three have one cause: the depfile computed its template set
+// with a second walk of its own instead of asking the loader what it
+// loads. The fourth is the same shape one layer over, in the import
+// graph: the CLI re-derived the import paths instead of taking what the
+// compile actually read.
 //
 // The probe here is behavioural rather than structural. For each backend
 // and pipeline it renders once, prunes every template the depfile did
@@ -134,32 +142,44 @@ const STATECHART: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A forge algorithm importing a forge codec — the pipeline `sce:kind`
-/// routes away from the statechart arm, and the import gives the
+/// A forge codec carrying one field, optionally importing another codec.
+///
+/// Built rather than spelled out per variant: the "mutated" form of a
+/// document differs from the original in one number, and holding the two
+/// as separate literals is how they drift into no longer being the same
+/// document with one change.
+fn forge_codec(name: &str, field: &str, bits: u32, imports: Option<&str>) -> String {
+    let import_line = imports
+        .map(|src| format!("  <sce:import src=\"{src}\" kind=\"codec\" as=\"inner\"/>\n"))
+        .unwrap_or_default();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+{import_line}  <datamodel>
+    <sce:field id="{field}" sce:type="uint{bits}" sce:byte="0" sce:bit-size="{bits}"/>
+  </datamodel>
+</scxml>
+"#
+    )
+}
+
+/// The leaf of the import chain — imported by `frame_codec`, and so
+/// reachable from the compiled document only transitively.
+fn forge_inner_codec(bits: u32) -> String {
+    forge_codec("inner_codec", "inner_id", bits, None)
+}
+
+/// The middle of the chain: imported directly by the compiled algorithm,
+/// and itself importing the leaf.
+fn forge_frame_codec(bits: u32) -> String {
+    forge_codec("frame_codec", "msg_id", bits, Some("inner_codec.scxml"))
+}
+
+/// The compiled document. Its `sce:kind` routes away from the statechart
+/// arm, and the two-level import chain below it is what gives the
 /// `<sce:import>` half of the contract something to be measured against.
-const FORGE_CODEC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="frame_codec" version="1.0">
-  <datamodel>
-    <sce:field id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-  </datamodel>
-</scxml>
-"#;
-
-/// The same codec with a widened field. Used to demonstrate that the
-/// imported document is load-bearing before demanding it be declared —
-/// an assertion nobody can break is not worth making.
-const FORGE_CODEC_MUTATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="frame_codec" version="1.0">
-  <datamodel>
-    <sce:field id="msg_id" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
-  </datamodel>
-</scxml>
-"#;
-
 const FORGE_ALGORITHM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -174,6 +194,35 @@ const FORGE_ALGORITHM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </sce:body>
 </scxml>
 "#;
+
+/// The field width every chain document starts at, and the width a
+/// mutation widens it to. Any pair of distinct widths works; naming them
+/// keeps the "before" and "after" of each probe from drifting apart.
+const CHAIN_BITS: u32 = 8;
+const CHAIN_BITS_WIDENED: u32 = 16;
+
+/// A document in the import chain, by how far it sits from the compiled
+/// one. Both distances are probed: the depfile named the direct import
+/// and stopped there, so a chain of length one could not tell the two
+/// apart.
+struct ChainDoc {
+    filename: &'static str,
+    distance: &'static str,
+    widened: fn() -> String,
+}
+
+const CHAIN_DOCS: &[ChainDoc] = &[
+    ChainDoc {
+        filename: "frame_codec.scxml",
+        distance: "directly imported",
+        widened: || forge_frame_codec(CHAIN_BITS_WIDENED),
+    },
+    ChainDoc {
+        filename: "inner_codec.scxml",
+        distance: "transitively imported",
+        widened: || forge_inner_codec(CHAIN_BITS_WIDENED),
+    },
+];
 
 /// Which pipeline a scenario routes through — the two arms compute their
 /// template scope differently, so both need a probe.
@@ -316,7 +365,9 @@ fn write_sources(dir: &Path, pipeline: Pipeline) -> PathBuf {
             doc
         }
         Pipeline::Forge => {
-            std::fs::write(dir.join("frame_codec.scxml"), FORGE_CODEC)
+            std::fs::write(dir.join("inner_codec.scxml"), forge_inner_codec(CHAIN_BITS))
+                .expect("fixture is writable");
+            std::fs::write(dir.join("frame_codec.scxml"), forge_frame_codec(CHAIN_BITS))
                 .expect("fixture is writable");
             let doc = dir.join("route_msg.scxml");
             std::fs::write(&doc, FORGE_ALGORITHM).expect("fixture is writable");
@@ -436,70 +487,93 @@ fn every_declared_depfile_names_the_templates_its_render_reads() {
     );
 }
 
-/// The imported forge document is a prerequisite of the importing
-/// document's output.
+/// Every forge document the compile reads is a prerequisite of its
+/// output — at any depth in the import chain, not just the first.
 ///
-/// Asserted in two steps, because the first is what makes the second
-/// worth asserting: mutate the imported codec, re-render, and require
-/// the output to change — only then is omitting it from the depfile a
-/// stale-artefact hazard rather than a cosmetic gap.
+/// Asserted in two steps per document, because the first is what makes
+/// the second worth asserting: widen a field of that document, re-render,
+/// and require the output to change. Only then is omitting it from the
+/// depfile a stale-artefact hazard rather than a cosmetic gap.
+///
+/// The chain is two levels deep for a reason. The first version of this
+/// gate used a one-level chain, and the fix it drove satisfied it by
+/// listing `parsed.imports` — the *direct* imports. That passed while a
+/// grandchild edit still shipped a stale artefact: widening
+/// `inner_codec.scxml` changes `route_msg.h`'s `source-hash`, and
+/// nothing declared it. A fixture that cannot distinguish "direct" from
+/// "reachable" cannot tell whether the fix closed the axis or only the
+/// case the fixture happened to show.
 #[test]
 fn forge_imports_are_declared_prerequisites() {
     let mut violations = Vec::new();
+    let mut probes = 0usize;
 
     for lang in LANGUAGES {
-        let work = TempDir::new().expect("tempdir");
-        let src = work.path().join("src");
-        std::fs::create_dir_all(&src).expect("source directory is creatable");
-        let doc = write_sources(&src, Pipeline::Forge);
-        let import = src.join("frame_codec.scxml");
-        let root = template_root();
+        for target in CHAIN_DOCS {
+            probes += 1;
+            let case = format!("{lang}/{}", target.filename);
+            let work = TempDir::new().expect("tempdir");
+            let src = work.path().join("src");
+            std::fs::create_dir_all(&src).expect("source directory is creatable");
+            let doc = write_sources(&src, Pipeline::Forge);
+            let root = template_root();
 
-        let before_out = work.path().join("before");
-        let depfile = work.path().join("before.d");
-        if let Err(e) = generate(&doc, &before_out, lang, &root, Some(&depfile)) {
-            violations.push(format!("{lang}: baseline generation failed\n{e}"));
-            continue;
-        }
-        let before = emitted_files(&before_out);
+            let before_out = work.path().join("before");
+            let depfile = work.path().join("before.d");
+            if let Err(e) = generate(&doc, &before_out, lang, &root, Some(&depfile)) {
+                violations.push(format!("{case}: baseline generation failed\n{e}"));
+                continue;
+            }
+            let before = emitted_files(&before_out);
 
-        std::fs::write(&import, FORGE_CODEC_MUTATED).expect("fixture is writable");
-        let after_out = work.path().join("after");
-        if let Err(e) = generate(&doc, &after_out, lang, &root, None) {
-            violations.push(format!(
-                "{lang}: generation after the import edit failed\n{e}"
-            ));
-            continue;
-        }
-        let after = emitted_files(&after_out);
+            std::fs::write(src.join(target.filename), (target.widened)())
+                .expect("fixture is writable");
+            let after_out = work.path().join("after");
+            if let Err(e) = generate(&doc, &after_out, lang, &root, None) {
+                violations.push(format!(
+                    "{case}: generation after the import edit failed\n{e}"
+                ));
+                continue;
+            }
+            let after = emitted_files(&after_out);
 
-        if before == after {
-            violations.push(format!(
-                "{lang}: widening a field of the imported codec left the importing \
-                 document's output byte-identical, so this probe cannot tell whether \
-                 the import is declared. Give the mutation something observable to \
-                 change before asserting on the depfile.",
-            ));
-            continue;
-        }
+            if before == after {
+                violations.push(format!(
+                    "{case}: widening a field of this {} codec left the compiled \
+                     document's output byte-identical, so the probe cannot tell whether \
+                     the import is declared. Give the mutation something observable to \
+                     change before asserting on the depfile.",
+                    target.distance,
+                ));
+                continue;
+            }
 
-        let prerequisites = depfile_prerequisites(&depfile);
-        let declared = prerequisites
-            .iter()
-            .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("frame_codec.scxml"));
-        if !declared {
-            violations.push(format!(
-                "{lang}: editing the imported `frame_codec.scxml` changes the output \
-                 (just demonstrated) but it is not a prerequisite in the depfile, so \
-                 the build will reuse the stale artefact. Prerequisites were: {:?}",
-                prerequisites
-                    .iter()
-                    .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or("?"))
-                    .collect::<Vec<_>>(),
-            ));
+            let prerequisites = depfile_prerequisites(&depfile);
+            let declared = prerequisites
+                .iter()
+                .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(target.filename));
+            if !declared {
+                violations.push(format!(
+                    "{case}: editing this {} document changes the output (just \
+                     demonstrated) but it is not a prerequisite in the depfile, so the \
+                     build will reuse the stale artefact. Prerequisites were: {:?}",
+                    target.distance,
+                    prerequisites
+                        .iter()
+                        .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or("?"))
+                        .collect::<Vec<_>>(),
+                ));
+            }
         }
     }
 
+    let expected = LANGUAGES.len() * CHAIN_DOCS.len();
+    assert_eq!(
+        probes, expected,
+        "ran {probes} probes, expected {expected} — the chain shrank, and a chain of one \
+         cannot distinguish a depfile that names every reachable import from one that \
+         names only the direct ones",
+    );
     assert!(
         violations.is_empty(),
         "forge imports are not declared as prerequisites:\n\n{}",
