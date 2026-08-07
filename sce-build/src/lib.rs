@@ -4969,7 +4969,7 @@ pub struct DeployMutationError {
 /// to influence codegen — its whole contract is to be visible.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeployFacts {
-    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429 — the analyzer this
+    /// SCE Protocol-Synthesis RFC, synth-5-E lines 1409-1429 — the analyzer this
     /// deployment declares it relies on. `None` when unstated, which is
     /// the common case and carries no meaning beyond "unstated".
     pub static_analyzer: Option<mesh::deploy::StaticAnalyzer>,
