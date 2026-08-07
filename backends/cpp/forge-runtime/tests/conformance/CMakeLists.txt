@@ -166,7 +166,9 @@ foreach(fixture IN LISTS FIXTURES)
         COMMAND "${SCE_CODEGEN}" generate "${scxml}"
                 --language cpp
                 --output-dir "${GENERATED_DIR}"
+                --write-deps "${GENERATED_DIR}/${fixture}.h.d"
         DEPENDS "${scxml}" "${SCE_CODEGEN}"
+        DEPFILE "${GENERATED_DIR}/${fixture}.h.d"
         COMMENT "Generating C++ fixture ${fixture}.h"
         VERBATIM
     )
