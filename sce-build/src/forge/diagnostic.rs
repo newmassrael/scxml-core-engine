@@ -3291,7 +3291,7 @@ impl DiagnosticCode {
             // ── Mesh remote invoke codegen-shape exclusivity (SCE_MESH.md §9.6) ──
             MeshDeployScxmlInvokeTargetConflict => Some("SCE Mesh §9.6"),
 
-            // ── Mesh cross-device scxml-remote transport (SCE_MESH.md §9.6 L1393) ──
+            // ── Mesh cross-device scxml-remote transport (SCE_MESH.md §9.6) ──
             MeshDeployScxmlInvokeCrossDeviceTransport => Some("SCE Mesh §9.6 L1393"),
 
             // ── Mesh §9.6 SOME/IP service-ID hybrid allocator (RFC F.X-1) ──

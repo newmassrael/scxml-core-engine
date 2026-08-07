@@ -1260,7 +1260,7 @@ public:
      * `runMainEventLoop()`, `runUntilCompletion()`, and external
      * `done.invoke` notification.
      *
-     * See SCE_MESH.md §mesh-16.5 L3500 for the concrete case that motivated
+     * See SCE_MESH.md §mesh-16.5 for the concrete case that motivated
      * the parent check: a `<parallel>` whose local region has reached its
      * regional `<final>` ahead of a remote sibling's wire-21 arrival still
      * needs the scheduler pumped so the barrier-timeout event can fire.
@@ -1374,7 +1374,7 @@ public:
         // as a whole, so we must not short-circuit the scheduler pump
         // when only a region has completed. `isInFinalState()` encodes the
         // parent-presence check that the structural `StatePolicy::isFinalState`
-        // deliberately omits; see SCE_MESH.md §mesh-16.5 L3500 for the
+        // deliberately omits; see SCE_MESH.md §mesh-16.5 for the
         // barrier-timeout case that surfaces this.
         if (isInFinalState()) {
             if (completionCallback_) {
@@ -1663,7 +1663,7 @@ public:
      * when a region hosted in this partition enters its `<final>`. The closure
      * is responsible for failing loudly when no transport-side callback was
      * installed by the TransportRouter — a missing wire-up must surface as a
-     * fatal exception rather than a silent drop (SCE_MESH.md §mesh-14 L2844).
+     * fatal exception rather than a silent drop (SCE_MESH.md §mesh-14).
      */
     void triggerParallelRegionRemoteSend(const std::string &parallel_id, const std::string &region_id,
                                          const std::string &donedata) {

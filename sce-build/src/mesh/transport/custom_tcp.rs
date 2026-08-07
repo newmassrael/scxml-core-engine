@@ -1,4 +1,4 @@
-//! SCE_MESH.md §mesh-9.6 L1399 (b) — per-transport scxml-invoke codegen helpers
+//! SCE_MESH.md §mesh-9.6 (b) — per-transport scxml-invoke codegen helpers
 //! for `custom_tcp`. Lives under `mesh::transport::custom_tcp` alongside the
 //! sibling `shm` / `someip` modules; the parent `transport` module stays
 //! focused on cross-transport descriptor metadata (capabilities, ordering,

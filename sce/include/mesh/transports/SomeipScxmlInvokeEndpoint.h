@@ -52,7 +52,7 @@
 // SCE app.
 // ──────────────────────────────────────────────────────────────────────────
 //
-// Wire shape (SCE_MESH.md §mesh-9.6.2 Session 4b L1393):
+// Wire shape (SCE_MESH.md §mesh-9.6.2 Session 4b):
 //   * fireAndForget method calls (MT_REQUEST_NO_RETURN). Each §mesh-9.6 wire
 //     direction is an independent method dispatch — wire-14 (P→C InvokeStart)
 //     and wire-15 (C→P InvokeStarted) carry no request/response coupling at
@@ -403,7 +403,7 @@ public:
         // fireAndForget: response is not coupled to this dispatch. The
         // reverse-direction wire (e.g. wire-15 reply to wire-14) is an
         // independent method call from the peer back to us, not a
-        // SOME/IP response. SCE_MESH.md §mesh-9.6.2 Session 4b L1393.
+        // SOME/IP response. SCE_MESH.md §mesh-9.6.2 Session 4b.
         request->set_message_type(vsomeip::message_type_e::MT_REQUEST_NO_RETURN);
         // vsomeip's `message_base_impl` defaults `is_reliable_` to false,
         // which routes outbound traffic to the UDP endpoint of the remote
