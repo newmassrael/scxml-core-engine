@@ -121,6 +121,83 @@ pub struct DeployConfig {
     /// fixtures and consumers compile unchanged.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variant_defaults: BTreeMap<String, u64>,
+
+    /// `build:` block — facts about the build environment that SCE
+    /// records but does not act on.
+    ///
+    /// Absent ⇒ nothing declared, which is the normal case: every key
+    /// under it is optional and descriptive.
+    #[serde(default)]
+    pub build: Option<BuildConfig>,
+}
+
+/// `build:` block in deploy.yaml. Today carries one key.
+///
+/// The block exists as its own type rather than as a flat
+/// `static_analyzer:` at the top level because what it describes is the
+/// *build*, not the topology — and the spec's other build-environment
+/// axes (compiler, defensive-layer opt-out) land beside it rather than
+/// beside `topology:`.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildConfig {
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429 — which commercial
+    /// analyzer this deployment relies on for the ownership contract.
+    ///
+    /// Descriptive, never load-bearing. The spec is explicit: SCE
+    /// records the declaration so deploy review can confirm CI runs
+    /// that analyzer, and "does not verify or gate on the claim". No
+    /// emission changes with this key, and no build fails for its
+    /// absence.
+    ///
+    /// The one configuration the spec calls unenforced — defensive layer
+    /// off with no analyzer declared — is reachable only by passing
+    /// `-DSCE_DEFENSIVE_OWNERSHIP=0` downstream, which SCE cannot
+    /// observe. Declaring an analyzer here is therefore the author's
+    /// statement of intent, and SCE's job is to carry it somewhere a
+    /// reviewer can read it rather than to adjudicate it.
+    #[serde(default)]
+    pub static_analyzer: Option<StaticAnalyzer>,
+}
+
+/// The commercial analyzers SCE's analyzer layer speaks to.
+///
+/// Closed rather than a free string, and the closure is the spec's, not
+/// a convenience: §synth-5-E rules out Polyspace (its in-source comments
+/// justify findings rather than describe function behaviour — that is
+/// `-code-behavior-specifications`, a separate XML file) and rules out
+/// Clang-Tidy (the typestate macros expand to nothing on a C build, so
+/// it cannot report the violations it would be mandated for). A free
+/// string would let a deployment declare either and read as covered.
+///
+/// The two variants here are exactly the two forms
+/// [`crate::forge::ownership_contract::OwnershipContract::rendered_lines`]
+/// emits — `pc_lint_annotation` and `coverity_annotations`. That
+/// correspondence is held by a test rather than derived, because the
+/// renderers are methods rather than an enumerable registry; adding a
+/// third renderer without a variant here fails it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StaticAnalyzer {
+    /// PC-lint Plus, which reads the `-sem(...)` semantics.
+    PcLintPlus,
+    /// Coverity, which reads the `coverity[...]` model primitives.
+    Coverity,
+}
+
+impl StaticAnalyzer {
+    /// The spelling authored in deploy.yaml.
+    ///
+    /// Also what the `sce-codegen generate` manifest echoes, so the
+    /// value a reviewer reads out of the manifest is the value the
+    /// author wrote — round-tripping through this one function rather
+    /// than through a second table that could disagree.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StaticAnalyzer::PcLintPlus => "pc-lint-plus",
+            StaticAnalyzer::Coverity => "coverity",
+        }
+    }
 }
 
 /// `extern_symbols:` block in deploy.yaml. Today carries one field.
