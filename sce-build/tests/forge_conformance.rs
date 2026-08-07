@@ -15223,7 +15223,7 @@ fn strip_xml_comments(src: &str) -> String {
     out
 }
 
-// ── §synth-5 transform kind — computed values, not emitted text ──
+// ── transform kind — computed values, not emitted text ─────────
 
 /// The transform kind is "input -> computation -> output", and until
 /// now nothing checked the computation.
@@ -15311,7 +15311,7 @@ mod transform_value_cases {
     .unwrap_or_else(|e| panic!("the emitted transforms must compute their declared values\n{e}"));
 }
 
-// ── §synth-5 procedure kind — the retry bound, exercised ────────
+// ── procedure kind — the retry bound, exercised ────────────────
 
 /// The procedure kind's contract is which branch it takes and how
 /// many times, and until now only its emitted text was checked.
