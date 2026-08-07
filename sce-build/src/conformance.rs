@@ -1517,19 +1517,23 @@ pub struct RenderedHarness {
 /// reason is not (see [`CodecFailure::observable_symbol`]). The fragment
 /// asserts against the symbol when it is there and against refusal when it
 /// is not.
+///
+/// Answers whether anything was folded, so the caller can declare the
+/// oracle as a prerequisite exactly when this render baked something out
+/// of it — see the `baked_from_reference` comment at the call site.
 fn fold_reject_vectors(
     value: &mut serde_json::Value,
     reference: &serde_json::Value,
     fixture: &Fixture,
     language: Language,
     reference_path: &Path,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let Some(rejects) = reference
         .get(&fixture.ref_section)
         .and_then(|s| s.get(&fixture.name))
         .and_then(|e| e.get("rejects"))
     else {
-        return Ok(());
+        return Ok(false);
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
     if !matches!(fixture.spec, FixtureSpec::Codec { .. }) {
@@ -1603,7 +1607,7 @@ fn fold_reject_vectors(
         .as_object_mut()
         .ok_or_else(|| format!("{where_} did not serialize to a JSON object"))?
         .insert("rejects".into(), serde_json::Value::Array(folded));
-    Ok(())
+    Ok(true)
 }
 
 /// Render the per-language conformance harness from a manifest, returning
@@ -1921,16 +1925,24 @@ pub fn render_harness(
         })?;
     let reference_text = std::fs::read_to_string(&reference_path)
         .map_err(|e| format!("read {}: {e}", reference_path.display()))?;
-    // Recorded at the read, not after the branch: an input the render
-    // consumed is reported by the code that consumed it, so a future route
-    // reading another file cannot forget.
-    extra_inputs.push(reference_path.clone());
     let reference: serde_json::Value = serde_json::from_str(&reference_text)
         .map_err(|e| format!("parse {}: {e}", reference_path.display()))?;
+    // Declared below rather than here, once the fold has run. Opening a
+    // file is not reading it: on the five non-C11 routes the oracle
+    // contributes to the harness only through the reject vectors it
+    // carries, so a catalog with none leaves those renders byte-identical
+    // no matter how the file is edited. Declaring it anyway would name a
+    // prerequisite that only forces rebuilds, which the depfile-content
+    // gate reports in exactly those words.
+    let mut baked_from_reference = false;
 
     let (fixtures_value, float_tolerance): (minijinja::Value, Option<f64>) = {
         let bake_cases = matches!(language, Language::C11);
         let tol = if bake_cases {
+            // C11 bakes the tolerance into a `#define`, so the value itself
+            // reaches the harness source and the file is read on this route
+            // whatever the fixtures carry.
+            baked_from_reference = true;
             reference.get("float_tolerance").and_then(|v| v.as_f64())
         } else {
             None
@@ -1940,7 +1952,8 @@ pub fn render_harness(
         for f in &fixtures {
             let mut v = serde_json::to_value(f)
                 .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
-            fold_reject_vectors(&mut v, &reference, f, language, &reference_path)?;
+            baked_from_reference |=
+                fold_reject_vectors(&mut v, &reference, f, language, &reference_path)?;
             // `oracle_eligible: false` fixtures don't have a field oracle —
             // they're compile-only. Skip the lookup + merge so the harness
             // fragment renders the minimal probe block without any `cases`
@@ -1997,6 +2010,10 @@ pub fn render_harness(
             tol,
         )
     };
+
+    if baked_from_reference {
+        extra_inputs.push(reference_path.clone());
+    }
 
     let ctx = minijinja::context! {
         fixtures => fixtures_value,
