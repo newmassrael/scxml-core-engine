@@ -1093,6 +1093,35 @@ pub enum ValidationError {
     )]
     CodecTlvChainDepthUnspecified { codec: String, field: String },
 
+    /// RFC §synth-5-B B3 TLV chain primitive: `on-overflow="truncate"`
+    /// declared together with `terminate-on="entry-flag"`.
+    ///
+    /// The two attributes contradict each other. `entry-flag` is the
+    /// author stating that the wire after the chain is not the chain's —
+    /// that is the only reason to choose it over `exhaust-or-depth`,
+    /// whose whole premise is that the trailing cursor IS the chain's
+    /// tail. `truncate` is the author stating that entries past
+    /// `max-depth` may be dropped silently. Dropping an entry does not
+    /// consume its bytes, so the next field reads the middle of the
+    /// chain and the decode returns success with fields built out of
+    /// another field's bytes.
+    ///
+    /// Consuming the dropped entries instead is not on the table: how
+    /// many there are is whatever the peer sent, so the skip loop has no
+    /// bound derivable from the declaration — precisely what `max-depth`
+    /// lowering to a `max-iter` (RFC line 533) and the `max-depth ×
+    /// per-entry-WCET` slot budget (line 647) exist to forbid.
+    ///
+    /// Author resolves with `on-overflow="reject"` (the chain refuses the
+    /// frame it cannot hold), or by switching to
+    /// `terminate-on="exhaust-or-depth"` if the chain does own the rest
+    /// of the wire after all. Raising `max-depth` is not a repair — it
+    /// moves the cliff from `max-depth + 1` to `max-depth + 2`.
+    #[error(
+        "codec '{codec}': tlv-chain field '{field}' declares `on-overflow=\"truncate\"` with `terminate-on=\"entry-flag\"` — entry-flag termination means the bytes after the chain belong to the fields that follow it, so silently dropping a post-cap entry leaves that entry's bytes where the next field reads them and the decode succeeds with corrupt values (RFC §5.B line 533); use `on-overflow=\"reject\"`, or `terminate-on=\"exhaust-or-depth\"` if the chain owns the rest of the wire"
+    )]
+    CodecTlvChainTruncateUnderEntryFlag { codec: String, field: String },
+
     /// RFC §synth-5-B B3 DMA alignment primitive: a field with
     /// `sce:dma-burst-align="N"` cannot be honored at build time —
     /// either its authored `sce:byte` is not divisible by `N`, or one
