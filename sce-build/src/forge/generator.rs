@@ -14988,13 +14988,20 @@ fn render_buffer_pool_linker_fragment(
 
 /// Codegen self-check for the §synth-5-E inter-pool padding invariant
 /// (lines 1059-1064). The buffer-pool linker fragment must carry an
-/// explicit `. = ALIGN(<n>);` sentinel after the SECTIONS{} body so
-/// the post-pool boundary stays alignment-pinned even if a downstream
+/// explicit `. = ALIGN(<n>);` sentinel inside the output section body
+/// so the post-pool boundary stays alignment-pinned even if a downstream
 /// master script splices another section in via INCLUDE. If the
 /// rendered fragment is missing that artifact, emit
 /// `mem/inter-pool-padding-not-emitted` (codegen invariant violation,
 /// not an authoring mistake — fires only when the template itself
 /// drops the sentinel).
+///
+/// This check reads the emit marker, so it decides presence only. That
+/// the sentinel is placed where it does any work is decided by
+/// `buffer_pool_linker_fragment_aligns_the_post_pool_boundary`, which
+/// links the fragment: written after the closing brace the directive
+/// advances only the location counter, which a region-allocated
+/// successor ignores, and this check would still pass.
 fn check_inter_pool_padding_invariant(
     pool_name: &str,
     rendered_ld: &str,
