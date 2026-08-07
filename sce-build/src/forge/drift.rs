@@ -141,6 +141,17 @@ const _: () = assert!(MAX_DIRECTORY_DESCENTS >= 100_000);
 pub struct SourceSet {
     root: PathBuf,
     entries: BTreeMap<PathBuf, [u8; 32]>,
+    /// Where `deploy.yaml` was read from, when one contributed.
+    ///
+    /// The map keys it under the canonical name rather than its real
+    /// path — the digest must not move when a build passes the same
+    /// file from a different directory. [`contributing_paths`] still has
+    /// to name the file a build system can watch, so the real location
+    /// is kept here instead of being reconstructed from `root`, which it
+    /// need not sit under.
+    ///
+    /// [`contributing_paths`]: Self::contributing_paths
+    deploy_yaml: Option<PathBuf>,
 }
 
 impl SourceSet {
@@ -180,6 +191,7 @@ impl SourceSet {
         Ok(Self {
             root: input_root.to_path_buf(),
             entries,
+            deploy_yaml: deploy_yaml.map(Path::to_path_buf),
         })
     }
 
@@ -221,6 +233,40 @@ impl SourceSet {
         };
         let digest = sha256_bytes(&bytes);
         self.entries.values().any(|h| *h == digest)
+    }
+
+    /// Every file whose bytes fed [`digest`](Self::digest), as paths a
+    /// build system can watch.
+    ///
+    /// Exists so a depfile can name the source set without walking for
+    /// it a second time. The second walk is what the depfile axis keeps
+    /// getting wrong — it dropped the shared `_macros/` family, then the
+    /// transitive `<sce:import>` closure, both times because the writer
+    /// re-derived a set someone else had already resolved. The set that
+    /// decided the hash is the set that must be declared, so it is the
+    /// one returned here.
+    ///
+    /// Declaring these is not optional precision. The fold is total over
+    /// the set, so editing *any* member changes the `source-hash` every
+    /// artefact of that invocation embeds; a member left undeclared is an
+    /// artefact the build reuses with a header that no longer describes
+    /// its inputs, which is the state `sce-codegen verify` refuses.
+    ///
+    /// Order is the map's, so a depfile does not churn between runs.
+    pub fn contributing_paths(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = self
+            .entries
+            .keys()
+            .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .map(|rel| self.root.join(rel))
+            .collect();
+        // Appended from the field rather than joined onto `root`: the
+        // canonical map key is a naming rule for the digest, not a
+        // location, and the file it names may sit anywhere.
+        if let Some(deploy) = &self.deploy_yaml {
+            paths.push(deploy.clone());
+        }
+        paths
     }
 }
 

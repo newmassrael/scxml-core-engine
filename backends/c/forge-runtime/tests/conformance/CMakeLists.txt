@@ -164,13 +164,13 @@ foreach(fixture IN LISTS C11_FIXTURES)
 endforeach()
 
 # Step 2: render the test harness from the shared template. The
-# scaffold pulls in per-kind fragments via dynamic Jinja2 include, so
-# the DEPENDS list enumerates every fragment as well — editing one of
-# them alone would otherwise silently leave a stale harness.
-file(GLOB CONFORMANCE_KIND_TEMPLATES
-    CONFIGURE_DEPENDS
-    "${CONFORMANCE_TEMPLATE_DIR}/kinds/*.c.jinja2"
-)
+# scaffold pulls in per-kind fragments via dynamic Jinja2 include, and
+# folds every fixture document under tests/forge/resources into the
+# harness `source-hash` — so the generator states its own prerequisites
+# through a DEPFILE, as every other codegen step in the tree does. The
+# `file(GLOB ... CONFIGURE_DEPENDS)` this replaced named the fragments
+# the scaffold includes directly and nothing they pull in, and named no
+# fixture document at all.
 set(HARNESS_SRC "${GENERATED_DIR}/numerical_conformance_test.c")
 add_custom_command(
     OUTPUT "${HARNESS_SRC}"
@@ -178,11 +178,11 @@ add_custom_command(
             --language c11
             --manifest "${FIXTURE_MANIFEST}"
             --output-dir "${GENERATED_DIR}"
+            --write-deps "${HARNESS_SRC}.d"
     DEPENDS "${FIXTURE_MANIFEST}"
             "${REFERENCE_JSON}"
-            "${CONFORMANCE_TEMPLATE_DIR}/harness.c.jinja2"
-            ${CONFORMANCE_KIND_TEMPLATES}
             "${SCE_CODEGEN}"
+    DEPFILE "${HARNESS_SRC}.d"
     COMMENT "Generating C11 conformance harness from template"
     VERBATIM
 )

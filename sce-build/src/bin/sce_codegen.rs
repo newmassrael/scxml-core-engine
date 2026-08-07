@@ -117,6 +117,15 @@ use sce_build::parser::SCXMLParser;
 struct DriftContext {
     hashes: drift::DriftHashes,
     generated_at: u64,
+    /// The §synth-6.2.6 source set that produced `hashes.source_hash`,
+    /// carried so `write_depfile` can declare it.
+    ///
+    /// Kept on the context rather than re-collected at the depfile call
+    /// site because the two would then be separate walks of the same
+    /// tree, free to disagree about what the header describes. A depfile
+    /// that names a different set than the hash covers is worse than one
+    /// that names none: it reports the artefact as watched.
+    sources: Vec<PathBuf>,
 }
 
 /// Routes a §synth-6.2.6 hash-walk failure onto the diagnostic that names
@@ -183,6 +192,7 @@ impl DriftContext {
             });
         }
         let source_hash = sources.digest();
+        let source_paths = sources.contributing_paths();
         let explicit = current_workspace_root_override();
         let template_hash = match locate_workspace_root(explicit.as_deref()) {
             Some(ws) => {
@@ -212,6 +222,7 @@ impl DriftContext {
                 template_hash,
             },
             generated_at: drift::now_utc_seconds(),
+            sources: source_paths,
         }
     }
 }
@@ -1019,6 +1030,16 @@ enum Commands {
         /// Output directory for the generated harness file
         #[arg(short, long)]
         output_dir: String,
+        /// Write a Make-format depfile for the harness.
+        ///
+        /// Same contract as `generate --write-deps`. Without it the two
+        /// CMake steps that render a harness were the only codegen
+        /// invocations in the tree with no `DEPFILE`, and declared their
+        /// inputs with a `file(GLOB ... CONFIGURE_DEPENDS)` that names
+        /// the per-kind fragments the scaffold includes directly and
+        /// nothing those fragments pull in.
+        #[arg(long)]
+        write_deps: Option<String>,
     },
     /// Expand preprocessors (XInclude + `sce:template`) on an SCXML
     /// file and print the post-expansion text to stdout.
@@ -1208,7 +1229,8 @@ fn main() {
             language,
             manifest,
             output_dir,
-        } => cmd_generate_conformance(&language, &manifest, &output_dir),
+            write_deps,
+        } => cmd_generate_conformance(&language, &manifest, &output_dir, write_deps.as_deref()),
         Commands::ListFixtures {
             manifest,
             format,
@@ -1723,11 +1745,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                             .join(lang.forge_template_subdir());
                         write_depfile(
                             dep_path,
-                            &targets,
-                            &forge_template_dir,
-                            lang,
-                            Path::new(scxml_path),
-                            &import_deps,
+                            DepfileInputs {
+                                output_paths: &targets,
+                                template_dir: &forge_template_dir,
+                                lang,
+                                scxml_input: Path::new(scxml_path),
+                                preprocessor_deps: &import_deps,
+                                source_set: &drift_ctx.sources,
+                                self_written: &[],
+                            },
                         );
                     }
                     report.needs_script_engine = Some(false);
@@ -2053,6 +2079,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // Pollution of the parent's *source* directory stays closed: the
     // write targets are caller-controlled (`-o`, `--deploy <path>`),
     // never `scxml_path`'s parent.
+    // Every file this invocation writes that is not a declared
+    // artefact. Collected as they are written, so the depfile filter
+    // cannot fall behind a new side-effect write.
+    let mut self_written: Vec<PathBuf> = Vec::new();
     let synth_scxml_writes: Vec<(String, String)> = model
         .iter_scxml_invokes()
         .filter_map(|inv| {
@@ -2078,6 +2108,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 dst.display()
             );
         }
+        // Recorded so the depfile does not name it. `-o` is frequently
+        // the directory the input was staged into, which puts this file
+        // in the invocation's own source set.
+        self_written.push(dst);
         if let Some(deploy_file) = deploy_path {
             let deploy_dir = Path::new(deploy_file).parent().unwrap_or(Path::new("."));
             if deploy_dir != out_path {
@@ -2088,6 +2122,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                         mirror.display()
                     );
                 }
+                self_written.push(mirror);
             }
         }
     }
@@ -2349,7 +2384,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         } else {
             out_path
         };
-        generate_hybrid_child_scxmls(&model, hybrid_dest);
+        self_written.extend(generate_hybrid_child_scxmls(&model, hybrid_dest));
     } // end of `if !transport_only` — mesh transport emit follows.
 
     // SCE Mesh: generate transport routing code when --deploy is provided.
@@ -2422,11 +2457,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     if let Some(depfile) = depfile_path {
         write_depfile(
             depfile,
-            &output_paths,
-            &template_dir,
-            lang,
-            Path::new(scxml_path),
-            parser.preprocessor_deps(),
+            DepfileInputs {
+                output_paths: &output_paths,
+                template_dir: &template_dir,
+                lang,
+                scxml_input: Path::new(scxml_path),
+                preprocessor_deps: parser.preprocessor_deps(),
+                source_set: &drift_ctx.sources,
+                self_written: &self_written,
+            },
         );
     }
 
@@ -2518,7 +2557,8 @@ fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir
 /// changes from the next incremental build. `write_if_changed` skips the
 /// write when the bytes are identical, so CMake mtime-based dependency
 /// tracking stays quiet on no-op runs.
-fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) {
+fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
+    let mut written = Vec::new();
     for invoke in model.iter_hybrid_invokes() {
         if invoke.child_name.is_empty() {
             continue;
@@ -2534,18 +2574,70 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) {
              </scxml>\n"
         );
         write_if_changed(&dest, &stub);
+        written.push(dest);
     }
+    written
+}
+
+/// A path in the form two spellings of the same file compare equal in.
+///
+/// `canonicalize` when the file exists, the path as given otherwise —
+/// which is the right fallback, since a prerequisite that does not exist
+/// cannot be something this invocation just wrote.
+fn depfile_identity(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Every family of file a depfile is written from.
+///
+/// Grouped rather than passed one by one because the families differ in
+/// *why* they belong, not just in what they hold, and the distinctions
+/// are what the axis keeps getting wrong: reachability (templates,
+/// imports) versus coverage (the source set) versus production
+/// (artefacts, side-effect writes), the last of which must be
+/// subtracted rather than added.
+struct DepfileInputs<'a> {
+    /// Files this invocation declares as artefacts — the depfile's
+    /// targets, and the first half of what it must not depend on.
+    output_paths: &'a [PathBuf],
+    /// Loader scope for the render, whose templates are prerequisites.
+    template_dir: &'a Path,
+    lang: Language,
+    /// The document compiled, named as a prerequisite in its own right.
+    scxml_input: &'a Path,
+    /// External files the parser consumed: `<xi:include>` targets,
+    /// `<sce:use>` fragments, `<sce:import>` closures, and whatever else
+    /// a pipeline reports having read.
+    preprocessor_deps: &'a [PathBuf],
+    /// The §synth-6.2.6 source set behind the embedded `source-hash`.
+    source_set: &'a [PathBuf],
+    /// Side-effect writes: synth children, hybrid stubs.
+    self_written: &'a [PathBuf],
 }
 
 /// Write CMake DEPFILE (Makefile-format dependency file).
-fn write_depfile(
-    depfile_path: &str,
-    output_paths: &[PathBuf],
-    template_dir: &Path,
-    lang: Language,
-    scxml_input: &Path,
-    preprocessor_deps: &[PathBuf],
-) {
+///
+/// [`DepfileInputs::self_written`] names files this invocation produced
+/// that are not artefacts — the §9.6.6 synth children and the
+/// hybrid-invoke stubs, which land in `-o` (or beside the deploy file)
+/// as a side effect. They are subtracted from the prerequisites below,
+/// and the reason is not cosmetic: a synth child is written into the
+/// directory it was generated from, so the *next* run's source set
+/// covers it, and declaring it made the mesh §9.6.6 step depend on its
+/// own output. Ninja rejects that outright —
+/// `dependency cycle: parent_synth_inline__sce_synth_invoke__remote_inv
+/// .scxml -> itself` — taking 131 of 378 tests down with it. A file this
+/// run wrote cannot be a reason to re-run it.
+fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
+    let DepfileInputs {
+        output_paths,
+        template_dir,
+        lang,
+        scxml_input,
+        preprocessor_deps,
+        source_set,
+        self_written,
+    } = inputs;
     let mut deps = Vec::new();
 
     // Add the SCXML input file itself as a dependency
@@ -2557,6 +2649,25 @@ fn write_depfile(
     // CMake/Ninja have no prerequisite to invalidate. See tc8-harness
     // feedback report.
     deps.extend(preprocessor_deps.iter().cloned());
+
+    // The §synth-6.2.6 source set behind the `source-hash` every emitted
+    // file carries — taken from the `DriftContext` that computed the
+    // hash, not re-walked here.
+    //
+    // These are prerequisites for a different reason than everything
+    // else in this list, and that difference is why they were missing.
+    // The two families above are reachability families: files the render
+    // loaded, documents the compile imported. A source-set member need
+    // be none of those — the fold is over every `**/*.scxml` beneath the
+    // input root, so a document that is never parsed, never imported and
+    // never mentioned still moves the header. Measured on all six
+    // backends and both pipelines before this line existed: editing an
+    // unrelated sibling changed the `source-hash:` line while nothing
+    // declared it, so ninja reused an artefact whose embedded hash no
+    // longer described its inputs — precisely what `sce-codegen verify`
+    // rejects. Declaring the set is what keeps the freshness contract
+    // the spec puts on that header enforceable by the build.
+    deps.extend(source_set.iter().cloned());
 
     // Template dependencies, taken from the loader rather than from a
     // second walk of our own. `loader_template_files` is what
@@ -2608,6 +2719,17 @@ fn write_depfile(
             deps.push(exe.clone());
         }
     }
+
+    // Drop anything this invocation wrote. Its own artefacts as well as
+    // the side-effect writes: both are outputs of this build edge, and
+    // an edge that lists its own output as a prerequisite is a cycle,
+    // not a dependency.
+    let produced: std::collections::HashSet<PathBuf> = output_paths
+        .iter()
+        .chain(self_written.iter())
+        .map(|p| depfile_identity(p))
+        .collect();
+    deps.retain(|p| !produced.contains(&depfile_identity(p)));
 
     // Collapse duplicates while preserving first-seen order. The same
     // canonical path can land in `deps` more than once (e.g. a fragment
@@ -4578,7 +4700,12 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
 
 // ── Subcommand: generate-conformance ───────────────────────────
 
-fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &str) {
+fn cmd_generate_conformance(
+    language: &str,
+    manifest_path: &str,
+    output_dir: &str,
+    depfile_path: Option<&str>,
+) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         cli_exit(CliError::UnknownLanguage {
             lang: language.to_string(),
@@ -4635,7 +4762,41 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
         .map(|p| p.join("resources"))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     let drift_ctx = DriftContext::compute(&drift_input_root, None, None);
-    write_drift_aware(current_error_format(), &out_path, &rendered, &drift_ctx);
+    write_drift_aware(
+        current_error_format(),
+        &out_path,
+        &rendered.source,
+        &drift_ctx,
+    );
+
+    // Same depfile contract the statechart and forge routes carry. This
+    // subcommand had none, so its two CMake steps declared their inputs
+    // with `DEPENDS` plus a `file(GLOB ... CONFIGURE_DEPENDS)` over the
+    // per-kind fragments — which names what the scaffold includes
+    // directly and not what those fragments pull in, and named no
+    // fixture document at all even though the harness asserts against
+    // them and folds every one into its `source-hash`.
+    //
+    // The template scope is the one `render_harness` loads, taken from
+    // the same `harness_layout` rather than spelled again here: a second
+    // spelling is free to drift into declaring a directory the render
+    // does not read, or missing the one it does.
+    if let Some(dep_path) = depfile_path {
+        let harness_template_dir =
+            template_base.join(sce_build::conformance::harness_layout(lang).template_subdir);
+        write_depfile(
+            dep_path,
+            DepfileInputs {
+                output_paths: std::slice::from_ref(&out_path),
+                template_dir: &harness_template_dir,
+                lang,
+                scxml_input: Path::new(manifest_path),
+                preprocessor_deps: &rendered.extra_inputs,
+                source_set: &drift_ctx.sources,
+                self_written: &[],
+            },
+        );
+    }
     println!("Generated conformance harness: {}", out_path.display());
 }
 

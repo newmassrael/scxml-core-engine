@@ -182,21 +182,23 @@ fn every_codegen_step_declares_its_template_inputs() {
             // individually surfaced it.
             let declares = body.lines().any(|l| l.trim_start().starts_with("DEPFILE "));
 
-            // A step may instead name the templates in `DEPENDS`, which
-            // the two `generate-conformance` harness steps do: that
-            // subcommand takes no `--write-deps`, so they list
+            // No escape hatch. This gate used to accept a step that
+            // merely named `.jinja2` files in `DEPENDS`, because the two
+            // `generate-conformance` harness steps had no other option —
+            // that subcommand took no `--write-deps`, so they listed
             // `harness.*.jinja2` plus a `file(GLOB ... CONFIGURE_DEPENDS)`
-            // over the per-kind fragments. That is a real declaration and
-            // is accepted here.
+            // over the per-kind fragments.
             //
-            // It is also weaker than a depfile, and saying so is the
-            // point: a glob names the fragments the scaffold includes
-            // directly, not whatever *those* pull in transitively. Given
-            // `generate-conformance` cannot emit a depfile today, the
-            // alternative to accepting it is a gate nobody can satisfy.
-            let names_templates = body.contains(".jinja2") || body.contains("TEMPLATE");
-
-            if !(names_templates || (writes && declares)) {
+            // A hand-written list is strictly weaker than a depfile and
+            // the two steps showed both ways it is weaker: the glob named
+            // the fragments the scaffold includes directly and nothing
+            // *those* pull in, and neither step named a single fixture
+            // document even though the harness folds every one of them
+            // into its `source-hash`. Once `generate-conformance` learned
+            // `--write-deps` the exemption had nothing left to protect,
+            // and keeping it would leave the gate accepting the weaker
+            // declaration from any step that happens to spell `.jinja2`.
+            if !(writes && declares) {
                 violations.push(format!(
                     "{rel}: codegen step for {output} is missing {}\n  \
                      A template edit will leave its output stale and the build will \
