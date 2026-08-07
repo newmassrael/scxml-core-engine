@@ -21,13 +21,20 @@
 SECTIONS {
   .{{ section }}_{{ snake_name }} (NOLOAD) : ALIGN({{ alignment }}) {
     KEEP(*(.{{ section }}_{{ snake_name }}*))
+    /* Inter-pool sentinel — explicit alignment so the post-pool
+     * boundary survives master-script INCLUDE re-ordering. The
+     * `mem/inter-pool-padding-not-emitted` codegen self-check
+     * inspects this artifact. Reverse-linkage: the validator
+     * reads the marker below instead of grepping for the literal
+     * `. = ALIGN(` token.
+     *
+     * It sits *inside* the output section body on purpose: the
+     * sentinel has to grow this section, because a `. = ALIGN();`
+     * after the closing brace moves only the location counter and a
+     * successor allocated with `> {{ section_upper }}` takes its base
+     * from the region cursor instead. Placed out there the directive
+     * links clean and constrains nothing. */
+    /* SCE-EMIT: kind=mem.inter-pool-padding */
+    . = ALIGN({{ alignment }});
   } > {{ section_upper }}
-  /* Inter-pool sentinel — explicit alignment so the post-pool
-   * boundary survives master-script INCLUDE re-ordering. The
-   * `mem/inter-pool-padding-not-emitted` codegen self-check
-   * inspects this artifact. Reverse-linkage: the validator
-   * reads the marker below instead of grepping for the literal
-   * `. = ALIGN(` token. */
-  /* SCE-EMIT: kind=mem.inter-pool-padding */
-  . = ALIGN({{ alignment }});
 }

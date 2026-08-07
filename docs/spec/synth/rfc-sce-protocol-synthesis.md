@@ -1035,8 +1035,8 @@ region. Mismatches are diagnosed at build time (see below).
   boundary even if a toolchain quirk drops the storage variable's
   `aligned(x)` attribute. Paired DMA descriptor sections (e.g.
   `.sram1_desc`) carry their own `ALIGN()` matching the
-  descriptor's burst alignment. **Between adjacent pool sections in
-  the same `MEMORY` region, codegen emits an explicit
+  descriptor's burst alignment. **At the tail of each pool section,
+  inside the section body, codegen emits an explicit
   `. = ALIGN(<line_size>);` sentinel** so the post-pool boundary is
   audibly aligned even if a downstream master linker script splices
   another section in via `INCLUDE`. Example shape:
@@ -1044,12 +1044,12 @@ region. Mismatches are diagnosed at build time (see below).
   ```
   .sram1_pool_a (NOLOAD) : ALIGN(32) {
     KEEP(*(.sram1_pool_a*))
+    . = ALIGN(32);                /* explicit inter-pool sentinel */
   } > SRAM1
-  . = ALIGN(32);                  /* explicit inter-pool sentinel */
   .sram1_pool_b (NOLOAD) : ALIGN(32) {
     KEEP(*(.sram1_pool_b*))
+    . = ALIGN(32);
   } > SRAM1
-  . = ALIGN(32);
   .sram1_desc (NOLOAD) : ALIGN(32) {
     KEEP(*(.sram1_desc*))
   } > SRAM1
@@ -1057,11 +1057,11 @@ region. Mismatches are diagnosed at build time (see below).
 
   The sentinel is redundant *given* that the next pool also carries
   `ALIGN(32)` — but ALIGN on a section only constrains its own
-  base, not the byte distance from the previous section's tail.
-  Explicit sentinels make the inter-pool boundary diff-visible (any
-  PR that drops one shows up in the linker fragment), survive a
-  master script that re-orders the INCLUDE, and are the artifact
-  the `mem/inter-pool-padding-not-emitted` self-check inspects.
+  base, not the byte distance from the previous section's tail. It
+  goes inside the body, where it grows the section: after the
+  closing brace it would move only the location counter, which a
+  `> SRAM1` successor ignores in favour of the region cursor. It is
+  the artifact `mem/inter-pool-padding-not-emitted` inspects.
 
   This is defense-in-depth: `aligned(32)` on the storage variable,
   `ALIGN(32)` on the section, the inter-pool `. = ALIGN(32);`
@@ -1543,7 +1543,7 @@ is auditable in the build flags rather than in SCE's output.
 - `mem/cache-policy-unsupported-on-no-dcache-core` — `maintain`/`non-cacheable` declared on a core without D-cache (use `none`)
 - `mem/cache-line-alignment` — pool `alignment` < target `dcache_line_size` with `cache-policy: maintain` (partial-line invalidate corrupts adjacent data on the start side)
 - `mem/slot-size-not-cache-line-multiple` — `cache-policy: maintain` with `slot_size % platform.dcache_line_size != 0`. Each slot must occupy a whole number of cache lines, else `cache_invalidate_by_addr` after RX corrupts the adjacent slot's bytes that share the boundary line. Author resolution: round `slot_size` up to the next cache-line multiple and use the original logical size from within the slot
-- `mem/inter-pool-padding-not-emitted` — codegen self-check. Two adjacent pool sections in the same `MEMORY` region under `cache-policy: maintain` without an intervening `. = ALIGN(<line_size>);` sentinel in the emitted linker fragment. Internal invariant violation (should never reach authors); guards against template regression that would let `dcache_invalidate_by_addr(pool_a, pool_a_size)` touch pool B's first cache line when a master linker script splices content between them
+- `mem/inter-pool-padding-not-emitted` — codegen self-check. Two adjacent pool sections in the same `MEMORY` region under `cache-policy: maintain` where the emitted linker fragment carries no `. = ALIGN(<line_size>);` sentinel inside the pool's output section body. Internal invariant violation (should never reach authors); guards against template regression that would let `dcache_invalidate_by_addr(pool_a, pool_a_size)` touch pool B's first cache line when a master linker script splices content between them
 - `pool/ownership-violation` — emitted operation maps to a forbidden FSM transition (e.g. CPU write on a slot in `dma-busy-rx`)
 - `pool/cache-maintenance-misplaced` — author code attempts manual `cache_clean` / `cache_invalidate` via `<sce:call>`; cache maintenance is FSM-driven only
 - `pool/slot-leak-on-error-path` — error branch in encode/parse drops a `cpu-mut` or `cpu-ref` reference without an explicit transition back to `free`
