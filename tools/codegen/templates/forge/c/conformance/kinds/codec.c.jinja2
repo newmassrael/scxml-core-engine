@@ -142,7 +142,7 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
     }
 {% endif %}
-{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+{# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. C11 has a name for the failure (the status enum), so the assertion
    is on the exact status and not merely on non-OK. Each vector gets its own
    block scope so repeated vectors cannot collide on a local name. #}

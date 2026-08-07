@@ -23411,7 +23411,7 @@ mod tests {
         assert!(has);
     }
 
-    /// RFC §synth-5-B — the four answers [`tlv_chain_guard`] gives, one per
+    /// RFC synth-5-B — the four answers [`tlv_chain_guard`] gives, one per
     /// (termination, policy) pair.
     ///
     /// The `truncate` + entry-flag pair is unreachable from SCXML — the

@@ -88,7 +88,7 @@
 	}
 {% endif %}
 
-{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+{# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. Go has a name for the failure, so the assertion is on the sentinel
    itself. Compared with `!=` rather than errors.Is: the generated decode
    returns these sentinels unwrapped, and if that ever stops being true the
