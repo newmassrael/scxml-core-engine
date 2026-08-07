@@ -519,7 +519,7 @@ struct RejectedInfo<'a> {
 #[derive(Serialize)]
 struct DeployInfo {
     /// Which commercial analyzer the deployment declares it relies on
-    /// (SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429). Omitted when
+    /// (SCE Protocol-Synthesis RFC, synth-5-E lines 1409-1429). Omitted when
     /// unstated. SCE never verifies the claim — carrying it here is the
     /// whole of SCE's part, and is what lets deploy review read it off
     /// the build rather than off the author's word.

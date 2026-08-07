@@ -141,7 +141,7 @@ pub struct DeployConfig {
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildConfig {
-    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429 — which commercial
+    /// SCE Protocol-Synthesis RFC, synth-5-E lines 1409-1429 — which commercial
     /// analyzer this deployment relies on for the ownership contract.
     ///
     /// Descriptive, never load-bearing. The spec is explicit: SCE
@@ -163,7 +163,7 @@ pub struct BuildConfig {
 /// The commercial analyzers SCE's analyzer layer speaks to.
 ///
 /// Closed rather than a free string, and the closure is the spec's, not
-/// a convenience: §synth-5-E rules out Polyspace (its in-source comments
+/// a convenience: synth-5-E rules out Polyspace (its in-source comments
 /// justify findings rather than describe function behaviour — that is
 /// `-code-behavior-specifications`, a separate XML file) and rules out
 /// Clang-Tidy (the typestate macros expand to nothing on a C build, so

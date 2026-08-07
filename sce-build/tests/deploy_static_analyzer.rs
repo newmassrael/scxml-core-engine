@@ -4,7 +4,7 @@
 // `build.static_analyzer` is descriptive, and that is exactly why it
 // needs a reader.
 //
-// SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429 lists three accepted
+// SCE Protocol-Synthesis RFC, synth-5-E lines 1409-1429 lists three accepted
 // release configurations for the ownership contract. The second is "the
 // defensive layer off plus a recognized commercial analyzer in CI,
 // declared via `build.static_analyzer` so deploy review can see which
@@ -15,7 +15,7 @@
 // it is inert: the author writes it, believes the deployment is
 // documented, and no artefact of the build says otherwise. That is the
 // shape of the `instances:` defect — a deploy key parsed into a struct
-// nobody consulted — and of the silently-inert hooks §2.4 forbids. The
+// nobody consulted — and of the silently-inert hooks synth-2.4 forbids. The
 // deploy layer already has the antidote elsewhere: permissive
 // distributability prints its merge notices precisely so an author sees
 // that the analyzer collapsed their partition plan.
@@ -287,7 +287,7 @@ fn every_recognized_analyzer_reaches_the_manifest_as_written() {
 ///
 /// This is vocabulary validation, not adjudication of the claim: SCE
 /// still never checks whether CI runs the analyzer. Polyspace is the
-/// case worth pinning because §synth-5-E rejects it for a reason a user
+/// case worth pinning because synth-5-E rejects it for a reason a user
 /// cannot guess — its in-source comments justify findings rather than
 /// describe function behaviour, so the annotations SCE emits say nothing
 /// to it. Accepting the string would let a deployment read as covered by
@@ -299,7 +299,7 @@ fn an_analyzer_the_spec_excludes_is_refused_by_name() {
         let (ok, stdout, stderr) = generate(&fixture);
         assert!(
             !ok,
-            "`{spelling}` is excluded by §synth-5-E but was accepted; stdout: {stdout}",
+            "`{spelling}` is excluded by synth-5-E but was accepted; stdout: {stdout}",
         );
         assert!(
             stderr.contains("pc-lint-plus") && stderr.contains("coverity"),
@@ -331,7 +331,7 @@ fn a_misspelled_build_key_is_refused_rather_than_ignored() {
 
 /// Every emitted file paired with its text, minus the provenance lines.
 ///
-/// `source-hash` is excluded because §synth-6.2.6 hashes every input the
+/// `source-hash` is excluded because synth-6.2.6 hashes every input the
 /// run read — deploy.yaml included — so *any* deploy edit moves it, a
 /// YAML comment as much as a declaration. Comparing it would assert that
 /// the provenance header works, not that the key is inert.
@@ -366,7 +366,7 @@ fn emitted_bodies(dir: &Path) -> Vec<(String, String)> {
 /// The spec calls the key descriptive rather than load-bearing, which is
 /// a claim about the emitted code. Stating it as "changes no byte" would
 /// be false for a reason that has nothing to do with this key: the
-/// §synth-6.2.6 `source-hash` covers deploy.yaml, so editing any
+/// synth-6.2.6 `source-hash` covers deploy.yaml, so editing any
 /// character of it — including a comment — moves that line.
 ///
 /// The comment is therefore the control. A run whose deploy gained only
@@ -412,7 +412,7 @@ fn declaring_an_analyzer_is_no_more_load_bearing_than_a_comment() {
     assert_eq!(
         a, b,
         "declaring an analyzer emitted different code than an inert deploy comment, but \
-         §synth-5-E calls the key descriptive rather than load-bearing — no emission may \
+         synth-5-E calls the key descriptive rather than load-bearing — no emission may \
          depend on it",
     );
 }
