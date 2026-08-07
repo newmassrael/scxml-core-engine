@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// RFC §synth-5-B — the decode-side failure vocabulary a generated codec can
+// RFC synth-5-B — the decode-side failure vocabulary a generated codec can
 // signal, and each backend's spelling of it.
 //
 // Two consumers share this table and must not grow private copies:
