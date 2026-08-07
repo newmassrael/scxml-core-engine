@@ -673,6 +673,126 @@ set_tests_properties(c11_integration_send_param_payload PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# ─── forge buffer pool: RFC §synth-5-E slot FSM, exercised ──────────
+#
+# The pool header had no compile target anywhere in the tree — its only
+# verification was a text grep over the emitted source, and a byte
+# golden proves determinism rather than correctness. Compiling it is
+# half the gap; the other half is that a header can compile and still
+# hand out a slot twice. This target runs the FSM: acquire/return,
+# free_count, payload round-trip, exhaustion, and the three separate
+# guards on a bad handle (index, pool-state comparison, CPU-ownership
+# tag) — each reached by a shape that the other two cannot reject, so
+# no guard is vouched for by a sibling.
+set(_FP_FIXTURE "${CMAKE_SOURCE_DIR}/tests/forge/resources/buffer_pool_ast_export_min.scxml")
+set(_FP_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/buffer_pool_ast_export_min.h")
+add_custom_command(
+    OUTPUT "${_FP_HEADER}"
+    COMMAND "${SCE_CODEGEN}" generate "${_FP_FIXTURE}"
+            -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --write-deps "${_FP_HEADER}.d"
+    DEPENDS "${_FP_FIXTURE}" "${SCE_CODEGEN}"
+    DEPFILE "${_FP_HEADER}.d"
+    COMMENT "Generating forge buffer-pool fixture: buffer_pool_ast_export_min.h"
+    VERBATIM
+)
+add_custom_target(sce_c_forge_buffer_pool_header DEPENDS "${_FP_HEADER}")
+
+add_executable(sce_c_integration_forge_buffer_pool
+    integration/test_forge_buffer_pool.c
+)
+add_dependencies(sce_c_integration_forge_buffer_pool sce_c_forge_buffer_pool_header)
+target_include_directories(sce_c_integration_forge_buffer_pool PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+# The pool is header-only `static inline` over file-scope storage, so
+# there is no runtime library to link — the MCU single-TU premise.
+target_compile_options(sce_c_integration_forge_buffer_pool PRIVATE
+    -Wall -Wextra -Werror -Wpedantic
+    -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+)
+set_target_properties(sce_c_integration_forge_buffer_pool PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_forge_buffer_pool
+    COMMAND sce_c_integration_forge_buffer_pool
+)
+set_tests_properties(c11_integration_forge_buffer_pool PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
+# ─── forge bounded collection: RFC §synth-5-D, exercised ────────────
+#
+# This one *was* compiled before — but only because an unrelated keyexpr
+# fixture happens to emit a collection, so `c7_keyexpr_field_match`
+# dragged it through a compiler as a side effect. That coverage vanishes
+# the moment the keyexpr fixture changes, and it never covered behaviour.
+#
+# The property under test is the generation-tagged handle: a handle to a
+# slot that has since been freed and *reused* must not resolve. A
+# slot-index-only handle passes every simpler check and then silently
+# addresses the wrong element.
+#
+# Three fixtures because the collection's element type is itself a forge
+# document: `subscription_entry` (element) → `local_sub_table`
+# (collection). Generating the collection alone fails on a missing
+# element header.
+set(_BC_FIXTURE_DIR "${CMAKE_SOURCE_DIR}/tests/forge/resources")
+set(_BC_ENTRY_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/subscription_entry.h")
+set(_BC_TABLE_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/local_sub_table.h")
+add_custom_command(
+    OUTPUT "${_BC_ENTRY_HEADER}"
+    COMMAND "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/subscription_entry.scxml"
+            -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --write-deps "${_BC_ENTRY_HEADER}.d"
+    DEPENDS "${_BC_FIXTURE_DIR}/subscription_entry.scxml" "${SCE_CODEGEN}"
+    DEPFILE "${_BC_ENTRY_HEADER}.d"
+    COMMENT "Generating forge bounded-collection element: subscription_entry.h"
+    VERBATIM
+)
+add_custom_command(
+    OUTPUT "${_BC_TABLE_HEADER}"
+    COMMAND "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/local_sub_table.scxml"
+            -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --write-deps "${_BC_TABLE_HEADER}.d"
+    DEPENDS "${_BC_FIXTURE_DIR}/local_sub_table.scxml" "${_BC_ENTRY_HEADER}" "${SCE_CODEGEN}"
+    DEPFILE "${_BC_TABLE_HEADER}.d"
+    COMMENT "Generating forge bounded collection: local_sub_table.h"
+    VERBATIM
+)
+add_custom_target(sce_c_forge_bounded_collection_headers DEPENDS "${_BC_TABLE_HEADER}")
+
+add_executable(sce_c_integration_forge_bounded_collection
+    integration/test_forge_bounded_collection.c
+)
+add_dependencies(sce_c_integration_forge_bounded_collection sce_c_forge_bounded_collection_headers)
+target_include_directories(sce_c_integration_forge_bounded_collection PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+target_compile_options(sce_c_integration_forge_bounded_collection PRIVATE
+    -Wall -Wextra -Werror -Wpedantic
+    -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+)
+set_target_properties(sce_c_integration_forge_bounded_collection PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_forge_bounded_collection
+    COMMAND sce_c_integration_forge_bounded_collection
+)
+set_tests_properties(c11_integration_forge_bounded_collection PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime
