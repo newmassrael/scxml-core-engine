@@ -69,15 +69,21 @@ class CodecZenohRequest:
                 return None
             if (header & 0x80) != 0:
                 extensions = []
+                _more = False
                 for _ in range(4):
                     if cursor.remaining() == 0:
                         break
                     _elem = CodecZenohExtEntry.decode(cursor)
                     if _elem is None:
                         return None
+                    _more = _elem.z()
                     extensions.append(_elem)
-                    if not _elem.z():
+                    if not _more:
                         break
+                if _more and cursor.remaining() == 0:
+                    raise NeedMoreBytes()
+                if _more:
+                    raise TlvChainOverflow()
             else:
                 extensions = None
             _peek = cursor.peek_slice(1)[0]

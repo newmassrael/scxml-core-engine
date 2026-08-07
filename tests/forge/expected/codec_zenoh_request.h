@@ -85,14 +85,16 @@ struct CodecZenohRequest {
         if ((header & 0x80) != 0) {
             std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> _list;
             _list.reserve(4);
+            bool _more = false;
             for (std::size_t _i = 0; _i < 4; ++_i) {
                 if (cursor.remaining() == 0) break;
                 auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
                 if (!_elem.has_value()) return std::nullopt;
-                bool _continue = _elem->z();
+                _more = _elem->z();
                 _list.push_back(*_elem);
-                if (!_continue) break;
+                if (!_more) break;
             }
+            if (_more) return std::nullopt;
             extensions = std::move(_list);
         }
         const std::uint8_t* _peek_raw = cursor.peek_slice(1);

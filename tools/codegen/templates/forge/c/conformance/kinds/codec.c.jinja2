@@ -142,4 +142,23 @@ static void test_{{ f.name }}(void) {
 {% endfor %}
     }
 {% endif %}
+{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+   shape. C11 has a name for the failure (the status enum), so the assertion
+   is on the exact status and not merely on non-OK. Each vector gets its own
+   block scope so repeated vectors cannot collide on a local name. #}
+{% for r in f.rejects %}
+    {
+        static const uint8_t reject_bytes[] = { {{ r.encoded | join(", ") }} };
+        {{ f.name }}_t reject_out;
+        sce_forge_cursor_t reject_cursor =
+            sce_forge_cursor_init(reject_bytes, sizeof(reject_bytes));
+        sce_forge_codec_status_t reject_st = {{ f.name }}_decode(&reject_cursor, &reject_out);
+        if (reject_st != {{ r.symbol }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} reject {{ loop.index0 }}: {{ r.why }} (status=%d expected=%d)\n",
+                (int)reject_st, (int){{ r.symbol }});
+            ++g_failures;
+        }
+    }
+{% endfor %}
 }

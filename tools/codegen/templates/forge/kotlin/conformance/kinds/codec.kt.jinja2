@@ -65,3 +65,19 @@
 {% endfor %}
         }
 {% endif %}
+
+{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+   shape. Kotlin constructs no typed runtime codec error (the null-sentinel
+   convention), so the assertion is that the decode refused. Byte literals
+   go through `.toByte()` because Kotlin's Byte is signed and a header with
+   the high bit set does not fit an unsuffixed literal. #}
+{% for r in f.rejects %}
+        run {
+            val rejectBytes = byteArrayOf({% for b in r.encoded %}{{ b }}.toByte(){% if not loop.last %}, {% endif %}{% endfor %})
+            val rejectCursor = com.sce.forge.runtime.SceCursor(rejectBytes)
+            assertTrue(
+                {{ f.name | to_pascal_case }}.decode(rejectCursor) == null,
+                "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}",
+            )
+        }
+{% endfor %}

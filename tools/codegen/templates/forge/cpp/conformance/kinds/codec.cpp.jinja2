@@ -79,3 +79,17 @@
         ++i;
     }
 {% endif %}
+
+{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+   shape. C++ constructs no typed runtime codec error (the truncation-
+   sentinel convention), so `r.symbol` is absent here and the assertion is
+   that the decode refused; which failure it was is not observable. #}
+{% for r in f.rejects %}
+    {
+        const std::vector<std::uint8_t> reject_bytes = { {{ r.encoded | join(", ") }} };
+        ::SCE::Forge::SceCursor reject_cursor(reject_bytes.data(), reject_bytes.size());
+        auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(reject_cursor);
+        CHECK(!refused.has_value(),
+              "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}");
+    }
+{% endfor %}
