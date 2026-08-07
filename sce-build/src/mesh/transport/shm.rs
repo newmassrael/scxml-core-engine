@@ -1,4 +1,4 @@
-//! SCE_MESH.md §mesh-9.6 L1399 (b) — per-transport scxml-invoke codegen helpers
+//! SCE_MESH.md §mesh-9.6 (b) — per-transport scxml-invoke codegen helpers
 //! for `shm` (same-device cross-partition implicit fallback).
 //!
 //! Shared-memory peers consume no deploy.yaml fields beyond the implicit

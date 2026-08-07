@@ -710,7 +710,7 @@ pub struct ScxmlInvokeInfo {
     /// by [`crate::inject_partition_context_for`] from the deploy topology.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_mesh_target: Option<String>,
-    /// SCE_MESH.md §9.6 L1393 cross-device transport — the author-declared
+    /// SCE_MESH.md §9.6 cross-device transport — the author-declared
     /// transport on `machines.<parent>.bindings["#<peer>"]` when the peer
     /// is cross-device. `None` when `remote_mesh_target` is also `None`
     /// (not a remote invoke) OR the invoke is cross-partition same-device
@@ -1478,7 +1478,7 @@ pub struct SCXMLModel {
     /// used as an `<invoke>` worker.
     pub is_remote_invoke_target: bool,
 
-    /// SCE_MESH.md §16.5 L3500 barrier-timeout runtime. Maps each
+    /// SCE_MESH.md §16.5 barrier-timeout runtime. Maps each
     /// `<parallel>` id **Rooted by the current partition** to the
     /// deploy-declared `partitions.<root>.barrier_timeout_ms:` value.
     /// An entry absent from the map is the W3C normative infinity

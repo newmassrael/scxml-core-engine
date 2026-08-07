@@ -272,7 +272,7 @@ pub struct PartitionDecl {
     #[serde(default)]
     pub barrier_timeout_ms: Option<u32>,
     /// Distributed `<parallel>`s this partition claims as the root
-    /// (SCE_MESH.md §mesh-14 rule 12, L2729-2735). Each entry names a
+    /// (SCE_MESH.md §mesh-14 rule 12). Each entry names a
     /// `<parallel>` in one of the partition's listed machines; the
     /// rule-12 cross-reference validator (see
     /// [`crate::mesh::partitions::validate_parallel_root_designation`])

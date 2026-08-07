@@ -5139,7 +5139,7 @@ pub fn inject_partition_context_for(
                     .partition_parallel_roles
                     .insert(parallel_id.clone(), role);
 
-                // SCE_MESH.md §16.5 L3500 barrier-timeout plumbing.
+                // SCE_MESH.md §16.5 barrier-timeout plumbing.
                 // Rule 12 pins exactly one claimant per distributed
                 // parallel, and `barrier_timeout_ms:` on a non-
                 // root-claiming partition is rejected at deploy time
@@ -5175,7 +5175,7 @@ pub fn inject_partition_context_for(
     Ok(present)
 }
 
-/// SCE_MESH.md §9.6 L1393 — cross-device scxml-remote invoke transport
+/// SCE_MESH.md §9.6 — cross-device scxml-remote invoke transport
 /// validator. The classifier
 /// ([`classify_remote_scxml_invokes`]) has already marked each
 /// `Invoke::Scxml` that crosses a partition with
@@ -5233,7 +5233,7 @@ fn validate_scxml_invoke_transport(
                     },
                 ),
                 Some(t) if t == "custom_tcp" => {
-                    // SCE_MESH.md §9.6 L1393 Session 2: custom_tcp
+                    // SCE_MESH.md §9.6 Session 2: custom_tcp
                     // scxml-remote is wired. Reject only when the
                     // device-shared server cannot be emitted for lack
                     // of a listen endpoint on either side. Both
@@ -5258,7 +5258,7 @@ fn validate_scxml_invoke_transport(
                     })
                 }
                 Some(t) if t == "someip" => {
-                    // SCE_MESH.md §9.6 L1393 Session 4b: someip
+                    // SCE_MESH.md §9.6 Session 4b: someip
                     // scxml-remote is wired. `vsomeip.json` OEM
                     // boundary validation belongs to §13 topology
                     // configuration (vsomeip_config validator + the
@@ -5274,7 +5274,7 @@ fn validate_scxml_invoke_transport(
                     None
                 }
                 Some(t) if t == "zenoh" => {
-                    // SCE_MESH.md §9.6 L1393 Session 5: zenoh
+                    // SCE_MESH.md §9.6 Session 5: zenoh
                     // scxml-remote is wired. The §9.6 endpoint
                     // shares the device-wide `zenoh_session_`
                     // (Zenoh has no §13 OEM boundary equivalent —
@@ -5684,7 +5684,7 @@ fn classify_remote_scxml_invokes(
 ) {
     let mut mutated = false;
     let parent_partition = mesh::partitions::partition_for_machine(deploy_cfg, resolved_name);
-    // SCE_MESH.md §9.6 L1393 — the parent's own `bindings["#<peer>"]`
+    // SCE_MESH.md §9.6 — the parent's own `bindings["#<peer>"]`
     // entry is the single source of truth for "which transport when this
     // machine addresses #peer" for both `<send>` and `<invoke>` axes.
     // Cross-device peers require an entry here; same-device peers take
@@ -5711,7 +5711,7 @@ fn classify_remote_scxml_invokes(
                 let target_partition = mesh::partitions::partition_for_machine(deploy_cfg, target);
                 if target_partition != parent_partition {
                     info.remote_mesh_target = Some(target.to_string());
-                    // SCE_MESH.md §9.6 L1393 — record the declared transport
+                    // SCE_MESH.md §9.6 — record the declared transport
                     // for this peer so `validate_scxml_invoke_transport`
                     // can reject cross-device declarations that name an
                     // incapable or not-yet-wired transport. `None` here
@@ -8440,7 +8440,7 @@ partitions:
         );
     }
 
-    // ── SCE_MESH.md §9.6 L1393 cross-device transport validator ──
+    // ── SCE_MESH.md §9.6 cross-device transport validator ──
     //
     // Shared scaffold for the three rejection modes: two machines on
     // separate devices, parent invokes `#worker`, caller supplies a

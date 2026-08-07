@@ -980,7 +980,7 @@ pub enum DeployError {
 
     /// A partition declared `transport_binding:` naming a transport
     /// that does not carry inter-partition IPC within a single
-    /// machine (SCE_MESH.md §mesh-14 L2729-2730). The spec default is
+    /// machine (SCE_MESH.md §mesh-14). The spec default is
     /// "kind tcp/shm"; today `shm` and `custom_tcp` qualify. A
     /// transport the registry does not recognise, or a recognised
     /// transport whose `supports_inter_partition_ipc` is `false`,
@@ -1004,7 +1004,7 @@ pub enum DeployError {
         failure: PartitionTransportBindingFailure,
     },
 
-    /// SCE_MESH.md §mesh-9.6 L1393 — `<invoke type="scxml" src="#<peer>">`
+    /// SCE_MESH.md §mesh-9.6 — `<invoke type="scxml" src="#<peer>">`
     /// classified as cross-device (parent's partition's `device:` differs
     /// from peer's partition's `device:`) but the parent's
     /// `bindings["#<peer>"]` declaration is absent, names an incapable
@@ -1243,7 +1243,7 @@ pub enum DeployError {
 
     /// A distributed `<parallel>` (regions span two or more partitions)
     /// has no partition claiming its root via `hosts_parallel_roots:`
-    /// (SCE_MESH.md §mesh-14 rule 12, L2838). Without a claimant, the
+    /// (SCE_MESH.md §mesh-14 rule 12). Without a claimant, the
     /// §mesh-16.5 `ParallelCompletionTracker` has no unique owner and
     /// `done.state.<parallel_id>` cannot be raised. The author repairs
     /// by naming exactly one partition (of those hosting at least one
@@ -1262,7 +1262,7 @@ pub enum DeployError {
     },
 
     /// Two or more partitions claim the same `(machine, parallel)` pair
-    /// as their root (SCE_MESH.md §mesh-14 rule 12, L2839). Tracker
+    /// as their root (SCE_MESH.md §mesh-14 rule 12). Tracker
     /// ownership is per-`<parallel>`-unique; ambiguous claims would
     /// produce two `done.state.<parallel_id>` raises (one per root).
     /// The author repairs by removing all but one claim.
@@ -1299,7 +1299,7 @@ pub enum DeployError {
 
     /// A partition claims `(machine, parallel)` as its root but hosts
     /// no region of that `<parallel>` in its `contains.parallel_regions:`
-    /// (SCE_MESH.md §mesh-14 rule 12, L2841). A root that co-hosts no region
+    /// (SCE_MESH.md §mesh-14 rule 12). A root that co-hosts no region
     /// would force every region update to cross process boundaries as
     /// inter-partition traffic — the spec rejects the shape to keep the
     /// §mesh-16.5 tracker's aggregation path coherent.

@@ -117,7 +117,7 @@ fn collect_covered_units(cfg: &DeployConfig) -> BTreeSet<String> {
     covered
 }
 
-/// SCE_MESH.md §mesh-14 rule 12 scaffolding carve-out (L2844): does the
+/// SCE_MESH.md §mesh-14 rule 12 scaffolding carve-out: does the
 /// machine appear under any partition's `machines:` list?
 ///
 /// The predicate reads only existence — partition names, unit
