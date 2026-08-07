@@ -117,7 +117,7 @@ use sce_build::parser::SCXMLParser;
 struct DriftContext {
     hashes: drift::DriftHashes,
     generated_at: u64,
-    /// The §synth-6.2.6 source set that produced `hashes.source_hash`,
+    /// The synth-6.2.6 source set that produced `hashes.source_hash`,
     /// carried so `write_depfile` can declare it.
     ///
     /// Kept on the context rather than re-collected at the depfile call
@@ -2609,7 +2609,7 @@ struct DepfileInputs<'a> {
     /// `<sce:use>` fragments, `<sce:import>` closures, and whatever else
     /// a pipeline reports having read.
     preprocessor_deps: &'a [PathBuf],
-    /// The §synth-6.2.6 source set behind the embedded `source-hash`.
+    /// The synth-6.2.6 source set behind the embedded `source-hash`.
     source_set: &'a [PathBuf],
     /// Side-effect writes: synth children, hybrid stubs.
     self_written: &'a [PathBuf],
@@ -2650,7 +2650,7 @@ fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
     // feedback report.
     deps.extend(preprocessor_deps.iter().cloned());
 
-    // The §synth-6.2.6 source set behind the `source-hash` every emitted
+    // The synth-6.2.6 source set behind the `source-hash` every emitted
     // file carries — taken from the `DriftContext` that computed the
     // hash, not re-walked here.
     //

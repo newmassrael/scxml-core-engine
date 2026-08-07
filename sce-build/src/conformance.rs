@@ -1474,7 +1474,7 @@ fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
 /// `conformance/numerical_reference.json`, read only on the C11 route,
 /// which bakes the oracle into the harness source because the backend's
 /// zero-dependency rule leaves no runtime JSON parser. It sits outside
-/// `resource_dir`, so the §synth-6.2.6 source set does not cover it, and
+/// `resource_dir`, so the synth-6.2.6 source set does not cover it, and
 /// editing it changes the emitted harness.
 ///
 /// Carried on the result rather than re-derived by the caller so the
