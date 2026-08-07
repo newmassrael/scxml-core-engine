@@ -9517,7 +9517,7 @@ topology:
             "MEMORY region directive must uppercase the section name; full ld:\n{ld}",
         );
         // The sentinel has to sit *inside* the output section body
-        // (§5.E lines 1059-1064). Written after the closing brace it
+        // (§synth-5-E lines 1059-1064). Written after the closing brace it
         // advances only the location counter, which a `> SRAM1`
         // successor ignores in favour of the region cursor — it would
         // link clean and constrain nothing.
