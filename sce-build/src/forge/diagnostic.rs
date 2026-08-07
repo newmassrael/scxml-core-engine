@@ -959,6 +959,11 @@ pub enum DiagnosticCode {
     //    structural — add `max-depth="N"` (N > 0). Stage = Validation. ──
     #[serde(rename = "codec/tlv-chain-depth-unspecified")]
     CodecTlvChainDepthUnspecified,
+    /// `on-overflow="truncate"` declared with `terminate-on="entry-flag"`:
+    /// a dropped entry's bytes stay under the cursor, where the field
+    /// after the chain reads them.
+    #[serde(rename = "codec/tlv-chain-truncate-under-entry-flag")]
+    CodecTlvChainTruncateUnderEntryFlag,
 
     // ── §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B) ──
     //    `sce:dma-burst-align="N"` requires the field's `sce:byte` be
@@ -2717,6 +2722,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmTestVectorUnsupportedKind,
         // Codec §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B)
         CodecTlvChainDepthUnspecified,
+        CodecTlvChainTruncateUnderEntryFlag,
         // Codec §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B)
         CodecDmaAlignmentUnsatisfiable,
         // Codec §synth-5-B peek-byte cross-codec layout match
@@ -3121,6 +3127,7 @@ impl DiagnosticCode {
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
+            | CodecTlvChainTruncateUnderEntryFlag
             | CodecDmaAlignmentUnsatisfiable
             | CodecPeekByteFlagLayoutMismatch => Some("SCE Protocol-Synthesis RFC §5.B"),
 
@@ -3781,6 +3788,7 @@ impl DiagnosticCode {
             CodecRepeatCountRefsLaterField => "codec/repeat-count-refs-later-field",
             AlgorithmTestVectorUnsupportedKind => "algorithm/test-vector-unsupported-kind",
             CodecTlvChainDepthUnspecified => "codec/tlv-chain-depth-unspecified",
+            CodecTlvChainTruncateUnderEntryFlag => "codec/tlv-chain-truncate-under-entry-flag",
             CodecDmaAlignmentUnsatisfiable => "codec/dma-alignment-unsatisfiable",
             CodecPeekByteFlagLayoutMismatch => "codec/peek-byte-flag-layout-mismatch",
             LinkFramerMissing => "link/framer-missing",
@@ -5551,6 +5559,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![codec.clone(), field.clone()],
         },
+        ValidationError::CodecTlvChainTruncateUnderEntryFlag { codec, field } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::CodecTlvChainTruncateUnderEntryFlag,
+                stage: Stage::Validation,
+                // The offending value is the `on-overflow` the author
+                // wrote, and its repair is single-valued: `reject` is the
+                // only policy that can hold under entry-flag termination.
+                // Switching `terminate-on` instead redeclares what the
+                // wire is, rather than repairing this declaration, so it
+                // stays in the message and out of the fix.
+                expected: None,
+                actual: Some("truncate".to_string()),
+                fix: Some(Fix::ReplaceWith {
+                    to: "reject".to_string(),
+                }),
+                key_fragments: vec![codec.clone(), field.clone()],
+            }
+        }
         ValidationError::CodecDmaAlignmentUnsatisfiable {
             codec,
             field,
@@ -9876,6 +9902,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:569cbc9e420b26e4","code":"codec/tlv-chain-depth-unspecified","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' is missing the required `max-depth` attribute — TLV chain decoders need a build-time bound to size their working set and enforce iterative-only parse (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0","actual":"extensions"}"#,
             ),
+            (
+                "forge/codec-tlv-chain-truncate-under-entry-flag",
+                ValidationError::CodecTlvChainTruncateUnderEntryFlag {
+                    codec: "session_envelope".into(),
+                    field: "extensions".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:66aacd8d5b7ac12e","code":"codec/tlv-chain-truncate-under-entry-flag","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' declares `on-overflow=\"truncate\"` with `terminate-on=\"entry-flag\"` — entry-flag termination means the bytes after the chain belong to the fields that follow it, so silently dropping a post-cap entry leaves that entry's bytes where the next field reads them and the decode succeeds with corrupt values (RFC §5.B line 533); use `on-overflow=\"reject\"`, or `terminate-on=\"exhaust-or-depth\"` if the chain owns the rest of the wire","actual":"truncate","fix":{"kind":"replace_with","to":"reject"}}"#,
+            ),
             // ── §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B) ─
             (
                 "forge/codec-dma-alignment-unsatisfiable",
@@ -12462,6 +12497,7 @@ mod tests {
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
+            | CodecTlvChainTruncateUnderEntryFlag
             | CodecDmaAlignmentUnsatisfiable
             | CodecPeekByteFlagLayoutMismatch
             | LinkFramerMissing
@@ -13071,6 +13107,7 @@ mod tests {
                 | CodecRepeatCountRefsLaterField
                 | AlgorithmTestVectorUnsupportedKind
                 | CodecTlvChainDepthUnspecified
+                | CodecTlvChainTruncateUnderEntryFlag
                 | CodecDmaAlignmentUnsatisfiable
                 | CodecPeekByteFlagLayoutMismatch
                 | LinkFramerMissing
@@ -13288,9 +13325,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            335,
+            336,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 335 distinct variants to match the DiagnosticCode \
+             expected 336 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

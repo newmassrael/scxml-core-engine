@@ -73,6 +73,9 @@ impl<'a> CodecTlvChainPresentIfBasic<'a> {
             let mut _vec: HeaplessVec<CodecTlvEntry<'a>, 4> = HeaplessVec::new();
             for _ in 0..4u32 {
                 if cursor.remaining() == 0 { break; }
+                // Bounded by max-depth on both sides — loop count and `_vec`
+                // capacity are the same literal — so this push cannot fail. An
+                // over-long chain is refused by the guard after the loop.
                 _vec.push(CodecTlvEntry::decode(cursor)?)
                     .map_err(|_| CodecError::TooManyElements)?;
             }
