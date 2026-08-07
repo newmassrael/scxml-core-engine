@@ -82,6 +82,29 @@ impl Language {
     /// attributable to one backend by path alone; separating them is a
     /// larger change than this axis, and until it happens a C11 build
     /// still lists the root C++ templates among its inputs.
+    /// Directory under `templates/forge/` holding this language's forge
+    /// templates — the scope `forge::generator::generate_*` loads.
+    ///
+    /// Separate from [`Self::template_subdir`] because the forge tree
+    /// names every backend, including C++, which has no directory of its
+    /// own in the statechart tree. `C11` is `c` there as it is here.
+    ///
+    /// The `generate_*` functions still spell their own path inline,
+    /// each being single-language. That duplication is bounded by
+    /// `codegen_depfile_content`, which prunes every template a depfile
+    /// does not declare and re-renders: a scope stated here that differs
+    /// from the one actually loaded fails to render.
+    pub fn forge_template_subdir(self) -> &'static str {
+        match self {
+            Language::Rust => "rust",
+            Language::Cpp => "cpp",
+            Language::Kotlin => "kotlin",
+            Language::Go => "go",
+            Language::Python => "python",
+            Language::C11 => "c",
+        }
+    }
+
     pub fn template_owned_subdir(self) -> Option<&'static str> {
         match self {
             Language::Rust => Some("rust"),
@@ -1423,26 +1446,72 @@ pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), Gener
         )));
     }
     load_templates_recursive(env, dir, dir)?;
-    // Sibling `_macros/` lives at `<workspace>/tools/codegen/templates/_macros/`.
-    // For per-backend roots like `rust/`, `_macros/` is one level up at
-    // (`<workspace>/tools/codegen/templates/_macros/`); for per-kind
-    // forge backends like `forge/rust/`, it is two levels up. Walk up
-    // the parent chain until either `_macros/` shows up or the chain
-    // terminates, so adding a third-level template tree later does
-    // not regress the inheritance.
+    if let Some((macro_base, macro_dir)) = shared_macro_dir(dir) {
+        // base_dir = the parent so loaded names start with `_macros/...`
+        // — matching the path callers use in
+        // `{% import "_macros/sce_map_marker.jinja2" as sce_map %}`.
+        load_templates_recursive(env, &macro_base, &macro_dir)?;
+    }
+    Ok(())
+}
+
+/// Where the workspace-shared `_macros/` tree sits relative to `dir`, as
+/// `(base_dir, macro_dir)`.
+///
+/// `_macros/` lives at `<workspace>/tools/codegen/templates/_macros/`.
+/// For per-backend roots like `rust/` that is one level up; for per-kind
+/// forge roots like `forge/rust/`, two. The parent chain is walked until
+/// it appears, so adding a third-level template tree later does not
+/// regress the inheritance. `None` when the tree is absent (vendored
+/// builds without the macro family).
+fn shared_macro_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
     let mut current = dir;
     while let Some(parent) = current.parent() {
         let shared_macros = parent.join("_macros");
         if shared_macros.is_dir() && shared_macros != dir.join("_macros") {
-            // base_dir = parent so the loaded template names start
-            // with `_macros/...` — matches the path callers use in
-            // `{% import "_macros/sce_map_marker.jinja2" as sce_map %}`.
-            load_templates_recursive(env, parent, &shared_macros)?;
-            break;
+            return Some((parent.to_path_buf(), shared_macros));
         }
         current = parent;
     }
-    Ok(())
+    None
+}
+
+/// Every template file [`load_templates`] would register for `dir`.
+///
+/// Exists so a depfile can state what the render could read without
+/// re-deriving the loader's scope. Deriving it separately is not a
+/// stylistic difference: the depfile writer used to walk `dir` alone,
+/// which silently dropped the shared `_macros/` family for every
+/// backend whose scope is a subdirectory (rust / kotlin / go / python).
+/// Editing `_macros/sce_map_marker.jinja2` therefore left their output
+/// stale while the build reported success.
+///
+/// Order is deterministic, so a depfile does not churn between runs.
+pub fn loader_template_files(dir: &Path) -> Vec<PathBuf> {
+    fn collect(current: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(current) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
+                out.push(path);
+            }
+        }
+    }
+
+    let mut found = Vec::new();
+    if dir.exists() {
+        collect(dir, &mut found);
+        if let Some((_, macro_dir)) = shared_macro_dir(dir) {
+            collect(&macro_dir, &mut found);
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
 }
 
 fn load_templates_recursive(
