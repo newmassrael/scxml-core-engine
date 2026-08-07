@@ -93,10 +93,18 @@ jobs:
     # (`sample_h_typestate_is_inert_in_c_and_only_warn_unused_survives`)
     # needs Clang's `consumable` / `callable_when` attribute family, which
     # GCC does not implement — with GCC alone the check cannot run at all.
+    #
+    # gcc-arm-none-eabi is installed for the same reason. It provides
+    # `arm-none-eabi-gcc`, the cross-compiler
+    # `statechart_native_lowering_c11_compiles_freestanding` uses to prove
+    # the emitted C11 builds for a freestanding target — the one profile
+    # where a hosted libc cannot paper over a missing declaration. The
+    # runner image does not carry it, so before this line the check was
+    # the single `SCE_REQUIRE_TOOLS` casualty in the lane.
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang
+        sudo apt-get install -y pkg-config libxml2-dev clang gcc-arm-none-eabi
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
