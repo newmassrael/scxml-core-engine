@@ -667,9 +667,8 @@ Author resolution paths when the gate fails:
    target="..." source-hash="..."/>` — the derived bound was
    pessimistic; the measured bound is tighter. Same workflow as §5.A.
 
-AP targets (`scheduler.kind: tokio` / `rt`) do not require codec
-aggregate WCET; the runtime is preemptive and a slow parse blocks
-only one task.
+AP targets (`scheduler.kind: tokio` / `rt`) do not require codec aggregate
+WCET; the runtime is preemptive and a slow parse blocks only one task.
 
 **Diagnostics:**
 - `codec/vle-width-overflow` — `vle_u32` field receiving value >2^32
@@ -679,6 +678,7 @@ only one task.
 - `codec/borrow-mode-with-owned-field` — mixed parse modes
 - `codec/test-vector-drift` — regression on golden vector
 - `codec/tlv-chain-depth-unspecified` — MCU target without `max-depth`
+- `codec/tlv-chain-truncate-under-entry-flag` — `on-overflow="truncate"` declared with `terminate-on="entry-flag"`. Entry-flag termination means the bytes after the chain belong to the fields that follow it, so a dropped post-cap entry leaves its bytes where the next field reads them. Consuming them instead has no declaration-derived bound, which is what `max-depth` lowering to a `max-iter` forbids. Hard error; use `on-overflow="reject"`, or `terminate-on="exhaust-or-depth"` if the chain owns the rest of the wire
 - `codec/tlv-chain-depth-exceeds-stack-budget` — `max-depth` × per-level working set > deploy-declared worker stack budget
 - `codec/dma-alignment-unsatisfiable` — burst-align requirement cannot be honored given preceding variable-length fields
 - `codec/dma-alignment-pool-mismatch` — field `dma-burst-align` > bound pool `alignment`

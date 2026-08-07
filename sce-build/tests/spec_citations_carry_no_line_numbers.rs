@@ -47,6 +47,17 @@ const EXTENSIONS: &[&str] = &[
 /// A document that later stops pinning its line count belongs here.
 const SPEC_DOCS: &[&str] = &["SCE_MESH.md"];
 
+/// The synth RFC's pinned length. See [`SYNTH_RFC`].
+const SYNTH_RFC_LINES: usize = 4053;
+
+/// The document the exclusion above is granted to.
+const SYNTH_RFC: &str = "docs/spec/synth/rfc-sce-protocol-synthesis.md";
+
+/// Measured floor on citations into the synth RFC, so a scan that stops
+/// matching cannot report a clean tree. Measured at 1316 when this gate
+/// landed.
+const MIN_SYNTH_RFC_CITATIONS: usize = 1200;
+
 /// Measured floor on citations seen, so a scan that stops matching
 /// cannot pass as a clean tree.
 const MIN_CITATIONS_SCANNED: usize = 800;
@@ -174,4 +185,93 @@ fn spec_citations_name_a_section_not_a_line() {
         "scanned only {scanned} spec citations, floor {MIN_CITATIONS_SCANNED} — the scan \
          stopped matching, so a green result means nothing was checked",
     );
+}
+
+/// The synth RFC's exclusion above rests on one claim: its line count is
+/// pinned, so a citation written today still resolves tomorrow. Nothing
+/// enforced that claim — the convention lived in a comment, and an author
+/// who inserted a paragraph would silently move every citation below it.
+/// Measured at the time this gate landed: 1316 citations across the tree
+/// name a line in that file, and 985 of them point below line 682.
+///
+/// So the pin is asserted here. Adding content means re-wrapping nearby
+/// prose to give the line back — which is what "corrections are rewritten
+/// to the same line count" already meant, now said out loud.
+///
+/// This does not check that a given line still says what its citation
+/// claims; content can be rewritten in place under a stable count. It
+/// catches the failure that rots every downstream citation at once, which
+/// is insertion and deletion.
+#[test]
+fn synth_rfc_holds_its_pinned_line_count() {
+    let path = repo_root().join(SYNTH_RFC);
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    // Trailing-newline-insensitive: a file ending in "\n" splits to a final
+    // empty element that is not a line.
+    let lines = text.lines().count();
+    assert_eq!(
+        lines, SYNTH_RFC_LINES,
+        "{SYNTH_RFC} is {lines} lines, pinned at {SYNTH_RFC_LINES}. Citations across the \
+         tree name absolute line numbers in this file, so an insertion or deletion moves \
+         every one below it and none of them would fail. To add content, re-wrap prose \
+         nearby to return the line; to remove it, spend the freed line the same way. If \
+         the pin is being retired on purpose, add this document to SPEC_DOCS above so the \
+         citations are forbidden instead, and update both in the same commit.",
+    );
+}
+
+/// The pin above is only worth having while citations depend on it. If that
+/// number collapses, the pin has become ceremony and should be retired
+/// deliberately rather than kept out of habit — this floor is what forces
+/// that decision to be made rather than drifted into.
+#[test]
+fn the_synth_rfc_pin_still_has_dependents() {
+    // `source_files` walks every SCAN_ROOTS entry itself, so it takes the
+    // repo root — joining a root name onto it again would walk
+    // `sce-build/src/sce-build/src` and count nothing.
+    let mut found = 0usize;
+    for file in source_files(&repo_root()) {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        found += count_synth_rfc_line_citations(&text);
+    }
+    assert!(
+        found >= MIN_SYNTH_RFC_CITATIONS,
+        "only {found} citations name a line in {SYNTH_RFC}, floor {MIN_SYNTH_RFC_CITATIONS}. \
+         Either the scan stopped matching, or the tree has moved to section anchors — in \
+         which case retire the pin and move this document into SPEC_DOCS.",
+    );
+}
+
+/// Count `§synth-5-B line 488` / `§5.K lines 2232-2540` shaped citations.
+/// Anchored on the `§` so prose containing a bare "line 12" is not counted.
+fn count_synth_rfc_line_citations(text: &str) -> usize {
+    let mut count = 0;
+    for (idx, _) in text.match_indices('§') {
+        let rest = &text[idx + '§'.len_utf8()..];
+        // Section token: digits, letters, dots and dashes (`synth-5-J-2`).
+        let sec_len = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+            .unwrap_or(rest.len());
+        if sec_len == 0 {
+            continue;
+        }
+        let after = rest[sec_len..].trim_start();
+        let after = match after.strip_prefix("lines") {
+            Some(r) => r,
+            None => match after.strip_prefix("line") {
+                Some(r) => r,
+                None => match after.strip_prefix('L') {
+                    Some(r) => r,
+                    None => continue,
+                },
+            },
+        };
+        if after.trim_start().starts_with(|c: char| c.is_ascii_digit()) {
+            count += 1;
+        }
+    }
+    count
 }
