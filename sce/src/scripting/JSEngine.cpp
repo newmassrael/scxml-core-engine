@@ -76,9 +76,11 @@ void JSEngine::shutdown() {
         futures.push_back(std::move(future));
     }
 
-    // Wait for all session cleanup to complete
+    // Wait for all session cleanup to complete. The result is discarded on
+    // purpose: the task above always returns success, so `get()` is here to
+    // join and to propagate an exception, not to report an outcome.
     for (auto &future : futures) {
-        future.get();
+        (void)future.get();
     }
 
     SCE_LOG_DEBUG("JSEngine: shutdown() - All sessions destroyed");
@@ -122,9 +124,10 @@ void JSEngine::reset() {
             futures.push_back(std::move(future));
         }
 
-        // Wait for all session cleanup to complete on worker thread
+        // Wait for all session cleanup to complete on worker thread. Result
+        // discarded on purpose — the task always returns success.
         for (auto &future : futures) {
-            future.get();
+            (void)future.get();
         }
 
         // Zero Duplication Principle: Platform-specific cleanup logic through Helper
@@ -374,8 +377,9 @@ void JSEngine::collectGarbage() {
         return ScriptResult::createSuccess();
     });
 
-    // Wait for completion but ignore result
-    future.get();
+    // Wait for completion but ignore result — the task always returns
+    // success, so `get()` is a join point rather than a status read.
+    (void)future.get();
 }
 
 // === Thread-safe Execution Worker ===
