@@ -1489,7 +1489,8 @@ fn shared_macro_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
-/// Every template file [`load_templates`] would register for `dir`.
+/// Every template file [`load_templates`] would register for `dir`, as
+/// `(registered name, path on disk)`.
 ///
 /// Exists so a depfile can state what the render could read without
 /// re-deriving the loader's scope. Deriving it separately is not a
@@ -1499,27 +1500,43 @@ fn shared_macro_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
 /// Editing `_macros/sce_map_marker.jinja2` therefore left their output
 /// stale while the build reported success.
 ///
+/// The name is the same string [`load_templates`] hands to
+/// `add_template_owned` — root-relative, `/`-separated, and the spelling
+/// a template's own `{% import %}` uses. It is returned rather than left
+/// for the caller to reconstruct because reconstruction is what broke:
+/// the depfile writer matched `Language::foreign_template_prefixes`,
+/// which are relative by definition, against each template's *absolute*
+/// path. Under a checkout whose prefix contains a backend's directory
+/// name (`/home/go/…`, `/srv/c/…`) every template matched as foreign and
+/// the depfile came out empty, on all six backends and both pipelines.
+///
 /// Order is deterministic, so a depfile does not churn between runs.
-pub fn loader_template_files(dir: &Path) -> Vec<PathBuf> {
-    fn collect(current: &Path, out: &mut Vec<PathBuf>) {
+pub fn loader_template_files(dir: &Path) -> Vec<(String, PathBuf)> {
+    fn collect(base: &Path, current: &Path, out: &mut Vec<(String, PathBuf)>) {
         let Ok(entries) = std::fs::read_dir(current) else {
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                collect(&path, out);
+                collect(base, &path, out);
             } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
-                out.push(path);
+                let Ok(rel) = path.strip_prefix(base) else {
+                    continue;
+                };
+                out.push((rel.to_string_lossy().replace('\\', "/"), path));
             }
         }
     }
 
     let mut found = Vec::new();
     if dir.exists() {
-        collect(dir, &mut found);
-        if let Some((_, macro_dir)) = shared_macro_dir(dir) {
-            collect(&macro_dir, &mut found);
+        collect(dir, dir, &mut found);
+        if let Some((macro_base, macro_dir)) = shared_macro_dir(dir) {
+            // Named from the parent, so entries read `_macros/…` exactly
+            // as `load_templates` registers them and as the importing
+            // templates spell them.
+            collect(&macro_base, &macro_dir, &mut found);
         }
     }
     found.sort();
