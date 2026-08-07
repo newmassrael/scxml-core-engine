@@ -103,8 +103,18 @@ first-class vs AOT-only" framing.
 
 Committed-tree backends are §6.2.6 drift-gated (per-context source-hash
 + template-hash invariant via `b9_drift_detection::verify_passes_on_real_committed_*`);
-build-time backends rely on CMake/CI to regenerate fresh trees on every
-build, so the build process itself is the §6.2.6 freshness invariant.
+build-time backends rely on CMake to regenerate on every build, so the
+build process itself is the §6.2.6 freshness invariant.
+
+That invariant holds only while every codegen step declares the
+templates as an input. CMake learns the SCXML dependency from `DEPENDS`
+and the ~120 template dependencies only from a `DEPFILE` written by
+`sce-codegen --write-deps`. Steps missing it were measured to reuse
+stale artefacts after a template edit — 0 of 21 C++ integration outputs
+regenerated, 74 of 270 C11 — while the build reported success. All ten
+steps now carry it, and `sce-build/tests/codegen_depfile_coverage.rs`
+holds them there; each site was individually mutated to confirm the gate
+catches its removal.
 
 ### Axis 2 — Engine path (Interpreter vs AOT)
 
