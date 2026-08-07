@@ -66,6 +66,51 @@ impl Language {
         }
     }
 
+    /// Subdirectory this language's own templates live in, as opposed to
+    /// the scope it loads.
+    ///
+    /// The two differ, and conflating them is a live defect rather than
+    /// a hypothetical: [`Self::template_subdir`] is a *loader scope*, so
+    /// C11 returns the root to reach the shared `license_header.jinja2`
+    /// even though its statechart templates are under `c/`. Anything
+    /// asking "whose templates are these?" — dependency filtering,
+    /// registry ownership — needs this instead, and asking the loader
+    /// scope leaves `c/` owned by nobody, so every language claims it.
+    ///
+    /// `None` means the language's templates sit at the tree root, which
+    /// only C++ does. Root-level templates are consequently not
+    /// attributable to one backend by path alone; separating them is a
+    /// larger change than this axis, and until it happens a C11 build
+    /// still lists the root C++ templates among its inputs.
+    pub fn template_owned_subdir(self) -> Option<&'static str> {
+        match self {
+            Language::Rust => Some("rust"),
+            Language::Cpp => None,
+            Language::Kotlin => Some("kotlin"),
+            Language::Go => Some("go"),
+            Language::Python => Some("python"),
+            Language::C11 => Some("c"),
+        }
+    }
+
+    /// Path prefixes belonging to *other* backends, relative to the
+    /// template tree root.
+    ///
+    /// Derived from the language registry rather than written out, so a
+    /// new backend cannot be forgotten here. It was: the depfile writer
+    /// carried a hand-kept `rust`/`kotlin`/`go` list, and when `python/`
+    /// and `c/` were added nothing updated it, so a C++ build declared a
+    /// dependency on 18 templates it cannot render and a C11 build on
+    /// 65 — meaning a Rust template edit regenerated every C11 output.
+    pub fn foreign_template_prefixes(self) -> Vec<&'static str> {
+        crate::template_registry::SUPPORTED_LANGUAGES
+            .iter()
+            .filter(|other| **other != self)
+            .filter_map(|other| other.template_owned_subdir())
+            .filter(|subdir| Some(*subdir) != self.template_owned_subdir())
+            .collect()
+    }
+
     /// The identifier [`FromStr`](std::str::FromStr) accepts for this
     /// language, and the one a caller should present.
     ///

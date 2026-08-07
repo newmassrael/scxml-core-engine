@@ -2480,24 +2480,24 @@ fn write_depfile(
     // feedback report.
     deps.extend(preprocessor_deps.iter().cloned());
 
-    // Add template dependencies (language-specific only)
+    // Template dependencies, minus the ones belonging to other
+    // backends. The exclusion set comes from the language registry
+    // (`foreign_template_prefixes`) rather than a list kept here: the
+    // list that used to live here named only rust/kotlin/go, so when
+    // `python/` and `c/` were added a C++ build declared a dependency on
+    // 18 templates it cannot render and a C11 build — which took no
+    // filter at all — on 65. The visible cost is spurious rebuilds: one
+    // Rust template edit regenerated all 270 C11 outputs.
     if let Ok(entries) = glob_jinja2_files(template_dir) {
-        if lang == Language::Cpp {
-            // C++ templates are at the base level which also contains rust/ and kotlin/ subdirs.
-            // Filter out other languages' templates to avoid spurious rebuilds.
-            for entry in entries {
-                // Filter using path components (portable across OS)
-                let is_other_lang = entry.components().any(|c| {
-                    let s = c.as_os_str().to_string_lossy();
-                    s == "rust" || s == "kotlin" || s == "go"
-                });
-                if !is_other_lang {
-                    deps.push(entry);
-                }
-            }
-        } else {
-            deps.extend(entries);
-        }
+        let foreign = lang.foreign_template_prefixes();
+        deps.extend(entries.into_iter().filter(|entry| {
+            // Component-wise, not substring: portable across separators,
+            // and a directory named `go_helpers` must not read as `go`.
+            !entry.components().any(|c| {
+                let s = c.as_os_str().to_string_lossy();
+                foreign.iter().any(|prefix| *prefix == s)
+            })
+        }));
     }
 
     // Add sce-codegen binary as a dependency (rebuilds if binary itself changes,
