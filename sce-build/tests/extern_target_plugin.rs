@@ -49,6 +49,7 @@ fn deploy_with_plugin(path: std::path::PathBuf) -> DeployConfig {
             target_plugin: Some(path),
         }),
         variant_defaults: std::collections::BTreeMap::new(),
+        build: None,
     }
 }
 
@@ -303,6 +304,7 @@ fn deploy_without_plugin_preserves_baseline_only_semantics() {
         distributability: None,
         extern_symbols: None,
         variant_defaults: std::collections::BTreeMap::new(),
+        build: None,
     };
 
     let scxml = fixture_transform_with_externs(

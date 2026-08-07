@@ -762,14 +762,19 @@ pub fn compile_scxml_lang_with_deploy(
         None,
         &generator::StatechartCodegenOptions::default(),
         |model| {
-            apply_deploy_model_mutations(model, deploy_path, for_partition).map_err(|e| {
-                forge::error::Located::new(
-                    forge::error::ForgeError::from(e.source),
-                    deploy_path.display().to_string(),
-                    None,
-                    None,
-                )
-            })
+            // The facts are dropped here: this entry compiles a model,
+            // and has no manifest to report them on. The CLI is the
+            // caller that carries them.
+            apply_deploy_model_mutations(model, deploy_path, for_partition)
+                .map(|_facts| ())
+                .map_err(|e| {
+                    forge::error::Located::new(
+                        forge::error::ForgeError::from(e.source),
+                        deploy_path.display().to_string(),
+                        None,
+                        None,
+                    )
+                })
         },
     )
 }
@@ -4953,11 +4958,28 @@ pub struct DeployMutationError {
 /// gap: the value gate over author `<param>` literals compiled its
 /// fixtures without a deploy and so could never see the mesh send site,
 /// which stayed unguarded after being fixed.
+/// Deploy-level declarations that change no emission and gate no build,
+/// returned so a caller can report them.
+///
+/// A declaration nothing reads is indistinguishable from a typo: the
+/// author believes they configured something and the build behaves as if
+/// they had not. `distributability: permissive` avoids that by printing
+/// its merge notices; the descriptive keys avoid it by travelling out
+/// here into the `generate` manifest. Nothing in this struct is allowed
+/// to influence codegen — its whole contract is to be visible.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeployFacts {
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429 — the analyzer this
+    /// deployment declares it relies on. `None` when unstated, which is
+    /// the common case and carries no meaning beyond "unstated".
+    pub static_analyzer: Option<mesh::deploy::StaticAnalyzer>,
+}
+
 pub fn apply_deploy_model_mutations(
     model: &mut SCXMLModel,
     deploy_path: &Path,
     for_partition: Option<&str>,
-) -> Result<(), DeployMutationError> {
+) -> Result<DeployFacts, DeployMutationError> {
     inject_server_model_mutations(model, deploy_path).map_err(|source| DeployMutationError {
         stage: DeployMutationStage::ServerModel,
         source,
@@ -4974,7 +4996,23 @@ pub fn apply_deploy_model_mutations(
             source,
         }
     })?;
-    Ok(())
+    // Read after the injectors, not before: they are what reject a
+    // malformed deploy, and reporting facts off a file that is about to
+    // be refused would surface a declaration from a build that never
+    // happened. Reached only on the success path for that reason.
+    //
+    // This is a fourth parse of the same file — each injector already
+    // does its own. All four parse the same bytes into the same type, so
+    // they cannot disagree; the redundancy is a cost, not a divergence,
+    // and collapsing it means threading `&DeployConfig` through three
+    // `pub` functions that have callers of their own.
+    let cfg = mesh::deploy::parse_deploy(deploy_path).map_err(|source| DeployMutationError {
+        stage: DeployMutationStage::ServerModel,
+        source: source.into(),
+    })?;
+    Ok(DeployFacts {
+        static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
+    })
 }
 
 /// Partition-aware form of [`inject_partition_context_flag`]. Pass

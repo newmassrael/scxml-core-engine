@@ -155,6 +155,14 @@ name = "codegen_depfile_content"
 path = "tests/codegen_depfile_content.rs"
 required-features = ["cli"]
 
+# Reader gate for the descriptive `build.static_analyzer` deploy key.
+# The property under test is what reaches the stdout manifest, so it
+# drives the real binary and takes the same `cli` feature gate.
+[[test]]
+name = "deploy_static_analyzer"
+path = "tests/deploy_static_analyzer.rs"
+required-features = ["cli"]
+
 # Per-backend Enum codegen smoke gate.
 # Generates each positive Enum fixture on all 6 backends and feeds the
 # output to a per-backend syntax checker (g++, syn::parse_file, gofmt,
