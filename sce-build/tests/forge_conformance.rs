@@ -734,9 +734,9 @@ fn forge_c11_algorithm_bytes_equal() {
 // `algorithm_cobs_encode` exercises the byte-buffer-build primitives on all
 // six backends — a bounded `<sce:var type="bytes" capacity>` output buffer,
 // `<sce:append>` of single bytes (the code byte + each data byte), and a
-// fallible `bytes` return. The Rust compile+run gate
-// `algorithm_cobs_encode.rs` pins the COBS reference vectors at runtime; these
-// goldens pin the emitted source per backend.
+// fallible `bytes` return. These goldens pin the emitted source per backend;
+// `forge_rust_algorithm_cobs_encode_runtime` runs the Rust emit against the
+// COBS vectors, which is what decides the encoder is correct.
 
 #[test]
 fn forge_cpp_algorithm_cobs_encode() {
@@ -15127,4 +15127,98 @@ fn axis1_camelcase_cross_codec_refs_compile() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── §synth-5-B B2 declared test-vectors — algorithm kind ─────
+
+/// SCE Protocol-Synthesis RFC §synth-5-B B2: a `<sce:test-vector>` an author
+/// writes is a claim about what the emitted code computes, and codegen
+/// turns it into an executable `#[test]` sidecar. For the algorithm
+/// kind nothing ever ran those sidecars — they were emitted and
+/// dropped, so the claim stayed a comment.
+///
+/// What that cost, measured: rewriting `rust_binop`'s `BitXor` arm to
+/// `"|"` corrupts CRC16 into a value that is not a CRC at all, and the
+/// whole workspace stays green once the two byte goldens are refreshed
+/// — 3221 passed, 0 failed. The only thing standing between that edit
+/// and a release was a reviewer reading `crc << 1 | 0x1021` in a
+/// golden diff and doing the polynomial in their head.
+///
+/// The declared vector is worth running because its value does not
+/// come from us: `0x29B1` over `"123456789"` is the published
+/// CRC-16/CCITT-FALSE check value, so it cannot drift along with the
+/// generator the way a golden does.
+///
+/// Fixtures are discovered by scanning rather than by list. Wiring a
+/// new fixture into a hand-kept list is precisely the step that was
+/// missed here, and a list would let the next one be missed the same
+/// way. The lower bound guards only the scan itself — a glob that
+/// matches nothing would otherwise report success over an empty set.
+#[test]
+fn algorithm_declared_test_vectors_execute() {
+    let dir = resource_dir();
+    let mut fixtures: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("read the forge resource dir") {
+        let path = entry.expect("read a resource dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("scxml") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("read a forge fixture");
+        if !src.contains(r#"sce:kind="algorithm""#) {
+            continue;
+        }
+        // Strip XML comments before looking for the element. Fixtures
+        // discuss `<sce:test-vector>` in their header comments —
+        // `algorithm_cobs_encode` has a comment saying it deliberately
+        // does *not* use one — and matching that text picked up a
+        // fixture with no vector to run, inflating this gate's own
+        // lower bound past what the tree actually declares.
+        let declarations = strip_xml_comments(&src);
+        if !declarations.contains("<sce:test-vector") {
+            continue;
+        }
+        fixtures.push(
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .expect("fixture filename is valid UTF-8")
+                .to_string(),
+        );
+    }
+    fixtures.sort();
+
+    // Measured on the tree that introduced this gate: algorithm_crc16 is
+    // the only algorithm fixture that declares a vector. Raise it when
+    // more land — never lower it to match a scan that came back short.
+    const DECLARED_VECTOR_FIXTURES: usize = 1;
+    assert!(
+        fixtures.len() >= DECLARED_VECTOR_FIXTURES,
+        "found {} algorithm fixtures declaring <sce:test-vector>, expected at \
+         least {DECLARED_VECTOR_FIXTURES}. A scan that comes back short means \
+         the discovery is broken, not that the vectors went away — this gate \
+         would then run nothing and still pass.",
+        fixtures.len(),
+    );
+
+    let names: Vec<&str> = fixtures.iter().map(String::as_str).collect();
+    rustc_test_codec_set(&dir, &names, "algorithm_vectors").unwrap_or_else(|e| {
+        panic!(
+            "the algorithm kind's declared <sce:test-vector> assertions must \
+             hold when run. Fixtures: {names:?}\n{e}"
+        )
+    });
+}
+
+/// Remove XML comments so a scan reads declarations rather than prose.
+fn strip_xml_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut rest = src;
+    while let Some(open) = rest.find("<!--") {
+        out.push_str(&rest[..open]);
+        rest = match rest[open..].find("-->") {
+            Some(close) => &rest[open + close + 3..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out
 }

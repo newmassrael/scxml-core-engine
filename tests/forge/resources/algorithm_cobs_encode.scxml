@@ -25,9 +25,9 @@
     11 22 00 33        -> 03 11 22 02 33
     11 00 00           -> 02 11 01 01
     11 22 33           -> 04 11 22 33
-  The Rust compile+run gate `algorithm_cobs_encode.rs` pins these at runtime;
-  the per-backend goldens pin the emitted source. (`<sce:test-vector>` is not
-  used here — its sidecar binds a scalar return value, not a `bytes` output.)
+  `forge_rust_algorithm_cobs_encode_runtime` runs the Rust emit against these;
+  the goldens pin the emitted source per backend. And `<sce:test-vector>` is
+  unusable here — its sidecar binds a scalar return value, not a `bytes` one.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
