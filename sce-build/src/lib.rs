@@ -11214,6 +11214,133 @@ static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_
         }
     }
 
+    /// SCE Protocol-Synthesis RFC §synth-5-E lines 1462-1484, third arm of
+    /// the trap contract: on a freestanding target the default
+    /// `SCE_OWNERSHIP_TRAP` fails the *link* rather than going quiet.
+    ///
+    /// The two arms above run hosted, where `abort()` always resolves.
+    /// The MCU class this pool API targets links `-ffreestanding
+    /// -nostdlib` and has no `abort`, and the header's answer to that is
+    /// deliberate: the unresolved symbol is how a deployment discovers
+    /// the macro needs pointing at a fault handler. Nothing enforced it,
+    /// so a future edit could swap `abort()` for some locally-defined
+    /// no-op and leave every hosted test green while the boundary went
+    /// inert on the only targets that ship it.
+    ///
+    /// The control arm is what makes the failing arm mean anything:
+    /// `-nostdlib` removes plenty of symbols, so "the link failed" on its
+    /// own says nothing about the trap. Defining `SCE_OWNERSHIP_TRAP`
+    /// against a target fault handler must link the same source clean —
+    /// then the only difference between the arms is the default trap's
+    /// `abort` reference, and the failing arm is attributable to it.
+    #[test]
+    fn sample_h_trap_on_a_freestanding_target_fails_the_link_rather_than_going_quiet() {
+        let Some(cc) = crate::toolchain::require_or_skip(
+            "gcc",
+            "link the ownership boundary for a freestanding target and check \
+             that the default trap leaves `abort` unresolved",
+        ) else {
+            return;
+        };
+
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let include_dir = crate_dir.join("../backends/c/runtime/include");
+
+        // `_start` stands in for the reset vector: `-nostdlib` drops the
+        // C runtime's entry point, and leaving it undefined would put an
+        // unrelated diagnostic in the arm that must fail.
+        let source = r#"#ifdef SCE_TEST_FAULT_HANDLER
+static void sce_target_fault(void) { for (;;) { } }
+#endif
+#include <sce/sample.h>
+struct sce_keyexpr_t { int dummy; };
+struct sce_timestamp_t { uint64_t lo, hi; };
+
+static inline sce_sample_t borrow_over(uint8_t *buf, size_t len, sce_slot_state_t st) {
+    sce_sample_t s = (sce_sample_t){ 0 };
+    s.payload = buf;
+    s.payload_len = len;
+    s._slot.state = st;
+    s._slot.idx = 0;
+    return s;
+}
+
+void _start(void) {
+    static uint8_t buf[8];
+    /* a borrow the CPU does not own — the boundary must trap */
+    sce_sample_t s = borrow_over(buf, sizeof buf, SCE_SLOT_DMA_BUSY_RX);
+    sce_ownership_scope_t sc = sce_ownership_callback_enter(&s);
+    (void)sc;
+    for (;;) { }
+}
+"#;
+
+        let tmp =
+            std::env::temp_dir().join(format!("sce-build-freestanding-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("create tmp dir");
+        let driver = tmp.join("driver.c");
+        std::fs::write(&driver, source).expect("write driver.c");
+
+        let build = |name: &str, extra: &[&str]| {
+            let mut cmd = std::process::Command::new(&cc);
+            cmd.arg("-std=c11")
+                .arg("-O2")
+                .arg("-DNDEBUG")
+                .arg("-DSCE_DEFENSIVE_OWNERSHIP=1")
+                .arg("-ffreestanding")
+                .arg("-nostdlib");
+            for f in extra {
+                cmd.arg(f);
+            }
+            cmd.arg("-I")
+                .arg(&include_dir)
+                .arg(&driver)
+                .arg("-o")
+                .arg(tmp.join(name))
+                .output()
+                .expect("gcc must be runnable for the build environment")
+        };
+
+        let default_trap = build("default", &[]);
+        let overridden_trap = build(
+            "overridden",
+            &[
+                "-DSCE_TEST_FAULT_HANDLER",
+                "-DSCE_OWNERSHIP_TRAP(msg)=((void)(msg), sce_target_fault())",
+            ],
+        );
+
+        let default_ok = default_trap.status.success();
+        let default_stderr = String::from_utf8_lossy(&default_trap.stderr).into_owned();
+        let control_ok = overridden_trap.status.success();
+        let control_stderr = String::from_utf8_lossy(&overridden_trap.stderr).into_owned();
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(
+            control_ok,
+            "the control arm must link: with `SCE_OWNERSHIP_TRAP` pointed at a \
+             target fault handler nothing else in this source needs libc. It \
+             failed, so `-nostdlib` is breaking the link on its own and the \
+             assertion below cannot attribute anything to the default trap.\
+             \nstderr:\n{control_stderr}",
+        );
+        assert!(
+            !default_ok,
+            "the default `SCE_OWNERSHIP_TRAP` linked on a freestanding target. \
+             It must leave `abort` unresolved — that unresolved symbol is how a \
+             deployment finds out the macro needs a fault handler. A trap that \
+             links clean here is one that runs every check and reports nothing \
+             on exactly the targets this pool API is for.",
+        );
+        assert!(
+            default_stderr.contains("abort"),
+            "the default arm failed to link, but not over `abort` — so the \
+             failure is some other missing symbol and this test is measuring \
+             the wrong thing.\nstderr:\n{default_stderr}",
+        );
+    }
+
     /// SCE Protocol-Synthesis RFC §synth-5-E lines 1349-1365: the
     /// analyzer annotations carried by
     /// `backends/c/runtime/include/sce/sample.h` must be exactly what
