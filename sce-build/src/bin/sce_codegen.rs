@@ -1650,13 +1650,41 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                         report.artifacts.push(path.clone());
                     }
                     if let Some(dep_path) = depfile_path {
+                        // Through `write_depfile`, not a local
+                        // `format!`. The inline version this replaced
+                        // named the input `.scxml` and nothing else — no
+                        // templates on any of the six backends, and no
+                        // `<sce:import>` targets — so editing
+                        // `forge/cpp/codec.h.jinja2` or an imported
+                        // document left the output stale while the build
+                        // reported success.
+                        //
+                        // Imports belong here because the importing
+                        // document's `source-hash` covers them: editing
+                        // an imported document demonstrably changes this
+                        // document's output.
                         let out = Path::new(output_dir);
-                        let targets: Vec<String> = files
+                        let targets: Vec<PathBuf> =
+                            files.iter().map(|(f, _)| out.join(f)).collect();
+                        let import_deps: Vec<PathBuf> = parsed
+                            .imports
                             .iter()
-                            .map(|(f, _)| out.join(f).display().to_string())
+                            .map(|imp| base_dir.join(&imp.src))
                             .collect();
-                        let dep_content = format!("{}: {}\n", targets.join(" "), scxml_path);
-                        let _ = fs::write(dep_path, dep_content);
+                        // The forge scope, not the statechart one:
+                        // `forge::generator::generate_*` loads
+                        // `templates/forge/<lang>`.
+                        let forge_template_dir = sce_build::find_template_base()
+                            .join("forge")
+                            .join(lang.forge_template_subdir());
+                        write_depfile(
+                            dep_path,
+                            &targets,
+                            &forge_template_dir,
+                            lang,
+                            Path::new(scxml_path),
+                            &import_deps,
+                        );
                     }
                     report.needs_script_engine = Some(false);
                     emit_generate_manifest(&report);
@@ -2480,25 +2508,38 @@ fn write_depfile(
     // feedback report.
     deps.extend(preprocessor_deps.iter().cloned());
 
-    // Template dependencies, minus the ones belonging to other
-    // backends. The exclusion set comes from the language registry
-    // (`foreign_template_prefixes`) rather than a list kept here: the
-    // list that used to live here named only rust/kotlin/go, so when
-    // `python/` and `c/` were added a C++ build declared a dependency on
-    // 18 templates it cannot render and a C11 build — which took no
-    // filter at all — on 65. The visible cost is spurious rebuilds: one
-    // Rust template edit regenerated all 270 C11 outputs.
-    if let Ok(entries) = glob_jinja2_files(template_dir) {
-        let foreign = lang.foreign_template_prefixes();
-        deps.extend(entries.into_iter().filter(|entry| {
-            // Component-wise, not substring: portable across separators,
-            // and a directory named `go_helpers` must not read as `go`.
-            !entry.components().any(|c| {
-                let s = c.as_os_str().to_string_lossy();
-                foreign.iter().any(|prefix| *prefix == s)
-            })
-        }));
-    }
+    // Template dependencies, taken from the loader rather than from a
+    // second walk of our own. `loader_template_files` is what
+    // `load_templates` registers, so the depfile cannot name a smaller
+    // set than the render can reach. Walking `template_dir` alone — the
+    // shape this used to have — silently dropped the shared `_macros/`
+    // family for every backend scoped to a subdirectory (rust, kotlin,
+    // go, python): editing `_macros/sce_map_marker.jinja2` left their
+    // output stale while the build reported success. C++ and C11 hid it,
+    // their scope being the whole tree.
+    //
+    // Then minus the templates belonging to other backends. Over-
+    // declaring only costs a spurious rebuild, but the cost is real: the
+    // hand-kept list this replaced named only rust/kotlin/go, so a C++
+    // build declared 18 templates it cannot render and a C11 build 65,
+    // and one Rust template edit regenerated all 270 C11 outputs.
+    // Removing them is safe because they are outside what this backend's
+    // render reads — which `codegen_depfile_content` proves by pruning
+    // every undeclared template and re-rendering.
+    let foreign = lang.foreign_template_prefixes();
+    deps.extend(
+        sce_build::generator::loader_template_files(template_dir)
+            .into_iter()
+            .filter(|entry| {
+                // Component-wise, not substring: portable across
+                // separators, and a directory named `go_helpers` must
+                // not read as `go`.
+                !entry.components().any(|c| {
+                    let s = c.as_os_str().to_string_lossy();
+                    foreign.iter().any(|prefix| *prefix == s)
+                })
+            }),
+    );
 
     // Add sce-codegen binary as a dependency (rebuilds if binary itself changes,
     // which covers all Rust source changes). More precise than listing all .rs files.
@@ -2538,20 +2579,6 @@ fn write_depfile(
             })
         });
     }
-}
-
-fn glob_jinja2_files(dir: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            files.extend(glob_jinja2_files(&path)?);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
-            files.push(path);
-        }
-    }
-    Ok(files)
 }
 
 // ── Subcommand: generate-w3c ────────────────────────────────────
