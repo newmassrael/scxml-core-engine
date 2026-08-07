@@ -146,12 +146,17 @@ foreach(fixture IN LISTS C11_FIXTURES)
         set(_sidecar "${GENERATED_DIR}/${fixture}_test.h")
         list(APPEND _outputs "${_sidecar}")
     endif()
+    # DEPFILE carries the ~120 jinja2 templates that rendered the output;
+    # `DEPENDS` alone names only the SCXML, so a template edit would
+    # leave the fixture stale and the build would reuse it silently.
     add_custom_command(
         OUTPUT ${_outputs}
         COMMAND "${SCE_CODEGEN}" generate "${scxml}"
                 --language c11
                 --output-dir "${GENERATED_DIR}"
+                --write-deps "${GENERATED_DIR}/${fixture}.h.d"
         DEPENDS "${scxml}" "${SCE_CODEGEN}"
+        DEPFILE "${GENERATED_DIR}/${fixture}.h.d"
         COMMENT "Generating C11 fixture ${fixture}.h"
         VERBATIM
     )

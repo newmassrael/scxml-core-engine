@@ -86,7 +86,9 @@ foreach(fixture IN LISTS FIXTURES)
         COMMAND "${SCE_CODEGEN}" generate "${scxml}"
                 --language cpp
                 --output-dir "${GENERATED_DIR}"
+                --write-deps "${out_header}.d"
         DEPENDS "${scxml}" "${SCE_CODEGEN}"
+        DEPFILE "${out_header}.d"
         COMMENT "Generating round-trip fixture ${fixture}.h (cpp)"
         VERBATIM
     )
