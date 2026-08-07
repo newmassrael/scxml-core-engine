@@ -15,6 +15,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::forge::codec_failure::CodecFailure;
 use crate::forge::model::RuntimeDep;
 use crate::generator::Language;
 
@@ -1489,6 +1490,122 @@ pub struct RenderedHarness {
     pub extra_inputs: Vec<PathBuf>,
 }
 
+/// RFC §synth-5-B — fold a codec fixture's decode-rejection vectors out of
+/// the oracle and into the value the per-language fragment renders from.
+///
+/// A reject vector is wire the codec MUST refuse, paired with the failure it
+/// must refuse with:
+///
+/// ```json
+/// "rejects": [
+///   {
+///     "why": "the chain saturates max-depth with the entry flag still set",
+///     "encoded": [0, 129, 130, 3],
+///     "error": "tlv-chain-overflow"
+///   }
+/// ]
+/// ```
+///
+/// These carry no field values, so — unlike the round-trip `cases` — they do
+/// not depend on the fixture's field shape being expressible in the
+/// `StructField` / `CanonicalType` schema. That matters: every tlv-chain
+/// fixture in the catalog is `oracle_eligible: false`, so before reject
+/// vectors the harness could only prove those codecs *compile*.
+///
+/// Each vector gains a `symbol` key naming the backend's spelling of the
+/// failure, absent on backends where a refused decode is observable but its
+/// reason is not (see [`CodecFailure::observable_symbol`]). The fragment
+/// asserts against the symbol when it is there and against refusal when it
+/// is not.
+fn fold_reject_vectors(
+    value: &mut serde_json::Value,
+    reference: &serde_json::Value,
+    fixture: &Fixture,
+    language: Language,
+    reference_path: &Path,
+) -> Result<(), String> {
+    let Some(rejects) = reference
+        .get(&fixture.ref_section)
+        .and_then(|s| s.get(&fixture.name))
+        .and_then(|e| e.get("rejects"))
+    else {
+        return Ok(());
+    };
+    let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
+    if !matches!(fixture.spec, FixtureSpec::Codec { .. }) {
+        return Err(format!(
+            "{where_}: 'rejects' is a codec-kind contract (wire the decoder must refuse); \
+             this fixture is not a codec"
+        ));
+    }
+    let rows = rejects
+        .as_array()
+        .ok_or_else(|| format!("{where_}: 'rejects' must be an array"))?;
+    if rows.is_empty() {
+        return Err(format!(
+            "{where_}: 'rejects' is present but empty — drop the key rather than \
+             declaring a contract with no cases in it"
+        ));
+    }
+
+    let mut folded = Vec::with_capacity(rows.len());
+    for (i, row) in rows.iter().enumerate() {
+        let at = format!("{where_}: rejects[{i}]");
+        let obj = row
+            .as_object()
+            .ok_or_else(|| format!("{at} must be an object"))?;
+        let why = obj
+            .get("why")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| {
+                format!("{at} must carry a non-empty 'why' — the assertion message a failing run prints")
+            })?;
+        // `why` is inlined into a source-level string literal in six
+        // languages, one of which (C) passes it to `fprintf` as the format
+        // string. Keep it to characters that mean themselves everywhere.
+        if let Some(bad) = why.chars().find(|c| "\"\\%".contains(*c) || c.is_control()) {
+            return Err(format!(
+                "{at}: 'why' contains {bad:?}, which does not survive being inlined as a \
+                 string literal in every backend (C passes it to fprintf as the format string)"
+            ));
+        }
+        let encoded = obj
+            .get("encoded")
+            .and_then(|v| v.as_array())
+            .filter(|a| !a.is_empty())
+            .ok_or_else(|| format!("{at} must carry a non-empty 'encoded' byte array"))?;
+        for (b, byte) in encoded.iter().enumerate() {
+            match byte.as_u64() {
+                Some(v) if v <= 0xFF => {}
+                _ => {
+                    return Err(format!("{at}: encoded[{b}] is not a byte in 0..=255"));
+                }
+            }
+        }
+        let error_name = obj
+            .get("error")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("{at} must name the failure it expects in 'error'"))?;
+        let failure = CodecFailure::parse(error_name).map_err(|e| format!("{at}: {e}"))?;
+
+        let mut out = serde_json::Map::new();
+        out.insert("why".into(), serde_json::Value::from(why));
+        out.insert("encoded".into(), serde_json::Value::Array(encoded.clone()));
+        out.insert("error".into(), serde_json::Value::from(failure.wire_name()));
+        if let Some(symbol) = failure.observable_symbol(language) {
+            out.insert("symbol".into(), serde_json::Value::from(symbol));
+        }
+        folded.push(serde_json::Value::Object(out));
+    }
+
+    value
+        .as_object_mut()
+        .ok_or_else(|| format!("{where_} did not serialize to a JSON object"))?
+        .insert("rejects".into(), serde_json::Value::Array(folded));
+    Ok(())
+}
+
 /// Render the per-language conformance harness from a manifest, returning
 /// the rendered source code.
 ///
@@ -1781,47 +1898,59 @@ pub fn render_harness(
         .iter()
         .any(|f| matches!(f.spec, FixtureSpec::Codec { .. }));
 
-    // C11: pre-bake the oracle into the harness source (no runtime JSON parser).
-    // Other backends parse `numerical_reference.json` at test-runtime via
-    // their language's JSON library, but C11 has no zero-deps parser
-    // compatible with the backend's zero-dependency rule — so we attach a `cases` array to
-    // each fixture and emit `static const` arrays at codegen time.
+    // The oracle is an input to every backend's render.
     //
-    // `float_tolerance` is exposed so the harness can `#define` the
+    // C11 pre-bakes the whole entry because it has no runtime JSON parser
+    // compatible with the backend's zero-dependency rule — the other five
+    // parse `numerical_reference.json` at test-runtime via their language's
+    // JSON library, so for them only the `cases` fold is C11-specific.
+    //
+    // Decode-rejection vectors are pre-baked for all six: they are short
+    // byte literals plus one symbol, and inlining them keeps the six codec
+    // fragments to one shape instead of six JSON-navigation dialects.
+    //
+    // `float_tolerance` is exposed to C11 so the harness can `#define` the
     // tolerance once instead of duplicating the literal across every
-    // per-kind fragment.
+    // per-kind fragment; the other backends read it from the JSON directly.
     let mut extra_inputs: Vec<PathBuf> = Vec::new();
-    let (fixtures_value, float_tolerance): (minijinja::Value, Option<f64>) =
-        if matches!(language, Language::C11) {
-            let reference_path = resource_dir
-                .parent()
-                .map(|p| p.join("conformance/numerical_reference.json"))
-                .ok_or_else(|| {
-                    "cannot derive numerical_reference.json path from resource_dir".to_string()
-                })?;
-            let reference_text = std::fs::read_to_string(&reference_path)
-                .map_err(|e| format!("read {}: {e}", reference_path.display()))?;
-            // Recorded at the read, not after the branch: an input the
-            // render consumed is reported by the code that consumed it,
-            // so a future route reading another file cannot forget.
-            extra_inputs.push(reference_path.clone());
-            let reference: serde_json::Value = serde_json::from_str(&reference_text)
-                .map_err(|e| format!("parse {}: {e}", reference_path.display()))?;
+    let reference_path = resource_dir
+        .parent()
+        .map(|p| p.join("conformance/numerical_reference.json"))
+        .ok_or_else(|| {
+            "cannot derive numerical_reference.json path from resource_dir".to_string()
+        })?;
+    let reference_text = std::fs::read_to_string(&reference_path)
+        .map_err(|e| format!("read {}: {e}", reference_path.display()))?;
+    // Recorded at the read, not after the branch: an input the render
+    // consumed is reported by the code that consumed it, so a future route
+    // reading another file cannot forget.
+    extra_inputs.push(reference_path.clone());
+    let reference: serde_json::Value = serde_json::from_str(&reference_text)
+        .map_err(|e| format!("parse {}: {e}", reference_path.display()))?;
 
-            let tol = reference.get("float_tolerance").and_then(|v| v.as_f64());
+    let (fixtures_value, float_tolerance): (minijinja::Value, Option<f64>) = {
+        let bake_cases = matches!(language, Language::C11);
+        let tol = if bake_cases {
+            reference.get("float_tolerance").and_then(|v| v.as_f64())
+        } else {
+            None
+        };
 
-            let mut enriched = Vec::with_capacity(fixtures.len());
-            for f in &fixtures {
-                let mut v = serde_json::to_value(f)
-                    .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
-                // `oracle_eligible: false` fixtures don't have an oracle
-                // entry — they're compile-only. Skip the lookup + merge so
-                // the harness fragment renders the minimal probe block
-                // without any `cases` array.
-                if !f.oracle_eligible {
-                    enriched.push(v);
-                    continue;
-                }
+        let mut enriched = Vec::with_capacity(fixtures.len());
+        for f in &fixtures {
+            let mut v = serde_json::to_value(f)
+                .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
+            fold_reject_vectors(&mut v, &reference, f, language, &reference_path)?;
+            // `oracle_eligible: false` fixtures don't have a field oracle —
+            // they're compile-only. Skip the lookup + merge so the harness
+            // fragment renders the minimal probe block without any `cases`
+            // array. Their reject vectors, folded above, do not depend on
+            // the field shape being expressible.
+            if !bake_cases || !f.oracle_eligible {
+                enriched.push(v);
+                continue;
+            }
+            {
                 // Fold every key of the oracle entry (e.g. `cases`, `sequence`,
                 // `tags`) into the fixture object so per-kind fragments can
                 // reference them as `f.<key>` regardless of which shape the
@@ -1862,13 +1991,12 @@ pub fn render_harness(
                 }
                 enriched.push(v);
             }
-            (
-                minijinja::Value::from_serialize(serde_json::Value::Array(enriched)),
-                tol,
-            )
-        } else {
-            (minijinja::Value::from_serialize(&fixtures), None)
-        };
+        }
+        (
+            minijinja::Value::from_serialize(serde_json::Value::Array(enriched)),
+            tol,
+        )
+    };
 
     let ctx = minijinja::context! {
         fixtures => fixtures_value,

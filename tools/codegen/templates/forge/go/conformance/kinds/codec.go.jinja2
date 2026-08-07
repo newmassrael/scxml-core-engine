@@ -87,3 +87,18 @@
 {% endfor %}
 	}
 {% endif %}
+
+{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+   shape. Go has a name for the failure, so the assertion is on the sentinel
+   itself. Compared with `!=` rather than errors.Is: the generated decode
+   returns these sentinels unwrapped, and if that ever stops being true the
+   comparison fails loudly here rather than passing on the wrong refusal. #}
+{% for r in f.rejects %}
+	{
+		rejectBytes := []byte{ {{ r.encoded | join(", ") }} }
+		rejectCursor := codec.NewSceCursor(rejectBytes)
+		if accepted, refused := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&rejectCursor); refused != {{ r.symbol }} {
+			t.Errorf("{{ f.name }} reject {{ loop.index0 }}: {{ r.why }} (err=%v value=%+v)", refused, accepted)
+		}
+	}
+{% endfor %}

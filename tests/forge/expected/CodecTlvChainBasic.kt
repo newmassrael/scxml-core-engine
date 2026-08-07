@@ -80,8 +80,8 @@ data class CodecTlvChainBasic(
                     if (cursor.remaining() == 0) break
                     it.add(CodecTlvEntry.decode(cursor) ?: return null)
                 }
+                if (cursor.remaining() > 0) return null
             }
-            if (cursor.remaining() > 0) return null
             return CodecTlvChainBasic(
                 header_flags = header_flags,
                 extensions = extensions

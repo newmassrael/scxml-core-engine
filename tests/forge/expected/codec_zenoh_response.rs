@@ -138,13 +138,20 @@ impl<'a> CodecZenohResponse<'a> {
         };
         let extensions = if (header & 0x80u8) != 0 {
             let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 4> = HeaplessVec::new();
+            let mut _more = false;
             for _ in 0..4u32 {
-                    if cursor.remaining() == 0 { break; }
-                    let _entry = CodecZenohExtEntry::decode(cursor)?;
-                    let _continue = _entry.z();
-                    _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
-                    if !_continue { break; }
-                }
+                if cursor.remaining() == 0 { break; }
+                let _entry = CodecZenohExtEntry::decode(cursor)?;
+                _more = _entry.z();
+                _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
+                if !_more { break; }
+            }
+            if _more && cursor.remaining() == 0 {
+                return Err(CodecError::NeedMoreBytes);
+            }
+            if _more {
+                return Err(CodecError::TlvChainOverflow);
+            }
             Some(_vec)
         } else {
             None

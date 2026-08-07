@@ -72,13 +72,13 @@ impl<'a> CodecTlvChainPresentIfBasic<'a> {
         let entries = if (carrier & 0x01u8) != 0 {
             let mut _vec: HeaplessVec<CodecTlvEntry<'a>, 4> = HeaplessVec::new();
             for _ in 0..4u32 {
-                    if cursor.remaining() == 0 { break; }
-                    _vec.push(CodecTlvEntry::decode(cursor)?)
-                        .map_err(|_| CodecError::TooManyElements)?;
-                }
-                if cursor.remaining() > 0 {
-                    return Err(CodecError::TlvChainOverflow);
-                }
+                if cursor.remaining() == 0 { break; }
+                _vec.push(CodecTlvEntry::decode(cursor)?)
+                    .map_err(|_| CodecError::TooManyElements)?;
+            }
+            if cursor.remaining() > 0 {
+                return Err(CodecError::TlvChainOverflow);
+            }
             Some(_vec)
         } else {
             None

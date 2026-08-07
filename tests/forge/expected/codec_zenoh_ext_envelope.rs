@@ -71,12 +71,19 @@ impl<'a> CodecZenohExtEnvelope<'a> {
         };
         let extensions = {
             let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 8> = HeaplessVec::new();
+            let mut _more = false;
             for _ in 0..8u32 {
                 if cursor.remaining() == 0 { break; }
                 let _entry = CodecZenohExtEntry::decode(cursor)?;
-                let _continue = _entry.z();
+                _more = _entry.z();
                 _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;
-                if !_continue { break; }
+                if !_more { break; }
+            }
+            if _more && cursor.remaining() == 0 {
+                return Err(CodecError::NeedMoreBytes);
+            }
+            if _more {
+                return Err(CodecError::TlvChainOverflow);
             }
             _vec
         };

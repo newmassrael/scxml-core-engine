@@ -74,14 +74,18 @@ static inline sce_forge_codec_status_t codec_zenoh_err_decode(sce_forge_cursor_t
     }
     out->extensions_len = 0;
         if ((out->header & 0x80) != 0) {
+            bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
                 sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
                 size_t _just = out->extensions_len;
                 out->extensions_len++;
-                if (!codec_zenoh_ext_entry_z(&out->extensions[_just])) break;
+                _more = codec_zenoh_ext_entry_z(&out->extensions[_just]);
+                if (!_more) break;
             }
+            if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+            if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
         }
     uint64_t payload_len;
     {

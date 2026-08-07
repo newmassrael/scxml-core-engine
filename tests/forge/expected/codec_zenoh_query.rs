@@ -117,13 +117,13 @@ impl<'a> CodecZenohQuery<'a> {
         let extensions = if (header & 0x80u8) != 0 {
             let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 8> = HeaplessVec::new();
             for _ in 0..8u32 {
-                    if cursor.remaining() == 0 { break; }
-                    _vec.push(CodecZenohExtEntry::decode(cursor)?)
-                        .map_err(|_| CodecError::TooManyElements)?;
-                }
-                if cursor.remaining() > 0 {
-                    return Err(CodecError::TlvChainOverflow);
-                }
+                if cursor.remaining() == 0 { break; }
+                _vec.push(CodecZenohExtEntry::decode(cursor)?)
+                    .map_err(|_| CodecError::TooManyElements)?;
+            }
+            if cursor.remaining() > 0 {
+                return Err(CodecError::TlvChainOverflow);
+            }
             Some(_vec)
         } else {
             None
