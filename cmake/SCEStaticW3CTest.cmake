@@ -409,10 +409,16 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
             COMMENT "Staging synth-invoke child SCXML: ${_CHILD_NAME}.scxml (C11)"
             VERBATIM
         )
+        # `--write-deps` + DEPFILE, as the cpp generator above already
+        # does: generated source depends on every jinja2 template that
+        # rendered it. Without it a template edit leaves the artefact
+        # stale and the build silently reuses it — measured on this
+        # backend, where a template fix needed a manual `rm` to compile.
         add_custom_command(
             OUTPUT "${_CHILD_HEADER}" "${_CHILD_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_CHILD_SOURCE}.d"
             DEPENDS "${_CHILD_SCXML}" "${SCE_CODEGEN}"
+            DEPFILE "${_CHILD_SOURCE}.d"
             COMMENT "Generating C11 code: ${_CHILD_NAME}_sm.{h,c}"
             VERBATIM
         )
@@ -444,8 +450,9 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_SUB_HEADER}" "${_SUB_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_SUB_SOURCE}.d"
             DEPENDS "${_SUB_SCXML}" "${SCE_CODEGEN}"
+            DEPFILE "${_SUB_SOURCE}.d"
             COMMENT "Generating C11 code: ${_SUB_NAME}_sm.{h,c}"
             VERBATIM
         )
@@ -483,8 +490,9 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_HYBRID_SOURCE}.d"
             DEPENDS "${_HYBRID_SCXML}" "${SCE_CODEGEN}"
+            DEPFILE "${_HYBRID_SOURCE}.d"
             COMMENT "Generating C11 code: ${_HYBRID_NAME}_sm.{h,c}"
             VERBATIM
         )
@@ -566,8 +574,9 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
 
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}"
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
         DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
+        DEPFILE "${GENERATED_SOURCE}.d"
         COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
         VERBATIM
     )

@@ -102,13 +102,23 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         set(_PARENT_FMT_CMD "")
     endif()
 
+    # `--write-deps` + DEPFILE: the generated source depends on every
+    # jinja2 template that rendered it, not just on the SCXML. Without it
+    # a template edit leaves this artefact stale and the build reuses it
+    # silently — measured, by editing a template and watching zero of the
+    # generated headers change. `SCECodegen.cmake` has always done this;
+    # this generator had not.
+    set(_PARENT_DEPFILE "${PARENT_HEADER}.d")
+
     add_custom_command(
         OUTPUT "${PARENT_HEADER}"
         COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
+                --write-deps "${_PARENT_DEPFILE}"
         ${_PARENT_FMT_CMD}
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
+        DEPFILE "${_PARENT_DEPFILE}"
         BYPRODUCTS "${PARENT_INL}" ${_CHILD_SCXMLS}
         COMMENT "Generating C++ integration parent: ${STEM}_sm.h"
         VERBATIM
@@ -133,14 +143,18 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
             set(_CHILD_FMT_CMD "")
         endif()
 
+        set(_CHILD_DEPFILE "${_CHILD_HEADER}.d")
+
         add_custom_command(
             OUTPUT "${_CHILD_HEADER}"
             COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
                     --as-child --parent-stem "${STEM}"
                     -l cpp -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"
+                    --write-deps "${_CHILD_DEPFILE}"
             ${_CHILD_FMT_CMD}
             DEPENDS "${PARENT_HEADER}" "${SCE_CODEGEN}"
+            DEPFILE "${_CHILD_DEPFILE}"
             BYPRODUCTS "${_CHILD_INL}"
             COMMENT "Generating C++ integration child: ${STEM}__sce_synth_invoke__${_CHILD}_sm.h"
             VERBATIM
@@ -205,12 +219,19 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
     endforeach()
 
+    # See the cpp generator above for why DEPFILE is load-bearing: the C11
+    # path is where the stale-artefact defect was first hit, and it took a
+    # manual `rm` of the generated `.c` to get a template fix compiled.
+    set(_PARENT_DEPFILE "${PARENT_SOURCE}.d")
+
     add_custom_command(
         OUTPUT "${PARENT_SOURCE}"
         COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l c11 -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
+                --write-deps "${_PARENT_DEPFILE}"
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
+        DEPFILE "${_PARENT_DEPFILE}"
         BYPRODUCTS "${PARENT_HEADER}" ${_CHILD_SCXMLS}
         COMMENT "Generating C11 integration parent: ${STEM}_sm.c"
         VERBATIM
@@ -223,13 +244,17 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         set(_CHILD_HEADER "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h")
         set(_CHILD_SOURCE "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.c")
 
+        set(_CHILD_DEPFILE "${_CHILD_SOURCE}.d")
+
         add_custom_command(
             OUTPUT "${_CHILD_SOURCE}" "${_CHILD_HEADER}"
             COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
                     --as-child --parent-stem "${STEM}"
                     -l c11 -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"
+                    --write-deps "${_CHILD_DEPFILE}"
             DEPENDS "${PARENT_SOURCE}" "${SCE_CODEGEN}"
+            DEPFILE "${_CHILD_DEPFILE}"
             COMMENT "Generating C11 integration child: ${STEM}__sce_synth_invoke__${_CHILD}_sm.{h,c}"
             VERBATIM
         )
