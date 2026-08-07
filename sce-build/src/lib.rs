@@ -9958,10 +9958,10 @@ void _start(void) {
             String::from_utf8_lossy(&compile.stderr),
         );
 
-        // A master script in the shape §synth-5-E documents: a MEMORY
-        // region, the fragment spliced in by INCLUDE, then an unaligned
-        // author section. The ASSERTs are the observation — they read
-        // linker-resolved addresses, so no object-file reader is needed.
+        // A master script in the shape the buffer-pool section documents:
+        // a MEMORY region, the fragment spliced in by INCLUDE, then an
+        // unaligned author section. The ASSERTs are the observation — they
+        // read linker-resolved addresses, so no object reader is needed.
         let master = |splice: &str| {
             format!(
                 r#"MEMORY {{
