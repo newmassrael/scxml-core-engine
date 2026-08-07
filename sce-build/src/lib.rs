@@ -1951,7 +1951,9 @@ pub fn compile_forge_from_parsed(
     // module-level scope comment in `cross_kind_check` records that its
     // public API is already kind-agnostic, so wiring one is a call site
     // rather than a redesign if such a binding lands.
-    forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
+    // Its return value is the transitive `<sce:import>` closure this
+    // compile read — reported below as `GeneratedOutput::deps`.
+    let import_sources = forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
 
     // Physical-quantity unit-mismatch
     // arithmetic verification. Walks expression sites whose typed
@@ -2063,6 +2065,14 @@ pub fn compile_forge_from_parsed(
         ),
     }
     .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+    // The forge backends render from the AST and know nothing about the
+    // filesystem, so the dependency slice is attached here, at the one
+    // layer that resolved imports. `GeneratedOutput::deps` is documented
+    // as the single source of truth for build-system rerun invalidation;
+    // leaving it empty on this route is what let `sce-codegen` re-derive
+    // the direct imports and miss everything below them.
+    let mut output = output;
+    output.deps = import_sources;
     Ok(output)
 }
 

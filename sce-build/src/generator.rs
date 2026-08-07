@@ -82,6 +82,17 @@ impl Language {
     /// attributable to one backend by path alone; separating them is a
     /// larger change than this axis, and until it happens a C11 build
     /// still lists the root C++ templates among its inputs.
+    pub fn template_owned_subdir(self) -> Option<&'static str> {
+        match self {
+            Language::Rust => Some("rust"),
+            Language::Cpp => None,
+            Language::Kotlin => Some("kotlin"),
+            Language::Go => Some("go"),
+            Language::Python => Some("python"),
+            Language::C11 => Some("c"),
+        }
+    }
+
     /// Directory under `templates/forge/` holding this language's forge
     /// templates — the scope `forge::generator::generate_*` loads.
     ///
@@ -91,9 +102,11 @@ impl Language {
     ///
     /// The `generate_*` functions still spell their own path inline,
     /// each being single-language. That duplication is bounded by
-    /// `codegen_depfile_content`, which prunes every template a depfile
-    /// does not declare and re-renders: a scope stated here that differs
-    /// from the one actually loaded fails to render.
+    /// `codegen_depfile_content`, and measured rather than assumed to
+    /// be: renaming `forge/kotlin` to `forge/kt` and pointing only the
+    /// loader at it still renders — the gate turns red anyway, because
+    /// the scope named here no longer resolves and the depfile comes out
+    /// empty. A divergence that renders is exactly the silent kind.
     pub fn forge_template_subdir(self) -> &'static str {
         match self {
             Language::Rust => "rust",
@@ -102,17 +115,6 @@ impl Language {
             Language::Go => "go",
             Language::Python => "python",
             Language::C11 => "c",
-        }
-    }
-
-    pub fn template_owned_subdir(self) -> Option<&'static str> {
-        match self {
-            Language::Rust => Some("rust"),
-            Language::Cpp => None,
-            Language::Kotlin => Some("kotlin"),
-            Language::Go => Some("go"),
-            Language::Python => Some("python"),
-            Language::C11 => Some("c"),
         }
     }
 
@@ -169,8 +171,9 @@ impl std::str::FromStr for Language {
 }
 
 /// Generated output — may contain multiple files (e.g., C++ .h + .inl)
-/// plus the canonical paths of every external file the parse phase
-/// consumed (`<xi:include>` targets, `<sce:use>` template fragments).
+/// plus the canonical paths of every external file the compile consumed
+/// (`<xi:include>` targets, `<sce:use>` template fragments,
+/// `<sce:import>` forge documents).
 ///
 /// `deps` is the single source of truth for build-system rerun
 /// invalidation. Consumers that drive Cargo (`compile_scxml`) or write
@@ -181,13 +184,23 @@ impl std::str::FromStr for Language {
 /// a clean rebuild (tc8-harness hazard class). `from_string` entry
 /// points populate this with `Vec::new()` because they have no
 /// filesystem dependencies.
+///
+/// "Single source of truth" is load-bearing, not decorative: a consumer
+/// that reconstructs the list instead of reading this field gets a
+/// different answer. `sce-codegen` rebuilt the forge half from
+/// `parsed.imports` and so named the *direct* imports only, leaving an
+/// `algorithm → codec → codec` chain's leaf undeclared while editing it
+/// still changed the compiled document's `source-hash`.
 #[derive(Default)]
 pub struct GeneratedOutput {
     pub files: Vec<(String, String)>, // (filename, content)
-    /// Canonical paths of preprocessor inputs consumed by the parse
-    /// phase. Populated by typed entry points from
-    /// `Parser::preprocessor_deps()`; empty for `from_string` /
-    /// in-memory routes.
+    /// Canonical paths of the external inputs this compile read.
+    ///
+    /// On the statechart route these are the preprocessor inputs, from
+    /// `Parser::preprocessor_deps()`. On the forge route they are the
+    /// transitive `<sce:import>` closure, from the walk
+    /// `forge::cross_kind_check::check` already performs. Empty for
+    /// `from_string` / in-memory routes.
     pub deps: Vec<PathBuf>,
 }
 
