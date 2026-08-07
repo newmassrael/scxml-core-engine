@@ -30,7 +30,7 @@
 //      codec` chain, widening the leaf changed `route_msg.h` and nothing
 //      declared the leaf. Found because this gate's fixture grew a second
 //      level — a one-level chain cannot tell "direct" from "reachable".
-//   5. the §synth-6.2.6 source set went undeclared entirely. The
+//   5. the synth-6.2.6 source set went undeclared entirely. The
 //      `source-hash` every emitted file carries folds *every*
 //      `**/*.scxml` under the input root, so editing a document the
 //      compile never reads still changes the bytes written — measured on
@@ -472,7 +472,7 @@ fn emitted_files(dir: &Path) -> Vec<(String, Vec<u8>)> {
 /// A document that shares the input root with the compiled one but is
 /// unreachable from it — no import, no include, no reference of any kind.
 ///
-/// It still feeds the artefact's `source-hash`: the §synth-6.2.6 source
+/// It still feeds the artefact's `source-hash`: the synth-6.2.6 source
 /// set is every `**/*.scxml` under the input root, folded whole. So
 /// editing this document changes the compiled document's output, which
 /// makes it a prerequisite whether or not the compile ever read it.
@@ -715,7 +715,7 @@ fn forge_imports_are_declared_prerequisites() {
 /// A depfile never names a file the same invocation wrote.
 ///
 /// The counterpart to the source-set gate below, and the reason that one
-/// cannot simply declare everything it finds. The §synth-6.2.6 source
+/// cannot simply declare everything it finds. The synth-6.2.6 source
 /// set is *every* `**/*.scxml` under the input root, and a codegen run
 /// writes `.scxml` files of its own into `-o`: the §9.6.6 synth children
 /// for inline `<content>` invokes, and the hybrid-invoke stubs. Whenever
@@ -843,7 +843,7 @@ fn a_depfile_never_names_a_file_the_run_wrote() {
     );
 }
 
-/// Every document in the §synth-6.2.6 source set is a declared
+/// Every document in the synth-6.2.6 source set is a declared
 /// prerequisite — including the ones the compile never reads.
 ///
 /// The two prerequisite families above are both *reachability* families:
