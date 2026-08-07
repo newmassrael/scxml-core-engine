@@ -4340,6 +4340,18 @@
         {
           "file": "sce-build/tests/codegen_hash_root_gate.rs",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_send_param_payload.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_send_param_payload_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_send_param_payload_kotlin.sh",
+          "kind": "references"
         }
       ]
     },
