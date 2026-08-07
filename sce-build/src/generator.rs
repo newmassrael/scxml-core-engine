@@ -320,7 +320,7 @@ fn reject_barrier_timeout_without_handler(model: &SCXMLModel) -> Result<(), Gene
     Err(GenerateError::UnsupportedFeature(format!(
         "machine '{}' declares `barrier_timeout_ms:` on a Root partition \
          for <parallel id=\"{}\"> but the SCXML has no transition for \
-         event `error.communication`. SCE_MESH.md §16.5 L3500 raises \
+         event `error.communication`. SCE_MESH.md §16.5 raises \
          `error.communication` (reason PARALLEL_BARRIER_TIMEOUT) when \
          the barrier elapses — without a transition the raise is \
          silently discarded and the timeout has no observable effect. \

@@ -15,7 +15,7 @@
 // events, wire 18 `InvokeDone` (C→P) signals child final-state completion
 // with donedata, wire 19 `InvokeCancel` (P→C) terminates the child
 // session, and wire 20 `InvokeError` (bidirectional) reports instantiation
-// or transport-unavailable failures (SCE_MESH.md §mesh-9.6 L1396). 21 is
+// or transport-unavailable failures (SCE_MESH.md §mesh-9.6). 21 is
 // `ParallelRegionDone` — the distributed parallel-final barrier envelope
 // (§mesh-16.5) whose consumer is the `ParallelCompletionTracker` on the root
 // partition. Adding a variant requires a new wire value — never reuse.

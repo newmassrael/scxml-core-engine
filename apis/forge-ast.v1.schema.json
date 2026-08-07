@@ -2089,7 +2089,7 @@
                 "minimum": 0.0,
                 "type": "integer"
               },
-              "description": "SCE_MESH.md §16.5 L3500 barrier-timeout runtime. Maps each `<parallel>` id **Rooted by the current partition** to the deploy-declared `partitions.<root>.barrier_timeout_ms:` value. An entry absent from the map is the W3C normative infinity (no finite timer armed at first region completion); an entry present ⇒ the generated Root SM installs `TimerHooks` on the matching `ParallelCompletionTracker`.\n\nPopulated by [`crate::inject_partition_context_for`] whenever the selected partition declares `barrier_timeout_ms:` AND claims at least one root here. NonRoot partitions never see an entry (they hold no tracker). Empty in every non-partitioned build.",
+              "description": "SCE_MESH.md §16.5 barrier-timeout runtime. Maps each `<parallel>` id **Rooted by the current partition** to the deploy-declared `partitions.<root>.barrier_timeout_ms:` value. An entry absent from the map is the W3C normative infinity (no finite timer armed at first region completion); an entry present ⇒ the generated Root SM installs `TimerHooks` on the matching `ParallelCompletionTracker`.\n\nPopulated by [`crate::inject_partition_context_for`] whenever the selected partition declares `barrier_timeout_ms:` AND claims at least one root here. NonRoot partitions never see an entry (they hold no tracker). Empty in every non-partitioned build.",
               "type": "object"
             },
             "partition_context_present": {
@@ -3769,7 +3769,7 @@
               ]
             },
             "remote_mesh_transport": {
-              "description": "SCE_MESH.md §9.6 L1393 cross-device transport — the author-declared transport on `machines.<parent>.bindings[\"#<peer>\"]` when the peer is cross-device. `None` when `remote_mesh_target` is also `None` (not a remote invoke) OR the invoke is cross-partition same-device (implicit shm fallback, today's only wired codegen path). The Session 1 cross-device validator rejects cross-device declarations whose transport is not yet wired by Session 2 C++ dispatch, so this field is only a diagnostic payload until Session 2 lands.",
+              "description": "SCE_MESH.md §9.6 cross-device transport — the author-declared transport on `machines.<parent>.bindings[\"#<peer>\"]` when the peer is cross-device. `None` when `remote_mesh_target` is also `None` (not a remote invoke) OR the invoke is cross-partition same-device (implicit shm fallback, today's only wired codegen path). The Session 1 cross-device validator rejects cross-device declarations whose transport is not yet wired by Session 2 C++ dispatch, so this field is only a diagnostic payload until Session 2 lands.",
               "type": [
                 "string",
                 "null"

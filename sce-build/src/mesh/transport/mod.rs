@@ -11,7 +11,7 @@
 //   2. Add {% elif %} blocks in mesh_transport.h.jinja2  (C++ codegen)
 // The template's `#error` fallback catches (2) drift at C++ compile time.
 //
-// Per-transport scxml-invoke codegen helpers (SCE_MESH.md §mesh-9.6 L1399 (b))
+// Per-transport scxml-invoke codegen helpers (SCE_MESH.md §mesh-9.6 (b))
 // live in sibling submodules: resolve_connect_endpoint and future
 // per-peer resolvers stay off this registry so the descriptor layer
 // does not re-grow inline per-transport branches.
@@ -608,7 +608,7 @@ pub struct TransportDescriptor {
     /// the diagnostic (`DeployError::ServerPoolNotSupported`).
     pub supports_multi_instance_server: bool,
     /// Can this transport carry inter-partition IPC traffic within a
-    /// single machine (SCE_MESH.md §mesh-14 L2729-2730)?
+    /// single machine (SCE_MESH.md §mesh-14)?
     ///
     /// `partitions:` splits a machine across M OS processes; traffic
     /// between those processes flows over a transport chosen via
@@ -1669,7 +1669,7 @@ mod tests {
 
     #[test]
     fn only_shm_and_custom_tcp_support_inter_partition_ipc() {
-        // SCE_MESH.md §mesh-14 L2729-2730: `partitions.<n>.transport_binding:`
+        // SCE_MESH.md §mesh-14: `partitions.<n>.transport_binding:`
         // chooses the transport that carries inter-partition traffic
         // within a single machine. The spec default line reads "kind
         // tcp/shm" — shm is the canonical same-machine IPC mechanism

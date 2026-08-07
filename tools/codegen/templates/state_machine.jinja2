@@ -98,7 +98,7 @@
 #include <stdexcept>
 #include <utility>
 {% if model.partition_barrier_timeouts %}
-// SCE_MESH.md §16.5 L3500 — barrier-timeout runtime surfaces
+// SCE_MESH.md §16.5 — barrier-timeout runtime surfaces
 // `error.communication` (reason `PARALLEL_BARRIER_TIMEOUT`) through
 // the PullScheduler-driven external queue.
 #include "mesh/CommunicationError.h"
@@ -762,7 +762,7 @@ public:
         }
 {% if _pid in model.partition_barrier_timeouts %}
         ,
-        // SCE_MESH.md §16.5 L3500 barrier-timeout runtime for
+        // SCE_MESH.md §16.5 barrier-timeout runtime for
         // <parallel id="{{ _pid }}">. `timeout_ms` and the region
         // roster are baked in from deploy.yaml + SCXML at codegen
         // time. The arm callback schedules a one-shot
