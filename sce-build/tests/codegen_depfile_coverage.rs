@@ -29,23 +29,23 @@
 
 use std::path::{Path, PathBuf};
 
-/// CMake files defining codegen steps. Listed rather than globbed so a
-/// new generator file is a deliberate addition here, not something that
-/// slips in unscanned.
-const CMAKE_FILES: &[&str] = &[
-    "cmake/SCEStaticW3CTest.cmake",
-    "cmake/SCEStaticIntegrationFixture.cmake",
-    "cmake/SCECodegen.cmake",
-];
-
-/// Measured lower bound on codegen invocations across those files —
-/// read off a run with the floor set impossibly high, not guessed. A
-/// generator that stops being scanned (renamed file, changed invocation
-/// spelling) drops below it.
+/// Roots under which every CMake file is scanned.
 ///
-/// Coverage was then measured per site rather than assumed: deleting any
-/// one of the 10 `DEPFILE` keywords individually turns this gate red.
-const MIN_CODEGEN_INVOCATIONS: usize = 12;
+/// Discovered by walking, not listed. A hand-kept list is what made the
+/// first version of this gate read as full coverage while checking 12 of
+/// the 153 codegen steps in the tree — it named the three files the
+/// author happened to be editing, and the generator is invoked from nine.
+/// The same defect the gate exists to catch, in the gate.
+const SCAN_ROOTS: &[&str] = &["cmake", "tests", "backends"];
+
+/// Measured lower bound on codegen invocations found by that walk — read
+/// off a run with the floor set impossibly high, not guessed. A step that
+/// stops being scanned (renamed file, changed invocation spelling, a root
+/// dropped above) pushes the count below it.
+///
+/// Coverage is measured per site rather than assumed: deleting any single
+/// `DEPFILE` keyword turns this gate red.
+const MIN_CODEGEN_INVOCATIONS: usize = 150;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -101,15 +101,50 @@ fn runs_codegen(body: &str) -> bool {
         || body.contains("_SCE_CODEGEN_CMD}")
 }
 
+/// Every `CMakeLists.txt` / `*.cmake` under `SCAN_ROOTS`, skipping build
+/// output. Sorted so a failure lists files in a stable order.
+fn cmake_files(root: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if path.is_dir() {
+                // Generated trees restate the source commands; scanning
+                // them would double-count and pin the floor to whatever
+                // happens to be configured locally.
+                if name != "build" && !name.starts_with('.') {
+                    walk(&path, out);
+                }
+            } else if name == "CMakeLists.txt" || name.ends_with(".cmake") {
+                out.push(path);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    for r in SCAN_ROOTS {
+        walk(&root.join(r), &mut found);
+    }
+    found.sort();
+    found
+}
+
 #[test]
 fn every_codegen_step_declares_its_template_inputs() {
     let root = repo_root();
     let mut violations: Vec<String> = Vec::new();
     let mut scanned = 0usize;
 
-    for rel in CMAKE_FILES {
-        let path: &Path = &root.join(rel);
-        let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
+    for path in cmake_files(&root) {
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!("{rel} is readable: {e} — the gate cannot scan what it cannot open")
         });
 
@@ -146,7 +181,22 @@ fn every_codegen_step_declares_its_template_inputs() {
             // left the gate green; only mutating each fixed site
             // individually surfaced it.
             let declares = body.lines().any(|l| l.trim_start().starts_with("DEPFILE "));
-            if !writes || !declares {
+
+            // A step may instead name the templates in `DEPENDS`, which
+            // the two `generate-conformance` harness steps do: that
+            // subcommand takes no `--write-deps`, so they list
+            // `harness.*.jinja2` plus a `file(GLOB ... CONFIGURE_DEPENDS)`
+            // over the per-kind fragments. That is a real declaration and
+            // is accepted here.
+            //
+            // It is also weaker than a depfile, and saying so is the
+            // point: a glob names the fragments the scaffold includes
+            // directly, not whatever *those* pull in transitively. Given
+            // `generate-conformance` cannot emit a depfile today, the
+            // alternative to accepting it is a gate nobody can satisfy.
+            let names_templates = body.contains(".jinja2") || body.contains("TEMPLATE");
+
+            if !(names_templates || (writes && declares)) {
                 violations.push(format!(
                     "{rel}: codegen step for {output} is missing {}\n  \
                      A template edit will leave its output stale and the build will \

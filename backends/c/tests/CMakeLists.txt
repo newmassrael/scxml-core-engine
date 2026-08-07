@@ -695,9 +695,11 @@ add_custom_command(
     COMMAND "${SCE_CODEGEN}" generate
             "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --write-deps "${_ES_PARENT_SOURCE}.d"
     DEPENDS "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
             "${_ES_FIXTURE_ROOT}/schema_job_completed.scxml"
             "${SCE_CODEGEN}"
+    DEPFILE "${_ES_PARENT_SOURCE}.d"
     BYPRODUCTS "${_ES_PARENT_HEADER}"
     COMMENT "Generating C11 EventSchema native-lowering fixture: event_schema_native_sm.{h,c}"
     VERBATIM
@@ -740,9 +742,11 @@ add_custom_command(
     COMMAND "${SCE_CODEGEN}" generate
             "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --write-deps "${_ESB_SOURCE}.d"
     DEPENDS "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
             "${_ESB_FIXTURE_ROOT}/schema_signal_bytes.scxml"
             "${SCE_CODEGEN}"
+    DEPFILE "${_ESB_SOURCE}.d"
     BYPRODUCTS "${_ESB_HEADER}"
     COMMENT "Generating C11 EventSchema bytes-guard fixture: event_schema_bytes_sm.{h,c}"
     VERBATIM
