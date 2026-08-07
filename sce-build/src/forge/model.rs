@@ -1254,7 +1254,26 @@ pub enum TlvOverflowPolicy {
 ///
 /// `max_depth` and `on_overflow` apply uniformly across both
 /// strategies — they bound the worst case where the wire stream lies
-/// about chain length.
+/// about chain length. What differs is the evidence each strategy has
+/// that the wire lied:
+///
+///   - under `ExhaustOrDepth` the chain owns the codec's remaining wire,
+///     so bytes left after the loop are themselves the overflow;
+///
+///   - under `EntryFlag` other fields follow the chain, so leftover bytes
+///     prove nothing and the evidence is the flag: the last entry
+///     decoded declared a successor the loop did not take. That happens
+///     for two disjoint reasons and they are different failures — with
+///     bytes still on the cursor the depth cap refused an entry the peer
+///     sent, which is the overflow `on_overflow` governs; with the
+///     cursor empty the peer's frame simply ended mid-chain, which is a
+///     short frame and is reported as such whatever `on_overflow` says,
+///     because no policy asks a decoder to invent the entry the wire
+///     promised.
+///
+/// Neither is inferable from a downstream field's failure: whether the
+/// next field's read happens to fail on a refused entry's bytes is a
+/// property of the peer's wire, not of the codec.
 #[derive(Debug, Clone, Default, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type")]

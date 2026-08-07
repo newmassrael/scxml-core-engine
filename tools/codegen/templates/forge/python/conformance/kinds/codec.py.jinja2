@@ -60,3 +60,18 @@
             )
 {% endfor %}
 {% endif %}
+
+{# RFC §synth-5-B decode-rejection vectors — see the Rust fragment for the
+   shape. The generated Python `decode` funnels every `CodecError` through
+   one `except` into `None`, so the failure is raised by name inside the
+   codec but is not observable by name outside it; the assertion is that
+   the decode refused. #}
+{% for r in f.rejects %}
+        from sce_forge_runtime.codec import SceCursor as _SceCursor
+        self.assertIsNone(
+            {{ f.name }}.{{ f.name | to_pascal_case }}.decode(
+                _SceCursor(bytes([{{ r.encoded | join(", ") }}]))
+            ),
+            "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}",
+        )
+{% endfor %}

@@ -113,3 +113,31 @@
     let _val2: {{ f.name | to_pascal_case }} = {{ f.name | to_pascal_case }}::new();
     let _ = (_val, _val2);
 {% endif %}
+
+{# RFC §synth-5-B decode-rejection vectors — wire this codec MUST refuse,
+   paired with the failure it must refuse with. Independent of
+   `oracle_eligible`: a reject vector carries no field values, so a codec
+   whose field shape the StructField schema cannot express (every tlv-chain
+   fixture in the catalog) can still pin exactly which wire it turns away.
+   `r.symbol` is the backend's name for the failure; Rust has one, so the
+   assertion is on the typed error and not merely on refusal. #}
+{% for r in f.rejects %}
+    {
+        let wire: [u8; {{ r.encoded | length }}] = [{{ r.encoded | join(", ") }}];
+        let mut cursor = ::sce_forge_runtime::codec::SceCursor::new(&wire);
+        {# Bound before the match so a borrowed codec's temporary is dropped
+           with this binding rather than at the end of the enclosing block,
+           where `wire` is already gone. #}
+        let outcome = {{ f.name | to_pascal_case }}::decode(&mut cursor);
+        match outcome {
+            Ok(accepted) => panic!(
+                "{{ f.name }} reject {{ loop.index0 }} ({{ r.why }}): decode returned Ok({accepted:?})"
+            ),
+            Err(refused) => assert_eq!(
+                refused,
+                ::sce_forge_runtime::codec::{{ r.symbol }},
+                "{{ f.name }} reject {{ loop.index0 }}: {{ r.why }}"
+            ),
+        }
+    }
+{% endfor %}

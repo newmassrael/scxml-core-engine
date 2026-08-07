@@ -71,6 +71,7 @@ func DecodeCodecZenohMsgDel(cursor *codec.SceCursor) (*CodecZenohMsgDel, error) 
 	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 	if (Header & 0x80) != 0 {
 		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
 				break
@@ -79,11 +80,17 @@ func DecodeCodecZenohMsgDel(cursor *codec.SceCursor) (*CodecZenohMsgDel, error) 
 			if err != nil {
 				return nil, err
 			}
-			_continue := _elem.Z()
+			_more = _elem.Z()
 			Extensions = append(Extensions, *_elem)
-			if !_continue {
+			if !_more {
 				break
 			}
+		}
+		if _more && cursor.Remaining() == 0 {
+			return nil, codec.ErrNeedMoreBytes
+		}
+		if _more {
+			return nil, codec.ErrTlvChainOverflow
 		}
 	}
 	return &CodecZenohMsgDel{

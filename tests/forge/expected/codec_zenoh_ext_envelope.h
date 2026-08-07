@@ -49,14 +49,16 @@ struct CodecZenohExtEnvelope {
         }
         std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> extensions;
         extensions.reserve(8);
+        bool _more = false;
         for (std::size_t _i = 0; _i < 8; ++_i) {
             if (cursor.remaining() == 0) break;
             auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
             if (!_elem.has_value()) return std::nullopt;
-            bool _continue = _elem->z();
+            _more = _elem->z();
             extensions.push_back(*_elem);
-            if (!_continue) break;
+            if (!_more) break;
         }
+        if (_more) return std::nullopt;
         return CodecZenohExtEnvelope{
             .header_flags = header_flags,
             .extensions = extensions,

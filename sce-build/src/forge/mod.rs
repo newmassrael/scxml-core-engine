@@ -8,6 +8,7 @@
 
 pub mod ast_export;
 pub mod buffer_pool_fsm;
+pub mod codec_failure;
 pub mod codegen_markers;
 pub mod codegen_matrix;
 pub mod const_fold;
