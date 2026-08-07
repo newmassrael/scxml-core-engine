@@ -2580,15 +2580,24 @@ fn write_depfile(
     deps.extend(
         sce_build::generator::loader_template_files(template_dir)
             .into_iter()
-            .filter(|entry| {
-                // Component-wise, not substring: portable across
-                // separators, and a directory named `go_helpers` must
-                // not read as `go`.
-                !entry.components().any(|c| {
-                    let s = c.as_os_str().to_string_lossy();
-                    foreign.iter().any(|prefix| *prefix == s)
-                })
-            }),
+            .filter(|(name, _)| {
+                // Matched against the loader-registered name, which is
+                // relative to the template root — the frame the prefixes
+                // are defined in. Matching the path on disk instead let
+                // every component of the checkout prefix take part, so a
+                // tree under `/home/go/…` or `/srv/c/…` classified its
+                // own templates as another backend's and wrote an empty
+                // depfile. `codegen_depfile_path_independence` holds the
+                // two frames apart by rendering from a relocated tree.
+                //
+                // Component-wise within that name, not substring: a
+                // directory named `go_helpers` must not read as `go`,
+                // and `forge/rust/` is as foreign to C++ as `rust/` is —
+                // a plain prefix test would keep the whole `forge/`
+                // half of the other five backends.
+                !name.split('/').any(|c| foreign.contains(&c))
+            })
+            .map(|(_, path)| path),
     );
 
     // Add sce-codegen binary as a dependency (rebuilds if binary itself changes,
