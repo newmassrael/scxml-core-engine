@@ -89,7 +89,7 @@ fn main() {
         conformance::render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
             .unwrap_or_else(|e| panic!("render conformance harness: {e}"));
     let harness_path = Path::new(&out_dir).join(conformance::harness_filename(Language::Rust));
-    std::fs::write(&harness_path, harness)
+    std::fs::write(&harness_path, harness.source)
         .unwrap_or_else(|e| panic!("write {}: {e}", harness_path.display()));
 
     // Step 4: RFC variant-default-uniformity Rust runtime round-
