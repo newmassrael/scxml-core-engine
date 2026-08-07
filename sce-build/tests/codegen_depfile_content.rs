@@ -218,6 +218,19 @@ const FORGE_ALGORITHM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 const ORACLE_TOLERANCE: &str = "\"float_tolerance\": 1e-12";
 const ORACLE_TOLERANCE_MUTATED: &str = "\"float_tolerance\": 1e-9";
 
+/// A decode-rejection vector's `why`, and a value to move it to.
+///
+/// The tolerance above reaches only the C11 harness, so on its own it
+/// probes one route and reports the other five as not reading a file they
+/// do read. Reject vectors are inlined by all six codec fragments — the
+/// `why` string lands in each backend's assertion message — so moving one
+/// is the edit that reaches every reading route. Both mutations are
+/// applied together and each is asserted to have matched, because a probe
+/// that silently degrades to one surface would fail the five routes with a
+/// message blaming the producer.
+const ORACLE_REJECT_WHY: &str = "chain saturates max-depth=8";
+const ORACLE_REJECT_WHY_MUTATED: &str = "chain saturates the declared depth";
+
 /// The field width every chain document starts at, and the width a
 /// mutation widens it to. Any pair of distinct widths works; naming them
 /// keeps the "before" and "after" of each probe from drifting apart.
@@ -945,6 +958,94 @@ fn source_set_members_are_declared_prerequisites() {
         violations.join("\n\n"),
     );
 }
+/// The oracle is declared only by a render that baked something out of it.
+///
+/// The probe above uses the real catalog, where every backend folds reject
+/// vectors and so every backend legitimately declares the file. That leaves
+/// the other half of the rule — a route that reads nothing from the oracle
+/// must not name it — resting on a catalog shape the probe never produces.
+/// This constructs that shape: strip the `rejects` arrays, and the five
+/// non-C11 routes have nothing left to bake, while C11 still bakes the
+/// tolerance and the per-fixture cases.
+#[test]
+fn the_oracle_is_declared_only_where_it_is_read() {
+    let mut violations = Vec::new();
+    let mut stripped_total = 0usize;
+
+    for lang in LANGUAGES {
+        let work = TempDir::new().expect("tempdir");
+        let manifest = stage_conformance_catalog(&work.path().join("forge"));
+        let oracle = manifest
+            .parent()
+            .expect("manifest has a parent")
+            .join("numerical_reference.json");
+
+        let text = std::fs::read_to_string(&oracle).expect("oracle catalog is readable");
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&text).expect("oracle catalog is JSON");
+        let mut stripped = 0usize;
+        if let Some(codecs) = doc.get_mut("codecs").and_then(|c| c.as_object_mut()) {
+            for (_, entry) in codecs.iter_mut() {
+                if let Some(obj) = entry.as_object_mut() {
+                    if obj.remove("rejects").is_some() {
+                        stripped += 1;
+                    }
+                }
+            }
+        }
+        // A strip that removed nothing would leave the two arms
+        // indistinguishable and pass without testing anything.
+        assert!(
+            stripped > 0,
+            "{lang}: the catalog carries no reject vectors to strip, so this probe cannot \
+             tell a declaring route from a reading one",
+        );
+        stripped_total += stripped;
+        std::fs::write(
+            &oracle,
+            serde_json::to_string_pretty(&doc).expect("re-serializes"),
+        )
+        .expect("oracle catalog is writable");
+
+        let out = work.path().join("out");
+        let depfile = work.path().join("out.d");
+        if let Err(e) =
+            generate_conformance(&manifest, &out, lang, &template_root(), Some(&depfile))
+        {
+            violations.push(format!("{lang}: render without reject vectors failed\n{e}"));
+            continue;
+        }
+        let named = depfile_prerequisites(&depfile)
+            .iter()
+            .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("numerical_reference.json"));
+        // C11 bakes the tolerance and the per-fixture cases, so it reads the
+        // oracle whatever the reject vectors do; the other five had nothing
+        // else to take from it.
+        let expected = *lang == "c11";
+        if named != expected {
+            violations.push(format!(
+                "{lang}: with no reject vectors in the catalog the oracle is {} as a \
+                 prerequisite, expected {}. Declaration has to track what the render \
+                 actually baked — naming a file this route no longer reads only forces \
+                 rebuilds, and not naming one it does read reuses a stale harness",
+                if named { "named" } else { "absent" },
+                if expected { "named" } else { "absent" },
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "the oracle prerequisite does not track what the render baked:\n\n{}",
+        violations.join("\n\n"),
+    );
+    assert!(
+        stripped_total >= LANGUAGES.len(),
+        "stripped {stripped_total} reject arrays across {} probes — under one per probe \
+         means a probe ran against an unmodified catalog",
+        LANGUAGES.len(),
+    );
+}
 
 /// The conformance harness declares its inputs on the same terms.
 ///
@@ -1092,17 +1193,28 @@ fn the_conformance_harness_declares_the_inputs_it_reads() {
             .expect("manifest has a parent")
             .join("numerical_reference.json");
         let oracle_original = std::fs::read_to_string(&oracle).expect("oracle catalog is readable");
-        // A value the harness bakes in, not whitespace. Appending a
+        // Values the harness bakes in, not whitespace. Appending a
         // newline is semantic-preserving — the JSON parses to the same
         // tree, the harness renders the same bytes, and the probe
         // concludes the file is unread. The mutation has to move
-        // something the render actually emits.
-        let oracle_mutated = oracle_original.replace(ORACLE_TOLERANCE, ORACLE_TOLERANCE_MUTATED);
+        // something the render actually emits, and the two surfaces the
+        // oracle reaches differ by route: the tolerance is C11-only, the
+        // reject vectors are all six.
+        let tolerance_moved = oracle_original.replace(ORACLE_TOLERANCE, ORACLE_TOLERANCE_MUTATED);
+        assert_ne!(
+            tolerance_moved,
+            oracle_original,
+            "{lang}: the oracle tolerance mutation matched nothing in {} — a probe whose \
+             edit does not apply reports `unread` for a file the render does read",
+            oracle.display(),
+        );
+        let oracle_mutated = tolerance_moved.replace(ORACLE_REJECT_WHY, ORACLE_REJECT_WHY_MUTATED);
         assert_ne!(
             oracle_mutated,
-            oracle_original,
-            "{lang}: the oracle mutation matched nothing in {} — a probe whose edit does \
-             not apply reports `unread` for a file the render does read",
+            tolerance_moved,
+            "{lang}: the oracle reject-vector mutation matched nothing in {} — the probe \
+             would degrade to the C11-only tolerance and report the other five routes as \
+             not reading a file they do read",
             oracle.display(),
         );
         std::fs::write(&oracle, &oracle_mutated).expect("oracle catalog is writable");
