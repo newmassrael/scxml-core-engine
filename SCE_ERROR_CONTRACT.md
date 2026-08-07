@@ -449,7 +449,8 @@ stdout — nothing more, nothing less. The shape is:
     {"kind": "datamodel-variable-init", "var": "retry",
      "location": {"file": "m.scxml", "line": 5, "col": 15}}
   ],
-  "rejected": {"spec": "W3C SCXML 5.8", "name": "untestable_doc"}
+  "rejected": {"spec": "W3C SCXML 5.8", "name": "untestable_doc"},
+  "deploy": {"static_analyzer": "coverity"}
 }
 ```
 
@@ -464,6 +465,7 @@ stdout — nothing more, nothing less. The shape is:
 | `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |
 | `script_engine_causes` | optional array of objects | **Why** `needs_script_engine` is `true` — one record per construct that forced the engine in. Present exactly when the flag is `true`; omitted (not `[]`) otherwise, so a pure-static manifest carries no new bytes. See [§10.4](#104-script-engine-causes). |
 | `rejected` | optional object | Present only when the input triggered a W3C-spec rejection (currently `W3C SCXML 5.8`, "untestable manifest") and stub files were written in place of generated code. Absence means clean generation. Fields: `spec` (e.g. `"W3C SCXML 5.8"`) and `name` (the document's `name` attribute). |
+| `deploy` | optional object | Declarations read out of `--deploy` that SCE records without acting on. Omitted whole when the run had no deploy or the deploy declared none of them, so a deploy-unaware manifest carries no new bytes. See [§10.5](#105-deploy-declarations). |
 
 ### 10.2 Stream discipline
 
@@ -567,3 +569,49 @@ downstream from a model a later pass has touched
 (`script_engine_analyzer::tests::model_flag_agrees_with_stored_causes`).
 `ScriptEngineCauseKind::to_wire` is an exhaustive match: a new cause
 variant does not compile until its wire `kind` is chosen.
+
+### 10.5 Deploy declarations
+
+`script_engine_causes` and `rejected` report what the *document* cost.
+`deploy` reports what the *deployment* declared — keys under
+`deploy.yaml`'s `build:` block that change no emission and gate no
+build.
+
+| Field | Type | Semantics |
+|---|---|---|
+| `static_analyzer` | optional string | Which commercial analyzer the deployment declares it relies on for the ownership contract: `"pc-lint-plus"` or `"coverity"`. Omitted when unstated. |
+
+These exist here because a declaration nothing reads is
+indistinguishable from a typo. SCE Protocol-Synthesis RFC §synth-5-E is explicit that
+`build.static_analyzer` is "descriptive rather than load-bearing" and
+that SCE "does not verify or gate on the claim" — so no diagnostic
+fires, no emission changes, and no build fails for its absence. What
+would otherwise be left is a key the author writes and the build never
+acknowledges, which is the silently-inert shape §2.4 forbids. Echoing
+it here is the whole of SCE's part: deploy review reads the declaration
+off the build rather than off the author's word.
+
+**When the key is present.** `deploy` appears on a run that applied the
+deploy to a state machine. It is absent — even with `--deploy` and a
+declaration — when the run never reached that point: a forge document
+(`sce:kind="codec"` and friends) takes a pipeline where deploy-derived
+model mutations do not apply, and a document rejected under §scxml-5.8
+exits before them. In both cases SCE processed no deployment, and
+saying otherwise would attribute a declaration to a build that did not
+consult it.
+
+The vocabulary is closed, and the closure is the spec's. §synth-5-E
+rules out Polyspace (its in-source comments justify findings rather than
+describe function behaviour) and Clang-Tidy (the typestate macros expand
+to nothing on a C build, so it cannot report the violations it would be
+mandated for). Both are refused at parse time with the recognized names
+in the diagnostic — vocabulary validation, not adjudication of the
+claim.
+
+Producer: `DeployInfo::from_facts` in `sce-build/src/bin/sce_codegen.rs`,
+fed by `sce_build::DeployFacts` from `apply_deploy_model_mutations`.
+Tests: `tests/deploy_static_analyzer.rs` — each recognized value is
+asserted to reach the manifest *and* to differ from the other, so a
+reader reporting a constant fails; and the emitted code is asserted
+identical to a run whose deploy gained only a YAML comment, so nothing
+may come to depend on the key.

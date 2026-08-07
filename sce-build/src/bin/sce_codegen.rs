@@ -430,6 +430,10 @@ struct GenerateReport {
     needs_script_engine: Option<bool>,
     script_engine_causes: Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
     rejected: Option<RejectedDocument>,
+    /// Descriptive deploy declarations, present only on a `--deploy`
+    /// run. `None` for every deploy-unaware invocation, which is what
+    /// keeps the manifest byte-identical for them.
+    deploy_facts: Option<sce_build::DeployFacts>,
 }
 
 struct RejectedDocument {
@@ -487,6 +491,12 @@ struct GenerateManifest<'a> {
     script_engine_causes: &'a [sce_build::script_engine_analyzer::ScriptEngineCauseRecord],
     #[serde(skip_serializing_if = "Option::is_none")]
     rejected: Option<RejectedInfo<'a>>,
+    /// Descriptive declarations read out of `--deploy`. Omitted whole
+    /// when the run had no deploy or the deploy declared none of them,
+    /// so every manifest that could be produced before this field stays
+    /// byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deploy: Option<DeployInfo>,
 }
 
 #[derive(Serialize)]
@@ -498,6 +508,34 @@ struct ArtifactEntry {
 struct RejectedInfo<'a> {
     spec: &'a str,
     name: &'a str,
+}
+
+/// Deploy declarations SCE records without acting on them.
+///
+/// An object rather than a flat `static_analyzer` key for the same
+/// reason `artifacts` holds objects: the spec has further descriptive
+/// build-environment axes, and they belong beside this one rather than
+/// each claiming a top-level manifest key.
+#[derive(Serialize)]
+struct DeployInfo {
+    /// Which commercial analyzer the deployment declares it relies on
+    /// (SCE Protocol-Synthesis RFC §synth-5-E lines 1409-1429). Omitted when
+    /// unstated. SCE never verifies the claim — carrying it here is the
+    /// whole of SCE's part, and is what lets deploy review read it off
+    /// the build rather than off the author's word.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    static_analyzer: Option<&'static str>,
+}
+
+impl DeployInfo {
+    /// `None` when nothing was declared, so the manifest omits the key
+    /// entirely rather than carrying an empty object.
+    fn from_facts(facts: Option<&sce_build::DeployFacts>) -> Option<Self> {
+        let analyzer = facts?.static_analyzer?;
+        Some(DeployInfo {
+            static_analyzer: Some(analyzer.as_str()),
+        })
+    }
 }
 
 /// Serialise `report` and write it as a single JSON line to stdout.
@@ -519,6 +557,7 @@ fn emit_generate_manifest(report: &GenerateReport) {
             spec: rd.spec,
             name: rd.name.as_str(),
         }),
+        deploy: DeployInfo::from_facts(report.deploy_facts.as_ref()),
     };
     let line = serde_json::to_string(&manifest)
         .expect("GenerateManifest serialises; fields are all owned");
@@ -2068,12 +2107,18 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // everything else, and the value gate over author `<param>` literals
     // silently compiled a different shape of machine as a result.
     if let Some(deploy_file) = deploy_path {
-        if let Err(e) = sce_build::apply_deploy_model_mutations(
+        match sce_build::apply_deploy_model_mutations(
             &mut model,
             Path::new(deploy_file),
             for_partition,
         ) {
-            error_format.emit_and_exit(&e.source, e.stage.error_prefix());
+            // The descriptive half of the deploy travels into the
+            // manifest. Without a reader a declaration is
+            // indistinguishable from a typo — the author believes they
+            // configured something and nothing in the build says
+            // otherwise.
+            Ok(facts) => report.deploy_facts = Some(facts),
+            Err(e) => error_format.emit_and_exit(&e.source, e.stage.error_prefix()),
         }
     }
 
