@@ -245,7 +245,8 @@ fn the_synth_rfc_pin_still_has_dependents() {
     );
 }
 
-/// Count `§synth-5-B line 488` / `§5.K lines 2232-2540` shaped citations.
+/// Count `§synth-5-B line 488` shaped citations, including the `L488` and
+/// `lines 2232-2540` forms.
 /// Anchored on the `§` so prose containing a bare "line 12" is not counted.
 fn count_synth_rfc_line_citations(text: &str) -> usize {
     let mut count = 0;
