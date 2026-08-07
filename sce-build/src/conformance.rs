@@ -1466,6 +1466,29 @@ fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
+/// A rendered conformance harness and the inputs its render consumed.
+///
+/// `extra_inputs` holds the files read beyond the manifest, the fixture
+/// documents under `resource_dir` and the template tree — the three a
+/// caller can enumerate for itself. Today that is
+/// `conformance/numerical_reference.json`, read only on the C11 route,
+/// which bakes the oracle into the harness source because the backend's
+/// zero-dependency rule leaves no runtime JSON parser. It sits outside
+/// `resource_dir`, so the §synth-6.2.6 source set does not cover it, and
+/// editing it changes the emitted harness.
+///
+/// Carried on the result rather than re-derived by the caller so the
+/// build's prerequisite list and the render agree by construction. The
+/// C11 CMake step used to name the file in `DEPENDS` from its own
+/// knowledge of the C11 route — a second statement of the same fact,
+/// free to survive the route changing under it.
+pub struct RenderedHarness {
+    /// The generated harness source.
+    pub source: String,
+    /// Files this render read that the caller could not have named.
+    pub extra_inputs: Vec<PathBuf>,
+}
+
 /// Render the per-language conformance harness from a manifest, returning
 /// the rendered source code.
 ///
@@ -1482,12 +1505,20 @@ fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
 /// what realises RFC §synth-6.2.1 cross-backend parity: every backend runs
 /// the same test vectors, so a divergence is a test failure rather than an
 /// unnoticed difference between two hand-written suites.
+///
+/// Returns the source together with [`RenderedHarness::extra_inputs`] —
+/// the files this render read that no caller could name from its own
+/// arguments. Reporting them is the render's job precisely because it
+/// alone knows: which files those are depends on the language and on the
+/// manifest's contents, and the one caller that tried to keep the list
+/// by hand (the C11 CMake step's `DEPENDS`) is the shape this whole
+/// depfile axis keeps finding wrong.
 pub fn render_harness(
     manifest: &Manifest,
     language: Language,
     template_base: &Path,
     resource_dir: &Path,
-) -> Result<String, String> {
+) -> Result<RenderedHarness, String> {
     let layout = harness_layout(language);
     let template_dir: PathBuf = template_base.join(layout.template_subdir);
     if !template_dir.exists() {
@@ -1759,6 +1790,7 @@ pub fn render_harness(
     // `float_tolerance` is exposed so the harness can `#define` the
     // tolerance once instead of duplicating the literal across every
     // per-kind fragment.
+    let mut extra_inputs: Vec<PathBuf> = Vec::new();
     let (fixtures_value, float_tolerance): (minijinja::Value, Option<f64>) =
         if matches!(language, Language::C11) {
             let reference_path = resource_dir
@@ -1769,6 +1801,10 @@ pub fn render_harness(
                 })?;
             let reference_text = std::fs::read_to_string(&reference_path)
                 .map_err(|e| format!("read {}: {e}", reference_path.display()))?;
+            // Recorded at the read, not after the branch: an input the
+            // render consumed is reported by the code that consumed it,
+            // so a future route reading another file cannot forget.
+            extra_inputs.push(reference_path.clone());
             let reference: serde_json::Value = serde_json::from_str(&reference_text)
                 .map_err(|e| format!("parse {}: {e}", reference_path.display()))?;
 
@@ -1842,8 +1878,13 @@ pub fn render_harness(
         float_tolerance => float_tolerance,
     };
 
-    tmpl.render(ctx)
-        .map_err(|e| format!("render template {tmpl_name}: {e}"))
+    let source = tmpl
+        .render(ctx)
+        .map_err(|e| format!("render template {tmpl_name}: {e}"))?;
+    Ok(RenderedHarness {
+        source,
+        extra_inputs,
+    })
 }
 
 #[cfg(test)]
@@ -1944,7 +1985,7 @@ mod tests {
             match result {
                 Ok(rendered) => {
                     assert!(
-                        !rendered.is_empty(),
+                        !rendered.source.is_empty(),
                         "{lang:?}: render_harness returned empty output"
                     );
                 }
@@ -2139,8 +2180,8 @@ mod tests {
 
         // Gate 2: rendered harness template
         match render_harness(&manifest, Language::Rust, &template_base, &resource_dir) {
-            Ok(harness_code) => {
-                if let Err(e) = syn::parse_file(&harness_code) {
+            Ok(harness) => {
+                if let Err(e) = syn::parse_file(&harness.source) {
                     failures.push(format!(
                         "harness ({}): syn parse error: {e}",
                         harness_filename(Language::Rust)
