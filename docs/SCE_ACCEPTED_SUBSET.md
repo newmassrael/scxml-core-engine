@@ -652,6 +652,44 @@ other backends reject the construct
 through a script engine. The construct is engine-free by
 definition — it never degrades to a runtime fallback.
 
+### §2.12 Unsupported `<invoke type>` (W3C SCXML 6.4.1)
+
+An `<invoke>` whose `type` names no processor this platform
+implements is **accepted, not rejected as malformed**: §scxml-6.4.1
+defines the case — the processor "MUST place error.execution in the
+internal event queue" — so the document is valid SCXML with a
+defined meaning. Its entire observable is that one raise at invoke
+time. No child session starts, `done.invoke.<id>` never fires, and
+state exit has nothing to cancel.
+
+```xml
+<state id="probe">
+  <invoke type="urn:example:no-such-processor"/>
+  <transition event="error.execution" target="handled"/>
+</state>
+```
+
+The supported set is closed: the `scxml` shorthand, the SCXML
+processor URI with and without its trailing slash, and
+`sce:mesh-rpc` (SCE_MESH.md §9.5). `typeexpr` resolves the type at
+runtime and is therefore never classified at build time.
+
+Both engines raise the same event, but by different routes, and only
+the Interpreter is complete:
+
+| Engine | §6.4.1 behaviour |
+|---|---|
+| Interpreter | `InvokeHandlerFactory::createHandler` returns null for a type outside the supported set and `InvokeExecutor::executeInvoke` raises `error.execution`. |
+| AOT — C++ | The `<invoke>` is deferred at entry and `executePendingInvokes` raises `error.execution` at macrostep end, preserving §scxml-6.4 ordering. |
+| AOT — Rust / Kotlin / Go / Python / C11 | Rejected with `generate/unsupported-feature` until those backends lower the raise. |
+
+The rejection on the five remaining backends is a *backend-coverage*
+refusal, on the same footing as `<sce:action>` above: a backend that
+accepted the document while emitting no raise would reproduce the
+original defect, in which the `<invoke>` vanished from the model
+entirely and AOT produced no observable at all where the Interpreter
+produced one.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When an importing kind references an imported kind's field via

@@ -102,6 +102,7 @@ pub fn emit_requirements_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) ->
                 crate::model::Invoke::Scxml(info) => &info.common.base,
                 crate::model::Invoke::Hybrid(info) => &info.common.base,
                 crate::model::Invoke::MeshRpc(info) => &info.base,
+                crate::model::Invoke::Unsupported(info) => &info.base,
             };
             if !base.req.is_empty() {
                 let record = RequirementRecord {

@@ -44,7 +44,7 @@
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or model.invokes | unsupported %}
 #include "core/InvokeHelper.h"
 {% endif %}
 {% if model.invokes | scxml or model.invokes | scxml_remote or model.invokes | hybrid %}
@@ -467,15 +467,21 @@ struct {{ model.name }}Policy {
     {% endfor %}
     {% endif %}
 
-    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or model.invokes | unsupported %}
 
     // W3C SCXML 6.4: Pending invoke structure for defer/cancel/execute pattern
     // ARCHITECTURE.md Zero Duplication: Used with InvokeHelper (Single Source of Truth)
     // Pattern: defer (onentry) → cancel (onexit) → execute (macrostep end)
+    // Also carries §scxml-6.4.1 unsupported-type invokes, whose execute step
+    // raises error.execution instead of starting a session — they need the
+    // defer queue but none of the child-session machinery below.
     struct PendingInvoke {
         std::string invokeId;  // W3C SCXML 6.4.1: Unique invoke identifier
         State state;           // State containing the invoke element
     };
+
+    {% endif %}
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
 
     // Active child sessions indexed by invokeId (shared across local, hybrid,
     // and SCE_MESH.md §9.6 remote scxml invokes — finalize/autoforward/cancel
@@ -493,6 +499,8 @@ struct {{ model.name }}Policy {
     // wire-15 race on `onInvokeStarted` is also covered — cheap when
     // uncontended, mandatory for correctness when contended.
     mutable std::mutex activeInvokesMutex_;
+    {% endif %}
+    {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or model.invokes | unsupported %}
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
     {% endif %}

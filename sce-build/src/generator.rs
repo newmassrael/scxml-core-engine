@@ -322,6 +322,29 @@ fn reject_native_actions_in_unsupported_lang(
     )))
 }
 
+// §scxml-6.4.1 unsupported `<invoke type>`: the spec's observable is one
+// `error.execution` raised at invoke time. Only the C++ backend lowers it so
+// far (defer at onentry, raise from `executePendingInvokes`). The other
+// backends refuse here rather than emit a machine that drops the `<invoke>`
+// entirely — a silent drop is exactly the defect the `Invoke::Unsupported`
+// variant exists to prevent, and moving it from the parser into a template
+// filter would leave it just as invisible.
+fn reject_unsupported_invoke_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    if !model.has_unsupported_invoke() {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "<invoke> with an unsupported `type` in '{}' has no {} codegen path — \
+         the W3C SCXML 6.4.1 error.execution lowering is currently C++-only. \
+         Generate this machine for `--lang cpp`, or give the <invoke> a `type` \
+         this platform supports.",
+        model.name, language
+    )))
+}
+
 // EventSchema MCU native lowering: every backend
 // (Rust, C11, C++, Kotlin, Go, Python) now lowers a typed `_event.data`
 // transition guard to a script-engine-free native comparison, so the former
@@ -469,6 +492,7 @@ pub fn generate_with_options(
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
@@ -486,6 +510,7 @@ pub fn generate_with_templates(
     no_std: bool,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
@@ -793,6 +818,7 @@ fn render_c11(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
@@ -899,6 +925,7 @@ pub fn generate_kotlin(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
@@ -916,6 +943,7 @@ pub fn generate_kotlin_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
@@ -1139,6 +1167,7 @@ impl minijinja::value::Object for KotlinDefaultFn {
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_go_filters(&mut env);
@@ -1152,6 +1181,7 @@ pub fn generate_go_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
+    reject_unsupported_invoke_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_go_filters(&mut env);
@@ -1214,6 +1244,12 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     for inv in &model.invokes {
         match inv {
             crate::model::Invoke::Scxml(_) | crate::model::Invoke::Hybrid(_) => {}
+            // §scxml-6.4.1: refused until the Python invoke templates lower
+            // the error.execution raise. See
+            // `reject_unsupported_invoke_in_unsupported_lang`.
+            crate::model::Invoke::Unsupported(_) => {
+                return reject_unsupported_invoke_in_unsupported_lang(model, "Python");
+            }
             crate::model::Invoke::MeshRpc(_) => {
                 return Err(GenerateError::InvalidConfig(
                     "Python codegen rejects <invoke type=\"sce:mesh-rpc\">: \
@@ -1823,9 +1859,119 @@ mod tests {
   </state>
 </scxml>"##;
 
+    /// §scxml-6.4.1: `type` names no processor SCE implements. The spec
+    /// defines the case (raise `error.execution`), so the document parses
+    /// and carries an [`crate::model::Invoke::Unsupported`].
+    const UNSUPPORTED_INVOKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="brake" initial="idle">
+  <state id="idle">
+    <invoke type="urn:sce:test:no-such-processor"/>
+    <transition event="error.execution" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+
+    fn assert_rejects_unsupported_invoke(err: GenerateError, language: &str) {
+        match err {
+            GenerateError::UnsupportedFeature(msg) => {
+                assert!(
+                    msg.contains("unsupported `type`"),
+                    "msg names the feature: {msg}"
+                );
+                assert!(msg.contains(language), "msg names the language: {msg}");
+                assert!(msg.contains("brake"), "msg names the machine: {msg}");
+            }
+            other => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
+    }
+
     fn parse(content: &str) -> SCXMLModel {
         let mut p = SCXMLParser::new();
         p.parse_string(content, "brake").expect("parse")
+    }
+
+    /// The parser must keep the `<invoke>` rather than dropping it. This is
+    /// the guard on the original defect: `parse_invoke` used to answer
+    /// `Ok(None)` for an unsupported type, so the element vanished from the
+    /// model and every backend emitted a machine in which the `<invoke>`
+    /// simply did not exist.
+    #[test]
+    fn unsupported_invoke_type_survives_parsing() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        assert!(
+            model.has_unsupported_invoke(),
+            "an unsupported <invoke type> must reach the model, not be dropped"
+        );
+        assert!(
+            model.events.contains("error.execution"),
+            "the analyzer must register error.execution so the generated enum \
+             resolves Event::Error_execution without an author handler"
+        );
+    }
+
+    /// §scxml-6.4.1 on the one backend that lowers it: the emitted machine
+    /// must contain the raise. A backend that "accepts" the document while
+    /// emitting nothing is the same silent drop in a new place.
+    #[test]
+    fn cpp_generate_emits_error_execution_for_unsupported_invoke() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        // Real templates: the sibling reject tests can pass `&[]` because
+        // they fail before any template loads, but an *emission* assertion
+        // has to render the actual `.jinja2` sources.
+        let templates = crate::find_template_base();
+        match generate_cpp(&model, &templates, "fixture", None) {
+            Err(e) => panic!("C++ must lower the §6.4.1 raise, got {e:?}"),
+            Ok(out) => {
+                let joined: String = out.files.iter().map(|(_, c)| c.as_str()).collect();
+                assert!(
+                    joined.contains("Unsupported <invoke> type: urn:sce:test:no-such-processor"),
+                    "generated C++ must raise error.execution naming the refused type"
+                );
+                assert!(
+                    joined.contains("deferInvoke"),
+                    "the raise must ride the §scxml-6.4 defer queue, not fire from onentry"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rust_generate_rejects_unsupported_invoke() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        let templates: &[(&str, &str)] = &[];
+        let err = generate_with_templates(&model, templates, false).unwrap_err();
+        assert_rejects_unsupported_invoke(err, "Rust");
+    }
+
+    #[test]
+    fn kotlin_generate_rejects_unsupported_invoke() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        let err = generate_kotlin_with_templates(&model, &[], None).unwrap_err();
+        assert_rejects_unsupported_invoke(err, "Kotlin");
+    }
+
+    #[test]
+    fn go_generate_rejects_unsupported_invoke() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        let err = generate_go_with_templates(&model, &[]).unwrap_err();
+        assert_rejects_unsupported_invoke(err, "Go");
+    }
+
+    #[test]
+    fn python_generate_rejects_unsupported_invoke() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        let err = generate_python_with_templates(&model, &[]).unwrap_err();
+        assert_rejects_unsupported_invoke(err, "Python");
+    }
+
+    #[test]
+    fn c11_generate_rejects_unsupported_invoke() {
+        let model = parse(UNSUPPORTED_INVOKE_SCXML);
+        match generate_c11_with_templates(&model, &[], "fixture") {
+            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
+            Err(e) => assert_rejects_unsupported_invoke(e, "C11"),
+        }
     }
 
     /// `postprocess_cpp_inl` must not index a line by byte offset.

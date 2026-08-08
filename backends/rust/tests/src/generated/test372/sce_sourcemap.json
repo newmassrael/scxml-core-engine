@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source_hash": "b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a",
-  "template_hash": "894d11dad693c1040e16152130c83103ca132cfd62152461f0760e932c41c490",
+  "template_hash": "4b3c3c02df8fbc8c8bdd14a46e1f1d9b76a9416609a553ce18199941c3392f19",
   "symbols": {
     "test372_____machine": {
       "scxml_file": "test372.scxml",

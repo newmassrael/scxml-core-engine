@@ -70,6 +70,7 @@ fn invoke_id_of(invoke: &Invoke) -> &str {
         Invoke::Scxml(info) => info.common.base.invoke_id.as_str(),
         Invoke::Hybrid(info) => info.common.base.invoke_id.as_str(),
         Invoke::MeshRpc(info) => info.base.invoke_id.as_str(),
+        Invoke::Unsupported(info) => info.base.invoke_id.as_str(),
     }
 }
 

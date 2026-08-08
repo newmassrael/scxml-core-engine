@@ -433,6 +433,14 @@ fn filter_mesh_rpc(value: Value) -> Result<Value, minijinja::Error> {
     filter_invokes_by_kind(value, "MeshRpc")
 }
 
+/// Keep only `Invoke::Unsupported` entries — §scxml-6.4.1 `<invoke>` whose
+/// `type` names no processor SCE implements. Consumed by the per-backend
+/// entry-action and pending-invoke templates, which lower it to a single
+/// `error.execution` raise at invoke time and nothing else.
+fn filter_unsupported(value: Value) -> Result<Value, minijinja::Error> {
+    filter_invokes_by_kind(value, "Unsupported")
+}
+
 /// Register the variant-filtering helpers shared by every backend.
 /// Called from each per-language `register_*_filters` function so the same
 /// filter names are available no matter which template engine is rendering.
@@ -442,6 +450,7 @@ pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("hybrid", filter_hybrid);
     env.add_filter("scxml_family", filter_scxml_family);
     env.add_filter("mesh_rpc", filter_mesh_rpc);
+    env.add_filter("unsupported", filter_unsupported);
     env.add_filter("to_field_suffix", filter_to_field_suffix);
 }
 

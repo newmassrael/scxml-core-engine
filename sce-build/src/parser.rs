@@ -2662,11 +2662,46 @@ impl SCXMLParser {
             return Ok(Some(Invoke::Scxml(scxml_info)));
         }
 
-        // Neither static, hybrid, nor sce:mesh-rpc — skip silently.
-        // Unknown `type` URIs are documented in §scxml-6.4.1 as producing
-        // `error.execution` at runtime on foreign processors; the
-        // parser declines to statically reject them so forward-compatible
-        // documents still parse.
+        // §scxml-6.4.1: a `type` naming no processor this platform
+        // implements. The spec defines the case — "MUST place
+        // error.execution in the internal event queue" — so the document
+        // is valid SCXML with defined meaning, not an author error the
+        // compiler may reject. Carrying it as a typed variant is what
+        // makes the backends emit that raise; the earlier `Ok(None)` here
+        // dropped the `<invoke>` from the model outright, so AOT produced
+        // no observable at all where the Interpreter produced one.
+        //
+        // `typeexpr` resolves the type at runtime, so a document carrying
+        // one cannot be classified statically and is left alone.
+        if !scxml_type && elem.attribute("typeexpr").is_none() {
+            let invoke_req =
+                collect_sce_req(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
+            let invoke_unresolved = collect_sce_unresolved(elem, source_name);
+            return Ok(Some(Invoke::Unsupported(UnsupportedInvokeInfo {
+                base: InvokeBase {
+                    source_location: source_location_of(elem, source_name),
+                    invoke_id,
+                    field_suffix,
+                    state_name: state_id.to_string(),
+                    // Inert: no session starts, so no `<param>` is ever
+                    // delivered. Carried anyway so the AST export reports
+                    // what the author wrote rather than an empty invoke.
+                    params: static_params,
+                    idlocation,
+                    req: invoke_req,
+                    provenance: Vec::new(),
+                    unresolved: invoke_unresolved,
+                },
+                invoke_type,
+            })));
+        }
+
+        // A supported type that resolves to no child at all — `<invoke
+        // type="scxml">` with neither `src`, inline `<content>`, `srcexpr`
+        // nor `contentexpr`. §scxml-6.4.1 requires one of them, so this is
+        // a malformed `<invoke>` rather than an unsupported processor. It
+        // stays a silent skip here; making it loud is a separate axis from
+        // the type-support boundary above and needs its own diagnostic.
         Ok(None)
     }
 
@@ -3129,6 +3164,7 @@ impl SCXMLParser {
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
                     || state.has_mesh_rpc_invoke()
+                    || state.has_unsupported_invoke()
                     || !state.datamodel.is_empty()
                     || !state.initial_transition_actions.is_empty()
                     || !state.initial_history_id.is_empty()
@@ -3140,7 +3176,10 @@ impl SCXMLParser {
                 && (!state.on_exit_blocks.is_empty()
                     || state.has_scxml_invoke()
                     || state.has_hybrid_invoke()
-                    || state.has_mesh_rpc_invoke())
+                    || state.has_mesh_rpc_invoke()
+                    // §scxml-6.4.1: the pending entry must be cancellable
+                    // when the state exits before the macrostep ends.
+                    || state.has_unsupported_invoke())
             {
                 model.has_exit_actions = true;
             }
@@ -3191,7 +3230,9 @@ impl SCXMLParser {
                 let common: &mut InvokeSessionCommon = match invoke {
                     Invoke::Scxml(i) => &mut i.common,
                     Invoke::Hybrid(i) => &mut i.common,
-                    Invoke::MeshRpc(_) => continue,
+                    // Neither owns an SCXML child session, so neither has
+                    // an `InvokeSessionCommon` to enrich.
+                    Invoke::MeshRpc(_) | Invoke::Unsupported(_) => continue,
                 };
                 if common.invoke_id.is_empty() {
                     continue;
@@ -3304,7 +3345,9 @@ impl SCXMLParser {
                 let common = match invoke {
                     Invoke::Scxml(i) => &mut i.common,
                     Invoke::Hybrid(i) => &mut i.common,
-                    Invoke::MeshRpc(_) => continue,
+                    // No child session spawns, so there is no
+                    // parent-routing surface to mirror.
+                    Invoke::MeshRpc(_) | Invoke::Unsupported(_) => continue,
                 };
                 if let Some(&has) = child_send_to_parent.get(&common.child_name) {
                     common.child_has_send_to_parent = has;
@@ -6123,6 +6166,7 @@ mod tests {
             Invoke::Scxml(info) => &info.common.base,
             Invoke::Hybrid(info) => &info.common.base,
             Invoke::MeshRpc(info) => &info.base,
+            Invoke::Unsupported(info) => &info.base,
         };
         (base.invoke_id.clone(), base.field_suffix.clone())
     }
@@ -6218,6 +6262,7 @@ mod tests {
                 Invoke::Scxml(info) => info.common.base.invoke_id.clone(),
                 Invoke::Hybrid(info) => info.common.base.invoke_id.clone(),
                 Invoke::MeshRpc(info) => info.base.invoke_id.clone(),
+                Invoke::Unsupported(info) => info.base.invoke_id.clone(),
             })
             .collect();
         assert_eq!(ids.len(), 2);
