@@ -327,7 +327,6 @@ pub struct PoolFnContract {
 /// pool function guards its pointers. Returning by value removes the
 /// pointer, and with it the choice between an empty contract and a
 /// false one.
-
 pub const POOL_CONTRACTS: [PoolFnContract; 6] = [
     // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`).
