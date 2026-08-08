@@ -8898,6 +8898,101 @@ topology:
 
     // ── §synth-5-E buffer-pool kind ─────────────────────────────────
 
+    /// Every edge the FSM declares must reach the generated source,
+    /// on both backends.
+    ///
+    /// The `buffer_pool_fsm` tests prove the *table* is sound — every
+    /// state reachable, every state able to return to `free`. They
+    /// cannot see whether the templates emitted any of it. That gap is
+    /// how the pool shipped for as long as it did with six of eleven
+    /// edges missing: the table said `dma-busy-rx → cpu-ref` existed,
+    /// the template said in a comment that the progression was "owned
+    /// by the runtime and not directly invocable", and no test
+    /// compared the two. Arming a slot for DMA removed it from the
+    /// pool permanently, on both backends, and every gate stayed
+    /// green.
+    ///
+    /// Driven off `TRANSITIONS` rather than a list of names, so an
+    /// edge added under the §synth-5-E FSM extension policy (lines
+    /// 1166-1180) fails here until both templates render it.
+    #[test]
+    fn every_declared_fsm_edge_reaches_both_backends() {
+        use crate::forge::buffer_pool_fsm as fsm;
+
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+
+        for (lang, filename, spelling) in [
+            (
+                generator::Language::Rust,
+                "rx_pool_sram1.rs",
+                "fn {op}(" as &str,
+            ),
+            (
+                generator::Language::C11,
+                "rx_pool_sram1.h",
+                "rx_pool_sram1_{op}(",
+            ),
+        ] {
+            let out = compile_forge_from_string(scxml, label, lang)
+                .unwrap_or_else(|e| panic!("{lang:?} codegen must succeed: {e:?}"));
+            let body = out
+                .files
+                .iter()
+                .find(|(n, _)| n == filename)
+                .map(|(_, b)| b.as_str())
+                .unwrap_or_else(|| panic!("{lang:?} must emit {filename}"));
+
+            // Collect every miss rather than stopping at the first:
+            // halting leaves the rest of the edge set unproven, which
+            // is the state this test exists to end.
+            let mut missing: Vec<String> = Vec::new();
+            for t in fsm::TRANSITIONS.iter() {
+                let needle = spelling.replace("{op}", t.op_name);
+                if !body.contains(&needle) {
+                    missing.push(format!(
+                        "{} → {} (`{needle}`)",
+                        t.from.spec_name(),
+                        t.to.spec_name()
+                    ));
+                }
+            }
+            assert!(
+                missing.is_empty(),
+                "{lang:?} emit is missing {} of {} declared FSM edges:\n  {}\n--- source ---\n{body}",
+                missing.len(),
+                fsm::TRANSITION_COUNT,
+                missing.join("\n  "),
+            );
+
+            // Every holdable state must be nameable in the emit, or
+            // its edges describe a handle nothing can hold.
+            for st in fsm::STATES.iter().filter(|s| s.is_holdable()) {
+                let needle = match lang {
+                    generator::Language::Rust => st.pascal_name().to_string(),
+                    _ => format!("SCE_SLOT_{}", st.c_enum_suffix()),
+                };
+                assert!(
+                    body.contains(&needle),
+                    "{lang:?} emit never names holdable state `{}`",
+                    st.spec_name(),
+                );
+            }
+        }
+    }
+
     /// SCE Protocol-Synthesis RFC §synth-5-E: buffer-pool kind happy path.
     /// A well-formed `<sce:kind="buffer-pool">` document → Rust
     /// generator emits a `<Pascal>` struct owning a `[[u8; SLOT_SIZE];
@@ -9643,6 +9738,54 @@ int main(void) {
     if (rx_pool_sram1_link_arm_tx(&r)) return 7;
 
     if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT - 1) return 8;
+
+    /* Runtime seam: the slot armed above is still out of the pool.
+       Drive it home through the peripheral-start and RX-completion
+       edges the driver owns (spec lines 1149-1150). Before the seam
+       was emitted this was impossible and the loop below would spin
+       the pool down to zero and stay there. */
+    if (!rx_pool_sram1_dma_start_rx(&r)) return 9;
+    if (r.state != SCE_SLOT_INVALID) return 10;
+    sce_slot_handle_t done = rx_pool_sram1_rx_complete(0);
+    if (done.state != SCE_SLOT_CPU_REF) return 11;
+    if (rx_pool_sram1_slot_read(&done) == NULL) return 12;
+    if (rx_pool_sram1_slot_write(&done) != NULL) return 13;
+    if (!rx_pool_sram1_pool_return(&done)) return 14;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 15;
+
+    /* TX arm closes too: cpu-mut -> dma-armed-tx -> dma-busy-tx -> free. */
+    sce_slot_handle_t t = rx_pool_sram1_pool_acquire_for_encode();
+    if (t.state != SCE_SLOT_CPU_MUT) return 16;
+    size_t ti = t.idx;
+    if (!rx_pool_sram1_link_arm_tx(&t)) return 17;
+    if (t.state != SCE_SLOT_DMA_ARMED_TX) return 18;
+    if (rx_pool_sram1_slot_read(&t) != NULL) return 19;
+    if (!rx_pool_sram1_dma_start_tx(ti)) return 20;
+    if (!rx_pool_sram1_tx_complete(ti)) return 21;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 22;
+
+    /* A stray interrupt naming a slot in some other state is refused
+       rather than acted on — the index-keyed seam has no handle tag to
+       lean on, so this check is the whole defence. */
+    if (rx_pool_sram1_tx_complete(0)) return 23;
+    if (rx_pool_sram1_rx_complete(RX_POOL_SRAM1_SLOT_COUNT).state != SCE_SLOT_INVALID) return 24;
+    if (rx_pool_sram1_un_arm_tx(0).state != SCE_SLOT_INVALID) return 25;
+
+    /* Whole ring, twice: arming every slot must remain recoverable. */
+    for (int round = 0; round < 2; ++round) {
+        for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+            sce_slot_handle_t a = rx_pool_sram1_link_arm_rx();
+            if (a.state != SCE_SLOT_DMA_ARMED_RX) return 26;
+            if (!rx_pool_sram1_dma_start_rx(&a)) return 27;
+        }
+        if (rx_pool_sram1_free_count() != 0) return 28;
+        for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+            sce_slot_handle_t c = rx_pool_sram1_rx_complete(i);
+            if (c.state != SCE_SLOT_CPU_REF) return 29;
+            if (!rx_pool_sram1_pool_return(&c)) return 30;
+        }
+        if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 31;
+    }
     return 0;
 }
 "#,

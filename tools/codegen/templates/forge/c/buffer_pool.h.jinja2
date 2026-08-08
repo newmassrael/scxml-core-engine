@@ -93,16 +93,24 @@ extern "C" {
  * `maintain`; the other two policies emit no maintenance calls. */
 #define {{ upper_name }}_CACHE_POLICY "{{ cache_policy }}"
 
-{%- if cache_maintain %}
+{%- if needs_clean_extern or needs_invalidate_extern %}
 
 /* C5 cache-maintenance externs (spec §synth-5-I lines 1736-1740). The
  * implementations live in `sce_intrinsics_runtime` (or a target
  * plugin's vendor crate per RFC §synth-5-I lines 1760-1787). Forward
  * declarations also appear in the sidecar `{{ snake_name }}_externs.h`
  * for deploy-review transparency; both forward declarations are
- * legal and unify at link time because the symbols are identical. */
+ * legal and unify at link time because the symbols are identical.
+ *
+ * Which of the two is declared follows from the resolved edge set
+ * rather than from the policy flags directly: the `dma-busy-rx ->
+ * cpu-ref` invalidate is ungated under `maintain` (spec line 1151),
+ * so keying the declaration on `has_speculative_prefetch` would leave
+ * the RX-completion edge calling a symbol it never declared. */
+{%- if needs_clean_extern %}
 extern void sce_dcache_clean_by_addr(const void *start, size_t len);
-{%- if has_speculative_prefetch %}
+{%- endif %}
+{%- if needs_invalidate_extern %}
 extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
 {%- endif %}
 {%- endif %}
@@ -262,7 +270,7 @@ static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
 static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
     for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
         if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
-{% if cache_maintain and has_speculative_prefetch %}
+{% if edge_cache["link_arm_rx"].invalidate %}
             /* C5 pre-arm cache-invalidate (spec lines 1189-1198). */
             sce_dcache_invalidate_by_addr({{ snake_name }}_storage[i],
                                           {{ upper_name }}_SLOT_SIZE);
@@ -305,14 +313,18 @@ static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
         SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_link_arm_tx: pool state disagrees with the handle tag");
         return false;
     }
-{% if cache_maintain %}
+{% if edge_cache["link_arm_tx"].clean %}
     /* C5 cache-clean before TX descriptor publish (spec lines 1186-1188). */
     sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx],
                              {{ upper_name }}_SLOT_SIZE);
 {% endif %}
     {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_DMA_ARMED_TX;
-    handle->state = SCE_SLOT_INVALID;
-    handle->idx = SIZE_MAX;
+    /* Retagged, not tombstoned. The slot is now the DMA controller's,
+       and `slot_read` / `slot_write` / `pool_return` all reject the
+       `dma-armed-tx` tag, so the handle is no more usable for CPU
+       access than an invalidated one — but it still names the slot,
+       which is what the driver needs to drive the seam below. */
+    handle->state = SCE_SLOT_DMA_ARMED_TX;
     return true;
 }
 
@@ -394,6 +406,115 @@ static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
     return {{ snake_name }}_storage[handle->idx];
 }
 
+/* ── Runtime seam ─────────────────────────────────────────────────
+ * The six FSM edges the DMA controller, the peripheral, and the
+ * completion IRQs own (spec §synth-5-E lines 1144, 1145, 1149, 1150,
+ * 1153, 1156).
+ *
+ * Not part of the author-visible API on spec lines 1232-1237, but
+ * emitted, because omitting them does not make them unreachable — it
+ * makes the pool a one-way sink. `pool_acquire_for_encode` and
+ * `link_arm_rx` hand slots out; `dma-busy-tx -> free` and
+ * `dma-busy-rx -> cpu-ref` are the only edges that hand them back.
+ *
+ * Two shapes, decided by whether the edge's source state is one the
+ * API hands back as a tagged handle:
+ *
+ *   - source is holdable: the caller has the handle, so it is
+ *     tag-checked and retagged in place.
+ *   - source is DMA-owned: no handle exists by construction, so the
+ *     slot is named by index and the resulting handle comes back by
+ *     value — the shape `pool_acquire_for_encode` already uses, with
+ *     `INVALID_HANDLE` as the failure sentinel.
+ * ─────────────────────────────────────────────────────────────── */
+
+{% for t in seam %}
+{% if t.from_holdable %}
+/* `{{ t.from_spec }} -> {{ t.to_spec }}` — {{ t.trigger }}.
+ * Spec §synth-5-E line {{ t.spec_line }}. Runtime-owned: call it only
+ * once the named hardware event has been observed for this slot.
+ * Tag check: handle must be in `SCE_SLOT_{{ t.from_c }}`. Returns
+ * `false` on mismatch, leaving every state untouched. */
+{{ analyzer["_" ~ t.op_name] }}
+static inline bool {{ snake_name }}_{{ t.op_name }}(sce_slot_handle_t *handle) {
+    if (handle == NULL) return false;
+    if (handle->state != SCE_SLOT_{{ t.from_c }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: handle is not {{ t.from_spec }}");
+        return false;
+    }
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: handle index out of range");
+        return false;
+    }
+    if ({{ snake_name }}_slot_states[handle->idx] != SCE_SLOT_{{ t.from_c }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: pool state disagrees with the handle tag");
+        return false;
+    }
+{% if t.cache_clean %}
+    /* C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}). */
+    sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx],
+                             {{ upper_name }}_SLOT_SIZE);
+{% endif %}
+{% if t.cache_invalidate %}
+    /* C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}). */
+    sce_dcache_invalidate_by_addr({{ snake_name }}_storage[handle->idx],
+                                  {{ upper_name }}_SLOT_SIZE);
+{% endif %}
+    {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_{{ t.to_c }};
+{% if t.to_holdable %}
+    handle->state = SCE_SLOT_{{ t.to_c }};
+{% else %}
+    /* `{{ t.to_spec }}` hands out no handle — the slot is the
+       peripheral's until the completion edge mints a new one. */
+    handle->state = SCE_SLOT_INVALID;
+    handle->idx = SIZE_MAX;
+{% endif %}
+    return true;
+}
+
+{% else %}
+/* `{{ t.from_spec }} -> {{ t.to_spec }}` — {{ t.trigger }}.
+ * Spec §synth-5-E line {{ t.spec_line }}. Runtime-owned: call it only
+ * once the named hardware event has been observed for this slot.
+ *
+ * `{{ t.from_spec }}` hands out no handle, so the slot is named by
+ * index — which is what the completion signal actually carries.
+ * Refuses a slot that is not in `{{ t.from_spec }}`, so a spurious or
+ * replayed interrupt cannot advance an unrelated slot. */
+static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {{ snake_name }}_{{ t.op_name }}(size_t idx) {
+    if (idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: slot index out of range");
+        return {% if t.to_holdable %}{{ upper_name }}_INVALID_HANDLE{% else %}false{% endif %};
+    }
+    if ({{ snake_name }}_slot_states[idx] != SCE_SLOT_{{ t.from_c }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ t.op_name }}: slot is not {{ t.from_spec }}");
+        return {% if t.to_holdable %}{{ upper_name }}_INVALID_HANDLE{% else %}false{% endif %};
+    }
+{% if t.cache_clean %}
+    /* C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}). */
+    sce_dcache_clean_by_addr({{ snake_name }}_storage[idx],
+                             {{ upper_name }}_SLOT_SIZE);
+{% endif %}
+{% if t.cache_invalidate %}
+    /* C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}) —
+       evicts the stale lines the CPU holds for a region the DMA has
+       just rewritten. */
+    sce_dcache_invalidate_by_addr({{ snake_name }}_storage[idx],
+                                  {{ upper_name }}_SLOT_SIZE);
+{% endif %}
+    {{ snake_name }}_slot_states[idx] = SCE_SLOT_{{ t.to_c }};
+{% if t.to_holdable %}
+    sce_slot_handle_t h;
+    h.state = SCE_SLOT_{{ t.to_c }};
+    h.idx = idx;
+    return h;
+{% else %}
+    return true;
+{% endif %}
+}
+
+{% endif %}
+{% endfor %}
 /* Inspect a slot's current lifecycle state. Out-of-range index
  * returns `SCE_SLOT_INVALID` so debug introspection cannot fault. */
 static inline sce_slot_state_t {{ snake_name }}_slot_state(size_t idx) {
