@@ -1376,35 +1376,29 @@ pub enum ValidationError {
         dcache_line_size: u32,
     },
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E C5 cache-maintenance validation
-    /// (spec line 1545): `<sce:slot-size>` is not a whole-number
-    /// multiple of `platform.dcache_line_size` while `cache-policy:
-    /// maintain` is in effect. Each slot must occupy a whole number
-    /// of cache lines so that `cache_invalidate_by_addr(slot, len)`
-    /// after RX cannot touch the bytes of the adjacent slot that
-    /// share the boundary cache line. Fires only via
-    /// [`compile_forge_with_deploy`] after section validation passes
-    /// (silent-skip when deploy.yaml is unavailable). Author
-    /// resolution: round `slot_size` up to the next cache-line
-    /// multiple and continue using the original logical size from
-    /// within each slot. RFC §synth-5-E line 1545 + §synth-5-I line 1742-1744
-    /// spec anchor.
+    /// SCE Protocol-Synthesis RFC §synth-5-E C5 cache-maintenance
+    /// validation: `platform.dcache_line_size` is not a power of two.
+    ///
+    /// `PlatformConfig` deferred this check "alongside its codegen
+    /// consumer"; the §synth-5-E cache validator is that consumer, and
+    /// the rule is load-bearing there rather than cosmetic. Every
+    /// downstream cache rule reasons that a line size divides an
+    /// alignment it is no larger than, and that inference holds only
+    /// for powers of two — 48 is no larger than 64 and does not divide
+    /// it. Every real cache line is a power of two, so a deploy
+    /// declaring otherwise has a typo rather than a target.
     #[error(
-        "buffer-pool '{name}': slot-size {slot_size} is not a whole-number multiple of target platform's `dcache_line_size` {dcache_line_size} on machine '{machine}' (remainder {remainder}) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to {next_multiple} (next cache-line multiple)."
+        "machine '{machine}': `platform.dcache_line_size` {dcache_line_size} is not a power of two. Cache lines are powers of two on every core SCE targets, and the buffer-pool cache rules divide by this value. Nearest powers of two are {previous_power} and {next_power}."
     )]
-    BufferPoolSlotSizeNotCacheLineMultiple {
-        /// Buffer-pool document name (root `name=` attribute).
-        name: String,
+    DeployDcacheLineSizeNotPowerOfTwo {
         /// Target machine name (deploy.yaml top-level key).
         machine: String,
-        /// `<sce:slot-size>` body as authored.
-        slot_size: u32,
-        /// `platform.dcache_line_size` from deploy.yaml.
+        /// `platform.dcache_line_size` as declared.
         dcache_line_size: u32,
-        /// `slot_size % dcache_line_size` — the over-the-line excess.
-        remainder: u32,
-        /// `slot_size + (dcache_line_size - remainder)` — repair target.
-        next_multiple: u32,
+        /// Largest power of two below the declared value.
+        previous_power: u32,
+        /// Smallest power of two above the declared value.
+        next_power: u32,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-E (spec lines 1024-1073):
@@ -1444,12 +1438,14 @@ pub enum ValidationError {
     /// maintenance, which operates by cache line and so reaches into
     /// a neighbouring slot whenever a slot does not start on one.
     ///
-    /// Distinct from
-    /// [`Self::BufferPoolSlotSizeNotCacheLineMultiple`], which
-    /// compares the slot size against the deploy-resolved
-    /// `platform.dcache_line_size` and only under `cache-policy:
-    /// maintain`. This one is the pool's own declared DMA boundary
-    /// and holds under every cache policy, with or without a deploy.
+    /// This is the pool's own declared DMA boundary, so it holds under
+    /// every cache policy, with or without a deploy. Together with
+    /// [`Self::BufferPoolCacheLineAlignment`] and
+    /// [`Self::DeployDcacheLineSizeNotPowerOfTwo`] it also settles the
+    /// cache-line question the spec raised separately at line 1545: a
+    /// slot size that is a multiple of a power-of-two alignment no
+    /// smaller than a power-of-two line size is a whole number of
+    /// cache lines by construction, so no fourth check is emitted.
     ///
     /// Rejected rather than padded: padding would spend up to
     /// `alignment - 1` bytes of SRAM per slot that the author's

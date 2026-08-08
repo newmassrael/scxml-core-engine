@@ -1098,16 +1098,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/cache-line-alignment")]
     MemCacheLineAlignment,
 
-    /// RFC §synth-5-E C5 cache-maintenance validation: `<sce:slot-size>` is
-    /// not a whole-number multiple of the resolved target's
-    /// `platform.dcache_line_size` while `cache-policy: maintain` is
-    /// in effect. Validate-time — fires only via
-    /// [`compile_forge_with_deploy`]. The boundary cache line is
-    /// shared with the adjacent slot; cache_invalidate_by_addr after
-    /// RX would corrupt it. RFC §synth-5-E line 1545 + §synth-5-I lines 1742-1744
-    /// spec anchor.
-    #[serde(rename = "mem/slot-size-not-cache-line-multiple")]
-    MemSlotSizeNotCacheLineMultiple,
+    /// RFC §synth-5-E C5 cache-maintenance validation:
+    /// `platform.dcache_line_size` is not a power of two. Validate-time
+    /// — fires only via [`compile_forge_with_deploy`]. Load-bearing for
+    /// the rules around it, which divide by this value and rely on a
+    /// line size no larger than an alignment dividing it. RFC
+    /// §synth-5-E line 1544 + §synth-5-I lines 1742-1744 spec anchor.
+    #[serde(rename = "mem/dcache-line-size-not-power-of-two")]
+    MemDcacheLineSizeNotPowerOfTwo,
 
     /// RFC §synth-5-E slot-table layout: `<sce:alignment>` is not a
     /// power of two. Both backends lower it to a language alignment
@@ -1121,10 +1119,11 @@ pub enum DiagnosticCode {
     /// whole-number multiple of `<sce:alignment>`. The slot size is
     /// the stride between slots, so only the first slot would start
     /// on the declared DMA boundary. Distinct from
-    /// [`Self::MemSlotSizeNotCacheLineMultiple`], which compares
-    /// against the deploy-resolved `platform.dcache_line_size` under
-    /// `cache-policy: maintain`; this one is the pool's own declared
-    /// boundary and holds under every policy. Parse-time.
+    /// [`Self::MemCacheLineAlignment`], which compares the pool's
+    /// alignment against the deploy-resolved
+    /// `platform.dcache_line_size` under `cache-policy: maintain`;
+    /// this one is the pool's own declared boundary and holds under
+    /// every policy, with or without a deploy. Parse-time.
     /// RFC §synth-5-E lines 1024-1073 spec anchor.
     #[serde(rename = "mem/slot-size-not-alignment-multiple")]
     MemSlotSizeNotAlignmentMultiple,
@@ -2759,7 +2758,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MemInterPoolPaddingNotEmitted,
         // BufferPool §synth-5-E C5 cache-maintenance validation + codegen self-checks (SCE Protocol-Synthesis RFC §synth-5-E + §synth-5-I)
         MemCacheLineAlignment,
-        MemSlotSizeNotCacheLineMultiple,
+        MemDcacheLineSizeNotPowerOfTwo,
         MemAlignmentNotPowerOfTwo,
         MemSlotSizeNotAlignmentMultiple,
         MemCachePolicyUnsupportedOnNoDcacheCore,
@@ -3167,7 +3166,7 @@ impl DiagnosticCode {
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
             | MemCacheLineAlignment
-            | MemSlotSizeNotCacheLineMultiple
+            | MemDcacheLineSizeNotPowerOfTwo
             | MemAlignmentNotPowerOfTwo
             | MemSlotSizeNotAlignmentMultiple
             | MemCachePolicyUnsupportedOnNoDcacheCore
@@ -3824,7 +3823,7 @@ impl DiagnosticCode {
             MemPoolTooLarge => "mem/pool-too-large",
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
             MemCacheLineAlignment => "mem/cache-line-alignment",
-            MemSlotSizeNotCacheLineMultiple => "mem/slot-size-not-cache-line-multiple",
+            MemDcacheLineSizeNotPowerOfTwo => "mem/dcache-line-size-not-power-of-two",
             MemAlignmentNotPowerOfTwo => "mem/alignment-not-power-of-two",
             MemSlotSizeNotAlignmentMultiple => "mem/slot-size-not-alignment-multiple",
             MemCachePolicyUnsupportedOnNoDcacheCore => {
@@ -5826,31 +5825,28 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 dcache_line_size.to_string(),
             ],
         },
-        ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
-            name,
+        ValidationError::DeployDcacheLineSizeNotPowerOfTwo {
             machine,
-            slot_size,
             dcache_line_size,
-            remainder,
-            next_multiple,
+            previous_power,
+            next_power,
         } => DiagnosticPayload {
-            code: DiagnosticCode::MemSlotSizeNotCacheLineMultiple,
+            code: DiagnosticCode::MemDcacheLineSizeNotPowerOfTwo,
             stage: Stage::Validation,
-            // `Fix::None` per `MemPoolTooLarge` precedent — the
-            // repair (round slot_size up to next_multiple) is named
-            // in message prose; multi-axis interpretation lets the
-            // author choose between rounding the slot or shrinking
-            // the dcache_line_size assumption in deploy.yaml.
+            // Closed two-element repair, so the candidates ride the
+            // fix rather than the prose — same shape as the two
+            // §synth-5-E slot-table rules. Which one is right is a
+            // datasheet question, not one codegen can settle.
             expected: None,
-            actual: Some(slot_size.to_string()),
-            fix: None,
+            actual: Some(dcache_line_size.to_string()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec![previous_power.to_string(), next_power.to_string()],
+            }),
             key_fragments: vec![
-                name.clone(),
                 machine.clone(),
-                slot_size.to_string(),
                 dcache_line_size.to_string(),
-                remainder.to_string(),
-                next_multiple.to_string(),
+                previous_power.to_string(),
+                next_power.to_string(),
             ],
         },
         ValidationError::BufferPoolAlignmentNotPowerOfTwo {
@@ -10122,19 +10118,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9871be15958d973d","code":"mem/cache-line-alignment","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': alignment 16 is smaller than target platform's `dcache_line_size` 32 on machine 'mcu_node' under `cache-policy: maintain`. Partial-line cache_invalidate_by_addr corrupts adjacent slot data on the start side. Raise <sce:alignment> to at least 32.","actual":"16"}"#,
             ),
-            // ── §synth-5-E C5 cache-maintenance validation: slot_size vs platform.dcache_line_size ─
+            // ── §synth-5-E C5 cache-maintenance validation: dcache_line_size must be a power of two ─
             (
-                "forge/mem-slot-size-not-cache-line-multiple",
-                ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
-                    name: "rx_pool_sram1".into(),
+                "forge/mem-dcache-line-size-not-power-of-two",
+                ValidationError::DeployDcacheLineSizeNotPowerOfTwo {
                     machine: "mcu_node".into(),
-                    slot_size: 100,
-                    dcache_line_size: 32,
-                    remainder: 4,
-                    next_multiple: 128,
+                    dcache_line_size: 48,
+                    previous_power: 32,
+                    next_power: 64,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:ad64c9aa97912ef0","code":"mem/slot-size-not-cache-line-multiple","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': slot-size 100 is not a whole-number multiple of target platform's `dcache_line_size` 32 on machine 'mcu_node' (remainder 4) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to 128 (next cache-line multiple).","actual":"100"}"#,
+                r#"{"v":1,"id":"fnv1a:612266b62e600c21","code":"mem/dcache-line-size-not-power-of-two","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': `platform.dcache_line_size` 48 is not a power of two. Cache lines are powers of two on every core SCE targets, and the buffer-pool cache rules divide by this value. Nearest powers of two are 32 and 64.","actual":"48","fix":{"kind":"replace_one_of","candidates":["32","64"]}}"#,
             ),
             // ── §synth-5-E slot-table layout: alignment must be a power of two ─
             (
@@ -12377,7 +12371,7 @@ mod tests {
             //   - cache-pre-arm-invalidate-missing-on-speculative-core:
             //     codegen-invariant violation, no author repair
             | MemCacheLineAlignment
-            | MemSlotSizeNotCacheLineMultiple
+            | MemDcacheLineSizeNotPowerOfTwo
             | PoolCacheMaintenanceMisplaced
             | PoolSpeculativePrefetchFlagMissing
             | PoolCachePreArmInvalidateMissingOnSpeculativeCore
@@ -13230,7 +13224,7 @@ mod tests {
                 | MemPoolTooLarge
                 | MemInterPoolPaddingNotEmitted
                 | MemCacheLineAlignment
-                | MemSlotSizeNotCacheLineMultiple
+                | MemDcacheLineSizeNotPowerOfTwo
                 | MemAlignmentNotPowerOfTwo
                 | MemSlotSizeNotAlignmentMultiple
                 | MemCachePolicyUnsupportedOnNoDcacheCore

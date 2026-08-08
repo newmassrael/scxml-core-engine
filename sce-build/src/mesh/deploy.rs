@@ -557,11 +557,15 @@ impl PlatformClass {
 /// invariants the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5) and the
 /// §synth-5-E cache-policy validator consume.
 ///
-/// Field-specific numeric checks (e.g. `dcache_line_size` power-of-2 or
-/// `has_speculative_prefetch` REQUIRED when `has_dcache=true`) are not
-/// enforced here at schema time — each lands alongside its codegen
-/// consumer per the RFC §synth-7 sequence. The single
-/// invariant validated at parse time is `class` ↔ `os` consistency
+/// Field-specific numeric checks are not enforced here at schema time —
+/// each lands alongside its codegen consumer per the RFC §synth-7
+/// sequence. Both of the ones this struct used to name have since
+/// landed with the §synth-5-E cache validator that reads them:
+/// `dcache_line_size` power-of-2 as
+/// `mem/dcache-line-size-not-power-of-two`, and
+/// `has_speculative_prefetch` REQUIRED as
+/// `pool/speculative-prefetch-flag-missing`. The single invariant
+/// validated at parse time is `class` ↔ `os` consistency
 /// (`validate_platform_class_os_consistency`), which is intrinsic to
 /// the schema rather than a downstream codegen rule.
 #[derive(Debug, Clone, Deserialize)]

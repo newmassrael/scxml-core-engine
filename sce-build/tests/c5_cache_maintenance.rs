@@ -369,63 +369,53 @@ fn mem_cache_line_alignment_passes_when_alignment_equals_dcache_line_size() {
     assert!(out.is_ok(), "alignment == dcache_line_size must pass");
 }
 
-/// Spec line 1545, and the narrow shape that still reaches it.
+/// A `dcache_line_size` that is not a power of two is rejected.
 ///
-/// The obvious fixture — `slot_size=100, alignment=32,
-/// dcache_line_size=32` — no longer gets here: `<sce:slot-size>` must
-/// be a whole multiple of `<sce:alignment>` at parse time
-/// (`mem/slot-size-not-alignment-multiple`), which rejects it before
-/// any deploy is consulted. That is not a coincidence, and
-/// `the_alignment_rules_subsume_the_cache_line_rule_for_real_platforms`
-/// below states why: with a power-of-two line size, the parse-time
-/// rules plus `mem/cache-line-alignment` imply this one.
-///
-/// So the fixture is a line size that is *not* a power of two, which
-/// is the only remaining shape that reaches the check. No real core
-/// has one; the check survives as the layer that catches a deploy
-/// declaring one anyway, and this test is what keeps that layer
-/// exercised rather than merely present.
+/// `PlatformConfig` deferred this check "alongside its codegen
+/// consumer"; this validator is that consumer, and the rule is
+/// load-bearing here rather than cosmetic. The two rules on either side
+/// of it — the pool's alignment must cover the line size, and the slot
+/// size must be a whole multiple of the alignment — together imply that
+/// a slot is a whole number of cache lines, but only because a power of
+/// two no larger than another divides it. 48 is no larger than 64 and
+/// does not divide it.
 #[test]
-fn mem_slot_size_not_cache_line_multiple_fires_when_remainder_nonzero() {
-    const ODD_LINE_SIZE: u32 = 48;
+fn mem_dcache_line_size_not_power_of_two_rejects() {
     let deploy = deploy_speculative_core().replace("dcache_line_size: 32", "dcache_line_size: 48");
-    // alignment 64 >= 48, so `mem/cache-line-alignment` passes;
-    // 128 % 64 == 0, so the parse-time stride rule passes;
-    // 128 % 48 == 32, so this check is the one left to fire.
-    assert_eq!(128 % 64, 0);
-    assert_ne!(128 % ODD_LINE_SIZE, 0);
     let err = expect_compile_err(
         compile_pool_with_deploy("maintain", 64, 128, &deploy, "mcu_node", Language::Rust),
-        "slot-size remainder violation must reject",
+        "a non-power-of-two cache line must reject",
     );
     let diags = err.to_diagnostics();
     assert_eq!(diags.len(), 1);
     assert!(matches!(
         diags[0].code,
-        DiagnosticCode::MemSlotSizeNotCacheLineMultiple
+        DiagnosticCode::MemDcacheLineSizeNotPowerOfTwo
     ));
-    assert!(diags[0].message.contains("128"));
     assert!(diags[0].message.contains("48"));
-    assert!(diags[0].message.contains("144")); // next_multiple
+    // The author has to be told which way to round, or the diagnostic
+    // names a rule without naming a fix.
+    assert!(diags[0].message.contains("32") && diags[0].message.contains("64"));
 }
 
-/// The parse-time alignment rules make the cache-line rule redundant
-/// on every platform with a power-of-two cache line, and this states
-/// it rather than leaving the redundancy to be discovered as a
-/// diagnostic that never fires.
+/// The slot size is always a whole number of cache lines, so no
+/// separate check for it is emitted.
 ///
-/// Three rules compose: `<sce:alignment>` is a power of two,
-/// `<sce:slot-size>` is a multiple of it, and `mem/cache-line-alignment`
-/// requires `alignment >= dcache_line_size`. When the line size is
-/// also a power of two it therefore divides the alignment, which
-/// divides the slot size — so the slot size is a whole number of
-/// cache lines by construction.
+/// Spec line 1545 asked for one. Three rules now compose to make it
+/// unreachable: `<sce:alignment>` is a power of two
+/// (`mem/alignment-not-power-of-two`), `<sce:slot-size>` is a whole
+/// multiple of it (`mem/slot-size-not-alignment-multiple`), and the
+/// alignment is at least the line size (`mem/cache-line-alignment`),
+/// which is itself a power of two (`mem/dcache-line-size-not-power-of-
+/// two`). A power of two no larger than another divides it, and
+/// division is transitive.
 ///
 /// Stated as a search over the legal space rather than as prose,
-/// because prose would not notice if one of the three rules were
-/// relaxed later.
+/// because prose would not notice if one of the four rules were
+/// relaxed — and the check it replaced would then be missing rather
+/// than redundant.
 #[test]
-fn the_alignment_rules_subsume_the_cache_line_rule_for_real_platforms() {
+fn slot_size_is_always_a_whole_number_of_cache_lines() {
     let mut examined = 0usize;
     for line_shift in 3u32..=8 {
         let line_size = 1u32 << line_shift; // 8 .. 256, powers of two
@@ -437,9 +427,9 @@ fn the_alignment_rules_subsume_the_cache_line_rule_for_real_platforms() {
                     slot_size % line_size,
                     0,
                     "slot-size {slot_size} (= alignment {alignment} x {multiple}) leaves \
-                     a remainder against a {line_size}-byte cache line, so \
-                     mem/slot-size-not-cache-line-multiple is reachable on a real \
-                     platform after all — this test's premise has stopped holding",
+                     a remainder against a {line_size}-byte cache line, so the check \
+                     spec line 1545 asked for is reachable after all and its removal \
+                     dropped real coverage",
                 );
                 examined += 1;
             }
@@ -448,6 +438,54 @@ fn the_alignment_rules_subsume_the_cache_line_rule_for_real_platforms() {
     assert!(
         examined >= 200,
         "only {examined} configurations examined; the search collapsed",
+    );
+}
+
+/// And the composition holds through the real pipeline, not only in
+/// arithmetic: a pool whose slot size would leave a cache-line
+/// remainder cannot be built, because an earlier rule rejects it first.
+#[test]
+fn a_slot_size_with_a_cache_line_remainder_is_unreachable_through_the_pipeline() {
+    // slot_size 100 against a 32-byte line leaves 4 — the fixture the
+    // removed check used. It is now refused before any deploy is read.
+    let err = expect_compile_err(
+        compile_pool_with_deploy(
+            "maintain",
+            32,
+            100,
+            deploy_speculative_core(),
+            "mcu_node",
+            Language::Rust,
+        ),
+        "slot-size 100 against alignment 32 must reject",
+    );
+    let diags = err.to_diagnostics();
+    assert!(
+        matches!(
+            diags[0].code,
+            DiagnosticCode::MemSlotSizeNotAlignmentMultiple
+        ),
+        "the stride rule must be what refuses it; got {:?}",
+        diags[0].code,
+    );
+    // And the shape that would have reached the removed check —
+    // alignment below the line size — is refused by its own rule.
+    let err = expect_compile_err(
+        compile_pool_with_deploy(
+            "maintain",
+            4,
+            100,
+            deploy_speculative_core(),
+            "mcu_node",
+            Language::Rust,
+        ),
+        "alignment 4 under a 32-byte cache line must reject",
+    );
+    let diags = err.to_diagnostics();
+    assert!(
+        matches!(diags[0].code, DiagnosticCode::MemCacheLineAlignment),
+        "the alignment-covers-the-line rule must be what refuses it; got {:?}",
+        diags[0].code,
     );
 }
 
