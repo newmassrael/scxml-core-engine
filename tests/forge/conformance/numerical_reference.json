@@ -2130,17 +2130,21 @@
     },
     "codec_zenoh_msg_put": {
       "fixture": "CodecZenohMsgPut",
-      "signature": "(raw: &[u8]) -> {header: u8 flags @ byte 0, timestamp: T-gated embed, encoding: E-gated embed, extensions: Z-gated tlv-chain<codec_zenoh_ext_entry> max-depth=4 on-overflow=reject terminate-on=entry-flag(Z), payload_len: vle u64, payload: bytes}",
+      "signature": "(raw: &[u8]) -> {header: u8 flags @ byte 0, timestamp: T-gated embed, encoding: E-gated embed, extensions: Z-gated tlv-chain<codec_zenoh_ext_entry> max-depth=8 on-overflow=reject terminate-on=entry-flag(Z), payload_len: vle u64, payload: bytes}",
       "description": "Decode-rejection vectors only (see codec_zenoh_ext_envelope). This is the present-if-gated chain, and the chain is followed on the wire by payload_len + payload -- which is what makes a refused entry a corruption rather than a loss: dropping it silently leaves its header byte under the cursor, where payload_len then reads it. Header 0x81 = MID 0x01 with Z set, T and E clear.",
       "rejects": [
         {
-          "why": "five extensions on a max-depth=4 chain: the fifth entry's header byte must not be read as payload_len",
+          "why": "nine extensions on a max-depth=8 chain: the ninth entry's header byte must not be read as payload_len",
           "encoded": [
             129,
             129,
             130,
             131,
             132,
+            133,
+            134,
+            135,
+            136,
             3,
             3,
             170,
