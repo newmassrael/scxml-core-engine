@@ -15,6 +15,7 @@
 # Paths are relative to the SCE source root.
 set(SCE_CODEGEN_CMAKE_FILES
     cmake/SCECodegen.cmake
+    cmake/SCEFindCodegen.cmake
     cmake/SCEClangFormat.cmake
 )
 
