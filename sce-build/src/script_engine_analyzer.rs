@@ -595,6 +595,10 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
                 ));
             }
         }
+        // §scxml-6.4.1: the whole lowering is one `error.execution` raise
+        // with a compile-time-constant message. Nothing is evaluated, so
+        // an unsupported invoke never pulls in a script engine.
+        Invoke::Unsupported(_) => {}
     }
 }
 

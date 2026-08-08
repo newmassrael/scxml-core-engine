@@ -15,7 +15,7 @@
     - forwardToAutoforwardChildren()    — W3C SCXML 6.4.1 event forwarding
     - executeFinalizeForChildEvent()    — W3C SCXML 6.5 finalize execution
 #}
-{% if (model.invokes | scxml_family) or (model.invokes | scxml_remote) %}
+{% if (model.invokes | scxml_family) or (model.invokes | scxml_remote) or (model.invokes | unsupported) %}
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication).
@@ -301,6 +301,27 @@
                         child_{{ invoke_info.field_suffix }}_->initialize();
 
                         AOT_DEBUG("Hybrid AOT child {{ invoke_info.invoke_id }} initialized and running");
+                        return;
+                    }
+                    {% endfor %}
+                }
+                {% endif %}
+                {% if state.invokes | unsupported %}
+                if (pending.state == State::{{ state_id | capitalize }}) {
+                    {% for invoke_info in state.invokes | unsupported %}
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                        // W3C SCXML 6.4.1: the `type` names no processor this
+                        // platform supports. Place error.execution on the
+                        // internal queue and start nothing — no child session
+                        // exists, so no done.invoke can follow and state exit
+                        // has nothing to cancel. Raising here rather than at
+                        // onentry keeps the spec's ordering: invokes run after
+                        // the macrostep settles, so the author sees the error
+                        // on the next iteration exactly as a real processor
+                        // failure would arrive.
+                        engine.raise(typename Engine::EventWithMetadata(
+                            Event::Error_execution,
+                            "Unsupported <invoke> type: {{ invoke_info.invoke_type }}"));
                         return;
                     }
                     {% endfor %}

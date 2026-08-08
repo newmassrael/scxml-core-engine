@@ -71,6 +71,7 @@ pub fn first_unresolved(model: &SCXMLModel) -> Option<(String, &UnresolvedMarker
                 Invoke::Scxml(info) => &info.common.base,
                 Invoke::Hybrid(info) => &info.common.base,
                 Invoke::MeshRpc(info) => &info.base,
+                Invoke::Unsupported(info) => &info.base,
             };
             if let Some(m) = base.unresolved.first() {
                 return Some((
@@ -177,6 +178,7 @@ pub fn emit_unresolved_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) -> i
                 Invoke::Scxml(info) => &info.common.base,
                 Invoke::Hybrid(info) => &info.common.base,
                 Invoke::MeshRpc(info) => &info.base,
+                Invoke::Unsupported(info) => &info.base,
             };
             let path = format!("states.{}.invokes[{i}]", state.id);
             for marker in &base.unresolved {

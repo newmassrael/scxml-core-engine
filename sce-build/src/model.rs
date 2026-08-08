@@ -420,6 +420,34 @@ pub enum Invoke {
     Scxml(ScxmlInvokeInfo),
     Hybrid(HybridInvokeInfo),
     MeshRpc(MeshRpcInvokeInfo),
+    Unsupported(UnsupportedInvokeInfo),
+}
+
+/// §scxml-6.4.1: an `<invoke>` whose `type` names no processor this
+/// platform implements.
+///
+/// The spec defines this case rather than leaving it undefined — the
+/// processor "MUST place error.execution on the internal event queue" —
+/// so a document carrying one is *valid SCXML with defined meaning*, not
+/// an author error the compiler may reject. That single raise at invoke
+/// time is the whole observable: no child session starts, no
+/// `done.invoke.<id>` ever fires, and there is nothing to cancel on state
+/// exit. The struct therefore carries only the W3C identity and the
+/// refused type string.
+///
+/// The variant exists so the case cannot be dropped silently. Before it,
+/// `parse_invoke` returned `Ok(None)` for an unsupported type and the
+/// `<invoke>` vanished from the model, leaving AOT with no observable at
+/// all where the Interpreter raised one.
+#[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct UnsupportedInvokeInfo {
+    #[serde(flatten)]
+    pub base: InvokeBase,
+    /// The `type` attribute verbatim. Reported in the raised
+    /// `error.execution` payload so the author sees which URI was refused
+    /// rather than a generic failure.
+    pub invoke_type: String,
 }
 
 /// Fields every invoke carries regardless of kind: the W3C identity
@@ -1575,6 +1603,15 @@ impl State {
     pub fn has_mesh_rpc_invoke(&self) -> bool {
         self.invokes.iter().any(|i| matches!(i, Invoke::MeshRpc(_)))
     }
+    /// True iff the state declares any [`Invoke::Unsupported`]
+    /// (§scxml-6.4.1 unsupported `type`). Used by codegen to decide
+    /// whether the state's entry chain must defer a pending invoke whose
+    /// only effect is the spec-mandated `error.execution` raise.
+    pub fn has_unsupported_invoke(&self) -> bool {
+        self.invokes
+            .iter()
+            .any(|i| matches!(i, Invoke::Unsupported(_)))
+    }
     /// Iterate over the static-SCXML invoke payloads on this state.
     pub fn iter_scxml_invokes(&self) -> impl Iterator<Item = &ScxmlInvokeInfo> {
         self.invokes.iter().filter_map(|i| match i {
@@ -1613,6 +1650,14 @@ impl SCXMLModel {
     /// Computed from states — see [`State::has_mesh_rpc_invoke`].
     pub fn has_mesh_rpc_invoke(&self) -> bool {
         self.states.values().any(|s| s.has_mesh_rpc_invoke())
+    }
+    /// True iff any state in the model declares an [`Invoke::Unsupported`]
+    /// (§scxml-6.4.1 unsupported `type`). Drives the analyzer's
+    /// `error.execution` event registration so `Event::Error_execution`
+    /// resolves in the generated enum whether or not the author wrote a
+    /// handler for it.
+    pub fn has_unsupported_invoke(&self) -> bool {
+        self.states.values().any(|s| s.has_unsupported_invoke())
     }
     /// Iterate every static-SCXML invoke across all states in document order.
     /// Replaces the legacy flat `model.static_invokes` read by the codegen

@@ -47,6 +47,9 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     model.execute_entry_actions_needs_this = model.needs_script_engine
         || model.has_scxml_invoke()
         || model.has_mesh_rpc_invoke()
+        // §scxml-6.4.1: the unsupported-type entry chain defers into
+        // `pendingInvokes_` and stamps the invoke id from `this`.
+        || model.has_unsupported_invoke()
         || model.has_parent_communication
         || model.needs_event_scheduler.unwrap_or(false)
         || model.has_parallel_states
@@ -442,6 +445,15 @@ fn add_system_events(model: &mut SCXMLModel) {
     if model.has_mesh_rpc_invoke() {
         model.events.insert("done.invoke".to_string());
         model.events.insert("error.invoke".to_string());
+        model.events.insert("error.execution".to_string());
+    }
+    // §scxml-6.4.1: an `<invoke>` naming an unsupported processor raises
+    // error.execution and nothing else — no session starts, so neither
+    // done.invoke nor cancel.invoke can ever follow. Registering the event
+    // here keeps `Event::Error_execution` resolvable in the generated enum
+    // whether or not the author wrote an explicit handler, exactly as the
+    // mesh-rpc arm above does.
+    if model.has_unsupported_invoke() {
         model.events.insert("error.execution".to_string());
     }
 }

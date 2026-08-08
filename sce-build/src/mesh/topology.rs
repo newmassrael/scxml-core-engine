@@ -3256,6 +3256,9 @@ pub fn static_invoke_targets(
                 Invoke::Scxml(info) => Some(info.src.as_str()),
                 Invoke::MeshRpc(info) => info.target.src_literal(),
                 Invoke::Hybrid(_) => None,
+                // §scxml-6.4.1: no processor, so no `src` target to
+                // resolve against the mesh topology.
+                Invoke::Unsupported(_) => None,
             };
             let Some(target) = literal.and_then(|s| s.strip_prefix('#')) else {
                 continue;
