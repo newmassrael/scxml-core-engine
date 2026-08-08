@@ -31,6 +31,14 @@ plugins {
 group = "com.sce.forge"
 version = "0.1.0"
 
+// Which profile holds the generator is gradle/sce-codegen.gradle.kts's
+// business, not this module's — see that file for why no build script
+// names one.
+apply(from = rootProject.file("gradle/sce-codegen.gradle.kts"))
+val sceCodegenBuildArgs: List<String> by rootProject.extra
+val sceCodegenBuiltRelative: String by rootProject.extra
+val sceCodegenRelative: String by rootProject.extra
+
 // Cross-language numerical conformance: invoke the sce-codegen CLI on every
 // fixture declared in tests/forge/conformance/fixtures.json AND render the
 // test harness itself from the shared Jinja2 template. Both outputs land
@@ -70,7 +78,7 @@ abstract class GenerateForgeFixtures : DefaultTask() {
             throw GradleException(
                 "sce-codegen binary not found or not executable at ${bin.absolutePath}. " +
                 "Build it first: " +
-                "`cargo build --bin sce-codegen --features cli --release -p sce-build`",
+                "`cargo build --bin sce-codegen --features cli -p sce-build`",
             )
         }
         val res = resourceDir.get().asFile
@@ -151,18 +159,12 @@ abstract class GenerateForgeFixtures : DefaultTask() {
 // configuration cache refuses to serialize.
 val buildSceCodegen by tasks.registering(Exec::class) {
     workingDir = rootProject.projectDir
-    commandLine(
-        "cargo", "build",
-        "--bin", "sce-codegen",
-        "--features", "cli",
-        "--release",
-        "-p", "sce-build",
-    )
+    commandLine(sceCodegenBuildArgs)
     inputs.dir(rootProject.layout.projectDirectory.dir("sce-build/src"))
         .withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(rootProject.layout.projectDirectory.file("sce-build/Cargo.toml"))
         .withPathSensitivity(PathSensitivity.RELATIVE)
-    outputs.file(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
+    outputs.file(rootProject.layout.projectDirectory.file(sceCodegenBuiltRelative))
     onlyIf {
         val path = System.getenv("PATH") ?: return@onlyIf false
         val sep = File.pathSeparator
@@ -178,7 +180,7 @@ val buildSceCodegen by tasks.registering(Exec::class) {
 
 val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
     dependsOn(buildSceCodegen)
-    sceCodegen.set(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
+    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
     manifest.set(rootProject.layout.projectDirectory.file("tests/forge/conformance/fixtures.json"))
     conformanceTemplateDir.set(
@@ -214,7 +216,7 @@ abstract class GenerateRoundTripFixtures : DefaultTask() {
             throw GradleException(
                 "sce-codegen binary not found or not executable at ${bin.absolutePath}. " +
                 "Build it first: " +
-                "`cargo build --bin sce-codegen --features cli --release -p sce-build`",
+                "`cargo build --bin sce-codegen --features cli -p sce-build`",
             )
         }
         val res = resourceDir.get().asFile
@@ -242,7 +244,7 @@ abstract class GenerateRoundTripFixtures : DefaultTask() {
 
 val generateRoundTripFixtures by tasks.registering(GenerateRoundTripFixtures::class) {
     dependsOn(buildSceCodegen)
-    sceCodegen.set(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
+    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
     outputDir.set(layout.buildDirectory.dir("generated/round_trip/kotlin"))
 }

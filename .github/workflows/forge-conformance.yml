@@ -38,6 +38,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every language's harness pipes its test run into `tee` to keep a log for
+# the summary step. The runner's default shell is `bash -e {0}` — `-e` but
+# not `-o pipefail` — so the step's exit status was tee's, and a conformance
+# failure in any of the six languages reported green. `pipefail` here makes
+# the pipeline report the test's status instead; the shell string carries
+# `-e` because naming `defaults.run.shell` replaces the runner's default
+# rather than adding to it. Pinned by
+# `codegen_binary_resolution::every_conformance_run_can_actually_fail`.
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 jobs:
   # ============================================================
   # Build sce-codegen once, publish as artifact for fan-out
@@ -173,8 +185,9 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: sce-codegen-binary
-        # conftest.py hardcodes REPO_ROOT/target/debug/sce-codegen.
-        path: target/release
+        # The build job produced it under target/debug; the harness
+        # resolves it from there via _sce_codegen.py.
+        path: target/debug
 
     - name: Make sce-codegen Executable
       run: chmod +x target/debug/sce-codegen
@@ -187,7 +200,10 @@ jobs:
     - name: Run Python Conformance Harness
       run: |
         cd backends/python/forge-runtime
-        PYTHONPATH=tests python3 -m unittest tests.test_numerical_conformance 2>&1 | tee ../../python_conformance.log
+        PYTHONPATH=tests python3 -m unittest \
+          tests.test_numerical_conformance \
+          tests.test_default_round_trip \
+          2>&1 | tee ../../python_conformance.log
 
     - name: Summarize
       if: always()
@@ -225,8 +241,9 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: sce-codegen-binary
-        # generate.sh resolves sce-codegen via target/release from repo root.
-        path: target/release
+        # The build job produced it under target/debug; generate.sh
+        # resolves it from there via scripts/lib/sce_codegen.sh.
+        path: target/debug
 
     - name: Make sce-codegen Executable
       run: chmod +x target/debug/sce-codegen
@@ -308,8 +325,9 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: sce-codegen-binary
-        # GenerateForgeFixtures resolves sce-codegen via the repo-root target/release.
-        path: target/release
+        # The build job produced it under target/debug; the Gradle build
+        # resolves it from there via gradle/sce-codegen.gradle.kts.
+        path: target/debug
 
     - name: Make sce-codegen Executable
       run: chmod +x target/debug/sce-codegen
@@ -388,8 +406,9 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: sce-codegen-binary
-        # CMakeLists.txt resolves SCE_CODEGEN from ${REPO_ROOT}/target/release.
-        path: target/release
+        # The build job produced it under target/debug; the harness
+        # resolves it from there via cmake/SCEFindCodegen.cmake.
+        path: target/debug
 
     - name: Make sce-codegen Executable
       run: chmod +x target/debug/sce-codegen

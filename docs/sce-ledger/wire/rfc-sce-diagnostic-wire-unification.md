@@ -2324,7 +2324,7 @@ signal justifies.
 
 → **Parses but does not generate code.** Writes a skeleton with
 TODO markers. Real codegen is Rust `sce-codegen`
-(`target/release/sce-codegen`, verified).
+(the `sce-codegen` binary, verified).
 
 CMake references (`grep -rn "src/main/main\|scxml-codegen\|sce_main"
 --include="CMakeLists.txt" --include="*.cmake"`): **0 matches**.

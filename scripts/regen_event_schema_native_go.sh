@@ -26,21 +26,18 @@
 #   scripts/regen_event_schema_native_go.sh
 #
 # Requires:
-#   target/debug/sce-codegen (auto-built when missing).
+#   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/debug/sce-codegen"
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
+CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
 INPUT_ROOT="sce-build/tests/fixtures/event_schema"
 GENERATED_DIR="backends/go/tests/integration/event_schema_native"
-
-if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli -p sce-build
-fi
 
 # The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) lowers to a Go
 # `string(p.pending….raw) == "ack"` guard (slice `==` is illegal in Go, so

@@ -19,7 +19,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-SCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen"
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 RESOURCE_DIR="$REPO_ROOT/tests/forge/resources"
 OUT_DIR="$SCRIPT_DIR/generated"
 
@@ -28,14 +28,10 @@ GO_MODULE_ROOT="$(awk '$1 == "module" { print $2; exit }' "$GO_MOD_FILE")"
 GO_MODULE_PREFIX="$GO_MODULE_ROOT/round_trip/generated"
 
 if command -v cargo >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli --release -p sce-build)
+    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build)
 fi
 
-if [[ ! -x "$SCE_CODEGEN" ]]; then
-    echo "error: sce-codegen binary not found at $SCE_CODEGEN" >&2
-    echo "  Build it first: cargo build --bin sce-codegen --features cli --release -p sce-build" >&2
-    exit 1
-fi
+SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 # Clean stale fixtures (keep the .gitignore-equivalent marker).
 find "$OUT_DIR" -mindepth 1 -exec rm -rf {} + 2>/dev/null || true

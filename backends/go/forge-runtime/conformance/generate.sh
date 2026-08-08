@@ -24,7 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-SCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen"
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 RESOURCE_DIR="$REPO_ROOT/tests/forge/resources"
 MANIFEST="$REPO_ROOT/tests/forge/conformance/fixtures.json"
 OUT_DIR="$SCRIPT_DIR/generated"
@@ -50,17 +50,13 @@ GO_MODULE_PREFIX="$GO_MODULE_ROOT/conformance/generated"
 # stale-binary foot-gun where a schema change in conformance.rs would
 # otherwise be silently ignored by a test still calling the old binary. In
 # CI, the Go job downloads a pre-built artifact from the build-codegen job
-# and cargo is not on PATH — this branch is skipped and the existence check
-# below catches any misconfiguration.
+# and cargo is not on PATH — sce_codegen_require then uses the downloaded
+# binary as-is and fails loudly if there is none.
 if command -v cargo >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli --release -p sce-build)
+    (cd "$REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build)
 fi
 
-if [[ ! -x "$SCE_CODEGEN" ]]; then
-    echo "error: sce-codegen binary not found at $SCE_CODEGEN" >&2
-    echo "  Build it first: cargo build --bin sce-codegen --features cli --release -p sce-build" >&2
-    exit 1
-fi
+SCE_CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 # Pull the fixture list from sce-codegen itself so this script needs neither
 # python3 nor jq — the Rust binary owns the manifest schema and prints a

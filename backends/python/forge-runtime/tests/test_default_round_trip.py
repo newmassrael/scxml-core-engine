@@ -22,18 +22,19 @@ import types
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+import _sce_codegen
+
+REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
-SCE_CODEGEN = REPO_ROOT / "target" / "release" / "sce-codegen"
 
 
-def _generate(out_dir: Path, fixture: str) -> None:
+def _generate(codegen: Path, out_dir: Path, fixture: str) -> None:
     """Invoke sce-codegen on a single fixture, writing the .py output
     into ``out_dir``. Same CLI shape as the existing conftest bootstrap;
     we just narrow the manifest scope to a single SCXML."""
     subprocess.run(
         [
-            str(SCE_CODEGEN),
+            str(codegen),
             "generate",
             str(RESOURCE_DIR / f"{fixture}.scxml"),
             "--language",
@@ -75,12 +76,12 @@ class TestDefaultRoundTrip(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not SCE_CODEGEN.exists():
-            raise unittest.SkipTest(
-                f"sce-codegen binary not found at {SCE_CODEGEN}; "
-                "run `cargo build --bin sce-codegen --features cli "
-                "--release -p sce-build`"
-            )
+        # No skip guard: the generator is a build product _sce_codegen
+        # can produce, and this class spent its whole life skipping —
+        # its REPO_ROOT was one directory too shallow, so the binary it
+        # looked for could not exist and every run reported green
+        # without executing a single assertion.
+        codegen = _sce_codegen.require()
         cls._tmp = tempfile.TemporaryDirectory()
         cls._out = Path(cls._tmp.name)
         for fixture in (
@@ -88,7 +89,7 @@ class TestDefaultRoundTrip(unittest.TestCase):
             "codec_default_marker_arm_b",
             "codec_variant_default_marker",
         ):
-            _generate(cls._out, fixture)
+            _generate(codegen, cls._out, fixture)
         # Install a synthetic parent package so the outer's
         # ``from .codec_default_marker_arm_a import …`` relative
         # imports resolve against our generated arm modules.

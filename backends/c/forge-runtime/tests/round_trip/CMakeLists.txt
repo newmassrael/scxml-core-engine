@@ -14,7 +14,7 @@
 #     decode → byte-equal re-encode)
 #
 # Configure + build + test:
-#   cargo build --bin sce-codegen --features cli --release -p sce-build
+#   cargo build --bin sce-codegen --features cli -p sce-build
 #   cmake -S backends/c/forge-runtime/tests/round_trip -B build_round_trip_c
 #   cmake --build build_round_trip_c
 #   ctest --test-dir build_round_trip_c --output-on-failure
@@ -29,7 +29,6 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")
 get_filename_component(REPO_ROOT "${REPO_ROOT}" ABSOLUTE)
 
-set(SCE_CODEGEN "${REPO_ROOT}/target/release/sce-codegen")
 set(RESOURCE_DIR "${REPO_ROOT}/tests/forge/resources")
 set(RUNTIME_INCLUDE_DIR "${REPO_ROOT}/backends/c/forge-runtime/include")
 # Tier 1 header tree. Generated forge C headers reach into it for
@@ -47,7 +46,6 @@ if(CARGO_EXECUTABLE)
         COMMAND "${CARGO_EXECUTABLE}" build
                 --bin sce-codegen
                 --features cli
-                --release
                 -p sce-build
         WORKING_DIRECTORY "${REPO_ROOT}"
         RESULT_VARIABLE _cargo_rc
@@ -57,12 +55,11 @@ if(CARGO_EXECUTABLE)
     endif()
 endif()
 
-if(NOT EXISTS "${SCE_CODEGEN}")
-    message(FATAL_ERROR
-        "sce-codegen binary not found at ${SCE_CODEGEN}. "
-        "Build it first: cargo build --bin sce-codegen --features cli --release -p sce-build"
-    )
-endif()
+# Resolve the generator. The search lives in cmake/SCEFindCodegen.cmake
+# so every harness finds it the same way and none of them names a
+# build profile; it aborts with the build command when no profile
+# holds a binary, which is what the hand-written check here used to do.
+include("${REPO_ROOT}/cmake/SCEFindCodegen.cmake")
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")

@@ -518,7 +518,7 @@ install(FILES ${SCE_CODEGEN_STYLE_FILE}
 )
 
 # Install sce-codegen binary if it was built before cmake configure.
-# Build order: cargo build --bin sce-codegen --features cli --release -p sce-build
+# Build order: cargo build --bin sce-codegen --features cli -p sce-build
 # Then: cmake -B build && cmake --install build
 find_program(_SCE_CODEGEN_BIN sce-codegen
     PATHS "${CMAKE_SOURCE_DIR}/target/release" "${CMAKE_SOURCE_DIR}/target/debug"

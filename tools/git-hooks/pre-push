@@ -348,16 +348,21 @@ if stage_on "1d"; then
     # run only by a filtered workflow again. `hook_ci_parity` covers the
     # neighbouring failure — a stage that fires correctly but runs a
     # weaker command than the workflow it mirrors.
+    # `codegen_binary_resolution` reads every tracked file too: it holds
+    # that no harness names a cargo build profile when reaching for the
+    # sce-codegen binary, and those sites span five languages with no
+    # common path prefix.
     #
     # tree-hygiene.yml declares no filter, so the selector derives "always"
-    # for this stage the same way it derives every other trigger. Both
-    # targets are named explicitly rather than swept, so this costs one
+    # for this stage the same way it derives every other trigger. Every
+    # target is named explicitly rather than swept, so this costs one
     # cached build and sub-second tests instead of Stage 4's full suite.
     log_step "Stage 1d/8 — tree-wide hygiene gates (marker + trigger + parity)"
     cargo test -p sce-build \
         --test roadmap_marker_gate \
         --test workflow_trigger_coverage \
         --test hook_ci_parity \
+        --test codegen_binary_resolution \
         || fail_step "Stage 1d (tree-wide hygiene gates)"
 
 fi
@@ -588,7 +593,8 @@ if stage_on "5c"; then
     # ── Stage 5c: Python forge conformance ────────────────────────────
     # No build step, so this is the cheapest of the five language arms.
     log_step "Stage 5c/8 — Python forge conformance (numerical)"
-    ( cd backends/python/forge-runtime && PYTHONPATH=tests python3 -m unittest tests.test_numerical_conformance ) \
+    ( cd backends/python/forge-runtime && PYTHONPATH=tests python3 -m unittest \
+        tests.test_numerical_conformance tests.test_default_round_trip ) \
         || fail_step "Stage 5c (Python forge conformance)"
 
 fi

@@ -10,7 +10,7 @@
 //
 // Workflow:
 //
-//	cargo build --bin sce-codegen --features cli --release -p sce-build
+//	cargo build --bin sce-codegen --features cli -p sce-build
 //	go generate ./backends/go/forge-runtime/conformance/...
 //	go test    ./backends/go/forge-runtime/conformance/...
 //
