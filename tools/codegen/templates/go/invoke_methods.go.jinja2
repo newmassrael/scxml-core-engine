@@ -9,7 +9,7 @@
 
     Port of Rust invoke_methods.rs.jinja2.
 #}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 
 // ExecutePendingInvokes starts deferred child state machines (W3C SCXML 6.4).
 // Port of Rust do_execute_pending_invokes().
@@ -125,6 +125,18 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				// and the Rust raise_done_invoke(donedata) 3-arg signature.
 				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", wrapper.DonedataAtFinal(), engine)
 			}
+			continue
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.invokes | unsupported %}
+{% for invoke_info in state.invokes | unsupported %}
+		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
+			// the internal queue and start nothing.
+			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 			continue
 		}
 {% endfor %}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4.1: an `<invoke>` whose `type` names no processor the
+     platform implements is valid SCXML with a defined meaning — the
+     processor "MUST place error.execution in the internal event queue".
+
+     The document is therefore not malformed and must not be rejected at
+     build time. Its entire observable is that one raise: no child session
+     starts, `done.invoke.<id>` never fires, and state exit has nothing to
+     cancel beyond the pending entry.
+
+     Every prior implementation of this contract was silent in a different
+     way, which is why the fixture asserts the raise rather than the absence
+     of a crash. The Interpreter substituted an SCXML handler for the
+     unknown type and started the wrong child session; AOT dropped the
+     `<invoke>` from the model entirely, so there was no observable at all.
+     A backend that accepts this document and emits no raise reproduces the
+     second form one layer down — the fixture is load-bearing precisely
+     because the machine then rests in `probe` forever instead of failing
+     loudly.
+
+       raises error.execution     reaches `pass`
+       drops the <invoke>         rests in `probe`, never completes
+
+     Deliberately single-axis: no `<param>`, no `<donedata>`, no
+     autoforward, no second `<invoke>`. The `<invoke>` carries no `src` and
+     no `<content>` on purpose — §6.4.1 classification happens on `type`
+     alone, before any child document would be resolved, and a fixture that
+     supplied one would let a child-materialization regression masquerade
+     as an unsupported-type regression.
+
+     The `type` value matches the one in docs/SCE_ACCEPTED_SUBSET.md §2.12
+     so the accepted-subset example and its runtime witness cannot drift
+     apart.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="probe"
+       name="invoke_unsupported_type">
+    <state id="probe">
+        <invoke type="urn:example:no-such-processor"/>
+        <transition event="error.execution" target="pass"/>
+    </state>
+    <final id="pass"/>
+</scxml>

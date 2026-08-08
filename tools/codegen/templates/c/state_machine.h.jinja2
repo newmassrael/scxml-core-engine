@@ -42,7 +42,7 @@
 #include "sce/sample.h"
 {% endif %}
 
-{% if (model.invokes | scxml_family) %}
+{% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
 /* W3C SCXML 6.4: invoke types + helpers (backends/c/runtime/include/sce/invoke.h).
    Header-only — types and `static inline` helpers (jinja2-inline
    contract, no shared .c). cpp's `core/InvokeHelper.h` template class is the equivalent
@@ -330,7 +330,7 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     void (*completion_callback)(void *user_data);
     void *completion_callback_user_data;
-    {% if (model.invokes | scxml_family) %}
+    {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
     /* W3C SCXML 6.4: pending invokes deferred to macrostep end + per-site
        child SM instance. cpp uses `std::vector<PendingInvoke>` and
        `std::shared_ptr<ChildSM>`; C11 mirrors with the bounded queue

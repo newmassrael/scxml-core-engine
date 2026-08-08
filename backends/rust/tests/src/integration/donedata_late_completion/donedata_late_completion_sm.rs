@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 4b3c3c02df8fbc8c8bdd14a46e1f1d9b76a9416609a553ce18199941c3392f19
+// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -174,7 +174,9 @@ pub struct DonedataLateCompletionPolicy {
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
     basic_http_access_uri: String,
-    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end)
+    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end).
+    // §scxml-6.4.1 unsupported-type invokes ride it too — their execute step
+    // raises error.execution instead of starting a session.
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<DonedataLateCompletionState>>,
     // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
@@ -543,7 +545,11 @@ impl StatePolicy for DonedataLateCompletionPolicy {
     const NEEDS_SCRIPT_ENGINE: bool = true;
     const NEEDS_DATA_MODEL_INIT: bool = true;
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
+    // §scxml-6.4: gates the engine's macrostep-end call into
+    // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
+    // it too — that call site is where their error.execution is raised.
     const HAS_INVOKE_SUPPORT: bool = true;
+    // Only session-bearing invokes have a child engine to tick.
     const HAS_CHILD_TICK: bool = true;
 
     // ======================================================================
@@ -757,7 +763,9 @@ impl StatePolicy for DonedataLateCompletionPolicy {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
             DonedataLateCompletionState::Phase => {
-                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
                     DonedataLateCompletionState::Phase,

@@ -35,7 +35,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 	switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% for block in state.on_entry_blocks %}
 		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
@@ -186,6 +186,21 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 {% endif %}
 {% endif %}
+{% if state.invokes | unsupported %}
+		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
+		// Defer only — the error.execution raise happens in
+		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
+		// CancelInvokesForState drops the entry if the state exits first.
+{% for invoke_info in state.invokes | unsupported %}
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
+				InvokeID: generatedInvokeID,
+				State:    {{ machine_name }}State{{ state_id | to_state_variant }},
+			})
+		}
+{% endfor %}
+{% endif %}
 {% if state.invokes | scxml or state.invokes | hybrid %}
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 {% for invoke_info in state.invokes | scxml %}
@@ -310,12 +325,12 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 		return result
 	}()
 {% endif %}
-{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid %}
+{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 {% if has_invoke_exits %}
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.invokes | scxml or state.invokes | hybrid %}
+{% if state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 		sce.CancelInvokesForState(&p.pendingInvokes, {{ machine_name }}State{{ state_id | to_state_variant }})
 {% for invoke_info in state.invokes | scxml %}

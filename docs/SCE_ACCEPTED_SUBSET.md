@@ -674,21 +674,35 @@ processor URI with and without its trailing slash, and
 `sce:mesh-rpc` (SCE_MESH.md §9.5). `typeexpr` resolves the type at
 runtime and is therefore never classified at build time.
 
-Both engines raise the same event, but by different routes, and only
-the Interpreter is complete:
+Both engines raise the same event, by different routes:
 
 | Engine | §6.4.1 behaviour |
 |---|---|
 | Interpreter | `InvokeHandlerFactory::createHandler` returns null for a type outside the supported set and `InvokeExecutor::executeInvoke` raises `error.execution`. |
-| AOT — C++ | The `<invoke>` is deferred at entry and `executePendingInvokes` raises `error.execution` at macrostep end, preserving §scxml-6.4 ordering. |
-| AOT — Rust / Kotlin / Go / Python / C11 | Rejected with `generate/unsupported-feature` until those backends lower the raise. |
+| AOT — C++ / Rust / Kotlin / Go / Python / C11 | The `<invoke>` is deferred at entry and the raise fires at macrostep end, preserving §scxml-6.4 ordering. Leaving the state first cancels the pending entry along with every other deferred invoke, so a machine that exits before the macrostep boundary raises nothing. |
 
-The rejection on the five remaining backends is a *backend-coverage*
-refusal, on the same footing as `<sce:action>` above: a backend that
-accepted the document while emitting no raise would reproduce the
-original defect, in which the `<invoke>` vanished from the model
-entirely and AOT produced no observable at all where the Interpreter
-produced one.
+No backend refuses the document. Refusing it would be a conformance
+break rather than a coverage boundary: §6.4.1 assigns the construct a
+meaning instead of declaring it malformed, so an AOT target that
+rejected it would reject valid SCXML. The `<sce:action>` refusal above
+is not a precedent here — that construct is an SCE extension with no
+W3C meaning to preserve.
+
+Accepting the document while emitting no raise is the failure this
+subset clause guards against, because it reproduces the original
+defect, in which the `<invoke>` vanished from the model entirely and
+AOT produced no observable at all where the Interpreter produced one.
+Wiring one backend does not close it for the rest: the model variant
+that carries the unsupported invoke is skipped by each template's
+`scxml`-family filter unless that backend is wired explicitly, so the
+silent drop moves from the parser into the templates rather than
+disappearing.
+
+The runtime witness is
+`integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml`,
+driven on all seven channels (C++ Interpreter + AOT, Rust, Kotlin, Go,
+Python, C11). It rests in its `probe` state and never completes on any
+channel that drops the `<invoke>`.
 
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 

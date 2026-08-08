@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 4b3c3c02df8fbc8c8bdd14a46e1f1d9b76a9416609a553ce18199941c3392f19
+// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -183,7 +183,9 @@ pub struct Test422Policy {
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
     basic_http_access_uri: String,
-    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end)
+    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end).
+    // §scxml-6.4.1 unsupported-type invokes ride it too — their execute step
+    // raises error.execution instead of starting a session.
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<Test422State>>,
     // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
@@ -842,7 +844,11 @@ impl StatePolicy for Test422Policy {
     const NEEDS_SCRIPT_ENGINE: bool = true;
     const NEEDS_DATA_MODEL_INIT: bool = true;
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
+    // §scxml-6.4: gates the engine's macrostep-end call into
+    // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
+    // it too — that call site is where their error.execution is raised.
     const HAS_INVOKE_SUPPORT: bool = true;
+    // Only session-bearing invokes have a child engine to tick.
     const HAS_CHILD_TICK: bool = true;
 
     // ======================================================================
@@ -1117,7 +1123,9 @@ impl StatePolicy for Test422Policy {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
             Test422State::S1 => {
-                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
                     Test422State::S1,
@@ -1135,7 +1143,9 @@ impl StatePolicy for Test422Policy {
                 self.pending_done_invoke_invoke_0 = false;
             }
             Test422State::S11 => {
-                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
                     Test422State::S11,
@@ -1153,7 +1163,9 @@ impl StatePolicy for Test422Policy {
                 self.pending_done_invoke_invoke_1 = false;
             }
             Test422State::S12 => {
-                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
                     Test422State::S12,
