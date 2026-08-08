@@ -99,6 +99,69 @@ pub const OVERRIDE_VAR_PREFIX: &str = "SCE_TOOL_";
 /// the only ones a versioned-directory install hides. Go, Kotlin, and
 /// Rust ship through version managers that do link into `PATH`. Adding
 /// a family here is a one-line change when that stops being true.
+/// Where the CI lane that sets [`REQUIRE_TOOLS_VAR`] obtains a tool.
+///
+/// Under that variable a missing tool is a hard failure, so the lane is
+/// only honest if everything the harness can ask for is actually there.
+/// Nothing checked that until `arm-none-eabi-gcc` went missing: the
+/// freestanding check carried the comment "CI installs
+/// `gcc-arm-none-eabi`" while the workflow installed no such package,
+/// and the mismatch surfaced only when the lane went red naming the
+/// tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolSource {
+    /// Present on the GitHub-hosted runner image without installation.
+    RunnerImage,
+    /// Installed by the lane's `apt-get install` step. Carries the
+    /// package name, which is often not the binary name —
+    /// `gcc-arm-none-eabi` provides `arm-none-eabi-gcc`.
+    AptPackage(&'static str),
+}
+
+/// Every tool the harness can ask [`locate`] for, and where the
+/// requiring lane gets it.
+///
+/// `every_tool_a_skip_guard_names_is_declared` scans the crate for
+/// tool names reaching the locator and fails if one is missing here,
+/// so a new check cannot introduce a dependency the lane does not
+/// satisfy. `every_apt_sourced_tool_is_installed_by_the_requiring_lane`
+/// reads the workflow and fails if a package listed here is not
+/// installed there. The pair is what makes "CI installs it" a checked
+/// claim instead of a comment.
+pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
+    // Cross-compiler for the freestanding C11 check. Not on the runner
+    // image; the package name differs from the binary name.
+    (
+        "arm-none-eabi-gcc",
+        ToolSource::AptPackage("gcc-arm-none-eabi"),
+    ),
+    // Clang's `consumable` / `callable_when` family has no GCC
+    // equivalent, so the typestate check cannot run without it.
+    ("clang", ToolSource::AptPackage("clang")),
+    ("clang++", ToolSource::AptPackage("clang")),
+    // Formatter for the emitted C sources.
+    ("clang-format", ToolSource::RunnerImage),
+    // Host toolchains, version managers, and interpreters the runner
+    // image ships. `ld` arrives with binutils, which gcc depends on, so
+    // no image carrying a C compiler is missing it.
+    ("cc", ToolSource::RunnerImage),
+    ("ld", ToolSource::RunnerImage),
+    ("readelf", ToolSource::RunnerImage),
+    ("gcc", ToolSource::RunnerImage),
+    ("g++", ToolSource::RunnerImage),
+    ("go", ToolSource::RunnerImage),
+    ("gofmt", ToolSource::RunnerImage),
+    ("python", ToolSource::RunnerImage),
+    ("python3", ToolSource::RunnerImage),
+    ("cargo", ToolSource::RunnerImage),
+    ("rustc", ToolSource::RunnerImage),
+    // Kotlin ships through SDKMAN on a workstation; the runner image
+    // carries it, measured rather than assumed — `smoke_kotlin` ran and
+    // passed in the lane, and that run emitted exactly one
+    // `SCE_REQUIRE_TOOLS` skip, for `arm-none-eabi-gcc`.
+    ("kotlinc", ToolSource::RunnerImage),
+];
+
 pub const VERSIONED_BIN_DIRS: &[(&str, &str, &str)] = &[
     // Debian, Ubuntu, and derivatives: apt.llvm.org and the distro
     // packages both use this layout.
@@ -427,12 +490,40 @@ impl ToolLocator {
 /// Prefer building one [`ToolLocator::from_env`] per test when
 /// resolving several tools; this convenience re-reads the environment
 /// on every call.
+/// Reject a tool name the provenance table does not declare.
+///
+/// [`HARNESS_TOOLS`] is what
+/// `every_apt_sourced_tool_is_installed_by_the_requiring_lane` compares
+/// against the workflow. A guard reaching for an undeclared name is a
+/// dependency nobody has agreed to supply: under [`REQUIRE_TOOLS_VAR`]
+/// it turns the lane red on the next push and nowhere earlier, which is
+/// how `arm-none-eabi-gcc` shipped for as long as it did.
+///
+/// Enforced here rather than by scanning the sources for call sites.
+/// Reading Rust with string matching mistook `allocate(` for `locate(`
+/// and pulled words out of the `purpose` argument's prose; the locator
+/// sees the exact name and cannot be fooled by either.
+///
+/// The check sits on the free functions, not on [`ToolLocator`]'s
+/// methods: the locator's own unit tests probe it with deliberately
+/// absent names, which describe the resolver rather than the harness.
+fn assert_declared(name: &str) {
+    assert!(
+        HARNESS_TOOLS.iter().any(|(n, _)| *n == name),
+        "`{name}` is not declared in toolchain::HARNESS_TOOLS. Add it together \
+         with where the requiring CI lane obtains it, so the workflow gate can \
+         check that the lane actually supplies it.",
+    );
+}
+
 pub fn locate(name: &str) -> Option<PathBuf> {
+    assert_declared(name);
     ToolLocator::from_env().locate(name)
 }
 
 /// [`locate`] over interchangeable tool names.
 pub fn locate_any(names: &[&str]) -> Option<PathBuf> {
+    names.iter().for_each(|n| assert_declared(n));
     ToolLocator::from_env().locate_any(names)
 }
 
@@ -465,6 +556,7 @@ pub fn skipped(reason: &str) {
 ///
 /// When [`REQUIRE_TOOLS_VAR`] is set and `name` cannot be located.
 pub fn require_or_skip(name: &str, purpose: &str) -> Option<PathBuf> {
+    assert_declared(name);
     ToolLocator::from_env().require_or_skip(name, purpose)
 }
 
@@ -474,6 +566,7 @@ pub fn require_or_skip(name: &str, purpose: &str) -> Option<PathBuf> {
 ///
 /// When [`REQUIRE_TOOLS_VAR`] is set and none of `names` can be located.
 pub fn require_any_or_skip(names: &[&str], purpose: &str) -> Option<PathBuf> {
+    names.iter().for_each(|n| assert_declared(n));
     ToolLocator::from_env().require_any_or_skip(names, purpose)
 }
 
