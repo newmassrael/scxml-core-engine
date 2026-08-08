@@ -13,7 +13,7 @@
 
 ### Code Generator
 - **Tool**: `sce-codegen` (Rust binary from `sce-build` crate, minijinja templates)
-- **Build**: `cargo build --bin sce-codegen --features cli --release -p sce-build`
+- **Build**: `cargo build --bin sce-codegen --features cli -p sce-build`
 - **Templates**: `tools/codegen/templates/` — always modify templates, never generate code directly
 - Test changes by regenerating affected test files
 - Follow existing template patterns for consistency

@@ -23,17 +23,20 @@
 from __future__ import annotations
 
 import fcntl
-import shutil
 import subprocess
 import sys
 import types
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+import _sce_codegen
+
+REPO_ROOT = _sce_codegen.REPO_ROOT
 RUNTIME_SRC = REPO_ROOT / "backends" / "python" / "forge-runtime"
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
 MANIFEST = REPO_ROOT / "tests" / "forge" / "conformance" / "fixtures.json"
-SCE_CODEGEN = REPO_ROOT / "target" / "release" / "sce-codegen"
+# Resolved by _ensure_codegen() before any generation runs; which profile
+# holds the binary is _sce_codegen's business, not this harness's.
+SCE_CODEGEN: Path | None = None
 
 # Synthetic package name under which generated fixtures and the harness are
 # loaded. Cross-file Forge fixtures emit canonical relative imports
@@ -47,37 +50,14 @@ CONFORMANCE_PACKAGE = "_sce_conformance"
 
 
 def _ensure_codegen() -> None:
-    """Rebuild sce-codegen from the current sce-build sources when the Rust
-    toolchain is available (local dev). Cargo's incremental build makes this
-    a near-instant no-op when nothing has changed; the value is eliminating
-    the stale-binary foot-gun where a schema change in conformance.rs would
-    otherwise be silently ignored by Python tests calling the old binary.
+    """Resolve the generator, rebuilding it from the current sce-build
+    sources when the Rust toolchain is available.
 
-    In CI, the Python job downloads a pre-built artifact from the build-
-    codegen job and has no Rust toolchain — shutil.which returns None and
-    we fall through to the binary-exists check below."""
-    if shutil.which("cargo") is not None:
-        subprocess.run(
-            [
-                "cargo",
-                "build",
-                "--bin",
-                "sce-codegen",
-                "--features",
-                "cli",
-                "--release",
-                "-p",
-                "sce-build",
-            ],
-            cwd=str(REPO_ROOT),
-            check=True,
-        )
-    if not SCE_CODEGEN.exists():
-        raise RuntimeError(
-            f"sce-codegen binary not found at {SCE_CODEGEN}. "
-            "Build it first: "
-            "`cargo build --bin sce-codegen --features cli --release -p sce-build`"
-        )
+    Both halves live in _sce_codegen so the round-trip harness resolves
+    the binary identically; see that module for why the profile is not
+    named here."""
+    global SCE_CODEGEN
+    SCE_CODEGEN = _sce_codegen.require()
 
 
 def _load_fixture_names() -> list[str]:

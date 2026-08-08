@@ -264,7 +264,7 @@ Adding a new utility or template group means editing `sce_codegen_assets.cmake` 
 ## Code Generator: sce-codegen (Rust + minijinja)
 
 **Tool**: `sce-codegen` — Rust binary from `sce-build` crate (replaces legacy Python codegen).
-**Build**: `cargo build --bin sce-codegen --features cli --release -p sce-build`
+**Build**: `cargo build --bin sce-codegen --features cli -p sce-build`
 
 **Architecture**:
 - **Parser**: `sce-build/src/lib.rs` — Parses SCXML files via roxmltree into intermediate model
@@ -713,7 +713,7 @@ sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / look
 - **Forge kinds**: Same admission as C++/Kotlin/Go — non-MCU kinds (Statechart / Transform / Lookup / Condition / Procedure / Aoi / Stream / BoundedCollection) ship; MCU-class kinds (Link / BufferPool / Worker) are rust+c11-only per `forge/codegen_matrix.rs::kind_class`
 
 **Build & Test**:
-- Codegen: `cargo build --bin sce-codegen --features cli --release -p sce-build && ./target/release/sce-codegen generate-w3c -l python`
+- Codegen: `cargo build --bin sce-codegen --features cli -p sce-build && ./target/debug/sce-codegen generate-w3c -l python`
 - Install runtime: `pip install -e backends/python/runtime/` (single hard dep: `lupa>=2.0`)
 - Run W3C suite: `pytest backends/python/tests/generated/` — 202/202, ~1.5 s wall clock
 - CI: `.github/workflows/w3c-tests.yml::test-python` (family-member AOT lane, sibling to `test-rust` / `test-kotlin` / `test-go`); the pybind channel rides `test-python-bindings`

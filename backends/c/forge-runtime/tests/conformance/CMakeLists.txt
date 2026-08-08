@@ -5,7 +5,7 @@
 #
 # Standalone CMake project. Configure and build with:
 #
-#   cargo build --bin sce-codegen --features cli --release -p sce-build
+#   cargo build --bin sce-codegen --features cli -p sce-build
 #   cmake -S backends/c/forge-runtime/tests/conformance -B build_conformance_c
 #   cmake --build build_conformance_c
 #   ctest --test-dir build_conformance_c --output-on-failure
@@ -29,7 +29,6 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")
 get_filename_component(REPO_ROOT "${REPO_ROOT}" ABSOLUTE)
 
-set(SCE_CODEGEN "${REPO_ROOT}/target/release/sce-codegen")
 set(RESOURCE_DIR "${REPO_ROOT}/tests/forge/resources")
 set(REFERENCE_JSON "${REPO_ROOT}/tests/forge/conformance/numerical_reference.json")
 set(FIXTURE_MANIFEST "${REPO_ROOT}/tests/forge/conformance/fixtures.json")
@@ -54,7 +53,6 @@ if(CARGO_EXECUTABLE)
         COMMAND "${CARGO_EXECUTABLE}" build
                 --bin sce-codegen
                 --features cli
-                --release
                 -p sce-build
         WORKING_DIRECTORY "${REPO_ROOT}"
         RESULT_VARIABLE _cargo_rc
@@ -66,13 +64,11 @@ if(CARGO_EXECUTABLE)
     endif()
 endif()
 
-if(NOT EXISTS "${SCE_CODEGEN}")
-    message(FATAL_ERROR
-        "sce-codegen binary not found at ${SCE_CODEGEN}. "
-        "Build it first: "
-        "cargo build --bin sce-codegen --features cli --release -p sce-build"
-    )
-endif()
+# Resolve the generator. The search lives in cmake/SCEFindCodegen.cmake
+# so every harness finds it the same way and none of them names a
+# build profile; it aborts with the build command when no profile
+# holds a binary, which is what the hand-written check here used to do.
+include("${REPO_ROOT}/cmake/SCEFindCodegen.cmake")
 
 if(NOT EXISTS "${REFERENCE_JSON}")
     message(FATAL_ERROR "reference JSON not found at ${REFERENCE_JSON}")

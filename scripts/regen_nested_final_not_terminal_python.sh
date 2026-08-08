@@ -23,23 +23,21 @@
 #   scripts/regen_nested_final_not_terminal_python.sh
 #
 # Requires:
-#   target/debug/sce-codegen (build first if missing: see step 1).
+#   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml"
 GENERATED_DIR="backends/python/tests/integration/nested_final_not_terminal"
 STEM="nested_final_not_terminal"
 INPUT_ROOT="integration_resources/nested_final_not_terminal"
 
-# Step 1: build sce-codegen in release mode if absent.
-if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli -p sce-build
-fi
+# Step 1: resolve sce-codegen, building it when no profile holds one.
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
+CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 # Step 2: stage the fixture into a tmp dir so synth-invoke children
 # land outside the canonical fixture root during the codegen run.

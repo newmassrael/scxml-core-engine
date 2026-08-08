@@ -22,7 +22,7 @@
 #   scripts/regen_send_param_payload_kotlin.sh
 #
 # Requires:
-#   target/debug/sce-codegen (build first if missing: see step 1).
+#   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
 #
 # Idempotency: re-runs are byte-stable except for the embedded
 # `generated-at: <unix-seconds>` header line that the codegen emits
@@ -34,17 +34,15 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/send_param_payload/send_param_payload.scxml"
 GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/send_param_payload"
 STEM="send_param_payload"
 INPUT_ROOT="integration_resources/send_param_payload"
 PACKAGE_PREFIX="com.sce.integration"
 
-# Step 1: build sce-codegen in release mode if absent.
-if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli -p sce-build
-fi
+# Step 1: resolve sce-codegen, building it when no profile holds one.
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
+CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
 # Step 2: stage the fixture into a tmp dir so synth-invoke children land
 # outside the tracked fixtures/ tree during this run.

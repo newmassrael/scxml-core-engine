@@ -12,33 +12,11 @@
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
 #   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR scxml/)
 
-# Find sce-codegen binary
-# Priority: 1) SCE_CODEGEN (already set by parent CMake / installed package)
-#           2) In-tree cargo build output (debug, then release)
-#           3) System PATH
-#
-# Debug comes first because that is the only profile anything in this
-# repository now builds the generator in: the binary runs identically
-# either way (its cost is process start-up and I/O, not optimisation),
-# while a release build compiles the whole dependency tree a second
-# time instead of sharing the one clippy and the test suite already
-# produced. `target/release` stays in the search path so a tree that
-# still holds an older release build keeps working — but it is looked
-# at second, or a stale binary would silently outrank a fresh one.
-if(NOT SCE_CODEGEN)
-    get_filename_component(_SCE_CMAKE_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
-    find_program(SCE_CODEGEN sce-codegen
-        PATHS "${_SCE_CMAKE_ROOT}/target/debug" "${_SCE_CMAKE_ROOT}/target/release"
-        NO_DEFAULT_PATH
-    )
-    if(NOT SCE_CODEGEN)
-        find_program(SCE_CODEGEN sce-codegen)
-    endif()
-endif()
-
-if(NOT SCE_CODEGEN)
-    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli -p sce-build")
-endif()
+# Find sce-codegen binary. The search itself lives in SCEFindCodegen so
+# the forge conformance and round-trip harnesses — which need the
+# binary but none of the generation functions below — resolve it the
+# same way rather than each naming a profile.
+include("${CMAKE_CURRENT_LIST_DIR}/SCEFindCodegen.cmake")
 
 message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
