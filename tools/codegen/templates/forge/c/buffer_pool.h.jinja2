@@ -80,8 +80,11 @@ extern "C" {
 #define {{ upper_name }}_SECTION "{{ section }}"
 
 /* DMA alignment in bytes (`<sce:alignment>`). The same value drives
- * `aligned()` on the storage variable below and `ALIGN()` in the
- * sidecar linker fragment. */
+ * `SCE_ALIGNAS()` on the slot type below, `aligned()` on the storage
+ * variable, and `ALIGN()` in the sidecar linker fragment — the slot
+ * type is what makes it the alignment of every slot rather than of
+ * the table's first byte. Non-powers of two and a `slot-size` that is
+ * not a multiple of this are rejected at parse time. */
 #define {{ upper_name }}_ALIGNMENT ({{ alignment }}u)
 
 /* DMA channel binding (`<sce:dma-channel>`). Empty when the pool is
@@ -235,8 +238,35 @@ SCE_STATIC_ASSERT(sizeof({{ snake_name }}_peer_id_t) == 16,
  * single failure mode (toolchain bug, custom linker script override,
  * manual edit, master-script INCLUDE re-ordering) cannot silently
  * corrupt DMA or cause cross-pool cache-maintenance contamination. */
+typedef struct {
+    SCE_ALIGNAS({{ alignment }}) uint8_t bytes[{{ upper_name }}_SLOT_SIZE];
+} {{ snake_name }}_slot_t;
+
+/* The alignment is a property of every slot, not of the table. Before
+ * this type existed the storage was `uint8_t [COUNT][SIZE]` with
+ * `aligned(N)` on the variable, which aligns the array — so slot 0 sat
+ * on the boundary and every later slot sat `SLOT_SIZE` from it, i.e. on
+ * the boundary only when `SLOT_SIZE` happened to be a multiple of the
+ * alignment. Two things ride on it: the address handed to the
+ * peripheral, and the per-slot cache maintenance below, which operates
+ * by cache line and so reaches into a neighbouring slot whenever a slot
+ * does not start on one — the intra-pool form of the cross-contamination
+ * the inter-pool ALIGN sentinel exists to prevent (spec lines 1066-1086).
+ *
+ * `SCE_ALIGNAS` rather than the `aligned()` attribute alone: the host
+ * builds that verify this header compile it with `-D__attribute__(x)=`,
+ * which erases the attribute, and toolchains outside the GCC family
+ * never had it. The parser rejects a `slot-size` that is not a multiple
+ * of `alignment`, so the padding is always zero; the assertions say so
+ * where the compiler can check it. */
+SCE_STATIC_ASSERT(SCE_ALIGNOF({{ snake_name }}_slot_t) == {{ upper_name }}_ALIGNMENT,
+                  "slot alignment must be the declared <sce:alignment> (RFC 5.E lines 1024-1073)");
+SCE_STATIC_ASSERT(sizeof({{ snake_name }}_slot_t) == {{ upper_name }}_SLOT_SIZE,
+                  "slot stride must equal <sce:slot-size>; padding here would mean the pool "
+                  "silently occupies more SRAM than the author budgeted");
+
 __attribute__((section(".{{ section }}_{{ snake_name }}"), aligned({{ alignment }})))
-static uint8_t {{ snake_name }}_storage[{{ slot_count }}][{{ slot_size }}];
+static {{ snake_name }}_slot_t {{ snake_name }}_storage[{{ slot_count }}];
 
 /* Per-slot lifecycle state. Replaces the β-era `in_use[]` bitmap
  * with the full seven-state FSM tracking. */
@@ -272,7 +302,7 @@ static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
         if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
 {% if edge_cache["link_arm_rx"].invalidate %}
             /* C5 pre-arm cache-invalidate (spec lines 1189-1198). */
-            sce_dcache_invalidate_by_addr({{ snake_name }}_storage[i],
+            sce_dcache_invalidate_by_addr({{ snake_name }}_storage[i].bytes,
                                           {{ upper_name }}_SLOT_SIZE);
 {% endif %}
             {{ snake_name }}_slot_states[i] = SCE_SLOT_DMA_ARMED_RX;
@@ -315,7 +345,7 @@ static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
     }
 {% if edge_cache["link_arm_tx"].clean %}
     /* C5 cache-clean before TX descriptor publish (spec lines 1186-1188). */
-    sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx],
+    sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx].bytes,
                              {{ upper_name }}_SLOT_SIZE);
 {% endif %}
     {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_DMA_ARMED_TX;
@@ -381,7 +411,7 @@ static inline const uint8_t *{{ snake_name }}_slot_read(const sce_slot_handle_t 
         SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_read: handle index out of range");
         return NULL;
     }
-    return {{ snake_name }}_storage[handle->idx];
+    return {{ snake_name }}_storage[handle->idx].bytes;
 }
 
 /* Mutable view of the slot's bytes. Tag check: handle must be in
@@ -403,7 +433,7 @@ static inline uint8_t *{{ snake_name }}_slot_write(sce_slot_handle_t *handle) {
         SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_slot_write: handle index out of range");
         return NULL;
     }
-    return {{ snake_name }}_storage[handle->idx];
+    return {{ snake_name }}_storage[handle->idx].bytes;
 }
 
 /* ── Runtime seam ─────────────────────────────────────────────────
@@ -452,12 +482,12 @@ static inline bool {{ snake_name }}_{{ t.op_name }}(sce_slot_handle_t *handle) {
     }
 {% if t.cache_clean %}
     /* C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}). */
-    sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx],
+    sce_dcache_clean_by_addr({{ snake_name }}_storage[handle->idx].bytes,
                              {{ upper_name }}_SLOT_SIZE);
 {% endif %}
 {% if t.cache_invalidate %}
     /* C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}). */
-    sce_dcache_invalidate_by_addr({{ snake_name }}_storage[handle->idx],
+    sce_dcache_invalidate_by_addr({{ snake_name }}_storage[handle->idx].bytes,
                                   {{ upper_name }}_SLOT_SIZE);
 {% endif %}
     {{ snake_name }}_slot_states[handle->idx] = SCE_SLOT_{{ t.to_c }};
@@ -492,14 +522,14 @@ static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {
     }
 {% if t.cache_clean %}
     /* C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}). */
-    sce_dcache_clean_by_addr({{ snake_name }}_storage[idx],
+    sce_dcache_clean_by_addr({{ snake_name }}_storage[idx].bytes,
                              {{ upper_name }}_SLOT_SIZE);
 {% endif %}
 {% if t.cache_invalidate %}
     /* C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}) —
        evicts the stale lines the CPU holds for a region the DMA has
        just rewritten. */
-    sce_dcache_invalidate_by_addr({{ snake_name }}_storage[idx],
+    sce_dcache_invalidate_by_addr({{ snake_name }}_storage[idx].bytes,
                                   {{ upper_name }}_SLOT_SIZE);
 {% endif %}
     {{ snake_name }}_slot_states[idx] = SCE_SLOT_{{ t.to_c }};
@@ -515,6 +545,125 @@ static inline {% if t.to_holdable %}sce_slot_handle_t{% else %}bool{% endif %} {
 
 {% endif %}
 {% endfor %}
+/* ── Address publication ───────────────────────────────────────────
+ *
+ * Where a slot passes into a bus master's hands it has to be findable
+ * by it. The states that produce an address through the CPU accessors
+ * are `cpu-mut` and `cpu-ref` (`slot_read` / `slot_write`), and those
+ * are exactly the two no bus master owns — so without these the arm
+ * functions hand back a handle naming a slot the peripheral is about
+ * to use and no way to say where it is.
+ *
+ * One accessor per hand-off state, in the shape that state's
+ * holdability implies — the same split the runtime seam draws. The
+ * constness follows the direction of the transfer: a device that reads
+ * the slot is not handed the means to write it.
+ */
+{% for a in addresses %}
+{% if a.holdable %}
+/* Address of a slot in `{{ a.state_spec }}`, for the descriptor the bus
+ * master reads it from. Tag check: handle must be in
+ * `SCE_SLOT_{{ a.state_c_enum }}`; returns NULL otherwise, so an address
+ * cannot be lifted out of a slot some other owner holds.
+ *
+ * Does not retag. Publishing the address is not a transition — the
+ * caller writes it into the peripheral's descriptor and then advances
+ * the slot with `{{ snake_name }}_{{ a.advance_op }}`, which is where the
+ * state changes.
+ *
+ * The pointer is valid only while the slot stays in
+ * `{{ a.state_spec }}`, and{% if a.device_writes %} the CPU must not read through it before
+ * the completion edge{% else %} must not be written through while the transfer
+ * runs{% endif %}.
+ *
+ * Analyzer layer (spec lines 1349-1365): `r_null` + a borrowed handle,
+ * the same shape as `slot_read` — the NULL return is a documented
+ * failure signal, so a caller that dereferences without checking is
+ * flagged. */
+{{ analyzer["_" + a.op_name] }}
+static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_{{ a.op_name }}(const sce_slot_handle_t *handle) {
+    if (handle == NULL) return NULL;
+    if (handle->state != SCE_SLOT_{{ a.state_c_enum }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ a.op_name }}: slot is not {{ a.state_spec }} (published before arming, or after the transfer started?)");
+        return NULL;
+    }
+    if (handle->idx >= {{ upper_name }}_SLOT_COUNT) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ a.op_name }}: handle index out of range");
+        return NULL;
+    }
+    if ({{ snake_name }}_slot_states[handle->idx] != SCE_SLOT_{{ a.state_c_enum }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ a.op_name }}: pool state disagrees with the handle tag");
+        return NULL;
+    }
+    return {{ snake_name }}_storage[handle->idx].bytes;
+}
+
+{% else %}
+/* Address of a slot in `{{ a.state_spec }}`, for the descriptor the bus
+ * master reads it from. `{{ a.state_spec }}` hands out no handle of its
+ * own, so the slot is named by index — the same key the completion
+ * signal carries. Returns NULL unless the slot really is in
+ * `{{ a.state_spec }}`, so an address cannot be lifted out of a slot
+ * some other owner holds.
+ *
+ * Does not transition. The caller writes the address into the
+ * peripheral's descriptor and then advances the slot with
+ * `{{ snake_name }}_{{ a.advance_op }}`.
+ *
+ * The pointer is valid only while the slot stays in
+ * `{{ a.state_spec }}`, and{% if a.device_writes %} the CPU must not read through it before
+ * the completion edge{% else %} must not be written through while the transfer
+ * runs{% endif %}.
+ *
+ * No analyzer contract: the parameter is a slot index, not a pointer,
+ * so there is no ownership effect to describe — the same reason the
+ * index-keyed seam functions carry none. */
+static inline {% if not a.device_writes %}const {% endif %}uint8_t *{{ snake_name }}_{{ a.op_name }}(size_t idx) {
+    if (idx >= {{ upper_name }}_SLOT_COUNT) return NULL;
+    if ({{ snake_name }}_slot_states[idx] != SCE_SLOT_{{ a.state_c_enum }}) {
+        SCE_OWNERSHIP_TAG_VIOLATION("{{ snake_name }}_{{ a.op_name }}: slot is not {{ a.state_spec }} (published before arming, or after the transfer started?)");
+        return NULL;
+    }
+    return {{ snake_name }}_storage[idx].bytes;
+}
+
+{% endif %}
+{% endfor %}
+/* Which slot a buffer address names, or `SIZE_MAX` for none.
+ *
+ * The return leg of address publication. Peripheral completion
+ * callbacks conventionally hand back the buffer address they were
+ * given (`rx_frame_cb(addr, len)`), while every edge back into the
+ * pool is keyed by slot index. Without this the driver keeps a shadow
+ * table of a layout the pool already knows, and a slip in that table
+ * advances the wrong slot.
+ *
+ * Only an exact slot base resolves. An interior or foreign pointer is
+ * `SIZE_MAX` rather than being rounded down to the slot containing it:
+ * a completion naming an address the pool never published is a driver
+ * bug, and rounding would turn it into a plausible-looking index.
+ *
+ * `SIZE_MAX` is the same not-a-slot sentinel `INVALID_HANDLE` carries,
+ * and returning it by value rather than through an out-parameter keeps
+ * the function free of a pointer whose ownership contract would have
+ * to be either empty or false.
+ *
+ * Compared as `uintptr_t` rather than as pointers: a relational
+ * comparison between pointers into different objects is undefined, and
+ * a foreign pointer is precisely the case this has to answer for. */
+static inline size_t {{ snake_name }}_slot_index_of_ptr(const void *ptr) {
+    uintptr_t base = (uintptr_t)(const void *){{ snake_name }}_storage;
+    uintptr_t addr = (uintptr_t)ptr;
+    size_t stride = sizeof({{ snake_name }}_slot_t);
+    size_t offset;
+    size_t idx;
+    if (ptr == NULL || addr < base) return SIZE_MAX;
+    offset = (size_t)(addr - base);
+    if (offset % stride != 0) return SIZE_MAX;
+    idx = offset / stride;
+    return idx < {{ upper_name }}_SLOT_COUNT ? idx : SIZE_MAX;
+}
+
 /* Inspect a slot's current lifecycle state. Out-of-range index
  * returns `SCE_SLOT_INVALID` so debug introspection cannot fault. */
 static inline sce_slot_state_t {{ snake_name }}_slot_state(size_t idx) {

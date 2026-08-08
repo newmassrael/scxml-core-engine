@@ -369,18 +369,33 @@ fn mem_cache_line_alignment_passes_when_alignment_equals_dcache_line_size() {
     assert!(out.is_ok(), "alignment == dcache_line_size must pass");
 }
 
+/// Spec line 1545, and the narrow shape that still reaches it.
+///
+/// The obvious fixture — `slot_size=100, alignment=32,
+/// dcache_line_size=32` — no longer gets here: `<sce:slot-size>` must
+/// be a whole multiple of `<sce:alignment>` at parse time
+/// (`mem/slot-size-not-alignment-multiple`), which rejects it before
+/// any deploy is consulted. That is not a coincidence, and
+/// `the_alignment_rules_subsume_the_cache_line_rule_for_real_platforms`
+/// below states why: with a power-of-two line size, the parse-time
+/// rules plus `mem/cache-line-alignment` imply this one.
+///
+/// So the fixture is a line size that is *not* a power of two, which
+/// is the only remaining shape that reaches the check. No real core
+/// has one; the check survives as the layer that catches a deploy
+/// declaring one anyway, and this test is what keeps that layer
+/// exercised rather than merely present.
 #[test]
 fn mem_slot_size_not_cache_line_multiple_fires_when_remainder_nonzero() {
-    // Spec line 1545: slot_size=100, dcache_line_size=32, remainder=4.
+    const ODD_LINE_SIZE: u32 = 48;
+    let deploy = deploy_speculative_core().replace("dcache_line_size: 32", "dcache_line_size: 48");
+    // alignment 64 >= 48, so `mem/cache-line-alignment` passes;
+    // 128 % 64 == 0, so the parse-time stride rule passes;
+    // 128 % 48 == 32, so this check is the one left to fire.
+    assert_eq!(128 % 64, 0);
+    assert_ne!(128 % ODD_LINE_SIZE, 0);
     let err = expect_compile_err(
-        compile_pool_with_deploy(
-            "maintain",
-            32,
-            100,
-            deploy_speculative_core(),
-            "mcu_node",
-            Language::Rust,
-        ),
+        compile_pool_with_deploy("maintain", 64, 128, &deploy, "mcu_node", Language::Rust),
         "slot-size remainder violation must reject",
     );
     let diags = err.to_diagnostics();
@@ -389,9 +404,51 @@ fn mem_slot_size_not_cache_line_multiple_fires_when_remainder_nonzero() {
         diags[0].code,
         DiagnosticCode::MemSlotSizeNotCacheLineMultiple
     ));
-    assert!(diags[0].message.contains("100"));
-    assert!(diags[0].message.contains("32"));
-    assert!(diags[0].message.contains("128")); // next_multiple
+    assert!(diags[0].message.contains("128"));
+    assert!(diags[0].message.contains("48"));
+    assert!(diags[0].message.contains("144")); // next_multiple
+}
+
+/// The parse-time alignment rules make the cache-line rule redundant
+/// on every platform with a power-of-two cache line, and this states
+/// it rather than leaving the redundancy to be discovered as a
+/// diagnostic that never fires.
+///
+/// Three rules compose: `<sce:alignment>` is a power of two,
+/// `<sce:slot-size>` is a multiple of it, and `mem/cache-line-alignment`
+/// requires `alignment >= dcache_line_size`. When the line size is
+/// also a power of two it therefore divides the alignment, which
+/// divides the slot size — so the slot size is a whole number of
+/// cache lines by construction.
+///
+/// Stated as a search over the legal space rather than as prose,
+/// because prose would not notice if one of the three rules were
+/// relaxed later.
+#[test]
+fn the_alignment_rules_subsume_the_cache_line_rule_for_real_platforms() {
+    let mut examined = 0usize;
+    for line_shift in 3u32..=8 {
+        let line_size = 1u32 << line_shift; // 8 .. 256, powers of two
+        for align_shift in line_shift..=9 {
+            let alignment = 1u32 << align_shift; // >= line_size
+            for multiple in 1u32..=8 {
+                let slot_size = alignment * multiple;
+                assert_eq!(
+                    slot_size % line_size,
+                    0,
+                    "slot-size {slot_size} (= alignment {alignment} x {multiple}) leaves \
+                     a remainder against a {line_size}-byte cache line, so \
+                     mem/slot-size-not-cache-line-multiple is reachable on a real \
+                     platform after all — this test's premise has stopped holding",
+                );
+                examined += 1;
+            }
+        }
+    }
+    assert!(
+        examined >= 200,
+        "only {examined} configurations examined; the search collapsed",
+    );
 }
 
 #[test]

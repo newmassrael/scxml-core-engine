@@ -108,6 +108,71 @@ impl SlotState {
         )
     }
 
+    /// Whether the emitted API must be able to hand out this slot's
+    /// address while it is in this state.
+    ///
+    /// A bus master cannot be pointed at a slot it has not been given
+    /// the address of, and the states that can produce an address
+    /// today — `cpu-mut` and `cpu-ref`, through `read` / `write` — are
+    /// exactly the two a bus master never owns. So the arm edges
+    /// hand out a handle that names a slot the peripheral is about to
+    /// use and offers no way to say *where* it is, which is the shape
+    /// a driver stalls on: `link_arm_rx` yields a `Slot<DmaArmedRx>`,
+    /// the MAC wants a `uint8_t *`, and nothing bridges the two.
+    ///
+    /// Derived rather than listed: a hand-off is an edge that crosses
+    /// into bus-master ownership, so the states that need to publish
+    /// an address are the [`Self::is_dma_owned`] ones reachable from a
+    /// state that is not. That is `dma-armed-tx` and `dma-armed-rx` —
+    /// the two `dma-busy-*` states are entered from their own armed
+    /// state, by which point the address is already in the
+    /// peripheral's descriptor and re-publishing it would name memory
+    /// the bus master is actively using. A bus master added under the
+    /// §synth-5-E FSM extension policy (lines 1166-1180) inherits the
+    /// requirement from its edges instead of having to be remembered.
+    pub fn publishes_bus_address(self) -> bool {
+        self.is_dma_owned()
+            && TRANSITIONS
+                .iter()
+                .any(|t| t.to == self && !t.from.is_dma_owned())
+    }
+
+    /// Which way the bytes move while a bus master owns the slot, or
+    /// `None` when no bus master does.
+    ///
+    /// This is what picks the constness of the published address: a
+    /// device that reads the slot gets `*const u8` / `const uint8_t *`,
+    /// one that writes it gets `*mut u8` / `uint8_t *`. Handing a
+    /// writable pointer to a TX path would let a driver mutate a
+    /// buffer the DMA controller is mid-way through reading and have
+    /// the type system agree with it.
+    ///
+    /// `dma_direction_agrees_with_the_cache_annotation` cross-checks
+    /// every answer here against the cache-maintenance annotation on
+    /// the edge into the state, which is derived from the same
+    /// physical fact by a different route: a hand-off to a device that
+    /// reads needs the CPU's writes cleaned out to memory first, and
+    /// one to a device that writes needs the CPU's stale lines
+    /// invalidated.
+    pub fn bus_direction(self) -> Option<BusDirection> {
+        match self {
+            Self::DmaArmedTx | Self::DmaBusyTx => Some(BusDirection::DeviceReads),
+            Self::DmaArmedRx | Self::DmaBusyRx => Some(BusDirection::DeviceWrites),
+            Self::Free | Self::CpuMut | Self::CpuRef => None,
+        }
+    }
+
+    /// Emitted name of this state's address accessor, or `None` when
+    /// the state publishes no address.
+    ///
+    /// Derived from [`Self::spec_name`] so the two backends spell the
+    /// accessor identically and a state added later names its own
+    /// accessor rather than waiting for a template to be taught one.
+    pub fn address_op_name(self) -> Option<String> {
+        self.publishes_bus_address()
+            .then(|| format!("{}_ptr", self.spec_name().replace('-', "_")))
+    }
+
     /// What holding a handle in this state means, as the emitted
     /// marker's doc comment — one entry per rendered `///` line.
     ///
@@ -166,6 +231,19 @@ impl SlotState {
             Self::CpuRef => "CPU_REF",
         }
     }
+}
+
+/// Which way bytes move across the bus while a bus master owns a
+/// slot. Spec §synth-5-E lines 1131-1134 name the two directions in
+/// the state descriptions themselves ("DMA actively reading slot for
+/// TX" / "DMA actively writing slot from peripheral").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusDirection {
+    /// The device reads the slot; the CPU produced the bytes.
+    DeviceReads,
+    /// The device writes the slot; the CPU must not read until the
+    /// completion edge.
+    DeviceWrites,
 }
 
 /// Stable enumeration of all states. Order matches discriminant.
@@ -760,6 +838,149 @@ mod tests {
         assert!(SlotState::CpuRef.is_holdable());
         assert!(SlotState::DmaArmedRx.is_holdable());
         assert_eq!(STATES.iter().filter(|s| s.is_holdable()).count(), 3);
+    }
+
+    /// The states that must publish an address are the hand-off
+    /// targets — where a slot passes from CPU or pool custody into a
+    /// bus master's — and nothing else.
+    ///
+    /// Pinned against a hand-listed set because the derivation is the
+    /// load-bearing part: `is_dma_owned` alone would also select the
+    /// two `dma-busy-*` states, and emitting an accessor for those
+    /// would offer a driver the address of a buffer the peripheral is
+    /// mid-transfer on, which is the aliasing the DMA states exist to
+    /// forbid.
+    #[test]
+    fn address_publication_states_are_exactly_the_bus_hand_off_targets() {
+        let publish: Vec<SlotState> = STATES
+            .iter()
+            .copied()
+            .filter(|s| s.publishes_bus_address())
+            .collect();
+        assert_eq!(
+            publish,
+            vec![SlotState::DmaArmedTx, SlotState::DmaArmedRx],
+            "the arm states are where a slot's address is owed to a bus master",
+        );
+        // The busy states are DMA-owned but are entered from their own
+        // armed state, so the address was already published.
+        for busy in [SlotState::DmaBusyTx, SlotState::DmaBusyRx] {
+            assert!(busy.is_dma_owned(), "{busy:?} is bus-master owned");
+            assert!(
+                !busy.publishes_bus_address(),
+                "{busy:?} re-publishes an address the peripheral is already using",
+            );
+        }
+        // And nothing CPU- or pool-owned publishes one: those states
+        // hand out `read` / `write` views instead.
+        for cpu in [SlotState::Free, SlotState::CpuMut, SlotState::CpuRef] {
+            assert!(
+                !cpu.publishes_bus_address(),
+                "{cpu:?} is not a bus hand-off target",
+            );
+        }
+    }
+
+    /// Every state a bus master owns has a direction, and it agrees
+    /// with the cache-maintenance annotation on the edge that hands
+    /// the slot over.
+    ///
+    /// The two facts are derived from the same physical property by
+    /// different routes — a device that reads needs the CPU's dirty
+    /// lines cleaned out first, a device that writes needs the CPU's
+    /// stale lines invalidated — so checking them against each other
+    /// catches an edit to either one alone. Getting this wrong is what
+    /// hands a TX path a writable pointer, or an RX path a `const` one
+    /// the driver then casts away.
+    #[test]
+    fn dma_direction_agrees_with_the_cache_annotation() {
+        let mut checked = 0usize;
+        for s in STATES.iter() {
+            let Some(dir) = s.bus_direction() else {
+                assert!(
+                    !s.is_dma_owned(),
+                    "{s:?} is bus-master owned but declares no direction",
+                );
+                continue;
+            };
+            assert!(
+                s.is_dma_owned(),
+                "{s:?} declares a bus direction but no bus master owns it",
+            );
+            // Only the hand-off edges carry a maintenance annotation;
+            // an armed → busy edge is a signal, not a transfer of
+            // custody, so it has none to compare against.
+            for t in TRANSITIONS
+                .iter()
+                .filter(|t| t.to == *s && !t.from.is_dma_owned())
+            {
+                let expected_by_cache = match t.cache_op {
+                    CacheOp::CleanIfMaintain => BusDirection::DeviceReads,
+                    CacheOp::InvalidateIfMaintain { .. } => BusDirection::DeviceWrites,
+                    other => panic!(
+                        "hand-off {} → {} carries {other:?}: a slot crossing into \
+                         bus-master ownership needs its cache state settled one way \
+                         or the other (spec §synth-5-E lines 1182-1228)",
+                        t.from.spec_name(),
+                        t.to.spec_name(),
+                    ),
+                };
+                assert_eq!(
+                    dir,
+                    expected_by_cache,
+                    "{} declares {dir:?} but the hand-off {} → {} carries {:?}, \
+                     which describes the opposite direction",
+                    s.spec_name(),
+                    t.from.spec_name(),
+                    t.to.spec_name(),
+                    t.cache_op,
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(
+            checked, 2,
+            "both hand-off edges must have been cross-checked",
+        );
+    }
+
+    /// The accessor names must be usable as identifiers on both
+    /// backends and must not collide with an edge's name, which would
+    /// put two different functions on one symbol.
+    #[test]
+    fn address_op_names_are_unique_identifiers_distinct_from_edge_names() {
+        let edge_names: std::collections::HashSet<&str> =
+            TRANSITIONS.iter().map(|t| t.op_name).collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut count = 0usize;
+        for s in STATES.iter() {
+            let Some(name) = s.address_op_name() else {
+                continue;
+            };
+            assert!(
+                seen.insert(name.clone()),
+                "duplicate address_op_name {name}"
+            );
+            assert!(
+                !edge_names.contains(name.as_str()),
+                "{name} collides with a transition's emitted name",
+            );
+            assert!(
+                name.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "address_op_name {name} must be lower_snake_case",
+            );
+            count += 1;
+        }
+        assert_eq!(
+            count,
+            STATES.iter().filter(|s| s.publishes_bus_address()).count(),
+            "every publishing state must name its accessor",
+        );
+        assert!(
+            count >= 2,
+            "only {count} accessors named; the filter narrowed"
+        );
     }
 
     /// Nothing may be declared holdable that no transition produces —
