@@ -7288,9 +7288,7 @@ fn parse_buffer_pool(
     let alignment = require_u32_body(root, label, "alignment", doc_name)?;
 
     // Reject zero-valued count/size/alignment at parse time (load-bearing
-    // for any subsequent layout / FSM logic). Power-of-2 alignment check
-    // rides the linker-fragment emission where the constraint is
-    // observable through ALIGN(<n>) directives.
+    // for any subsequent layout / FSM logic).
     for (name, value) in [
         ("slot-count", slot_count),
         ("slot-size", slot_size),
@@ -7309,6 +7307,67 @@ fn parse_buffer_pool(
                 },
             ));
         }
+    }
+
+    // `<sce:alignment>` reaches the emit as `_Alignas(n)` on the C11
+    // slot type and `#[repr(align(n))]` on the Rust one, and both
+    // languages admit only powers of two. Until this check existed the
+    // value was carried through untouched: `<sce:alignment>3</...>`
+    // produced a header whose *consumer* failed with "requested
+    // alignment '3' is not a positive power of 2", and a linker
+    // fragment whose `ALIGN(3)` rounds to a boundary that is not one.
+    // The build that produced them reported success.
+    if !alignment.is_power_of_two() {
+        let node = find_sce_child(root, "alignment").expect("required-element resolution above");
+        // `next_power_of_two` on an already-higher value and a shift
+        // for the lower one; `alignment` is non-zero by the check
+        // above, so both are defined.
+        let next_power = alignment.next_power_of_two();
+        return Err(located(
+            &node,
+            label.diagnostic_label,
+            ValidationError::BufferPoolAlignmentNotPowerOfTwo {
+                name: doc_name.to_string(),
+                alignment,
+                previous_power: next_power / 2,
+                next_power,
+            },
+        ));
+    }
+
+    // A slot's alignment is a property of every slot, not of the table
+    // that holds them. `slot-size` is the stride between slots, so a
+    // stride that is not a multiple of the alignment puts slot 0 on the
+    // boundary and every later slot off it — which is what both
+    // backends shipped: with `slot-size 100, alignment 32`, slot 1
+    // landed at +100. Two things then break at once. The peripheral is
+    // handed an address it may not accept, and the per-slot cache
+    // maintenance (`sce_dcache_*_by_addr(slot, SLOT_SIZE)`, spec lines
+    // 1182-1228) operates by cache line, so maintaining slot i touches
+    // the line slot i±1 shares with it — the intra-pool form of exactly
+    // the cross-contamination the inter-pool ALIGN sentinel exists to
+    // prevent (spec lines 1066-1086).
+    //
+    // Rejected rather than padded: padding would silently spend up to
+    // `alignment - 1` bytes of SRAM per slot that the author's memory
+    // budget never accounted for, and `mem/pool-too-large` would then
+    // be checked against a size the author never wrote. The author
+    // gets to choose which way to round.
+    let stride_remainder = slot_size % alignment;
+    if stride_remainder != 0 {
+        let node = find_sce_child(root, "slot-size").expect("required-element resolution above");
+        return Err(located(
+            &node,
+            label.diagnostic_label,
+            ValidationError::BufferPoolSlotSizeNotAlignmentMultiple {
+                name: doc_name.to_string(),
+                slot_size,
+                alignment,
+                remainder: stride_remainder,
+                previous_multiple: slot_size - stride_remainder,
+                next_multiple: slot_size - stride_remainder + alignment,
+            },
+        ));
     }
 
     let section_node = find_sce_child(root, "section").ok_or_else(|| {

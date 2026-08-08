@@ -1407,6 +1407,73 @@ pub enum ValidationError {
         next_multiple: u32,
     },
 
+    /// SCE Protocol-Synthesis RFC §synth-5-E (spec lines 1024-1073):
+    /// `<sce:alignment>` is not a power of two. Both backends lower
+    /// the value to a language alignment specifier — `_Alignas(n)` on
+    /// C11, `#[repr(align(n))]` on Rust — and neither language admits
+    /// anything else, so a value like `3` produced a header whose
+    /// *consumer* failed to compile and a linker fragment whose
+    /// `ALIGN(3)` rounds to a boundary that is not one, while the
+    /// build that emitted them reported success. Parse-time, so it
+    /// fires without a deploy.yaml. Author resolution: use the DMA or
+    /// cache-line boundary the peripheral actually requires.
+    #[error(
+        "buffer-pool '{name}': alignment {alignment} is not a power of two. DMA and cache-line boundaries are powers of two, and both backends lower `<sce:alignment>` to a language alignment specifier that admits nothing else. Nearest powers of two are {previous_power} and {next_power}."
+    )]
+    BufferPoolAlignmentNotPowerOfTwo {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// `<sce:alignment>` body as authored.
+        alignment: u32,
+        /// Largest power of two below `alignment` — repair candidate.
+        previous_power: u32,
+        /// Smallest power of two above `alignment` — repair candidate.
+        next_power: u32,
+    },
+
+    /// SCE Protocol-Synthesis RFC §synth-5-E (spec lines 1024-1073):
+    /// `<sce:slot-size>` is not a whole-number multiple of
+    /// `<sce:alignment>`.
+    ///
+    /// The slot size is the stride between slots, so a stride that
+    /// does not divide by the alignment puts slot 0 on the boundary
+    /// and every later slot off it — which is what both backends
+    /// emitted for as long as the alignment lived on the storage
+    /// array rather than on the slot. Two things ride on it: the
+    /// address published to the peripheral, and the per-slot cache
+    /// maintenance, which operates by cache line and so reaches into
+    /// a neighbouring slot whenever a slot does not start on one.
+    ///
+    /// Distinct from
+    /// [`Self::BufferPoolSlotSizeNotCacheLineMultiple`], which
+    /// compares the slot size against the deploy-resolved
+    /// `platform.dcache_line_size` and only under `cache-policy:
+    /// maintain`. This one is the pool's own declared DMA boundary
+    /// and holds under every cache policy, with or without a deploy.
+    ///
+    /// Rejected rather than padded: padding would spend up to
+    /// `alignment - 1` bytes of SRAM per slot that the author's
+    /// memory budget never accounted for, and `mem/pool-too-large`
+    /// would then be checked against a size the author never wrote.
+    #[error(
+        "buffer-pool '{name}': slot-size {slot_size} is not a whole-number multiple of alignment {alignment} (remainder {remainder}). The slot size is the stride between slots, so only the first slot would start on the declared DMA boundary — and the per-slot cache maintenance would reach into the neighbouring slot's line. Round slot-size to {previous_multiple} or {next_multiple}."
+    )]
+    BufferPoolSlotSizeNotAlignmentMultiple {
+        /// Buffer-pool document name (root `name=` attribute).
+        name: String,
+        /// `<sce:slot-size>` body as authored.
+        slot_size: u32,
+        /// `<sce:alignment>` body as authored.
+        alignment: u32,
+        /// `slot_size % alignment` — the over-the-boundary excess.
+        remainder: u32,
+        /// `slot_size - remainder` — repair target, rounding down.
+        previous_multiple: u32,
+        /// `slot_size - remainder + alignment` — repair target,
+        /// rounding up.
+        next_multiple: u32,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-E C5 cache-maintenance validation
     /// (spec line 1543): pool declares `cache-policy: maintain` or
     /// `cache-policy: non-cacheable` while the resolved target

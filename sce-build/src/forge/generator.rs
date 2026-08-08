@@ -13935,6 +13935,11 @@ struct BufferPoolFsmContext {
     /// The six runtime-owned edges, each carrying the shape its
     /// source state implies.
     seam: Vec<serde_json::Value>,
+    /// One entry per state that hands a slot to a bus master — the
+    /// address accessors. Derived from
+    /// `SlotState::publishes_bus_address`, so the set follows the FSM
+    /// rather than a template's memory of which peripherals exist.
+    addresses: Vec<serde_json::Value>,
     /// Author-edge cache flags keyed by `op_name`, so the author
     /// blocks read the same resolution the seam does.
     author_cache: std::collections::BTreeMap<String, serde_json::Value>,
@@ -13997,6 +14002,50 @@ fn buffer_pool_fsm_context(
         })
         .collect();
 
+    // Address publication. A slot handed to a bus master has to be
+    // findable by it, and the hand-off states are the only ones where
+    // that address is owed: before the hand-off the CPU accessors
+    // cover it, after it the peripheral already holds the descriptor.
+    let addresses = fsm::STATES
+        .iter()
+        .filter(|s| s.publishes_bus_address())
+        .map(|s| {
+            // The edge that brings a slot here is what the caller just
+            // invoked, so naming it in the doc comment puts the two
+            // halves of the hand-off next to each other.
+            let arm_op = fsm::TRANSITIONS
+                .iter()
+                .find(|t| t.to == *s && !t.from.is_dma_owned())
+                .map(|t| t.op_name)
+                .unwrap_or_default();
+            // And the edge that leaves it for the transfer proper —
+            // the one the caller invokes *after* writing the address
+            // into the descriptor. Naming it keeps the accessor's doc
+            // from having to guess which of the outgoing edges (the
+            // other is the un-arm error path) continues the hand-off.
+            let advance_op = fsm::transitions_from(*s)
+                .find(|t| t.to.is_dma_owned())
+                .map(|t| t.op_name)
+                .unwrap_or_default();
+            serde_json::json!({
+                "op_name": s.address_op_name().expect("publishing state names its accessor"),
+                "advance_op": advance_op,
+                "state_pascal": s.pascal_name(),
+                "state_spec": s.spec_name(),
+                "state_c_enum": s.c_enum_suffix(),
+                "arm_op": arm_op,
+                // Same split the seam draws: a holdable state means
+                // the caller still has the handle to ask through; a
+                // DMA-owned one is named by index.
+                "holdable": s.is_holdable(),
+                // Picks the constness. A device that writes the slot
+                // needs a mutable pointer; one that reads it must not
+                // be handed the means to write.
+                "device_writes": s.bus_direction() == Some(fsm::BusDirection::DeviceWrites),
+            })
+        })
+        .collect();
+
     let author_cache = fsm::author_callable_transitions()
         .map(|t| {
             let (clean, invalidate) =
@@ -14018,6 +14067,7 @@ fn buffer_pool_fsm_context(
     BufferPoolFsmContext {
         markers,
         seam,
+        addresses,
         author_cache,
         needs_clean_extern,
         needs_invalidate_extern,
@@ -14092,6 +14142,7 @@ fn render_buffer_pool_rust(
         // than restated in the template.
         markers => fsm_ctx.markers,
         seam => fsm_ctx.seam,
+        addresses => fsm_ctx.addresses,
         edge_cache => fsm_ctx.author_cache,
         needs_clean_extern => fsm_ctx.needs_clean_extern,
         needs_invalidate_extern => fsm_ctx.needs_invalidate_extern,
@@ -15024,6 +15075,7 @@ fn render_buffer_pool_c(
         // than restated in the template.
         markers => fsm_ctx.markers,
         seam => fsm_ctx.seam,
+        addresses => fsm_ctx.addresses,
         edge_cache => fsm_ctx.author_cache,
         needs_clean_extern => fsm_ctx.needs_clean_extern,
         needs_invalidate_extern => fsm_ctx.needs_invalidate_extern,

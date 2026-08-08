@@ -1109,6 +1109,26 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/slot-size-not-cache-line-multiple")]
     MemSlotSizeNotCacheLineMultiple,
 
+    /// RFC §synth-5-E slot-table layout: `<sce:alignment>` is not a
+    /// power of two. Both backends lower it to a language alignment
+    /// specifier (`_Alignas` / `#[repr(align)]`) and neither language
+    /// admits anything else. Parse-time — fires without a deploy.
+    /// RFC §synth-5-E lines 1024-1073 spec anchor.
+    #[serde(rename = "mem/alignment-not-power-of-two")]
+    MemAlignmentNotPowerOfTwo,
+
+    /// RFC §synth-5-E slot-table layout: `<sce:slot-size>` is not a
+    /// whole-number multiple of `<sce:alignment>`. The slot size is
+    /// the stride between slots, so only the first slot would start
+    /// on the declared DMA boundary. Distinct from
+    /// [`Self::MemSlotSizeNotCacheLineMultiple`], which compares
+    /// against the deploy-resolved `platform.dcache_line_size` under
+    /// `cache-policy: maintain`; this one is the pool's own declared
+    /// boundary and holds under every policy. Parse-time.
+    /// RFC §synth-5-E lines 1024-1073 spec anchor.
+    #[serde(rename = "mem/slot-size-not-alignment-multiple")]
+    MemSlotSizeNotAlignmentMultiple,
+
     /// RFC §synth-5-E C5 cache-maintenance validation: pool declares
     /// `cache-policy: maintain` (or `non-cacheable`) while the
     /// resolved target platform has `has_dcache: false`. Cache
@@ -2740,6 +2760,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // BufferPool §synth-5-E C5 cache-maintenance validation + codegen self-checks (SCE Protocol-Synthesis RFC §synth-5-E + §synth-5-I)
         MemCacheLineAlignment,
         MemSlotSizeNotCacheLineMultiple,
+        MemAlignmentNotPowerOfTwo,
+        MemSlotSizeNotAlignmentMultiple,
         MemCachePolicyUnsupportedOnNoDcacheCore,
         PoolCacheMaintenanceMisplaced,
         PoolSpeculativePrefetchFlagMissing,
@@ -3146,6 +3168,8 @@ impl DiagnosticCode {
             | MemInterPoolPaddingNotEmitted
             | MemCacheLineAlignment
             | MemSlotSizeNotCacheLineMultiple
+            | MemAlignmentNotPowerOfTwo
+            | MemSlotSizeNotAlignmentMultiple
             | MemCachePolicyUnsupportedOnNoDcacheCore
             | PoolCacheMaintenanceMisplaced
             | PoolSpeculativePrefetchFlagMissing
@@ -3801,6 +3825,8 @@ impl DiagnosticCode {
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
             MemCacheLineAlignment => "mem/cache-line-alignment",
             MemSlotSizeNotCacheLineMultiple => "mem/slot-size-not-cache-line-multiple",
+            MemAlignmentNotPowerOfTwo => "mem/alignment-not-power-of-two",
+            MemSlotSizeNotAlignmentMultiple => "mem/slot-size-not-alignment-multiple",
             MemCachePolicyUnsupportedOnNoDcacheCore => {
                 "mem/cache-policy-unsupported-on-no-dcache-core"
             }
@@ -5824,6 +5850,58 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 slot_size.to_string(),
                 dcache_line_size.to_string(),
                 remainder.to_string(),
+                next_multiple.to_string(),
+            ],
+        },
+        ValidationError::BufferPoolAlignmentNotPowerOfTwo {
+            name,
+            alignment,
+            previous_power,
+            next_power,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemAlignmentNotPowerOfTwo,
+            stage: Stage::Validation,
+            // `Fix::ReplaceOneOf` rather than prose: the repair is a
+            // closed two-element choice, and which of the two is right
+            // is the author's call — rounding down keeps the memory
+            // budget, rounding up keeps the boundary the peripheral
+            // may actually need.
+            expected: None,
+            actual: Some(alignment.to_string()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec![previous_power.to_string(), next_power.to_string()],
+            }),
+            key_fragments: vec![
+                name.clone(),
+                alignment.to_string(),
+                previous_power.to_string(),
+                next_power.to_string(),
+            ],
+        },
+        ValidationError::BufferPoolSlotSizeNotAlignmentMultiple {
+            name,
+            slot_size,
+            alignment,
+            remainder,
+            previous_multiple,
+            next_multiple,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MemSlotSizeNotAlignmentMultiple,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(slot_size.to_string()),
+            // Same shape as the alignment repair above, and for the
+            // same reason: rounding down keeps the SRAM budget,
+            // rounding up keeps the authored payload capacity.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: vec![previous_multiple.to_string(), next_multiple.to_string()],
+            }),
+            key_fragments: vec![
+                name.clone(),
+                slot_size.to_string(),
+                alignment.to_string(),
+                remainder.to_string(),
+                previous_multiple.to_string(),
                 next_multiple.to_string(),
             ],
         },
@@ -10058,6 +10136,32 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ad64c9aa97912ef0","code":"mem/slot-size-not-cache-line-multiple","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': slot-size 100 is not a whole-number multiple of target platform's `dcache_line_size` 32 on machine 'mcu_node' (remainder 4) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to 128 (next cache-line multiple).","actual":"100"}"#,
             ),
+            // ── §synth-5-E slot-table layout: alignment must be a power of two ─
+            (
+                "forge/mem-alignment-not-power-of-two",
+                ValidationError::BufferPoolAlignmentNotPowerOfTwo {
+                    name: "rx_pool_sram1".into(),
+                    alignment: 3,
+                    previous_power: 2,
+                    next_power: 4,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2e5362567f68b687","code":"mem/alignment-not-power-of-two","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': alignment 3 is not a power of two. DMA and cache-line boundaries are powers of two, and both backends lower `<sce:alignment>` to a language alignment specifier that admits nothing else. Nearest powers of two are 2 and 4.","actual":"3","fix":{"kind":"replace_one_of","candidates":["2","4"]}}"#,
+            ),
+            // ── §synth-5-E slot-table layout: slot-size is the stride, so it must divide by the alignment ─
+            (
+                "forge/mem-slot-size-not-alignment-multiple",
+                ValidationError::BufferPoolSlotSizeNotAlignmentMultiple {
+                    name: "rx_pool_sram1".into(),
+                    slot_size: 100,
+                    alignment: 32,
+                    remainder: 4,
+                    previous_multiple: 96,
+                    next_multiple: 128,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5770bfd94be1cf4d","code":"mem/slot-size-not-alignment-multiple","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': slot-size 100 is not a whole-number multiple of alignment 32 (remainder 4). The slot size is the stride between slots, so only the first slot would start on the declared DMA boundary — and the per-slot cache maintenance would reach into the neighbouring slot's line. Round slot-size to 96 or 128.","actual":"100","fix":{"kind":"replace_one_of","candidates":["96","128"]}}"#,
+            ),
             // ── §synth-5-E C5 cache-policy on no-dcache core (Fix::ReplaceOneOf [\"none\"]) ─
             (
                 "forge/mem-cache-policy-unsupported-on-no-dcache-core",
@@ -12197,7 +12301,14 @@ mod tests {
             // candidate list so `did_you_mean`-style typo repair
             // surfaces identically on `<send>/<param>` and on
             // `_event.data.<field>` use sites.
-            | ValidationEventPayloadFieldUnknown => FixCarriesCandidates,
+            | ValidationEventPayloadFieldUnknown
+            // §synth-5-E slot-table layout — both carry the two legal
+            // roundings as a closed candidate set, and which one is
+            // right is the author's call: rounding down keeps the SRAM
+            // budget, rounding up keeps the boundary or the payload
+            // capacity. Naming one in prose would be picking for them.
+            | MemAlignmentNotPowerOfTwo
+            | MemSlotSizeNotAlignmentMultiple => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             // `algorithm/append-type-mismatch`: `expected` is the fixed
@@ -13120,6 +13231,8 @@ mod tests {
                 | MemInterPoolPaddingNotEmitted
                 | MemCacheLineAlignment
                 | MemSlotSizeNotCacheLineMultiple
+                | MemAlignmentNotPowerOfTwo
+                | MemSlotSizeNotAlignmentMultiple
                 | MemCachePolicyUnsupportedOnNoDcacheCore
                 | PoolCacheMaintenanceMisplaced
                 | PoolSpeculativePrefetchFlagMissing
@@ -13325,9 +13438,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            336,
+            338,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 336 distinct variants to match the DiagnosticCode \
+             expected 338 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

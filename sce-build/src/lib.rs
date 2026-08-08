@@ -8993,6 +8993,138 @@ topology:
         }
     }
 
+    /// Every state that hands a slot to a bus master must be able to
+    /// tell that bus master where the slot is, on both backends.
+    ///
+    /// `every_declared_fsm_edge_reaches_both_backends` proves the
+    /// transitions are all emitted, and they were: `link_arm_rx`
+    /// yields a handle, `dma_start_rx` takes it back, `rx_complete`
+    /// returns a readable one. What no gate looked at is that the
+    /// address the peripheral has to be pointed at is obtainable
+    /// nowhere in between — the only accessors are on `cpu-mut` and
+    /// `cpu-ref`, the two states a bus master never owns. A driver
+    /// could walk the whole RX lifecycle and never learn a buffer
+    /// address, which is a pool that type-checks and cannot be wired
+    /// to hardware.
+    ///
+    /// Driven off `STATES` and `SlotState::publishes_bus_address`
+    /// rather than a list of names, so a bus master added under the
+    /// §synth-5-E FSM extension policy (lines 1166-1180) fails here
+    /// until both templates publish its address too. The constness is
+    /// checked alongside the name because a TX accessor handing back a
+    /// writable pointer is the same defect one layer down.
+    #[test]
+    fn every_bus_hand_off_state_publishes_its_address_on_both_backends() {
+        use crate::forge::buffer_pool_fsm::{self as fsm, BusDirection};
+
+        let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="rx_pool_sram1" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>256</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>maintain</sce:cache-policy>
+</scxml>"##;
+        let label = DocumentLabel {
+            identifier: "rx_pool_sram1",
+            diagnostic_label: "rx_pool_sram1.scxml",
+        };
+
+        for (lang, filename, prefix, reads, writes) in [
+            (
+                generator::Language::Rust,
+                "rx_pool_sram1.rs",
+                "fn " as &str,
+                "*const u8",
+                "*mut u8",
+            ),
+            (
+                generator::Language::C11,
+                "rx_pool_sram1.h",
+                "rx_pool_sram1_",
+                "const uint8_t *",
+                "uint8_t *",
+            ),
+        ] {
+            let out = compile_forge_from_string(scxml, label, lang)
+                .unwrap_or_else(|e| panic!("{lang:?} codegen must succeed: {e:?}"));
+            let body = out
+                .files
+                .iter()
+                .find(|(n, _)| n == filename)
+                .map(|(_, b)| b.as_str())
+                .unwrap_or_else(|| panic!("{lang:?} must emit {filename}"));
+
+            // Collect every miss rather than stopping at the first —
+            // halting leaves the rest unproven, which is the state
+            // this test exists to end.
+            let mut missing: Vec<String> = Vec::new();
+            let mut checked = 0usize;
+            for st in fsm::STATES.iter().filter(|s| s.publishes_bus_address()) {
+                let op = st
+                    .address_op_name()
+                    .expect("a publishing state names its accessor");
+                let needle = format!("{prefix}{op}(");
+                if !body.contains(&needle) {
+                    missing.push(format!(
+                        "{} has no address accessor (`{needle}`)",
+                        st.spec_name()
+                    ));
+                    continue;
+                }
+                let expected_ptr = match st.bus_direction() {
+                    Some(BusDirection::DeviceReads) => reads,
+                    Some(BusDirection::DeviceWrites) => writes,
+                    None => unreachable!("a hand-off target is bus-master owned"),
+                };
+                // The accessor's own line carries the return type.
+                let signature = body
+                    .lines()
+                    .find(|l| l.contains(&needle))
+                    .expect("the needle matched somewhere");
+                if !signature.contains(expected_ptr) {
+                    missing.push(format!(
+                        "{} publishes `{expected_ptr}` per its bus direction \
+                         ({:?}) but the emitted signature reads:\n      {}",
+                        st.spec_name(),
+                        st.bus_direction(),
+                        signature.trim(),
+                    ));
+                }
+                checked += 1;
+            }
+            assert!(
+                missing.is_empty(),
+                "{lang:?} emit cannot point a bus master at {} of {} hand-off states:\n  {}\n--- source ---\n{body}",
+                missing.len(),
+                fsm::STATES
+                    .iter()
+                    .filter(|s| s.publishes_bus_address())
+                    .count(),
+                missing.join("\n  "),
+            );
+            assert!(
+                checked >= 2,
+                "{lang:?}: only {checked} accessors checked; the filter narrowed",
+            );
+
+            // The return leg. A completion callback arrives carrying
+            // the buffer address the driver published, and every edge
+            // back into the pool is keyed by slot index — so without a
+            // way to map one to the other the driver has to keep its
+            // own shadow table of the layout the pool already knows.
+            let reverse = format!("{prefix}slot_index_of_ptr(");
+            assert!(
+                body.contains(&reverse),
+                "{lang:?} publishes slot addresses but offers no way back \
+                 (`{reverse}`); a completion signal carrying an address \
+                 cannot name the slot it belongs to.\n--- source ---\n{body}",
+            );
+        }
+    }
+
     /// SCE Protocol-Synthesis RFC §synth-5-E: buffer-pool kind happy path.
     /// A well-formed `<sce:kind="buffer-pool">` document → Rust
     /// generator emits a `<Pascal>` struct owning a `[[u8; SLOT_SIZE];
@@ -9093,8 +9225,13 @@ topology:
             "must emit SlotState enum mirroring C11 tag values; full source:\n{body}",
         );
         assert!(
-            body.contains("storage: [[0u8; SLOT_SIZE]; SLOT_COUNT]"),
-            "must initialize storage as fixed-size array of slot-sized chunks; full source:\n{body}",
+            body.contains("storage: [SlotBytes([0u8; SLOT_SIZE]); SLOT_COUNT]"),
+            "must initialize storage as a fixed-size array of slot-sized chunks; full source:\n{body}",
+        );
+        assert!(
+            body.contains("#[repr(C, align(32))]"),
+            "the slot type must carry the declared alignment, so that every slot starts \
+             on the DMA boundary rather than only the first; full source:\n{body}",
         );
         assert!(
             body.contains("slot_states: [SlotState::Free; SLOT_COUNT]"),
@@ -9102,16 +9239,21 @@ topology:
         );
     }
 
-    /// SCE Protocol-Synthesis RFC §synth-5-E: the emitted Rust buffer-pool
-    /// module must compile end-to-end as a real Rust source file —
+    /// SCE Protocol-Synthesis RFC §synth-5-E: the emitted Rust
+    /// buffer-pool module must compile *and its own tests must pass* —
     /// byte assertions alone do not prove the phantom-typed `Slot<S>`
-    /// API is well-formed (per `feedback_byte_goldens_not_compile.md`).
-    /// Drives the generator output through `rustc --crate-type lib
-    /// --emit=metadata` so that any drift in the trait bounds,
-    /// PhantomData variance, or `#[must_use]` annotation surfaces
-    /// here rather than at integration time.
+    /// API is well-formed (per `feedback_byte_goldens_not_compile.md`),
+    /// and compiling alone does not prove it behaves.
+    ///
+    /// Drives the generator output through `rustc --test` and runs the
+    /// resulting binary. The template emits a `mod generated_tests`
+    /// walking both DMA arms end to end; until this test ran it, that
+    /// module was emitted and executed nowhere in this repository —
+    /// only a downstream consumer that happened to build the generated
+    /// crate ever saw it. A test that ships in every pool and runs in
+    /// none is the same shape as a gate that never fires.
     #[test]
-    fn buffer_pool_rust_emitted_module_compiles_under_rustc() {
+    fn buffer_pool_rust_emitted_module_compiles_and_its_tests_pass() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -9138,28 +9280,71 @@ topology:
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("create tmp dir");
         let src = tmp.join("rx_pool_sram1.rs");
-        std::fs::write(&src, body).expect("write generated source");
+        // `cache-policy: maintain` declares the two cache-maintenance
+        // externs, so a *linked* binary needs them to resolve. On target
+        // they come from `sce_intrinsics_runtime` (spec §synth-5-I lines
+        // 1707-1711); here host no-ops are enough, the same stubs the
+        // C11 driver test provides. Appended rather than emitted: the
+        // generated module must not carry host stubs to target.
+        // In a submodule: the generated file already declares these
+        // names in its `extern` block, and it is the exported C symbol
+        // that resolves the link, not the Rust path.
+        let harness_src = format!(
+            "{body}\n\
+             mod host_cache_stubs {{\n\
+             #[no_mangle]\n\
+             pub extern \"C\" fn sce_dcache_clean_by_addr(_s: *const core::ffi::c_void, _n: usize) {{}}\n\
+             #[no_mangle]\n\
+             pub extern \"C\" fn sce_dcache_invalidate_by_addr(_s: *mut core::ffi::c_void, _n: usize) {{}}\n\
+             }}\n"
+        );
+        std::fs::write(&src, &harness_src).expect("write generated source");
 
-        let status = std::process::Command::new("rustc")
+        let harness = tmp.join("rx_pool_sram1_tests");
+        let compiled = std::process::Command::new("rustc")
             .arg("--edition=2021")
-            .arg("--crate-type=lib")
-            .arg("--emit=metadata")
+            .arg("--test")
             .arg("-o")
-            .arg(tmp.join("rx_pool_sram1.rmeta"))
+            .arg(&harness)
             .arg(&src)
             .arg("--cap-lints")
             .arg("allow")
             .output()
             .expect("rustc must be on PATH for the build environment");
 
+        assert!(
+            compiled.status.success(),
+            "generated Rust source must compile under rustc.\nstdout:\n{}\nstderr:\n{}\n--- source ---\n{}",
+            String::from_utf8_lossy(&compiled.stdout),
+            String::from_utf8_lossy(&compiled.stderr),
+            body,
+        );
+
+        let ran = std::process::Command::new(&harness)
+            .output()
+            .expect("the compiled test harness must be runnable");
+        let stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&ran.stderr).into_owned();
         let _ = std::fs::remove_dir_all(&tmp);
 
         assert!(
-            status.status.success(),
-            "generated Rust source must compile under rustc.\nstdout:\n{}\nstderr:\n{}\n--- source ---\n{}",
-            String::from_utf8_lossy(&status.stdout),
-            String::from_utf8_lossy(&status.stderr),
-            body,
+            ran.status.success(),
+            "the generated module's own tests must pass.\nstdout:\n{stdout}\nstderr:\n{stderr}\n--- source ---\n{body}",
+        );
+        // A harness that compiled but collected nothing would report
+        // success with `0 passed`, which is the silent shape this test
+        // exists to rule out. The lower bound is counted off the
+        // template's current `mod generated_tests`.
+        let ran_count = stdout
+            .lines()
+            .find_map(|l| l.strip_prefix("test result: ok. "))
+            .and_then(|rest| rest.split(' ').next())
+            .and_then(|n| n.parse::<usize>().ok())
+            .unwrap_or_else(|| panic!("could not read the test count from:\n{stdout}"));
+        assert!(
+            ran_count >= 16,
+            "only {ran_count} generated tests ran; the emitted `mod generated_tests` \
+             has lost cases or stopped being collected.\n{stdout}",
         );
     }
 
@@ -9461,6 +9646,99 @@ topology:
             "must be XmlSchemaValidation for zero slot-size (XSD-pre-empted); got {:?}",
             diags[0].code,
         );
+
+        // Non-power-of-2 alignment. Both backends lower `<sce:alignment>`
+        // to a language alignment specifier, and neither language admits
+        // anything else. Until this check existed the value went through
+        // untouched and the *consumer's* build failed with "requested
+        // alignment '3' is not a positive power of 2", while the linker
+        // fragment carried an `ALIGN(3)` that rounds to a boundary which
+        // is not one. The build that produced them reported success.
+        let odd_alignment = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="bad_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>96</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>3</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        let err = compile_forge_from_string(odd_alignment, label, generator::Language::Rust)
+            .err()
+            .expect("buffer-pool with a non-power-of-2 alignment must reject");
+        let diags = err.to_diagnostics();
+        assert!(
+            matches!(diags[0].code, DiagnosticCode::MemAlignmentNotPowerOfTwo),
+            "must be MemAlignmentNotPowerOfTwo for a non-power-of-2 alignment; got {:?}",
+            diags[0].code,
+        );
+
+        // `slot-size` that is not a multiple of `alignment`. The stride
+        // between slots is the slot size, so a stride that does not
+        // divide by the alignment puts slot 0 on the boundary and every
+        // later slot off it — which is what both backends emitted, and
+        // what makes the per-slot cache maintenance reach into a
+        // neighbouring slot's cache line.
+        let unaligned_stride = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="bad_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>100</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##;
+        for lang in [generator::Language::Rust, generator::Language::C11] {
+            let err = compile_forge_from_string(unaligned_stride, label, lang)
+                .err()
+                .unwrap_or_else(|| {
+                    panic!("{lang:?}: slot-size 100 against alignment 32 must reject")
+                });
+            let diags = err.to_diagnostics();
+            assert!(
+                matches!(
+                    diags[0].code,
+                    DiagnosticCode::MemSlotSizeNotAlignmentMultiple
+                ),
+                "{lang:?}: must be MemSlotSizeNotAlignmentMultiple for a slot-size that \
+                 is not a multiple of the alignment; got {:?}",
+                diags[0].code,
+            );
+            // The author has to be told which way to round, or the
+            // diagnostic names a rule without naming a fix.
+            let rendered = format!("{:?}", diags[0]);
+            assert!(
+                rendered.contains("96") && rendered.contains("128"),
+                "{lang:?}: the diagnostic must offer the nearest multiples (96 / 128); got:\n{rendered}",
+            );
+        }
+
+        // And the boundary case passes: a slot size that is exactly the
+        // alignment, and one that is a multiple of it.
+        for size in [32usize, 64, 256] {
+            let ok = format!(
+                r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="ok_pool" version="1.0">
+  <sce:slot-count>4</sce:slot-count>
+  <sce:slot-size>{size}</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##
+            );
+            let label = DocumentLabel {
+                identifier: "ok_pool",
+                diagnostic_label: "ok_pool.scxml",
+            };
+            assert!(
+                compile_forge_from_string(&ok, label, generator::Language::Rust).is_ok(),
+                "slot-size {size} divides alignment 32 and must be accepted",
+            );
+        }
     }
 
     // ── §synth-5-E buffer-pool kind c11 parity + linker fragment ─────
@@ -9543,8 +9821,13 @@ topology:
             "storage variable must carry section+aligned attribute; full header:\n{header}",
         );
         assert!(
-            header.contains("static uint8_t rx_pool_sram1_storage[8][256];"),
-            "storage shape must be [SLOT_COUNT][SLOT_SIZE]; full header:\n{header}",
+            header.contains("SCE_ALIGNAS(32) uint8_t bytes[RX_POOL_SRAM1_SLOT_SIZE];"),
+            "the slot type must carry the declared alignment, so that every slot starts \
+             on the DMA boundary rather than only the first; full header:\n{header}",
+        );
+        assert!(
+            header.contains("static rx_pool_sram1_slot_t rx_pool_sram1_storage[8];"),
+            "storage shape must be SLOT_COUNT alignment-carrying slots; full header:\n{header}",
         );
         // γ: STATE_COUNT / TRANSITION_COUNT macros mirror the
         // forge::buffer_pool_fsm IR module (7 + 11 per §synth-5-E lines
@@ -9771,6 +10054,82 @@ int main(void) {
     if (rx_pool_sram1_rx_complete(RX_POOL_SRAM1_SLOT_COUNT).state != SCE_SLOT_INVALID) return 24;
     if (rx_pool_sram1_un_arm_tx(0).state != SCE_SLOT_INVALID) return 25;
 
+    /* Address publication. The lifecycle above walks the states; this
+       hands the slot to the bus master that is supposed to fill or
+       drain it, which is what the states are for. Touching the slot
+       only through the published address is the point: reaching for
+       slot_read / slot_write instead would exercise the CPU accessors
+       and pass with no address accessor emitted at all. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+        if ((uintptr_t)rx_pool_sram1_storage[i].bytes % RX_POOL_SRAM1_ALIGNMENT) return 32;
+    }
+
+    sce_slot_handle_t ar = rx_pool_sram1_link_arm_rx();
+    if (ar.state != SCE_SLOT_DMA_ARMED_RX) return 33;
+    size_t ari = ar.idx;
+    uint8_t *rxbuf = rx_pool_sram1_dma_armed_rx_ptr(&ar);
+    if (rxbuf == NULL) return 34;
+    if ((uintptr_t)rxbuf % RX_POOL_SRAM1_ALIGNMENT) return 35;
+    if (rx_pool_sram1_slot_index_of_ptr(rxbuf) != ari) return 36;
+    /* Standing in for the MAC writing the buffer it was pointed at. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        rxbuf[i] = (uint8_t)(i % 251u);
+    }
+    if (!rx_pool_sram1_dma_start_rx(&ar)) return 37;
+    /* dma-busy-rx already holds the address; re-publishing it would
+       name memory the peripheral is mid-transfer on. */
+    if (rx_pool_sram1_dma_armed_rx_ptr(&ar) != NULL) return 38;
+    sce_slot_handle_t filled = rx_pool_sram1_rx_complete(ari);
+    if (filled.state != SCE_SLOT_CPU_REF) return 39;
+    const uint8_t *readback = rx_pool_sram1_slot_read(&filled);
+    if (readback == NULL) return 40;
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        if (readback[i] != (uint8_t)(i % 251u)) return 41;
+    }
+    if (!rx_pool_sram1_pool_return(&filled)) return 42;
+
+    sce_slot_handle_t at = rx_pool_sram1_pool_acquire_for_encode();
+    if (at.state != SCE_SLOT_CPU_MUT) return 43;
+    size_t ati = at.idx;
+    uint8_t *enc = rx_pool_sram1_slot_write(&at);
+    if (enc == NULL) return 44;
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        enc[i] = (uint8_t)(i % 241u);
+    }
+    /* A slot the CPU still owns publishes no bus address. */
+    if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 45;
+    if (!rx_pool_sram1_link_arm_tx(&at)) return 46;
+    const uint8_t *txbuf = rx_pool_sram1_dma_armed_tx_ptr(ati);
+    if (txbuf == NULL) return 47;
+    if (rx_pool_sram1_slot_index_of_ptr(txbuf) != ati) return 48;
+    /* Standing in for the DMA controller draining the descriptor. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_SIZE; ++i) {
+        if (txbuf[i] != (uint8_t)(i % 241u)) return 49;
+    }
+    if (!rx_pool_sram1_dma_start_tx(ati)) return 50;
+    if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 51;
+    if (!rx_pool_sram1_tx_complete(ati)) return 52;
+    if (rx_pool_sram1_dma_armed_tx_ptr(ati) != NULL) return 53;
+    if (rx_pool_sram1_dma_armed_tx_ptr(RX_POOL_SRAM1_SLOT_COUNT) != NULL) return 54;
+    if (rx_pool_sram1_free_count() != RX_POOL_SRAM1_SLOT_COUNT) return 55;
+
+    /* The reverse map resolves exactly what the pool published.
+       An interior pointer names no slot base, and rounding one down
+       would turn a driver bug into a plausible-looking index. */
+    for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
+        if (rx_pool_sram1_slot_index_of_ptr(rx_pool_sram1_storage[i].bytes) != i) return 56;
+    }
+    if (rx_pool_sram1_slot_index_of_ptr(rx_pool_sram1_storage[0].bytes + 1) != SIZE_MAX) return 57;
+    if (rx_pool_sram1_slot_index_of_ptr(NULL) != SIZE_MAX) return 58;
+    /* One past the table, and one byte below it. Both deterministic,
+       unlike the address of some unrelated object, which could land
+       inside the pool's range and pass for the wrong reason. */
+    if (rx_pool_sram1_slot_index_of_ptr(
+            (const void *)((uintptr_t)rx_pool_sram1_storage
+                           + sizeof(rx_pool_sram1_storage))) != SIZE_MAX) return 59;
+    if (rx_pool_sram1_slot_index_of_ptr(
+            (const void *)((uintptr_t)rx_pool_sram1_storage - 1u)) != SIZE_MAX) return 60;
+
     /* Whole ring, twice: arming every slot must remain recoverable. */
     for (int round = 0; round < 2; ++round) {
         for (size_t i = 0; i < RX_POOL_SRAM1_SLOT_COUNT; ++i) {
@@ -9838,13 +10197,66 @@ int main(void) {
         let run = std::process::Command::new(&exec_path)
             .output()
             .expect("driver binary must execute");
-        let _ = std::fs::remove_dir_all(&tmp);
         assert!(
             run.status.success(),
             "driver run failed: status={:?}, stderr={}",
             run.status.code(),
             String::from_utf8_lossy(&run.stderr),
         );
+
+        // The same driver as C++. The header wraps its declarations in
+        // `extern "C"`, and that wrapper is a claim: the pool an MCU
+        // compiles as C11 is consumable from a C++ application on the
+        // AP side. `extern "C"` only fixes linkage — one C-only
+        // keyword anywhere voids the claim for the whole file with a
+        // parse error, which is why the alignment specifier goes
+        // through `SCE_ALIGNAS` / `SCE_ALIGNOF` rather than
+        // `_Alignas` / `_Alignof`. Nothing checked that until this
+        // arm: `c11_cxx_consumption` covers other kinds, not the pool.
+        if let Some(cxx) = crate::toolchain::locate("g++") {
+            let cxx_src = tmp.join("driver.cpp");
+            std::fs::copy(&driver_path, &cxx_src).expect("copy driver for the C++ arm");
+            let cxx_exec = tmp.join("driver_cxx");
+            let cxx_status = std::process::Command::new(&cxx)
+                .arg("-std=c++17")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-D__attribute__(x)=")
+                .arg("-I")
+                .arg(&tmp)
+                .arg("-I")
+                .arg(&runtime_include)
+                .arg(&cxx_src)
+                .arg("-o")
+                .arg(&cxx_exec)
+                .output()
+                .expect("g++ must be runnable once located");
+            if !cxx_status.status.success() {
+                let _ = std::fs::remove_dir_all(&tmp);
+                panic!(
+                    "generated C header must also compile as C++.\nstdout:\n{}\nstderr:\n{}\n--- header ---\n{}",
+                    String::from_utf8_lossy(&cxx_status.stdout),
+                    String::from_utf8_lossy(&cxx_status.stderr),
+                    header,
+                );
+            }
+            let cxx_run = std::process::Command::new(&cxx_exec)
+                .output()
+                .expect("C++ driver binary must execute");
+            let cxx_code = cxx_run.status.code();
+            let cxx_err = String::from_utf8_lossy(&cxx_run.stderr).into_owned();
+            let _ = std::fs::remove_dir_all(&tmp);
+            assert!(
+                cxx_run.status.success(),
+                "C++ driver run failed: status={cxx_code:?}, stderr={cxx_err}",
+            );
+        } else {
+            crate::toolchain::skipped(
+                "buffer_pool_c11_emitted_header_compiles_under_gcc: g++ not on PATH, \
+                 C++ consumption arm skipped",
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
     }
 
     /// SCE Protocol-Synthesis RFC §synth-5-E: region-size check on
@@ -10016,16 +10428,31 @@ topology:
             return;
         };
 
-        // 300 bytes of storage against a 32-byte boundary: 300 % 32 == 12,
-        // so the post-pool boundary moves only if the fragment moves it.
+        // The pool's own storage can no longer end off the boundary:
+        // `slot-size` must be a multiple of `alignment`, so the slot type's
+        // size is too and `count * size` always divides it. What the
+        // sentinel actually defends is the case the spec names — a master
+        // script splicing another section into the pool's output section
+        // via the fragment's `KEEP(*(.<section>_<pool>*))` glob. So the
+        // fixture splices one: 288 bytes of storage plus a 12-byte
+        // author section is 300, and 300 % 32 == 12, so the post-pool
+        // boundary moves only if the fragment moves it.
         const SLOT_COUNT: usize = 3;
-        const SLOT_SIZE: usize = 100;
+        const SLOT_SIZE: usize = 96;
         const ALIGNMENT: usize = 32;
-        assert_ne!(
+        const SPLICED_BYTES: usize = 12;
+        assert_eq!(
             (SLOT_COUNT * SLOT_SIZE) % ALIGNMENT,
             0,
-            "the fixture must not divide the alignment, or a fragment that \
-             emits no sentinel at all would satisfy this test",
+            "per-slot alignment makes the storage table's own size a multiple \
+             of the alignment; a fixture that did not would be rejected at parse",
+        );
+        assert_ne!(
+            (SLOT_COUNT * SLOT_SIZE + SPLICED_BYTES) % ALIGNMENT,
+            0,
+            "the spliced section must push the pool section's tail off the \
+             boundary, or a fragment that emits no sentinel at all would \
+             satisfy this test",
         );
 
         let scxml = format!(
@@ -10063,6 +10490,12 @@ topology:
 #include <stddef.h>
 #include "odd_pool.h"
 
+/* Spliced into the pool's own output section through the fragment's
+   `KEEP(*(.sram1_odd_pool*))` glob — the master-script case the
+   sentinel exists for. Its odd size is what pushes the section's tail
+   off the boundary now that the storage table's own size cannot. */
+__attribute__((section(".sram1_odd_pool_spliced"), used)) uint8_t spliced_buf[SCE_SPLICED_BYTES];
+
 /* The spliced section: no ALIGN() of its own, so its base is whatever
    the region cursor holds when the pool's output section ends. */
 __attribute__((section(".after_pool"), used)) uint8_t author_buf[4];
@@ -10072,8 +10505,10 @@ volatile uint8_t *sce_test_sink;
 void _start(void) {
     sce_slot_handle_t h = odd_pool_pool_acquire_for_encode();
     sce_test_sink = odd_pool_slot_write(&h);
+    sce_test_sink = spliced_buf;
 }
-"#,
+"#
+            .replace("SCE_SPLICED_BYTES", &SPLICED_BYTES.to_string()),
         )
         .expect("write driver.c");
 
@@ -10776,6 +11211,13 @@ int main(void) { (void)0; return 0; }
 
         // Two distinct pools so the rx/tx axes can carry different
         // slot-sizes — driver tests parameterise the side under test.
+        //
+        // Alignment 8 rather than 32: the subject here is a pool whose
+        // slots are smaller than the framer's `codec_max_bytes` (32) —
+        // the driver tests go down to 8 — and `<sce:slot-size>` must be
+        // a whole multiple of `<sce:alignment>`, so a boundary larger
+        // than the smallest slot under test is rejected at parse time
+        // and never reaches the cross-resolution check these are about.
         let rx_pool_scxml = format!(
             r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -10784,7 +11226,7 @@ int main(void) { (void)0; return 0; }
   <sce:slot-count>4</sce:slot-count>
   <sce:slot-size>{rx_slot_size}</sce:slot-size>
   <sce:section>sram1</sce:section>
-  <sce:alignment>32</sce:alignment>
+  <sce:alignment>8</sce:alignment>
   <sce:cache-policy>none</sce:cache-policy>
 </scxml>"##
         );
@@ -10798,7 +11240,7 @@ int main(void) { (void)0; return 0; }
   <sce:slot-count>4</sce:slot-count>
   <sce:slot-size>{tx_slot_size}</sce:slot-size>
   <sce:section>sram1</sce:section>
-  <sce:alignment>32</sce:alignment>
+  <sce:alignment>8</sce:alignment>
   <sce:cache-policy>none</sce:cache-policy>
 </scxml>"##
         );
