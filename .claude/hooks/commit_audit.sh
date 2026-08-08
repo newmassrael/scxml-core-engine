@@ -640,10 +640,24 @@ HEAD_SHA="$(git -C "${CWD:-.}" rev-parse --verify HEAD 2>/dev/null || echo none)
 # project. Memory dirs follow the slug `<leading-slash>path-with-
 # dashes`, e.g. /home/coin/scxml-core-engine → -home-coin-scxml-core-
 # engine. Missing dir is fine — the questions still stand.
-PROJECT_SLUG="$(printf '%s' "${CWD:-$PWD}" | sed 's|/|-|g')"
+#
+# The slug keys off the *main* worktree, not the invoking directory. A
+# commit made from a linked worktree has a `cwd` somewhere else
+# entirely, which slugs to a directory that has never existed — and
+# the whole memory-lifecycle validation below would then skip without
+# saying so. Committing from a worktree is a normal thing to do while
+# the main tree is busy, and it must not silently disable a gate.
+MAIN_WORKTREE="$(git -C "${CWD:-.}" worktree list --porcelain 2>/dev/null \
+  | sed -n '1s/^worktree //p')"
+PROJECT_SLUG="$(printf '%s' "${MAIN_WORKTREE:-${CWD:-$PWD}}" | sed 's|/|-|g')"
 MEMORY_DIR="$HOME/.claude/projects/${PROJECT_SLUG}/memory"
 NEXT_MEMOS=""
 MEMO_VALIDATION=""
+# Initialised out here, not inside the branch below: under `set -u` a
+# missing memory dir made the "Missing dir is fine" comment above false
+# — the script died on the unbound read a few lines later instead of
+# asking its five questions.
+MEMO_ERRORS=""
 if [ -d "$MEMORY_DIR" ]; then
   # Full memory tree lifecycle validation. Every .md file (except
   # MEMORY.md) must declare frontmatter `status:` from the 8-value
