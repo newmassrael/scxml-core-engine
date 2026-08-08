@@ -14088,8 +14088,8 @@ fn render_buffer_pool_rust(
         // C5 cache-maintenance: template emits cache_clean +
         // (conditionally) cache_invalidate when cache_policy=maintain.
         cache_maintain => cache_maintain,
-        // §synth-5-E lifecycle FSM, rendered from `buffer_pool_fsm`
-        // rather than restated in the template.
+        // Slot-lifecycle FSM, rendered from `buffer_pool_fsm` rather
+        // than restated in the template.
         markers => fsm_ctx.markers,
         seam => fsm_ctx.seam,
         edge_cache => fsm_ctx.author_cache,
@@ -15020,8 +15020,8 @@ fn render_buffer_pool_c(
         // context shape so per-backend template authors can reach for
         // the same names without per-backend wiring guesswork.
         cache_maintain => cache_maintain,
-        // §synth-5-E lifecycle FSM, rendered from `buffer_pool_fsm`
-        // rather than restated in the template.
+        // Slot-lifecycle FSM, rendered from `buffer_pool_fsm` rather
+        // than restated in the template.
         markers => fsm_ctx.markers,
         seam => fsm_ctx.seam,
         edge_cache => fsm_ctx.author_cache,
