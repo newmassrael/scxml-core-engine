@@ -46,6 +46,25 @@
 
 namespace {
 
+// Deleter for a `popen` stream.
+//
+// glibc declares `pclose` with function attributes, and naming its type
+// through `decltype(&pclose)` as a `unique_ptr` template argument drops
+// them — which `-Wignored-attributes` reports and `-Werror` promotes.
+// A deleter type that calls `pclose` from an ordinary member body has no
+// attributes to lose, so the pointer type stays attribute-free.
+struct PipeCloser {
+    void operator()(FILE *pipe) const {
+        if (pipe != nullptr) {
+            pclose(pipe);
+        }
+    }
+};
+
+// Owning handle for a `popen` stream. Call sites that need `pclose`'s
+// exit status take it back with `release()` and close it themselves.
+using UniquePipe = std::unique_ptr<FILE, PipeCloser>;
+
 // Run `sce-codegen expand <scxml>` as a subprocess and capture its
 // stdout. The command binary path is passed via the
 // `SCE_CODEGEN_BIN` env var that CMake plumbs in at add_test time,
@@ -63,7 +82,7 @@ std::string runSceCodegenExpand(const std::string &sceCodegenBin, const std::str
         cmd += " --include-dir \"" + dir + "\"";
     }
     cmd += " \"" + scxmlPath + "\" 2>/dev/null";
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    UniquePipe pipe(popen(cmd.c_str(), "r"));
     if (!pipe) {
         return {};
     }
@@ -99,7 +118,7 @@ SceCodegenExpandError runSceCodegenExpandExpectFail(const std::string &sceCodege
     // redirect file avoids shell-quoting surprises on complex paths.
     const std::string cmd = "\"" + sceCodegenBin + "\" --error-format json expand \"" + scxmlPath + "\" 2>&1";
     SceCodegenExpandError result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    UniquePipe pipe(popen(cmd.c_str(), "r"));
     if (!pipe) {
         result.exitCode = -1;
         return result;
