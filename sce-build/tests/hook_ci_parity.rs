@@ -648,3 +648,52 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
          worktree the commit came from",
     );
 }
+
+// ── The requiring lane must supply every tool the harness can ask for ──
+
+/// Every apt-sourced tool must be installed by the lane that requires
+/// tools.
+#[test]
+fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
+    use sce_build::toolchain::{ToolSource, HARNESS_TOOLS};
+    let workflow = read(".github/workflows/rust-workspace-tests.yml");
+    assert!(
+        workflow.contains("SCE_REQUIRE_TOOLS"),
+        "this test is aimed at the lane that promotes a missing tool into a \
+         failure; that lane no longer sets SCE_REQUIRE_TOOLS, so the pairing \
+         has moved and this check needs re-aiming",
+    );
+    let installs: String = workflow
+        .lines()
+        .filter(|l| l.contains("apt-get install"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        !installs.is_empty(),
+        "no `apt-get install` step found in the requiring lane",
+    );
+
+    let mut checked = 0usize;
+    let mut missing: Vec<String> = Vec::new();
+    for (tool, source) in HARNESS_TOOLS {
+        let ToolSource::AptPackage(pkg) = source else {
+            continue;
+        };
+        checked += 1;
+        if !installs.split_whitespace().any(|w| w == *pkg) {
+            missing.push(format!("{tool} needs package `{pkg}`"));
+        }
+    }
+    assert!(
+        checked >= 2,
+        "only {checked} apt-sourced tools checked; the table lost its \
+         AptPackage entries and this gate would pass on anything",
+    );
+    assert!(
+        missing.is_empty(),
+        "the lane sets SCE_REQUIRE_TOOLS but does not install what the \
+         harness asks for ({} tool(s)):\n  {}\napt line(s):\n  {installs}",
+        missing.len(),
+        missing.join("\n  "),
+    );
+}
