@@ -34,7 +34,7 @@
                   termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the always-present payload pair
                   so the exhaust-or-depth termination would not detect
-                  the payload boundary. max-depth=4 covers PUT's
+                  the payload boundary. max-depth=8 covers PUT's
                   upstream ext slots — source_info via
                   `_Z_MSG_EXT_ENC_ZBUF | 0x01` and attachment via
                   `_Z_MSG_EXT_ENC_ZBUF | 0x03` per push_body_encode).
@@ -79,7 +79,7 @@
     <sce:embed id="encoding" type="codec_zenoh_encoding" sce:byte="2"
                sce:present-if="header.E"/>
     <sce:tlv-chain id="extensions" type="codec_zenoh_ext_entry" sce:byte="3"
-                   max-depth="4" on-overflow="reject"
+                   max-depth="8" on-overflow="reject"
                    sce:present-if="header.Z"
                    terminate-on="entry-flag" entry-flag-name="Z"/>
     <sce:field id="payload_len" sce:type="uint64" sce:byte="4" sce:bit-size="vle"/>

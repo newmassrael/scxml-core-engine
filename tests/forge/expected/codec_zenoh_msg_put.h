@@ -68,9 +68,9 @@ struct CodecZenohMsgPut {
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
         if ((header & 0x80) != 0) {
             std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> _list;
-            _list.reserve(4);
+            _list.reserve(8);
             bool _more = false;
-            for (std::size_t _i = 0; _i < 4; ++_i) {
+            for (std::size_t _i = 0; _i < 8; ++_i) {
                 if (cursor.remaining() == 0) break;
                 auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
                 if (!_elem.has_value()) return std::nullopt;
@@ -167,7 +167,7 @@ struct CodecZenohMsgPut {
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 946;
+    static constexpr std::size_t MAX_ENCODED_BYTES = 1114;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the

@@ -17,14 +17,14 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_MSG_DEL_MIN_BYTES 1
-#define CODEC_ZENOH_MSG_DEL_MAX_BYTES 425
+#define CODEC_ZENOH_MSG_DEL_MAX_BYTES 593
 
 typedef struct {
     uint8_t header;
     /* RFC §synth-5-B embed: nested codec_zenoh_timestamp_t struct (no length prefix on the wire) */
     codec_zenoh_timestamp_t timestamp;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[4];
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 8, on-overflow=reject) */
+    codec_zenoh_ext_entry_t extensions[8];
     size_t  extensions_len;
 } codec_zenoh_msg_del_t;
 
@@ -72,7 +72,7 @@ static inline sce_forge_codec_status_t codec_zenoh_msg_del_decode(sce_forge_curs
     out->extensions_len = 0;
         if ((out->header & 0x80) != 0) {
             bool _more = false;
-            for (size_t _i = 0; _i < 4; ++_i) {
+            for (size_t _i = 0; _i < 8; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
                 sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;

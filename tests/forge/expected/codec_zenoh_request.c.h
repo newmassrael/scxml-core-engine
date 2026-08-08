@@ -20,7 +20,7 @@
 #include "codec_zenoh_query.h"
 
 #define CODEC_ZENOH_REQUEST_MIN_BYTES 1
-#define CODEC_ZENOH_REQUEST_MAX_BYTES 1212
+#define CODEC_ZENOH_REQUEST_MAX_BYTES 1380
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
