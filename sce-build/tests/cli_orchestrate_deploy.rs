@@ -87,6 +87,11 @@ fn link_with_rx_pool(name: &str, rx_pool: &str) -> String {
     )
 }
 
+/// Slot sizes passed here must be whole multiples of the 32-byte
+/// alignment below (`mem/slot-size-not-alignment-multiple`), which is
+/// why the MTU-sized fixtures use 1536 rather than 1500: a pool
+/// carrying Ethernet frames has to round the payload up to the DMA
+/// boundary, and 1536 is what a real MTU pool declares.
 fn buffer_pool(name: &str, slot_count: u32, slot_size: u32) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -180,7 +185,7 @@ fn orchestrate_without_deploy_silent_skips_c13_validators() {
     let pool = write_doc(
         dir.path(),
         "rx_pool.scxml",
-        &buffer_pool("rx_pool", 16, 1500),
+        &buffer_pool("rx_pool", 16, 1536),
     );
     let link = write_doc(
         dir.path(),
@@ -221,7 +226,7 @@ fn orchestrate_with_deploy_fires_link_not_declared_in_deploy() {
     let pool = write_doc(
         dir.path(),
         "rx_pool.scxml",
-        &buffer_pool("rx_pool", 16, 1500),
+        &buffer_pool("rx_pool", 16, 1536),
     );
     let link = write_doc(
         dir.path(),
