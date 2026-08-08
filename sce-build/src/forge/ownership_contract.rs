@@ -680,7 +680,7 @@ mod tests {
     /// a contract, and every one that does not must not.
     ///
     /// Read off `buffer_pool_fsm::TRANSITIONS` rather than a copy of
-    /// it, so an edge added under the §synth-5-E FSM extension policy
+    /// it, so an edge added under the spec's FSM extension policy
     /// cannot reach the header uncovered. `is_holdable` on the source
     /// state is what decides which side an edge falls on, and it is
     /// the same predicate the templates branch on — so this test fails
