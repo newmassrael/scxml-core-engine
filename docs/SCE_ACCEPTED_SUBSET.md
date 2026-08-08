@@ -1214,7 +1214,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mem/pool-too-large` | Validation |
 | `mem/inter-pool-padding-not-emitted` | Validation |
 | `mem/cache-line-alignment` | Validation |
-| `mem/slot-size-not-cache-line-multiple` | Validation |
+| `mem/dcache-line-size-not-power-of-two` | Validation |
 | `mem/alignment-not-power-of-two` | Validation |
 | `mem/slot-size-not-alignment-multiple` | Validation |
 | `mem/cache-policy-unsupported-on-no-dcache-core` | Validation |

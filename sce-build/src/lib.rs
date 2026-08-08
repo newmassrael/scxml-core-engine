@@ -1163,13 +1163,38 @@ pub fn compile_forge_with_deploy(
                     }
 
                     if pool.cache_policy == forge::model::CachePolicy::Maintain {
-                        // (2) alignment vs dcache_line_size (spec line 1544)
-                        //     and (3) slot_size vs dcache_line_size (spec
-                        //     line 1545) — both fire only when the deploy
-                        //     declares `dcache_line_size`. A
-                        //     missing field skips silently (it's a §synth-5-K
-                        //     completeness rule).
+                        // (2) `dcache_line_size` must be a power of two, and
+                        //     (3) the pool's alignment must cover it (spec
+                        //     line 1544). Both fire only when the deploy
+                        //     declares `dcache_line_size`; a missing field
+                        //     skips silently (it's a §synth-5-K completeness
+                        //     rule).
+                        //
+                        //     The power-of-two check is what `PlatformConfig`
+                        //     deferred "alongside its codegen consumer" — this
+                        //     validator is that consumer. It is load-bearing
+                        //     rather than cosmetic: every rule below reasons
+                        //     that a line size divides an alignment it is no
+                        //     larger than, and that only holds for powers of
+                        //     two (48 <= 64 but does not divide it). Every
+                        //     real cache line is a power of two, so a deploy
+                        //     declaring otherwise has a typo, not a target.
                         if let Some(line_size) = platform.dcache_line_size {
+                            if !line_size.is_power_of_two() {
+                                let next_power = line_size.next_power_of_two();
+                                return Err(Located::new(
+                                    ValidationError::DeployDcacheLineSizeNotPowerOfTwo {
+                                        machine: machine_name.to_string(),
+                                        dcache_line_size: line_size,
+                                        previous_power: next_power / 2,
+                                        next_power,
+                                    }
+                                    .into(),
+                                    label.diagnostic_label,
+                                    None,
+                                    None,
+                                ));
+                            }
                             if pool.alignment < line_size {
                                 return Err(Located::new(
                                     ValidationError::BufferPoolCacheLineAlignment {
@@ -1184,24 +1209,19 @@ pub fn compile_forge_with_deploy(
                                     None,
                                 ));
                             }
-                            let remainder = pool.slot_size % line_size;
-                            if remainder != 0 {
-                                let next_multiple = pool.slot_size + (line_size - remainder);
-                                return Err(Located::new(
-                                    ValidationError::BufferPoolSlotSizeNotCacheLineMultiple {
-                                        name: pool.name.clone(),
-                                        machine: machine_name.to_string(),
-                                        slot_size: pool.slot_size,
-                                        dcache_line_size: line_size,
-                                        remainder,
-                                        next_multiple,
-                                    }
-                                    .into(),
-                                    label.diagnostic_label,
-                                    None,
-                                    None,
-                                ));
-                            }
+                            // Spec line 1545 asked for a third check here —
+                            // `slot_size % dcache_line_size != 0`. It is now
+                            // unreachable and is not emitted: `<sce:alignment>`
+                            // is a power of two, `<sce:slot-size>` is a whole
+                            // multiple of it, and the check above forces the
+                            // alignment to be at least the line size. A power
+                            // of two no larger than another therefore divides
+                            // it, and division is transitive — the slot size
+                            // is a whole number of cache lines by
+                            // construction. `slot_size_is_always_a_whole_
+                            // number_of_cache_lines` searches the legal space
+                            // to keep that true if any of the three rules is
+                            // relaxed.
                         }
 
                         // (4) `has_speculative_prefetch` REQUIRED when

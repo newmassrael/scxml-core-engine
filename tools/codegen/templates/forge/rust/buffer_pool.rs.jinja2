@@ -42,9 +42,24 @@ pub const SLOT_COUNT: usize = {{ slot_count }};
 /// Bytes per slot (`<sce:slot-size>`).
 pub const SLOT_SIZE: usize = {{ slot_size }};
 
-/// SRAM region name (`<sce:section>`). Round-tripped here so that
-/// downstream linker integration can read it without re-parsing
-/// the SCXML.
+/// SRAM region name (`<sce:section>`), round-tripped so downstream
+/// tooling can read it without re-parsing the SCXML.
+///
+/// The Rust emit does not place the pool in this region, and the
+/// constant is not a hook for doing so. The C11 emit places its
+/// storage with `__attribute__((section))` because storage there is a
+/// file-static array of bytes and nothing else; the Rust pool owns its
+/// storage inline alongside `slot_states`, and the region the sidecar
+/// linker fragment declares is `(NOLOAD)` — nothing initialises it.
+/// Putting this whole struct there would leave the freelist reading
+/// whatever SRAM held at reset.
+///
+/// Placing it correctly means splitting the storage out into its own
+/// placed static, which makes the pool a singleton rather than a type
+/// the caller instantiates. That is the "MCU Rust variant" the spec
+/// names (§synth-5-E codegen contract), and it is a different author
+/// API from this one — not something a consumer can bolt on with
+/// `#[link_section]`.
 pub const SECTION: &'static str = "{{ section }}";
 
 /// DMA alignment in bytes (`<sce:alignment>`). Carried into the slot
