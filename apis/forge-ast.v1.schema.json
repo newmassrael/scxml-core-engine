@@ -4055,6 +4055,82 @@
             "state_name"
           ],
           "type": "object"
+        },
+        {
+          "description": "§scxml-6.4.1: an `<invoke>` whose `type` names no processor this platform implements.\n\nThe spec defines this case rather than leaving it undefined — the processor \"MUST place error.execution on the internal event queue\" — so a document carrying one is *valid SCXML with defined meaning*, not an author error the compiler may reject. That single raise at invoke time is the whole observable: no child session starts, no `done.invoke.<id>` ever fires, and there is nothing to cancel on state exit. The struct therefore carries only the W3C identity and the refused type string.\n\nThe variant exists so the case cannot be dropped silently. Before it, `parse_invoke` returned `Ok(None)` for an unsupported type and the `<invoke>` vanished from the model, leaving AOT with no observable at all where the Interpreter raised one.",
+          "properties": {
+            "field_suffix": {
+              "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
+              "type": "string"
+            },
+            "idlocation": {
+              "type": "string"
+            },
+            "invoke_id": {
+              "type": "string"
+            },
+            "invoke_type": {
+              "description": "The `type` attribute verbatim. Reported in the raised `error.execution` payload so the author sees which URI was refused rather than a generic failure.",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "Unsupported"
+              ],
+              "type": "string"
+            },
+            "params": {
+              "items": {
+                "$ref": "#/definitions/Param"
+              },
+              "type": "array"
+            },
+            "provenance": {
+              "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/SpecProvenance"
+              },
+              "type": "array"
+            },
+            "req": {
+              "description": "`sce:req` requirement IDs attached to this `<invoke>`. See [`Transition::req`] for the wire-format contract.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `<invoke>` element's position, so an invoke-anchored script-engine cause can name the line (SCE_ERROR_CONTRACT.md §10.4)."
+            },
+            "state_name": {
+              "type": "string"
+            },
+            "unresolved": {
+              "description": "`sce:unresolved` placeholder markers attached to this `<invoke>`.",
+              "items": {
+                "$ref": "#/definitions/UnresolvedMarker"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "field_suffix",
+            "idlocation",
+            "invoke_id",
+            "invoke_type",
+            "kind",
+            "params",
+            "state_name"
+          ],
+          "type": "object"
         }
       ]
     },
