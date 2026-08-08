@@ -114,6 +114,20 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         const sce_invoke_pending_t *p = &snapshot[i];
 
         {% for state_id, state in model.states | dictsort %}
+        {% for invoke_info in state.invokes | unsupported %}
+        if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
+            && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) }}) {
+            /* W3C SCXML 6.4.1: unsupported `type` — place error.execution on
+               the internal queue and start nothing. */
+            {
+                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
+                memset(&_err_evt, 0, sizeof(_err_evt));
+                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            }
+            continue;
+        }
+        {% endfor %}
         {% for invoke_info in state.invokes | scxml %}
         if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}
             && p->invoke_idx == {{ loop.index0 }}) {
@@ -362,7 +376,15 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
     }
 }
 
+{% if model.invokes | scxml_family %}
 {# ── drive_active_children ───────────────────────────────────────────
+   Emitted only for machines that can actually hold a child. A
+   §scxml-6.4.1 unsupported `type` rides the same pending queue but
+   starts nothing, so for a machine whose only `<invoke>` is unsupported
+   both walks below would render empty and leave `sm` unread — which the
+   C11 test build rejects under `-Wunused-parameter -Werror`. The two
+   call sites in `state_machine.c.jinja2` carry the same guard.
+
    W3C SCXML 6.4: drive every active child's macrostep so the parent's
    `<send target="#_<invokeid>" event="X">` lower (which enqueued onto
    the child's external queue) gets drained on the next call cycle.
@@ -468,3 +490,4 @@ static void {{ csym_prefix }}{{ model.name }}_destroy_active_children({{ csym_pr
     {% endfor %}
     {% endfor %}
 }
+{% endif %}

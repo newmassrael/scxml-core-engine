@@ -39,7 +39,7 @@
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {  {{- annot.annotation_comment(state, "rust", "                ") }}
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -83,6 +83,29 @@
 
 {% endfor %}
                 }
+{% endif %}
+{% if state.invokes | unsupported %}
+                // W3C SCXML 6.4.1: `type` names no processor this platform
+                // implements. The whole observable is one error.execution at
+                // invoke time, so the entry chain only defers — the raise
+                // happens in `do_execute_pending_invokes`. Riding the defer
+                // queue keeps §scxml-6.4 ordering (invokes run after the
+                // macrostep settles) and lets `cancel_invokes_for_state` drop
+                // the entry when the state exits first, which is the correct
+                // W3C outcome: an invoke that never ran raises nothing.
+{% for invoke_info in state.invokes | unsupported %}
+                {
+                    let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
+                        "{{ state_id }}", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                        },
+                    );
+                }
+{% endfor %}
 {% endif %}
 {% if state.invokes | scxml or state.invokes | hybrid %}
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
@@ -372,9 +395,11 @@
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.invokes | scxml or state.invokes | hybrid %}
+{% if state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
-                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
                     &mut self.pending_invokes,
                     {{ machine_name }}State::{{ state_id | to_state_variant }},

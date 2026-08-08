@@ -12,7 +12,8 @@ The stems under `integration_resources/` today are
 `autoforward_event_fields`, `autoforward_internal_queue`,
 `donedata_late_completion`, `donedata_local_invoke`,
 `invoke_precedes_dequeue_midrun`, `invoke_precedes_external_dequeue`,
-`nested_final_not_terminal` and `send_param_payload`.
+`invoke_unsupported_type`, `nested_final_not_terminal` and
+`send_param_payload`.
 
 A fixture placed under `integration_resources/` is a **five-backend
 commitment**, not merely a shared file: `sce-codegen generate-integration`
@@ -63,6 +64,32 @@ formatted through the runtime Lua formatter, which does not compile in a
 machine with no `lua_State`; and `<send target="#_internal">` with `<param>`
 children fell through to the unenumerated-shape fallback and raised
 `error.execution`.
+
+`invoke_unsupported_type` covers W3C §6.4.1: an `<invoke>` whose `type` names
+no processor the platform implements is valid SCXML that must raise
+`error.execution`, not a document to reject. Both engines were silent here in
+different ways — the Interpreter substituted its SCXML handler for the unknown
+type and started a child session the author never asked for, while AOT dropped
+the `<invoke>` from the model outright and produced no observable at all. The
+fixture is single-axis to the point of carrying no `src` and no `<content>`:
+§6.4.1 classifies on `type` alone, before any child document would be
+resolved, so a fixture that supplied one would let a child-materialization
+regression masquerade as an unsupported-type regression. It is also why this
+stem is the only one whose CMake registration passes no
+`SYNTH_INVOKE_CHILDREN` — there is no child to synthesize.
+
+Every channel asserts it, because wiring one backend does not close the
+contract for the rest: the `Invoke::Unsupported` model variant is skipped by
+each template's `scxml`-family filter until that backend is wired explicitly,
+which moves the silent drop from the parser into the templates rather than
+removing it. Measured directly during the work that added this fixture —
+after the C++ lowering landed, five backends still emitted zero raise sites
+while reporting successful generation. C11 needed three separate gates opened
+(the entry-action switch, the `scxml_family` include guards, and an
+`execute_pending_invokes` arm past the `| scxml` filter's index space), and
+Rust passed a generated-source assertion while still resting in `probe` at
+runtime, so the emit-site check and the runtime channel are not
+substitutes for one another.
 
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in

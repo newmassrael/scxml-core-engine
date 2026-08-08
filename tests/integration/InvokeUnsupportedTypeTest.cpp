@@ -19,6 +19,12 @@
 // argument only holds if SCE itself honours the rule for types *it* does not
 // know, which is what these two tests measure — the factory contract
 // directly, and the event the machine actually observes end to end.
+//
+// Sibling of `InvokeUnsupportedTypeAotTest.cpp` (C++ AOT channel). Both
+// engines ship in production, so each is held to the clause independently
+// against one canonical fixture.
+//
+// Fixture: integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml
 
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -29,10 +35,16 @@
 #include "scripting/ScriptEngineProvider.h"
 
 #include <chrono>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
+
+#ifndef SCE_PROJECT_ROOT
+#define SCE_PROJECT_ROOT "."
+#endif
 
 namespace SCE {
 namespace Tests {
@@ -41,7 +53,10 @@ namespace {
 
 // A type URI no SCE processor claims. Deliberately not a plausible typo of
 // the SCXML URI so the test cannot pass by accident through prefix matching.
-constexpr const char *UNSUPPORTED_TYPE = "urn:sce:test:no-such-processor";
+// Same value as the canonical fixture's `<invoke type>` — the factory-level
+// boundary below and the end-to-end run must be asked about one type, or a
+// refusal proven here would say nothing about the machine measured there.
+constexpr const char *UNSUPPORTED_TYPE = "urn:example:no-such-processor";
 
 }  // namespace
 
@@ -81,15 +96,17 @@ TEST_F(InvokeUnsupportedTypeTest, FactoryRefusesUnsupportedTypeInsteadOfSubstitu
 // §scxml-6.4.1: end to end — the machine observes error.execution and the
 // author's handler fires.
 TEST_F(InvokeUnsupportedTypeTest, UnsupportedTypeRaisesErrorExecutionOnTheInternalQueue) {
-    const std::string scxml = std::string(R"(<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="probe">
-  <state id="probe">
-    <invoke type=")") + UNSUPPORTED_TYPE +
-                              R"("/>
-    <transition event="error.execution" target="pass"/>
-  </state>
-  <final id="pass"/>
-</scxml>)";
+    const std::string fixture =
+        std::string(SCE_PROJECT_ROOT) + "/integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml";
+    std::ifstream in(fixture);
+    ASSERT_TRUE(in.is_open()) << "canonical fixture not readable: " << fixture;
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    const std::string scxml = buffer.str();
+    ASSERT_NE(scxml.find(UNSUPPORTED_TYPE), std::string::npos)
+        << "the canonical fixture no longer names " << UNSUPPORTED_TYPE
+        << ", so the factory-level boundary asserted above and this end-to-end run are "
+           "no longer asking about the same type";
 
     auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 

@@ -128,7 +128,7 @@
 #include "{{ d.resolved_path or d.href }}"
 {%- endfor %}
 
-{% if (model.invokes | scxml_family) %}
+{% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
 /* W3C SCXML 6.4: invoke lifecycle includes — sce/invoke.h supplies
    types + static inline helpers (declared in `_sm.h` for struct
    visibility); each child SM's public API surfaces through the
@@ -2071,7 +2071,8 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
     {% set has_donedata = state.is_final and state.donedata %}
     {% set has_scxml_invoke = (state.invokes | scxml) | length > 0 %}
     {% set has_hybrid_invoke = (state.invokes | hybrid) | length > 0 %}
-    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke or has_hybrid_invoke %}
+    {% set has_unsupported_invoke = (state.invokes | unsupported) | length > 0 %}
+    {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke or has_hybrid_invoke or has_unsupported_invoke %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% if has_late_init %}
         /* W3C SCXML 5.3: late-binding state-local <datamodel> init runs
@@ -2087,6 +2088,27 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            stop-subsequent-content) terminates only that block. */
         {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}(sm);
         {% endfor %}
+        {% if state.invokes | unsupported %}
+        {% for invoke_info in state.invokes | unsupported %}
+        {
+            /* W3C SCXML 6.4.1: `type` names no processor this platform
+               implements. Defer only — the error.execution raise happens in
+               `execute_pending_invokes`, so §scxml-6.4 ordering holds and
+               `sce_invoke_cancel_for_state` drops the entry if the state
+               exits first. The idx space is offset past the `| scxml` arms
+               so the (state, invoke_idx) key stays unique in a state that
+               carries both kinds. */
+            char _invoke_id_buf[SCE_MAX_ID_LEN];
+            sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
+                                 "{{ state_id }}", (const void *)sm,
+                                 {{ loop.index0 + (state.invokes | scxml | length) }});
+            sce_invoke_pending_push(&sm->pending_invokes,
+                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    {{ loop.index0 + (state.invokes | scxml | length) }},
+                                    _invoke_id_buf);
+        }
+        {% endfor %}
+        {% endif %}
         {% if state.invokes | scxml %}
         /* W3C SCXML 6.4: defer `<invoke>` execution until macrostep end.
            cpp `entry_exit_actions.jinja2` mirrors this with
@@ -3072,7 +3094,7 @@ SCE_SM_FN static void handle_microstep({{ csym_prefix }}{{ model.name }}_t *sm,
     }
 }
 
-{% if (model.invokes | scxml_family) %}
+{% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
 /* ── W3C SCXML 6.4: Invoke lifecycle helpers (per-SM, inline) ──────── */
 {% include 'c/invoke_methods.jinja2' %}
 {% endif %}
@@ -3846,19 +3868,27 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
             break;
         }
 
-        {% if (model.invokes | scxml_family) %}
+        {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
         /* W3C SCXML 6.4: execute the deferred `<invoke>` elements for states
            entered-and-not-exited during this macrostep. Children that reach
            their top-level <final> synchronously (test247 pattern: child has
            only `<final>` as initial) raise `done.invoke` onto the external
            queue here, which this loop's next iteration drains. */
         {{ csym_prefix }}{{ model.name }}_execute_pending_invokes(sm);
+        {% if model.invokes | scxml_family %}
         /* W3C SCXML 6.4 (test192): drive active children so events the parent
            enqueued onto a child's external queue earlier in this macrostep
            (via `<send target="#_<invokeid>">`) get drained inside the same
            loop. A child that reaches `<final>` here has its `done.invoke`
-           raised onto the parent's external queue for the next iteration. */
+           raised onto the parent's external queue for the next iteration.
+
+           Narrower than the guard above on purpose: a §scxml-6.4.1
+           unsupported `type` defers and raises but starts no child, so a
+           machine whose only `<invoke>` is unsupported has no active-child
+           walk to run — and emitting one would leave `sm` unread under
+           `-Wunused-parameter -Werror`. */
         {{ csym_prefix }}{{ model.name }}_drive_active_children(sm);
+        {% endif %}
         {% endif %}
 
         /* W3C SCXML Appendix D: invoking may have raised internal error
@@ -4086,12 +4116,17 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
 {% endif %}
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm) {
-    {% if (model.invokes | scxml_family) %}
+    {% if model.invokes | scxml_family %}
     /* W3C SCXML 6.4: tear down any active invoke children before the
        parent's own resources (lua state, scheduler payload refs) go
        away. cpp's shared_ptr reset in the parent destructor is the
        equivalent — c11 mirrors with the active-flag-gated explicit
-       destroy walk. Idempotent on already-destroyed children. */
+       destroy walk. Idempotent on already-destroyed children.
+
+       A §scxml-6.4.1 unsupported `type` starts no child, so a machine
+       whose only `<invoke>` is unsupported has nothing to tear down here
+       — its pending entry lives in the bounded queue the parent owns
+       outright. */
     {{ csym_prefix }}{{ model.name }}_destroy_active_children(sm);
     {% endif %}
     {% if model.needs_event_scheduler and model.needs_script_engine %}
