@@ -24,22 +24,19 @@ dependencies {
 //   - src/main/kotlin/com/sce/generated/testXXX/  (state machine code)
 //   - src/test/kotlin/com/sce/w3c/TestXXX.kt      (JUnit5 test classes)
 //
-// Build sce-codegen: cargo build --bin sce-codegen --features cli --release -p sce-build
+// Build sce-codegen: cargo build --bin sce-codegen --features cli -p sce-build
 // Incremental: only runs when SCXML files, templates, or test registry change.
 // Generated files are kept in git so builds work without sce-codegen.
 // ---------------------------------------------------------------------------
 
-// Configuration-cache-safe codegen binary resolution.  All values are plain
-// strings evaluated eagerly so no Gradle script objects leak into task state.
+// Configuration-cache-safe codegen binary resolution.  The search order —
+// and the fact that this build names no profile — lives in
+// gradle/sce-codegen.gradle.kts; the value it hands back is a plain string
+// evaluated eagerly, so no Gradle script object leaks into task state.
+apply(from = rootProject.file("gradle/sce-codegen.gradle.kts"))
 val rootDir: String = rootProject.projectDir.absolutePath
-val sceCodegenBinary: String? = listOf(
-    "target/release/sce-codegen", "target/debug/sce-codegen"
-).firstOrNull {
-    File(rootDir, it).exists()
-}?.let { File(rootDir, it).absolutePath }
-    ?: System.getenv("PATH")?.split(File.pathSeparator)
-        ?.map { File(it, "sce-codegen") }
-        ?.firstOrNull { it.exists() }?.absolutePath
+val sceCodegenAbsoluteOrNull: String? by rootProject.extra
+val sceCodegenBinary: String? = sceCodegenAbsoluteOrNull
 val hasCodegen: Boolean = sceCodegenBinary != null
 
 val generateScxml by tasks.registering(Exec::class) {

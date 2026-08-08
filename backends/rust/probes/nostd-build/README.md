@@ -20,10 +20,10 @@ exercise the constructs that were historically std-coupled: nested `<parallel>`
 
 ```sh
 # 1. Build the code generator.
-cargo build --bin sce-codegen --features cli --release -p sce-build
+cargo build --bin sce-codegen --features cli -p sce-build
 
 # 2. Generate the probe machine (git-ignored output).
-target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+target/debug/sce-codegen --workspace-root . generate -l rust --no-std \
   --output-dir backends/rust/probes/nostd-build/src \
   sce-build/tests/fixtures/no_std/parallel_history_probe.scxml
 

@@ -34,11 +34,13 @@ use std::path::{Path, PathBuf};
 
 /// Test targets whose input set outgrows any path filter.
 ///
-/// `roadmap_marker_gate` reads every tracked file; this test and
-/// `hook_ci_parity` read every workflow. Adding an entry is a claim that
-/// the target's inputs cannot be enumerated as globs — and it obliges the
-/// unfiltered workflow to run that target by name.
+/// `roadmap_marker_gate` and `codegen_binary_resolution` read every
+/// tracked file; this test and `hook_ci_parity` read every workflow.
+/// Adding an entry is a claim that the target's inputs cannot be
+/// enumerated as globs — and it obliges the unfiltered workflow to run
+/// that target by name.
 const UNFILTERABLE_GATES: &[&str] = &[
+    "codegen_binary_resolution",
     "hook_ci_parity",
     "roadmap_marker_gate",
     "workflow_trigger_coverage",

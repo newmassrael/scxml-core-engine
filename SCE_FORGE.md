@@ -1637,7 +1637,7 @@ The scaffold is kind-agnostic — adding a new kind is one new fragment file per
 
 **Go kind-specific `Step` types.** Go's `encoding/json` requires static types at unmarshal time, so the Go harness declares one `Step` struct per sequence-based kind (`filterStep`, `observerStep`, `validatorStep`, `codecCase`) and one accessor function per kind (`filterSteps`, `observerSteps`, `validatorSteps`, `codecCases`). Each accessor asserts the manifest's `ref_section` matches the hard-wired expectation for that kind, so a fixture tagged with the wrong section fails loudly at test time rather than silently reading the wrong map.
 
-**Auto-rebuild `sce-codegen`.** Each language's harness generation step is preceded by a `cargo build --bin sce-codegen --features cli --release -p sce-build` invocation guarded by a `cargo-on-PATH` check:
+**Auto-rebuild `sce-codegen`.** Each language's harness generation step is preceded by a `cargo build --bin sce-codegen --features cli -p sce-build` invocation guarded by a `cargo-on-PATH` check:
 
 - **Local development**: cargo is available → release binary is rebuilt from the current sce-build sources. `cargo` incremental makes this a near-instant no-op when nothing has changed.
 - **CI**: cargo is absent (pre-built artifact downloaded from build-codegen job) → check fails, pre-built binary is used as-is.

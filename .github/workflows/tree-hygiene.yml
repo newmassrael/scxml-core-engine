@@ -30,6 +30,12 @@ name: Tree Hygiene
 # workflow it mirrors. Both read all of `.github/workflows/`, which makes
 # them gates of the kind described above, so they run here beside the
 # gate they protect.
+#
+# `codegen_binary_resolution` enumerates every tracked file too: it holds
+# that no harness names a cargo build profile when reaching for the
+# sce-codegen binary. A profile flip that moved only some of the ~100
+# sites is what took every forge conformance job down, and the sites it
+# judges are spread across five languages with no common path prefix.
 
 on:
   push:
@@ -83,4 +89,5 @@ jobs:
         cargo test -p sce-build \
           --test roadmap_marker_gate \
           --test workflow_trigger_coverage \
-          --test hook_ci_parity
+          --test hook_ci_parity \
+          --test codegen_binary_resolution

@@ -538,9 +538,9 @@ fn verify_passes_on_real_committed_rust_w3c_tree() {
         "verify must pass on the committed Rust W3C generated tree. \
          A failure here means tools/codegen/templates/** or Cargo.lock \
          changed without refreshing backends/rust/tests/src/generated/. \
-         Run `cargo build --bin sce-codegen --features cli --release \
-         -p sce-build` then `target/release/sce-codegen generate-w3c \
-         -l rust` and commit the result. stderr:\n{stderr}"
+         Run `scripts/regen_all_committed_trees.sh` and commit the \
+         result — it pins the `generated-at` stamp that a bare \
+         generate-w3c leaves on wall-clock. stderr:\n{stderr}"
     );
 }
 
@@ -562,9 +562,9 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
         "verify must pass on the committed Kotlin W3C generated tree. \
          A failure here means tools/codegen/templates/** or Cargo.lock \
          changed without refreshing the committed Kotlin generated \
-         tree. Run `cargo build --bin sce-codegen --features cli \
-         --release -p sce-build` then `target/release/sce-codegen \
-         generate-w3c -l kotlin` and commit the result. stderr:\n{stderr}"
+         tree. Run `scripts/regen_all_committed_trees.sh` and commit \
+         the result — it pins the `generated-at` stamp that a bare \
+         generate-w3c leaves on wall-clock. stderr:\n{stderr}"
     );
 }
 

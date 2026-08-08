@@ -25,20 +25,17 @@
 #   scripts/regen_event_schema_native.sh
 #
 # Requires:
-#   target/debug/sce-codegen (auto-built when missing).
+#   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/debug/sce-codegen"
+source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
+CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
 GENERATED_DIR="backends/rust/tests/src/integration/event_schema_native"
-
-if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli -p sce-build
-fi
 
 # The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) rides the same
 # committed-tree gate so the bytes-equality guard is REALLY compiled + run,
