@@ -508,7 +508,7 @@ fn the_test_profile_keeps_debug_assertions_on() {
 
 /// Drive `.claude/hooks/commit_audit.sh` with a synthetic payload and
 /// return `(stdout, stderr, exit_code)`.
-fn run_commit_audit(cwd: &Path) -> (String, String, Option<i32>) {
+fn run_commit_audit(cwd: &Path, home: &Path) -> (String, String, Option<i32>) {
     let payload = format!(
         r#"{{"cwd":{},"tool_input":{{"command":"git commit -m \"chore: probe the audit hook\""}}}}"#,
         serde_json_string(&cwd.display().to_string()),
@@ -517,6 +517,7 @@ fn run_commit_audit(cwd: &Path) -> (String, String, Option<i32>) {
     let mut child = std::process::Command::new("bash")
         .arg(&hook)
         .current_dir(repo_root())
+        .env("HOME", home)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -576,6 +577,15 @@ fn memo_section(text: &str) -> String {
 /// saying so, which is the silently-inert gate this repository forbids.
 /// Both halves are pinned here, by requiring the two invocations to
 /// agree rather than merely requiring neither to crash.
+///
+/// The memory tree is seeded into a private HOME rather than read from
+/// the developer's own. Reading the ambient one made the probe pass on
+/// a machine that happens to have memos and fail on a CI runner that
+/// has none: with an absent directory the hook prints "plan memo
+/// directory is empty or absent" from both callers, which is
+/// indistinguishable from the bug being fixed and trips the guard
+/// below. A seeded HOME makes the two callers differ exactly when the
+/// slug is derived from the wrong worktree, on any machine.
 #[test]
 fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
     let root = repo_root();
@@ -583,6 +593,23 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
         std::env::temp_dir().join(format!("sce-audit-hook-worktree-{}", std::process::id()));
     let _ = fs::remove_dir_all(&scratch);
     let branch = format!("audit-hook-probe-{}", std::process::id());
+
+    // The hook slugs the main worktree's path into a memory directory
+    // under $HOME; seed exactly that directory with one open plan memo
+    // so the banner has something to list.
+    let home = std::env::temp_dir().join(format!("sce-audit-hook-home-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    let slug = root.display().to_string().replace('/', "-");
+    let memory = home.join(".claude/projects").join(&slug).join("memory");
+    fs::create_dir_all(&memory).expect("seed memory dir");
+    fs::write(
+        memory.join("next_audit_hook_probe.md"),
+        "---\nname: next_audit_hook_probe\ndescription: seeded probe memo\n\
+         metadata:\n  type: project\n  status: open\n---\n\n\
+         Seeded by the worktree audit probe; the hook must list this file \
+         from either caller.\n",
+    )
+    .expect("seed plan memo");
 
     let add = std::process::Command::new("git")
         .current_dir(&root)
@@ -597,8 +624,8 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
         String::from_utf8_lossy(&add.stderr),
     );
 
-    let (out_main, err_main, code_main) = run_commit_audit(&root);
-    let (out_wt, err_wt, code_wt) = run_commit_audit(&scratch);
+    let (out_main, err_main, code_main) = run_commit_audit(&root, &home);
+    let (out_wt, err_wt, code_wt) = run_commit_audit(&scratch, &home);
 
     // Clean up before asserting so a failure does not strand a worktree.
     let _ = std::process::Command::new("git")
@@ -611,6 +638,7 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
         .args(["branch", "-D", &branch])
         .output();
     let _ = fs::remove_dir_all(&scratch);
+    let _ = fs::remove_dir_all(&home);
 
     for (label, err) in [("main tree", &err_main), ("linked worktree", &err_wt)] {
         assert!(
@@ -637,9 +665,10 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
     // earlier — at the COMMIT_FORMAT gate, say — and two empty strings
     // would then agree with each other while proving nothing.
     assert!(
-        memos_main.contains(".md"),
+        memos_main.contains("next_audit_hook_probe.md"),
         "the probe never reached the memory validation from the main tree; \
-         the banner listed no plan memos:\nstdout:\n{out_main}\nstderr:\n{err_main}",
+         the banner did not list the memo seeded into its HOME:\nstdout:\n\
+         {out_main}\nstderr:\n{err_main}",
     );
     assert_eq!(
         memos_main, memos_wt,
