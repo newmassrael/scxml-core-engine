@@ -88,10 +88,10 @@
  * form directly would stop compiling for every C++ consumer, which is
  * the contract the `extern "C"` wrapper exists to keep.
  *
- * These carry the DMA alignment of a `buffer-pool` slot (RFC
- * §synth-5-E lines 1024-1073). `__attribute__((aligned(n)))` on the
- * storage variable is the other half of that contract, and it is not a
- * substitute: it is GCC-family syntax, and the host builds that verify
+ * These carry the DMA alignment of a `buffer-pool` slot.
+ * `__attribute__((aligned(n)))` on the storage variable is the other
+ * half of that contract, and it is not a substitute: it is GCC-family
+ * syntax, and the host builds that verify
  * these headers compile it with `-D__attribute__(x)=`, which erases the
  * attribute and with it any alignment the emitted code depends on. A
  * standard alignment specifier on the slot type survives that erasure
