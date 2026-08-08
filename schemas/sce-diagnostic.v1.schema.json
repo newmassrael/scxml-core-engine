@@ -164,7 +164,7 @@
         "mem/pool-too-large",
         "mem/inter-pool-padding-not-emitted",
         "mem/cache-line-alignment",
-        "mem/slot-size-not-cache-line-multiple",
+        "mem/dcache-line-size-not-power-of-two",
         "mem/alignment-not-power-of-two",
         "mem/slot-size-not-alignment-multiple",
         "mem/cache-policy-unsupported-on-no-dcache-core",
