@@ -188,7 +188,7 @@ type {{ machine_name }}Policy struct {
 	inPredicateStates []string
 {% endif %}
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 	pendingInvokes []sce.PendingInvoke[{{ machine_name }}State]
 	activeInvokes  map[string]*sce.ChildSession
 {% for invoke_info in model.invokes | scxml %}
@@ -233,7 +233,7 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 		pendingInvokes: make([]sce.PendingInvoke[{{ machine_name }}State], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 {% endif %}
@@ -471,13 +471,19 @@ func (p *{{ machine_name }}Policy) NeedsDataModelInit() bool {
 	return {{ 'true' if model.needs_script_engine else 'false' }}
 }
 
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{# §scxml-6.4.1 unsupported-type invokes need HasInvokeSupport (that call
+   site raises their error.execution) but never HasChildTick — no child
+   engine exists to tick. #}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 // HasInvokeSupport returns true for invoke-capable SMs.
 func (p *{{ machine_name }}Policy) HasInvokeSupport() bool { return true }
+{% else %}
+func (p *{{ machine_name }}Policy) HasInvokeSupport() bool { return false }
+{% endif %}
+{% if model.invokes | scxml or model.invokes | hybrid %}
 // HasChildTick returns true for child-ticking SMs.
 func (p *{{ machine_name }}Policy) HasChildTick() bool { return true }
 {% else %}
-func (p *{{ machine_name }}Policy) HasInvokeSupport() bool { return false }
 func (p *{{ machine_name }}Policy) HasChildTick() bool { return false }
 {% endif %}
 {% if model.invokes | scxml | selectattr('finalize_content') | list %}

@@ -305,8 +305,10 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
 {% endif %}
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid %}
-    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end)
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
+    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end).
+    // §scxml-6.4.1 unsupported-type invokes ride it too — their execute step
+    // raises error.execution instead of starting a session.
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<{{ machine_name }}State>>,
     // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
@@ -429,7 +431,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             in_predicate_states: None,
 {% endif %}
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
 {% endif %}
@@ -527,8 +529,14 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% if model.needs_external_flag %}
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
 {% endif %}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
+    // §scxml-6.4: gates the engine's macrostep-end call into
+    // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
+    // it too — that call site is where their error.execution is raised.
     const HAS_INVOKE_SUPPORT: bool = true;
+{% endif %}
+{% if model.invokes | scxml or model.invokes | hybrid %}
+    // Only session-bearing invokes have a child engine to tick.
     const HAS_CHILD_TICK: bool = true;
 {% endif %}
 {% if model.invokes | scxml | selectattr('autoforward') | list %}
@@ -849,11 +857,13 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     }
 {% endif %}
 
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);
     }
+{% endif %}
+{% if model.invokes | scxml or model.invokes | hybrid %}
 
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {

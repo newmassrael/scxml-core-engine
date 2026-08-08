@@ -9,7 +9,7 @@
 
     Ports from C++ entry_exit_actions.jinja2 executePendingInvokes() and tickChildren().
 #}
-{% if model.invokes | scxml or model.invokes | hybrid %}
+{% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
     fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
@@ -284,6 +284,17 @@
                         engine,
                     );
                 }
+                continue;
+            }
+{% endfor %}
+{% endif %}
+{% if state.invokes | unsupported %}
+{% for invoke_info in state.invokes | unsupported %}
+            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+                // W3C SCXML 6.4.1: unsupported `type` — place error.execution
+                // on the internal queue and start nothing. No child session,
+                // so no done.invoke follows and nothing is left to cancel.
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
                 continue;
             }
 {% endfor %}

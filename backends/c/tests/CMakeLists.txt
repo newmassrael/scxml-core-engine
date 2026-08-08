@@ -609,6 +609,37 @@ set_tests_properties(c11_integration_nested_final_not_terminal PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
+# implements is valid SCXML that must raise error.execution — not a document to
+# reject at build time. C11 reaches that raise through three gates the other
+# backends do not share (the entry-action switch, the scxml_family include
+# guards, and an execute_pending_invokes arm the `| scxml` filter skips), so
+# the fixture is the only thing that proves all three are open.
+sce_generate_static_integration_c_test(invoke_unsupported_type "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+add_executable(sce_c_integration_invoke_unsupported_type
+    integration/test_invoke_unsupported_type.c
+    ${INTEGRATION_C_TEST_invoke_unsupported_type_SOURCES}
+)
+target_link_libraries(sce_c_integration_invoke_unsupported_type PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_invoke_unsupported_type PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_invoke_unsupported_type PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_invoke_unsupported_type
+    COMMAND sce_c_integration_invoke_unsupported_type
+)
+set_tests_properties(c11_integration_invoke_unsupported_type PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # W3C SCXML 5.5 + 6.3.1: donedata rides done.invoke.<id> wherever the child
 # reaches its final state, not only where it finalises during start-up. The
 # donedata_local_invoke fixture pins the payload shapes on a child that is

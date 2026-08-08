@@ -64,6 +64,20 @@
             ))
 {% endfor %}
 {% endif %}
+{% set unsup_list = state.invokes | unsupported | list %}
+{% if unsup_list %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for inv in unsup_list %}
+            # W3C SCXML 6.4.1: `type` names no processor this platform
+            # implements. Defer only — the error.execution raise happens in
+            # `execute_pending_invokes`, so §scxml-6.4 ordering holds and the
+            # exit prune drops the entry when the state leaves first.
+            engine._pending_invokes.append(PendingInvoke(
+                invoke_id=f"{{ state_id }}.{id(self)}.{{ inv.invoke_id }}",
+                owner_state_name={{ state_id | py_string_literal }},
+            ))
+{% endfor %}
+{% endif %}
 {% endfor %}
         return
 
@@ -71,6 +85,9 @@
 {% set ns_any = namespace(any=false) %}
 {% for state_id, state in model.states | dictsort %}
 {% for inv in state.invokes | scxml_family %}
+{% set ns_any.any = true %}
+{% endfor %}
+{% for inv in state.invokes | unsupported %}
 {% set ns_any.any = true %}
 {% endfor %}
 {% endfor %}
@@ -212,12 +229,32 @@
                     engine._done_invoke_emitted[{{ inv.invoke_id | py_string_literal }}] = True
                 continue
 {% endfor %}
+{% for inv in state.invokes | unsupported %}
+            if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+                # W3C SCXML 6.4.1: unsupported `type` — place error.execution
+                # on the internal queue and start nothing.
+                self._raise_error_execution(engine)
+                continue
+{% endfor %}
 {% endfor %}
 {% endif %}
         return
 
     def cancel_invokes_for_state(self, state, engine) -> None:
 {% for state_id, state in model.states | dictsort %}
+{% set unsup_list = state.invokes | unsupported | list %}
+{% if unsup_list %}
+        if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
+{% for inv in unsup_list %}
+            # §scxml-6.4.1: an unsupported-type entry that never ran must
+            # raise nothing, so drop it from the pending queue on exit.
+            _suffix = {{ ('.' + inv.invoke_id) | py_string_literal }}
+            engine._pending_invokes = [
+                p for p in engine._pending_invokes
+                if not p.invoke_id.endswith(_suffix)
+            ]
+{% endfor %}
+{% endif %}
 {% set scxml_list = state.invokes | scxml_family | list %}
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:

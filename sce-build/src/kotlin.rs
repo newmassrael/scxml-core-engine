@@ -365,6 +365,28 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
         }
     }
 
+    // §scxml-6.4.1: `<invoke>` naming a processor this platform does not
+    // implement. It carries no child class, no done event and no params —
+    // the deferred closure raises `error.execution` and returns. Kotlin's
+    // runtime-closure invoke shape means the "execute" step is the closure
+    // body, so no separate execute-site arm is needed.
+    for (state_id, state) in &model.states {
+        if state.has_unsupported_invoke() {
+            let entries = invoke_entries.entry(state_id.clone()).or_default();
+            for ui in state.invokes.iter().filter_map(|i| match i {
+                crate::model::Invoke::Unsupported(info) => Some(info),
+                _ => None,
+            }) {
+                entries.push(serde_json::json!({
+                    "invoke_id": ui.base.invoke_id.as_str(),
+                    "state_id": state_id,
+                    "is_unsupported": true,
+                    "invoke_type": ui.invoke_type.as_str(),
+                }));
+            }
+        }
+    }
+
     invoke_entries
 }
 

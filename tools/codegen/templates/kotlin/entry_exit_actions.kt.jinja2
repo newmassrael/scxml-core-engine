@@ -100,7 +100,19 @@
 {% endif %}
 {% if has_invokes %}
 {% for inv in invoke_entries[state_id] %}
-{% if inv.is_hybrid is defined and inv.is_hybrid %}
+{% if inv.is_unsupported is defined and inv.is_unsupported %}
+                // W3C SCXML 6.4.1: `type` names no processor this platform
+                // implements. The deferred closure runs at macrostep end and
+                // raises error.execution — no child is created, so nothing
+                // follows and state exit has nothing to cancel beyond the
+                // pending entry `cancelPendingInvokesForState` already drops.
+                run {
+                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
+                    deferInvoke(state, generatedInvokeId) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                    }
+                }
+{% elif inv.is_hybrid is defined and inv.is_hybrid %}
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -367,8 +379,10 @@
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
 {% for inv in invoke_entries[state_id] %}
+{% if not (inv.is_unsupported is defined and inv.is_unsupported) %}
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("{{ inv.invoke_id }}")
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if is_parallel %}

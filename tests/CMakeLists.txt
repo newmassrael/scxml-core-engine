@@ -491,6 +491,7 @@ add_executable(integration_tests
     integration/InvokePrecedesDequeueMidrunTest.cpp
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
+    integration/InvokeUnsupportedTypeAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
     integration/NestedFinalNotTerminalAotTest.cpp
     integration/SendParamPayloadTest.cpp
@@ -835,6 +836,15 @@ sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INT
 # the final's parent is the `<scxml>` element. The fixture rests in the nested
 # final so the completion predicate is sampled while the machine is still live.
 sce_generate_static_integration_test(nested_final_not_terminal ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 6.4.1: an `<invoke>` whose `type` names no processor this platform
+# implements is valid SCXML that must raise `error.execution` — not a document
+# to reject at build time. AOT used to drop such an `<invoke>` from the model
+# entirely, so there was no observable at all where the Interpreter had one;
+# the fixture rests in `probe` if any backend still does. No
+# SYNTH_INVOKE_CHILDREN: §6.4.1 classification happens on `type` alone, before
+# any child document would be resolved, so codegen emits no child here.
+sce_generate_static_integration_test(invoke_unsupported_type ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.5 + 6.3.1: donedata rides `done.invoke.<id>` wherever the child
 # reaches its final state, not only where it finalises during start-up. The
