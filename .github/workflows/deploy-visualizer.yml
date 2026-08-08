@@ -67,7 +67,7 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     # The codegen WASM used to be a committed binary under
     # web/visualizer/wasm/ that nothing in the repository could rebuild:

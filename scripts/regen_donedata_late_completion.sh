@@ -23,20 +23,20 @@
 #   scripts/regen_donedata_late_completion.sh
 #
 # Requires:
-#   target/release/sce-codegen (auto-built when missing).
+#   target/debug/sce-codegen (auto-built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/donedata_late_completion/donedata_late_completion.scxml"
 GENERATED_DIR="backends/rust/tests/src/integration/donedata_late_completion"
 STEM="donedata_late_completion"
 
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 TMP="$(mktemp -d)"
