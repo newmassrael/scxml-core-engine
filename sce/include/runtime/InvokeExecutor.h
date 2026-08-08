@@ -244,9 +244,34 @@ private:
 
 /**
  * @brief Factory for creating invoke handlers (Factory Pattern)
+ *
+ * §scxml-6.4.1: the set of supported `type` values is closed. A value
+ * outside it is *not* substituted with the SCXML processor — the factory
+ * returns null and the caller raises `error.execution`, which is the
+ * observable the spec mandates and the one SCE_MESH.md §9.5 relies on
+ * for foreign-processor degradation of `<invoke type="sce:mesh-rpc">`.
  */
 class InvokeHandlerFactory {
 public:
+    /**
+     * @brief §scxml-6.4.1: Test whether a `type` value names a supported processor
+     *
+     * Accepts the `scxml` shorthand and the SCXML processor URI with and
+     * without its trailing slash. An absent `type` defaults to SCXML
+     * before reaching here, so the empty string is not a member.
+     *
+     * @param type Resolved invoke type (post-`typeexpr` evaluation)
+     * @return true when a handler can be created for this type
+     */
+    static bool isSupportedType(const std::string &type);
+
+    /**
+     * @brief Create the handler for an invoke type
+     *
+     * @param type Resolved invoke type (post-`typeexpr` evaluation)
+     * @param scriptEngine Script engine injected into the handler
+     * @return Handler for a supported type, nullptr otherwise
+     */
     static std::shared_ptr<IInvokeHandler> createHandler(const std::string &type, IScriptEngine &scriptEngine);
 
 private:
