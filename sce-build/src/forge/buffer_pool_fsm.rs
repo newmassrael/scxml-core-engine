@@ -70,6 +70,72 @@ impl SlotState {
         }
     }
 
+    /// Whether the emitted API can hand author code a handle in this
+    /// state — a `Slot<S>` on Rust, a tagged `sce_slot_handle_t` on
+    /// C11.
+    ///
+    /// This is what decides the *shape* of an edge leaving the state,
+    /// and both backends read it. An edge leaving a holdable state
+    /// consumes the caller's handle, so the old state's handle is
+    /// invalidated by the move (Rust) or retagged in place (C11). An
+    /// edge leaving a non-holdable state has no handle to consume by
+    /// construction — the slot belongs to the DMA controller or the
+    /// peripheral, which signal completion with a channel/descriptor
+    /// index and nothing else — so those edges are keyed by slot
+    /// index and mint the resulting handle instead.
+    ///
+    /// `free` is not holdable: a free slot is held by the pool, and
+    /// handing out a handle to it is precisely the aliasing the
+    /// freelist exists to prevent.
+    pub fn is_holdable(self) -> bool {
+        matches!(self, Self::CpuMut | Self::CpuRef | Self::DmaArmedRx)
+    }
+
+    /// What holding a handle in this state means, as the emitted
+    /// marker's doc comment — one entry per rendered `///` line.
+    ///
+    /// Pre-wrapped rather than one long sentence because the caller is
+    /// a template: Jinja cannot reflow, so a single string would emit a
+    /// doc line several times the width of every other comment in the
+    /// generated file.
+    ///
+    /// Lives beside the state rather than in the template so a state
+    /// added under the §synth-5-E FSM extension policy arrives with its
+    /// meaning attached instead of inheriting a generic sentence. Only
+    /// holdable states are emitted as markers (see [`Self::is_holdable`]);
+    /// the rest state why they are not, which is worth recording where
+    /// someone reading the table will ask.
+    pub fn holder_doc_lines(self) -> &'static [&'static str] {
+        match self {
+            Self::Free => &["On the freelist — held by the pool, never by author code."],
+            Self::CpuMut => &[
+                "Held by author code while the slot is in exclusive",
+                "CPU-write state.",
+            ],
+            Self::DmaArmedTx => &[
+                "TX descriptor queued. Owned by the DMA controller, so the",
+                "edges leaving it are keyed by slot index.",
+            ],
+            Self::DmaBusyTx => &[
+                "The DMA controller is reading the slot for TX. Reached by",
+                "slot index.",
+            ],
+            Self::DmaArmedRx => &[
+                "Returned from `link_arm_rx` so the author can register the",
+                "slot index with the peripheral's RX descriptor. Hand it to",
+                "`dma_start_rx` when the peripheral begins writing.",
+            ],
+            Self::DmaBusyRx => &[
+                "The peripheral is writing the slot. Reached by slot index;",
+                "`rx_complete` yields the readable `cpu-ref` handle.",
+            ],
+            Self::CpuRef => &[
+                "Held by author code while the slot is in shared CPU-read",
+                "state (post-RX-IRQ).",
+            ],
+        }
+    }
+
     /// SCREAMING_SNAKE_CASE form for C11 enum variants
     /// (`SCE_SLOT_<name>` is the full identifier).
     pub fn c_enum_suffix(self) -> &'static str {
@@ -137,6 +203,20 @@ pub struct Transition {
     /// for IRQ-driven, peripheral-driven, and intermediate edges
     /// that the runtime owns.
     pub author_callable: bool,
+    /// Identifier form of [`Self::trigger`] — the name both backends
+    /// emit for this edge (`Slot::<op_name>` on Rust,
+    /// `<pool>_<op_name>` on C11). Rendering from one field is what
+    /// keeps the two backends from drifting into different spellings
+    /// of the same transition; `pool_return` deliberately repeats
+    /// because spec line 1234 gives `cpu-mut → free` and
+    /// `cpu-ref → free` a single author-visible operation.
+    pub op_name: &'static str,
+    /// Line in `docs/spec/synth/rfc-sce-protocol-synthesis.md` declaring this
+    /// edge. `spec_line_quotes_its_own_edge` reads the spec body at
+    /// this line and fails if the citation drifts off its target — a
+    /// misaimed line number is otherwise invisible, since nothing
+    /// else reads it.
+    pub spec_line: u32,
 }
 
 /// The eleven legal transitions, verbatim from spec §synth-5-E lines
@@ -148,6 +228,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::Free,
         to: SlotState::CpuMut,
         trigger: "pool_acquire_for_encode()",
+        op_name: "pool_acquire_for_encode",
+        spec_line: 1141,
         cache_op: CacheOp::None,
         author_callable: true,
     },
@@ -155,6 +237,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::CpuMut,
         to: SlotState::DmaArmedTx,
         trigger: "link_arm_tx(slot)",
+        op_name: "link_arm_tx",
+        spec_line: 1142,
         cache_op: CacheOp::CleanIfMaintain,
         author_callable: true,
     },
@@ -162,6 +246,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::DmaArmedTx,
         to: SlotState::DmaBusyTx,
         trigger: "DMA controller signal",
+        op_name: "dma_start_tx",
+        spec_line: 1144,
         cache_op: CacheOp::None,
         author_callable: false,
     },
@@ -169,6 +255,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::DmaBusyTx,
         to: SlotState::Free,
         trigger: "TX-complete IRQ; pool_return(slot)",
+        op_name: "tx_complete",
+        spec_line: 1145,
         cache_op: CacheOp::None,
         author_callable: false,
     },
@@ -176,6 +264,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::Free,
         to: SlotState::DmaArmedRx,
         trigger: "link_arm_rx(slot)",
+        op_name: "link_arm_rx",
+        spec_line: 1146,
         cache_op: CacheOp::InvalidateIfMaintain {
             gated_speculative: true,
         },
@@ -185,6 +275,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::DmaArmedRx,
         to: SlotState::DmaBusyRx,
         trigger: "peripheral start",
+        op_name: "dma_start_rx",
+        spec_line: 1149,
         cache_op: CacheOp::None,
         author_callable: false,
     },
@@ -192,6 +284,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::DmaBusyRx,
         to: SlotState::CpuRef,
         trigger: "RX-complete IRQ",
+        op_name: "rx_complete",
+        spec_line: 1150,
         cache_op: CacheOp::InvalidateIfMaintain {
             gated_speculative: false,
         },
@@ -201,6 +295,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::CpuRef,
         to: SlotState::Free,
         trigger: "handler complete; pool_return(slot)",
+        op_name: "pool_return",
+        spec_line: 1152,
         cache_op: CacheOp::None,
         author_callable: true,
     },
@@ -208,6 +304,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::CpuRef,
         to: SlotState::CpuMut,
         trigger: "in-place mutate",
+        op_name: "mutate_in_place",
+        spec_line: 1153,
         cache_op: CacheOp::CleanOnNextHandOff,
         author_callable: false,
     },
@@ -215,6 +313,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::CpuMut,
         to: SlotState::Free,
         trigger: "abort encode (error path)",
+        op_name: "pool_return",
+        spec_line: 1155,
         cache_op: CacheOp::None,
         author_callable: true,
     },
@@ -222,6 +322,8 @@ pub const TRANSITIONS: [Transition; 11] = [
         from: SlotState::DmaArmedTx,
         to: SlotState::CpuMut,
         trigger: "un-arm before DMA start (error path)",
+        op_name: "un_arm_tx",
+        spec_line: 1156,
         cache_op: CacheOp::None,
         author_callable: false,
     },
@@ -256,6 +358,28 @@ pub fn transitions_from(state: SlotState) -> impl Iterator<Item = &'static Trans
 /// the C11 handle.
 pub fn author_callable_transitions() -> impl Iterator<Item = &'static Transition> {
     TRANSITIONS.iter().filter(|t| t.author_callable)
+}
+
+/// The edges the runtime owns: the DMA controller signal, the
+/// peripheral start, the TX/RX completion IRQs, the un-arm error
+/// path, and the in-place mutate. Exactly the complement of
+/// [`author_callable_transitions`].
+///
+/// These are emitted too, as an explicitly-`unsafe` seam that the
+/// driver or ISR calls. Leaving them unemitted does not make them
+/// unreachable — it makes the pool a one-way sink. `free →
+/// dma-armed-{tx,rx}` are author-callable, so a pool with no seam
+/// can be drained but never refilled: `dma-busy-tx → free` and
+/// `dma-busy-rx → cpu-ref` are the only paths back to the freelist
+/// and both live here. Spec line 1159 states the FSM is total over
+/// emitted operations, which is only true of an emit that carries
+/// every edge.
+///
+/// `unsafe` is the honest marker rather than a naming convention:
+/// calling one of these before the hardware event it names hands out
+/// a view of memory the peripheral is still writing.
+pub fn runtime_seam_transitions() -> impl Iterator<Item = &'static Transition> {
+    TRANSITIONS.iter().filter(|t| !t.author_callable)
 }
 
 #[cfg(test)]
@@ -511,6 +635,201 @@ mod tests {
         assert!(pairs.contains(&(SlotState::Free, SlotState::DmaArmedRx)));
         assert!(pairs.contains(&(SlotState::CpuMut, SlotState::Free)));
         assert!(pairs.contains(&(SlotState::CpuRef, SlotState::Free)));
+    }
+
+    /// `is_holdable` decides whether an edge leaving a state consumes
+    /// a handle or takes a slot index, so both backends branch on it.
+    /// Pin the partition and the reason for each side.
+    #[test]
+    fn holdable_states_are_the_cpu_owned_ones_plus_the_armed_rx_handle() {
+        // The pool owns a free slot; handing out a handle to one is
+        // the aliasing the freelist prevents.
+        assert!(!SlotState::Free.is_holdable());
+        // Hardware owns these — a completion IRQ arrives with an
+        // index, never with a handle the author could have kept.
+        assert!(!SlotState::DmaArmedTx.is_holdable());
+        assert!(!SlotState::DmaBusyTx.is_holdable());
+        assert!(!SlotState::DmaBusyRx.is_holdable());
+        // CPU-owned, plus the armed-RX handle `link_arm_rx` returns so
+        // the author can write the peripheral's descriptor.
+        assert!(SlotState::CpuMut.is_holdable());
+        assert!(SlotState::CpuRef.is_holdable());
+        assert!(SlotState::DmaArmedRx.is_holdable());
+        assert_eq!(STATES.iter().filter(|s| s.is_holdable()).count(), 3);
+    }
+
+    /// Nothing may be declared holdable that no transition produces —
+    /// that would emit a `Slot<S>` type with no way to obtain one,
+    /// which is the dead-code shape the seam exists to remove.
+    #[test]
+    fn every_holdable_state_has_a_producer() {
+        for s in STATES.iter().filter(|s| s.is_holdable()) {
+            assert!(
+                TRANSITIONS.iter().any(|t| t.to == *s),
+                "{s:?} is holdable but no transition produces it",
+            );
+        }
+    }
+
+    /// The runtime seam is exactly the complement of the author API,
+    /// and it is not empty. Six edges: the two DMA starts, the two
+    /// completions, the un-arm error path, and the in-place mutate.
+    #[test]
+    fn runtime_seam_is_the_complement_of_the_author_api() {
+        let seam: Vec<(SlotState, SlotState)> =
+            runtime_seam_transitions().map(|t| (t.from, t.to)).collect();
+        assert_eq!(
+            seam.len(),
+            TRANSITION_COUNT - author_callable_transitions().count(),
+            "seam and author API must partition the edge set",
+        );
+        assert_eq!(seam.len(), 6, "six runtime-owned edges (spec §5.E)");
+        for pair in [
+            (SlotState::DmaArmedTx, SlotState::DmaBusyTx),
+            (SlotState::DmaBusyTx, SlotState::Free),
+            (SlotState::DmaArmedRx, SlotState::DmaBusyRx),
+            (SlotState::DmaBusyRx, SlotState::CpuRef),
+            (SlotState::CpuRef, SlotState::CpuMut),
+            (SlotState::DmaArmedTx, SlotState::CpuMut),
+        ] {
+            assert!(seam.contains(&pair), "{pair:?} must be a seam edge");
+        }
+    }
+
+    /// Every state must be reachable from `free` and must have a way
+    /// out. This is the property the pre-seam emit violated: three
+    /// states had no producer and the two DMA-busy states had no
+    /// consumer, so arming a slot removed it from the pool forever.
+    ///
+    /// Stated over `TRANSITIONS` rather than over a hand-listed set,
+    /// so a state added under the §synth-5-E FSM extension policy
+    /// (lines 1166-1180) inherits the requirement instead of slipping
+    /// in unreachable.
+    #[test]
+    fn every_state_is_reachable_from_free_and_has_a_way_out() {
+        let mut reached = std::collections::HashSet::from([SlotState::Free]);
+        // Eleven edges: |STATES| passes is a generous fixpoint bound.
+        for _ in 0..STATE_COUNT {
+            for t in TRANSITIONS.iter() {
+                if reached.contains(&t.from) {
+                    reached.insert(t.to);
+                }
+            }
+        }
+        for s in STATES.iter() {
+            assert!(
+                reached.contains(s),
+                "{s:?} is not reachable from free — no emitted operation can \
+                 ever put a slot into it",
+            );
+            assert!(
+                TRANSITIONS.iter().any(|t| t.from == *s),
+                "{s:?} has no outgoing edge — a slot entering it is stranded",
+            );
+        }
+    }
+
+    /// A slot must be able to get back to `free` from every state,
+    /// not merely leave it. Without this, "has a way out" is
+    /// satisfied by a cycle that never returns the slot to the pool.
+    #[test]
+    fn every_state_can_return_to_free() {
+        // Backward fixpoint: states from which `free` is reachable.
+        let mut returns = std::collections::HashSet::from([SlotState::Free]);
+        for _ in 0..STATE_COUNT {
+            for t in TRANSITIONS.iter() {
+                if returns.contains(&t.to) {
+                    returns.insert(t.from);
+                }
+            }
+        }
+        for s in STATES.iter() {
+            assert!(
+                returns.contains(s),
+                "{s:?} cannot reach free — a slot arriving there leaks",
+            );
+        }
+    }
+
+    /// Two edges leaving the same state must not share an emitted
+    /// name: on Rust they would collide in one `impl Slot<From>`
+    /// block, on C11 in one function name. Edges leaving *different*
+    /// states may share one (`pool_return` covers `cpu-mut → free`
+    /// and `cpu-ref → free` per spec line 1234).
+    #[test]
+    fn op_names_are_unique_per_source_state() {
+        for s in STATES.iter() {
+            let mut seen = std::collections::HashSet::new();
+            for t in transitions_from(*s) {
+                assert!(
+                    seen.insert(t.op_name),
+                    "{:?} has two edges emitting `{}`",
+                    s,
+                    t.op_name,
+                );
+            }
+        }
+    }
+
+    /// Emitted names must be usable as identifiers in both backends.
+    #[test]
+    fn op_names_are_lower_snake_identifiers() {
+        for t in TRANSITIONS.iter() {
+            assert!(!t.op_name.is_empty(), "{:?} has an empty op_name", t.from);
+            assert!(
+                t.op_name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "op_name {:?} must be lower_snake_case",
+                t.op_name,
+            );
+            let first = t.op_name.chars().next().expect("non-empty");
+            assert!(
+                first.is_ascii_lowercase(),
+                "op_name {:?} must start with a letter",
+                t.op_name,
+            );
+        }
+    }
+
+    /// Read the spec body at each `spec_line` and require that the
+    /// line declares the edge it is attached to.
+    ///
+    /// A line number that drifts off its target is invisible
+    /// otherwise: nothing dereferences it, so a wrong one stays wrong
+    /// and reads as documentation. This is the only check that can
+    /// catch a misaimed citation, so it reads the file rather than a
+    /// copy of it.
+    #[test]
+    fn spec_line_quotes_its_own_edge() {
+        let spec = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../docs/spec/synth/rfc-sce-protocol-synthesis.md");
+        let body = std::fs::read_to_string(&spec)
+            .unwrap_or_else(|e| panic!("spec must be readable at {}: {e}", spec.display()));
+        let lines: Vec<&str> = body.lines().collect();
+        let mut checked = 0usize;
+        for t in TRANSITIONS.iter() {
+            let idx = t.spec_line as usize - 1;
+            let line = lines.get(idx).unwrap_or_else(|| {
+                panic!(
+                    "spec has no line {} (file has {})",
+                    t.spec_line,
+                    lines.len()
+                )
+            });
+            assert!(
+                line.contains(t.from.spec_name()) && line.contains(t.to.spec_name()),
+                "spec line {} does not declare {} → {}; it reads:\n  {line}",
+                t.spec_line,
+                t.from.spec_name(),
+                t.to.spec_name(),
+            );
+            checked += 1;
+        }
+        assert_eq!(
+            checked, TRANSITION_COUNT,
+            "every edge must have had its citation checked",
+        );
     }
 
     /// IRQ-driven and peripheral-driven edges must NOT be marked

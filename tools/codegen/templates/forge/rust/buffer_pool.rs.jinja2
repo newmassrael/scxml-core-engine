@@ -61,7 +61,7 @@ pub const DMA_CHANNEL: &'static str = "{{ dma_channel }}";
 /// `maintain`; the other two policies emit no maintenance calls.
 pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
 
-{%- if cache_maintain %}
+{%- if needs_clean_extern or needs_invalidate_extern %}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // C5 cache-maintenance externs (spec §synth-5-I lines 1736-1740). The
@@ -70,11 +70,19 @@ pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
 // declarations also appear in the sidecar `{{ snake_name }}_externs.rs`
 // for deploy-review transparency; both forward declarations are
 // legal and unify at link time because the symbols are identical.
+//
+// Which of the two is declared follows from the resolved edge set,
+// not from the pool's policy flags directly: the `dma-busy-rx →
+// cpu-ref` invalidate is ungated under `maintain` (spec line 1151),
+// so keying the declaration on `has_speculative_prefetch` would
+// leave the RX-completion edge calling a symbol it never declared.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 unsafe extern "C" {
+{%- if needs_clean_extern %}
     fn sce_dcache_clean_by_addr(start: *const core::ffi::c_void, len: usize);
-{%- if has_speculative_prefetch %}
+{%- endif %}
+{%- if needs_invalidate_extern %}
     fn sce_dcache_invalidate_by_addr(start: *mut core::ffi::c_void, len: usize);
 {%- endif %}
 }
@@ -219,23 +227,15 @@ pub enum SlotState {
 // (free → dma-armed-rx).
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Phantom marker for `SlotState::CpuMut`. Held by author code while
-/// the slot is in exclusive CPU-write state.
+{% for mk in markers %}
+/// Phantom marker for `SlotState::{{ mk.pascal }}`.
+{% for line in mk.doc %}
+/// {{ line }}
+{% endfor %}
 #[derive(Debug)]
-pub struct CpuMut;
+pub struct {{ mk.pascal }};
 
-/// Phantom marker for `SlotState::CpuRef`. Held by author code while
-/// the slot is in shared CPU-read state (post-RX-IRQ).
-#[derive(Debug)]
-pub struct CpuRef;
-
-/// Phantom marker for `SlotState::DmaArmedRx`. Returned from
-/// `link_arm_rx` so the author can register the slot index with the
-/// peripheral's RX descriptor; the slot then progresses through
-/// `DmaBusyRx → CpuRef` via IRQ handlers (not exposed in this
-/// atomic).
-#[derive(Debug)]
-pub struct DmaArmedRx;
+{% endfor %}
 
 /// Phantom-typed slot handle. The state parameter `S` is one of the
 /// marker types above. Since `idx` is private, code outside this
@@ -321,7 +321,7 @@ impl {{ pascal_name }} {
     pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>> {
         for (i, st) in self.slot_states.iter_mut().enumerate() {
             if *st == SlotState::Free {
-                {% if cache_maintain and has_speculative_prefetch %}
+                {% if edge_cache["link_arm_rx"].invalidate %}
                 // C5 pre-arm cache-invalidate (spec lines 1189-1198).
                 unsafe {
                     sce_dcache_invalidate_by_addr(
@@ -365,7 +365,7 @@ impl Slot<CpuMut> {
     /// (spec lines 1186-1188) so the DMA controller reads the
     /// latest CPU writes from main memory.
     pub fn link_arm_tx(self, pool: &mut {{ pascal_name }}) {
-        {% if cache_maintain %}
+        {% if edge_cache["link_arm_tx"].clean %}
         // C5 cache-clean before TX descriptor publish (spec lines 1186-1188).
         unsafe {
             sce_dcache_clean_by_addr(
@@ -420,12 +420,125 @@ impl Slot<CpuRef> {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Slot<DmaArmedRx> — exposed for the author to register the slot
-// index against a peripheral RX descriptor. The IRQ-driven
-// progression `DmaArmedRx → DmaBusyRx → CpuRef` (spec lines
-// 1149-1150) is owned by the runtime and not directly invocable.
-// `Slot::idx()` is the only public method here.
+// Runtime seam — the six FSM edges the DMA controller, the
+// peripheral, and the completion IRQs own (spec §synth-5-E lines
+// 1144, 1145, 1149, 1150, 1153, 1156).
+//
+// These are not part of the author-visible API on spec lines
+// 1232-1237, but they are emitted, because leaving them out does not
+// make them unreachable — it makes the pool a one-way sink.
+// `pool_acquire_for_encode` and `link_arm_rx` hand slots out;
+// `dma-busy-tx → free` and `dma-busy-rx → cpu-ref` are the only
+// edges that hand them back, and both live here. Without this block
+// a slot armed for DMA never returns to the freelist and the pool
+// drains permanently.
+//
+// Two shapes, decided by whether the edge's source state is one the
+// API can hand back as a `Slot<S>`:
+//
+//   * source is holdable — the caller has the handle, so the method
+//     consumes it and Rust's move semantics invalidate the old state.
+//   * source is DMA-owned — no handle exists by construction. The
+//     completion signal carries a channel/descriptor index and
+//     nothing else, so the pool method takes `idx` and mints the
+//     resulting handle.
+//
+// Every one is `unsafe`, and that is a real contract rather than a
+// naming convention: calling one before the hardware event it names
+// hands out a view of memory the peripheral is still writing.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+impl {{ pascal_name }} {
+{% for t in seam %}
+{% if not t.from_holdable %}
+    /// `{{ t.from_spec }} → {{ t.to_spec }}` — {{ t.trigger }}.
+    /// Spec §synth-5-E line {{ t.spec_line }}.
+    ///
+    /// Runtime-owned edge. `{{ t.from_spec }}` hands out no handle, so
+    /// the slot is named by index — which is what the completion
+    /// signal actually carries.
+    ///
+    /// Refuses a slot that is not in `{{ t.from_spec }}`, so a spurious
+    /// or replayed interrupt cannot advance an unrelated slot.
+    ///
+    /// # Safety
+    /// The caller must have observed {{ t.trigger }} for this slot.
+    /// Calling it early publishes memory the peripheral still owns.
+    pub unsafe fn {{ t.op_name }}(&mut self, idx: usize) -> {% if t.to_holdable %}Option<Slot<{{ t.to_pascal }}>>{% else %}bool{% endif %} {
+        if self.slot_states.get(idx) != Some(&SlotState::{{ t.from_pascal }}) {
+            return {% if t.to_holdable %}None{% else %}false{% endif %};
+        }
+{% if t.cache_clean %}
+        // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
+        unsafe {
+            sce_dcache_clean_by_addr(
+                self.storage[idx].as_ptr() as *const core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+{% if t.cache_invalidate %}
+        // C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}) —
+        // evicts the stale lines the CPU holds for a region the DMA
+        // has just rewritten.
+        unsafe {
+            sce_dcache_invalidate_by_addr(
+                self.storage[idx].as_mut_ptr() as *mut core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+        self.slot_states[idx] = SlotState::{{ t.to_pascal }};
+{% if t.to_holdable %}
+        Some(Slot { idx, _state: PhantomData })
+{% else %}
+        true
+{% endif %}
+    }
+
+{% endif %}
+{% endfor %}
+}
+{% for t in seam %}
+{% if t.from_holdable %}
+
+impl Slot<{{ t.from_pascal }}> {
+    /// `{{ t.from_spec }} → {{ t.to_spec }}` — {{ t.trigger }}.
+    /// Spec §synth-5-E line {{ t.spec_line }}.
+    ///
+    /// Runtime-owned edge. Consumes the handle, so the
+    /// `{{ t.from_spec }}` view cannot outlive the transition.
+    ///
+    /// # Safety
+    /// The caller must have observed {{ t.trigger }} for this slot.
+    /// Calling it early publishes memory the peripheral still owns.
+    pub unsafe fn {{ t.op_name }}(self, pool: &mut {{ pascal_name }}){% if t.to_holdable %} -> Slot<{{ t.to_pascal }}>{% endif %} {
+{% if t.cache_clean %}
+        // C5 cache-clean on this edge (spec §synth-5-E line {{ t.spec_line }}).
+        unsafe {
+            sce_dcache_clean_by_addr(
+                pool.storage[self.idx].as_ptr() as *const core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+{% if t.cache_invalidate %}
+        // C5 cache-invalidate on this edge (spec §synth-5-E line {{ t.spec_line }}).
+        unsafe {
+            sce_dcache_invalidate_by_addr(
+                pool.storage[self.idx].as_mut_ptr() as *mut core::ffi::c_void,
+                SLOT_SIZE,
+            );
+        }
+{% endif %}
+        pool.slot_states[self.idx] = SlotState::{{ t.to_pascal }};
+{% if t.to_holdable %}
+        Slot { idx: self.idx, _state: PhantomData }
+{% endif %}
+    }
+}
+{% endif %}
+{% endfor %}
 
 #[cfg(test)]
 mod generated_tests {
@@ -502,5 +615,96 @@ mod generated_tests {
         let pool = {{ pascal_name }}::new();
         assert!(pool.slot_state(SLOT_COUNT).is_none());
         assert!(pool.slot_state(usize::MAX).is_none());
+    }
+
+    // ── Lifecycle closure ────────────────────────────────────────
+    // A slot armed for DMA has to come back. These walk the two arms
+    // end to end and assert the pool is whole again afterwards, which
+    // is exactly what fails when the runtime seam is missing: arming
+    // is author-callable, but `dma-busy-tx → free` and
+    // `dma-busy-rx → cpu-ref` are the only edges that return a slot,
+    // and both are runtime-owned. Without them the pool drains once
+    // and never refills.
+
+    #[test]
+    fn tx_arm_returns_the_slot_to_the_freelist() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        slot.link_arm_tx(&mut pool);
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaArmedTx));
+        // SAFETY: no DMA controller here; this test *is* the driver.
+        assert!(unsafe { pool.dma_start_tx(idx) });
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaBusyTx));
+        assert!(unsafe { pool.tx_complete(idx) });
+        assert_eq!(pool.free_count(), SLOT_COUNT, "TX arm must not leak the slot");
+    }
+
+    #[test]
+    fn rx_arm_returns_the_slot_to_the_freelist() {
+        let mut pool = {{ pascal_name }}::new();
+        let armed = pool.link_arm_rx().expect("free slot available");
+        let idx = armed.idx();
+        // SAFETY: standing in for the peripheral and its completion IRQ.
+        unsafe { armed.dma_start_rx(&mut pool) };
+        assert_eq!(pool.slot_state(idx), Some(SlotState::DmaBusyRx));
+        let readable = unsafe { pool.rx_complete(idx) }.expect("rx completion yields cpu-ref");
+        assert_eq!(readable.idx(), idx);
+        assert_eq!(readable.read(&pool).len(), SLOT_SIZE);
+        readable.pool_return(&mut pool);
+        assert_eq!(pool.free_count(), SLOT_COUNT, "RX arm must not leak the slot");
+    }
+
+    #[test]
+    fn the_whole_ring_can_be_armed_and_drained_repeatedly() {
+        let mut pool = {{ pascal_name }}::new();
+        for _round in 0..3 {
+            let mut armed = Vec::new();
+            for _ in 0..SLOT_COUNT {
+                let slot = pool.link_arm_rx().expect("free slot available");
+                armed.push(slot.idx());
+                // SAFETY: see above.
+                unsafe { slot.dma_start_rx(&mut pool) };
+            }
+            assert_eq!(pool.free_count(), 0, "ring fully armed");
+            for idx in armed {
+                unsafe { pool.rx_complete(idx) }
+                    .expect("rx completion yields cpu-ref")
+                    .pool_return(&mut pool);
+            }
+            assert_eq!(pool.free_count(), SLOT_COUNT, "ring fully recovered");
+        }
+    }
+
+    #[test]
+    fn un_arm_recovers_a_slot_whose_dma_never_started() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        slot.link_arm_tx(&mut pool);
+        // SAFETY: the error path — the driver knows the DMA never started.
+        let recovered = unsafe { pool.un_arm_tx(idx) }.expect("un-arm yields cpu-mut");
+        recovered.pool_return(&mut pool);
+        assert_eq!(pool.free_count(), SLOT_COUNT);
+    }
+
+    /// A spurious or replayed interrupt must not advance a slot that
+    /// is in some other state. The index-keyed seam has no handle to
+    /// tag-check, so this state check is the only thing standing
+    /// between a stray IRQ and a slot handed to two owners.
+    #[test]
+    fn the_seam_refuses_a_slot_in_the_wrong_state() {
+        let mut pool = {{ pascal_name }}::new();
+        let slot = pool.pool_acquire_for_encode().expect("free slot available");
+        let idx = slot.idx();
+        // SAFETY: deliberately calling on a cpu-mut slot; the point is
+        // that it is refused rather than acted on.
+        assert!(!unsafe { pool.dma_start_tx(idx) }, "cpu-mut is not dma-armed-tx");
+        assert!(!unsafe { pool.tx_complete(idx) }, "cpu-mut is not dma-busy-tx");
+        assert!(unsafe { pool.rx_complete(idx) }.is_none(), "cpu-mut is not dma-busy-rx");
+        assert!(unsafe { pool.un_arm_tx(idx) }.is_none(), "cpu-mut is not dma-armed-tx");
+        assert_eq!(pool.slot_state(idx), Some(SlotState::CpuMut), "state untouched");
+        assert!(unsafe { pool.rx_complete(SLOT_COUNT) }.is_none(), "out of range");
+        slot.pool_return(&mut pool);
     }
 }
