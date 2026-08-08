@@ -490,6 +490,7 @@ add_executable(integration_tests
     integration/InvokePrecedesExternalDequeueAotTest.cpp
     integration/InvokePrecedesDequeueMidrunTest.cpp
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
+    integration/InvokeUnsupportedTypeTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
     integration/NestedFinalNotTerminalAotTest.cpp
     integration/SendParamPayloadTest.cpp

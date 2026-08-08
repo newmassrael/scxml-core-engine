@@ -10,6 +10,7 @@
 #include "core/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"
+#include "events/EventRaiserService.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "model/InvokeNode.h"
@@ -680,17 +681,24 @@ std::string SCXMLInvokeHandler::generateInvokeId(const std::string &stateId) con
 // InvokeHandlerFactory Implementation
 // ============================================================================
 
+bool InvokeHandlerFactory::isSupportedType(const std::string &type) {
+    // §scxml-6.4.1: the SCXML processor URI, with and without its trailing
+    // slash, plus the "scxml" shorthand.
+    const std::string processorUri(Constants::SCXML_INVOKE_PROCESSOR_URI);
+    return type == "scxml" || type == processorUri || type == processorUri.substr(0, processorUri.length() - 1);
+}
+
 std::shared_ptr<IInvokeHandler> InvokeHandlerFactory::createHandler(const std::string &type,
                                                                     IScriptEngine &scriptEngine) {
-    // W3C SCXML: Check if type matches SCXML invoke processor
-    if (type == "scxml" || type == Constants::SCXML_INVOKE_PROCESSOR_URI ||
-        type == std::string(Constants::SCXML_INVOKE_PROCESSOR_URI)
-                    .substr(0, std::string(Constants::SCXML_INVOKE_PROCESSOR_URI).length() - 1)) {
+    if (isSupportedType(type)) {
         return std::make_shared<SCXMLInvokeHandler>(scriptEngine);
     }
 
-    SCE_LOG_WARN("InvokeHandlerFactory: Unknown invoke type: {}, falling back to SCXML handler", type);
-    return std::make_shared<SCXMLInvokeHandler>(scriptEngine);
+    // §scxml-6.4.1: an unsupported type is never substituted with a
+    // different processor. Returning null routes the caller to the
+    // spec-mandated error.execution instead of silently starting an
+    // SCXML child session the author never asked for.
+    return nullptr;
 }
 
 // ============================================================================
@@ -793,7 +801,19 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
     // Create appropriate handler using factory pattern
     auto handler = InvokeHandlerFactory::createHandler(invokeType, scriptEngine_);
     if (!handler) {
-        SCE_LOG_ERROR("InvokeExecutor: Failed to create handler for invoke type: {}", invokeType);
+        // §scxml-6.4.1: an unsupported invoke type MUST place
+        // error.execution on the internal event queue. The author catches
+        // it with a plain `<transition event="error.execution">`, which is
+        // the same handler a foreign SCXML 1.0 processor would exercise
+        // for SCE's own `sce:mesh-rpc` type (SCE_MESH.md §9.5).
+        SCE_LOG_ERROR("InvokeExecutor: Unsupported invoke type '{}' - raising error.execution for session: {}",
+                      invokeType, sessionId);
+        auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(sessionId);
+        if (eventRaiser) {
+            eventRaiser->raiseEvent("error.execution", "Unsupported <invoke> type: " + invokeType);
+        } else {
+            SCE_LOG_ERROR("InvokeExecutor: No EventRaiser for session '{}' - error.execution dropped", sessionId);
+        }
         return "";
     }
 
