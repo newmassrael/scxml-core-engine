@@ -240,8 +240,18 @@ fi
 
 if stage_on "1"; then
 # ── Stage 1: sce-codegen build (baseline) ─────────────────────────
-    log_step "Stage 1/8 — cargo build sce-codegen --release"
-    cargo build --bin sce-codegen --features cli --release -p sce-build \
+#
+# Debug profile. The generator's cost is process start-up and I/O, not
+# optimisation — measured at 2.75s vs 2.89s over forty runs of the
+# largest fixture, with the two profiles producing byte-identical
+# output across all 1588 committed generated files. Building it in
+# release compiled the entire dependency tree a second time, sharing
+# nothing with Stage 2's clippy or Stage 4's test run: 145.7s against
+# 24.6s in a tree those stages had already warmed. `cargo test
+# --release` in Stage 5b is a different thing and stays — that one
+# pins optimised floating-point output, which is what ships.
+    log_step "Stage 1/8 — cargo build sce-codegen"
+    cargo build --bin sce-codegen --features cli -p sce-build \
         || fail_step "Stage 1 (sce-codegen build)"
 
 fi
@@ -389,7 +399,7 @@ if stage_on "2b"; then
     cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
         --target=thumbv7em-none-eabihf -- -D warnings \
         || fail_step "Stage 2b (no_std runtime clippy)"
-    "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
+    "$REPO_ROOT/target/debug/sce-codegen" --workspace-root "$REPO_ROOT" generate \
         -l rust --no-std --output-dir backends/rust/probes/nostd-build/src \
         sce-build/tests/fixtures/no_std/parallel_history_probe.scxml >/dev/null 2>&1 \
         || fail_step "Stage 2b (no_std probe generation)"
@@ -400,7 +410,7 @@ if stage_on "2b"; then
     # emission compiles against BOTH the std runtime (host, AP profile) and the
     # no_std runtime (thumb, MCU profile). Regression gate for the bytes-field
     # `E0433: cannot find heapless in sce_rust_runtime` against the std runtime.
-    "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
+    "$REPO_ROOT/target/debug/sce-codegen" --workspace-root "$REPO_ROOT" generate \
         -l rust --no-std --output-dir backends/rust/probes/portable-emit/src \
         sce-build/tests/fixtures/no_std/portable_probe.scxml >/dev/null 2>&1 \
         || fail_step "Stage 2b (portability probe generation)"
@@ -415,7 +425,7 @@ if stage_on "2b"; then
     # silent revert of the per-machine `StatePolicy::EventQueue` to the bare
     # (depth-64) form — which a plain compile gate misses, since the bare form
     # still compiles. This is the downstream MCU SRAM blocker class.
-    "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
+    "$REPO_ROOT/target/debug/sce-codegen" --workspace-root "$REPO_ROOT" generate \
         -l rust --no-std --output-dir backends/rust/probes/nostd-queue-size/machine/src \
         sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml >/dev/null 2>&1 \
         || fail_step "Stage 2b (queue-size probe generation)"
@@ -591,7 +601,7 @@ if stage_on "6"; then
     BUILD_DIR="$(mktemp -d)"
     cmake -S backends/cpp/forge-runtime/tests/conformance \
           -B "$BUILD_DIR" \
-          -DSCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen" \
+          -DSCE_CODEGEN="$REPO_ROOT/target/debug/sce-codegen" \
           -Wno-dev >/dev/null \
         || fail_step "Stage 6 (C++ forge conformance configure)"
     cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
@@ -616,7 +626,7 @@ if stage_on "7"; then
     example_failures=0
     for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
         [[ -f "$scxml" ]] || continue
-        if ! "$REPO_ROOT/target/release/sce-codegen" generate "$scxml" \
+        if ! "$REPO_ROOT/target/debug/sce-codegen" generate "$scxml" \
                 --language cpp \
                 --output-dir "$GEN_OUT/" >/dev/null 2>&1; then
             printf '  FAIL: %s\n' "$scxml" >&2

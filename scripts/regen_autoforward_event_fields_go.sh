@@ -22,7 +22,7 @@
 #   scripts/regen_autoforward_event_fields_go.sh
 #
 # Requires:
-#   target/release/sce-codegen (build first if missing: see step 1).
+#   target/debug/sce-codegen (build first if missing: see step 1).
 #
 # Idempotency: re-runs are byte-stable except for the embedded
 # `generated-at: <unix-seconds>` header line that the codegen emits
@@ -34,7 +34,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/autoforward_event_fields/autoforward_event_fields.scxml"
 GENERATED_DIR="backends/go/tests/integration/autoforward_event_fields"
 STEM="autoforward_event_fields"
@@ -42,7 +42,7 @@ INPUT_ROOT="integration_resources/autoforward_event_fields"
 
 # Step 1: build sce-codegen in release mode if absent.
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 # Step 2: stage the fixture into a tmp dir so synth-invoke children land

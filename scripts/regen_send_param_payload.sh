@@ -23,20 +23,20 @@
 #   scripts/regen_send_param_payload.sh
 #
 # Requires:
-#   target/release/sce-codegen (auto-built when missing).
+#   target/debug/sce-codegen (auto-built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/send_param_payload/send_param_payload.scxml"
 GENERATED_DIR="backends/rust/tests/src/integration/send_param_payload"
 STEM="send_param_payload"
 
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 TMP="$(mktemp -d)"

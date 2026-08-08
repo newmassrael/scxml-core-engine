@@ -115,11 +115,11 @@ jobs:
     # target with no `#[global_allocator]`; any reachable `alloc` symbol is a
     # hard compile error. See backends/rust/probes/nostd-build/README.md.
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate the no_std probe machine
       run: |
-        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+        target/debug/sce-codegen --workspace-root . generate -l rust --no-std \
           --output-dir backends/rust/probes/nostd-build/src \
           sce-build/tests/fixtures/no_std/parallel_history_probe.scxml
 
@@ -138,7 +138,7 @@ jobs:
     # source with the generated native-action machine and compiling again.
     - name: Generate the no_std native-action probe
       run: |
-        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+        target/debug/sce-codegen --workspace-root . generate -l rust --no-std \
           --output-dir /tmp/na-probe \
           sce-build/tests/fixtures/event_schema/statechart_native_action.scxml
         cp /tmp/na-probe/statechart_native_action_sm.rs \
@@ -163,7 +163,7 @@ jobs:
     # exercises every alias. See backends/rust/probes/portable-emit/README.md.
     - name: Generate the portability probe machine
       run: |
-        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+        target/debug/sce-codegen --workspace-root . generate -l rust --no-std \
           --output-dir backends/rust/probes/portable-emit/src \
           sce-build/tests/fixtures/no_std/portable_probe.scxml
 
@@ -191,7 +191,7 @@ jobs:
     # See backends/rust/probes/nostd-queue-size/README.md.
     - name: Generate the queue-size probe machine (sce:capacity=2)
       run: |
-        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+        target/debug/sce-codegen --workspace-root . generate -l rust --no-std \
           --output-dir backends/rust/probes/nostd-queue-size/machine/src \
           sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml
 

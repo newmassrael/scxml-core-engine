@@ -40,10 +40,10 @@ cd "$REPO_ROOT"
 # lands without it.
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 echo "==> W3C committed trees"

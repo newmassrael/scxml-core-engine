@@ -2,7 +2,7 @@
 # Generates C++ state machine code from W3C SCXML test suite
 #
 # Requires sce-codegen (Rust binary).
-# Build: cargo build --bin sce-codegen --features cli --release -p sce-build
+# Build: cargo build --bin sce-codegen --features cli -p sce-build
 
 # Set CMake policy CMP0116 to NEW (Ninja DEPFILE transformation)
 # This suppresses warnings for add_custom_command DEPFILE usage
@@ -13,9 +13,9 @@ endif()
 # clang-format integration for generated C++ code
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 
-# Find sce-codegen binary (built via: cargo build --bin sce-codegen --features cli --release -p sce-build)
+# Find sce-codegen binary (built via: cargo build --bin sce-codegen --features cli -p sce-build)
 find_program(SCE_CODEGEN sce-codegen
-    PATHS "${CMAKE_SOURCE_DIR}/target/release" "${CMAKE_SOURCE_DIR}/target/debug"
+    PATHS "${CMAKE_SOURCE_DIR}/target/debug" "${CMAKE_SOURCE_DIR}/target/release"
     NO_DEFAULT_PATH
 )
 if(NOT SCE_CODEGEN)
@@ -26,7 +26,7 @@ endif()
 if(SCE_CODEGEN)
     message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 else()
-    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli --release -p sce-build")
+    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli -p sce-build")
 endif()
 
 # sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
