@@ -38,6 +38,18 @@ EMBED_FRESH="${SCRATCH}/embed"
 CONSUMER_SRC="${SCRATCH}/consumer"
 CONSUMER_BUILD="${SCRATCH}/consumer_build"
 
+# Pin the generator to this tree's build. The consumer project is built
+# from a scratch directory, so `SCEFindCodegen.cmake`'s in-tree lookup
+# finds nothing and falls through to `find_program(sce-codegen)` — i.e.
+# whatever binary happens to sit on the developer's PATH. That pairs an
+# arbitrarily old generator with this tree's templates, and the mismatch
+# reads as a template bug: a generator predating a filter fails with
+# "unknown filter" on a template that is perfectly valid here. Resolving
+# through the shared locator asserts what the gate is for — that the
+# embed payload *this tree produces* is consumer-usable.
+source "${SCE_ROOT}/scripts/lib/sce_codegen.sh"
+SCE_CODEGEN_BIN="$(sce_codegen_require "${SCE_ROOT}")"
+
 echo "[smoke] Regenerating embed payload into ${EMBED_FRESH}"
 "${SCRIPT_DIR}/package_embed.sh" -o "${EMBED_FRESH}" >/dev/null
 
@@ -116,6 +128,7 @@ CMAKEEOF
 echo "[smoke] Configuring consumer"
 cmake -S "${CONSUMER_SRC}" -B "${CONSUMER_BUILD}" \
       -DCMAKE_BUILD_TYPE=Release \
+      -DSCE_CODEGEN="${SCE_CODEGEN_BIN}" \
       >"${SCRATCH}/configure.log" 2>&1 || {
     echo "ERROR: consumer configure failed. Log tail:" >&2
     tail -n 40 "${SCRATCH}/configure.log" >&2
