@@ -12296,8 +12296,8 @@ mod tests {
             // surfaces identically on `<send>/<param>` and on
             // `_event.data.<field>` use sites.
             | ValidationEventPayloadFieldUnknown
-            // §synth-5-E slot-table layout — both carry the two legal
-            // roundings as a closed candidate set, and which one is
+            // Buffer-pool slot-table layout — both carry the two
+            // legal roundings as a closed candidate set, and which one is
             // right is the author's call: rounding down keeps the SRAM
             // budget, rounding up keeps the boundary or the payload
             // capacity. Naming one in prose would be picking for them.

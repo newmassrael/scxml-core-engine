@@ -9302,9 +9302,9 @@ topology:
         let src = tmp.join("rx_pool_sram1.rs");
         // `cache-policy: maintain` declares the two cache-maintenance
         // externs, so a *linked* binary needs them to resolve. On target
-        // they come from `sce_intrinsics_runtime` (spec §synth-5-I lines
-        // 1707-1711); here host no-ops are enough, the same stubs the
-        // C11 driver test provides. Appended rather than emitted: the
+        // they come from `sce_intrinsics_runtime`; here host no-ops are
+        // enough, the same stubs the C11 driver test provides.
+        // Appended rather than emitted: the
         // generated module must not carry host stubs to target.
         // In a submodule: the generated file already declares these
         // names in its `extern` block, and it is the exported C symbol
