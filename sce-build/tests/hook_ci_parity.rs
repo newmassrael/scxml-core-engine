@@ -503,3 +503,148 @@ fn the_test_profile_keeps_debug_assertions_on() {
          `[profile.test] opt-level` is free to change; this bit is not."
     );
 }
+
+// ── The audit hook must not change behaviour with the caller's cwd ──
+
+/// Drive `.claude/hooks/commit_audit.sh` with a synthetic payload and
+/// return `(stdout, stderr, exit_code)`.
+fn run_commit_audit(cwd: &Path) -> (String, String, Option<i32>) {
+    let payload = format!(
+        r#"{{"cwd":{},"tool_input":{{"command":"git commit -m \"chore: probe the audit hook\""}}}}"#,
+        serde_json_string(&cwd.display().to_string()),
+    );
+    let hook = repo_root().join(".claude/hooks/commit_audit.sh");
+    let mut child = std::process::Command::new("bash")
+        .arg(&hook)
+        .current_dir(repo_root())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| panic!("spawn {}: {e}", hook.display()));
+    {
+        use std::io::Write;
+        child
+            .stdin
+            .as_mut()
+            .expect("hook stdin")
+            .write_all(payload.as_bytes())
+            .expect("write payload");
+    }
+    let out = child.wait_with_output().expect("hook runs to completion");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status.code(),
+    )
+}
+
+/// Minimal JSON string escaping — enough for a filesystem path.
+fn serde_json_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The section of the audit banner listing plan memos, or empty.
+fn memo_section(text: &str) -> String {
+    match text.find("Related plan memos:") {
+        Some(i) => text[i..].to_string(),
+        None => String::new(),
+    }
+}
+
+/// Committing from a linked worktree must produce the same audit as
+/// committing from the main tree.
+///
+/// The memory-lifecycle validation keys off a slug derived from a
+/// directory path. Deriving it from the *invoking* directory made a
+/// linked worktree resolve to a memory directory that has never
+/// existed, and the branch that reads it was also the only place its
+/// accumulator was initialised — so under `set -u` the hook died on an
+/// unbound variable rather than asking its five questions.
+///
+/// Initialising the accumulator alone would have been worse than the
+/// crash: the validation would then skip in every worktree without
+/// saying so, which is the silently-inert gate this repository forbids.
+/// Both halves are pinned here, by requiring the two invocations to
+/// agree rather than merely requiring neither to crash.
+#[test]
+fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
+    let root = repo_root();
+    let scratch =
+        std::env::temp_dir().join(format!("sce-audit-hook-worktree-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    let branch = format!("audit-hook-probe-{}", std::process::id());
+
+    let add = std::process::Command::new("git")
+        .current_dir(&root)
+        .args(["worktree", "add", "--detach"])
+        .arg(&scratch)
+        .arg("HEAD")
+        .output()
+        .expect("git worktree add runs");
+    assert!(
+        add.status.success(),
+        "git worktree add failed:\n{}",
+        String::from_utf8_lossy(&add.stderr),
+    );
+
+    let (out_main, err_main, code_main) = run_commit_audit(&root);
+    let (out_wt, err_wt, code_wt) = run_commit_audit(&scratch);
+
+    // Clean up before asserting so a failure does not strand a worktree.
+    let _ = std::process::Command::new("git")
+        .current_dir(&root)
+        .args(["worktree", "remove", "--force"])
+        .arg(&scratch)
+        .output();
+    let _ = std::process::Command::new("git")
+        .current_dir(&root)
+        .args(["branch", "-D", &branch])
+        .output();
+    let _ = fs::remove_dir_all(&scratch);
+
+    for (label, err) in [("main tree", &err_main), ("linked worktree", &err_wt)] {
+        assert!(
+            !err.contains("internal failure"),
+            "commit_audit.sh failed internally when invoked from the {label}:\n{err}",
+        );
+        assert!(
+            !err.contains("unbound variable") && !err.contains("바인딩 해제한 변수"),
+            "commit_audit.sh read an uninitialised variable from the {label}:\n{err}",
+        );
+    }
+
+    assert_eq!(
+        code_main, code_wt,
+        "the audit hook must reach the same verdict from either directory;\
+         \nmain stderr:\n{err_main}\nworktree stderr:\n{err_wt}",
+    );
+
+    let memos_main = memo_section(&format!("{out_main}{err_main}"));
+    let memos_wt = memo_section(&format!("{out_wt}{err_wt}"));
+    // Reaching the memory validation is a precondition of the
+    // comparison below. The banner prints this section only after the
+    // validation has run, so its absence means the probe stopped
+    // earlier — at the COMMIT_FORMAT gate, say — and two empty strings
+    // would then agree with each other while proving nothing.
+    assert!(
+        memos_main.contains(".md"),
+        "the probe never reached the memory validation from the main tree; \
+         the banner listed no plan memos:\nstdout:\n{out_main}\nstderr:\n{err_main}",
+    );
+    assert_eq!(
+        memos_main, memos_wt,
+        "the audit hook listed different plan memos depending on the caller's \
+         directory — the memory tree it validates must not depend on which \
+         worktree the commit came from",
+    );
+}
