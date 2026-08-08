@@ -63,7 +63,7 @@ class CodecZenohMsgPut:
             if (header & 0x80) != 0:
                 extensions = []
                 _more = False
-                for _ in range(4):
+                for _ in range(8):
                     if cursor.remaining() == 0:
                         break
                     _elem = CodecZenohExtEntry.decode(cursor)
