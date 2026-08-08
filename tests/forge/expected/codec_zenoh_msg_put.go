@@ -82,9 +82,9 @@ func DecodeCodecZenohMsgPut(cursor *codec.SceCursor) (*CodecZenohMsgPut, error) 
 	}
 	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
 	if (Header & 0x80) != 0 {
-		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 8)
 		_more := false
-		for _i := 0; _i < int(4); _i++ {
+		for _i := 0; _i < int(8); _i++ {
 			if cursor.Remaining() == 0 {
 				break
 			}
@@ -226,7 +226,7 @@ func (s *CodecZenohMsgPut) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecZenohMsgPut) EncodeToBytes() []byte {
-	_dst := make([]byte, 0, 946)
+	_dst := make([]byte, 0, 1114)
 	_ = s.Encode(codec.NewBytesSink(&_dst))
 	return _dst
 }

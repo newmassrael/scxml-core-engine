@@ -262,7 +262,7 @@ func (s *CodecZenohRequest) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecZenohRequest) EncodeToBytes() []byte {
-	_dst := make([]byte, 0, 1212)
+	_dst := make([]byte, 0, 1380)
 	_ = s.Encode(codec.NewBytesSink(&_dst))
 	return _dst
 }
