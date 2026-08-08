@@ -410,6 +410,11 @@ fn link_with_rx_pool(name: &str, rx_pool_ref: &str) -> String {
 
 /// Forge `<sce:kind="buffer-pool">` Default-variant pool document
 /// (no `<sce:variant>` element ⇒ BufferPoolVariant::Default).
+/// Slot sizes passed here must be whole multiples of the 32-byte
+/// alignment below (`mem/slot-size-not-alignment-multiple`), which is
+/// why the MTU-sized fixtures use 1536 rather than 1500: a pool
+/// carrying Ethernet frames has to round the payload up to the DMA
+/// boundary, and 1536 is what a real MTU pool declares.
 fn buffer_pool_default(name: &str, slot_count: u32, slot_size: u32) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -496,7 +501,7 @@ fn c13_validators_silent_skip_when_deploy_none() {
     let pool = write_doc(
         dir.path(),
         "rx_data_pool.scxml",
-        &buffer_pool_default("rx_data_pool", 16, 1500),
+        &buffer_pool_default("rx_data_pool", 16, 1536),
     );
     let link = write_doc(
         dir.path(),
@@ -541,7 +546,7 @@ fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
     let pool = write_doc(
         dir.path(),
         "rx_data_pool.scxml",
-        &buffer_pool_default("rx_data_pool", 16, 1500),
+        &buffer_pool_default("rx_data_pool", 16, 1536),
     );
     let link = write_doc(
         dir.path(),
@@ -670,7 +675,7 @@ fn c13_burst_absorption_fires_through_orchestrator() {
     let pool = write_doc(
         dir.path(),
         "rx_data_pool.scxml",
-        &buffer_pool_default("rx_data_pool", 16, 1500),
+        &buffer_pool_default("rx_data_pool", 16, 1536),
     );
     let link = write_doc(
         dir.path(),
@@ -737,7 +742,7 @@ fn c13_orchestrator_happy_path_emits_outputs() {
     let pool = write_doc(
         dir.path(),
         "rx_data_pool.scxml",
-        &buffer_pool_default("rx_data_pool", 2000, 1500),
+        &buffer_pool_default("rx_data_pool", 2000, 1536),
     );
     let link = write_doc(
         dir.path(),

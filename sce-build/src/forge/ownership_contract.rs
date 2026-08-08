@@ -327,7 +327,18 @@ pub struct PoolFnContract {
 /// pool function guards its pointers. Returning by value removes the
 /// pointer, and with it the choice between an empty contract and a
 /// false one.
-pub const POOL_CONTRACTS: [PoolFnContract; 6] = [
+///
+/// ── Address-publication entries ───────────────────────────────────
+///
+/// The hand-off states publish their slot's address, in the shape
+/// `is_holdable` implies — and only the holdable one has a pointer
+/// argument to describe. `dma-armed-rx` reads the caller's handle and
+/// returns a pointer into pool storage without touching it, which is
+/// `_slot_read`'s shape exactly: `Borrow` plus `may_return_null`.
+/// `dma-armed-tx` hands out no handle, so its accessor takes a slot
+/// index and there is nothing here to say about it, the same as the
+/// index-keyed seam edges.
+pub const POOL_CONTRACTS: [PoolFnContract; 7] = [
     // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`).
     PoolFnContract {
@@ -388,6 +399,19 @@ pub const POOL_CONTRACTS: [PoolFnContract; 6] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: false,
+    },
+    // `uint8_t *<pool>_dma_armed_rx_ptr(const sce_slot_handle_t *handle)`
+    // — publishes the slot's address for the peripheral's descriptor.
+    // Returns NULL unless the handle's tag is `dma-armed-rx`.
+    PoolFnContract {
+        suffix: "_dma_armed_rx_ptr",
+        arity: 1,
+        params: &[ParamContract {
+            position: 0,
+            effect: PointerEffect::Borrow,
+            caller_guarantees_non_null: false,
+        }],
+        may_return_null: true,
     },
     // `bool <pool>_mutate_in_place(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1153 (`cpu-ref -> cpu-mut`). Leaves a holdable
@@ -740,6 +764,61 @@ mod tests {
         assert!(
             by_value >= 6,
             "only {by_value} by-value edges seen; is_holdable widened",
+        );
+    }
+
+    /// The address accessors split on the same predicate the edges do,
+    /// and their contracts have to follow.
+    ///
+    /// A hand-off state that hands out a handle publishes its address
+    /// through that handle, so the accessor takes a pointer and needs a
+    /// contract; one that does not takes a slot index, and a pointer
+    /// contract for it would describe an argument that does not exist.
+    /// Read off `STATES` so a bus master added under the FSM extension
+    /// policy cannot reach the header with its accessor uncovered.
+    #[test]
+    fn address_accessor_contracts_follow_the_holdable_hand_off_states() {
+        use crate::forge::buffer_pool_fsm as fsm;
+        let suffixes: std::collections::HashSet<&str> =
+            POOL_CONTRACTS.iter().map(|c| c.suffix).collect();
+        let mut checked = 0usize;
+
+        for st in fsm::STATES.iter().filter(|s| s.publishes_bus_address()) {
+            let suffix = format!(
+                "_{}",
+                st.address_op_name()
+                    .expect("a publishing state names its accessor")
+            );
+            if st.is_holdable() {
+                assert!(
+                    suffixes.contains(suffix.as_str()),
+                    "{} publishes its address through a handle, so `<pool>{suffix}` \
+                     takes `const sce_slot_handle_t *` — but POOL_CONTRACTS has no \
+                     entry, and the declaration would ship with no analyzer coverage",
+                    st.spec_name(),
+                );
+                let c = POOL_CONTRACTS
+                    .iter()
+                    .find(|c| c.suffix == suffix)
+                    .expect("just asserted present");
+                assert!(
+                    c.may_return_null,
+                    "{suffix} returns NULL on a tag mismatch; without may_return_null \
+                     a caller that dereferences unchecked goes unflagged",
+                );
+            } else {
+                assert!(
+                    !suffixes.contains(suffix.as_str()),
+                    "{} hands out no handle, so `<pool>{suffix}` takes a slot index — \
+                     a pointer contract would describe an argument that does not exist",
+                    st.spec_name(),
+                );
+            }
+            checked += 1;
+        }
+        assert!(
+            checked >= 2,
+            "only {checked} hand-off states examined; the filter narrowed",
         );
     }
 

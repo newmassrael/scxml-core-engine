@@ -79,4 +79,41 @@
     typedef char SCE_STATIC_ASSERT_PASTE(sce_static_assert_line_, __LINE__)[(cond) ? 1 : -1]
 #endif
 
+/*
+ * Alignment, spelled for whichever language is compiling.
+ *
+ * The same argument `SCE_STATIC_ASSERT` makes: C11 spells these
+ * `_Alignas` / `_Alignof`, C++11 spells them `alignas` / `alignof`, and
+ * neither keyword parses as the other. A generated header writing the C
+ * form directly would stop compiling for every C++ consumer, which is
+ * the contract the `extern "C"` wrapper exists to keep.
+ *
+ * These carry the DMA alignment of a `buffer-pool` slot (RFC
+ * §synth-5-E lines 1024-1073). `__attribute__((aligned(n)))` on the
+ * storage variable is the other half of that contract, and it is not a
+ * substitute: it is GCC-family syntax, and the host builds that verify
+ * these headers compile it with `-D__attribute__(x)=`, which erases the
+ * attribute and with it any alignment the emitted code depends on. A
+ * standard alignment specifier on the slot type survives that erasure
+ * and travels to toolchains outside the GCC family.
+ *
+ * Pre-C11 gets no lowering. Unlike an assertion, alignment cannot
+ * degrade to a weaker check that still catches drift — a slot laid out
+ * without it is silently misaligned, and DMA into a misaligned buffer
+ * fails as corrupted data rather than as a diagnostic. `#error` is the
+ * honest outcome: the two runtimes that ship these headers both declare
+ * `c_std_11`, so reaching this arm means a consumer is building in a
+ * configuration where the emitted pool cannot be made correct.
+ */
+#if defined(__cplusplus)
+#define SCE_ALIGNAS(n) alignas(n)
+#define SCE_ALIGNOF(t) alignof(t)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define SCE_ALIGNAS(n) _Alignas(n)
+#define SCE_ALIGNOF(t) _Alignof(t)
+#else
+#error                                                                                                                 \
+    "SCE requires C11 or C++11 for alignment specifiers; buffer-pool slot alignment cannot be expressed on this toolchain"
+#endif
+
 #endif /* SCE_PORTABILITY_H */
