@@ -6,7 +6,7 @@
 #   2. Installed: When SCE is found via find_package(SCE)
 #
 # Uses sce-codegen (Rust binary) for code generation.
-# Build: cargo build --bin sce-codegen --features cli --release -p sce-build
+# Build: cargo build --bin sce-codegen --features cli -p sce-build
 #
 # Usage:
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
@@ -14,12 +14,21 @@
 
 # Find sce-codegen binary
 # Priority: 1) SCE_CODEGEN (already set by parent CMake / installed package)
-#           2) In-tree cargo build output (release, then debug)
+#           2) In-tree cargo build output (debug, then release)
 #           3) System PATH
+#
+# Debug comes first because that is the only profile anything in this
+# repository now builds the generator in: the binary runs identically
+# either way (its cost is process start-up and I/O, not optimisation),
+# while a release build compiles the whole dependency tree a second
+# time instead of sharing the one clippy and the test suite already
+# produced. `target/release` stays in the search path so a tree that
+# still holds an older release build keeps working — but it is looked
+# at second, or a stale binary would silently outrank a fresh one.
 if(NOT SCE_CODEGEN)
     get_filename_component(_SCE_CMAKE_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
     find_program(SCE_CODEGEN sce-codegen
-        PATHS "${_SCE_CMAKE_ROOT}/target/release" "${_SCE_CMAKE_ROOT}/target/debug"
+        PATHS "${_SCE_CMAKE_ROOT}/target/debug" "${_SCE_CMAKE_ROOT}/target/release"
         NO_DEFAULT_PATH
     )
     if(NOT SCE_CODEGEN)
@@ -28,12 +37,12 @@ if(NOT SCE_CODEGEN)
 endif()
 
 if(NOT SCE_CODEGEN)
-    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli --release -p sce-build")
+    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli -p sce-build")
 endif()
 
 message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
-# Auto-detect SCE_TEMPLATE_DIR so release sce-codegen binaries (which
+# Auto-detect SCE_TEMPLATE_DIR so installed sce-codegen binaries (which
 # refuse silent fallback — see sce-build::find_template_base) find the
 # Jinja2 templates in all three distribution layouts without the
 # consumer having to set SCE_TEMPLATE_DIR manually:

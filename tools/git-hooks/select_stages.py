@@ -46,7 +46,7 @@ from pathlib import Path
 # Keep the keys in sync with the `log_step "Stage ..."` labels in `pre-push`;
 # `--self-test` checks the table is well-formed but cannot see the hook.
 STAGES: dict[str, dict] = {
-    # Prerequisite, not a gate: stages 2b/5/6/7 execute target/release/sce-codegen.
+    # Prerequisite, not a gate: stages 2b/5/6/7 execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by dependents (see DEPENDS_ON).
     "1": {"local": ["sce-build/**", "Cargo.toml", "Cargo.lock"]},
     # Structural check over the Rust module tree — only a .rs add/remove can

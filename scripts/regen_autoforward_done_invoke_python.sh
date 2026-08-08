@@ -23,14 +23,14 @@
 #   scripts/regen_autoforward_done_invoke_python.sh
 #
 # Requires:
-#   target/release/sce-codegen (build first if missing: see step 1).
+#   target/debug/sce-codegen (build first if missing: see step 1).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/autoforward_done_invoke/autoforward_done_invoke.scxml"
 GENERATED_DIR="backends/python/tests/integration/autoforward_done_invoke"
 STEM="autoforward_done_invoke"
@@ -38,7 +38,7 @@ INPUT_ROOT="integration_resources/autoforward_done_invoke"
 
 # Step 1: build sce-codegen in release mode if absent.
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 # Step 2: stage the fixture into a tmp dir so synth-invoke children

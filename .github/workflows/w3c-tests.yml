@@ -85,7 +85,7 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Setup Emscripten (emsdk)
       run: |
@@ -362,10 +362,10 @@ jobs:
           ${{ runner.os }}-cargo-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate Rust W3C Tests
-      run: ./target/release/sce-codegen generate-w3c -l rust
+      run: ./target/debug/sce-codegen generate-w3c -l rust
 
     - name: Start W3C HTTP Test Server
       run: |
@@ -456,7 +456,7 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Setup JDK 17
       uses: actions/setup-java@v5
@@ -575,7 +575,7 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Cache CMake Build
       uses: actions/cache@v5
@@ -678,15 +678,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate Python W3C Tests
-      run: ./target/release/sce-codegen generate-w3c -l python
+      run: ./target/debug/sce-codegen generate-w3c -l python
 
     - name: Generate Python Integration Tests
       # Python AOT integration fixtures share the W3C IRP regen
       # pattern (gitignored output, CI-regenerated before pytest).
-      run: ./target/release/sce-codegen generate-integration -l python
+      run: ./target/debug/sce-codegen generate-integration -l python
 
     - name: Setup Python
       uses: actions/setup-python@v7
@@ -778,10 +778,10 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate Go W3C Tests
-      run: ./target/release/sce-codegen generate-w3c -l go
+      run: ./target/debug/sce-codegen generate-w3c -l go
 
     - name: Setup Go
       uses: actions/setup-go@v7
@@ -916,7 +916,7 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Setup ccache
       uses: actions/cache@v5

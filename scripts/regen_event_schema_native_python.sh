@@ -27,20 +27,20 @@
 #   scripts/regen_event_schema_native_python.sh
 #
 # Requires:
-#   target/release/sce-codegen (auto-built when missing).
+#   target/debug/sce-codegen (auto-built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
 INPUT_ROOT="sce-build/tests/fixtures/event_schema"
 GENERATED_DIR="backends/python/tests/integration/event_schema_native"
 
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 # The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) rides the same

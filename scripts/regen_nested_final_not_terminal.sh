@@ -23,20 +23,20 @@
 #   scripts/regen_nested_final_not_terminal.sh
 #
 # Requires:
-#   target/release/sce-codegen (auto-built when missing).
+#   target/debug/sce-codegen (auto-built when missing).
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-CODEGEN="target/release/sce-codegen"
+CODEGEN="target/debug/sce-codegen"
 FIXTURE="integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml"
 GENERATED_DIR="backends/rust/tests/src/integration/nested_final_not_terminal"
 STEM="nested_final_not_terminal"
 
 if [[ ! -x "$CODEGEN" ]]; then
-    cargo build --bin sce-codegen --features cli --release -p sce-build
+    cargo build --bin sce-codegen --features cli -p sce-build
 fi
 
 TMP="$(mktemp -d)"

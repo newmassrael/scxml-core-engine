@@ -84,7 +84,7 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Put sce-codegen on PATH
       # SCECodegen.cmake's find_program resolves sce-codegen from PATH

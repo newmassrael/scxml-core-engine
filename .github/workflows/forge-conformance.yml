@@ -79,13 +79,13 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+      run: cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Upload sce-codegen Binary
       uses: actions/upload-artifact@v7
       with:
         name: sce-codegen-binary
-        path: target/release/sce-codegen
+        path: target/debug/sce-codegen
         retention-days: 1
         if-no-files-found: error
 
@@ -173,11 +173,11 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: sce-codegen-binary
-        # conftest.py hardcodes REPO_ROOT/target/release/sce-codegen.
+        # conftest.py hardcodes REPO_ROOT/target/debug/sce-codegen.
         path: target/release
 
     - name: Make sce-codegen Executable
-      run: chmod +x target/release/sce-codegen
+      run: chmod +x target/debug/sce-codegen
 
     - name: Setup Python
       uses: actions/setup-python@v7
@@ -229,7 +229,7 @@ jobs:
         path: target/release
 
     - name: Make sce-codegen Executable
-      run: chmod +x target/release/sce-codegen
+      run: chmod +x target/debug/sce-codegen
 
     - name: Setup Go
       uses: actions/setup-go@v7
@@ -312,7 +312,7 @@ jobs:
         path: target/release
 
     - name: Make sce-codegen Executable
-      run: chmod +x target/release/sce-codegen
+      run: chmod +x target/debug/sce-codegen
 
     - name: Setup JDK 17
       uses: actions/setup-java@v5
@@ -392,7 +392,7 @@ jobs:
         path: target/release
 
     - name: Make sce-codegen Executable
-      run: chmod +x target/release/sce-codegen
+      run: chmod +x target/debug/sce-codegen
 
     - name: Configure and Build C++ Conformance
       run: |
