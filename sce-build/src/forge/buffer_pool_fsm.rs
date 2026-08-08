@@ -91,6 +91,23 @@ impl SlotState {
         matches!(self, Self::CpuMut | Self::CpuRef | Self::DmaArmedRx)
     }
 
+    /// Whether a bus master owns the slot in this state rather than the
+    /// CPU.
+    ///
+    /// Distinct from [`Self::is_holdable`], which asks whether the
+    /// emitted API can hand author code a handle: `dma-armed-rx` is
+    /// both — the peripheral owns the buffer while the author still
+    /// holds the handle it needs to write the descriptor.
+    ///
+    /// An edge *into* one of these is a hand-off, which is what the
+    /// spec's deferred cache-clean (line 1154) comes due on.
+    pub fn is_dma_owned(self) -> bool {
+        matches!(
+            self,
+            Self::DmaArmedTx | Self::DmaBusyTx | Self::DmaArmedRx | Self::DmaBusyRx
+        )
+    }
+
     /// What holding a handle in this state means, as the emitted
     /// marker's doc comment — one entry per rendered `///` line.
     ///
@@ -635,6 +652,93 @@ mod tests {
         assert!(pairs.contains(&(SlotState::Free, SlotState::DmaArmedRx)));
         assert!(pairs.contains(&(SlotState::CpuMut, SlotState::Free)));
         assert!(pairs.contains(&(SlotState::CpuRef, SlotState::Free)));
+    }
+
+    /// A deferred cache-clean has to be discharged by whatever edge
+    /// comes due, and this is what checks that something does.
+    ///
+    /// Spec line 1154 attaches no call to `cpu-ref → cpu-mut` itself:
+    /// the in-place mutate leaves dirty CPU lines and the obligation
+    /// falls on the *next* hand-off to a bus master. Today that is
+    /// `link_arm_tx`, which cleans on every hand-off under `maintain`
+    /// whether or not the slot arrived through an in-place mutate — so
+    /// the obligation is discharged by construction, and nothing says
+    /// so or would notice if it stopped being true.
+    ///
+    /// Making `link_arm_tx`'s clean conditional — on a dirty flag, on
+    /// whether the slot was written since acquire — would silently
+    /// strip the clean from exactly the path that needs it most,
+    /// because that path is the one where the CPU wrote *after* the
+    /// slot was last cleaned. Stated as a property over the table so
+    /// the check survives an edge set that grows.
+    #[test]
+    fn a_deferred_cache_clean_is_discharged_by_every_hand_off_out_of_its_target() {
+        let deferred: Vec<&Transition> = TRANSITIONS
+            .iter()
+            .filter(|t| matches!(t.cache_op, CacheOp::CleanOnNextHandOff))
+            .collect();
+        assert!(
+            !deferred.is_empty(),
+            "no edge defers a cache-clean; this check has lost its subject",
+        );
+
+        let mut hand_offs = 0usize;
+        for d in deferred {
+            // Every edge leaving the state the deferral lands in and
+            // reaching a bus master is a hand-off, and each one must
+            // carry the clean the deferral is owed.
+            let outgoing: Vec<&Transition> = transitions_from(d.to)
+                .filter(|t| t.to.is_dma_owned())
+                .collect();
+            assert!(
+                !outgoing.is_empty(),
+                "{} → {} defers a cache-clean to the next hand-off, but no edge \
+                 leaves {} for a bus master — the obligation can never come due",
+                d.from.spec_name(),
+                d.to.spec_name(),
+                d.to.spec_name(),
+            );
+            for h in outgoing {
+                hand_offs += 1;
+                assert!(
+                    matches!(h.cache_op, CacheOp::CleanIfMaintain),
+                    "{} → {} defers a cache-clean, but the hand-off {} → {} that \
+                     comes due carries {:?} instead of CleanIfMaintain — a slot \
+                     mutated in place would reach the bus master with dirty CPU \
+                     lines (spec §synth-5-E line 1154)",
+                    d.from.spec_name(),
+                    d.to.spec_name(),
+                    h.from.spec_name(),
+                    h.to.spec_name(),
+                    h.cache_op,
+                );
+            }
+        }
+        assert!(
+            hand_offs >= 1,
+            "no hand-off edge was examined; the filter stopped selecting",
+        );
+    }
+
+    /// The two ownership predicates answer different questions, and a
+    /// state can be both. Pin the overlap so a future edit cannot
+    /// quietly collapse one into the other.
+    #[test]
+    fn dma_ownership_and_holdability_are_independent_axes() {
+        // Owned by a bus master, and the author still holds the handle
+        // it needs to write the peripheral's descriptor.
+        assert!(SlotState::DmaArmedRx.is_dma_owned());
+        assert!(SlotState::DmaArmedRx.is_holdable());
+        // CPU-owned and holdable.
+        assert!(!SlotState::CpuMut.is_dma_owned());
+        assert!(SlotState::CpuMut.is_holdable());
+        // Bus-master owned with no handle in author hands.
+        assert!(SlotState::DmaBusyRx.is_dma_owned());
+        assert!(!SlotState::DmaBusyRx.is_holdable());
+        // Neither: the pool holds it.
+        assert!(!SlotState::Free.is_dma_owned());
+        assert!(!SlotState::Free.is_holdable());
+        assert_eq!(STATES.iter().filter(|s| s.is_dma_owned()).count(), 4);
     }
 
     /// `is_holdable` decides whether an edge leaving a state consumes
