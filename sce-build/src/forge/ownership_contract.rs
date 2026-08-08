@@ -302,7 +302,33 @@ pub struct PoolFnContract {
 /// an explicit `if (handle == NULL) return ...;` branch, and marking
 /// the parameter null-hostile would render that branch unreachable to
 /// the analyzer — turning a defensive check into a dead-code finding.
-pub const POOL_CONTRACTS: [PoolFnContract; 4] = [
+/// ── Runtime-seam entries ──────────────────────────────────────────
+///
+/// The six edges `buffer_pool_fsm::runtime_seam_transitions` yields are
+/// emitted too, but only two of them appear here, and the split is the
+/// one `SlotState::is_holdable` already draws.
+///
+/// An edge leaving a holdable state takes the caller's handle and
+/// retags it in place, so it has a pointer argument to describe and
+/// declares the same `InOut` shape as `_link_arm_tx`. An edge leaving a
+/// DMA-owned state has no handle to take — the completion signal
+/// carries a slot index and nothing else — so it reads `size_t idx` and
+/// hands the resulting handle back *by value*, with `INVALID_HANDLE` as
+/// the failure sentinel. That is the shape `pool_acquire_for_encode`
+/// and `link_arm_rx` already use, and like them it carries no pointer
+/// argument, so there is nothing for this table to say about it.
+///
+/// The by-value return was not the first design. An out-parameter was,
+/// and `pool_functions_do_not_declare_their_guarded_parameters_null_hostile`
+/// rejected it: a nullable out-parameter renders no annotation at all
+/// (`OutParam` alone maps to no PC-lint semantic and no Coverity
+/// primitive), and the only way to make it render was to declare it
+/// non-null — which contradicts that test's standing claim that every
+/// pool function guards its pointers. Returning by value removes the
+/// pointer, and with it the choice between an empty contract and a
+/// false one.
+
+pub const POOL_CONTRACTS: [PoolFnContract; 6] = [
     // `bool <pool>_link_arm_tx(sce_slot_handle_t *handle)` —
     // spec §synth-5-E line 1142 (`cpu-mut → dma-armed-tx`).
     PoolFnContract {
@@ -350,6 +376,32 @@ pub const POOL_CONTRACTS: [PoolFnContract; 4] = [
             caller_guarantees_non_null: false,
         }],
         may_return_null: true,
+    },
+    // `bool <pool>_dma_start_rx(sce_slot_handle_t *handle)` —
+    // spec §synth-5-E line 1149 (`dma-armed-rx -> dma-busy-rx`). Leaves a holdable
+    // state, so the caller's handle is read then retagged.
+    PoolFnContract {
+        suffix: "_dma_start_rx",
+        arity: 1,
+        params: &[ParamContract {
+            position: 0,
+            effect: PointerEffect::InOut,
+            caller_guarantees_non_null: false,
+        }],
+        may_return_null: false,
+    },
+    // `bool <pool>_mutate_in_place(sce_slot_handle_t *handle)` —
+    // spec §synth-5-E line 1153 (`cpu-ref -> cpu-mut`). Leaves a holdable
+    // state, so the caller's handle is read then retagged.
+    PoolFnContract {
+        suffix: "_mutate_in_place",
+        arity: 1,
+        params: &[ParamContract {
+            position: 0,
+            effect: PointerEffect::InOut,
+            caller_guarantees_non_null: false,
+        }],
+        may_return_null: false,
     },
 ];
 
@@ -623,6 +675,73 @@ mod tests {
                 c.suffix
             );
         }
+    }
+
+    /// Every emitted transition that takes a handle pointer must have
+    /// a contract, and every one that does not must not.
+    ///
+    /// Read off `buffer_pool_fsm::TRANSITIONS` rather than a copy of
+    /// it, so an edge added under the §synth-5-E FSM extension policy
+    /// cannot reach the header uncovered. `is_holdable` on the source
+    /// state is what decides which side an edge falls on, and it is
+    /// the same predicate the templates branch on — so this test fails
+    /// if the table and the emitted shape ever disagree about an edge.
+    ///
+    /// Both directions matter.
+    /// `check_analyzer_annotations_emitted_c11` verifies the template
+    /// renders every contract in this table; it cannot see a function
+    /// the table never mentions. Only this test looks that way.
+    #[test]
+    fn contract_coverage_follows_the_handle_taking_edges() {
+        use crate::forge::buffer_pool_fsm as fsm;
+        let suffixes: std::collections::HashSet<&str> =
+            POOL_CONTRACTS.iter().map(|c| c.suffix).collect();
+        let (mut with_handle, mut by_value) = (0usize, 0usize);
+
+        for t in fsm::TRANSITIONS.iter() {
+            let suffix = format!("_{}", t.op_name);
+            if t.from.is_holdable() {
+                with_handle += 1;
+                assert!(
+                    suffixes.contains(suffix.as_str()),
+                    "edge {} → {} emits `<pool>{suffix}(sce_slot_handle_t *)` but \
+                     POOL_CONTRACTS has no entry — the declaration would ship with no \
+                     analyzer coverage",
+                    t.from.spec_name(),
+                    t.to.spec_name(),
+                );
+            } else {
+                by_value += 1;
+                assert!(
+                    !suffixes.contains(suffix.as_str()),
+                    "edge {} → {} leaves a DMA-owned state, so it takes a slot index \
+                     and returns by value — a pointer contract for `<pool>{suffix}` \
+                     would describe an argument that does not exist",
+                    t.from.spec_name(),
+                    t.to.spec_name(),
+                );
+            }
+        }
+
+        // Lower bounds: a predicate that stopped selecting anything
+        // would satisfy both loops vacuously. The numbers are counted
+        // off the current table — five edges leave a holdable state
+        // (`cpu-mut → dma-armed-tx`, `dma-armed-rx → dma-busy-rx`,
+        // `cpu-ref → free`, `cpu-ref → cpu-mut`, `cpu-mut → free`) and
+        // six leave one the API never hands out.
+        assert_eq!(
+            with_handle + by_value,
+            fsm::TRANSITION_COUNT,
+            "every edge must fall on exactly one side",
+        );
+        assert!(
+            with_handle >= 5,
+            "only {with_handle} handle-taking edges seen; is_holdable narrowed",
+        );
+        assert!(
+            by_value >= 6,
+            "only {by_value} by-value edges seen; is_holdable widened",
+        );
     }
 
     /// The tag-checked transition functions read the handle before

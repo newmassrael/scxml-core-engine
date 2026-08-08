@@ -13893,6 +13893,137 @@ pub fn render_machine_scheduler_c(
 /// TX hand-off (`link_arm_tx`) and pre-arm cache-invalidate on RX
 /// arming (`link_arm_rx`, gated on `platform.has_speculative_prefetch`
 /// per RFC §synth-5-E lines 1189-1198 + 1199-1212).
+/// Resolve one FSM edge's cache-maintenance calls against the pool's
+/// policy and the deploy-resolved platform.
+///
+/// The rule is the spec's, carried per-edge in
+/// [`crate::forge::buffer_pool_fsm::CacheOp`]. Resolving it here — once,
+/// for both backends — is what keeps the two templates from restating
+/// it as hand-written Jinja conditions, which is how the C11 and Rust
+/// emits would drift apart from each other and from the IR without
+/// anything noticing.
+///
+/// Returns `(emit_clean, emit_invalidate)`.
+fn resolve_edge_cache(
+    t: &crate::forge::buffer_pool_fsm::Transition,
+    cache_maintain: bool,
+    has_speculative_prefetch: bool,
+) -> (bool, bool) {
+    use crate::forge::buffer_pool_fsm::CacheOp;
+    match t.cache_op {
+        // `CleanOnNextHandOff` (spec line 1154) names an obligation
+        // discharged by the *next* edge — `link_arm_tx` already emits
+        // that clean — not a call on this one.
+        CacheOp::None | CacheOp::CleanOnNextHandOff => (false, false),
+        CacheOp::CleanIfMaintain => (cache_maintain, false),
+        CacheOp::InvalidateIfMaintain { gated_speculative } => (
+            false,
+            cache_maintain && (!gated_speculative || has_speculative_prefetch),
+        ),
+    }
+}
+
+/// Everything both buffer-pool templates need to render the lifecycle
+/// FSM: the phantom/handle markers, the runtime seam, the author
+/// edges' resolved cache flags, and which cache externs to declare.
+struct BufferPoolFsmContext {
+    /// One entry per holdable state — the states an emitted API can
+    /// hand back as a handle. Derived from
+    /// `SlotState::is_holdable` rather than listed, so the marker set
+    /// tracks the FSM instead of a template's memory of it.
+    markers: Vec<serde_json::Value>,
+    /// The six runtime-owned edges, each carrying the shape its
+    /// source state implies.
+    seam: Vec<serde_json::Value>,
+    /// Author-edge cache flags keyed by `op_name`, so the author
+    /// blocks read the same resolution the seam does.
+    author_cache: std::collections::BTreeMap<String, serde_json::Value>,
+    /// Whether any edge emits `sce_dcache_clean_by_addr`.
+    needs_clean_extern: bool,
+    /// Whether any edge emits `sce_dcache_invalidate_by_addr`.
+    ///
+    /// Derived rather than aliased to `has_speculative_prefetch`: the
+    /// `dma-busy-rx → cpu-ref` invalidate is ungated under `maintain`
+    /// (spec line 1151), so gating the extern on the speculative flag
+    /// would leave the RX-completion edge calling a function it never
+    /// declared.
+    needs_invalidate_extern: bool,
+}
+
+/// Build [`BufferPoolFsmContext`] from the canonical FSM table.
+fn buffer_pool_fsm_context(
+    cache_maintain: bool,
+    has_speculative_prefetch: bool,
+) -> BufferPoolFsmContext {
+    use crate::forge::buffer_pool_fsm as fsm;
+
+    let markers = fsm::STATES
+        .iter()
+        .filter(|s| s.is_holdable())
+        .map(|s| {
+            serde_json::json!({
+                "pascal": s.pascal_name(),
+                "spec_name": s.spec_name(),
+                "c_enum": s.c_enum_suffix(),
+                "doc": s.holder_doc_lines(),
+            })
+        })
+        .collect();
+
+    let seam = fsm::runtime_seam_transitions()
+        .map(|t| {
+            let (clean, invalidate) =
+                resolve_edge_cache(t, cache_maintain, has_speculative_prefetch);
+            serde_json::json!({
+                "op_name": t.op_name,
+                "trigger": t.trigger,
+                "spec_line": t.spec_line,
+                "from_pascal": t.from.pascal_name(),
+                "to_pascal": t.to.pascal_name(),
+                "from_spec": t.from.spec_name(),
+                "to_spec": t.to.spec_name(),
+                "from_c": t.from.c_enum_suffix(),
+                "to_c": t.to.c_enum_suffix(),
+                // The source state decides the shape: a holdable
+                // source means the caller has a handle to consume; a
+                // DMA-owned source means the completion signal
+                // carries only a slot index.
+                "from_holdable": t.from.is_holdable(),
+                "to_holdable": t.to.is_holdable(),
+                "to_is_free": t.to == fsm::SlotState::Free,
+                "cache_clean": clean,
+                "cache_invalidate": invalidate,
+            })
+        })
+        .collect();
+
+    let author_cache = fsm::author_callable_transitions()
+        .map(|t| {
+            let (clean, invalidate) =
+                resolve_edge_cache(t, cache_maintain, has_speculative_prefetch);
+            (
+                t.op_name.to_string(),
+                serde_json::json!({ "clean": clean, "invalidate": invalidate }),
+            )
+        })
+        .collect();
+
+    let needs_clean_extern = fsm::TRANSITIONS
+        .iter()
+        .any(|t| resolve_edge_cache(t, cache_maintain, has_speculative_prefetch).0);
+    let needs_invalidate_extern = fsm::TRANSITIONS
+        .iter()
+        .any(|t| resolve_edge_cache(t, cache_maintain, has_speculative_prefetch).1);
+
+    BufferPoolFsmContext {
+        markers,
+        seam,
+        author_cache,
+        needs_clean_extern,
+        needs_invalidate_extern,
+    }
+}
+
 fn render_buffer_pool_rust(
     env: &minijinja::Environment<'_>,
     m: &BufferPoolModel,
@@ -13936,6 +14067,10 @@ fn render_buffer_pool_rust(
                 cfg.per_peer_quota,
             ),
         };
+    // Lifecycle-FSM context shared by both backends: markers, the
+    // runtime seam, and the per-edge cache resolution.
+    let cache_maintain = m.cache_policy == crate::forge::model::CachePolicy::Maintain;
+    let fsm_ctx = buffer_pool_fsm_context(cache_maintain, has_speculative_prefetch);
     let ctx = minijinja::context! {
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
@@ -13952,7 +14087,14 @@ fn render_buffer_pool_rust(
         cache_policy => m.cache_policy.to_string(),
         // C5 cache-maintenance: template emits cache_clean +
         // (conditionally) cache_invalidate when cache_policy=maintain.
-        cache_maintain => m.cache_policy == crate::forge::model::CachePolicy::Maintain,
+        cache_maintain => cache_maintain,
+        // §synth-5-E lifecycle FSM, rendered from `buffer_pool_fsm`
+        // rather than restated in the template.
+        markers => fsm_ctx.markers,
+        seam => fsm_ctx.seam,
+        edge_cache => fsm_ctx.author_cache,
+        needs_clean_extern => fsm_ctx.needs_clean_extern,
+        needs_invalidate_extern => fsm_ctx.needs_invalidate_extern,
         has_speculative_prefetch => has_speculative_prefetch,
         // Reassembly variant (item C9).
         variant_reassembly => variant_reassembly,
@@ -14856,6 +14998,10 @@ fn render_buffer_pool_c(
                 )
             })
             .collect();
+    // Lifecycle-FSM context shared by both backends: markers, the
+    // runtime seam, and the per-edge cache resolution.
+    let cache_maintain = m.cache_policy == crate::forge::model::CachePolicy::Maintain;
+    let fsm_ctx = buffer_pool_fsm_context(cache_maintain, has_speculative_prefetch);
     let ctx = minijinja::context! {
         name => &m.name,
         snake_name => snake_name.clone(),
@@ -14873,7 +15019,14 @@ fn render_buffer_pool_c(
         // C5 cache-maintenance gating; mirror of Rust template
         // context shape so per-backend template authors can reach for
         // the same names without per-backend wiring guesswork.
-        cache_maintain => m.cache_policy == crate::forge::model::CachePolicy::Maintain,
+        cache_maintain => cache_maintain,
+        // §synth-5-E lifecycle FSM, rendered from `buffer_pool_fsm`
+        // rather than restated in the template.
+        markers => fsm_ctx.markers,
+        seam => fsm_ctx.seam,
+        edge_cache => fsm_ctx.author_cache,
+        needs_clean_extern => fsm_ctx.needs_clean_extern,
+        needs_invalidate_extern => fsm_ctx.needs_invalidate_extern,
         has_speculative_prefetch => has_speculative_prefetch,
         // Reassembly variant (item C9).
         variant_reassembly => variant_reassembly,

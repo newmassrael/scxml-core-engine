@@ -179,8 +179,32 @@ fn cache_maintain_with_speculative_prefetch_emits_both_edges_c11() {
     );
 }
 
+/// The emitted body of `fn <name>`, up to the next item.
+///
+/// Site-scoped assertions need this. "The file contains no
+/// `sce_dcache_invalidate_by_addr` call" used to mean "the RX pre-arm
+/// edge emits none", but only because the pre-arm edge was the sole
+/// invalidate site in the emit. Spec line 1151 puts a second one on
+/// `dma-busy-rx → cpu-ref` with no speculative condition, so the
+/// file-wide proxy now answers a different question than the one these
+/// tests ask.
+fn emitted_fn_body<'a>(src: &'a str, name: &str) -> &'a str {
+    let sig = format!("fn {name}(");
+    let start = src
+        .find(&sig)
+        .unwrap_or_else(|| panic!("emit must contain `{sig}`; full source:\n{src}"));
+    let rest = &src[start..];
+    let end = rest[1..]
+        .find("\n    pub ")
+        .or_else(|| rest[1..].find("\n    fn "))
+        .or_else(|| rest[1..].find("\n}"))
+        .map(|i| i + 1)
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
 #[test]
-fn cache_maintain_without_speculative_prefetch_emits_only_clean_rust() {
+fn cache_maintain_without_speculative_prefetch_skips_the_pre_arm_invalidate_rust() {
     // Spec lines 1199-1212: M3/M4 (no speculative prefetch) doesn't
     // need pre-arm RX invalidate; emit just the TX cache-clean.
     let out = compile_pool_with_deploy(
@@ -194,9 +218,20 @@ fn cache_maintain_without_speculative_prefetch_emits_only_clean_rust() {
     .expect("non-speculative core + maintain pool compiles");
     let body = &out.files.first().expect("primary rust file emitted").1;
     assert!(body.contains("sce_dcache_clean_by_addr("));
+    let pre_arm = emitted_fn_body(body, "link_arm_rx");
     assert!(
-        !body.contains("sce_dcache_invalidate_by_addr("),
-        "RX pre-arm invalidate must NOT emit when has_speculative_prefetch=false:\n{body}"
+        !pre_arm.contains("sce_dcache_invalidate_by_addr("),
+        "RX pre-arm invalidate must NOT emit when has_speculative_prefetch=false:\n{pre_arm}"
+    );
+    // The post-RX invalidate is a different edge under a different
+    // gate: spec line 1151 attaches no speculative condition to
+    // `dma-busy-rx → cpu-ref`, so it emits under `maintain` alone.
+    // Asserting it here keeps the negative above from quietly widening
+    // into "this pool performs no invalidation at all".
+    let rx_done = emitted_fn_body(body, "rx_complete");
+    assert!(
+        rx_done.contains("sce_dcache_invalidate_by_addr("),
+        "post-RX invalidate is ungated under maintain (spec line 1151):\n{rx_done}"
     );
 }
 
@@ -543,7 +578,7 @@ fn pool_cache_pre_arm_invalidate_missing_force_fixture() {
 // ────────────────────────────────────────────────────────────────────
 
 #[test]
-fn cache_maintain_deploy_unaware_emits_clean_only() {
+fn cache_maintain_deploy_unaware_skips_the_pre_arm_invalidate() {
     // sce_codegen / compile_forge_with_imports has no platform info →
     // ForgeCompileOptions::cache_platform = None → conservative
     // defaults → cache-clean emits (cache_maintain=true), pre-arm
@@ -578,9 +613,18 @@ fn cache_maintain_deploy_unaware_emits_clean_only() {
         body.contains("sce_dcache_clean_by_addr("),
         "deploy-unaware maintain still emits cache-clean:\n{body}"
     );
+    let pre_arm = emitted_fn_body(body, "link_arm_rx");
     assert!(
-        !body.contains("sce_dcache_invalidate_by_addr("),
-        "deploy-unaware path defaults has_speculative_prefetch=false:\n{body}"
+        !pre_arm.contains("sce_dcache_invalidate_by_addr("),
+        "deploy-unaware path defaults has_speculative_prefetch=false:\n{pre_arm}"
+    );
+    // Same split as above: the ungated post-RX invalidate still emits,
+    // because it does not depend on the platform fact the deploy-unaware
+    // path is missing.
+    let rx_done = emitted_fn_body(body, "rx_complete");
+    assert!(
+        rx_done.contains("sce_dcache_invalidate_by_addr("),
+        "post-RX invalidate does not depend on the deploy platform:\n{rx_done}"
     );
 }
 
