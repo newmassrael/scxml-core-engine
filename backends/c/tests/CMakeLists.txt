@@ -309,400 +309,437 @@ sce_generate_static_w3c_c_test(530 "${SCE_C_GENERATED_DIR}" NEEDS_INVOKE NEEDS_L
 # regardless of the compiler's default standard. Lua54 is linked only into fixtures flagged
 # NEEDS_LUA so datamodel-less fixtures preserve their MCU-relevant
 # zero-deps profile.
-foreach(TEST_NUM ${W3C_C_AOT_TESTS})
-    set(_runner "${CMAKE_CURRENT_SOURCE_DIR}/aot_tests/test_${TEST_NUM}.c")
-    set(_generated "${SCE_C_GENERATED_DIR}/test${TEST_NUM}_sm.c")
-    set(_target "sce_c_w3c_test_${TEST_NUM}")
-    # W3C SCXML 6.4: per-test invoke child sources. Empty for fixtures that
-    # carry no `<invoke>` (the variable is unset / empty list); fixtures
-    # marked NEEDS_INVOKE see the sce-build-extracted
-    # `__sce_synth_invoke__*_sm.c` translation units staged into the
-    # binary so child SM types are linked into the parent's _sm.c.
-    set(_child_sources "${W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES}")
+# The runners link the SCE-shipped POSIX platform impl for clock.h and
+# http_client.h, so they exist only when it is built. A bare-metal
+# consumer opting out still gets the freestanding forge and EventSchema
+# fixtures below, which link neither it nor a script engine.
+if(SCE_C_RUNTIME_POSIX)
+    foreach(TEST_NUM ${W3C_C_AOT_TESTS})
+        # A fixture flagged NEEDS_LUA / NEEDS_DOM / NEEDS_HTTP reaches lua54
+        # or sce_c_scripting below, and both are built only under
+        # SCE_ENABLE_LUA. Skipping just those keeps the datamodel-less
+        # fixtures — the MCU-relevant zero-deps profile this loop's link
+        # flags exist to preserve — running without a script engine.
+        if(NOT SCE_ENABLE_LUA
+           AND (${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA
+                OR ${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_DOM
+                OR ${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP))
+            continue()
+        endif()
+        set(_runner "${CMAKE_CURRENT_SOURCE_DIR}/aot_tests/test_${TEST_NUM}.c")
+        set(_generated "${SCE_C_GENERATED_DIR}/test${TEST_NUM}_sm.c")
+        set(_target "sce_c_w3c_test_${TEST_NUM}")
+        # W3C SCXML 6.4: per-test invoke child sources. Empty for fixtures that
+        # carry no `<invoke>` (the variable is unset / empty list); fixtures
+        # marked NEEDS_INVOKE see the sce-build-extracted
+        # `__sce_synth_invoke__*_sm.c` translation units staged into the
+        # binary so child SM types are linked into the parent's _sm.c.
+        set(_child_sources "${W3C_C_AOT_TEST_${TEST_NUM}_CHILD_SOURCES}")
 
-    add_executable(${_target} ${_runner} ${_generated} ${_child_sources})
-    target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix)
-    target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
-    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)
-        target_link_libraries(${_target} PRIVATE lua54)
-    endif()
-    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_DOM)
-        # sce_c_base provides the freestanding DOM parser; sce_c_scripting
-        # adds the Lua binding (which needs lua54 — pulled transitively).
-        target_link_libraries(${_target} PRIVATE sce_c_base sce_c_scripting)
-    endif()
-    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
-        # sce_c_runtime_posix provides http_client; sce_c_scripting adds
-        # the Lua binding for HTTP fixtures.
-        target_link_libraries(${_target} PRIVATE sce_c_scripting)
-    endif()
-    set_target_properties(${_target} PROPERTIES
+        add_executable(${_target} ${_runner} ${_generated} ${_child_sources})
+        target_link_libraries(${_target} PRIVATE sce_c_runtime sce_c_runtime_posix)
+        target_include_directories(${_target} PRIVATE "${SCE_C_GENERATED_DIR}")
+        # Each arm names SCE_ENABLE_LUA alongside its fixture flag. The
+        # `continue()` above already means a script-engine fixture has no
+        # target here without it, so these conjuncts change no build — what
+        # they change is that the dependency is stated where the library is
+        # named, which is where a reader and the guard-scope gate look.
+        if(SCE_ENABLE_LUA AND ${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_LUA)
+            target_link_libraries(${_target} PRIVATE lua54)
+        endif()
+        if(SCE_ENABLE_LUA AND ${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_DOM)
+            # sce_c_base provides the freestanding DOM parser; sce_c_scripting
+            # adds the Lua binding (which needs lua54 — pulled transitively).
+            target_link_libraries(${_target} PRIVATE sce_c_base sce_c_scripting)
+        endif()
+        if(SCE_ENABLE_LUA AND ${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
+            # sce_c_runtime_posix provides http_client; sce_c_scripting adds
+            # the Lua binding for HTTP fixtures.
+            target_link_libraries(${_target} PRIVATE sce_c_scripting)
+        endif()
+        set_target_properties(${_target} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+
+        add_test(NAME w3c_c_aot_${TEST_NUM} COMMAND ${_target})
+        set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
+            TIMEOUT 30
+            LABELS "w3c;c11;aot"
+        )
+        if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
+            set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
+                FIXTURES_REQUIRED w3c_c_http_server
+            )
+        endif()
+    endforeach()
+else()
+    list(LENGTH W3C_C_AOT_TESTS _sce_c_w3c_skipped)
+    message(STATUS
+        "SCE_C_RUNTIME_POSIX=OFF — skipping ${_sce_c_w3c_skipped} W3C "
+        "C11 conformance runner(s); they link sce_c_runtime_posix for "
+        "clock + http_client.")
+endif()
+
+# Every fixture below links sce_c_runtime_posix and lua54, so the whole
+# block is bounded by the two options that build them.
+if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
+    # ─── Integration fixtures ────────────────────────────────────────────
+    #
+    # Build-time generation under SCE_C_INTEGRATION_GENERATED_DIR (no
+    # committed tree — the build is the §6.2.6 freshness invariant,
+    # mirroring the cpp/c11 W3C IRP pattern). The fixture closes the W3C
+    # IRP gap on `<donedata>` + `<invoke>` + `done.invoke.<id>._event.data`
+    # (a grep against `resources/*/test*.txml` returned zero hits).
+    sce_generate_static_integration_c_test(donedata_local_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_param inv_content
+    )
+
+    add_executable(sce_c_integration_donedata_local_invoke
+        integration/test_donedata_local_invoke.c
+        ${INTEGRATION_C_TEST_donedata_local_invoke_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_donedata_local_invoke PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_donedata_local_invoke PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_donedata_local_invoke PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
     )
-
-    add_test(NAME w3c_c_aot_${TEST_NUM} COMMAND ${_target})
-    set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
-        TIMEOUT 30
-        LABELS "w3c;c11;aot"
+    add_test(NAME c11_integration_donedata_local_invoke
+        COMMAND sce_c_integration_donedata_local_invoke
     )
-    if(${TEST_NUM} IN_LIST W3C_C_AOT_TESTS_NEEDS_HTTP)
-        set_tests_properties(w3c_c_aot_${TEST_NUM} PROPERTIES
-            FIXTURES_REQUIRED w3c_c_http_server
-        )
-    endif()
-endforeach()
+    set_tests_properties(c11_integration_donedata_local_invoke PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# ─── Integration fixtures ────────────────────────────────────────────
-#
-# Build-time generation under SCE_C_INTEGRATION_GENERATED_DIR (no
-# committed tree — the build is the §6.2.6 freshness invariant,
-# mirroring the cpp/c11 W3C IRP pattern). The fixture closes the W3C
-# IRP gap on `<donedata>` + `<invoke>` + `done.invoke.<id>._event.data`
-# (a grep against `resources/*/test*.txml` returned zero hits).
-sce_generate_static_integration_c_test(donedata_local_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_param inv_content
-)
+    # W3C SCXML 6.4 autoforward field preservation. The IRP suite checks only
+    # that the event name crosses (test229) or leaves the field comparison to a
+    # human (test230 is a manual test), so a name-only forward passes both; this
+    # fixture asserts the copy is exact.
+    sce_generate_static_integration_c_test(autoforward_event_fields "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_echo
+    )
 
-add_executable(sce_c_integration_donedata_local_invoke
-    integration/test_donedata_local_invoke.c
-    ${INTEGRATION_C_TEST_donedata_local_invoke_SOURCES}
-)
-target_link_libraries(sce_c_integration_donedata_local_invoke PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_donedata_local_invoke PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_donedata_local_invoke PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_donedata_local_invoke
-    COMMAND sce_c_integration_donedata_local_invoke
-)
-set_tests_properties(c11_integration_donedata_local_invoke PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_autoforward_event_fields
+        integration/test_autoforward_event_fields.c
+        ${INTEGRATION_C_TEST_autoforward_event_fields_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_autoforward_event_fields PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_autoforward_event_fields PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_autoforward_event_fields PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_autoforward_event_fields
+        COMMAND sce_c_integration_autoforward_event_fields
+    )
+    set_tests_properties(c11_integration_autoforward_event_fields PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 6.4 autoforward field preservation. The IRP suite checks only
-# that the event name crosses (test229) or leaves the field comparison to a
-# human (test230 is a manual test), so a name-only forward passes both; this
-# fixture asserts the copy is exact.
-sce_generate_static_integration_c_test(autoforward_event_fields "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_echo
-)
+    # W3C SCXML 6.4 autoforward carries `done.invoke.<id>`. Appendix D
+    # `mainEventLoop` forwards every event dequeued from the external queue to each
+    # autoforward child and excludes only the cancel event; §6.4.2 puts
+    # `done.invoke.<id>` on that queue. Observing it needs two concurrent invokes,
+    # which is why no IRP test covers it.
+    sce_generate_static_integration_c_test(autoforward_done_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_watch inv_short
+    )
 
-add_executable(sce_c_integration_autoforward_event_fields
-    integration/test_autoforward_event_fields.c
-    ${INTEGRATION_C_TEST_autoforward_event_fields_SOURCES}
-)
-target_link_libraries(sce_c_integration_autoforward_event_fields PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_autoforward_event_fields PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_autoforward_event_fields PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_autoforward_event_fields
-    COMMAND sce_c_integration_autoforward_event_fields
-)
-set_tests_properties(c11_integration_autoforward_event_fields PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_autoforward_done_invoke
+        integration/test_autoforward_done_invoke.c
+        ${INTEGRATION_C_TEST_autoforward_done_invoke_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_autoforward_done_invoke PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_autoforward_done_invoke PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_autoforward_done_invoke PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_autoforward_done_invoke
+        COMMAND sce_c_integration_autoforward_done_invoke
+    )
+    set_tests_properties(c11_integration_autoforward_done_invoke PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 6.4 autoforward carries `done.invoke.<id>`. Appendix D
-# `mainEventLoop` forwards every event dequeued from the external queue to each
-# autoforward child and excludes only the cancel event; §6.4.2 puts
-# `done.invoke.<id>` on that queue. Observing it needs two concurrent invokes,
-# which is why no IRP test covers it.
-sce_generate_static_integration_c_test(autoforward_done_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_watch inv_short
-)
+    # W3C SCXML 6.4: the negative half of the same loop. The internal drain has
+    # no forwarding step, so `error.execution` (6.2, unsupported `<send>` type)
+    # must never reach an autoforward child — excluded by the queue it was
+    # raised onto, not by a filter that recognises its name.
+    sce_generate_static_integration_c_test(autoforward_internal_queue "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_watch
+    )
 
-add_executable(sce_c_integration_autoforward_done_invoke
-    integration/test_autoforward_done_invoke.c
-    ${INTEGRATION_C_TEST_autoforward_done_invoke_SOURCES}
-)
-target_link_libraries(sce_c_integration_autoforward_done_invoke PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_autoforward_done_invoke PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_autoforward_done_invoke PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_autoforward_done_invoke
-    COMMAND sce_c_integration_autoforward_done_invoke
-)
-set_tests_properties(c11_integration_autoforward_done_invoke PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_autoforward_internal_queue
+        integration/test_autoforward_internal_queue.c
+        ${INTEGRATION_C_TEST_autoforward_internal_queue_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_autoforward_internal_queue PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_autoforward_internal_queue PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_autoforward_internal_queue PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_autoforward_internal_queue
+        COMMAND sce_c_integration_autoforward_internal_queue
+    )
+    set_tests_properties(c11_integration_autoforward_internal_queue PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 6.4: the negative half of the same loop. The internal drain has
-# no forwarding step, so `error.execution` (6.2, unsupported `<send>` type)
-# must never reach an autoforward child — excluded by the queue it was
-# raised onto, not by a filter that recognises its name.
-sce_generate_static_integration_c_test(autoforward_internal_queue "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_watch
-)
+    # W3C SCXML 6.4: *where* in the loop the forward happens. Appendix D puts it
+    # one statement after `externalQueue.dequeue()`, and 6.4.2 in prose at the
+    # point at which the parent removes the event from the external event queue.
+    # The two fixtures above are blind to this by construction — queue order
+    # alone cannot tell the enqueue from the dequeue, so the parent marks the
+    # child directly with `<send target="#_inv_probe">` from a transition body.
+    sce_generate_static_integration_c_test(autoforward_dequeue_point "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_probe
+    )
 
-add_executable(sce_c_integration_autoforward_internal_queue
-    integration/test_autoforward_internal_queue.c
-    ${INTEGRATION_C_TEST_autoforward_internal_queue_SOURCES}
-)
-target_link_libraries(sce_c_integration_autoforward_internal_queue PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_autoforward_internal_queue PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_autoforward_internal_queue PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_autoforward_internal_queue
-    COMMAND sce_c_integration_autoforward_internal_queue
-)
-set_tests_properties(c11_integration_autoforward_internal_queue PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_autoforward_dequeue_point
+        integration/test_autoforward_dequeue_point.c
+        ${INTEGRATION_C_TEST_autoforward_dequeue_point_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_autoforward_dequeue_point PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_autoforward_dequeue_point PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_autoforward_dequeue_point PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_autoforward_dequeue_point
+        COMMAND sce_c_integration_autoforward_dequeue_point
+    )
+    set_tests_properties(c11_integration_autoforward_dequeue_point PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 6.4: *where* in the loop the forward happens. Appendix D puts it
-# one statement after `externalQueue.dequeue()`, and 6.4.2 in prose at the
-# point at which the parent removes the event from the external event queue.
-# The two fixtures above are blind to this by construction — queue order
-# alone cannot tell the enqueue from the dequeue, so the parent marks the
-# child directly with `<send target="#_inv_probe">` from a transition body.
-sce_generate_static_integration_c_test(autoforward_dequeue_point "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_probe
-)
+    # W3C SCXML Appendix D: *when* the invokes start relative to the external
+    # dequeue. mainEventLoop completes the macrostep on eventless and internal
+    # transitions alone, runs invoke(inv), and only then reaches
+    # externalQueue.dequeue(). The fixture above cannot see this axis — its child
+    # opens the exchange, so it is alive before anything is queued; here the
+    # parent queues for itself in onentry and the child starts second.
+    sce_generate_static_integration_c_test(invoke_precedes_external_dequeue "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_watch
+    )
 
-add_executable(sce_c_integration_autoforward_dequeue_point
-    integration/test_autoforward_dequeue_point.c
-    ${INTEGRATION_C_TEST_autoforward_dequeue_point_SOURCES}
-)
-target_link_libraries(sce_c_integration_autoforward_dequeue_point PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_autoforward_dequeue_point PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_autoforward_dequeue_point PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_autoforward_dequeue_point
-    COMMAND sce_c_integration_autoforward_dequeue_point
-)
-set_tests_properties(c11_integration_autoforward_dequeue_point PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_invoke_precedes_external_dequeue
+        integration/test_invoke_precedes_external_dequeue.c
+        ${INTEGRATION_C_TEST_invoke_precedes_external_dequeue_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_precedes_external_dequeue PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_precedes_external_dequeue
+        COMMAND sce_c_integration_invoke_precedes_external_dequeue
+    )
+    set_tests_properties(c11_integration_invoke_precedes_external_dequeue PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML Appendix D: *when* the invokes start relative to the external
-# dequeue. mainEventLoop completes the macrostep on eventless and internal
-# transitions alone, runs invoke(inv), and only then reaches
-# externalQueue.dequeue(). The fixture above cannot see this axis — its child
-# opens the exchange, so it is alive before anything is queued; here the
-# parent queues for itself in onentry and the child starts second.
-sce_generate_static_integration_c_test(invoke_precedes_external_dequeue "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_watch
-)
+    # W3C SCXML Appendix D: the same order, reached mid-run. statesToInvoke is
+    # filled by enterStates inside microstep, so a state entered by an external
+    # event's transition arms an invoke that must start before the next event is
+    # dequeued. The fixture above enters its invoking state at initialization and
+    # cannot see an engine that drains the external queue to exhaustion per step.
+    sce_generate_static_integration_c_test(invoke_precedes_dequeue_midrun "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_watch
+    )
 
-add_executable(sce_c_integration_invoke_precedes_external_dequeue
-    integration/test_invoke_precedes_external_dequeue.c
-    ${INTEGRATION_C_TEST_invoke_precedes_external_dequeue_SOURCES}
-)
-target_link_libraries(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_invoke_precedes_external_dequeue PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_invoke_precedes_external_dequeue PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_invoke_precedes_external_dequeue
-    COMMAND sce_c_integration_invoke_precedes_external_dequeue
-)
-set_tests_properties(c11_integration_invoke_precedes_external_dequeue PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_invoke_precedes_dequeue_midrun
+        integration/test_invoke_precedes_dequeue_midrun.c
+        ${INTEGRATION_C_TEST_invoke_precedes_dequeue_midrun_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_precedes_dequeue_midrun PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_precedes_dequeue_midrun
+        COMMAND sce_c_integration_invoke_precedes_dequeue_midrun
+    )
+    set_tests_properties(c11_integration_invoke_precedes_dequeue_midrun PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML Appendix D: the same order, reached mid-run. statesToInvoke is
-# filled by enterStates inside microstep, so a state entered by an external
-# event's transition arms an invoke that must start before the next event is
-# dequeued. The fixture above enters its invoking state at initialization and
-# cannot see an engine that drains the external queue to exhaustion per step.
-sce_generate_static_integration_c_test(invoke_precedes_dequeue_midrun "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_watch
-)
+    # W3C SCXML 3.7: a <final> nested inside a compound state completes that
+    # state, not the session — Appendix D enterStates ends the session only when
+    # the final's parent is the <scxml> element. The fixture rests in the nested
+    # final so the completion predicate is sampled while the machine is still live.
+    sce_generate_static_integration_c_test(nested_final_not_terminal "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
-add_executable(sce_c_integration_invoke_precedes_dequeue_midrun
-    integration/test_invoke_precedes_dequeue_midrun.c
-    ${INTEGRATION_C_TEST_invoke_precedes_dequeue_midrun_SOURCES}
-)
-target_link_libraries(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_invoke_precedes_dequeue_midrun PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_invoke_precedes_dequeue_midrun PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_invoke_precedes_dequeue_midrun
-    COMMAND sce_c_integration_invoke_precedes_dequeue_midrun
-)
-set_tests_properties(c11_integration_invoke_precedes_dequeue_midrun PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_nested_final_not_terminal
+        integration/test_nested_final_not_terminal.c
+        ${INTEGRATION_C_TEST_nested_final_not_terminal_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_nested_final_not_terminal PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_nested_final_not_terminal PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_nested_final_not_terminal PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_nested_final_not_terminal
+        COMMAND sce_c_integration_nested_final_not_terminal
+    )
+    set_tests_properties(c11_integration_nested_final_not_terminal PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 3.7: a <final> nested inside a compound state completes that
-# state, not the session — Appendix D enterStates ends the session only when
-# the final's parent is the <scxml> element. The fixture rests in the nested
-# final so the completion predicate is sampled while the machine is still live.
-sce_generate_static_integration_c_test(nested_final_not_terminal "${SCE_C_INTEGRATION_GENERATED_DIR}")
+    # W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
+    # implements is valid SCXML that must raise error.execution — not a document to
+    # reject at build time. C11 reaches that raise through three gates the other
+    # backends do not share (the entry-action switch, the scxml_family include
+    # guards, and an execute_pending_invokes arm the `| scxml` filter skips), so
+    # the fixture is the only thing that proves all three are open.
+    sce_generate_static_integration_c_test(invoke_unsupported_type "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
-add_executable(sce_c_integration_nested_final_not_terminal
-    integration/test_nested_final_not_terminal.c
-    ${INTEGRATION_C_TEST_nested_final_not_terminal_SOURCES}
-)
-target_link_libraries(sce_c_integration_nested_final_not_terminal PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_nested_final_not_terminal PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_nested_final_not_terminal PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_nested_final_not_terminal
-    COMMAND sce_c_integration_nested_final_not_terminal
-)
-set_tests_properties(c11_integration_nested_final_not_terminal PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_invoke_unsupported_type
+        integration/test_invoke_unsupported_type.c
+        ${INTEGRATION_C_TEST_invoke_unsupported_type_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_unsupported_type PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_invoke_unsupported_type PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_unsupported_type PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_unsupported_type
+        COMMAND sce_c_integration_invoke_unsupported_type
+    )
+    set_tests_properties(c11_integration_invoke_unsupported_type PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
-# implements is valid SCXML that must raise error.execution — not a document to
-# reject at build time. C11 reaches that raise through three gates the other
-# backends do not share (the entry-action switch, the scxml_family include
-# guards, and an execute_pending_invokes arm the `| scxml` filter skips), so
-# the fixture is the only thing that proves all three are open.
-sce_generate_static_integration_c_test(invoke_unsupported_type "${SCE_C_INTEGRATION_GENERATED_DIR}")
+    # W3C SCXML 5.5 + 6.3.1: donedata rides done.invoke.<id> wherever the child
+    # reaches its final state, not only where it finalises during start-up. The
+    # donedata_local_invoke fixture pins the payload shapes on a child that is
+    # already final at invoke time and is blind to this; here the child answers
+    # an event first and reaches <final> two macrosteps in.
+    sce_generate_static_integration_c_test(donedata_late_completion "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_late
+    )
 
-add_executable(sce_c_integration_invoke_unsupported_type
-    integration/test_invoke_unsupported_type.c
-    ${INTEGRATION_C_TEST_invoke_unsupported_type_SOURCES}
-)
-target_link_libraries(sce_c_integration_invoke_unsupported_type PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_invoke_unsupported_type PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_invoke_unsupported_type PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_invoke_unsupported_type
-    COMMAND sce_c_integration_invoke_unsupported_type
-)
-set_tests_properties(c11_integration_invoke_unsupported_type PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_donedata_late_completion
+        integration/test_donedata_late_completion.c
+        ${INTEGRATION_C_TEST_donedata_late_completion_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_donedata_late_completion PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_donedata_late_completion PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_donedata_late_completion PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_donedata_late_completion
+        COMMAND sce_c_integration_donedata_late_completion
+    )
+    set_tests_properties(c11_integration_donedata_late_completion PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 
-# W3C SCXML 5.5 + 6.3.1: donedata rides done.invoke.<id> wherever the child
-# reaches its final state, not only where it finalises during start-up. The
-# donedata_local_invoke fixture pins the payload shapes on a child that is
-# already final at invoke time and is blind to this; here the child answers
-# an event first and reaches <final> two macrosteps in.
-sce_generate_static_integration_c_test(donedata_late_completion "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_late
-)
+    # W3C SCXML 6.2: a <send> carries its <param> payload on both the paths that
+    # had no runtime witness — from a datamodel="null" child (which needs no
+    # script engine, so param emission must be judged per send rather than per
+    # machine) and to #_internal (whose raise used to take no event data). The
+    # two land in distinct final states so a failure names the path.
+    sce_generate_static_integration_c_test(send_param_payload "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_emitter
+    )
 
-add_executable(sce_c_integration_donedata_late_completion
-    integration/test_donedata_late_completion.c
-    ${INTEGRATION_C_TEST_donedata_late_completion_SOURCES}
-)
-target_link_libraries(sce_c_integration_donedata_late_completion PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_donedata_late_completion PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_donedata_late_completion PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_donedata_late_completion
-    COMMAND sce_c_integration_donedata_late_completion
-)
-set_tests_properties(c11_integration_donedata_late_completion PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
-
-# W3C SCXML 6.2: a <send> carries its <param> payload on both the paths that
-# had no runtime witness — from a datamodel="null" child (which needs no
-# script engine, so param emission must be judged per send rather than per
-# machine) and to #_internal (whose raise used to take no event data). The
-# two land in distinct final states so a failure names the path.
-sce_generate_static_integration_c_test(send_param_payload "${SCE_C_INTEGRATION_GENERATED_DIR}"
-    SYNTH_INVOKE_CHILDREN inv_emitter
-)
-
-add_executable(sce_c_integration_send_param_payload
-    integration/test_send_param_payload.c
-    ${INTEGRATION_C_TEST_send_param_payload_SOURCES}
-)
-target_link_libraries(sce_c_integration_send_param_payload PRIVATE
-    sce_c_runtime sce_c_runtime_posix lua54
-)
-target_include_directories(sce_c_integration_send_param_payload PRIVATE
-    "${SCE_C_INTEGRATION_GENERATED_DIR}"
-)
-set_target_properties(sce_c_integration_send_param_payload PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_integration_send_param_payload
-    COMMAND sce_c_integration_send_param_payload
-)
-set_tests_properties(c11_integration_send_param_payload PROPERTIES
-    TIMEOUT 30
-    LABELS "integration;c11;aot"
-)
+    add_executable(sce_c_integration_send_param_payload
+        integration/test_send_param_payload.c
+        ${INTEGRATION_C_TEST_send_param_payload_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_send_param_payload PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_send_param_payload PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_send_param_payload PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_send_param_payload
+        COMMAND sce_c_integration_send_param_payload
+    )
+    set_tests_properties(c11_integration_send_param_payload PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+else()
+    message(STATUS
+        "skipping the c11 integration fixtures — they link "
+        "sce_c_runtime_posix and lua54, which SCE_C_RUNTIME_POSIX / "
+        "SCE_ENABLE_LUA do not build in this configuration.")
+endif()
 
 # ─── forge buffer pool: RFC §synth-5-E slot FSM, exercised ──────────
 #
@@ -943,7 +980,13 @@ set_tests_properties(c11_integration_event_schema_bytes PROPERTIES
 # (KILL fallback after 2s). Both arms are idempotent so a partial-run
 # `ctest -R w3c_c_aot_513` followed by another ctest invocation does
 # not stack server instances.
-if(W3C_C_AOT_TESTS_NEEDS_HTTP)
+# The two options are named alongside the fixture list because the list
+# is populated by the registrations above, which run whether or not the
+# runners are built. Without them a bare-metal or script-engine-less
+# configuration registers a server fixture that no test can require —
+# inert, since ctest starts a fixture only on demand, but it reads in
+# `ctest -N` as coverage that is not there.
+if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA AND W3C_C_AOT_TESTS_NEEDS_HTTP)
     find_program(SCE_TEST_NODE_EXECUTABLE node)
     if(SCE_TEST_NODE_EXECUTABLE)
         set(_http_fixture_pid "${CMAKE_CURRENT_BINARY_DIR}/w3c_http_server.pid")
@@ -978,62 +1021,80 @@ if(W3C_C_AOT_TESTS_NEEDS_HTTP)
     endif()
 endif()
 
-# ─── DOM helper unit tests ──────────────────────────────────────────
-#
-# Coverage for the full pugixml feature set (DOCTYPE / CDATA / entity
-# decoding / mixed text PCDATA) that the W3C SCXML B.2 corpus does not
-# force. Without these the additions to backends/c/tests/support/dom.c are
-# unconsumed; the unit suite is the first reader and pins the parser's
-# `parse_default`-equivalent behaviour against drift.
-add_executable(sce_c_dom_unit_test unit/dom_test.c)
-target_link_libraries(sce_c_dom_unit_test PRIVATE sce_c_runtime sce_c_base sce_c_scripting)
-set_target_properties(sce_c_dom_unit_test PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_unit_dom COMMAND sce_c_dom_unit_test)
-set_tests_properties(c11_unit_dom PROPERTIES
-    TIMEOUT 10
-    LABELS "unit;c11"
-)
+# sce_c_scripting carries the lua_dom binding this suite reads through,
+# and it is built only under SCE_ENABLE_LUA.
+if(SCE_ENABLE_LUA)
+    # ─── DOM helper unit tests ──────────────────────────────────────────
+    #
+    # Coverage for the full pugixml feature set (DOCTYPE / CDATA / entity
+    # decoding / mixed text PCDATA) that the W3C SCXML B.2 corpus does not
+    # force. Without these the additions to backends/c/tests/support/dom.c are
+    # unconsumed; the unit suite is the first reader and pins the parser's
+    # `parse_default`-equivalent behaviour against drift.
+    add_executable(sce_c_dom_unit_test unit/dom_test.c)
+    target_link_libraries(sce_c_dom_unit_test PRIVATE sce_c_runtime sce_c_base sce_c_scripting)
+    set_target_properties(sce_c_dom_unit_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_unit_dom COMMAND sce_c_dom_unit_test)
+    set_tests_properties(c11_unit_dom PROPERTIES
+        TIMEOUT 10
+        LABELS "unit;c11"
+    )
+else()
+    message(STATUS
+        "skipping c11_unit_dom — it links sce_c_scripting, which "
+        "SCE_ENABLE_LUA does not build in this configuration.")
+endif()
 
-# ─── HTTP client unit tests ────────────────────────────────────────
-#
-# Coverage for the host-side HTTP/1.1 client + JSON response extractor
-# (backends/c/tests/support/http_client.{c,h}). The W3C SCXML C.2 corpus
-# only exercises the happy path against the standalone Node server;
-# these unit tests force edge cases the corpus does not (URL parsing
-# rejections, percent-encoding overflow, depth-counted JSON object
-# capture with embedded `}`, `\uXXXX` UTF-8 unescape) plus a single
-# end-to-end POST round-trip against an in-process loopback server
-# (TCP 127.0.0.1, OS-assigned port, single-shot accept thread). pthread
-# link is local to this binary — sce_c_test_http_support stays free of
-# threading deps so fixture binaries that only call the synchronous
-# POST API do not pull pthread either.
-find_package(Threads REQUIRED)
-add_executable(sce_c_http_client_unit_test unit/http_client_test.c)
-target_link_libraries(sce_c_http_client_unit_test
-    PRIVATE
-        sce_c_runtime
-        sce_c_runtime_posix
-        sce_c_scripting
-        Threads::Threads
-)
-set_target_properties(sce_c_http_client_unit_test PROPERTIES
-    C_STANDARD 11
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-add_test(NAME c11_unit_http_client COMMAND sce_c_http_client_unit_test)
-set_tests_properties(c11_unit_http_client PROPERTIES
-    TIMEOUT 30
-    LABELS "unit;c11"
-    # In-process loopback pthread server with a 5s client recv timeout —
-    # CPU-heavy peers under `ctest -j` starve scheduling and flake the
-    # bound. Force serial so the round-trip runs unimpeded.
-    RUN_SERIAL TRUE
-)
+# Linked against the POSIX platform impl (the client under test) and
+# sce_c_scripting (the http_lua binding), so this binary exists only
+# when both are built.
+if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
+    # ─── HTTP client unit tests ────────────────────────────────────────
+    #
+    # Coverage for the host-side HTTP/1.1 client + JSON response extractor
+    # (backends/c/tests/support/http_client.{c,h}). The W3C SCXML C.2 corpus
+    # only exercises the happy path against the standalone Node server;
+    # these unit tests force edge cases the corpus does not (URL parsing
+    # rejections, percent-encoding overflow, depth-counted JSON object
+    # capture with embedded `}`, `\uXXXX` UTF-8 unescape) plus a single
+    # end-to-end POST round-trip against an in-process loopback server
+    # (TCP 127.0.0.1, OS-assigned port, single-shot accept thread). pthread
+    # link is local to this binary — sce_c_test_http_support stays free of
+    # threading deps so fixture binaries that only call the synchronous
+    # POST API do not pull pthread either.
+    find_package(Threads REQUIRED)
+    add_executable(sce_c_http_client_unit_test unit/http_client_test.c)
+    target_link_libraries(sce_c_http_client_unit_test
+        PRIVATE
+            sce_c_runtime
+            sce_c_runtime_posix
+            sce_c_scripting
+            Threads::Threads
+    )
+    set_target_properties(sce_c_http_client_unit_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_unit_http_client COMMAND sce_c_http_client_unit_test)
+    set_tests_properties(c11_unit_http_client PROPERTIES
+        TIMEOUT 30
+        LABELS "unit;c11"
+        # In-process loopback pthread server with a 5s client recv timeout —
+        # CPU-heavy peers under `ctest -j` starve scheduling and flake the
+        # bound. Force serial so the round-trip runs unimpeded.
+        RUN_SERIAL TRUE
+    )
+else()
+    message(STATUS
+        "skipping c11_unit_http_client — it links sce_c_runtime_posix "
+        "and sce_c_scripting, which SCE_C_RUNTIME_POSIX / SCE_ENABLE_LUA "
+        "do not build in this configuration.")
+endif()
 
 # ─── C++ consumption gate ───────────────────────────────────────────
 #
@@ -1056,11 +1117,29 @@ set_tests_properties(c11_unit_http_client PROPERTIES
 # registered file list, so a header added later is covered without
 # anyone remembering to add it, and a root that resolves to zero
 # headers fails rather than passing over an empty set.
+#
+# That last property is why the W3C tree is named conditionally. Nothing
+# consumes its codegen when the runners are not built, so ninja never
+# runs it and the directory stays empty — which the gate reports as a
+# broken scan, correctly, because it cannot tell "nobody generated this"
+# from "the scan lost its root". Naming only the trees this
+# configuration populates keeps the floor meaningful instead of
+# weakening it to tolerate emptiness.
+set(_sce_cxx_scan_roots
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include/sce"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include/sce/forge"
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+if(SCE_C_RUNTIME_POSIX)
+    list(APPEND _sce_cxx_scan_roots "${SCE_C_GENERATED_DIR}")
+endif()
+list(JOIN _sce_cxx_scan_roots "|" _sce_cxx_scan_roots)
+
 add_test(NAME c11_headers_are_cxx_consumable
     COMMAND ${CMAKE_COMMAND}
         -DSCE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
         -DSCE_CXX_STANDARD=17
-        -DSCE_SCAN_ROOTS=${CMAKE_SOURCE_DIR}/backends/c/runtime/include/sce|${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include/sce/forge|${SCE_C_GENERATED_DIR}|${SCE_C_INTEGRATION_GENERATED_DIR}
+        -DSCE_SCAN_ROOTS=${_sce_cxx_scan_roots}
         -DSCE_INCLUDE_DIRS=${CMAKE_SOURCE_DIR}/backends/c/runtime/include|${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include|${SCE_C_GENERATED_DIR}|${SCE_C_INTEGRATION_GENERATED_DIR}|${CMAKE_SOURCE_DIR}/third_party/lua/src
         -DSCE_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cxx_consumption
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cxx_consumption_gate.cmake
