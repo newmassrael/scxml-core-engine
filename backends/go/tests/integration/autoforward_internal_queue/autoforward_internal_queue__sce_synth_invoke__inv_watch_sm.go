@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -332,6 +332,7 @@ func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ClearEventMetadat
 func (p *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state AutoforwardInternalQueueSceSynthInvokeInvWatchState, engine *sce.Engine[AutoforwardInternalQueueSceSynthInvokeInvWatchState, AutoforwardInternalQueueSceSynthInvokeInvWatchEvent]) {
 	switch state {
 	case AutoforwardInternalQueueSceSynthInvokeInvWatchStateWatch:
+		//line autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0

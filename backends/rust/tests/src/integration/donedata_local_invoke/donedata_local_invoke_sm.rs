@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -880,6 +880,7 @@ impl StatePolicy for DonedataLocalInvokePolicy {
     ) {
         match state {
             DonedataLocalInvokeState::PhaseContent => {
+                // SCE-MAP: donedata_local_invoke.scxml:55
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id = format!(
@@ -896,6 +897,7 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                 }
             }
             DonedataLocalInvokeState::PhaseParam => {
+                // SCE-MAP: donedata_local_invoke.scxml:34
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -1040,6 +1042,7 @@ impl StatePolicy for DonedataLocalInvokePolicy {
             DonedataLocalInvokeState::PhaseParam => {
                 match self.last_transition_index {
                     0 => {
+                        // SCE-MAP: donedata_local_invoke.scxml:47
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {

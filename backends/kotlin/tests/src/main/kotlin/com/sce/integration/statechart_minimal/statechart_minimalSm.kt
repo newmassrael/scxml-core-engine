@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -133,10 +133,12 @@ class StatechartMinimalStateMachine(
     override fun onEntry(state: StatechartMinimalState) {
         when (state) {
             is StatechartMinimalState.Done -> {
+                // SCE-MAP: statechart_minimal.scxml:18
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
             }
             is StatechartMinimalState.Waiting -> {
+                // SCE-MAP: statechart_minimal.scxml:15
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
             }
@@ -148,9 +150,11 @@ class StatechartMinimalStateMachine(
     override fun onExit(state: StatechartMinimalState) {
         when (state) {
             is StatechartMinimalState.Done -> {
+                // SCE-MAP: statechart_minimal.scxml:18
                 activeStateIds.remove("done")
             }
             is StatechartMinimalState.Waiting -> {
+                // SCE-MAP: statechart_minimal.scxml:15
                 activeStateIds.remove("waiting")
             }
         }

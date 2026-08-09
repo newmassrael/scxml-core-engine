@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -334,26 +334,31 @@ class Test294StateMachine(
     override fun onEntry(state: Test294State) {
         when (state) {
             is Test294State.Fail -> {
+                // SCE-MAP: test294.scxml:47
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test294State.Pass -> {
+                // SCE-MAP: test294.scxml:46
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test294State.S0 -> {
+                // SCE-MAP: test294.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test294State.S01 -> {
+                // SCE-MAP: test294.scxml:18
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test294State.S02 -> {
+                // SCE-MAP: test294.scxml:21
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
@@ -381,14 +386,17 @@ class Test294StateMachine(
                 }
             }
             is Test294State.S1 -> {
+                // SCE-MAP: test294.scxml:28
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             is Test294State.S11 -> {
+                // SCE-MAP: test294.scxml:36
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
             }
             is Test294State.S12 -> {
+                // SCE-MAP: test294.scxml:39
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
@@ -417,27 +425,35 @@ class Test294StateMachine(
     override fun onExit(state: Test294State) {
         when (state) {
             is Test294State.Fail -> {
+                // SCE-MAP: test294.scxml:47
                 activeStateIds.remove("fail")
             }
             is Test294State.Pass -> {
+                // SCE-MAP: test294.scxml:46
                 activeStateIds.remove("pass")
             }
             is Test294State.S0 -> {
+                // SCE-MAP: test294.scxml:10
                 activeStateIds.remove("s0")
             }
             is Test294State.S01 -> {
+                // SCE-MAP: test294.scxml:18
                 activeStateIds.remove("s01")
             }
             is Test294State.S02 -> {
+                // SCE-MAP: test294.scxml:21
                 activeStateIds.remove("s02")
             }
             is Test294State.S1 -> {
+                // SCE-MAP: test294.scxml:28
                 activeStateIds.remove("s1")
             }
             is Test294State.S11 -> {
+                // SCE-MAP: test294.scxml:36
                 activeStateIds.remove("s11")
             }
             is Test294State.S12 -> {
+                // SCE-MAP: test294.scxml:39
                 activeStateIds.remove("s12")
             }
         }

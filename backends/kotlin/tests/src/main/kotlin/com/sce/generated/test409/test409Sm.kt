@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -160,18 +160,21 @@ class Test409StateMachine(
     override fun onEntry(state: Test409State) {
         when (state) {
             is Test409State.Fail -> {
+                // SCE-MAP: test409.scxml:35
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test409State.Pass -> {
+                // SCE-MAP: test409.scxml:34
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test409State.S0 -> {
+                // SCE-MAP: test409.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -179,14 +182,17 @@ class Test409StateMachine(
             scheduleSend("__send_0", 1000L, Test409Event.Timeout)
             }
             is Test409State.S01 -> {
+                // SCE-MAP: test409.scxml:18
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test409State.S011 -> {
+                // SCE-MAP: test409.scxml:25
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
             }
             is Test409State.S02 -> {
+                // SCE-MAP: test409.scxml:30
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
@@ -198,15 +204,19 @@ class Test409StateMachine(
     override fun onExit(state: Test409State) {
         when (state) {
             is Test409State.Fail -> {
+                // SCE-MAP: test409.scxml:35
                 activeStateIds.remove("fail")
             }
             is Test409State.Pass -> {
+                // SCE-MAP: test409.scxml:34
                 activeStateIds.remove("pass")
             }
             is Test409State.S0 -> {
+                // SCE-MAP: test409.scxml:10
                 activeStateIds.remove("s0")
             }
             is Test409State.S01 -> {
+                // SCE-MAP: test409.scxml:18
                 activeStateIds.remove("s01")
 
 
@@ -216,9 +226,11 @@ class Test409StateMachine(
             }
             }
             is Test409State.S011 -> {
+                // SCE-MAP: test409.scxml:25
                 activeStateIds.remove("s011")
             }
             is Test409State.S02 -> {
+                // SCE-MAP: test409.scxml:30
                 activeStateIds.remove("s02")
             }
         }

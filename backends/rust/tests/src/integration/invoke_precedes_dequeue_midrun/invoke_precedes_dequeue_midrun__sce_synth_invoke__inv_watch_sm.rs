@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -385,6 +385,7 @@ impl StatePolicy for InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy {
     ) {
         match state {
             InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState::Waiting => {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -457,6 +458,7 @@ impl StatePolicy for InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy {
             InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState::Saw => {
                 match self.last_transition_index {
                     0 => {
+                        // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:15
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -482,6 +484,7 @@ impl StatePolicy for InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy {
             InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState::Waiting => {
                 match self.last_transition_index {
                     1 => {
+                        // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:10
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {

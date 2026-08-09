@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -317,18 +317,21 @@ class Test579StateMachine(
     override fun onEntry(state: Test579State) {
         when (state) {
             is Test579State.Fail -> {
+                // SCE-MAP: test579.scxml:63
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test579State.Pass -> {
+                // SCE-MAP: test579.scxml:62
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test579State.S0 -> {
+                // SCE-MAP: test579.scxml:11
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -362,22 +365,27 @@ class Test579StateMachine(
                 }
             }
             is Test579State.S01 -> {
+                // SCE-MAP: test579.scxml:33
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test579State.S02 -> {
+                // SCE-MAP: test579.scxml:38
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
             is Test579State.S03 -> {
+                // SCE-MAP: test579.scxml:42
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
             }
             is Test579State.S2 -> {
+                // SCE-MAP: test579.scxml:50
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
             is Test579State.S3 -> {
+                // SCE-MAP: test579.scxml:56
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             }
@@ -389,12 +397,15 @@ class Test579StateMachine(
     override fun onExit(state: Test579State) {
         when (state) {
             is Test579State.Fail -> {
+                // SCE-MAP: test579.scxml:63
                 activeStateIds.remove("fail")
             }
             is Test579State.Pass -> {
+                // SCE-MAP: test579.scxml:62
                 activeStateIds.remove("pass")
             }
             is Test579State.S0 -> {
+                // SCE-MAP: test579.scxml:11
                 // W3C SCXML 3.11: Record shallow history for sh1
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
                 historyStore["sh1"] = preTransitionActiveStates.filter { stateId ->
@@ -407,18 +418,23 @@ class Test579StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test579State.S01 -> {
+                // SCE-MAP: test579.scxml:33
                 activeStateIds.remove("s01")
             }
             is Test579State.S02 -> {
+                // SCE-MAP: test579.scxml:38
                 activeStateIds.remove("s02")
             }
             is Test579State.S03 -> {
+                // SCE-MAP: test579.scxml:42
                 activeStateIds.remove("s03")
             }
             is Test579State.S2 -> {
+                // SCE-MAP: test579.scxml:50
                 activeStateIds.remove("s2")
             }
             is Test579State.S3 -> {
+                // SCE-MAP: test579.scxml:56
                 activeStateIds.remove("s3")
             }
         }

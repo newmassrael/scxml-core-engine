@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -385,12 +385,14 @@ class Test570StateMachine(
     override fun onEntry(state: Test570State) {
         when (state) {
             is Test570State.Fail -> {
+                // SCE-MAP: test570.scxml:47
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test570State.P0 -> {
+                // SCE-MAP: test570.scxml:9
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
 
@@ -406,6 +408,7 @@ class Test570StateMachine(
                 onEntry(Test570State.P0s2)
             }
             is Test570State.P0s1 -> {
+                // SCE-MAP: test570.scxml:24
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1")) return
                 if (!suppressChildEntry) {
@@ -414,10 +417,12 @@ class Test570StateMachine(
                 }
             }
             is Test570State.P0s11 -> {
+                // SCE-MAP: test570.scxml:25
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s11")) return
             }
             is Test570State.P0s1final -> {
+                // SCE-MAP: test570.scxml:28
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
@@ -428,6 +433,7 @@ class Test570StateMachine(
                 }
             }
             is Test570State.P0s2 -> {
+                // SCE-MAP: test570.scxml:31
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2")) return
                 if (!suppressChildEntry) {
@@ -436,10 +442,12 @@ class Test570StateMachine(
                 }
             }
             is Test570State.P0s21 -> {
+                // SCE-MAP: test570.scxml:32
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s21")) return
             }
             is Test570State.P0s2final -> {
+                // SCE-MAP: test570.scxml:35
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
@@ -450,12 +458,14 @@ class Test570StateMachine(
                 }
             }
             is Test570State.Pass -> {
+                // SCE-MAP: test570.scxml:46
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test570State.S1 -> {
+                // SCE-MAP: test570.scxml:40
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
@@ -467,9 +477,11 @@ class Test570StateMachine(
     override fun onExit(state: Test570State) {
         when (state) {
             is Test570State.Fail -> {
+                // SCE-MAP: test570.scxml:47
                 activeStateIds.remove("fail")
             }
             is Test570State.P0 -> {
+                // SCE-MAP: test570.scxml:9
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -501,27 +513,35 @@ class Test570StateMachine(
                 activeStateIds.remove("p0")
             }
             is Test570State.P0s1 -> {
+                // SCE-MAP: test570.scxml:24
                 activeStateIds.remove("p0s1")
             }
             is Test570State.P0s11 -> {
+                // SCE-MAP: test570.scxml:25
                 activeStateIds.remove("p0s11")
             }
             is Test570State.P0s1final -> {
+                // SCE-MAP: test570.scxml:28
                 activeStateIds.remove("p0s1final")
             }
             is Test570State.P0s2 -> {
+                // SCE-MAP: test570.scxml:31
                 activeStateIds.remove("p0s2")
             }
             is Test570State.P0s21 -> {
+                // SCE-MAP: test570.scxml:32
                 activeStateIds.remove("p0s21")
             }
             is Test570State.P0s2final -> {
+                // SCE-MAP: test570.scxml:35
                 activeStateIds.remove("p0s2final")
             }
             is Test570State.Pass -> {
+                // SCE-MAP: test570.scxml:46
                 activeStateIds.remove("pass")
             }
             is Test570State.S1 -> {
+                // SCE-MAP: test570.scxml:40
                 activeStateIds.remove("s1")
             }
         }

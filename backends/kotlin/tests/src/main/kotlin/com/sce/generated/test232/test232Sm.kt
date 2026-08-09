@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -204,18 +204,21 @@ class Test232StateMachine(
     override fun onEntry(state: Test232State) {
         when (state) {
             is Test232State.Fail -> {
+                // SCE-MAP: test232.scxml:42
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test232State.Pass -> {
+                // SCE-MAP: test232.scxml:41
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test232State.S0 -> {
+                // SCE-MAP: test232.scxml:8
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -233,14 +236,17 @@ class Test232StateMachine(
                 }
             }
             is Test232State.S01 -> {
+                // SCE-MAP: test232.scxml:27
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test232State.S02 -> {
+                // SCE-MAP: test232.scxml:31
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
             is Test232State.S03 -> {
+                // SCE-MAP: test232.scxml:35
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
             }
@@ -252,12 +258,15 @@ class Test232StateMachine(
     override fun onExit(state: Test232State) {
         when (state) {
             is Test232State.Fail -> {
+                // SCE-MAP: test232.scxml:42
                 activeStateIds.remove("fail")
             }
             is Test232State.Pass -> {
+                // SCE-MAP: test232.scxml:41
                 activeStateIds.remove("pass")
             }
             is Test232State.S0 -> {
+                // SCE-MAP: test232.scxml:8
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -265,12 +274,15 @@ class Test232StateMachine(
                 activeStateIds.remove("s0")
             }
             is Test232State.S01 -> {
+                // SCE-MAP: test232.scxml:27
                 activeStateIds.remove("s01")
             }
             is Test232State.S02 -> {
+                // SCE-MAP: test232.scxml:31
                 activeStateIds.remove("s02")
             }
             is Test232State.S03 -> {
+                // SCE-MAP: test232.scxml:35
                 activeStateIds.remove("s03")
             }
         }

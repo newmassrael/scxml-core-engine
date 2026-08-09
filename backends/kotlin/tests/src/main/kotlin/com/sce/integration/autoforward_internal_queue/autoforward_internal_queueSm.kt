@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -137,18 +137,21 @@ class AutoforwardInternalQueueStateMachine(
     override fun onEntry(state: AutoforwardInternalQueueState) {
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:85
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueState.Pass -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:84
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueState.Phase -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:54
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -170,12 +173,15 @@ class AutoforwardInternalQueueStateMachine(
     override fun onExit(state: AutoforwardInternalQueueState) {
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:85
                 activeStateIds.remove("fail")
             }
             is AutoforwardInternalQueueState.Pass -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:84
                 activeStateIds.remove("pass")
             }
             is AutoforwardInternalQueueState.Phase -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:54
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit

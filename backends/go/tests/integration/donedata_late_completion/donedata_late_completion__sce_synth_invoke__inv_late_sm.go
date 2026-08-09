@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -474,6 +474,7 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLateCompletionSceSynthInvokeInvLateStateSettled:
+		//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:11
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		doneDataOk := true
@@ -503,6 +504,7 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 			engine.StashDonedataAtFinal(doneEventData)
 		}
 	case DonedataLateCompletionSceSynthInvokeInvLateStateWaiting:
+		//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:5
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0

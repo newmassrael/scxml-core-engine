@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -329,6 +329,7 @@ func (p *NestedFinalNotTerminalPolicy) ClearEventMetadata() {
 func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {
 	switch state {
 	case NestedFinalNotTerminalStatePhaseDone:
+		//line nested_final_not_terminal.scxml:48
 		// W3C SCXML 3.7: Final state reached — raise done.state.phase
 		engine.Raise(sce.NewEventWithMetadata(NestedFinalNotTerminalEventDoneStatePhase))
 	default:

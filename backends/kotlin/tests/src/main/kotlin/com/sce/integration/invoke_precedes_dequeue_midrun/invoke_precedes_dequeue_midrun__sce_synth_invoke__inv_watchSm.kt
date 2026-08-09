@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -136,22 +136,26 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
     override fun onEntry(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState) {
         when (state) {
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("missed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ordered")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("saw")) return
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
 
@@ -167,15 +171,19 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
     override fun onExit(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState) {
         when (state) {
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19
                 activeStateIds.remove("missed")
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20
                 activeStateIds.remove("ordered")
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14
                 activeStateIds.remove("saw")
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> {
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
                 activeStateIds.remove("waiting")
             }
         }
