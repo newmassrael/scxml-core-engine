@@ -13,6 +13,7 @@
 #}
 {%- import '_actions.py.jinja2' as actions %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 
     # ── Transitions (W3C SCXML 3.13) ───────────────────────────────
 
@@ -76,6 +77,9 @@
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for transition in transitions_with_action_here %}
             if transition_index == {{ transition.transition_index }}:{{ annot.annotation_comment(transition, "python", "                ") }}
+{% if transition.source_location %}
+                {{ sce_map.source_marker(transition.source_location, "python", stmt_level=true) | trim }}
+{% endif %}
                 try:
 {% for action in transition.actions %}
 {{ annot.annotation_block(action, "python", "                    ") }}{{ actions.emit(action, '                    ', machine_name, model) }}
