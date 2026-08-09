@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sce.dev/schemas/w3c-conformance-fixtures.v1.schema.json",
+  "title": "W3C SCXML statechart conformance fixture catalog",
+  "description": "Editor/IDE aid only. Runtime validation is hand-rolled in sce-build/src/w3c_registry.rs, and `w3c_registry_matches_the_schema_file` keeps the two descriptions of the shape in lockstep so this file cannot drift into fiction. Not an agent-facing wire surface — it is a repository input, not a produced record, so it carries no x-sce-schema-status and is absent from SCE_WIRE_CONTRACTS.md, matching tests/forge/conformance/fixtures.schema.json.",
+  "type": "object",
+  "required": ["version", "harnesses", "fixtures"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "description": "Catalog format version. Bumped only for a change no reader can absorb additively.",
+      "type": "integer",
+      "const": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "harnesses": {
+      "description": "Every harness a fixture may name, mapped to what the runner has to do differently for it. A fixture naming a harness absent from this map is rejected at load, so the map is the closed set rather than documentation of one.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "harness"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Upstream W3C test id, optionally with a variant suffix (403a). Names resources/<id>/ and must be unique across the catalog.",
+            "type": "string",
+            "pattern": "^[0-9]+[a-z]?$"
+          },
+          "harness": {
+            "description": "Key into `harnesses`. Absent is not permitted: the default lives in the loader, not in each entry, so a reader never has to know it.",
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "description": "This repository's curation note for the fixture, shown by `generate-w3c --list`. Distinct from the upstream description in resources/<id>/metadata.txt, which the generator reads separately and which this must not duplicate.",
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
