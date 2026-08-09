@@ -32,9 +32,12 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Two fixtures is enough: the claim is about where output lands, not
-/// about how much of it there is, and a small registry keeps the test
-/// from regenerating 202 state machines.
+/// Three fixtures: the claim is about where output lands, not about how
+/// much of it there is, so a small registry keeps the test from
+/// regenerating 202 state machines. 216 earns its place by lowering a
+/// hybrid child — the generator synthesises that child's SCXML into the
+/// output tree, which is the only shape whose provenance line can pick
+/// up the output root.
 fn stage_registry(dir: &Path) -> PathBuf {
     let full = std::fs::read_to_string(
         repo_root().join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH),
@@ -45,13 +48,13 @@ fn stage_registry(dir: &Path) -> PathBuf {
         .as_array()
         .expect("fixtures array")
         .iter()
-        .filter(|f| matches!(f["id"].as_str(), Some("144") | Some("147")))
+        .filter(|f| matches!(f["id"].as_str(), Some("144") | Some("147") | Some("216")))
         .cloned()
         .collect();
     assert_eq!(
         kept.len(),
-        2,
-        "both fixtures must still be registered for this test to mean anything",
+        3,
+        "every fixture must still be registered for this test to mean anything",
     );
     doc["fixtures"] = serde_json::Value::Array(kept);
     let path = dir.join("fixtures.json");
@@ -137,8 +140,18 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
             "backends/rust/tests/src/generated/test147/mod.rs".to_string(),
             "backends/rust/tests/src/generated/test147/sce_sourcemap.json".to_string(),
             "backends/rust/tests/src/generated/test147/test147_sm.rs".to_string(),
+            "backends/rust/tests/src/generated/test216/mod.rs".to_string(),
+            "backends/rust/tests/src/generated/test216/sce_sourcemap.json".to_string(),
+            // 216 lowers a hybrid child: the generator synthesises the
+            // child's SCXML into the output tree and then reads it back,
+            // so this input is itself an artifact of the run and has to
+            // land under the named root like everything else.
+            "backends/rust/tests/src/generated/test216/test216_hybrid0.scxml".to_string(),
+            "backends/rust/tests/src/generated/test216/test216_hybrid0_sm.rs".to_string(),
+            "backends/rust/tests/src/generated/test216/test216_sm.rs".to_string(),
             "backends/rust/tests/tests/test_144.rs".to_string(),
             "backends/rust/tests/tests/test_147.rs".to_string(),
+            "backends/rust/tests/tests/test_216.rs".to_string(),
         ],
         "the backend layout is preserved beneath the named root, and only \
          the registered fixtures are emitted",
