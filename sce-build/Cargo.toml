@@ -118,6 +118,17 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# Committed-sourcemap drift gate. Regenerates every committed
+# `sce_sourcemap.json` through the real binary and compares symbol
+# tables, which is the only check that sees an emitter change for
+# unchanged inputs — the §6.2.6 hashes cover inputs, and the sidecars
+# carry no header for `verify` to read. Same `cli` feature gate as the
+# other binary-driven tests.
+[[test]]
+name = "committed_sourcemap_drift"
+path = "tests/committed_sourcemap_drift.rs"
+required-features = ["cli"]
+
 # End-to-end contract test for `sce-codegen check`. Drives the real
 # binary because the two claims under test — that `check` reaches the
 # same verdict as `generate`, and that it writes nothing — are process
