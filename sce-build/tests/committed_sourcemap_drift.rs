@@ -326,3 +326,140 @@ fn committed_sourcemaps_match_regeneration() {
         "compared only {compared} sidecars; expected at least {MIN_SIDECARS}",
     );
 }
+
+/// The published sourcemap schema, compiled as draft-07.
+fn sourcemap_schema() -> serde_json::Value {
+    serde_json::from_str(include_str!("../../schemas/sce-sourcemap.v1.schema.json"))
+        .expect("sourcemap schema is valid JSON")
+}
+
+/// Schema violations for one sidecar document, as message strings.
+fn sourcemap_schema_violations(instance: &serde_json::Value) -> Vec<String> {
+    let schema_value = sourcemap_schema();
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("sourcemap schema compiles as draft-07");
+    // Bound to a local so the `Result`'s temporary — which carries the
+    // borrow of `validator` — drops before `validator` does.
+    let msgs: Vec<String> = match validator.validate(instance) {
+        Ok(()) => Vec::new(),
+        Err(errors) => errors.map(|e| e.to_string()).collect(),
+    };
+    msgs
+}
+
+/// Every committed sidecar is valid against
+/// `schemas/sce-sourcemap.v1.schema.json`.
+///
+/// Nothing else asserts this. [`committed_sourcemaps_match_regeneration`]
+/// compares committed bytes against the generator, so the two sides
+/// are free to drift away from the schema together and stay green.
+/// The guards in `forge::sourcemap` compare the schema *file* against
+/// Rust constants — the version const, the `kind` enum — which is a
+/// property of the schema, not of any document it claims to describe.
+///
+/// Paired with the regeneration gate above, this covers what the
+/// generator emits as well: the committed documents are pinned equal
+/// to a fresh emission, so validating them validates that emission.
+#[test]
+fn committed_sourcemaps_validate_against_the_wire_schema() {
+    let sidecars = committed_sidecars();
+    assert!(
+        sidecars.len() >= MIN_SIDECARS,
+        "found only {} committed sidecars; expected at least \
+         {MIN_SIDECARS}. A walk that finds nothing certifies nothing.",
+        sidecars.len(),
+    );
+
+    let mut violations: Vec<String> = Vec::new();
+    for sidecar in &sidecars {
+        let instance: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(sidecar).expect("read sidecar"))
+                .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", sidecar.display()));
+        let msgs = sourcemap_schema_violations(&instance);
+        if !msgs.is_empty() {
+            violations.push(format!("\n{}: {msgs:?}", sidecar.display()));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{} of {} committed sidecars violate \
+         schemas/sce-sourcemap.v1.schema.json:{}",
+        violations.len(),
+        sidecars.len(),
+        violations
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(""),
+    );
+}
+
+/// A sidecar the schema must reject, built by changing exactly one
+/// thing in a committed document.
+///
+/// The control assertion pins the rejection to the mutated field. A
+/// hand-typed document rejects for whichever constraint it trips
+/// first, which makes a negative case pass while proving nothing
+/// about the constraint it is named after.
+fn assert_one_change_is_rejected(
+    why: &str,
+    mutate: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+) {
+    let sidecars = committed_sidecars();
+    let first = sidecars.first().expect("at least one committed sidecar");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(first).expect("read sidecar"))
+            .expect("sidecar is JSON");
+    assert!(
+        sourcemap_schema_violations(&doc).is_empty(),
+        "the control document must be valid before mutation, \
+         otherwise the rejection below proves nothing: {}",
+        first.display(),
+    );
+    mutate(doc.as_object_mut().expect("sidecar is an object"));
+    assert!(
+        !sourcemap_schema_violations(&doc).is_empty(),
+        "schema must reject this document ({why}): {doc}",
+    );
+}
+
+#[test]
+fn sourcemap_schema_rejects_an_unknown_symbol_kind() {
+    assert_one_change_is_rejected("kind outside the declared enum", |obj| {
+        let symbols = obj
+            .get_mut("symbols")
+            .and_then(|s| s.as_object_mut())
+            .expect("symbols object");
+        let key = symbols.keys().next().expect("at least one symbol").clone();
+        symbols[&key]["kind"] = serde_json::Value::String("no-such-kind".to_string());
+    });
+}
+
+#[test]
+fn sourcemap_schema_rejects_a_missing_required_field() {
+    assert_one_change_is_rejected("line_range absent", |obj| {
+        let symbols = obj
+            .get_mut("symbols")
+            .and_then(|s| s.as_object_mut())
+            .expect("symbols object");
+        let key = symbols.keys().next().expect("at least one symbol").clone();
+        symbols[&key]
+            .as_object_mut()
+            .expect("symbol is an object")
+            .remove("line_range");
+    });
+}
+
+/// The schema closes both the document and each symbol. An emitter
+/// that starts writing a field without declaring it would otherwise
+/// ship sidecars every external validator rejects.
+#[test]
+fn sourcemap_schema_rejects_an_undeclared_field() {
+    assert_one_change_is_rejected("field not declared in properties", |obj| {
+        obj.insert("wcet_budget_us".to_string(), serde_json::Value::from(42u32));
+    });
+}
