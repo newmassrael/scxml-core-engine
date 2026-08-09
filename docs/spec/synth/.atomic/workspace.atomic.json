@@ -2143,6 +2143,11 @@
         {
           "file": "tests/forge/resources/algorithm_crc16_table.scxml",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "OrchestrateArgs",
+          "kind": "references"
         }
       ]
     },
@@ -3098,6 +3103,11 @@
         {
           "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "OrchestrateArgs",
+          "kind": "references"
         }
       ]
     },
@@ -3536,6 +3546,11 @@
         },
         {
           "file": "tools/codegen/templates/forge/rust/buffer_pool.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "OrchestrateArgs",
           "kind": "references"
         }
       ]
