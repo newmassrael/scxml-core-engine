@@ -118,6 +118,17 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# Diagnostic instance-validation gate. Sweeps the fixture corpus in
+# every backend through `check` and validates the emitted NDJSON
+# against the published schema — the only check that puts a produced
+# diagnostic through a validator rather than comparing one declaration
+# to another. Its own target because the input set is the whole
+# fixture tree, which makes it a tree-wide gate.
+[[test]]
+name = "diagnostic_corpus_schema"
+path = "tests/diagnostic_corpus_schema.rs"
+required-features = ["cli"]
+
 # Committed-sourcemap drift gate. Regenerates every committed
 # `sce_sourcemap.json` through the real binary and compares symbol
 # tables, which is the only check that sees an emitter change for
