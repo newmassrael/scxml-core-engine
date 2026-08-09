@@ -2188,7 +2188,19 @@ pub fn compile_scxml_with_imports(
     // pattern; consumed by `validate_*_cross_doc` only when `deploy` is
     // `Some` — `None` (deploy-unaware path) silent-skips
     // (no deploy ⇒ no cross-doc deploy-vs-forge to check).
-    let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
+    // The link's own `<sce:import>` list rides in the third slot
+    // because a pool ref may resolve either way: through the build's
+    // document set (this orchestrator's `--forge` inputs) or through
+    // the link document's own import, which names a file directly.
+    // `validate_link_pool_refs` accepts either, so both resolution
+    // paths have to be reachable from one capture — a parallel vector
+    // could disagree with this one about which link an import belongs
+    // to.
+    let mut link_models_for_xref: Vec<(
+        String,
+        forge::model::LinkModel,
+        Vec<forge::model::ForgeImport>,
+    )> = Vec::new();
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
 
     for forge_path in forge_files {
@@ -2282,7 +2294,7 @@ pub fn compile_scxml_with_imports(
                 // the bound BufferPoolModel. The diag-label
                 // (basename) rides along so error sites name the
                 // forge link doc that wrote the offending ref.
-                link_models_for_xref.push((basename.to_string(), link));
+                link_models_for_xref.push((basename.to_string(), link, parsed.imports.clone()));
             }
             forge::model::ForgeDocument::BufferPool(pool) => {
                 // The reassembly + burst validators look up pool
@@ -2412,6 +2424,29 @@ pub fn compile_scxml_with_imports(
     // document and never calls into here, and used to emit typed payload
     // accesses that were never typechecked at all.
 
+    // ── Link pool-ref cross-doc resolution ──
+    //
+    // First of the forge→forge cross-doc validators, per the
+    // spec-section walk order the passes below follow (§synth-5-C link
+    // before §synth-5-D outbox before §synth-5-L bounded-collection).
+    // Needs only pass-1 captures, so it does not wait on pass-2
+    // statechart registration.
+    //
+    // Ordering it ahead of the deploy-aware block is also what makes
+    // that block's joins well-founded: those reach the pool through
+    // the very ref this pass proves resolves, and every one of them
+    // skips on a miss — `resolve_link_rx_pool_slot_count` returns
+    // `None`, and `validate_links_burst_invariants` /
+    // `validate_reassembly_cross_doc` `continue` past the link. That
+    // skip is right for a partial topology and wrong for a typo, and
+    // only this entry point can tell the two apart, because only it is
+    // handed the whole build.
+    //
+    // Deploy-independent by construction — the ref is a forge→forge
+    // fact — so unlike the deploy block this one does not gate on
+    // `deploy.is_some()`.
+    validate_link_pool_refs(&link_models_for_xref, &pool_reg)?;
+
     // ── Worker outbox cross-resolution ──
     //
     // Runs after pass-2 statechart registration so worker→statechart
@@ -2510,7 +2545,7 @@ pub fn compile_scxml_with_imports(
         let forge_link_models_view: std::collections::HashMap<String, &forge::model::LinkModel> =
             link_models_for_xref
                 .iter()
-                .map(|(_, link)| (link.name.clone(), link))
+                .map(|(_, link, _)| (link.name.clone(), link))
                 .collect();
         let pool_models_view: std::collections::HashMap<String, &forge::model::BufferPoolModel> =
             pool_models_for_xref
@@ -3636,6 +3671,79 @@ fn validate_link_pool_framer_resolution(
                 }
                 .into(),
                 importing_doc,
+                None,
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// RFC §synth-5-C / §synth-5-E: every `<sce:rx-pool>`, `<sce:tx-pool>`
+/// and `<sce:stage-pool>` reference on a link kind must name a
+/// buffer-pool document this build can see.
+///
+/// A ref resolves when it names either a `sce:kind="buffer-pool"`
+/// document among the build's inputs (`pool_reg`) or a buffer-pool
+/// `<sce:import>` alias on the link document itself. Both are genuine
+/// resolutions and the two paths are not interchangeable: the import
+/// form is how a link doc names a pool that the caller did not list,
+/// and `validate_link_pool_framer_resolution` already follows it to
+/// compare slot sizes. Requiring the build-set form alone would reject
+/// documents the rest of the pipeline compiles correctly.
+///
+/// Unlike [`validate_link_pool_framer_resolution`], which compares a
+/// resolved pool's capacity and therefore tolerates a ref it cannot
+/// resolve, this pass is about resolution itself, so it has no
+/// silent-skip arm on the pool axis. It only runs from
+/// [`compile_scxml_with_imports`]: the single-document entry points
+/// are handed one file and genuinely cannot know whether a name is
+/// declared elsewhere in the build, so refusing there would reject
+/// partial topologies that are legal by construction.
+///
+/// The diagnostic anchors at the link document — the file that wrote
+/// the offending ref — matching the
+/// `validate_link_pool_framer_resolution` convention. Sides are walked
+/// rx → tx → stage over the links in input order, so the first
+/// refusal is deterministic for a given invocation.
+fn validate_link_pool_refs(
+    links: &[(
+        String,
+        forge::model::LinkModel,
+        Vec<forge::model::ForgeImport>,
+    )],
+    pool_reg: &forge::pool_registry::ForgePoolRegistry,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+    use forge::model::ForgeKind;
+    use forge::pool_registry::ForgePoolKind;
+
+    let candidates = pool_reg.names_of_kind(ForgePoolKind::BufferPool);
+    for (diag_label, link, imports) in links {
+        for (side, pool_ref) in [
+            ("rx", &link.rx_pool),
+            ("tx", &link.tx_pool),
+            ("stage", &link.stage_pool),
+        ] {
+            let Some(pool_ref) = pool_ref.as_deref() else {
+                continue;
+            };
+            let declared_in_build = pool_reg.lookup(pool_ref).is_some();
+            let imported_by_link = imports
+                .iter()
+                .any(|imp| imp.alias == pool_ref && imp.kind == ForgeKind::BufferPool);
+            if declared_in_build || imported_by_link {
+                continue;
+            }
+            return Err(Located::new(
+                ValidationError::LinkPoolRefNotDeclared {
+                    link_name: link.name.clone(),
+                    pool_side: side,
+                    pool_ref: pool_ref.to_string(),
+                    candidates: candidates.clone(),
+                }
+                .into(),
+                diag_label,
                 None,
                 None,
             ));

@@ -1277,6 +1277,57 @@ pub enum ValidationError {
         framer_max_bytes: u32,
     },
 
+    /// RFC §synth-5-C / §synth-5-E cross-resolution: a
+    /// `<sce:rx-pool ref>`, `<sce:tx-pool ref>` or
+    /// `<sce:stage-pool ref>` on a link kind names no
+    /// `sce:kind="buffer-pool"` document reachable from this build —
+    /// neither among the documents the build was handed nor among the
+    /// link's own `<sce:import>` aliases.
+    ///
+    /// Every consumer of these refs resolves them by joining against
+    /// the build's pool set, and every one of those joins skips on a
+    /// miss: [`crate::mesh::deploy::validate_links_burst_invariants`]
+    /// and [`crate::mesh::deploy::validate_reassembly_cross_doc`]
+    /// `continue` past a link whose pool does not resolve, and
+    /// `validate_link_pool_framer_resolution` falls through its `None`
+    /// arm. Skipping is correct for a partial topology — the pool
+    /// really is outside this build — and wrong for a typo, which is
+    /// indistinguishable from a partial topology at those layers.
+    /// The multi-document entry point is handed the whole build, so it
+    /// is the one layer that can tell them apart; without this
+    /// diagnostic a one-character slip in a pool ref silently disables
+    /// the MCU burst-absorption and reassembly checks instead of
+    /// failing the build.
+    ///
+    /// Fires only from [`crate::compile_scxml_with_imports`], the
+    /// closed-world entry point. The single-document paths keep their
+    /// existing tolerance: they are handed one file and cannot know
+    /// whether a name is declared elsewhere in the build.
+    ///
+    /// `candidates` is the sorted buffer-pool name set of the build,
+    /// driving `Fix::ReplaceOneOf`. The diagnostic anchors at the link
+    /// document — the file that wrote the offending ref — matching the
+    /// `validate_link_pool_framer_resolution` convention.
+    #[error(
+        "link '{link_name}': <sce:{pool_side}-pool ref=\"{pool_ref}\"/> names no `sce:kind=\"buffer-pool\"` document in this build — declare the pool document and pass it to the build, or correct the ref to one of {candidates:?}"
+    )]
+    LinkPoolRefNotDeclared {
+        /// Link document name (root `name=` attribute).
+        link_name: String,
+        /// `"rx"`, `"tx"` or `"stage"` — which `<sce:*-pool>` element
+        /// carried the unresolved ref. A `&'static str` because the
+        /// set is closed by [`crate::forge::model::LinkModel`]'s three
+        /// pool fields, not by author input.
+        pool_side: &'static str,
+        /// The unresolved `ref` attribute value as written.
+        pool_ref: String,
+        /// Sorted buffer-pool document names declared in this build,
+        /// for `Fix::ReplaceOneOf`. Empty when the build declares no
+        /// buffer-pool at all — the repair is then to add the document
+        /// rather than to pick a different name.
+        candidates: Vec<String>,
+    },
+
     /// RFC §synth-5-E buffer-pool placement validation: the declared
     /// `<sce:section>` is not in the resolved machine's
     /// `memory.sram_regions` map. Fires only via
