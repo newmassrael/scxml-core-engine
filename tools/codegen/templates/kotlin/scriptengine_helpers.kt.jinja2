@@ -30,7 +30,7 @@
         // entry names and the same addresses whichever one runs it.
         engine.setupSystemVariables(
             sid,
-            "{{ model.name }}",
+            "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_kotlin }}",
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 

@@ -32,6 +32,35 @@ pub fn capitalize_first(s: &str) -> String {
     }
 }
 
+/// The value W3C SCXML 5.10 binds to `_name`.
+///
+/// The spec is explicit about both halves. §5.10 requires the processor
+/// to bind `_name` "at load time to the value of the `name` attribute of
+/// the `<scxml>` element", and §3.2.1 requires it to generate a name
+/// when the document declares none. `declared` is the attribute
+/// (`SCXMLModel::scxml_name`, empty when absent) and `generated` is the
+/// identity the toolchain derives from the document itself
+/// (`SCXMLModel::name`, the file stem).
+///
+/// This exists as a filter rather than as prose in five templates
+/// because five templates is how it went wrong: every AOT backend
+/// interpolated the *generated* identity into the engine's
+/// `setupSystemVariables` call, so a document declaring
+/// `name="machineName"` bound `_name` to its file stem. The C11 backend
+/// alone read the attribute, which is what showed the others were not
+/// expressing a different policy — they were simply wrong.
+///
+/// Callers must still apply their language's escape filter: unlike the
+/// file stem this replaced, the value is author-controlled text that
+/// lands inside a host string literal.
+pub fn w3c_session_name(declared: &str, generated: &str) -> String {
+    if declared.is_empty() {
+        generated.to_string()
+    } else {
+        declared.to_string()
+    }
+}
+
 /// Rust 2021 edition reserved keywords — must be escaped with `r#` prefix
 const RUST_KEYWORDS: &[&str] = &[
     "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
@@ -44,6 +73,7 @@ const RUST_KEYWORDS: &[&str] = &[
 
 /// Register all Rust-specific filters on the minijinja environment.
 pub fn register_filters(env: &mut minijinja::Environment) {
+    env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_pascal_case", to_pascal_case);
@@ -555,6 +585,7 @@ const GO_KEYWORDS: &[&str] = &[
 
 /// Register all Go-specific filters on the minijinja environment.
 pub fn register_go_filters(env: &mut minijinja::Environment) {
+    env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
@@ -660,6 +691,7 @@ fn to_in_predicate_go(cond_cpp: String) -> String {
 
 /// Register all C++-specific filters on the minijinja environment.
 pub fn register_cpp_filters(env: &mut minijinja::Environment) {
+    env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("capitalize", capitalize_state);
     env.add_filter("escape_cpp", escape_cpp);
@@ -699,6 +731,7 @@ fn escape_cpp(text: String) -> String {
 /// ECMAScript expressions to Lua at codegen time and embeds the result
 /// as a C string literal passed through `luaL_dostring`.
 pub fn register_c11_filters(env: &mut minijinja::Environment) {
+    env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("escape_c", escape_c);
     env.add_filter("escape_json_string", escape_json_string);
@@ -817,6 +850,7 @@ fn to_in_predicate_c11(
 
 /// Register all Kotlin-specific filters on the minijinja environment.
 pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
+    env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
@@ -933,6 +967,7 @@ fn to_state_class_name(name: String) -> String {
 /// string-keyed accessors, so SCXML author identifiers never reach a
 /// Python parser either.
 pub fn register_python_filters(env: &mut minijinja::Environment) {
+    env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_snake_case", to_snake_case);
