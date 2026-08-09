@@ -151,6 +151,19 @@ pub struct SymbolEntry {
     pub state_path: String,
     pub artifact: String,
     pub location: SourceLocation,
+    /// Triggering event name, for symbols that have one (today:
+    /// transitions with a non-empty `event` attribute). `None` for
+    /// state bodies, entry/exit actions, the machine symbol, and
+    /// forge bodies.
+    ///
+    /// Carried on the entry rather than derived later because the
+    /// event name exists only here, while the model is in scope: the
+    /// mangled artifact string is `_transition_<idx>` and holds no
+    /// trace of it. The sourcemap's `event` field was previously fed
+    /// by an `extract_event(artifact)` stub that returned `None`
+    /// unconditionally, so the field was declared on the wire and in
+    /// the schema but never once emitted.
+    pub event: Option<String>,
 }
 
 /// Result of a cross-IR collision scan. Holds the offending symbol
@@ -184,7 +197,7 @@ pub fn build_symbol_table(
     //    reserved tag so it can never collide with an author-supplied
     //    artifact name like "on_entry" or "on_exit").
     if let Some(ref loc) = model.source_location {
-        push_entry(&mut table, &machine_name, "", "_machine", loc)?;
+        push_entry(&mut table, &machine_name, "", "_machine", loc, None)?;
     }
 
     // 2. Per-state walk — emits a SymbolEntry for the state's body
@@ -201,7 +214,7 @@ pub fn build_symbol_table(
     for doc in forge_docs {
         if let Some(loc) = forge_doc_source_location(doc) {
             let name = forge_doc_name(doc);
-            push_entry(&mut table, name, "", "_forge_body", loc)?;
+            push_entry(&mut table, name, "", "_forge_body", loc, None)?;
         }
     }
 
@@ -217,6 +230,7 @@ fn push_entry(
     state_path: &str,
     artifact: &str,
     location: &SourceLocation,
+    event: Option<&str>,
 ) -> Result<(), Box<Collision>> {
     let mangled = mangle(machine, state_path, artifact);
     let entry = SymbolEntry {
@@ -225,6 +239,9 @@ fn push_entry(
         state_path: state_path.to_string(),
         artifact: artifact.to_string(),
         location: location.clone(),
+        // Empty is not a name: an eventless transition must read as
+        // "no event", not as an event spelled "".
+        event: event.filter(|e| !e.is_empty()).map(str::to_string),
     };
     if let Some(prior) = table.get(&mangled) {
         return Err(Box::new(Collision {
@@ -249,13 +266,13 @@ fn walk_state(
     state: &State,
 ) -> Result<(), Box<Collision>> {
     if let Some(ref loc) = state.source_location {
-        push_entry(table, machine, state_id, "_state_body", loc)?;
+        push_entry(table, machine, state_id, "_state_body", loc, None)?;
     }
 
     for (idx, trans) in state.transitions.iter().enumerate() {
         if let Some(ref loc) = trans.source_location {
             let artifact = format!("_transition_{}", idx);
-            push_entry(table, machine, state_id, &artifact, loc)?;
+            push_entry(table, machine, state_id, &artifact, loc, Some(&trans.event))?;
         }
     }
 
@@ -283,7 +300,7 @@ fn walk_action_block(
     for (action_idx, action) in actions.iter().enumerate() {
         if let Some(ref loc) = action.source_location {
             let artifact = format!("{}_{}_{}", kind, block_idx, action_idx);
-            push_entry(table, machine, state_id, &artifact, loc)?;
+            push_entry(table, machine, state_id, &artifact, loc, None)?;
         }
     }
     Ok(())
@@ -423,8 +440,8 @@ mod tests {
             line: Some(20),
             col: None,
         };
-        push_entry(&mut table, "m", "dup", "_state_body", &loc1).unwrap();
-        let res = push_entry(&mut table, "m", "dup", "_state_body", &loc2);
+        push_entry(&mut table, "m", "dup", "_state_body", &loc1, None).unwrap();
+        let res = push_entry(&mut table, "m", "dup", "_state_body", &loc2, None);
         let coll = res.expect_err("must report collision on duplicate symbol");
         assert_eq!(coll.first.location.file, "a.scxml");
         assert_eq!(coll.second.location.file, "b.scxml");
