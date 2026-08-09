@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -201,6 +201,7 @@ class AutoforwardInternalQueueStateMachine(
         when (source) {
         is AutoforwardInternalQueueState.Phase -> when {
             event is AutoforwardInternalQueueEvent.Ready -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:75
 
 
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
@@ -208,6 +209,7 @@ class AutoforwardInternalQueueStateMachine(
             return  // W3C SCXML 5.10: Stop subsequent executable content
             }
             event is AutoforwardInternalQueueEvent.Error.Execution -> {
+                // SCE-MAP: autoforward_internal_queue.scxml:78
 
 
             send(AutoforwardInternalQueueEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -174,12 +174,14 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
         when (source) {
         is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> when {
             event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawPlatform", "")
             }
             event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

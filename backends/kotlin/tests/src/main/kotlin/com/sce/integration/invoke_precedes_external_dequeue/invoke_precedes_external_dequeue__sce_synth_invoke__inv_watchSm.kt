@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -199,6 +199,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         when (source) {
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> when {
             event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> {
+                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -208,6 +209,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
         }
         is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Waiting -> when {
             event is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.Probe -> {
+                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

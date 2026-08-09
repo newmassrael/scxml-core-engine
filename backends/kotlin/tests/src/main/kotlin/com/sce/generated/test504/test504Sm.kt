@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -547,6 +547,7 @@ class Test504StateMachine(
         when (source) {
         is Test504State.P -> when {
             event is Test504Event.Foo -> {
+                // SCE-MAP: test504.scxml:31
 
 
             executeAssign("Var4", "Var4 + 1")
@@ -555,6 +556,7 @@ class Test504StateMachine(
         }
         is Test504State.Ps1 -> when {
             event is Test504Event.Foo -> {
+                // SCE-MAP: test504.scxml:31
 
 
             executeAssign("Var4", "Var4 + 1")
@@ -563,6 +565,7 @@ class Test504StateMachine(
         }
         is Test504State.Ps2 -> when {
             event is Test504Event.Foo -> {
+                // SCE-MAP: test504.scxml:31
 
 
             executeAssign("Var4", "Var4 + 1")

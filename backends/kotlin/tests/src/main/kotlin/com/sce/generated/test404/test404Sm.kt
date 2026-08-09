@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -345,6 +345,7 @@ class Test404StateMachine(
         when (source) {
         is Test404State.S01p -> when {
             event == null -> {
+                // SCE-MAP: test404.scxml:19
 
             raiseInternal(Test404Event.Event4)
             }
@@ -352,6 +353,7 @@ class Test404StateMachine(
         }
         is Test404State.S01p1 -> when {
             event == null -> {
+                // SCE-MAP: test404.scxml:19
 
             raiseInternal(Test404Event.Event4)
             }
@@ -359,6 +361,7 @@ class Test404StateMachine(
         }
         is Test404State.S01p2 -> when {
             event == null -> {
+                // SCE-MAP: test404.scxml:19
 
             raiseInternal(Test404Event.Event4)
             }

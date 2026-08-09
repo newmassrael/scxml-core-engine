@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 
@@ -582,6 +582,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionAct
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit && idx == 0 {
+		//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -596,6 +597,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteTransitionAct
 		return
 	}
 	if source == AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit && idx == 1 {
+		//line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{

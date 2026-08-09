@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -224,6 +224,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
         when (source) {
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> when {
             event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> {
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -233,6 +234,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
         }
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> when {
             event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> {
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

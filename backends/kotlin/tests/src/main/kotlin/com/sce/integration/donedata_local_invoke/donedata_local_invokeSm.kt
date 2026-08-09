@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -355,6 +355,7 @@ class DonedataLocalInvokeStateMachine(
         when (source) {
         is DonedataLocalInvokeState.PhaseParam -> when {
             event is DonedataLocalInvokeEvent.Done.Invoke.InvParam && safeEvaluateGuard("_event.data && _event.data.result === 42") -> {
+                // SCE-MAP: donedata_local_invoke.scxml:47
 
 
             executeAssign("param_ok", "true")
