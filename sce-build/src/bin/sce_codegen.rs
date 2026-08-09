@@ -13,7 +13,6 @@
 //   read-metadata  — Extract metadata description (replaces read_test_metadata.py)
 
 use clap::{Parser, Subcommand, ValueEnum};
-use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,6 +23,9 @@ use sce_build::cli_error::CliError;
 use sce_build::filters;
 use sce_build::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
+use sce_build::manifest::{
+    ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
+};
 
 use sce_build::generator::with_trailing_newline;
 
@@ -452,108 +454,21 @@ struct RejectedDocument {
     name: String,
 }
 
-/// Wire contract for `sce-codegen generate` stdout. Matches
-/// SCE_ERROR_CONTRACT.md §10.
+/// Build the stdout manifest for `report` under `kind`.
 ///
-/// * `v` — schema version, pinned at 1; bumped only on breaking shape
-///   changes per the same policy that governs the error contract.
-/// * `kind` — which subcommand produced the record. Constrains agent
-///   dispatch when future subcommands (e.g. `generate-w3c`) emit
-///   their own manifest shapes on the same stream.
-/// * `artifacts` — every file written during the run. Each entry is
-///   an object (not a bare string) so the schema can grow additively
-///   (size, hash, kind-of-artifact) without a v-bump.
-/// * `needs_script_engine` — whether the compiled machine needs a
-///   runtime script engine.
-/// * `script_engine_causes` — why. Present exactly when
-///   `needs_script_engine` is `true`, naming every construct that
-///   forced the engine in. A consumer that gates its build on
-///   `needs_script_engine == false` (an MCU target with no engine to
-///   embed, a deployment that must stay deterministic) can now report
-///   which `cond` / `<assign>` / `<invoke>` cost it the pure-static
-///   lowering instead of failing with a bare boolean.
-/// * `rejected` — present only when the document was rejected by a
-///   W3C-spec rule (e.g. §scxml-5.8) and stub files were written
-///   in its place. Absence means clean generation.
-///
-/// `script_engine_causes` and `rejected` are both non-fatal degradation
-/// reports: generation succeeded, but the output is weaker than the
-/// author may have intended. The manifest is where SCE says so —
-/// diagnostics on stderr carry no severity and are rejections by
-/// construction (SCE_ERROR_CONTRACT.md §1), and a clean run is pinned to
-/// an empty stderr.
-#[derive(Serialize)]
-struct GenerateManifest<'a> {
-    v: u32,
-    kind: &'static str,
-    /// Commit of the generator that produced these artifacts, or
-    /// `"unknown"` on a build with no git checkout to read. Present so a
-    /// build system capturing this manifest attributes its output without
-    /// a second invocation and without maintaining a version sidecar by
-    /// hand — the bookkeeping that leaves a committed tree traceable to no
-    /// single commit once it drifts.
-    generator: &'static str,
-    artifacts: Vec<ArtifactEntry>,
-    needs_script_engine: bool,
-    /// Omitted (not `[]`) on a pure-static machine, so a pure-static
-    /// manifest stays byte-identical to the shape that predates this
-    /// field.
-    #[serde(skip_serializing_if = "<[_]>::is_empty")]
-    script_engine_causes: &'a [sce_build::script_engine_analyzer::ScriptEngineCauseRecord],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    rejected: Option<RejectedInfo<'a>>,
-    /// Descriptive declarations read out of `--deploy`. Omitted whole
-    /// when the run had no deploy or the deploy declared none of them,
-    /// so every manifest that could be produced before this field stays
-    /// byte-identical.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    deploy: Option<DeployInfo>,
-}
-
-#[derive(Serialize)]
-struct ArtifactEntry {
-    path: String,
-}
-
-#[derive(Serialize)]
-struct RejectedInfo<'a> {
-    spec: &'a str,
-    name: &'a str,
-}
-
-/// Deploy declarations SCE records without acting on them.
-///
-/// An object rather than a flat `static_analyzer` key for the same
-/// reason `artifacts` holds objects: the spec has further descriptive
-/// build-environment axes, and they belong beside this one rather than
-/// each claiming a top-level manifest key.
-#[derive(Serialize)]
-struct DeployInfo {
-    /// Which commercial analyzer the deployment declares it relies on
-    /// (SCE Protocol-Synthesis RFC, synth-5-E lines 1409-1429). Omitted when
-    /// unstated. SCE never verifies the claim — carrying it here is the
-    /// whole of SCE's part, and is what lets deploy review read it off
-    /// the build rather than off the author's word.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    static_analyzer: Option<&'static str>,
-}
-
-impl DeployInfo {
-    /// `None` when nothing was declared, so the manifest omits the key
-    /// entirely rather than carrying an empty object.
-    fn from_facts(facts: Option<&sce_build::DeployFacts>) -> Option<Self> {
-        let analyzer = facts?.static_analyzer?;
-        Some(DeployInfo {
-            static_analyzer: Some(analyzer.as_str()),
-        })
-    }
-}
-
-/// Serialise `report` and write it as a single JSON line to stdout.
-fn emit_generate_manifest(report: &GenerateReport) {
-    let manifest = GenerateManifest {
-        v: 1,
-        kind: "generate",
+/// The shape lives in `sce_build::manifest` — see
+/// SCE_ERROR_CONTRACT.md §10 for the prose contract and
+/// `schemas/sce-manifest.v1.schema.json` for the wire schema. Both
+/// `generate` and `check` funnel through here so the two subcommands
+/// cannot drift into two shapes of the same record.
+fn build_manifest<'a>(
+    report: &'a GenerateReport,
+    kind: ManifestKind,
+    languages: Option<Vec<LanguageVerdict>>,
+) -> Manifest<'a> {
+    Manifest {
+        v: sce_build::manifest::MANIFEST_SCHEMA_VERSION,
+        kind: kind.as_str(),
         generator: env!("SCE_GIT_COMMIT"),
         artifacts: report
             .artifacts
@@ -566,13 +481,19 @@ fn emit_generate_manifest(report: &GenerateReport) {
         script_engine_causes: &report.script_engine_causes,
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
-            name: rd.name.as_str(),
+            name: rd.name.clone(),
         }),
         deploy: DeployInfo::from_facts(report.deploy_facts.as_ref()),
-    };
-    let line = serde_json::to_string(&manifest)
-        .expect("GenerateManifest serialises; fields are all owned");
-    println!("{line}");
+        languages,
+    }
+}
+
+/// Serialise `report` and write it as a single JSON line to stdout.
+fn emit_generate_manifest(report: &GenerateReport) {
+    println!(
+        "{}",
+        build_manifest(report, ManifestKind::Generate, None).to_line()
+    );
 }
 
 // ── CLI Definition ──────────────────────────────────────────────
@@ -898,10 +819,75 @@ struct GenerateW3cArgs {
     no_format: bool,
 }
 
+/// CLI arguments for the `check` subcommand.
+///
+/// Deliberately narrower than [`GenerateArgs`]: every flag that only
+/// shapes *output* (`--output-dir`, `--write-deps`, `--emit-ast`,
+/// formatting, namespace prefixes, `--as-child`) is absent, because
+/// `check` writes nothing for them to shape. What remains is the set
+/// that changes how the document is *read* — include path, unresolved
+/// strictness, forge import resolution, the const-fold budget, and the
+/// no_std validation axis — so a document that checks clean is one
+/// `generate` would accept under the same interpretation.
+#[derive(clap::Args)]
+struct CheckArgs {
+    /// Input SCXML file path.
+    scxml: String,
+    /// Backend to check against (rust, cpp, kotlin, go, python, c11).
+    /// Repeatable. When omitted every backend is checked and the
+    /// per-backend verdict rides the manifest instead of the exit code
+    /// — see the subcommand's long help for the exit contract.
+    #[arg(short, long = "language", value_name = "LANG")]
+    language: Vec<String>,
+    /// Additional directories searched (in declaration order) to
+    /// resolve `<xi:include href="...">` and `<sce:use template="...">`
+    /// fragments by name. Mirrors `generate`'s `-I`.
+    #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+    include_dir: Vec<String>,
+    /// Reject the document when it carries any `<sce:unresolved>`
+    /// placeholder. Mirrors `generate --strict-unresolved`.
+    #[arg(long)]
+    strict_unresolved: bool,
+    /// Go module path hosting the generated forge packages. Required to
+    /// check any Go crossfile document; ignored for other backends.
+    #[arg(long)]
+    go_module_prefix: Option<String>,
+    /// Build-time const-fold iteration budget. Mirrors `generate`.
+    #[arg(long)]
+    const_fold_budget: Option<u64>,
+    /// Validate against the Rust `no_std` runtime variant. Only
+    /// meaningful when `rust` is among the checked backends.
+    #[arg(long)]
+    no_std: bool,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Generate code from a single SCXML file
     Generate(Box<GenerateArgs>),
+    /// Validate a document without writing anything.
+    ///
+    /// Reaches the same verdict `generate` would — the same parse, the
+    /// same validators, the same backend codegen — and then discards
+    /// the result instead of writing it. Nothing is created: no
+    /// artifacts, no sourcemap, no output directory. The manifest's
+    /// `artifacts` array is empty by construction, which is the
+    /// contract, not an accident of the input.
+    ///
+    /// Two refusal axes, and the exit code distinguishes them:
+    ///
+    /// * The **document** axis (`xml/*`, `validation/*`, `scxml/*`) —
+    ///   the document is wrong under any backend. Always fatal: the
+    ///   diagnostic goes to stderr, stdout stays empty, exit is
+    ///   non-zero.
+    /// * The **backend** axis (`generate/*`, `codegen/*`) — the
+    ///   document is well-formed but some backend cannot lower a
+    ///   construct it uses. With `--language` named, this is fatal too,
+    ///   so `check -l X` and `generate -l X` always agree. With no
+    ///   `--language`, every backend is swept and the per-backend
+    ///   verdict rides the manifest's `languages` array with exit 0 —
+    ///   "only Rust can lower this" is an answer, not a failure.
+    Check(Box<CheckArgs>),
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
     /// (SCE Protocol-Synthesis RFC §synth-5-D).
@@ -1200,6 +1186,7 @@ fn main() {
     }
     match cli.command {
         Commands::Generate(args) => cmd_generate(*args, error_format),
+        Commands::Check(args) => cmd_check(*args, error_format),
         Commands::Orchestrate {
             scxml,
             forge,
@@ -1519,6 +1506,273 @@ fn emit_orchestrate_asts(
 }
 
 // ── Subcommand: generate ────────────────────────────────────────
+
+/// Wire `code` of the first diagnostic an error expands to.
+///
+/// The per-backend verdict carries the same code an agent would read
+/// off stderr, so a refusal surfaced through the manifest routes to the
+/// repair path the diagnostic wire already defines.
+fn first_diagnostic_code<E: ToDiagnostics>(err: &E) -> String {
+    err.to_diagnostics()
+        .first()
+        .map(|d| d.code.as_str().to_string())
+        .unwrap_or_else(|| "generate/unknown".to_string())
+}
+
+/// Record one backend's outcome, or terminate.
+///
+/// `explicit` is the caller's `--language` choice: when the operator
+/// named the backend, its refusal is the answer to the question they
+/// asked and must behave exactly as `generate -l <lang>` does. When no
+/// backend was named the sweep is exploratory, so a refusal is data.
+fn record_backend_outcome<E: ToDiagnostics>(
+    verdicts: &mut Vec<LanguageVerdict>,
+    lang: Language,
+    explicit: bool,
+    error_format: ErrorFormat,
+    outcome: Result<(), E>,
+) {
+    let wire = sce_build::manifest::language_wire_name(lang);
+    match outcome {
+        Ok(()) => verdicts.push(LanguageVerdict::ok(wire)),
+        Err(e) => {
+            if explicit {
+                error_format.emit_and_exit(&e, "");
+            }
+            verdicts.push(LanguageVerdict::rejected(wire, first_diagnostic_code(&e)));
+        }
+    }
+}
+
+/// `sce-codegen check` — every verdict `generate` would reach, nothing
+/// written.
+///
+/// Runs the real pipeline rather than a validation subset: the same
+/// parser, the same validators, and the same per-backend codegen, whose
+/// in-memory `GeneratedOutput` is then dropped instead of written. A
+/// subset would answer a different question than the one the operator
+/// asked — "does this parse" instead of "would this generate" — and the
+/// two diverge exactly where template rendering does.
+///
+/// Writing nothing is structural, not a policy this function enforces
+/// by being careful: every file `generate` produces is written by the
+/// CLI from a `GeneratedOutput` the library returned, so a code path
+/// that never calls a write helper cannot emit. The library's compile
+/// entry points touch no filesystem.
+fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
+    let CheckArgs {
+        scxml,
+        language,
+        include_dir,
+        strict_unresolved,
+        go_module_prefix,
+        const_fold_budget,
+        no_std,
+    } = args;
+    let scxml_path: &str = &scxml;
+
+    // An empty `--language` means "sweep every backend"; a non-empty
+    // one pins the question to what the operator named.
+    let explicit = !language.is_empty();
+    let langs: Vec<Language> = if explicit {
+        language
+            .iter()
+            .map(|name| {
+                name.parse::<Language>().unwrap_or_else(|_| {
+                    error_format.emit_and_exit(
+                        &CliError::UnknownLanguage {
+                            lang: name.to_string(),
+                        },
+                        "",
+                    )
+                })
+            })
+            .collect()
+    } else {
+        Language::ALL.to_vec()
+    };
+
+    let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: scxml_path.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+
+    let mut report = GenerateReport::default();
+    let mut verdicts: Vec<LanguageVerdict> = Vec::new();
+
+    match sce_build::classify_document(&scxml_content) {
+        sce_build::Pipeline::Forge => {
+            let input_stem = Path::new(scxml_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+            let input_basename = Path::new(scxml_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(input_stem);
+            let doc_label = sce_build::DocumentLabel {
+                identifier: input_stem,
+                diagnostic_label: input_basename,
+            };
+            let base_dir = Path::new(scxml_path)
+                .parent()
+                .unwrap_or_else(|| Path::new("."));
+
+            // Document axis: a parse failure is fatal regardless of
+            // which backends were asked for.
+            let parsed =
+                match sce_build::forge::parser::parse_forge_with_imports(&scxml_content, doc_label)
+                {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
+                            sce_build::forge::error::ValidationError::WrongPipeline {
+                                kind: sce_build::forge::model::ForgeKind::Statechart,
+                            }
+                            .into(),
+                            doc_label.diagnostic_label,
+                            None,
+                            None,
+                        ));
+                    }
+                    Err(e) => error_format.emit_forge_and_exit(&e),
+                };
+
+            for lang in &langs {
+                let forge_opts = sce_build::ForgeCompileOptions {
+                    go_module_prefix: go_module_prefix.clone(),
+                    const_fold_budget,
+                    ..Default::default()
+                };
+                let outcome = sce_build::compile_forge_from_parsed(
+                    &parsed,
+                    doc_label,
+                    *lang,
+                    base_dir,
+                    &forge_opts,
+                )
+                .map(|_| ());
+                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+            }
+            // Forge kinds are stateless by construction — no script
+            // engine is reachable from them.
+            report.needs_script_engine = Some(false);
+        }
+        sce_build::Pipeline::Scxml => {
+            let mut parser = SCXMLParser::new()
+                .with_include_dirs(include_dir.iter().map(PathBuf::from).collect());
+            let mut model = match parser.parse_file(scxml_path) {
+                Ok(m) => m,
+                Err(e) => error_format.emit_and_exit(&e, ""),
+            };
+
+            if strict_unresolved {
+                if let Err(e) = sce_build::unresolved_check::check_strict_unresolved(&model) {
+                    error_format.emit_and_exit(&e, "");
+                }
+            }
+
+            analyzer::analyze(&mut model, scxml_path);
+
+            // §scxml-5.8: a rejected document is a successful run that
+            // produced stubs. `check` reports the rejection the same way
+            // `generate` does — the difference is only that no stub was
+            // written.
+            if model.document_rejected {
+                report.rejected = Some(RejectedDocument {
+                    spec: "W3C SCXML 5.8",
+                    name: model.name.clone(),
+                });
+                report.needs_script_engine = Some(false);
+                for lang in &langs {
+                    verdicts.push(LanguageVerdict::ok(
+                        sce_build::manifest::language_wire_name(*lang),
+                    ));
+                }
+                println!(
+                    "{}",
+                    build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
+                );
+                return;
+            }
+
+            if let Err(err) = analyzer::can_generate_static(&model) {
+                let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
+                error_format.emit_forge_and_exit(&located);
+            }
+
+            if no_std && langs.contains(&Language::Rust) {
+                if let Err(err) =
+                    sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path))
+                {
+                    let located =
+                        sce_build::forge::error::Located::new(err, scxml_path, None, None);
+                    error_format.emit_forge_and_exit(&located);
+                }
+            }
+
+            resolve_source_path(&mut model, Path::new(scxml_path));
+
+            let input_stem = Path::new(scxml_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+
+            report.needs_script_engine = Some(model.needs_script_engine);
+            report.script_engine_causes = model
+                .script_engine_causes
+                .iter()
+                .map(|c| c.to_wire())
+                .collect();
+
+            for lang in &langs {
+                let template_dir = sce_build::find_template_dir_for(*lang);
+                let outcome = match lang {
+                    Language::Rust => {
+                        sce_build::generator::generate(&model, &template_dir, no_std).map(|_| ())
+                    }
+                    Language::Cpp => {
+                        sce_build::generator::generate_cpp(&model, &template_dir, input_stem, None)
+                            .map(|_| ())
+                    }
+                    Language::Kotlin => {
+                        sce_build::generator::generate_kotlin(&model, &template_dir, None)
+                            .map(|_| ())
+                    }
+                    Language::Go => {
+                        sce_build::generator::generate_go(&model, &template_dir).map(|_| ())
+                    }
+                    Language::Python => {
+                        sce_build::generator::generate_python(&model, &template_dir).map(|_| ())
+                    }
+                    Language::C11 => {
+                        sce_build::generator::generate_c11(&model, &template_dir, input_stem, None)
+                            .map(|_| ())
+                    }
+                }
+                .map_err(|e| {
+                    sce_build::forge::error::Located::new(
+                        ForgeError::from(e),
+                        scxml_path,
+                        None,
+                        None,
+                    )
+                });
+                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+            }
+        }
+    }
+
+    println!(
+        "{}",
+        build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
+    );
+}
 
 fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // Unpack the CLI args struct into the internal borrowed names the

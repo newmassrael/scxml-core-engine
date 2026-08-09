@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-manifest.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE stdout manifest (wire schema v1)",
+  "description": "The single JSON line sce-codegen writes to stdout on success. One record per invocation, never pretty-printed, terminated by a single newline. Emitted only when the process exit code is 0 — on failure stdout is empty and the NDJSON diagnostic on stderr is the sole signal. The `kind` field names the subcommand that produced the record so a consumer branches before reading subcommand-specific fields. Authoritative producer is sce-build/src/manifest.rs; the prose contract is SCE_ERROR_CONTRACT.md §10. Consumers MUST ignore unknown fields: any purely additive change is compatible with v1 and does NOT bump `v`. The stability status of this surface lives in this header alone, not in the payload — see SCE_WIRE_CONTRACTS.md for the shared deprecation policy across SCE wire surfaces.",
+  "type": "object",
+  "required": ["v", "kind", "generator", "artifacts", "needs_script_engine"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "description": "Manifest schema version. Always 1 for this revision. Additive field growth does NOT bump this.",
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "description": "Which subcommand produced this manifest. Consumers branch on this before deserialising into a subcommand-specific shape. Kept in lockstep with the Rust ManifestKind enum by manifest.rs::tests::json_schema_kind_enum_matches_rust_source_of_truth.",
+      "type": "string",
+      "enum": ["generate", "check"]
+    },
+    "generator": {
+      "description": "Commit of the sce-codegen build that produced this record, or \"unknown\" when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing on its own.",
+      "type": "string",
+      "minLength": 1
+    },
+    "artifacts": {
+      "description": "Every file written during the run, in emission order. Entries are objects rather than bare strings so the shape can grow additively (size, hash, artifact_kind) without a v-bump. Always empty for kind=\"check\", which is that subcommand's whole contract: it reaches the same verdict as generate while writing nothing.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/artifact" }
+    },
+    "needs_script_engine": {
+      "description": "Whether the compiled machine embeds ECMAScript requiring a runtime script engine.",
+      "type": "boolean"
+    },
+    "script_engine_causes": {
+      "description": "Why needs_script_engine is true — one record per construct that forced the engine in. Present exactly when the flag is true; omitted (not []) otherwise, so a pure-static manifest carries no extra bytes. A non-fatal degradation report: generation succeeded, but the output is weaker than the author may have intended.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/scriptEngineCause" }
+    },
+    "rejected": {
+      "description": "Present only when the input triggered a W3C-spec rejection and stub files were written in place of generated code. Absence means clean generation.",
+      "$ref": "#/definitions/rejected"
+    },
+    "deploy": {
+      "description": "Declarations read out of --deploy that SCE records without acting on. Omitted whole when the run had no deploy or the deploy declared none of them.",
+      "$ref": "#/definitions/deploy"
+    },
+    "languages": {
+      "description": "Per-language verdict. Present only for kind=\"check\": one entry per language the run checked, in the canonical language order. Names the backend axis explicitly so a consumer never has to infer, from a single exit code, whether a document was refused on its own merits or only by the backend it happened to be generated for.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/languageVerdict" }
+    }
+  },
+  "definitions": {
+    "artifact": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "description": "Path of the written file, as the invocation named it.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "scriptEngineCause": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "description": "Stable kebab-case discriminator for the construct that forced the script engine in. Deliberately not an enum: consumers dispatch on this and MUST tolerate values added by later revisions.",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "description": "Owning state, for causes anchored to a state or a transition.",
+          "type": "string"
+        },
+        "var": {
+          "description": "Datamodel variable id, for the <data> initializer cause.",
+          "type": "string"
+        },
+        "param": {
+          "description": "<param name=\"…\">, for the send-param cause.",
+          "type": "string"
+        },
+        "invoke": {
+          "description": "<invoke id=\"…\">, for the invoke-anchored causes.",
+          "type": "string"
+        },
+        "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "rejected": {
+      "type": "object",
+      "required": ["spec", "name"],
+      "properties": {
+        "spec": {
+          "description": "The spec rule that rejected the document, e.g. \"W3C SCXML 5.8\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "description": "The document's name attribute.",
+          "type": "string"
+        }
+      }
+    },
+    "deploy": {
+      "type": "object",
+      "properties": {
+        "static_analyzer": {
+          "description": "Which commercial analyzer the deployment declares it relies on. SCE never verifies the claim — carrying it here is the whole of SCE's part. Kept in lockstep with the Rust StaticAnalyzer enum.",
+          "type": "string",
+          "enum": ["pc-lint-plus", "coverity"]
+        }
+      }
+    },
+    "languageVerdict": {
+      "type": "object",
+      "required": ["language", "status"],
+      "properties": {
+        "language": {
+          "description": "Backend the verdict applies to. Kept in lockstep with the Rust Language enum's wire names.",
+          "type": "string",
+          "enum": ["rust", "cpp", "kotlin", "go", "python", "c11"]
+        },
+        "status": {
+          "description": "\"ok\" when this backend would generate the document, \"rejected\" when it would refuse.",
+          "type": "string",
+          "enum": ["ok", "rejected"]
+        },
+        "code": {
+          "description": "Diagnostic code of the refusal, present exactly when status is \"rejected\". Same vocabulary as the diagnostic wire's `code` field, so a consumer routes a check refusal through the repair path it already has.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 0 },
+        "col": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

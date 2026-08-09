@@ -431,8 +431,11 @@ and flip-to-`stable` procedure for every agent-facing wire surface.
 
 ## 10. Stdout manifest
 
-On success, `sce-codegen generate` writes exactly one JSON line to
-stdout — nothing more, nothing less. The shape is:
+On success, `sce-codegen generate` and `sce-codegen check` each write
+exactly one JSON line to stdout — nothing more, nothing less. The wire
+schema is `schemas/sce-manifest.v1.schema.json`; the surface's
+stability status is registered in `SCE_WIRE_CONTRACTS.md`. The shape
+is:
 
 ```json
 {
@@ -459,7 +462,7 @@ stdout — nothing more, nothing less. The shape is:
 | Field | Type | Semantics |
 |---|---|---|
 | `v` | integer | Schema version. Currently `1`. Bumped under the same policy as the error contract ([§8](#8-evolution-policy)). |
-| `kind` | string | Which subcommand produced this manifest. Agents branch on this before deserialising into a subcommand-specific shape. Currently only `"generate"`. |
+| `kind` | string | Which subcommand produced this manifest. Consumers branch on this before deserialising into a subcommand-specific shape. `"generate"` or `"check"`; the enumeration is `ManifestKind` and the schema's `kind.enum` is pinned to it. |
 | `generator` | string | Commit of the `sce-codegen` build that produced these artifacts, or `"unknown"` when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing, so this is the field to record when attributing a committed artifact to a generator — reading it here costs no extra invocation and replaces a hand-maintained version sidecar. Identifies the committed state the generator was built from; uncommitted edits to the generator are not reflected (the §6.2.6 hashes cover the inputs, not the binary). Also available as `sce-codegen --version`. |
 | `artifacts` | array of `{path}` objects | Absolute path of every file written during the run, in emission order. Entries are objects (not bare strings) so the schema can grow additively — future fields (`size`, `hash`, `artifact_kind`) must extend the object without a `v` bump. |
 | `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |
@@ -482,13 +485,51 @@ stdout — nothing more, nothing less. The shape is:
 
 ### 10.3 On-disk enforcement
 
-- Structs: `GenerateManifest`, `ArtifactEntry`, `RejectedInfo` in
-  `sce-build/src/bin/sce_codegen.rs`; `ScriptEngineCauseRecord` in
-  `sce-build/src/script_engine_analyzer.rs`.
-- Emitter: `emit_generate_manifest` in the same file, called at every
-  `cmd_generate` exit point.
-- Tests: `tests/error_format_json.rs::stdout_emits_single_json_manifest_on_success`
-  (positive pin) and `::stdout_does_not_emit_human_prose` (negative pin).
+- Schema: `schemas/sce-manifest.v1.schema.json`, registered as a wire
+  surface in `SCE_WIRE_CONTRACTS.md`.
+- Structs: `Manifest`, `ManifestKind`, `ArtifactEntry`, `RejectedInfo`,
+  `DeployInfo`, `LanguageVerdict` in `sce-build/src/manifest.rs`;
+  `ScriptEngineCauseRecord` in `sce-build/src/script_engine_analyzer.rs`.
+  They live in the library rather than beside the CLI so the
+  schema-lockstep guards run where the cross-surface registry test can
+  reach them.
+- Emitter: `build_manifest` in `sce-build/src/bin/sce_codegen.rs`, the
+  single construction point for both subcommands, reached from
+  `emit_generate_manifest` at every `cmd_generate` exit and from
+  `cmd_check`.
+- Tests: `manifest.rs::tests` pins the producer constants to the schema
+  file and validates produced records against it, positively and
+  negatively;
+  `tests/error_format_json.rs::stdout_emits_single_json_manifest_on_success`
+  (positive pin) and `::stdout_does_not_emit_human_prose` (negative
+  pin); `tests/cli_check.rs` validates emitted `check` manifests
+  against the schema through the real binary.
+
+### 10.3.1 `check` manifests
+
+`sce-codegen check` reaches the verdict `generate` would and writes
+nothing. Two fields carry that difference:
+
+- `artifacts` is always `[]`. This is the subcommand's contract, not a
+  property of the input — pinned by
+  `tests/cli_check.rs::check_writes_no_file_anywhere`, which also
+  re-lists the working directory and the input's directory to confirm
+  no file appeared in either.
+- `languages` is present only on a `check` manifest: one verdict per
+  backend, each `{"language", "status"}` plus a `code` when the status
+  is `"rejected"`.
+
+The exit code splits the two refusal axes. A **document-axis** refusal
+(`xml/*`, `validation/*`, `scxml/*`) is fatal — the document is wrong
+under every backend, stdout stays empty per [§10.2](#102-stream-discipline).
+A **backend-axis** refusal (`generate/*`, `codegen/*`) is fatal only
+when the operator named the backend with `--language`, so `check -l X`
+and `generate -l X` always agree; that agreement is swept over the
+fixture corpus by
+`tests/cli_check.rs::check_and_generate_agree_on_every_document_and_backend`.
+Without `--language` every backend is checked, the per-backend verdict
+rides `languages`, and the exit is `0`: "only the Rust backend can
+lower this document" is an answer, not a failure.
 
 ### 10.4 Script-engine causes
 

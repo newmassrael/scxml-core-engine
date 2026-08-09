@@ -118,6 +118,16 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# End-to-end contract test for `sce-codegen check`. Drives the real
+# binary because the two claims under test — that `check` reaches the
+# same verdict as `generate`, and that it writes nothing — are process
+# observations, not in-crate ones. Same `cli` feature gate as the other
+# binary-driven tests.
+[[test]]
+name = "cli_check"
+path = "tests/cli_check.rs"
+required-features = ["cli"]
+
 # End-to-end CLI contract test for the mesh pipeline (--deploy). Shares
 # the binary target of `error_format_json` and the same `cli` feature
 # gate so mesh codegen errors get the same NDJSON wire-format coverage
