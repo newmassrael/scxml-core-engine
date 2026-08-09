@@ -833,6 +833,21 @@ struct GenerateW3cArgs {
     /// Path to resources directory
     #[arg(long)]
     resources: Option<String>,
+    /// Root the generated trees are written under.
+    ///
+    /// Each backend keeps its own layout beneath this root
+    /// (`backends/rust/tests/src/generated`, `backends/kotlin/tests/
+    /// src/main/kotlin/com/sce/generated`, ...) because the emitted code
+    /// depends on it: Rust test files name `sce_rust_tests::generated::…`
+    /// and Kotlin sources carry a package path. Only the root moves.
+    ///
+    /// Defaults to the project root, which is what an in-repo
+    /// regeneration wants. Set it when the caller is not this repository
+    /// — together with `--registry` and `--resources`, that is what lets
+    /// a vendoring build drive the conformance suite without owning
+    /// SCE's directory layout.
+    #[arg(long)]
+    output_dir: Option<String>,
     /// Generate single test by ID
     #[arg(short, long)]
     test: Option<String>,
@@ -3513,6 +3528,7 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         language,
         registry,
         resources,
+        output_dir,
         test,
         clean,
         list,
@@ -3522,6 +3538,7 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
     let language: &str = &language;
     let registry = registry.as_deref();
     let resources = resources.as_deref();
+    let output_dir = output_dir.as_deref();
     let single_test = test.as_deref();
     let format_style = format_style.as_deref();
 
@@ -3540,12 +3557,20 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         .map(PathBuf::from)
         .unwrap_or_else(|| project_root.join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH));
 
+    // Inputs were already retargetable through `--registry` and
+    // `--resources`; the output root was not, so a caller outside this
+    // repository could enumerate and validate the suite but had nowhere
+    // to put what it generated.
+    let output_root = output_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project_root.clone());
+
     let backend: Box<dyn W3cBackend> = match lang {
-        Language::Rust => Box::new(RustBackend::new(&project_root)),
-        Language::Go => Box::new(GoBackend::new(&project_root)),
-        Language::Kotlin => Box::new(KotlinBackend::new(&project_root)),
-        Language::Cpp => Box::new(CppBackend::new(&project_root)),
-        Language::Python => Box::new(PythonBackend::new(&project_root)),
+        Language::Rust => Box::new(RustBackend::new(&output_root)),
+        Language::Go => Box::new(GoBackend::new(&output_root)),
+        Language::Kotlin => Box::new(KotlinBackend::new(&output_root)),
+        Language::Cpp => Box::new(CppBackend::new(&output_root)),
+        Language::Python => Box::new(PythonBackend::new(&output_root)),
         Language::C11 => cli_exit(CliError::UnsupportedLanguage {
             lang: "C11 W3C statechart emitter (RFC §5.J.1)".into(),
         }),
@@ -4333,8 +4358,8 @@ struct RustBackend {
 }
 
 impl RustBackend {
-    fn new(project_root: &Path) -> Self {
-        let tests_crate = project_root.join("backends/rust/tests");
+    fn new(output_root: &Path) -> Self {
+        let tests_crate = output_root.join("backends/rust/tests");
         Self {
             sm_base: tests_crate.join("src/generated"),
             test_dir: tests_crate.join("tests"),
@@ -4581,8 +4606,8 @@ struct GoBackend {
 }
 
 impl GoBackend {
-    fn new(project_root: &Path) -> Self {
-        let tests_module = project_root.join("backends/go/tests");
+    fn new(output_root: &Path) -> Self {
+        let tests_module = output_root.join("backends/go/tests");
         Self {
             sm_base: tests_module.join("generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Go),
@@ -4733,8 +4758,8 @@ struct KotlinBackend {
 }
 
 impl KotlinBackend {
-    fn new(project_root: &Path) -> Self {
-        let tests_module = project_root.join("backends/kotlin/tests");
+    fn new(output_root: &Path) -> Self {
+        let tests_module = output_root.join("backends/kotlin/tests");
         Self {
             sm_base: tests_module.join("src/main/kotlin/com/sce/generated"),
             test_dir: tests_module.join("src/test/kotlin/com/sce/w3c"),
@@ -4959,9 +4984,9 @@ struct CppBackend {
 }
 
 impl CppBackend {
-    fn new(project_root: &Path) -> Self {
+    fn new(output_root: &Path) -> Self {
         Self {
-            output_dir: project_root.join("build/tests/w3c_static_generated"),
+            output_dir: output_root.join("build/tests/w3c_static_generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Cpp),
         }
     }
@@ -5032,9 +5057,9 @@ struct PythonBackend {
 }
 
 impl PythonBackend {
-    fn new(project_root: &Path) -> Self {
+    fn new(output_root: &Path) -> Self {
         Self {
-            sm_base: project_root.join("backends/python/tests/generated"),
+            sm_base: output_root.join("backends/python/tests/generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Python),
         }
     }
