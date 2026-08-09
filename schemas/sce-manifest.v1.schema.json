@@ -16,7 +16,7 @@
     "kind": {
       "description": "Which subcommand produced this manifest. Consumers branch on this before deserialising into a subcommand-specific shape. Kept in lockstep with the Rust ManifestKind enum by manifest.rs::tests::json_schema_kind_enum_matches_rust_source_of_truth.",
       "type": "string",
-      "enum": ["generate", "check"]
+      "enum": ["generate", "check", "orchestrate"]
     },
     "generator": {
       "description": "Commit of the sce-codegen build that produced this record, or \"unknown\" when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing on its own.",

@@ -40,6 +40,16 @@ pub enum ManifestKind {
     Generate,
     /// `sce-codegen check` — the same verdict, nothing written.
     Check,
+    /// `sce-codegen orchestrate` — artifacts were written for a
+    /// document set.
+    ///
+    /// Distinct from [`Self::Generate`] because the two answer the
+    /// question about different units: `generate` reports one
+    /// document's lowering, `orchestrate` reports a build whose
+    /// artifacts come from several documents and whose
+    /// `needs_script_engine` is the union over the set. A consumer that
+    /// treated them as one kind would have to guess which.
+    Orchestrate,
 }
 
 impl ManifestKind {
@@ -48,6 +58,7 @@ impl ManifestKind {
         match self {
             ManifestKind::Generate => "generate",
             ManifestKind::Check => "check",
+            ManifestKind::Orchestrate => "orchestrate",
         }
     }
 }
@@ -56,7 +67,11 @@ impl ManifestKind {
 /// `kind.enum` is checked against — a new subcommand that emits a
 /// manifest lands here and fails the lockstep test until the schema
 /// names it too.
-pub const ALL_MANIFEST_KINDS: &[ManifestKind] = &[ManifestKind::Generate, ManifestKind::Check];
+pub const ALL_MANIFEST_KINDS: &[ManifestKind] = &[
+    ManifestKind::Generate,
+    ManifestKind::Check,
+    ManifestKind::Orchestrate,
+];
 
 /// One written file.
 ///

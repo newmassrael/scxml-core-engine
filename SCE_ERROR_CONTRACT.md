@@ -431,11 +431,11 @@ and flip-to-`stable` procedure for every agent-facing wire surface.
 
 ## 10. Stdout manifest
 
-On success, `sce-codegen generate` and `sce-codegen check` each write
-exactly one JSON line to stdout — nothing more, nothing less. The wire
-schema is `schemas/sce-manifest.v1.schema.json`; the surface's
-stability status is registered in `SCE_WIRE_CONTRACTS.md`. The shape
-is:
+On success, `sce-codegen generate`, `sce-codegen check` and
+`sce-codegen orchestrate` each write exactly one JSON line to stdout —
+nothing more, nothing less. The wire schema is
+`schemas/sce-manifest.v1.schema.json`; the surface's stability status
+is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 
 ```json
 {

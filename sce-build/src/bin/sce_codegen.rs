@@ -1520,13 +1520,55 @@ fn cmd_orchestrate(
         scxml_path_bufs.first().map(|p| p.as_path()),
     );
 
+    // §10 stdout manifest. Built from the same `GenerateReport` shape
+    // and the same `build_manifest` construction point the other two
+    // subcommands use, so the three cannot drift into three shapes of
+    // one record. Without it this subcommand wrote a tree of artifacts
+    // and told no one: `check` mirrors its verdict but reports
+    // `artifacts: []` by contract, so nothing on the wire named the
+    // files a build had just produced.
+    //
+    // `needs_script_engine` describes the **set** — the union over its
+    // statechart inputs — which is the form the question takes for a
+    // build deciding whether to link an engine, and the same form
+    // `check`'s document-set route answers it in. Both read it through
+    // `scxml_script_engine_facts`, so the two routes cannot disagree.
+    let mut report = GenerateReport {
+        deploy_facts: deploy_cfg.as_ref().map(|cfg| sce_build::DeployFacts {
+            static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
+        }),
+        ..GenerateReport::default()
+    };
+    let mut needs_script_engine = false;
+    for path in &scxml_path_bufs {
+        let Some((needs, causes)) = scxml_script_engine_facts(&path.to_string_lossy()) else {
+            continue;
+        };
+        needs_script_engine |= needs;
+        for cause in causes {
+            if !report.script_engine_causes.contains(&cause) {
+                report.script_engine_causes.push(cause);
+            }
+        }
+    }
+    report.needs_script_engine = Some(needs_script_engine);
+
     for (basename, generated) in &outputs {
         for (file_name, code) in &generated.files {
             let path = out_root.join(file_name);
             write_drift_aware(error_format, &path, code, &drift_ctx);
+            // Recorded at the write, not from `outputs` — §10.1 defines
+            // `artifacts` as every file written, so a path that never
+            // reached the disk must never reach the manifest.
+            report.artifacts.push(path);
         }
         let _ = basename; // basename is the input-doc label; outputs already self-name.
     }
+
+    println!(
+        "{}",
+        build_manifest(&report, ManifestKind::Orchestrate, None).to_line()
+    );
 }
 
 /// Multi-doc AST emit helper for [`cmd_orchestrate`]. For every

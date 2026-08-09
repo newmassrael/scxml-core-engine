@@ -22,7 +22,7 @@ doc (linked below).
 | Forge AST export (`--emit-ast`) | `apis/forge-ast.v1.schema.json` | `FORGE_AST_SCHEMA_STATUS` (`sce-build/src/forge/ast_export.rs`) ↔ `x-sce-schema-status` | `pre-release` | `docs/SCE_FORGE_AST.md` §3 |
 | Sourcemap sidecar (`out/{lang}/sce_sourcemap.json`) | `schemas/sce-sourcemap.v1.schema.json` | `SOURCEMAP_SCHEMA_STATUS` (`sce-build/src/forge/sourcemap.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/sourcemap.rs` (producer); reverse-lookup via `sce-codegen addr2sce` |
 | Authoring grammar (Extended SCXML) | `schemas/sce-forge.xsd`, `schemas/sce-forge-ext.xsd` | `<xs:documentation>x-sce-schema-status: …</xs:documentation>` (first child of `<xs:schema>`) | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` |
-| Stdout manifest (`generate`, `check`) | `schemas/sce-manifest.v1.schema.json` | `MANIFEST_SCHEMA_STATUS` (`sce-build/src/manifest.rs`) ↔ `x-sce-schema-status` | `pre-release` | `SCE_ERROR_CONTRACT.md` §10 |
+| Stdout manifest (`generate`, `check`, `orchestrate`) | `schemas/sce-manifest.v1.schema.json` | `MANIFEST_SCHEMA_STATUS` (`sce-build/src/manifest.rs`) ↔ `x-sce-schema-status` | `pre-release` | `SCE_ERROR_CONTRACT.md` §10 |
 | Symbol lookup (`addr2sce`, `sce2sym`) | `schemas/sce-symbol-lookup.v1.schema.json` | `SYMBOL_LOOKUP_SCHEMA_STATUS` (`sce-build/src/forge/sourcemap.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/sourcemap.rs` (producer) |
 
 All six surfaces are currently **`pre-release`**. SCE has not yet made
@@ -88,8 +88,10 @@ checked-in schema without linking the `sce-build` crate.
    - Sourcemap sidecar — `committed_sourcemaps_validate_against_the_wire_schema`
      (every committed sidecar; paired with the regeneration gate in the
      same file, this also covers what the generator emits today)
-   - Stdout manifest — `generate_manifest_instance_validates_against_schema`
-     and `check_manifest_validates_against_the_wire_schema`
+   - Stdout manifest — `generate_manifest_instance_validates_against_schema`,
+     `check_manifest_validates_against_the_wire_schema` and
+     `orchestrate_manifest_names_exactly_the_files_it_wrote` (which also
+     pins the record against a walk of the directory it describes)
    - Symbol lookup — `both_lookup_directions_validate_against_the_wire_schema`
 
    The authoring grammar is not in that table because it is not
