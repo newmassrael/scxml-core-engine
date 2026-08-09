@@ -37,6 +37,9 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
+{% if state.source_location %}
+		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true) | trim }}
+{% endif %}
 {% for block in state.on_entry_blocks %}
 		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
 		for actionBlock{{ loop.index0 }} := 0; actionBlock{{ loop.index0 }} < 1; actionBlock{{ loop.index0 }}++ {
@@ -356,6 +359,9 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
+{% if state.source_location %}
+		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true) | trim }}
+{% endif %}
 {% for block in state.on_exit_blocks %}
 		// W3C SCXML 3.9: onexit block {{ loop.index0 }}
 		for exitBlock{{ loop.index0 }} := 0; exitBlock{{ loop.index0 }} < 1; exitBlock{{ loop.index0 }}++ {
