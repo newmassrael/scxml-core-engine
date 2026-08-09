@@ -191,6 +191,31 @@ Optional attribute:
 Circular imports across the manifest graph are rejected as
 `manifest/circular-dependency`.
 
+**Name references between documents must resolve.** `<sce:import>` is
+the path-based route; a `sce:kind="link"` document also names sibling
+documents by *name*, and those names are joined against the build:
+
+- `<sce:framer ref>` names a `sce:kind="codec"` document
+  (`link/framer-ref-not-declared` when it names none).
+- `<sce:rx-pool ref>`, `<sce:tx-pool ref>` and `<sce:stage-pool ref>`
+  name a `sce:kind="buffer-pool"` document
+  (`link/pool-ref-not-declared`).
+
+A ref resolves either way it can be spelled: the named document may be
+one of the build's inputs, or an `<sce:import>` alias of the matching
+kind on the link document itself. Both diagnostics carry the reachable
+names of that kind as `Fix::ReplaceOneOf` candidates.
+
+These joins fire from the multi-document entry points — `orchestrate`
+and `check` over a document set — and not from a single-document
+`generate`, which is handed one file and cannot tell a name declared
+elsewhere in the build from one declared nowhere. The distinction is
+load-bearing rather than lenient: downstream checks that follow these
+refs (`link/pool-slot-smaller-than-framer-max`, the deploy-time
+burst-absorption and reassembly validators) skip the link when a ref
+does not resolve, which is right for a partial topology and would
+otherwise let a misspelt ref switch them off silently.
+
 ### §2.5 Communication patterns — `sce:pattern`
 
 For distributed deployments under `--deploy`, the `sce:pattern`
@@ -1161,7 +1186,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (339 codes)
+## Appendix — `DiagnosticCode` index (340 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1286,6 +1311,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `link/class-unsupported-on-target` | Validation |
 | `link/pool-slot-smaller-than-framer-max` | Validation |
 | `link/pool-ref-not-declared` | Validation |
+| `link/framer-ref-not-declared` | Validation |
 | `mem/pool-section-conflict` | Validation |
 | `mem/pool-too-large` | Validation |
 | `mem/inter-pool-padding-not-emitted` | Validation |

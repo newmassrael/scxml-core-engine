@@ -177,10 +177,30 @@ fn link_with_rx_pool(name: &str, rx_pool: &str) -> String {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="{name}" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
   <sce:rx-pool ref="{rx_pool}"/>
+</scxml>
+"##
+    )
+}
+
+/// The codec [`link_with_rx_pool`]'s `<sce:framer ref>` names. Staged
+/// beside the link so the `<sce:import src>` resolves, and reached
+/// through that import rather than the document set so the set both
+/// commands are handed stays the one under test.
+fn framer_codec(name: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="{name}">
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload_len" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
 </scxml>
 "##
     )
@@ -265,6 +285,14 @@ fn stage_doc_set(dir: &Path) -> DocSet {
         std::fs::write(&p, body).expect("stage fixture");
         p
     };
+    // The codec the link's `<sce:framer ref>` names. Staged beside the
+    // link so the import resolves, and not carried in `DocSet` because
+    // it is never handed to a command — the document set under test is
+    // exactly the statechart, the pool and the link.
+    write(
+        "scout_frame_codec.scxml",
+        &framer_codec("scout_frame_codec"),
+    );
     DocSet {
         scxml: write("session_fsm.scxml", &statechart_minimal("session_fsm")),
         pool: write("rx_pool.scxml", &buffer_pool("rx_pool", 16, 1536)),

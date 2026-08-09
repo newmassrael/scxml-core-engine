@@ -1328,6 +1328,52 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
+    /// RFC §synth-5-C: a link's `<sce:framer ref>` names no
+    /// `sce:kind="codec"` document the build can see, neither among its
+    /// inputs nor among the link's own `<sce:import>` aliases.
+    ///
+    /// The framer axis is the pool axis's twin, one join later. The
+    /// generated link wrapper states the split in its own header — the
+    /// wrapper "treats the framer as opaque (no codegen-time codec
+    /// import resolution here) … cross-file framer-codec resolution
+    /// happens at generator level" — and emits the ref as a
+    /// `*_LINK_FRAMER_REF` string for consumers to "resolve against the
+    /// imported codec map". Both sentences are claims about a join, and
+    /// the generator is the layer that owes it.
+    ///
+    /// The join that consumes the resolved framer,
+    /// `validate_link_pool_framer_resolution`, returns `Ok(())` when the
+    /// alias misses, because at that layer an unresolvable framer is
+    /// indistinguishable from a partial topology. Skipping is right for
+    /// a partial topology and wrong for a typo: a one-character slip in
+    /// the ref turns `link/pool-slot-smaller-than-framer-max` — the
+    /// check that a pool slot can hold one framed message — from a
+    /// refusal into a silent accept, shipping a DMA overrun.
+    ///
+    /// Fires only from [`crate::compile_scxml_with_imports`], the
+    /// closed-world entry point, matching
+    /// [`Self::LinkPoolRefNotDeclared`]. The single-document paths keep
+    /// their tolerance for the same reason: handed one file, they
+    /// cannot know what the rest of the build declares.
+    ///
+    /// `candidates` is the sorted codec name set of the build, driving
+    /// `Fix::ReplaceOneOf`. The diagnostic anchors at the link document
+    /// — the file that wrote the offending ref.
+    #[error(
+        "link '{link_name}': <sce:framer ref=\"{framer_ref}\"/> names no `sce:kind=\"codec\"` document in this build — declare the codec document and pass it to the build, or correct the ref to one of {candidates:?}"
+    )]
+    LinkFramerRefNotDeclared {
+        /// Link document name (root `name=` attribute).
+        link_name: String,
+        /// The unresolved `ref` attribute value as written.
+        framer_ref: String,
+        /// Sorted codec document names declared in this build, for
+        /// `Fix::ReplaceOneOf`. Empty when the build declares no codec
+        /// at all — the repair is then to add the document rather than
+        /// to pick a different name.
+        candidates: Vec<String>,
+    },
+
     /// RFC §synth-5-E buffer-pool placement validation: the declared
     /// `<sce:section>` is not in the resolved machine's
     /// `memory.sram_regions` map. Fires only via

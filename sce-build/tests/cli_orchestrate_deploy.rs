@@ -79,11 +79,47 @@ fn link_with_rx_pool(name: &str, rx_pool: &str) -> String {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="{name}" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
   <sce:rx-pool ref="{rx_pool}"/>
 </scxml>"##
+    )
+}
+
+/// The codec [`link_with_rx_pool`]'s `<sce:framer ref>` names.
+fn framer_codec(name: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="{name}">
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload_len" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"##
+    )
+}
+
+/// Stage a link together with the codec its `<sce:framer ref>` names,
+/// returning the link path — the only one a caller passes on the
+/// command line.
+///
+/// The codec reaches the build through the link's own `<sce:import>`
+/// rather than a second `--forge` argument, so the CLI invocations
+/// these tests pin stay the invocations under test.
+fn write_link_with_framer(dir: &Path, name: &str, rx_pool: &str) -> PathBuf {
+    write_doc(
+        dir,
+        "scout_frame_codec.scxml",
+        &framer_codec("scout_frame_codec"),
+    );
+    write_doc(
+        dir,
+        &format!("{name}.scxml"),
+        &link_with_rx_pool(name, rx_pool),
     )
 }
 
@@ -187,11 +223,7 @@ fn orchestrate_without_deploy_silent_skips_c13_validators() {
         "rx_pool.scxml",
         &buffer_pool("rx_pool", 16, 1536),
     );
-    let link = write_doc(
-        dir.path(),
-        "udp_data.scxml",
-        &link_with_rx_pool("udp_data", "rx_pool"),
-    );
+    let link = write_link_with_framer(dir.path(), "udp_data", "rx_pool");
     let out_dir = dir.path().join("out");
     std::fs::create_dir_all(&out_dir).expect("mkdir out");
 
@@ -228,11 +260,7 @@ fn orchestrate_with_deploy_fires_link_not_declared_in_deploy() {
         "rx_pool.scxml",
         &buffer_pool("rx_pool", 16, 1536),
     );
-    let link = write_doc(
-        dir.path(),
-        "udp_data.scxml",
-        &link_with_rx_pool("udp_data", "rx_pool"),
-    );
+    let link = write_link_with_framer(dir.path(), "udp_data", "rx_pool");
     let deploy = write_doc(
         dir.path(),
         "deploy.yaml",
@@ -395,11 +423,7 @@ fn orchestrate_manifest_names_exactly_the_files_it_wrote() {
         "rx_data_pool.scxml",
         &buffer_pool("rx_data_pool", 2000, 1536),
     );
-    let link = write_doc(
-        staged.path(),
-        "udp_data.scxml",
-        &link_with_rx_pool("udp_data", "rx_data_pool"),
-    );
+    let link = write_link_with_framer(staged.path(), "udp_data", "rx_data_pool");
     let deploy = write_doc(
         staged.path(),
         "deploy.yaml",
@@ -489,11 +513,7 @@ fn orchestrate_emits_no_manifest_when_it_refuses() {
         &buffer_pool("rx_data_pool", 2000, 1536),
     );
     // Deploy names a link the forge set does not declare.
-    let link = write_doc(
-        staged.path(),
-        "udp_data.scxml",
-        &link_with_rx_pool("udp_data", "rx_data_pool"),
-    );
+    let link = write_link_with_framer(staged.path(), "udp_data", "rx_data_pool");
     let deploy = write_doc(
         staged.path(),
         "deploy.yaml",
