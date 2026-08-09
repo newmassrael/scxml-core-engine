@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 use sce_build::analyzer;
 use sce_build::cli_error::CliError;
 use sce_build::filters;
-use sce_build::forge::diagnostic::{Diagnostic, ToDiagnostics};
+use sce_build::forge::diagnostic::{Diagnostic, Stage, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::manifest::{
     ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
@@ -863,8 +863,27 @@ struct GenerateW3cArgs {
 /// `generate` would accept under the same interpretation.
 #[derive(clap::Args)]
 struct CheckArgs {
-    /// Input SCXML file path.
-    scxml: String,
+    /// Input SCXML file path. Shorthand for a single-document run;
+    /// `--scxml` names the rest of a set.
+    #[arg(required_unless_present = "scxml_set")]
+    scxml: Option<String>,
+    /// Statechart document joining the set, mirroring `orchestrate`'s
+    /// `--scxml`. Repeatable. Naming one puts the run on the
+    /// document-set route.
+    #[arg(long = "scxml", value_name = "PATH")]
+    scxml_set: Vec<String>,
+    /// Forge document joining the cross-doc registry, mirroring
+    /// `orchestrate`'s `--forge`. Repeatable. Naming one puts the run on
+    /// the document-set route, where cross-file `<sce:on-sample link>`
+    /// and `<sce:outbox ref>` references resolve.
+    #[arg(long = "forge", value_name = "PATH")]
+    forge: Vec<String>,
+    /// Path to `deploy.yaml`, mirroring `orchestrate`'s `--deploy`.
+    /// Fires the SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M
+    /// cross-doc validators, which otherwise silent-skip. Omit to keep
+    /// the run deploy-unaware.
+    #[arg(long = "deploy", value_name = "PATH")]
+    deploy: Option<String>,
     /// Backend to check against (rust, cpp, kotlin, go, python, c11).
     /// Repeatable. When omitted every backend is checked and the
     /// per-backend verdict rides the manifest instead of the exit code
@@ -874,11 +893,26 @@ struct CheckArgs {
     /// Additional directories searched (in declaration order) to
     /// resolve `<xi:include href="...">` and `<sce:use template="...">`
     /// fragments by name. Mirrors `generate`'s `-I`.
-    #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+    ///
+    /// Single-document runs only: the multi-doc compile entry point
+    /// that `orchestrate` and the document-set route share resolves
+    /// includes relative to each document, with no search path, so
+    /// honouring this there would answer a question no producer can
+    /// reproduce.
+    #[arg(
+        short = 'I',
+        long = "include-dir",
+        value_name = "DIR",
+        conflicts_with_all = ["scxml_set", "forge", "deploy"]
+    )]
     include_dir: Vec<String>,
     /// Reject the document when it carries any `<sce:unresolved>`
     /// placeholder. Mirrors `generate --strict-unresolved`.
-    #[arg(long)]
+    ///
+    /// Single-document runs only — `orchestrate` has no counterpart, and
+    /// a `check` stricter than the producer it mirrors would refuse
+    /// document sets that build.
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
     strict_unresolved: bool,
     /// Go module path hosting the generated forge packages. Required to
     /// check any Go crossfile document; ignored for other backends.
@@ -889,7 +923,11 @@ struct CheckArgs {
     const_fold_budget: Option<u64>,
     /// Validate against the Rust `no_std` runtime variant. Only
     /// meaningful when `rust` is among the checked backends.
-    #[arg(long)]
+    ///
+    /// Single-document runs only: the document-set route renders through
+    /// the multi-doc compile entry point, which has no `no_std` variant
+    /// to render, so the flag has no producer to agree with there.
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
     no_std: bool,
 }
 
@@ -919,6 +957,15 @@ enum Commands {
     ///   `--language`, every backend is swept and the per-backend
     ///   verdict rides the manifest's `languages` array with exit 0 —
     ///   "only Rust can lower this" is an answer, not a failure.
+    ///
+    /// The reference producer is the one the invocation shape names.
+    /// A lone document is checked against `generate`; a document set —
+    /// any `--scxml`, `--forge`, or `--deploy` — is checked against
+    /// `orchestrate`, so the cross-doc registry is built and the deploy
+    /// validators fire instead of silent-skipping. `orchestrate` has to
+    /// be given an `--output-dir` and materialises the whole build into
+    /// it, which makes "is this system valid?" cost a tree of artifacts;
+    /// the document-set route answers it and writes nothing.
     Check(Box<CheckArgs>),
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -1426,34 +1473,10 @@ fn cmd_orchestrate(
     // C13 orchestrator wiring (`b501b18c`): parse the optional
     // deploy.yaml into a `DeployConfig` so the multi-doc compile path
     // can fire SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators.
-    // Errors during read/parse route through the same Located<ForgeError>
-    // pipeline `compile_scxml_with_imports` uses — `ForgeError::Mesh`
-    // wraps `MeshError::Deploy` so the wire JSON shape matches every
-    // other deploy-side diagnostic. The diagnostic label points at the
-    // user-supplied deploy.yaml path so CLI consumers see the file
-    // they passed.
-    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> = match deploy_path {
-        Some(p) => {
-            let content = fs::read_to_string(p).unwrap_or_else(|e| {
-                error_format.emit_and_exit(
-                    &CliError::ReadInput {
-                        path: p.to_string(),
-                        source: e,
-                    },
-                    "",
-                )
-            });
-            match sce_build::mesh::deploy::parse_deploy_str(&content) {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    let forge_err: ForgeError = sce_build::mesh::error::MeshError::from(e).into();
-                    let located = Located::new(forge_err, p, None, None);
-                    error_format.emit_forge_and_exit(&located);
-                }
-            }
-        }
-        None => None,
-    };
+    // Shared with `check`'s document-set route, which enters the same
+    // validators and so must refuse the same broken topologies.
+    let deploy_cfg: Option<sce_build::mesh::deploy::DeployConfig> =
+        deploy_path.map(|p| load_deploy_config(p, error_format));
 
     let outputs = match sce_build::compile_scxml_with_imports(
         &scxml_refs,
@@ -1633,11 +1656,14 @@ fn first_diagnostic_code<E: ToDiagnostics>(err: &E) -> String {
 /// `explicit` is the caller's `--language` choice: when the operator
 /// named the backend, its refusal is the answer to the question they
 /// asked and must behave exactly as `generate -l <lang>` does. When no
-/// backend was named the sweep is exploratory, so a refusal is data.
+/// backend was named the sweep is exploratory, so a refusal is data —
+/// but only a refusal that belongs to one backend. `axis` is how the
+/// caller's route tells the two apart.
 fn record_backend_outcome<E: ToDiagnostics>(
     verdicts: &mut Vec<LanguageVerdict>,
     lang: Language,
     explicit: bool,
+    axis: SweepAxis,
     error_format: ErrorFormat,
     outcome: Result<(), E>,
 ) {
@@ -1645,7 +1671,7 @@ fn record_backend_outcome<E: ToDiagnostics>(
     match outcome {
         Ok(()) => verdicts.push(LanguageVerdict::ok(wire)),
         Err(e) => {
-            if explicit {
+            if explicit || !axis.is_one_backends_refusal(&e) {
                 error_format.emit_and_exit(&e, "");
             }
             verdicts.push(LanguageVerdict::rejected(wire, first_diagnostic_code(&e)));
@@ -1653,35 +1679,50 @@ fn record_backend_outcome<E: ToDiagnostics>(
     }
 }
 
-/// `sce-codegen check` — every verdict `generate` would reach, nothing
-/// written.
+/// How a route's refusals are classified when no backend was named.
 ///
-/// Runs the real pipeline rather than a validation subset: the same
-/// parser, the same validators, and the same per-backend codegen, whose
-/// in-memory `GeneratedOutput` is then dropped instead of written. A
-/// subset would answer a different question than the one the operator
-/// asked — "does this parse" instead of "would this generate" — and the
-/// two diverge exactly where template rendering does.
-///
-/// Writing nothing is structural, not a policy this function enforces
-/// by being careful: every file `generate` produces is written by the
-/// CLI from a `GeneratedOutput` the library returned, so a code path
-/// that never calls a write helper cannot emit. The library's compile
-/// entry points touch no filesystem.
-fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
-    let CheckArgs {
-        scxml,
-        language,
-        include_dir,
-        strict_unresolved,
-        go_module_prefix,
-        const_fold_budget,
-        no_std,
-    } = args;
-    let scxml_path: &str = &scxml;
+/// Only a refusal that belongs to one backend can ride the manifest's
+/// `languages` array. A document, a cross-doc reference or a deploy
+/// topology is wrong under every backend, so a sweep has nothing to
+/// report about it and must fail the same way `--language` would —
+/// otherwise `check` answers "valid" with exit 0 for a build no
+/// producer can produce.
+#[derive(Clone, Copy)]
+enum SweepAxis {
+    /// The route already ran its document validators and exited on
+    /// them, so everything reaching the recorder is one backend's
+    /// refusal by construction. The single-document route.
+    BackendOnly,
+    /// The route's compile call fuses document-set validation with
+    /// per-backend rendering, so nothing about the call site says which
+    /// axis a refusal came from. Read it off the diagnostic instead.
+    ByStage,
+}
 
-    // An empty `--language` means "sweep every backend"; a non-empty
-    // one pins the question to what the operator named.
+impl SweepAxis {
+    /// Stages that describe rendering for one backend. Every other
+    /// stage — the document stages, and the mesh deploy/topology
+    /// validators — reaches the same verdict whichever backend is
+    /// named.
+    fn is_one_backends_refusal<E: ToDiagnostics>(self, err: &E) -> bool {
+        match self {
+            SweepAxis::BackendOnly => true,
+            SweepAxis::ByStage => err
+                .to_diagnostics()
+                .first()
+                .is_some_and(|d| matches!(d.stage, Stage::Generate | Stage::MeshCodegen)),
+        }
+    }
+}
+
+/// Resolve `--language` into the backends to check and whether the
+/// operator named them.
+///
+/// An empty list means "sweep every backend"; a non-empty one pins the
+/// question to what was named, which is what makes a refusal fatal. Both
+/// `check` routes resolve it here so the sweep-vs-named split cannot
+/// come to mean two different things depending on the invocation shape.
+fn requested_backends(language: &[String], error_format: ErrorFormat) -> (bool, Vec<Language>) {
     let explicit = !language.is_empty();
     let langs: Vec<Language> = if explicit {
         language
@@ -1700,6 +1741,229 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
     } else {
         Language::ALL.to_vec()
     };
+    (explicit, langs)
+}
+
+/// Read and parse a `deploy.yaml`, or terminate.
+///
+/// Both `orchestrate` and `check`'s document-set route enter the C13
+/// cross-doc validators through the same `Option<&DeployConfig>`, so
+/// they must also agree on what a broken topology does. Read failures
+/// route through [`CliError`]; parse failures route through
+/// `ForgeError::Mesh` so the wire JSON shape matches every other
+/// deploy-side diagnostic, and the label points at the path the operator
+/// passed rather than at whatever the parser was reading.
+fn load_deploy_config(
+    path: &str,
+    error_format: ErrorFormat,
+) -> sce_build::mesh::deploy::DeployConfig {
+    let content = fs::read_to_string(path).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: path.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
+    match sce_build::mesh::deploy::parse_deploy_str(&content) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            let forge_err: ForgeError = sce_build::mesh::error::MeshError::from(e).into();
+            let located = Located::new(forge_err, path, None, None);
+            error_format.emit_forge_and_exit(&located)
+        }
+    }
+}
+
+/// Script-engine facts for one statechart, or `None` when the document
+/// does not parse.
+///
+/// Report-only, and silent on failure by design: the compile pass that
+/// follows reads the same file and is what reports a parse error, with
+/// the diagnostic code and exit status the producer would give. Failing
+/// here instead would put the first refusal on a pass whose job is to
+/// describe the run, not to judge it.
+fn scxml_script_engine_facts(
+    path: &str,
+) -> Option<(
+    bool,
+    Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
+)> {
+    let mut parser = SCXMLParser::new();
+    let mut model = parser.parse_file(path).ok()?;
+    analyzer::analyze(&mut model, path);
+    Some((
+        model.needs_script_engine,
+        model
+            .script_engine_causes
+            .iter()
+            .map(|c| c.to_wire())
+            .collect(),
+    ))
+}
+
+/// `sce-codegen check` over a document set — every verdict
+/// `orchestrate` would reach, nothing written.
+///
+/// This is [`cmd_orchestrate`] with its write loop absent. Both enter
+/// [`sce_build::compile_scxml_with_imports`], which builds the cross-doc
+/// registry, fires the SCE Protocol-Synthesis RFC §synth-5-K +
+/// §synth-5-M deploy validators when a topology is supplied, and returns
+/// every artifact in memory. Writing is the caller's step, so declining
+/// to take it is the whole difference between the two subcommands —
+/// there is no second validation path here that could drift out of
+/// agreement with the producer.
+///
+/// The manifest reports the set, not a document: `needs_script_engine`
+/// is the union over the statechart inputs, which is the question a
+/// build system asks (does this build link an engine?) rather than a
+/// per-file property it would have to re-aggregate itself.
+fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
+    let CheckArgs {
+        scxml,
+        scxml_set,
+        forge,
+        deploy,
+        language,
+        include_dir: _,
+        strict_unresolved: _,
+        go_module_prefix,
+        const_fold_budget,
+        no_std: _,
+        // The three flags this route cannot honour are declared to
+        // conflict with every argument that reaches it, so clap refuses
+        // the combination before dispatch rather than this function
+        // accepting and ignoring them.
+    } = args;
+
+    let (explicit, langs) = requested_backends(&language, error_format);
+
+    // The positional is shorthand for the first statechart, so a set may
+    // be written either way round; order is input order in both cases.
+    let scxml_paths: Vec<PathBuf> = scxml
+        .into_iter()
+        .chain(scxml_set)
+        .map(PathBuf::from)
+        .collect();
+    let forge_paths: Vec<PathBuf> = forge.into_iter().map(PathBuf::from).collect();
+    let scxml_refs: Vec<&Path> = scxml_paths.iter().map(|p| p.as_path()).collect();
+    let forge_refs: Vec<&Path> = forge_paths.iter().map(|p| p.as_path()).collect();
+
+    // Parsed once, before the per-backend loop: a malformed topology is
+    // fatal regardless of backend, and `orchestrate` refuses it at the
+    // same point.
+    let deploy_cfg = deploy
+        .as_deref()
+        .map(|p| load_deploy_config(p, error_format));
+
+    let mut report = GenerateReport {
+        deploy_facts: deploy_cfg.as_ref().map(|cfg| sce_build::DeployFacts {
+            static_analyzer: cfg.build.as_ref().and_then(|b| b.static_analyzer),
+        }),
+        ..GenerateReport::default()
+    };
+    let mut needs_script_engine = false;
+    for path in &scxml_paths {
+        let Some((needs, causes)) = scxml_script_engine_facts(&path.to_string_lossy()) else {
+            continue;
+        };
+        needs_script_engine |= needs;
+        for cause in causes {
+            if !report.script_engine_causes.contains(&cause) {
+                report.script_engine_causes.push(cause);
+            }
+        }
+    }
+    report.needs_script_engine = Some(needs_script_engine);
+
+    let options = sce_build::ForgeCompileOptions {
+        go_module_prefix,
+        const_fold_budget,
+        ..Default::default()
+    };
+
+    let mut verdicts: Vec<LanguageVerdict> = Vec::new();
+    for lang in &langs {
+        let template_dir = sce_build::find_template_dir_for(*lang);
+        let outcome = sce_build::compile_scxml_with_imports(
+            &scxml_refs,
+            &forge_refs,
+            &template_dir,
+            *lang,
+            &options,
+            deploy_cfg.as_ref(),
+        )
+        .map(|_| ());
+        record_backend_outcome(
+            &mut verdicts,
+            *lang,
+            explicit,
+            SweepAxis::ByStage,
+            error_format,
+            outcome,
+        );
+    }
+
+    println!(
+        "{}",
+        build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
+    );
+}
+
+/// `sce-codegen check` — every verdict `generate` would reach, nothing
+/// written.
+///
+/// Runs the real pipeline rather than a validation subset: the same
+/// parser, the same validators, and the same per-backend codegen, whose
+/// in-memory `GeneratedOutput` is then dropped instead of written. A
+/// subset would answer a different question than the one the operator
+/// asked — "does this parse" instead of "would this generate" — and the
+/// two diverge exactly where template rendering does.
+///
+/// Writing nothing is structural, not a policy this function enforces
+/// by being careful: every file `generate` produces is written by the
+/// CLI from a `GeneratedOutput` the library returned, so a code path
+/// that never calls a write helper cannot emit. The library's compile
+/// entry points touch no filesystem.
+///
+/// The same holds one level up. A document set is compiled by
+/// [`sce_build::compile_scxml_with_imports`], the entry point
+/// `orchestrate` calls, which returns every artifact in memory and
+/// leaves the writes to its caller — so [`cmd_check_document_set`] is
+/// `cmd_orchestrate` with the write loop absent rather than a second
+/// validation path that has to be kept in agreement with it.
+fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
+    // A lone document is checked against `generate`; anything that
+    // needs a cross-doc registry or a deploy topology is checked
+    // against `orchestrate`. Routing on the invocation shape keeps each
+    // route mirroring exactly one producer — a single route would have
+    // to agree with both, and the two producers do not agree with each
+    // other about what a document set means.
+    if !args.scxml_set.is_empty() || !args.forge.is_empty() || args.deploy.is_some() {
+        cmd_check_document_set(args, error_format);
+        return;
+    }
+    let CheckArgs {
+        scxml,
+        scxml_set: _,
+        forge: _,
+        deploy: _,
+        language,
+        include_dir,
+        strict_unresolved,
+        go_module_prefix,
+        const_fold_budget,
+        no_std,
+    } = args;
+    // The router above leaves only the single-document shape here, and
+    // clap's `required_unless_present` guarantees the positional is the
+    // one that carries it.
+    let scxml_path: &str = scxml
+        .as_deref()
+        .expect("clap requires the positional when no --scxml is given");
+
+    let (explicit, langs) = requested_backends(&language, error_format);
 
     let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -1766,7 +2030,14 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     &forge_opts,
                 )
                 .map(|_| ());
-                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+                record_backend_outcome(
+                    &mut verdicts,
+                    *lang,
+                    explicit,
+                    SweepAxis::BackendOnly,
+                    error_format,
+                    outcome,
+                );
             }
             // Forge kinds are stateless by construction — no script
             // engine is reachable from them.
@@ -1872,7 +2143,14 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         None,
                     )
                 });
-                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
+                record_backend_outcome(
+                    &mut verdicts,
+                    *lang,
+                    explicit,
+                    SweepAxis::BackendOnly,
+                    error_format,
+                    outcome,
+                );
             }
         }
     }

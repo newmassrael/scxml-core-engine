@@ -496,14 +496,15 @@ is:
 - Emitter: `build_manifest` in `sce-build/src/bin/sce_codegen.rs`, the
   single construction point for both subcommands, reached from
   `emit_generate_manifest` at every `cmd_generate` exit and from
-  `cmd_check`.
+  `cmd_check` / `cmd_check_document_set`.
 - Tests: `manifest.rs::tests` pins the producer constants to the schema
   file and validates produced records against it, positively and
   negatively;
   `tests/error_format_json.rs::stdout_emits_single_json_manifest_on_success`
   (positive pin) and `::stdout_does_not_emit_human_prose` (negative
-  pin); `tests/cli_check.rs` validates emitted `check` manifests
-  against the schema through the real binary.
+  pin); `tests/cli_check.rs` and `tests/cli_check_cross_doc.rs`
+  validate emitted `check` manifests — single-document and
+  document-set — against the schema through the real binary.
 
 ### 10.3.1 `check` manifests
 
@@ -530,6 +531,41 @@ fixture corpus by
 Without `--language` every backend is checked, the per-backend verdict
 rides `languages`, and the exit is `0`: "only the Rust backend can
 lower this document" is an answer, not a failure.
+
+#### 10.3.1.1 Document sets
+
+The producer a `check` run mirrors is the one its invocation shape
+names. A lone document is checked against `generate`; a **document
+set** — any `--scxml`, `--forge`, or `--deploy` — is checked against
+`orchestrate`, so the cross-doc registry is built and the
+§synth-5-K / §synth-5-M deploy validators fire instead of
+silent-skipping. Both routes emit the same `kind: "check"` record.
+
+This matters because `orchestrate` has no no-write mode: it requires an
+`--output-dir` and materialises the whole build into it, so asking
+"is this system valid?" used to cost a tree of artifacts. Two claims
+keep the routes honest, both swept in
+`tests/cli_check_cross_doc.rs`:
+
+- `check … ≡ orchestrate …` on exit code and diagnostic code, over
+  every deploy variant × backend
+  (`check_and_orchestrate_agree_on_every_document_set_and_backend`).
+  The sweep asserts that the refusing variants refuse on every backend
+  that lowers the set, so agreement cannot be satisfied by two commands
+  that both skip the validators.
+- Nothing is written
+  (`check_over_a_document_set_writes_no_file_anywhere`), asserted
+  against a control run of `orchestrate` over the same set that does
+  write.
+
+On this route `needs_script_engine` describes the **set**: the union
+over its statechart inputs, which is the form the question takes for a
+build system deciding whether to link an engine. `-I`,
+`--strict-unresolved` and `--no-std` are refused rather than accepted
+and ignored — the multi-doc compile entry point resolves includes
+relative to each document with no search path and renders no `no_std`
+variant, so honouring them would answer a question no producer can
+reproduce.
 
 ### 10.4 Script-engine causes
 
