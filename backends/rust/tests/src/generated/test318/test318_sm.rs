@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 5f193aa604f411f4b7f10b4661fc07b1876983d16616ad5826e4908ece3ad363
+// template-hash: 06fcb129848f1848e5fbe17e18886dcdb5eb000ffbd147c27485d647b1258acf
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -243,7 +243,7 @@ impl Test318Policy {
         // entry names and the same addresses whichever one runs it.
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
-        if let Err(e) = se.setup_system_variables(&sid, "test318", &io_processors) {
+        if let Err(e) = se.setup_system_variables(&sid, "machineName", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
 
@@ -271,7 +271,7 @@ impl Test318Policy {
         // entry names and the same addresses whichever one runs it.
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
-        if let Err(e) = se.setup_system_variables(&sid, "test318", &io_processors) {
+        if let Err(e) = se.setup_system_variables(&sid, "machineName", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
 

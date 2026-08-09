@@ -199,6 +199,16 @@ name = "forge_document_name_is_the_stem"
 path = "tests/forge_document_name_is_the_stem.rs"
 required-features = ["cli"]
 
+# W3C SCXML 5.10 `_name`. The four W3C tests that reach the variable
+# assert only that it is bound, so the value went unchecked in every
+# backend; this target is where the value is asserted. Drives the binary
+# (hence `cli`) and parses the C11 backend's emitted Lua with `mlua`,
+# because that value crosses two literal boundaries.
+[[test]]
+name = "w3c_name_system_variable"
+path = "tests/w3c_name_system_variable.rs"
+required-features = ["cli"]
+
 # Structural smoke validator for all four codegen backends. Depends on
 # the `sce-codegen` binary, hence the `cli` gate shared with the other
 # end-to-end tests. See `tests/codegen_smoke.rs` for the rationale

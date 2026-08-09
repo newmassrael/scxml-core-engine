@@ -419,7 +419,7 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         return {{ 'True' if model.needs_script_engine else 'False' }}
 
     def machine_name(self) -> str:
-        return {{ model.name | py_string_literal }}
+        return {{ model.scxml_name | default('') | w3c_session_name(model.name) | py_string_literal }}
 
 {% include 'process_transition.py.jinja2' %}
 

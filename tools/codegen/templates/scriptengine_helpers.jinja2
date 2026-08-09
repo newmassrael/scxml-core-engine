@@ -49,7 +49,7 @@
         // same helper the Interpreter uses, so a machine reads the same entry
         // names and the same addresses whichever engine runs it.
         auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
-        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_cpp }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
@@ -109,7 +109,7 @@
         // same helper the Interpreter uses, so a machine reads the same entry
         // names and the same addresses whichever engine runs it.
         auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
-        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_cpp }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }

@@ -1036,20 +1036,31 @@ endif()
 # ============================================================================
 # Auto-generate web/visualizer/test-list.js from W3C_AOT_TESTS
 # ============================================================================
-# Zero Duplication: W3C_AOT_TESTS is auto-accumulated from sce_generate_static_w3c_test() calls
+# Zero Duplication: the conformance registry is the single source, and
+# `generate_test_list.py` reads it directly.
+#
+# It was handed `build/W3CAotTestList.cmake` instead — the CMake list this
+# tree used to accumulate — which the script stopped understanding when the
+# registry became the source of truth. It parses its input as JSON, so a
+# CMake file fails on the first byte:
+#
+#   Error extracting tests: Expecting value: line 1 column 1 (char 0)
+#
+# The output is committed and only rebuilds when an input is newer, so the
+# broken call sat latent until something touched the tree hard enough to
+# invalidate it, and then failed the whole build.
 find_package(Python3 COMPONENTS Interpreter)
 
 if(Python3_FOUND AND NOT EMSCRIPTEN)
-    # Use the auto-generated W3C_AOT_TESTS list file as input for test-list.js generation
     add_custom_command(
         OUTPUT ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
-                ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
+                ${W3C_REGISTRY}
                 ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
-        DEPENDS ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
+        DEPENDS ${W3C_REGISTRY}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
-        COMMENT "Generating web/visualizer/test-list.js from W3C_AOT_TESTS"
+        COMMENT "Generating web/visualizer/test-list.js from the conformance registry"
         VERBATIM
     )
 

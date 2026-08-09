@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 5f193aa604f411f4b7f10b4661fc07b1876983d16616ad5826e4908ece3ad363
+// template-hash: 06fcb129848f1848e5fbe17e18886dcdb5eb000ffbd147c27485d647b1258acf
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -112,7 +112,7 @@ class Test326StateMachine(
         // entry names and the same addresses whichever one runs it.
         engine.setupSystemVariables(
             sid,
-            "test326",
+            "machineName",
             com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
         )
 
