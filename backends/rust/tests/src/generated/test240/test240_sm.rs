@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -949,6 +949,7 @@ impl StatePolicy for Test240Policy {
     ) {
         match state {
             Test240State::S0 => {
+                // SCE-MAP: test240.scxml:13
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -971,6 +972,7 @@ impl StatePolicy for Test240Policy {
                 }
             }
             Test240State::S01 => {
+                // SCE-MAP: test240.scxml:19
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -985,6 +987,7 @@ impl StatePolicy for Test240Policy {
                 }
             }
             Test240State::S02 => {
+                // SCE-MAP: test240.scxml:42
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =

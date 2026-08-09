@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -268,18 +268,21 @@ class DonedataLocalInvokeStateMachine(
     override fun onEntry(state: DonedataLocalInvokeState) {
         when (state) {
             is DonedataLocalInvokeState.Fail -> {
+                // SCE-MAP: donedata_local_invoke.scxml:75
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLocalInvokeState.Pass -> {
+                // SCE-MAP: donedata_local_invoke.scxml:74
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLocalInvokeState.PhaseContent -> {
+                // SCE-MAP: donedata_local_invoke.scxml:55
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase_content")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -294,6 +297,7 @@ class DonedataLocalInvokeStateMachine(
                 }
             }
             is DonedataLocalInvokeState.PhaseParam -> {
+                // SCE-MAP: donedata_local_invoke.scxml:34
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase_param")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -315,12 +319,15 @@ class DonedataLocalInvokeStateMachine(
     override fun onExit(state: DonedataLocalInvokeState) {
         when (state) {
             is DonedataLocalInvokeState.Fail -> {
+                // SCE-MAP: donedata_local_invoke.scxml:75
                 activeStateIds.remove("fail")
             }
             is DonedataLocalInvokeState.Pass -> {
+                // SCE-MAP: donedata_local_invoke.scxml:74
                 activeStateIds.remove("pass")
             }
             is DonedataLocalInvokeState.PhaseContent -> {
+                // SCE-MAP: donedata_local_invoke.scxml:55
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -328,6 +335,7 @@ class DonedataLocalInvokeStateMachine(
                 activeStateIds.remove("phase_content")
             }
             is DonedataLocalInvokeState.PhaseParam -> {
+                // SCE-MAP: donedata_local_invoke.scxml:34
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit

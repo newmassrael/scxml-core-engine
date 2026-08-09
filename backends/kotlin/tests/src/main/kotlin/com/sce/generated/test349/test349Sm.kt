@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -248,18 +248,21 @@ class Test349StateMachine(
     override fun onEntry(state: Test349State) {
         when (state) {
             is Test349State.Fail -> {
+                // SCE-MAP: test349.scxml:31
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test349State.Pass -> {
+                // SCE-MAP: test349.scxml:30
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test349State.S0 -> {
+                // SCE-MAP: test349.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -267,6 +270,7 @@ class Test349StateMachine(
             send(Test349Event.S0Event, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is Test349State.S2 -> {
+                // SCE-MAP: test349.scxml:22
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
 
@@ -281,15 +285,19 @@ class Test349StateMachine(
     override fun onExit(state: Test349State) {
         when (state) {
             is Test349State.Fail -> {
+                // SCE-MAP: test349.scxml:31
                 activeStateIds.remove("fail")
             }
             is Test349State.Pass -> {
+                // SCE-MAP: test349.scxml:30
                 activeStateIds.remove("pass")
             }
             is Test349State.S0 -> {
+                // SCE-MAP: test349.scxml:10
                 activeStateIds.remove("s0")
             }
             is Test349State.S2 -> {
+                // SCE-MAP: test349.scxml:22
                 activeStateIds.remove("s2")
             }
         }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -238,10 +238,12 @@ class Test241SceSynthInvokeInvoke1StateMachine(
     override fun onEntry(state: Test241SceSynthInvokeInvoke1State) {
         when (state) {
             is Test241SceSynthInvokeInvoke1State.Sub02 -> {
+                // SCE-MAP: test241__sce_synth_invoke__invoke_1.scxml:8
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub02")) return
             }
             is Test241SceSynthInvokeInvoke1State.SubFinal2 -> {
+                // SCE-MAP: test241__sce_synth_invoke__invoke_1.scxml:17
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal2")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -255,9 +257,11 @@ class Test241SceSynthInvokeInvoke1StateMachine(
     override fun onExit(state: Test241SceSynthInvokeInvoke1State) {
         when (state) {
             is Test241SceSynthInvokeInvoke1State.Sub02 -> {
+                // SCE-MAP: test241__sce_synth_invoke__invoke_1.scxml:8
                 activeStateIds.remove("sub02")
             }
             is Test241SceSynthInvokeInvoke1State.SubFinal2 -> {
+                // SCE-MAP: test241__sce_synth_invoke__invoke_1.scxml:17
                 activeStateIds.remove("subFinal2")
             }
         }

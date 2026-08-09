@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -307,6 +307,7 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ClearEventMetadata() {
 func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ExecuteEntryActions(state SendParamPayloadSceSynthInvokeInvEmitterState, engine *sce.Engine[SendParamPayloadSceSynthInvokeInvEmitterState, SendParamPayloadSceSynthInvokeInvEmitterEvent]) {
 	switch state {
 	case SendParamPayloadSceSynthInvokeInvEmitterStateEmit:
+		//line send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0

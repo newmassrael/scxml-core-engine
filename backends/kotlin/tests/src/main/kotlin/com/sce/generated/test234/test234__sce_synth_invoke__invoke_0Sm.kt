@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -206,6 +206,7 @@ class Test234SceSynthInvokeInvoke0StateMachine(
     override fun onEntry(state: Test234SceSynthInvokeInvoke0State) {
         when (state) {
             is Test234SceSynthInvokeInvoke0State.SubFinal1 -> {
+                // SCE-MAP: test234__sce_synth_invoke__invoke_0.scxml:4
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal1")) return
 
@@ -231,6 +232,7 @@ class Test234SceSynthInvokeInvoke0StateMachine(
     override fun onExit(state: Test234SceSynthInvokeInvoke0State) {
         when (state) {
             is Test234SceSynthInvokeInvoke0State.SubFinal1 -> {
+                // SCE-MAP: test234__sce_synth_invoke__invoke_0.scxml:4
                 activeStateIds.remove("subFinal1")
             }
         }

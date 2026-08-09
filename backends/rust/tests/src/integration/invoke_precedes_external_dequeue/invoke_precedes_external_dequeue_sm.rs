@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -569,6 +569,7 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     ) {
         match state {
             InvokePrecedesExternalDequeueState::Phase => {
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -686,6 +687,7 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
             InvokePrecedesExternalDequeueState::Phase => {
                 match self.last_transition_index {
                     1 => {
+                        // SCE-MAP: invoke_precedes_external_dequeue.scxml:85
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {

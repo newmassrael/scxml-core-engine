@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -307,28 +307,33 @@ class Test331StateMachine(
     override fun onEntry(state: Test331State) {
         when (state) {
             is Test331State.Fail -> {
+                // SCE-MAP: test331.scxml:60
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.Pass -> {
+                // SCE-MAP: test331.scxml:59
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.S0 -> {
+                // SCE-MAP: test331.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
             raiseInternal(Test331Event.Foo)
             }
             is Test331State.S1 -> {
+                // SCE-MAP: test331.scxml:21
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             is Test331State.S2 -> {
+                // SCE-MAP: test331.scxml:26
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
 
@@ -337,10 +342,12 @@ class Test331StateMachine(
             raiseInternal(Test331Event.Error.Execution, EventMetadata.platform())
             }
             is Test331State.S3 -> {
+                // SCE-MAP: test331.scxml:37
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             }
             is Test331State.S4 -> {
+                // SCE-MAP: test331.scxml:42
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
 
@@ -348,6 +355,7 @@ class Test331StateMachine(
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is Test331State.S5 -> {
+                // SCE-MAP: test331.scxml:53
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s5")) return
             }
@@ -359,27 +367,35 @@ class Test331StateMachine(
     override fun onExit(state: Test331State) {
         when (state) {
             is Test331State.Fail -> {
+                // SCE-MAP: test331.scxml:60
                 activeStateIds.remove("fail")
             }
             is Test331State.Pass -> {
+                // SCE-MAP: test331.scxml:59
                 activeStateIds.remove("pass")
             }
             is Test331State.S0 -> {
+                // SCE-MAP: test331.scxml:10
                 activeStateIds.remove("s0")
             }
             is Test331State.S1 -> {
+                // SCE-MAP: test331.scxml:21
                 activeStateIds.remove("s1")
             }
             is Test331State.S2 -> {
+                // SCE-MAP: test331.scxml:26
                 activeStateIds.remove("s2")
             }
             is Test331State.S3 -> {
+                // SCE-MAP: test331.scxml:37
                 activeStateIds.remove("s3")
             }
             is Test331State.S4 -> {
+                // SCE-MAP: test331.scxml:42
                 activeStateIds.remove("s4")
             }
             is Test331State.S5 -> {
+                // SCE-MAP: test331.scxml:53
                 activeStateIds.remove("s5")
             }
         }

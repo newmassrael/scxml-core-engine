@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -227,6 +227,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("emit")) return
 
@@ -243,6 +244,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
             }
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("reported")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -256,9 +258,11 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     override fun onExit(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
                 activeStateIds.remove("emit")
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22
                 activeStateIds.remove("reported")
             }
         }

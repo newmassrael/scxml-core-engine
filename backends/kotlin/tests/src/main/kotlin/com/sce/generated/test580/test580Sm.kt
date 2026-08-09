@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -318,12 +318,14 @@ class Test580StateMachine(
     override fun onEntry(state: Test580State) {
         when (state) {
             is Test580State.Fail -> {
+                // SCE-MAP: test580.scxml:50
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test580State.P1 -> {
+                // SCE-MAP: test580.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p1")) return
 
@@ -335,16 +337,19 @@ class Test580StateMachine(
                 onEntry(Test580State.S1)
             }
             is Test580State.Pass -> {
+                // SCE-MAP: test580.scxml:49
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test580State.S0 -> {
+                // SCE-MAP: test580.scxml:16
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test580State.S1 -> {
+                // SCE-MAP: test580.scxml:22
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
                 if (!suppressChildEntry) {
@@ -365,10 +370,12 @@ class Test580StateMachine(
                 }
             }
             is Test580State.S11 -> {
+                // SCE-MAP: test580.scxml:32
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
             }
             is Test580State.S12 -> {
+                // SCE-MAP: test580.scxml:37
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
             }
@@ -380,9 +387,11 @@ class Test580StateMachine(
     override fun onExit(state: Test580State) {
         when (state) {
             is Test580State.Fail -> {
+                // SCE-MAP: test580.scxml:50
                 activeStateIds.remove("fail")
             }
             is Test580State.P1 -> {
+                // SCE-MAP: test580.scxml:10
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -408,12 +417,15 @@ class Test580StateMachine(
                 activeStateIds.remove("p1")
             }
             is Test580State.Pass -> {
+                // SCE-MAP: test580.scxml:49
                 activeStateIds.remove("pass")
             }
             is Test580State.S0 -> {
+                // SCE-MAP: test580.scxml:16
                 activeStateIds.remove("s0")
             }
             is Test580State.S1 -> {
+                // SCE-MAP: test580.scxml:22
                 // W3C SCXML 3.11: Record shallow history for sh1
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
                 historyStore["sh1"] = preTransitionActiveStates.filter { stateId ->
@@ -426,9 +438,11 @@ class Test580StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test580State.S11 -> {
+                // SCE-MAP: test580.scxml:32
                 activeStateIds.remove("s11")
             }
             is Test580State.S12 -> {
+                // SCE-MAP: test580.scxml:37
                 activeStateIds.remove("s12")
             }
         }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -371,18 +371,21 @@ class Test388StateMachine(
     override fun onEntry(state: Test388State) {
         when (state) {
             is Test388State.Fail -> {
+                // SCE-MAP: test388.scxml:78
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test388State.Pass -> {
+                // SCE-MAP: test388.scxml:77
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test388State.S0 -> {
+                // SCE-MAP: test388.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -390,42 +393,50 @@ class Test388StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test388State.S01 -> {
+                // SCE-MAP: test388.scxml:41
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test388State.S011 -> {
+                // SCE-MAP: test388.scxml:42
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
 
             raiseInternal(Test388Event.Entering.S011)
             }
             is Test388State.S012 -> {
+                // SCE-MAP: test388.scxml:47
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s012")) return
 
             raiseInternal(Test388Event.Entering.S012)
             }
             is Test388State.S02 -> {
+                // SCE-MAP: test388.scxml:53
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
             is Test388State.S021 -> {
+                // SCE-MAP: test388.scxml:54
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s021")) return
 
             raiseInternal(Test388Event.Entering.S021)
             }
             is Test388State.S022 -> {
+                // SCE-MAP: test388.scxml:59
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s022")) return
 
             raiseInternal(Test388Event.Entering.S022)
             }
             is Test388State.S1 -> {
+                // SCE-MAP: test388.scxml:69
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             is Test388State.S2 -> {
+                // SCE-MAP: test388.scxml:73
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
@@ -437,12 +448,15 @@ class Test388StateMachine(
     override fun onExit(state: Test388State) {
         when (state) {
             is Test388State.Fail -> {
+                // SCE-MAP: test388.scxml:78
                 activeStateIds.remove("fail")
             }
             is Test388State.Pass -> {
+                // SCE-MAP: test388.scxml:77
                 activeStateIds.remove("pass")
             }
             is Test388State.S0 -> {
+                // SCE-MAP: test388.scxml:14
                 // W3C SCXML 3.11: Record deep history for s0HistDeep
                 historyStore["s0HistDeep"] = preTransitionActiveStates.filter { stateId ->
                     val st = resolveState(stateId) ?: return@filter false
@@ -457,27 +471,35 @@ class Test388StateMachine(
                 activeStateIds.remove("s0")
             }
             is Test388State.S01 -> {
+                // SCE-MAP: test388.scxml:41
                 activeStateIds.remove("s01")
             }
             is Test388State.S011 -> {
+                // SCE-MAP: test388.scxml:42
                 activeStateIds.remove("s011")
             }
             is Test388State.S012 -> {
+                // SCE-MAP: test388.scxml:47
                 activeStateIds.remove("s012")
             }
             is Test388State.S02 -> {
+                // SCE-MAP: test388.scxml:53
                 activeStateIds.remove("s02")
             }
             is Test388State.S021 -> {
+                // SCE-MAP: test388.scxml:54
                 activeStateIds.remove("s021")
             }
             is Test388State.S022 -> {
+                // SCE-MAP: test388.scxml:59
                 activeStateIds.remove("s022")
             }
             is Test388State.S1 -> {
+                // SCE-MAP: test388.scxml:69
                 activeStateIds.remove("s1")
             }
             is Test388State.S2 -> {
+                // SCE-MAP: test388.scxml:73
                 activeStateIds.remove("s2")
             }
         }

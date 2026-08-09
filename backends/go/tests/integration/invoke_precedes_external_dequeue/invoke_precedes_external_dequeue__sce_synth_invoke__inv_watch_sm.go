@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -342,6 +342,7 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ClearEventMe
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {
 	switch state {
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting:
+		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0

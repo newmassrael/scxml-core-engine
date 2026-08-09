@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -142,22 +142,26 @@ class NestedFinalNotTerminalStateMachine(
     override fun onEntry(state: NestedFinalNotTerminalState) {
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:51
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is NestedFinalNotTerminalState.Phase -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:44
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
             }
             is NestedFinalNotTerminalState.PhaseDone -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:48
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phaseDone")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(NestedFinalNotTerminalEvent.Done.State.Phase, EventMetadata.platform())
             }
             is NestedFinalNotTerminalState.Running -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:45
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("running")) return
             }
@@ -169,15 +173,19 @@ class NestedFinalNotTerminalStateMachine(
     override fun onExit(state: NestedFinalNotTerminalState) {
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:51
                 activeStateIds.remove("pass")
             }
             is NestedFinalNotTerminalState.Phase -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:44
                 activeStateIds.remove("phase")
             }
             is NestedFinalNotTerminalState.PhaseDone -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:48
                 activeStateIds.remove("phaseDone")
             }
             is NestedFinalNotTerminalState.Running -> {
+                // SCE-MAP: nested_final_not_terminal.scxml:45
                 activeStateIds.remove("running")
             }
         }

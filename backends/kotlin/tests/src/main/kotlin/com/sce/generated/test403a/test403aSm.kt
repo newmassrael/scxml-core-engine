@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -162,18 +162,21 @@ class Test403aStateMachine(
     override fun onEntry(state: Test403aState) {
         when (state) {
             is Test403aState.Fail -> {
+                // SCE-MAP: test403a.scxml:46
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test403aState.Pass -> {
+                // SCE-MAP: test403a.scxml:45
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test403aState.S0 -> {
+                // SCE-MAP: test403a.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -181,12 +184,14 @@ class Test403aStateMachine(
             scheduleSend("__send_0", 1000L, Test403aEvent.Timeout)
             }
             is Test403aState.S01 -> {
+                // SCE-MAP: test403a.scxml:23
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
 
             raiseInternal(Test403aEvent.Event1)
             }
             is Test403aState.S02 -> {
+                // SCE-MAP: test403a.scxml:33
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
 
@@ -200,18 +205,23 @@ class Test403aStateMachine(
     override fun onExit(state: Test403aState) {
         when (state) {
             is Test403aState.Fail -> {
+                // SCE-MAP: test403a.scxml:46
                 activeStateIds.remove("fail")
             }
             is Test403aState.Pass -> {
+                // SCE-MAP: test403a.scxml:45
                 activeStateIds.remove("pass")
             }
             is Test403aState.S0 -> {
+                // SCE-MAP: test403a.scxml:14
                 activeStateIds.remove("s0")
             }
             is Test403aState.S01 -> {
+                // SCE-MAP: test403a.scxml:23
                 activeStateIds.remove("s01")
             }
             is Test403aState.S02 -> {
+                // SCE-MAP: test403a.scxml:33
                 activeStateIds.remove("s02")
             }
         }

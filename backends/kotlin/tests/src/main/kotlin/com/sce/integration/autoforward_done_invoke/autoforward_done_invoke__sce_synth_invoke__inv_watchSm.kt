@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -124,18 +124,21 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("missed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("saw")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("watch")) return
             }
@@ -147,12 +150,15 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     override fun onExit(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14
                 activeStateIds.remove("missed")
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13
                 activeStateIds.remove("saw")
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> {
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5
                 activeStateIds.remove("watch")
             }
         }

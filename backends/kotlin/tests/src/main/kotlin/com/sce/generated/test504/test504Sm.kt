@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -385,12 +385,14 @@ class Test504StateMachine(
     override fun onEntry(state: Test504State) {
         when (state) {
             is Test504State.Fail -> {
+                // SCE-MAP: test504.scxml:77
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test504State.P -> {
+                // SCE-MAP: test504.scxml:27
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -399,20 +401,24 @@ class Test504StateMachine(
                 onEntry(Test504State.Ps2)
             }
             is Test504State.Pass -> {
+                // SCE-MAP: test504.scxml:76
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test504State.Ps1 -> {
+                // SCE-MAP: test504.scxml:39
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ps1")) return
             }
             is Test504State.Ps2 -> {
+                // SCE-MAP: test504.scxml:44
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ps2")) return
             }
             is Test504State.S1 -> {
+                // SCE-MAP: test504.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -421,6 +427,7 @@ class Test504StateMachine(
             raiseInternal(Test504Event.Bar)
             }
             is Test504State.S2 -> {
+                // SCE-MAP: test504.scxml:22
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
                 if (!suppressChildEntry) {
@@ -429,18 +436,22 @@ class Test504StateMachine(
                 }
             }
             is Test504State.S3 -> {
+                // SCE-MAP: test504.scxml:52
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             }
             is Test504State.S4 -> {
+                // SCE-MAP: test504.scxml:58
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
             }
             is Test504State.S5 -> {
+                // SCE-MAP: test504.scxml:64
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s5")) return
             }
             is Test504State.S6 -> {
+                // SCE-MAP: test504.scxml:70
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s6")) return
             }
@@ -452,9 +463,11 @@ class Test504StateMachine(
     override fun onExit(state: Test504State) {
         when (state) {
             is Test504State.Fail -> {
+                // SCE-MAP: test504.scxml:77
                 activeStateIds.remove("fail")
             }
             is Test504State.P -> {
+                // SCE-MAP: test504.scxml:27
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -477,39 +490,48 @@ class Test504StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test504State.Pass -> {
+                // SCE-MAP: test504.scxml:76
                 activeStateIds.remove("pass")
             }
             is Test504State.Ps1 -> {
+                // SCE-MAP: test504.scxml:39
                 activeStateIds.remove("ps1")
 
 
             executeAssign("Var2", "Var2 + 1")
             }
             is Test504State.Ps2 -> {
+                // SCE-MAP: test504.scxml:44
                 activeStateIds.remove("ps2")
 
 
             executeAssign("Var3", "Var3 + 1")
             }
             is Test504State.S1 -> {
+                // SCE-MAP: test504.scxml:14
                 activeStateIds.remove("s1")
             }
             is Test504State.S2 -> {
+                // SCE-MAP: test504.scxml:22
                 activeStateIds.remove("s2")
 
 
             executeAssign("Var5", "Var5 + 1")
             }
             is Test504State.S3 -> {
+                // SCE-MAP: test504.scxml:52
                 activeStateIds.remove("s3")
             }
             is Test504State.S4 -> {
+                // SCE-MAP: test504.scxml:58
                 activeStateIds.remove("s4")
             }
             is Test504State.S5 -> {
+                // SCE-MAP: test504.scxml:64
                 activeStateIds.remove("s5")
             }
             is Test504State.S6 -> {
+                // SCE-MAP: test504.scxml:70
                 activeStateIds.remove("s6")
             }
         }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -459,6 +459,7 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(st
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLocalInvokeSceSynthInvokeInvParamStateDone:
+		//line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
 		doneDataOk := true

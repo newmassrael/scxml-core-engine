@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -436,18 +436,21 @@ class Test364StateMachine(
     override fun onEntry(state: Test364State) {
         when (state) {
             is Test364State.Fail -> {
+                // SCE-MAP: test364.scxml:76
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test364State.Pass -> {
+                // SCE-MAP: test364.scxml:75
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test364State.S1 -> {
+                // SCE-MAP: test364.scxml:9
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -464,6 +467,7 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S11 -> {
+                // SCE-MAP: test364.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
                 if (!suppressChildEntry) {
@@ -472,10 +476,12 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S111 -> {
+                // SCE-MAP: test364.scxml:15
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s111")) return
             }
             is Test364State.S11p1 -> {
+                // SCE-MAP: test364.scxml:16
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p1")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -484,6 +490,7 @@ class Test364StateMachine(
                 onEntry(Test364State.S11p12)
             }
             is Test364State.S11p11 -> {
+                // SCE-MAP: test364.scxml:17
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p11")) return
                 if (!suppressChildEntry) {
@@ -492,16 +499,19 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S11p111 -> {
+                // SCE-MAP: test364.scxml:18
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p111")) return
             }
             is Test364State.S11p112 -> {
+                // SCE-MAP: test364.scxml:19
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p112")) return
 
             raiseInternal(Test364Event.InS11p112)
             }
             is Test364State.S11p12 -> {
+                // SCE-MAP: test364.scxml:25
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p12")) return
                 if (!suppressChildEntry) {
@@ -510,14 +520,17 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S11p121 -> {
+                // SCE-MAP: test364.scxml:26
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p121")) return
             }
             is Test364State.S11p122 -> {
+                // SCE-MAP: test364.scxml:27
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p122")) return
             }
             is Test364State.S2 -> {
+                // SCE-MAP: test364.scxml:35
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
                 if (!suppressChildEntry) {
@@ -531,6 +544,7 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S21 -> {
+                // SCE-MAP: test364.scxml:40
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21")) return
                 if (!suppressChildEntry) {
@@ -539,10 +553,12 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S211 -> {
+                // SCE-MAP: test364.scxml:41
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s211")) return
             }
             is Test364State.S21p1 -> {
+                // SCE-MAP: test364.scxml:42
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p1")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -551,6 +567,7 @@ class Test364StateMachine(
                 onEntry(Test364State.S21p12)
             }
             is Test364State.S21p11 -> {
+                // SCE-MAP: test364.scxml:43
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p11")) return
                 if (!suppressChildEntry) {
@@ -559,16 +576,19 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S21p111 -> {
+                // SCE-MAP: test364.scxml:44
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p111")) return
             }
             is Test364State.S21p112 -> {
+                // SCE-MAP: test364.scxml:45
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p112")) return
 
             raiseInternal(Test364Event.InS21p112)
             }
             is Test364State.S21p12 -> {
+                // SCE-MAP: test364.scxml:51
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p12")) return
                 if (!suppressChildEntry) {
@@ -577,14 +597,17 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S21p121 -> {
+                // SCE-MAP: test364.scxml:52
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p121")) return
             }
             is Test364State.S21p122 -> {
+                // SCE-MAP: test364.scxml:53
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p122")) return
             }
             is Test364State.S3 -> {
+                // SCE-MAP: test364.scxml:61
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
                 if (!suppressChildEntry) {
@@ -593,6 +616,7 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S31 -> {
+                // SCE-MAP: test364.scxml:63
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s31")) return
                 if (!suppressChildEntry) {
@@ -601,6 +625,7 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S311 -> {
+                // SCE-MAP: test364.scxml:64
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s311")) return
                 if (!suppressChildEntry) {
@@ -609,18 +634,22 @@ class Test364StateMachine(
                 }
             }
             is Test364State.S3111 -> {
+                // SCE-MAP: test364.scxml:65
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3111")) return
             }
             is Test364State.S3112 -> {
+                // SCE-MAP: test364.scxml:68
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3112")) return
             }
             is Test364State.S312 -> {
+                // SCE-MAP: test364.scxml:69
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s312")) return
             }
             is Test364State.S32 -> {
+                // SCE-MAP: test364.scxml:70
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s32")) return
             }
@@ -632,21 +661,27 @@ class Test364StateMachine(
     override fun onExit(state: Test364State) {
         when (state) {
             is Test364State.Fail -> {
+                // SCE-MAP: test364.scxml:76
                 activeStateIds.remove("fail")
             }
             is Test364State.Pass -> {
+                // SCE-MAP: test364.scxml:75
                 activeStateIds.remove("pass")
             }
             is Test364State.S1 -> {
+                // SCE-MAP: test364.scxml:9
                 activeStateIds.remove("s1")
             }
             is Test364State.S11 -> {
+                // SCE-MAP: test364.scxml:14
                 activeStateIds.remove("s11")
             }
             is Test364State.S111 -> {
+                // SCE-MAP: test364.scxml:15
                 activeStateIds.remove("s111")
             }
             is Test364State.S11p1 -> {
+                // SCE-MAP: test364.scxml:16
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -678,33 +713,43 @@ class Test364StateMachine(
                 activeStateIds.remove("s11p1")
             }
             is Test364State.S11p11 -> {
+                // SCE-MAP: test364.scxml:17
                 activeStateIds.remove("s11p11")
             }
             is Test364State.S11p111 -> {
+                // SCE-MAP: test364.scxml:18
                 activeStateIds.remove("s11p111")
             }
             is Test364State.S11p112 -> {
+                // SCE-MAP: test364.scxml:19
                 activeStateIds.remove("s11p112")
             }
             is Test364State.S11p12 -> {
+                // SCE-MAP: test364.scxml:25
                 activeStateIds.remove("s11p12")
             }
             is Test364State.S11p121 -> {
+                // SCE-MAP: test364.scxml:26
                 activeStateIds.remove("s11p121")
             }
             is Test364State.S11p122 -> {
+                // SCE-MAP: test364.scxml:27
                 activeStateIds.remove("s11p122")
             }
             is Test364State.S2 -> {
+                // SCE-MAP: test364.scxml:35
                 activeStateIds.remove("s2")
             }
             is Test364State.S21 -> {
+                // SCE-MAP: test364.scxml:40
                 activeStateIds.remove("s21")
             }
             is Test364State.S211 -> {
+                // SCE-MAP: test364.scxml:41
                 activeStateIds.remove("s211")
             }
             is Test364State.S21p1 -> {
+                // SCE-MAP: test364.scxml:42
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -736,42 +781,55 @@ class Test364StateMachine(
                 activeStateIds.remove("s21p1")
             }
             is Test364State.S21p11 -> {
+                // SCE-MAP: test364.scxml:43
                 activeStateIds.remove("s21p11")
             }
             is Test364State.S21p111 -> {
+                // SCE-MAP: test364.scxml:44
                 activeStateIds.remove("s21p111")
             }
             is Test364State.S21p112 -> {
+                // SCE-MAP: test364.scxml:45
                 activeStateIds.remove("s21p112")
             }
             is Test364State.S21p12 -> {
+                // SCE-MAP: test364.scxml:51
                 activeStateIds.remove("s21p12")
             }
             is Test364State.S21p121 -> {
+                // SCE-MAP: test364.scxml:52
                 activeStateIds.remove("s21p121")
             }
             is Test364State.S21p122 -> {
+                // SCE-MAP: test364.scxml:53
                 activeStateIds.remove("s21p122")
             }
             is Test364State.S3 -> {
+                // SCE-MAP: test364.scxml:61
                 activeStateIds.remove("s3")
             }
             is Test364State.S31 -> {
+                // SCE-MAP: test364.scxml:63
                 activeStateIds.remove("s31")
             }
             is Test364State.S311 -> {
+                // SCE-MAP: test364.scxml:64
                 activeStateIds.remove("s311")
             }
             is Test364State.S3111 -> {
+                // SCE-MAP: test364.scxml:65
                 activeStateIds.remove("s3111")
             }
             is Test364State.S3112 -> {
+                // SCE-MAP: test364.scxml:68
                 activeStateIds.remove("s3112")
             }
             is Test364State.S312 -> {
+                // SCE-MAP: test364.scxml:69
                 activeStateIds.remove("s312")
             }
             is Test364State.S32 -> {
+                // SCE-MAP: test364.scxml:70
                 activeStateIds.remove("s32")
             }
         }

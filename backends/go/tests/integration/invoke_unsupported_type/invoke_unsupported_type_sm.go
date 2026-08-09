@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -334,6 +334,7 @@ func (p *InvokeUnsupportedTypePolicy) ClearEventMetadata() {
 func (p *InvokeUnsupportedTypePolicy) ExecuteEntryActions(state InvokeUnsupportedTypeState, engine *sce.Engine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent]) {
 	switch state {
 	case InvokeUnsupportedTypeStateProbe:
+		//line invoke_unsupported_type.scxml:38
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and

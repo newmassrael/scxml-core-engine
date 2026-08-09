@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -136,18 +136,21 @@ class AutoforwardDoneInvokeStateMachine(
     override fun onEntry(state: AutoforwardDoneInvokeState) {
         when (state) {
             is AutoforwardDoneInvokeState.Fail -> {
+                // SCE-MAP: autoforward_done_invoke.scxml:92
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeState.Pass -> {
+                // SCE-MAP: autoforward_done_invoke.scxml:91
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeState.Phase -> {
+                // SCE-MAP: autoforward_done_invoke.scxml:58
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -179,12 +182,15 @@ class AutoforwardDoneInvokeStateMachine(
     override fun onExit(state: AutoforwardDoneInvokeState) {
         when (state) {
             is AutoforwardDoneInvokeState.Fail -> {
+                // SCE-MAP: autoforward_done_invoke.scxml:92
                 activeStateIds.remove("fail")
             }
             is AutoforwardDoneInvokeState.Pass -> {
+                // SCE-MAP: autoforward_done_invoke.scxml:91
                 activeStateIds.remove("pass")
             }
             is AutoforwardDoneInvokeState.Phase -> {
+                // SCE-MAP: autoforward_done_invoke.scxml:58
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit

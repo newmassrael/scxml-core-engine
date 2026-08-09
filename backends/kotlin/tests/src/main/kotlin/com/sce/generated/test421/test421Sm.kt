@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -157,18 +157,21 @@ class Test421StateMachine(
     override fun onEntry(state: Test421State) {
         when (state) {
             is Test421State.Fail -> {
+                // SCE-MAP: test421.scxml:32
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test421State.Pass -> {
+                // SCE-MAP: test421.scxml:31
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test421State.S1 -> {
+                // SCE-MAP: test421.scxml:9
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -184,10 +187,12 @@ class Test421StateMachine(
             raiseInternal(Test421Event.InternalEvent4)
             }
             is Test421State.S11 -> {
+                // SCE-MAP: test421.scxml:20
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
             }
             is Test421State.S12 -> {
+                // SCE-MAP: test421.scxml:24
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
             }
@@ -199,18 +204,23 @@ class Test421StateMachine(
     override fun onExit(state: Test421State) {
         when (state) {
             is Test421State.Fail -> {
+                // SCE-MAP: test421.scxml:32
                 activeStateIds.remove("fail")
             }
             is Test421State.Pass -> {
+                // SCE-MAP: test421.scxml:31
                 activeStateIds.remove("pass")
             }
             is Test421State.S1 -> {
+                // SCE-MAP: test421.scxml:9
                 activeStateIds.remove("s1")
             }
             is Test421State.S11 -> {
+                // SCE-MAP: test421.scxml:20
                 activeStateIds.remove("s11")
             }
             is Test421State.S12 -> {
+                // SCE-MAP: test421.scxml:24
                 activeStateIds.remove("s12")
             }
         }

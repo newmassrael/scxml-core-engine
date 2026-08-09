@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -102,12 +102,14 @@ class InvokeUnsupportedTypeStateMachine(
     override fun onEntry(state: InvokeUnsupportedTypeState) {
         when (state) {
             is InvokeUnsupportedTypeState.Pass -> {
+                // SCE-MAP: invoke_unsupported_type.scxml:42
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokeUnsupportedTypeState.Probe -> {
+                // SCE-MAP: invoke_unsupported_type.scxml:38
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("probe")) return
                 // W3C SCXML 6.4.1: `type` names no processor this platform
@@ -130,9 +132,11 @@ class InvokeUnsupportedTypeStateMachine(
     override fun onExit(state: InvokeUnsupportedTypeState) {
         when (state) {
             is InvokeUnsupportedTypeState.Pass -> {
+                // SCE-MAP: invoke_unsupported_type.scxml:42
                 activeStateIds.remove("pass")
             }
             is InvokeUnsupportedTypeState.Probe -> {
+                // SCE-MAP: invoke_unsupported_type.scxml:38
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 activeStateIds.remove("probe")

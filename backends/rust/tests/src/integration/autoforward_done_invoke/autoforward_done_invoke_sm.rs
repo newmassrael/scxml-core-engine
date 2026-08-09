@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -691,6 +691,7 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
     ) {
         match state {
             AutoforwardDoneInvokeState::Phase => {
+                // SCE-MAP: autoforward_done_invoke.scxml:58
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -804,6 +805,7 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
             AutoforwardDoneInvokeState::Phase => {
                 match self.last_transition_index {
                     0 => {
+                        // SCE-MAP: autoforward_done_invoke.scxml:84
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {

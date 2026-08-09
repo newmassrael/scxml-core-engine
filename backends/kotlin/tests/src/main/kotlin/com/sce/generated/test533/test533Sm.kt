@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -359,12 +359,14 @@ class Test533StateMachine(
     override fun onEntry(state: Test533State) {
         when (state) {
             is Test533State.Fail -> {
+                // SCE-MAP: test533.scxml:64
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test533State.P -> {
+                // SCE-MAP: test533.scxml:21
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -373,20 +375,24 @@ class Test533StateMachine(
                 onEntry(Test533State.Ps2)
             }
             is Test533State.Pass -> {
+                // SCE-MAP: test533.scxml:63
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test533State.Ps1 -> {
+                // SCE-MAP: test533.scxml:33
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ps1")) return
             }
             is Test533State.Ps2 -> {
+                // SCE-MAP: test533.scxml:38
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ps2")) return
             }
             is Test533State.S1 -> {
+                // SCE-MAP: test533.scxml:13
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -395,14 +401,17 @@ class Test533StateMachine(
             raiseInternal(Test533Event.Bar)
             }
             is Test533State.S2 -> {
+                // SCE-MAP: test533.scxml:45
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
             is Test533State.S3 -> {
+                // SCE-MAP: test533.scxml:51
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             }
             is Test533State.S4 -> {
+                // SCE-MAP: test533.scxml:57
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
             }
@@ -414,9 +423,11 @@ class Test533StateMachine(
     override fun onExit(state: Test533State) {
         when (state) {
             is Test533State.Fail -> {
+                // SCE-MAP: test533.scxml:64
                 activeStateIds.remove("fail")
             }
             is Test533State.P -> {
+                // SCE-MAP: test533.scxml:21
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -439,30 +450,37 @@ class Test533StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test533State.Pass -> {
+                // SCE-MAP: test533.scxml:63
                 activeStateIds.remove("pass")
             }
             is Test533State.Ps1 -> {
+                // SCE-MAP: test533.scxml:33
                 activeStateIds.remove("ps1")
 
 
             executeAssign("Var2", "Var2 + 1")
             }
             is Test533State.Ps2 -> {
+                // SCE-MAP: test533.scxml:38
                 activeStateIds.remove("ps2")
 
 
             executeAssign("Var3", "Var3 + 1")
             }
             is Test533State.S1 -> {
+                // SCE-MAP: test533.scxml:13
                 activeStateIds.remove("s1")
             }
             is Test533State.S2 -> {
+                // SCE-MAP: test533.scxml:45
                 activeStateIds.remove("s2")
             }
             is Test533State.S3 -> {
+                // SCE-MAP: test533.scxml:51
                 activeStateIds.remove("s3")
             }
             is Test533State.S4 -> {
+                // SCE-MAP: test533.scxml:57
                 activeStateIds.remove("s4")
             }
         }

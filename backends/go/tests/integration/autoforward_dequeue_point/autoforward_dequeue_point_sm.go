@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -468,6 +468,7 @@ func (p *AutoforwardDequeuePointPolicy) ClearEventMetadata() {
 func (p *AutoforwardDequeuePointPolicy) ExecuteEntryActions(state AutoforwardDequeuePointState, engine *sce.Engine[AutoforwardDequeuePointState, AutoforwardDequeuePointEvent]) {
 	switch state {
 	case AutoforwardDequeuePointStatePhase:
+		//line autoforward_dequeue_point.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_probe", "phase", sce.NextInvokeCounter())

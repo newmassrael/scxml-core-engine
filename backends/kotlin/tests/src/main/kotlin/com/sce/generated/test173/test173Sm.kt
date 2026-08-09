@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -236,18 +236,21 @@ class Test173StateMachine(
     override fun onEntry(state: Test173State) {
         when (state) {
             is Test173State.Fail -> {
+                // SCE-MAP: test173.scxml:22
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test173State.Pass -> {
+                // SCE-MAP: test173.scxml:21
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test173State.S0 -> {
+                // SCE-MAP: test173.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -298,12 +301,15 @@ class Test173StateMachine(
     override fun onExit(state: Test173State) {
         when (state) {
             is Test173State.Fail -> {
+                // SCE-MAP: test173.scxml:22
                 activeStateIds.remove("fail")
             }
             is Test173State.Pass -> {
+                // SCE-MAP: test173.scxml:21
                 activeStateIds.remove("pass")
             }
             is Test173State.S0 -> {
+                // SCE-MAP: test173.scxml:10
                 activeStateIds.remove("s0")
             }
         }
