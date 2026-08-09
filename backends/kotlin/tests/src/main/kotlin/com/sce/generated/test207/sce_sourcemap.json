@@ -51,7 +51,8 @@
         44,
         44
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test207__s02___state_body": {
       "scxml_file": "test207.scxml",
@@ -71,7 +72,8 @@
         50,
         50
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "pass"
     },
     "test207__s02___transition_1": {
       "scxml_file": "test207.scxml",
@@ -81,7 +83,8 @@
         51,
         51
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "fail"
     },
     "test207__s02___transition_2": {
       "scxml_file": "test207.scxml",
@@ -91,7 +94,8 @@
         52,
         52
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test207__s0___on_entry_0_0": {
       "scxml_file": "test207.scxml",

@@ -61,7 +61,8 @@
         24,
         24
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test224__s1___state_body": {
       "scxml_file": "test224.scxml",

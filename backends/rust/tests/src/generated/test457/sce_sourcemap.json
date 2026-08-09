@@ -91,7 +91,8 @@
         23,
         23
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test457__s0___transition_1": {
       "scxml_file": "test457.scxml",
@@ -101,7 +102,8 @@
         24,
         24
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test457__s1___on_entry_0_0": {
       "scxml_file": "test457.scxml",
@@ -141,7 +143,8 @@
         35,
         35
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test457__s1___transition_1": {
       "scxml_file": "test457.scxml",
@@ -151,7 +154,8 @@
         36,
         36
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bar"
     },
     "test457__s2___state_body": {
       "scxml_file": "test457.scxml",

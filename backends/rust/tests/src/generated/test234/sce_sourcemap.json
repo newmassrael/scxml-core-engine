@@ -41,7 +41,8 @@
         37,
         37
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test234__p01___transition_1": {
       "scxml_file": "test234.scxml",
@@ -51,7 +52,8 @@
         38,
         38
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test234__p02___state_body": {
       "scxml_file": "test234.scxml",
@@ -91,7 +93,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test234__pass___state_body": {
       "scxml_file": "test234.scxml",

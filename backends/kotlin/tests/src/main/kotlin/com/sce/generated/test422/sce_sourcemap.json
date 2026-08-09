@@ -91,7 +91,8 @@
         18,
         18
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "invokeS1 invokeS12"
     },
     "test422__s1___transition_1": {
       "scxml_file": "test422.scxml",
@@ -101,7 +102,8 @@
         21,
         21
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "invokeS11"
     },
     "test422__s1___transition_2": {
       "scxml_file": "test422.scxml",
@@ -111,7 +113,8 @@
         23,
         23
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test422__s1___transition_3": {
       "scxml_file": "test422.scxml",
@@ -121,7 +124,8 @@
         24,
         24
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

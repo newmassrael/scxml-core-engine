@@ -51,7 +51,8 @@
         54,
         54
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childRunning"
     },
     "test253__s02___state_body": {
       "scxml_file": "test253.scxml",
@@ -111,7 +112,8 @@
         74,
         74
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "success"
     },
     "test253__s03___transition_1": {
       "scxml_file": "test253.scxml",
@@ -121,7 +123,8 @@
         75,
         75
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "fail"
     },
     "test253__s0___on_entry_0_0": {
       "scxml_file": "test253.scxml",
@@ -151,7 +154,8 @@
         18,
         18
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

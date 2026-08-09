@@ -61,7 +61,8 @@
         12,
         12
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "s0Event"
     },
     "test348__s0___transition_1": {
       "scxml_file": "test348.scxml",
@@ -71,7 +72,8 @@
         13,
         13
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

@@ -81,7 +81,8 @@
         9,
         9
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.state.s0"
     },
     "test527__s0___transition_1": {
       "scxml_file": "test527.scxml",
@@ -91,7 +92,8 @@
         12,
         12
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.state.s0"
     }
   }
 }

@@ -51,7 +51,8 @@
         29,
         29
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test347__s02___on_entry_0_0": {
       "scxml_file": "test347.scxml",
@@ -81,7 +82,8 @@
         36,
         36
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test347__s02___transition_1": {
       "scxml_file": "test347.scxml",
@@ -91,7 +93,8 @@
         37,
         37
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error"
     },
     "test347__s0___on_entry_0_0": {
       "scxml_file": "test347.scxml",
@@ -121,7 +124,8 @@
         26,
         26
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

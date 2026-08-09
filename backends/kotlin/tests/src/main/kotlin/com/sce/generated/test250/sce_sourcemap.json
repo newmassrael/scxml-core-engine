@@ -51,7 +51,8 @@
         42,
         42
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     }
   }
 }

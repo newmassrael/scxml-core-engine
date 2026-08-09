@@ -71,7 +71,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test346__s0___transition_1": {
       "scxml_file": "test346.scxml",
@@ -81,7 +82,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test346__s1___on_entry_0_0": {
       "scxml_file": "test346.scxml",
@@ -121,7 +123,8 @@
         26,
         26
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test346__s1___transition_1": {
       "scxml_file": "test346.scxml",
@@ -131,7 +134,8 @@
         27,
         27
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test346__s1___transition_2": {
       "scxml_file": "test346.scxml",
@@ -141,7 +145,8 @@
         30,
         30
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test346__s2___on_entry_0_0": {
       "scxml_file": "test346.scxml",
@@ -181,7 +186,8 @@
         38,
         38
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test346__s2___transition_1": {
       "scxml_file": "test346.scxml",
@@ -191,7 +197,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test346__s2___transition_2": {
       "scxml_file": "test346.scxml",
@@ -201,7 +208,8 @@
         40,
         40
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test346__s3___on_entry_0_0": {
       "scxml_file": "test346.scxml",
@@ -241,7 +249,8 @@
         48,
         48
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event3"
     },
     "test346__s3___transition_1": {
       "scxml_file": "test346.scxml",
@@ -251,7 +260,8 @@
         49,
         49
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test346__s3___transition_2": {
       "scxml_file": "test346.scxml",
@@ -261,7 +271,8 @@
         50,
         50
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

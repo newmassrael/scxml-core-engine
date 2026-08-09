@@ -51,7 +51,8 @@
         34,
         34
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test579__s01___transition_1": {
       "scxml_file": "test579.scxml",
@@ -61,7 +62,8 @@
         35,
         35
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test579__s02___state_body": {
       "scxml_file": "test579.scxml",
@@ -81,7 +83,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test579__s02___transition_1": {
       "scxml_file": "test579.scxml",
@@ -91,7 +94,8 @@
         40,
         40
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test579__s03___state_body": {
       "scxml_file": "test579.scxml",
@@ -111,7 +115,8 @@
         44,
         44
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event3"
     },
     "test579__s03___transition_1": {
       "scxml_file": "test579.scxml",
@@ -121,7 +126,8 @@
         45,
         45
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test579__s03___transition_2": {
       "scxml_file": "test579.scxml",
@@ -131,7 +137,8 @@
         46,
         46
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test579__s0___on_entry_0_0": {
       "scxml_file": "test579.scxml",
@@ -191,7 +198,8 @@
         51,
         51
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test579__s2___transition_1": {
       "scxml_file": "test579.scxml",
@@ -201,7 +209,8 @@
         52,
         52
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test579__s3___state_body": {
       "scxml_file": "test579.scxml",
@@ -221,7 +230,8 @@
         57,
         57
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event3"
     },
     "test579__s3___transition_1": {
       "scxml_file": "test579.scxml",
@@ -231,7 +241,8 @@
         58,
         58
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

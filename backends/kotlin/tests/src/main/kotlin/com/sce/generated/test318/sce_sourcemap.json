@@ -61,7 +61,8 @@
         14,
         14
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test318__s1___on_entry_0_0": {
       "scxml_file": "test318.scxml",

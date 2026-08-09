@@ -61,7 +61,8 @@
         22,
         22
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo bar"
     },
     "test399__s02___on_entry_0_0": {
       "scxml_file": "test399.scxml",
@@ -91,7 +92,8 @@
         30,
         30
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo bar"
     },
     "test399__s03___on_entry_0_0": {
       "scxml_file": "test399.scxml",
@@ -121,7 +123,8 @@
         38,
         38
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo bar"
     },
     "test399__s04___on_entry_0_0": {
       "scxml_file": "test399.scxml",
@@ -151,7 +154,8 @@
         46,
         46
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test399__s04___transition_1": {
       "scxml_file": "test399.scxml",
@@ -161,7 +165,8 @@
         47,
         47
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foos"
     },
     "test399__s05___on_entry_0_0": {
       "scxml_file": "test399.scxml",
@@ -191,7 +196,8 @@
         55,
         55
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo.*"
     },
     "test399__s06___on_entry_0_0": {
       "scxml_file": "test399.scxml",
@@ -221,7 +227,8 @@
         63,
         63
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test399__s0___on_entry_0_0": {
       "scxml_file": "test399.scxml",
@@ -251,7 +258,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

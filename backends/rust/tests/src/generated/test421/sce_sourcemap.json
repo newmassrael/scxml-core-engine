@@ -51,7 +51,8 @@
         21,
         21
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "internalEvent3"
     },
     "test421__s12___state_body": {
       "scxml_file": "test421.scxml",
@@ -71,7 +72,8 @@
         25,
         25
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "internalEvent4"
     },
     "test421__s1___on_entry_0_0": {
       "scxml_file": "test421.scxml",
@@ -141,7 +143,8 @@
         18,
         18
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "externalEvent"
     }
   }
 }

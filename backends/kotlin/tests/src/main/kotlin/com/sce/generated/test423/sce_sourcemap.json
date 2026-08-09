@@ -81,7 +81,8 @@
         14,
         14
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "internalEvent"
     },
     "test423__s0___transition_1": {
       "scxml_file": "test423.scxml",
@@ -91,7 +92,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test423__s1___state_body": {
       "scxml_file": "test423.scxml",
@@ -111,7 +113,8 @@
         20,
         20
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "externalEvent2"
     },
     "test423__s1___transition_1": {
       "scxml_file": "test423.scxml",
@@ -121,7 +124,8 @@
         21,
         21
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "internalEvent"
     }
   }
 }

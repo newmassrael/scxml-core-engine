@@ -81,7 +81,8 @@
         19,
         19
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test329__s0___transition_1": {
       "scxml_file": "test329.scxml",
@@ -91,7 +92,8 @@
         20,
         20
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test329__s1___on_entry_0_0": {
       "scxml_file": "test329.scxml",

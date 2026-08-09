@@ -61,7 +61,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test277__s0___transition_1": {
       "scxml_file": "test277.scxml",
@@ -71,7 +72,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test277__s1___on_entry_0_0": {
       "scxml_file": "test277.scxml",

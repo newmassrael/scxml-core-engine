@@ -71,7 +71,8 @@
         11,
         11
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.communication"
     },
     "test496__s0___transition_1": {
       "scxml_file": "test496.scxml",
@@ -81,7 +82,8 @@
         12,
         12
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

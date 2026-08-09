@@ -81,7 +81,8 @@
         9,
         9
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test528__s0___transition_1": {
       "scxml_file": "test528.scxml",
@@ -91,7 +92,8 @@
         10,
         10
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.state.s0"
     },
     "test528__s1___state_body": {
       "scxml_file": "test528.scxml",
@@ -111,7 +113,8 @@
         28,
         28
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.state.s0"
     },
     "test528__s1___transition_1": {
       "scxml_file": "test528.scxml",
@@ -121,7 +124,8 @@
         29,
         29
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

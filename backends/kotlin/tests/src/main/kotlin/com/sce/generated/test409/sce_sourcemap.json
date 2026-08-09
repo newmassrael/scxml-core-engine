@@ -111,7 +111,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test409__s0___transition_1": {
       "scxml_file": "test409.scxml",
@@ -121,7 +122,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     }
   }
 }
