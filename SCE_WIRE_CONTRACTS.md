@@ -67,6 +67,35 @@ checked-in schema without linking the `sce-build` crate.
      surface, and — walking the other way — every schema checked into
      `schemas/` or `apis/` is a declared surface, so a schema cannot
      land on disk and stay unregistered)
+4. **Each shape claim is checked against real instances.** A schema
+   nothing is validated against is a document, not a contract: the
+   drift guards in item 3 compare a constant to a header and never put
+   a produced artifact through the schema. For every JSON surface a
+   test runs emitted artifacts through a draft-07 validator, and a
+   negative case pins that the validator rejects — a positive sweep
+   alone proves only that everything is accepted. The table lives in
+   `wire_surface_stability.rs::INSTANCE_VALIDATION`, which fails if a
+   surface has no row, if a named test no longer exists, or if this
+   list stops naming it:
+   - Diagnostics — `every_golden_record_validates_against_the_wire_schema`
+     (the golden table, which `every_code_has_a_golden` proves reaches
+     every `DiagnosticCode`) and
+     `every_cli_diagnostic_in_the_fixture_corpus_validates_against_the_schema`
+     (the CLI's own stderr, over the fixture corpus in every backend).
+     The two record sets are disjoint: goldens are hand-authored
+     instances, the corpus produces different ones.
+   - Forge AST — `round_trip_every_kind`
+   - Sourcemap sidecar — `committed_sourcemaps_validate_against_the_wire_schema`
+     (every committed sidecar; paired with the regeneration gate in the
+     same file, this also covers what the generator emits today)
+   - Stdout manifest — `generate_manifest_instance_validates_against_schema`
+     and `check_manifest_validates_against_the_wire_schema`
+   - Symbol lookup — `both_lookup_directions_validate_against_the_wire_schema`
+
+   The authoring grammar is not in that table because it is not
+   validated by a test: `forge::xsd_validator` validates **every input
+   document** against `sce-forge.xsd` on the production path, before
+   codegen, which is the stronger property.
 
 ## Flipping a surface to `stable`
 
