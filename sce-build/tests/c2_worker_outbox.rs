@@ -53,6 +53,9 @@ fn template_dir() -> PathBuf {
 /// included so workers can also coexist with statecharts that wire
 /// `<sce:on-sample>` against this link (covers cross-validator
 /// no-interference cases).
+///
+/// Stage via [`write_link_with_pool`] rather than directly: the
+/// stage-pool ref below has to name a document the build can see.
 fn link_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -65,6 +68,36 @@ fn link_doc(name: &str) -> String {
   <sce:stage-pool ref="scout_stage_pool"/>
 </scxml>"##
     )
+}
+
+/// The buffer-pool that [`link_doc`]'s `<sce:stage-pool ref>` names.
+///
+/// `Sample::take()` copies into this pool, so the ref has to resolve
+/// to a real document — `link/pool-ref-not-declared` refuses a link
+/// whose pool ref names nothing, which is the same join deploy.yaml's
+/// `stage_pool:` has always been held to
+/// (`mesh/deploy-stage-pool-not-declared`). Slot size is a whole
+/// multiple of the declared 32-byte alignment.
+fn stage_pool_doc() -> &'static str {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="buffer-pool" name="scout_stage_pool" version="1.0">
+  <sce:slot-count>8</sce:slot-count>
+  <sce:slot-size>1536</sce:slot-size>
+  <sce:section>sram1</sce:section>
+  <sce:alignment>32</sce:alignment>
+  <sce:cache-policy>none</sce:cache-policy>
+</scxml>"##
+}
+
+/// Stage [`link_doc`] together with the pool its stage-pool ref names.
+/// Returns `(pool, link)` in the order the forge input list wants
+/// them, so call sites read `&[pool.as_path(), link.as_path(), …]`.
+fn write_link_with_pool(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let pool = write_doc(dir, "scout_stage_pool.scxml", stage_pool_doc());
+    let link = write_doc(dir, &format!("{name}.scxml"), &link_doc(name));
+    (pool, link)
 }
 
 /// Worker doc with explicit outbox. The link-rx alias matches the
@@ -148,7 +181,7 @@ fn happy_outbox_to_statechart_basic() {
     // to a registered statechart kind; suffix is `inbox`; the
     // validator passes silently.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let worker = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -165,10 +198,13 @@ fn happy_outbox_to_statechart_basic() {
         &statechart_named("session_fsm"),
     );
 
-    let outputs = run_orchestrator(&[statechart.as_path()], &[link.as_path(), worker.as_path()])
-        .expect("happy outbox→statechart must compile");
+    let outputs = run_orchestrator(
+        &[statechart.as_path()],
+        &[pool.as_path(), link.as_path(), worker.as_path()],
+    )
+    .expect("happy outbox→statechart must compile");
 
-    assert_eq!(outputs.len(), 3, "1 statechart + 2 forge → 3 outputs");
+    assert_eq!(outputs.len(), 4, "1 statechart + 3 forge → 4 outputs");
 }
 
 // ─── 2. happy_outbox_to_statechart_alongside_link ────────────────────
@@ -179,7 +215,7 @@ fn happy_outbox_to_statechart_alongside_link() {
     // via `<sce:on-sample>` — exercises both cross-validators in the
     // same build with no interference.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let worker = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -202,11 +238,11 @@ fn happy_outbox_to_statechart_alongside_link() {
 
     let outputs = run_orchestrator(
         &[session.as_path(), observer.as_path()],
-        &[link.as_path(), worker.as_path()],
+        &[pool.as_path(), link.as_path(), worker.as_path()],
     )
     .expect("happy outbox→statechart with sibling stm must compile");
 
-    assert_eq!(outputs.len(), 4);
+    assert_eq!(outputs.len(), 5);
 }
 
 // ─── 3. happy_outbox_to_worker_basic ─────────────────────────────────
@@ -216,7 +252,7 @@ fn happy_outbox_to_worker_basic() {
     // Worker→worker outbox is legal. `rx_loop`
     // routes to `tx_loop.inbox`; both workers in the same build.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -230,10 +266,13 @@ fn happy_outbox_to_worker_basic() {
         &worker_without_outbox("tx_loop", "scout_link", "scout_link.scxml"),
     );
 
-    let outputs = run_orchestrator(&[], &[link.as_path(), rx.as_path(), tx.as_path()])
-        .expect("worker→worker outbox must compile");
+    let outputs = run_orchestrator(
+        &[],
+        &[pool.as_path(), link.as_path(), rx.as_path(), tx.as_path()],
+    )
+    .expect("worker→worker outbox must compile");
 
-    assert_eq!(outputs.len(), 3, "3 forge files → 3 outputs");
+    assert_eq!(outputs.len(), 4, "4 forge files → 4 outputs");
 }
 
 // ─── 4. happy_outbox_to_worker_self_reference ────────────────────────
@@ -245,19 +284,19 @@ fn happy_outbox_to_worker_self_reference() {
     // guidance). `rx_loop.inbox` resolves to the same worker that
     // owns the outbox.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
         &worker_with_outbox("rx_loop", "scout_link", "scout_link.scxml", "rx_loop.inbox"),
     );
 
-    let outputs = run_orchestrator(&[], &[link.as_path(), rx.as_path()]).expect(
+    let outputs = run_orchestrator(&[], &[pool.as_path(), link.as_path(), rx.as_path()]).expect(
         "self-referencing outbox must compile (validator surfaces \
              resolution, not style)",
     );
 
-    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs.len(), 3);
 }
 
 // ─── 5. unknown_outbox_owner_fires ───────────────────────────────────
@@ -270,7 +309,7 @@ fn unknown_outbox_owner_fires() {
     // includes every registered recipient (here: only `rx_loop.inbox`
     // — the worker's own name).
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -282,7 +321,7 @@ fn unknown_outbox_owner_fires() {
         ),
     );
 
-    let err = match run_orchestrator(&[], &[link.as_path(), rx.as_path()]) {
+    let err = match run_orchestrator(&[], &[pool.as_path(), link.as_path(), rx.as_path()]) {
         Ok(_) => panic!("unknown outbox owner must fire diagnostic"),
         Err(e) => e,
     };
@@ -318,7 +357,7 @@ fn unknown_outbox_owner_with_busy_registry() {
     // is non-trivial and confirms the sorted-union shape from
     // `names_of_any_kind(statechart + worker)`.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -338,7 +377,7 @@ fn unknown_outbox_owner_with_busy_registry() {
 
     let err = match run_orchestrator(
         &[session.as_path(), observer.as_path()],
-        &[link.as_path(), rx.as_path()],
+        &[pool.as_path(), link.as_path(), rx.as_path()],
     ) {
         Ok(_) => panic!("unknown outbox owner must fire diagnostic"),
         Err(e) => e,
@@ -377,7 +416,7 @@ fn wrong_kind_outbox_to_link_fires() {
     // name. Diagnostic: `worker/outbox-target-wrong-kind` with
     // `actual_kind = "link"`.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -389,7 +428,7 @@ fn wrong_kind_outbox_to_link_fires() {
         ),
     );
 
-    let err = match run_orchestrator(&[], &[link.as_path(), rx.as_path()]) {
+    let err = match run_orchestrator(&[], &[pool.as_path(), link.as_path(), rx.as_path()]) {
         Ok(_) => panic!("outbox→link must fire wrong-kind diagnostic"),
         Err(e) => e,
     };
@@ -420,7 +459,7 @@ fn wrong_kind_outbox_to_link_with_valid_alts() {
     // the candidate list is non-empty and the author has a clear
     // repair target.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -437,7 +476,10 @@ fn wrong_kind_outbox_to_link_with_valid_alts() {
         &statechart_named("session_fsm"),
     );
 
-    let err = match run_orchestrator(&[session.as_path()], &[link.as_path(), rx.as_path()]) {
+    let err = match run_orchestrator(
+        &[session.as_path()],
+        &[pool.as_path(), link.as_path(), rx.as_path()],
+    ) {
         Ok(_) => panic!("outbox→link must fire wrong-kind diagnostic"),
         Err(e) => e,
     };
@@ -469,7 +511,7 @@ fn invalid_suffix_typo_inbx_fires() {
     // Diagnostic `worker/outbox-target-suffix-invalid` carries a
     // deterministic `Fix::ReplaceWith` for `{owner}.inbox`.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -486,7 +528,10 @@ fn invalid_suffix_typo_inbx_fires() {
         &statechart_named("session_fsm"),
     );
 
-    let err = match run_orchestrator(&[session.as_path()], &[link.as_path(), rx.as_path()]) {
+    let err = match run_orchestrator(
+        &[session.as_path()],
+        &[pool.as_path(), link.as_path(), rx.as_path()],
+    ) {
         Ok(_) => panic!("suffix typo must fire diagnostic"),
         Err(e) => e,
     };
@@ -517,7 +562,7 @@ fn invalid_suffix_bare_owner_no_dot_fires() {
     // `.inbox` suffix violates the strict shape. Routes to
     // suffix-invalid with an empty suffix string.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -529,7 +574,10 @@ fn invalid_suffix_bare_owner_no_dot_fires() {
         &statechart_named("session_fsm"),
     );
 
-    let err = match run_orchestrator(&[session.as_path()], &[link.as_path(), rx.as_path()]) {
+    let err = match run_orchestrator(
+        &[session.as_path()],
+        &[pool.as_path(), link.as_path(), rx.as_path()],
+    ) {
         Ok(_) => panic!("bare owner (no dot) must fire suffix-invalid"),
         Err(e) => e,
     };
@@ -562,7 +610,7 @@ fn empty_registry_with_outbox_fires_unknown() {
     // self owner, the unknown axis surfaces with empty-list peer
     // candidates (only the worker's own `.inbox` is in the list).
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -574,7 +622,7 @@ fn empty_registry_with_outbox_fires_unknown() {
         ),
     );
 
-    let err = match run_orchestrator(&[], &[link.as_path(), rx.as_path()]) {
+    let err = match run_orchestrator(&[], &[pool.as_path(), link.as_path(), rx.as_path()]) {
         Ok(_) => {
             panic!("minimal build with unknown outbox owner must fire diagnostic")
         }
@@ -607,7 +655,7 @@ fn multi_worker_fan_in_same_statechart() {
     // independently — neither validator failure short-circuits the
     // other.
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
+    let (pool, link) = write_link_with_pool(dir.path(), "scout_link");
     let rx = write_doc(
         dir.path(),
         "rx_loop.scxml",
@@ -636,9 +684,9 @@ fn multi_worker_fan_in_same_statechart() {
 
     let outputs = run_orchestrator(
         &[session.as_path()],
-        &[link.as_path(), rx.as_path(), tx.as_path()],
+        &[pool.as_path(), link.as_path(), rx.as_path(), tx.as_path()],
     )
     .expect("multi-worker fan-in to single statechart must compile");
 
-    assert_eq!(outputs.len(), 4);
+    assert_eq!(outputs.len(), 5);
 }

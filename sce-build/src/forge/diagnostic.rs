@@ -1051,6 +1051,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/pool-slot-smaller-than-framer-max")]
     LinkPoolSlotSmallerThanFramerMax,
 
+    /// RFC §synth-5-C / §synth-5-E cross-resolution: a
+    /// `<sce:rx-pool ref>` / `<sce:tx-pool ref>` / `<sce:stage-pool
+    /// ref>` on a link kind names no buffer-pool document reachable
+    /// from the build. Fires only from the multi-document entry point,
+    /// which is handed the closed world and can therefore separate a
+    /// typo from a partial topology; the single-document paths keep
+    /// their tolerance. Closes the silent-skip that let a
+    /// one-character slip in a pool ref switch the deploy-time
+    /// burst-absorption and reassembly validators off — those join on
+    /// the same name and `continue` when it misses. Candidate set is
+    /// the build's declared buffer-pool names ⇒ `Fix::ReplaceOneOf`.
+    #[serde(rename = "link/pool-ref-not-declared")]
+    LinkPoolRefNotDeclared,
+
     /// RFC §synth-5-E buffer-pool placement validation (item B7): declared
     /// `<sce:section>` body is not in deploy.yaml `machines.<m>.memory.
     /// sram_regions`. Validate-time — fires only via
@@ -2752,6 +2766,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         LinkBackpressureUndeclared,
         LinkClassUnsupportedOnTarget,
         LinkPoolSlotSmallerThanFramerMax,
+        LinkPoolRefNotDeclared,
         // BufferPool §synth-5-E DMA-aligned slot table (SCE Protocol-Synthesis RFC §synth-5-E, item B7)
         MemPoolSectionConflict,
         MemPoolTooLarge,
@@ -3178,7 +3193,8 @@ impl DiagnosticCode {
             | LinkLinkClassUnknown
             | LinkBackpressureUndeclared
             | LinkClassUnsupportedOnTarget
-            | LinkPoolSlotSmallerThanFramerMax => Some("SCE Protocol-Synthesis RFC §5.C"),
+            | LinkPoolSlotSmallerThanFramerMax
+            | LinkPoolRefNotDeclared => Some("SCE Protocol-Synthesis RFC §5.C"),
 
             // ── BufferPool §synth-5-E DMA-aligned slot table + the
             //    ownership pull-through + sample-callback Sample API
@@ -3846,6 +3862,7 @@ impl DiagnosticCode {
             LinkBackpressureUndeclared => "link/backpressure-undeclared",
             LinkClassUnsupportedOnTarget => "link/class-unsupported-on-target",
             LinkPoolSlotSmallerThanFramerMax => "link/pool-slot-smaller-than-framer-max",
+            LinkPoolRefNotDeclared => "link/pool-ref-not-declared",
             MemPoolSectionConflict => "mem/pool-section-conflict",
             MemPoolTooLarge => "mem/pool-too-large",
             MemInterPoolPaddingNotEmitted => "mem/inter-pool-padding-not-emitted",
@@ -5764,6 +5781,31 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 pool_slot_size.to_string(),
                 framer_alias.clone(),
                 framer_max_bytes.to_string(),
+            ],
+        },
+        ValidationError::LinkPoolRefNotDeclared {
+            link_name,
+            pool_side,
+            pool_ref,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::LinkPoolRefNotDeclared,
+            stage: Stage::Validation,
+            // Closed candidate set — the build's declared buffer-pool
+            // names — so the repair is machine-applicable. `actual`
+            // carries the ref as written, which is what an author
+            // greps for. The side rides `key_fragments` rather than
+            // `actual` so one link declaring the same bad name on two
+            // sides yields two distinct ids.
+            expected: None,
+            actual: Some(pool_ref.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![
+                link_name.clone(),
+                (*pool_side).to_string(),
+                pool_ref.clone(),
             ],
         },
         ValidationError::BufferPoolSectionConflict {
@@ -10088,6 +10130,17 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b02945fcd497fac4","code":"link/pool-slot-smaller-than-framer-max","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': rx-pool 'rx_pool_sram1' slot-size 64 bytes is smaller than framer 'scout_frame_codec' worst-case encoded size 256 bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body","actual":"64"}"#,
             ),
+            (
+                "forge/link-pool-ref-not-declared",
+                ValidationError::LinkPoolRefNotDeclared {
+                    link_name: "udp_scout".into(),
+                    pool_side: "rx",
+                    pool_ref: "rx_pool_sram".into(),
+                    candidates: vec!["rx_pool_sram1".into(), "tx_pool_sram1".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:297ea44f013980b0","code":"link/pool-ref-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': <sce:rx-pool ref=\"rx_pool_sram\"/> names no `sce:kind=\"buffer-pool\"` document in this build — declare the pool document and pass it to the build, or correct the ref to one of [\"rx_pool_sram1\", \"tx_pool_sram1\"]","actual":"rx_pool_sram","fix":{"kind":"replace_one_of","candidates":["rx_pool_sram1","tx_pool_sram1"]}}"#,
+            ),
             // ── §synth-5-E buffer-pool placement validate-time diagnostic ─
             (
                 "forge/mem-pool-section-conflict",
@@ -12154,6 +12207,7 @@ mod tests {
             | ValidationInvalidDirection
             | LinkLinkClassUnknown
             | LinkClassUnsupportedOnTarget
+            | LinkPoolRefNotDeclared
             | MemPoolSectionConflict
             | MeshDeployStagePoolNotDeclared
             | MeshDeployStagePoolWrongKind
@@ -13247,6 +13301,7 @@ mod tests {
                 | LinkBackpressureUndeclared
                 | LinkClassUnsupportedOnTarget
                 | LinkPoolSlotSmallerThanFramerMax
+                | LinkPoolRefNotDeclared
                 | MemPoolSectionConflict
                 | MemPoolTooLarge
                 | MemInterPoolPaddingNotEmitted
@@ -13459,9 +13514,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            338,
+            339,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 338 distinct variants to match the DiagnosticCode \
+             expected 339 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
