@@ -15,8 +15,8 @@
 # `codegen_binary_resolution` reads every tracked file too: it holds that no
 # harness names a cargo build profile when reaching for the sce-codegen
 # binary, and those sites span five languages with no common path prefix.
-# `cmake_mesh_guard_scope` reads every tracked CMake file, for the same
-# reason in a narrower alphabet: the mesh guard defaults to false, so a
+# `cmake_option_guard_scope` reads every tracked CMake file, for the same
+# reason in a narrower alphabet: an option can default to false, so a
 # block appended past its `endif()` configures cleanly and fails at build
 # time, and a directory can acquire a CMakeLists.txt anywhere.
 #
@@ -36,7 +36,7 @@ cargo test -p sce-build --features cli \
     --test workflow_trigger_coverage \
     --test hook_ci_parity \
     --test codegen_binary_resolution \
-    --test cmake_mesh_guard_scope \
+    --test cmake_option_guard_scope \
     --test gate_registry_contract \
     --test committed_sourcemap_drift \
     --test diagnostic_corpus_schema \
