@@ -329,19 +329,26 @@ const MIN_CODEGEN_BUILD_STEPS: usize = 12;
 ///
 /// The Cargo cache in these workflows restores all of `target`, while
 /// every `Build sce-codegen` step builds the debug profile alone. A
-/// `target/release/sce-codegen` left by an older cache therefore
-/// survives into a run that never produced it, and the CMake locator
-/// prefers the release path — which is how CI once executed a binary
+/// release binary left by an older cache therefore survives into a run
+/// that never produced it, and a debug-only build that has not yet
+/// produced its own binary leaves that stale one as the only candidate
+/// the locators can hand out — which is how CI once executed a binary
 /// predating a filter its own templates use and failed with
 /// "unknown filter: unsupported" while the source tree was consistent.
 ///
 /// Nothing else can see that: the source is self-consistent, every
 /// local run builds both profiles from the same tree, and the only
 /// evidence is a binary older than the checkout that produced it.
+///
+/// The needle is the locator call rather than the `rm` it performs.
+/// Which path holds a release binary is exactly the build-layout detail
+/// `codegen_binary_resolution.rs` keeps out of every file but the four
+/// locators, so a workflow spelling it out would satisfy this gate by
+/// breaking that one.
 #[test]
 fn debug_only_codegen_builds_drop_the_stale_release_binary() {
     const BUILD: &str = "cargo build --bin sce-codegen";
-    const DROP: &str = "rm -f target/release/sce-codegen";
+    const DROP: &str = "sce_codegen_drop_stale_release";
 
     let mut builds = 0usize;
     let mut offenders: Vec<String> = Vec::new();
@@ -364,9 +371,10 @@ fn debug_only_codegen_builds_drop_the_stale_release_binary() {
 
     assert!(
         offenders.is_empty(),
-        "a build step that produces only the debug binary must delete \
-         `target/release/sce-codegen` first, or the cache decides which \
-         binary CI runs:\n  {}",
+        "a build step that produces only the debug binary must call \
+         `sce_codegen_drop_stale_release` first (source \
+         scripts/lib/sce_codegen.sh), or the cache decides which binary \
+         CI runs:\n  {}",
         offenders.join("\n  "),
     );
     assert!(
