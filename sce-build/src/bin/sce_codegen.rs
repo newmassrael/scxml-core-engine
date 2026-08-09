@@ -410,9 +410,32 @@ static WORKSPACE_ROOT_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 /// process working directory.
 static SOURCE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
+/// Root the generated trees were written under, when `--output-dir`
+/// named one.
+///
+/// A second provenance root, not a replacement. Most inputs live under
+/// [`SOURCE_ROOT`], but a hybrid child's SCXML is *synthesised into the
+/// output tree* and read back from there, so under a foreign output root
+/// it has no relative spelling beneath the project root — provenance
+/// would fall back to the absolute path and the emitted bytes would then
+/// carry the directory they were written to.
+static OUTPUT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
 /// Read the installed provenance root, if any.
 fn current_source_root() -> Option<PathBuf> {
     SOURCE_ROOT.get().cloned()
+}
+
+/// Whether `path` resolves to somewhere beneath `root`.
+///
+/// Canonicalising both sides matches what `header_source_path` does when
+/// it computes the relative spelling, so this predicate and that
+/// computation cannot disagree about containment.
+fn path_is_under(path: &Path, root: &Path) -> bool {
+    match (fs::canonicalize(path), fs::canonicalize(root)) {
+        (Ok(p), Ok(r)) => p.starts_with(&r),
+        _ => false,
+    }
 }
 
 /// Read the installed override, if any. Callers pair this with
@@ -3564,6 +3587,12 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
     let output_root = output_dir
         .map(PathBuf::from)
         .unwrap_or_else(|| project_root.clone());
+    if output_dir.is_some() {
+        // Only when the caller named one: with the default root the two
+        // are the same directory and the extra candidate would say
+        // nothing.
+        let _ = OUTPUT_ROOT.set(output_root.clone());
+    }
 
     let backend: Box<dyn W3cBackend> = match lang {
         Language::Rust => Box::new(RustBackend::new(&output_root)),
@@ -6086,11 +6115,17 @@ fn cmd_list_fixtures(
 /// threading it keeps every emit site on one source of truth, matching how
 /// the error format and workspace-root override are already handled.
 fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &Path) {
-    sce_build::resolve_source_path(
-        model,
-        scxml_path.to_str().unwrap_or(""),
-        current_source_root().as_deref(),
-    );
+    // Whichever declared root actually contains the input wins. The
+    // output root is tried first because it is the narrower claim: it is
+    // set only when the caller named one, and an input under it is one
+    // this run wrote, which the project root may not be able to spell
+    // relatively at all.
+    let root = OUTPUT_ROOT
+        .get()
+        .filter(|r| path_is_under(scxml_path, r))
+        .cloned()
+        .or_else(current_source_root);
+    sce_build::resolve_source_path(model, scxml_path.to_str().unwrap_or(""), root.as_deref());
 }
 
 /// Create a C++ formatter if language is C++ and formatting is not disabled.
