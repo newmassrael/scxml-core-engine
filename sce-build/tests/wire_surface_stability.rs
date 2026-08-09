@@ -152,6 +152,107 @@ fn every_checked_in_schema_is_a_declared_surface() {
     );
 }
 
+/// Instance-validation coverage: `(surface, test fn, file declaring it)`.
+///
+/// A schema nothing is validated against is a document, not a
+/// contract. Every other guard in this file compares a constant to a
+/// header or a filename to a list — none of them puts a produced
+/// artifact through the schema, so a producer could drift out of its
+/// own schema with every status check still green.
+///
+/// This table names the test that does the validating, per surface.
+/// The XSD surfaces are absent deliberately: `forge::xsd_validator`
+/// validates every input document on the production path, which is
+/// stronger than a test over a fixture set, and it is not a draft-07
+/// validator, so it does not belong in this table's shape.
+const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
+    (
+        "schemas/sce-diagnostic.v1.schema.json",
+        "every_golden_record_validates_against_the_wire_schema",
+        "sce-build/src/forge/diagnostic.rs",
+    ),
+    (
+        "schemas/sce-diagnostic.v1.schema.json",
+        "every_cli_diagnostic_in_the_fixture_corpus_validates_against_the_schema",
+        "sce-build/tests/diagnostic_corpus_schema.rs",
+    ),
+    (
+        "apis/forge-ast.v1.schema.json",
+        "round_trip_every_kind",
+        "sce-build/tests/forge_ast_export.rs",
+    ),
+    (
+        "schemas/sce-sourcemap.v1.schema.json",
+        "committed_sourcemaps_validate_against_the_wire_schema",
+        "sce-build/tests/committed_sourcemap_drift.rs",
+    ),
+    (
+        "schemas/sce-manifest.v1.schema.json",
+        "generate_manifest_instance_validates_against_schema",
+        "sce-build/src/manifest.rs",
+    ),
+    (
+        "schemas/sce-manifest.v1.schema.json",
+        "check_manifest_validates_against_the_wire_schema",
+        "sce-build/tests/cli_check.rs",
+    ),
+    (
+        "schemas/sce-symbol-lookup.v1.schema.json",
+        "both_lookup_directions_validate_against_the_wire_schema",
+        "sce-build/tests/sourcemap_addr2sce.rs",
+    ),
+];
+
+/// Every JSON surface has at least one instance-validation test, and
+/// every test the table names still exists where it says it does.
+///
+/// Without the first half a new surface can register, declare a
+/// status, and never have one artifact checked against its schema.
+/// Without the second the table decays into names that moved.
+#[test]
+fn every_json_surface_has_an_instance_validation_test() {
+    for rel in JSON_SURFACES {
+        assert!(
+            INSTANCE_VALIDATION
+                .iter()
+                .any(|(surface, _, _)| surface == rel),
+            "{rel} has no instance-validation test. A surface whose \
+             schema no produced artifact is checked against is a \
+             document, not a contract — add a test that runs emitted \
+             records through it and register the test here and in \
+             SCE_WIRE_CONTRACTS.md.",
+        );
+    }
+
+    for (surface, test_fn, file) in INSTANCE_VALIDATION {
+        let body = read(file);
+        assert!(
+            body.contains(&format!("fn {test_fn}(")),
+            "{file} no longer declares `fn {test_fn}` (registered as \
+             the instance-validation test for {surface}). Update the \
+             INSTANCE_VALIDATION table and SCE_WIRE_CONTRACTS.md.",
+        );
+    }
+}
+
+/// The registry names the same tests this table does.
+///
+/// The doc-as-contract rule cuts both ways: a reader of
+/// `SCE_WIRE_CONTRACTS.md` decides how much to trust a surface partly
+/// from which tests cover it, so a name that drifts out of the code
+/// has to fail here rather than mislead there.
+#[test]
+fn registry_names_every_instance_validation_test() {
+    let registry = read("SCE_WIRE_CONTRACTS.md");
+    for (surface, test_fn, _) in INSTANCE_VALIDATION {
+        assert!(
+            registry.contains(test_fn),
+            "SCE_WIRE_CONTRACTS.md must name the instance-validation \
+             test for {surface}; missing {test_fn:?}",
+        );
+    }
+}
+
 #[test]
 fn registry_lists_every_surface() {
     let registry = read("SCE_WIRE_CONTRACTS.md");
