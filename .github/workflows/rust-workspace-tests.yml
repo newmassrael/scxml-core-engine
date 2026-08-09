@@ -139,7 +139,15 @@ jobs:
     # Mirrors pre-push Stage 1. Debug profile so the binary lands where
     # `CARGO_BIN_EXE_sce-codegen` resolves for the test step below.
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     # `SCE_REQUIRE_TOOLS` promotes "tool not found, skipping" into a hard
     # failure. Without it a runner image that loses a toolchain keeps

@@ -85,7 +85,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Setup Emscripten (emsdk)
       run: |
@@ -362,7 +370,15 @@ jobs:
           ${{ runner.os }}-cargo-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate Rust W3C Tests
       run: ./target/debug/sce-codegen generate-w3c -l rust
@@ -456,7 +472,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Setup JDK 17
       uses: actions/setup-java@v5
@@ -575,7 +599,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Cache CMake Build
       uses: actions/cache@v5
@@ -678,7 +710,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate Python W3C Tests
       run: ./target/debug/sce-codegen generate-w3c -l python
@@ -778,7 +818,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate Go W3C Tests
       run: ./target/debug/sce-codegen generate-w3c -l go
@@ -916,7 +964,15 @@ jobs:
           ${{ runner.os }}-cargo-codegen-
 
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Setup ccache
       uses: actions/cache@v5
