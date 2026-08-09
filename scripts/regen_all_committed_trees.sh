@@ -89,4 +89,21 @@ scripts/regen_event_schema_native_python.sh
 echo "==> Native-action host-trait Rust tree"
 scripts/regen_native_action.sh
 
+# The committed Rust trees are generator output *as rustfmt leaves it*, not
+# as the emitter writes it. `backends/rust/tests` is a workspace member, so
+# `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
+# but nothing in the emitter produces it. Without this step the script's
+# stated aim, "regenerate and expect no diff", is false for the W3C Rust
+# tree: a plain regeneration leaves ~450 files differing from HEAD by
+# whitespace alone. That gap used to be closed by accident, at commit time,
+# by the pre-commit `cargo fmt --all -- --check` gate refusing the push
+# until the developer ran the formatter — which meant the documented
+# procedure did not reproduce the committed state, and a reviewer could not
+# tell whitespace churn from a real emitter change.
+#
+# Scoped to the crate holding the committed generated Rust rather than
+# `--all`, so the step says what it is for.
+echo "==> Formatting the committed Rust trees (rustfmt is part of their committed form)"
+cargo fmt -p sce-rust-tests
+
 echo "All committed §6.2.6 trees regenerated."
