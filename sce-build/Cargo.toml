@@ -178,6 +178,16 @@ name = "cli_orchestrate_deploy"
 path = "tests/cli_orchestrate_deploy.rs"
 required-features = ["cli"]
 
+# Flag-surface parity between `check`'s document-set route and the
+# producer it names as its reference. `cli_check_cross_doc` pins that the
+# two agree on the documents it feeds them; this pins that they can be
+# asked for the same interpretations at all. Same `cli` gate, since it
+# drives both subcommands through the real binary.
+[[test]]
+name = "cli_orchestrate_check_parity"
+path = "tests/cli_orchestrate_check_parity.rs"
+required-features = ["cli"]
+
 # Structural smoke validator for all four codegen backends. Depends on
 # the `sce-codegen` binary, hence the `cli` gate shared with the other
 # end-to-end tests. See `tests/codegen_smoke.rs` for the rationale
