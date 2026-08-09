@@ -54,20 +54,40 @@ fn template_dir() -> PathBuf {
 /// `<sce:on-sample>` against this link (covers cross-validator
 /// no-interference cases).
 ///
-/// Stage via [`write_link_with_pool`] rather than directly: the
-/// stage-pool ref below has to name a document the build can see.
+/// Stage via [`write_link_with_pool`] rather than directly: both the
+/// stage-pool ref and the framer ref below have to name documents the
+/// build can see.
 fn link_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="{name}" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
   <sce:stage-pool ref="scout_stage_pool"/>
 </scxml>"##
     )
+}
+
+/// The codec that [`link_doc`]'s `<sce:framer ref>` names.
+///
+/// Named through the link's own `<sce:import>` rather than handed to
+/// the build as an input: both routes resolve the ref, and the import
+/// route leaves these fixtures' output counts alone, since an imported
+/// document is a dependency rather than a compilation unit of its own.
+fn framer_codec_doc() -> &'static str {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="scout_frame_codec">
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload_len" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"##
 }
 
 /// The buffer-pool that [`link_doc`]'s `<sce:stage-pool ref>` names.
@@ -96,6 +116,10 @@ fn stage_pool_doc() -> &'static str {
 /// them, so call sites read `&[pool.as_path(), link.as_path(), …]`.
 fn write_link_with_pool(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
     let pool = write_doc(dir, "scout_stage_pool.scxml", stage_pool_doc());
+    // Written beside the link so the `<sce:import src>` resolves at
+    // parse time; deliberately not returned, because callers pass build
+    // inputs and this document reaches the build as a dependency.
+    write_doc(dir, "scout_frame_codec.scxml", framer_codec_doc());
     let link = write_doc(dir, &format!("{name}.scxml"), &link_doc(name));
     (pool, link)
 }

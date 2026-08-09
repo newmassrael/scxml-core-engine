@@ -143,11 +143,28 @@ fn link_doc(name: &str) -> String {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="{name}" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
 </scxml>"##
     )
+}
+
+/// Stage [`link_doc`] together with the codec its `<sce:framer ref>`
+/// names — the ref has to resolve to a document the build can see.
+///
+/// The codec arrives through the link's own `<sce:import>` rather than
+/// the build's input list on purpose: the element-type candidate map
+/// this file asserts against is built from the build's forge inputs, so
+/// listing the framer codec there would change the very set under test.
+fn write_link_with_framer(dir: &Path, name: &str) -> PathBuf {
+    write_doc(
+        dir,
+        "scout_frame_codec.scxml",
+        &codec_doc("scout_frame_codec"),
+    );
+    write_doc(dir, &format!("{name}.scxml"), &link_doc(name))
 }
 
 /// Bounded-collection doc. Optional `index_by_field`, `concurrency`,
@@ -359,11 +376,7 @@ fn element_type_not_a_kind_resolves_to_link_fires() {
     // alternatives even when their reference resolves to the wrong
     // kind).
     let dir = tempdir().expect("tempdir");
-    let link = write_doc(
-        dir.path(),
-        "wire_endpoint.scxml",
-        &link_doc("wire_endpoint"),
-    );
+    let link = write_link_with_framer(dir.path(), "wire_endpoint");
     let codec = write_doc(
         dir.path(),
         "subscription_entry.scxml",

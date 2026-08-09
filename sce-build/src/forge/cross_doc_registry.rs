@@ -54,6 +54,12 @@ pub enum ScxmlDocKind {
     /// access" by negation admits inbox access regardless of owner
     /// kind).
     Worker,
+    /// `<scxml sce:kind="codec">` — wire codec doc (§synth-5-C). The
+    /// kind a link's `<sce:framer ref>` resolves to; recorded so the
+    /// cross-doc framer join can tell an undeclared name from a name
+    /// declared under a different kind, the same distinction the
+    /// on-sample validator draws for links.
+    Codec,
 }
 
 impl ScxmlDocKind {
@@ -65,6 +71,7 @@ impl ScxmlDocKind {
             ScxmlDocKind::Link => "link",
             ScxmlDocKind::Statechart => "statechart",
             ScxmlDocKind::Worker => "worker",
+            ScxmlDocKind::Codec => "codec",
         }
     }
 }
@@ -135,9 +142,13 @@ impl SceCrossDocRegistry {
     /// Register a forge document by its declared kind. Today's
     /// supported kinds: link (records as [`ScxmlDocKind::Link`] +
     /// optionally captures `<sce:stage-pool ref>` from `LinkModel`),
-    /// worker (records as [`ScxmlDocKind::Worker`]). Other forge
-    /// kinds (algorithm, codec, buffer-pool, timer, …) are no-op
-    /// because they are not valid outbox / on-sample recipients.
+    /// worker (records as [`ScxmlDocKind::Worker`]), codec (records as
+    /// [`ScxmlDocKind::Codec`], the target kind of a link's
+    /// `<sce:framer ref>`). Other forge kinds (algorithm, buffer-pool,
+    /// timer, …) are no-op because no cross-document reference names
+    /// them — buffer-pool refs resolve through
+    /// [`super::pool_registry::ForgePoolRegistry`], which carries the
+    /// slot geometry those joins also need.
     pub fn record_document(&mut self, doc: &ForgeDocument) -> Result<(), ScxmlDocKind> {
         match doc {
             ForgeDocument::Link(link) => {
@@ -153,6 +164,7 @@ impl SceCrossDocRegistry {
                 Ok(())
             }
             ForgeDocument::Worker(worker) => self.record(worker.name.clone(), ScxmlDocKind::Worker),
+            ForgeDocument::Codec(codec) => self.record(codec.name.clone(), ScxmlDocKind::Codec),
             _ => Ok(()),
         }
     }

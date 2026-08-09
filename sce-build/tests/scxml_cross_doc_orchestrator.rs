@@ -81,6 +81,7 @@ fn link_with_stage_pool() -> &'static str {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="scout_link" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
@@ -93,6 +94,7 @@ fn link_without_stage_pool() -> &'static str {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="scout_link" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
@@ -110,6 +112,34 @@ fn worker_minimal(name: &str) -> String {
   <sce:inbox depth="16" ordering="acq_rel"/>
 </scxml>"##
     )
+}
+
+/// The codec every link fixture in this file names as its framer.
+fn framer_codec_doc() -> &'static str {
+    r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="scout_frame_codec">
+  <datamodel>
+    <data id="msg_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload_len" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"##
+}
+
+/// Write a link document together with the codec its `<sce:framer ref>`
+/// names, returning the link path.
+///
+/// Pairing the two here is what keeps every link fixture in this file
+/// well-formed against the framer join: the ref has to name a document
+/// the build can see, and a link staged without its codec would be
+/// refused for a reason no test in this file is about. The codec
+/// arrives through the link's own `<sce:import>`, so it stays a
+/// dependency rather than a compilation unit and the per-test output
+/// counts below still describe the documents the caller listed.
+fn write_link(dir: &Path, basename: &str, content: &str) -> PathBuf {
+    write_doc(dir, "scout_frame_codec.scxml", framer_codec_doc());
+    write_doc(dir, basename, content)
 }
 
 fn write_doc(dir: &Path, basename: &str, content: &str) -> PathBuf {
@@ -132,7 +162,7 @@ fn happy_orchestrator_compiles_multi_doc() {
         "session_fsm.scxml",
         &statechart_with_on_sample("session_fsm", "scout_link"),
     );
-    let forge = write_doc(dir.path(), "scout_link.scxml", link_with_stage_pool());
+    let forge = write_link(dir.path(), "scout_link.scxml", link_with_stage_pool());
     // `link_with_stage_pool`'s `<sce:stage-pool ref>` names this
     // document. `Sample::take()` copies into it, so the ref has to
     // resolve to something the build can see — `link/pool-ref-not-
@@ -177,7 +207,7 @@ fn on_sample_link_not_declared_fires_in_production() {
         "session_fsm.scxml",
         &statechart_with_on_sample("session_fsm", "unknown_link"),
     );
-    let forge = write_doc(dir.path(), "scout_link.scxml", link_with_stage_pool());
+    let forge = write_link(dir.path(), "scout_link.scxml", link_with_stage_pool());
     // `link_with_stage_pool`'s `<sce:stage-pool ref>` names this
     // document. `Sample::take()` copies into it, so the ref has to
     // resolve to something the build can see — `link/pool-ref-not-
@@ -231,7 +261,7 @@ fn on_sample_sample_take_without_stage_pool_fires() {
         "session_fsm.scxml",
         &statechart_with_on_sample("session_fsm", "scout_link"),
     );
-    let forge = write_doc(dir.path(), "scout_link.scxml", link_without_stage_pool());
+    let forge = write_link(dir.path(), "scout_link.scxml", link_without_stage_pool());
 
     let scxml_refs: &[&Path] = &[scxml.as_path()];
     let forge_refs: &[&Path] = &[forge.as_path()];
@@ -357,7 +387,7 @@ fn worker_doc_records_into_cross_doc_registry() {
     let dir = tempdir().expect("tempdir");
     // Worker fixture needs sibling link doc for its `<sce:import>`
     // to resolve at parse time.
-    let link_sib = write_doc(dir.path(), "scout_link.scxml", link_with_stage_pool());
+    let link_sib = write_link(dir.path(), "scout_link.scxml", link_with_stage_pool());
     // `link_with_stage_pool`'s `<sce:stage-pool ref>` names this
     // document. `Sample::take()` copies into it, so the ref has to
     // resolve to something the build can see — `link/pool-ref-not-
@@ -428,6 +458,7 @@ fn link_with_rx_pool(name: &str, rx_pool_ref: &str) -> String {
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="{name}" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
@@ -531,7 +562,7 @@ fn c13_validators_silent_skip_when_deploy_none() {
         "rx_data_pool.scxml",
         &buffer_pool_default("rx_data_pool", 16, 1536),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_rx_pool("udp_data", "rx_data_pool"),
@@ -576,7 +607,7 @@ fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
         "rx_data_pool.scxml",
         &buffer_pool_default("rx_data_pool", 16, 1536),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_rx_pool("udp_data", "rx_data_pool"),
@@ -639,7 +670,7 @@ fn c13_reassembly_slot_size_fires_through_orchestrator() {
         "rx_data_pool.scxml",
         &buffer_pool_default("rx_data_pool", 16, 256),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_rx_pool("udp_data", "rx_data_pool"),
@@ -705,7 +736,7 @@ fn c13_burst_absorption_fires_through_orchestrator() {
         "rx_data_pool.scxml",
         &buffer_pool_default("rx_data_pool", 16, 1536),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_rx_pool("udp_data", "rx_data_pool"),
@@ -772,7 +803,7 @@ fn c13_orchestrator_happy_path_emits_outputs() {
         "rx_data_pool.scxml",
         &buffer_pool_default("rx_data_pool", 2000, 1536),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_rx_pool("udp_data", "rx_data_pool"),
@@ -840,6 +871,7 @@ fn link_with_pools(
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="{name}" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
@@ -875,7 +907,7 @@ fn rx_pool_ref_typo_does_not_silently_disable_the_burst_validator() {
         &buffer_pool_default("rx_data_pool", 16, 1536),
     );
     // `rx_data_poool` — one keystroke away from the pool above.
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_rx_pool("udp_data", "rx_data_poool"),
@@ -962,7 +994,7 @@ fn every_pool_ref_site_is_joined_against_the_build() {
             "rx_data_pool.scxml",
             &buffer_pool_default("rx_data_pool", 2000, 1536),
         );
-        let link = write_doc(dir.path(), "udp_data.scxml", &build_link("nosuch_pool"));
+        let link = write_link(dir.path(), "udp_data.scxml", &build_link("nosuch_pool"));
 
         let err = match compile_scxml_with_imports(
             &[scxml.as_path()],
@@ -1024,7 +1056,7 @@ fn resolving_pool_refs_on_all_three_sites_still_compiles() {
         "stage_data_pool.scxml",
         &buffer_pool_default("stage_data_pool", 2000, 1536),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         &link_with_pools(
@@ -1071,7 +1103,7 @@ fn a_pool_ref_resolves_through_the_links_own_import() {
         "rx_data_pool.scxml",
         &buffer_pool_default("rx_data_pool", 2000, 1536),
     );
-    let link = write_doc(
+    let link = write_link(
         dir.path(),
         "udp_data.scxml",
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -1079,6 +1111,7 @@ fn a_pool_ref_resolves_through_the_links_own_import() {
        xmlns:sce="http://sce.dev/ext"
        sce:kind="link" name="udp_data" version="1.0">
   <sce:import as="rx_data_pool" src="rx_data_pool.scxml" kind="buffer-pool"/>
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
   <sce:link-class>udp</sce:link-class>
   <sce:framer ref="scout_frame_codec"/>
   <sce:backpressure>drop</sce:backpressure>
@@ -1097,4 +1130,399 @@ fn a_pool_ref_resolves_through_the_links_own_import() {
     )
     .expect("an imported pool is a resolved pool");
     assert!(!outputs.is_empty(), "import route must still emit outputs");
+}
+
+/// Forge `sce:kind="codec"` document whose body is `field_count`
+/// single-byte fields, so the recursive worst-case encoded size the
+/// framer join compares against is exactly `field_count` bytes.
+///
+/// Written as a builder rather than a constant because the framer
+/// tests need the codec's worst case to sit on a chosen side of a
+/// pool's `<sce:slot-size>` — a fixed-size codec could only ever
+/// exercise one side of that comparison.
+fn codec_of_n_bytes(name: &str, field_count: u32) -> String {
+    let fields: String = (0..field_count)
+        .map(|i| {
+            format!(
+                "    <data id=\"f{i}\" sce:type=\"uint8\" sce:byte=\"{i}\" sce:bit-size=\"8\"/>\n"
+            )
+        })
+        .collect();
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="{name}">
+  <datamodel>
+{fields}  </datamodel>
+</scxml>"##
+    )
+}
+
+/// Forge `<sce:link>` importing both a codec and a buffer-pool by file,
+/// with the framer ref spelled by the caller. The import route is the
+/// one `validate_link_pool_framer_resolution` follows to reach
+/// `ImportContext::codec_max_bytes`, so it is the route a framer typo
+/// has to be caught on.
+fn link_importing_codec_and_pool(framer_ref: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_data" version="1.0">
+  <sce:import as="scout_frame_codec" src="scout_frame_codec.scxml" kind="codec"/>
+  <sce:import as="rx_data_pool" src="rx_data_pool.scxml" kind="buffer-pool"/>
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="{framer_ref}"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:rx-pool ref="rx_data_pool"/>
+</scxml>"##
+    )
+}
+
+/// A one-keystroke slip in `<sce:framer ref>` must not be a way to pass
+/// a topology the spec refuses.
+///
+/// `validate_link_pool_framer_resolution` reads the framer's worst-case
+/// encoded size out of the resolved codec import and refuses a pool
+/// whose slot cannot hold it
+/// (`link/pool-slot-smaller-than-framer-max`). Its framer arm returns
+/// `Ok(())` when the alias does not resolve — right for a partial
+/// topology, wrong for a typo, exactly as the pool-ref arm's own
+/// history showed. Without a resolution pass ahead of it, misspelling
+/// the ref turns a refused DMA-overrun configuration into a silent
+/// accept, which is strictly worse than the typo being reported.
+///
+/// The two halves are asserted together on purpose: the "correct
+/// spelling is refused" half is what proves the typo half is a silence
+/// and not merely a topology that nothing objects to.
+#[test]
+fn framer_ref_typo_does_not_silently_disable_the_slot_size_validator() {
+    // Each arm gets its own directory so both link documents can be
+    // `udp_data.scxml`. The link's model name is its file stem, so
+    // distinct filenames would make the two runs differ by a name as
+    // well as by the ref — and the claim under test is that they differ
+    // by the ref alone.
+    let root = tempdir().expect("tempdir");
+    let stage = |arm: &str, framer_ref: &str| -> (PathBuf, PathBuf) {
+        let dir = root.path().join(arm);
+        fs::create_dir_all(&dir).expect("arm dir");
+        let scxml = write_doc(
+            &dir,
+            "session_fsm.scxml",
+            &statechart_minimal("session_fsm"),
+        );
+        // Worst case 40 bytes against a 32-byte slot — the pool cannot
+        // hold one framed message, which is what the slot-size join
+        // refuses.
+        write_doc(
+            &dir,
+            "scout_frame_codec.scxml",
+            &codec_of_n_bytes("scout_frame_codec", 40),
+        );
+        write_doc(
+            &dir,
+            "rx_data_pool.scxml",
+            &buffer_pool_default("rx_data_pool", 16, 32),
+        );
+        let link = write_doc(
+            &dir,
+            "udp_data.scxml",
+            &link_importing_codec_and_pool(framer_ref),
+        );
+        (scxml, link)
+    };
+
+    let (scxml, correct) = stage("correct", "scout_frame_codec");
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[correct.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    ) {
+        Ok(_) => panic!("slot 32 < framer worst case 40 must be refused"),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(boxed) => assert!(
+            matches!(
+                *boxed,
+                ValidationError::LinkPoolSlotSmallerThanFramerMax { .. }
+            ),
+            "control arm must be the slot-size refusal, got: {boxed:?}"
+        ),
+        other => panic!("expected ForgeError::Validation, got: {other:?}"),
+    }
+
+    // Same set, same pool, same codec — one letter added to the ref.
+    let (scxml, typo) = stage("typo", "scout_frame_codecc");
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[typo.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    ) {
+        Ok(_) => panic!(
+            "a typo in <sce:framer ref> made a refused topology pass: the same \
+             set with the ref spelled correctly fires \
+             link/pool-slot-smaller-than-framer-max"
+        ),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::LinkFramerRefNotDeclared {
+                link_name,
+                framer_ref,
+                candidates,
+            } => {
+                assert_eq!(link_name, "udp_data");
+                assert_eq!(framer_ref, "scout_frame_codecc");
+                assert_eq!(
+                    candidates,
+                    vec!["scout_frame_codec".to_string()],
+                    "the repair candidates must be the codec names this build can see"
+                );
+            }
+            other => panic!("expected ValidationError::LinkFramerRefNotDeclared, got: {other:?}"),
+        },
+        other => panic!("expected ForgeError::Validation, got: {other:?}"),
+    }
+}
+
+/// A link whose framer names a codec it does **not** import — the ref
+/// can only resolve through the build's input list.
+///
+/// Kept separate from [`link_with_rx_pool`], which imports its codec:
+/// a fixture that resolves both ways cannot tell the two routes apart,
+/// so a test written against it stays green even when the build-input
+/// route is removed entirely.
+fn link_without_codec_import(name: &str, rx_pool: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="{name}" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:rx-pool ref="{rx_pool}"/>
+</scxml>"##
+    )
+}
+
+/// A framer ref naming a codec passed as a build input — rather than
+/// imported by the link — resolves too.
+///
+/// Both routes are genuine resolutions on the pool axis and the framer
+/// axis has no reason to differ: `orchestrate --forge a.scxml
+/// --forge b.scxml` is the shape a caller uses when the documents are
+/// siblings in one build rather than one importing the other.
+#[test]
+fn a_framer_ref_resolves_through_the_build_input_list() {
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    let codec = write_doc(
+        dir.path(),
+        "scout_frame_codec.scxml",
+        &codec_of_n_bytes("scout_frame_codec", 8),
+    );
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 1536),
+    );
+    // Written with `write_doc`, not `write_link`: the codec above is the
+    // only one staged, and it reaches the build as an input rather than
+    // through an import the link does not declare.
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_without_codec_import("udp_data", "rx_data_pool"),
+    );
+
+    let outputs = compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[codec.as_path(), pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    )
+    .expect("a codec in the build input list is a resolved framer");
+    assert!(
+        !outputs.is_empty(),
+        "build-input route must still emit outputs"
+    );
+}
+
+/// A single-document `generate` keeps its tolerance for both link
+/// refs — the closed-world joins belong to the multi-document entry
+/// point alone.
+///
+/// This is the boundary the two diagnostics are scoped by, and it is
+/// asserted rather than assumed: a resolution pass wired one layer too
+/// low would reject every partial topology a caller compiles one file
+/// at a time, and the tests above — which all run the orchestrator —
+/// would go on passing.
+#[test]
+fn single_document_compile_tolerates_refs_it_cannot_see() {
+    // Dangling on both axes at once: the framer names a codec this
+    // document neither imports nor is handed, and the pool ref names a
+    // document that is nowhere. One axis alone would leave the other's
+    // tolerance unproven.
+    let dir = tempdir().expect("tempdir");
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_without_codec_import("udp_data", "a_pool_declared_somewhere_else"),
+    );
+
+    let output = sce_build::compile_forge_with_imports(
+        &fs::read_to_string(&link).expect("read link"),
+        sce_build::DocumentLabel {
+            identifier: "udp_data",
+            diagnostic_label: "udp_data.scxml",
+        },
+        Language::Rust,
+        dir.path(),
+        &default_options(),
+    )
+    .expect("a single document cannot know what the rest of the build declares");
+    assert!(
+        !output.files.is_empty(),
+        "the tolerated path must still emit"
+    );
+}
+
+/// Both diagnostics name every candidate the link could have meant,
+/// including the ones reachable only through its own `<sce:import>`.
+///
+/// An empty candidate list is not a conservative answer when a legal
+/// name was in reach — `Fix::ReplaceOneOf` is a machine-applicable
+/// repair, and a repair offering nothing sends the reader looking for a
+/// document that is already staged. Driven over both ref axes because
+/// the candidate set is computed per axis.
+#[test]
+fn repair_candidates_include_names_reachable_only_by_import() {
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // Both named through the link's own imports; neither is a build
+    // input below.
+    write_doc(
+        dir.path(),
+        "scout_frame_codec.scxml",
+        &codec_of_n_bytes("scout_frame_codec", 8),
+    );
+    write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 1536),
+    );
+
+    // ── framer axis ──
+    let link = write_doc(
+        dir.path(),
+        "udp_framer.scxml",
+        &link_importing_codec_and_pool("scout_frame_codecc"),
+    );
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    ) {
+        Ok(_) => panic!("dangling framer ref must be refused"),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::LinkFramerRefNotDeclared { candidates, .. } => assert_eq!(
+                candidates,
+                vec!["scout_frame_codec".to_string()],
+                "the codec is reachable through the link's own import"
+            ),
+            other => panic!("expected LinkFramerRefNotDeclared, got: {other:?}"),
+        },
+        other => panic!("expected ForgeError::Validation, got: {other:?}"),
+    }
+
+    // ── pool axis, same build ──
+    let link = write_doc(
+        dir.path(),
+        "udp_pool.scxml",
+        &link_importing_codec_and_pool("scout_frame_codec").replace(
+            r#"<sce:rx-pool ref="rx_data_pool"/>"#,
+            r#"<sce:rx-pool ref="rx_data_poool"/>"#,
+        ),
+    );
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    ) {
+        Ok(_) => panic!("dangling pool ref must be refused"),
+        Err(e) => e,
+    };
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::LinkPoolRefNotDeclared { candidates, .. } => assert_eq!(
+                candidates,
+                vec!["rx_data_pool".to_string()],
+                "the pool is reachable through the link's own import"
+            ),
+            other => panic!("expected LinkPoolRefNotDeclared, got: {other:?}"),
+        },
+        other => panic!("expected ForgeError::Validation, got: {other:?}"),
+    }
+}
+
+/// The acceptance document states the join rule.
+///
+/// Both refs resolve at build time and nothing else in the tree tells
+/// an author that, so removing the prose removes the only place the
+/// contract is written down for the person writing the SCXML.
+#[test]
+fn acceptance_doc_states_the_link_ref_join_rule() {
+    let doc = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("sce-build has a parent")
+            .join("docs/SCE_ACCEPTED_SUBSET.md"),
+    )
+    .expect("read SCE_ACCEPTED_SUBSET.md");
+
+    for needle in [
+        "Name references between documents must resolve",
+        "link/framer-ref-not-declared",
+        "link/pool-ref-not-declared",
+        // The two resolution routes, and the entry-point scope that
+        // makes single-document tolerance correct rather than a gap.
+        "one of the build's inputs, or an `<sce:import>` alias",
+        "and not from a single-document",
+    ] {
+        assert!(
+            doc.contains(needle),
+            "SCE_ACCEPTED_SUBSET.md §2.4 no longer states {needle:?} — the \
+             prose is the only author-facing statement of when a link's \
+             name references are joined against the build."
+        );
+    }
 }
