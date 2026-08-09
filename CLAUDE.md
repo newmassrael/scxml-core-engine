@@ -46,22 +46,32 @@ sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
 
 **Do NOT** test against `build/tests/w3c_static_generated/testXXX.scxml` — it doesn't exist until registered.
 
-### Step 2: Register in CMakeLists.txt
+### Step 2: Register the test
 
-Add to `tests/CMakeLists.txt` in two places:
+1. **Conformance registry** — `tests/w3c/conformance/fixtures.json`. This
+   is the source of truth: `sce-codegen generate-w3c` reads it,
+   `sce-codegen list-fixtures --catalog w3c` enumerates it, and the
+   visualizer's test list is rendered from it. Entries stay sorted by
+   `id`.
+   ```json
+   { "id": "XXX", "harness": "simple", "summary": "W3C SCXML X.Y: description" }
+   ```
+   `harness` is `simple` (default), `scheduled` for a fixture that needs
+   delayed `<send>` to fire, or `http` for one that sends over
+   BasicHTTPEventProcessor. Omitting it means `simple`.
 
-1. **Code generation call** (search for `sce_generate_static_w3c_test`):
+2. **CMake registration** — `tests/CMakeLists.txt` still spells the call
+   that schedules the C++ AOT target:
    ```cmake
    sce_generate_static_w3c_test(XXX ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML X.Y: description
    ```
-
-2. **AOT test registry list** (search for `W3C_AOT_TESTS`):
-   ```cmake
-   set(W3C_AOT_TESTS
-       ...XXX...
-   )
-   ```
+   Use `TYPE SCHEDULED` / `TYPE HTTP` to match the registry's `harness`.
+   `W3C_AOT_TESTS` accumulates from these calls — do not edit it by hand.
    Remove from `W3C_INTERPRETER_ONLY_TESTS` if present.
+
+The two must agree:
+`sce-build/tests/w3c_registry_cmake_parity.rs` fails on a test present in
+one and not the other, and on a harness that disagrees across them.
 
 ### Step 3: Create AOT Test Header
 

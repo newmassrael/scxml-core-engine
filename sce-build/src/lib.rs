@@ -101,6 +101,12 @@ pub mod toolchain;
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
 pub mod unresolved_check;
 pub mod w3c_dist_manifest;
+/// W3C SCXML statechart conformance registry — which upstream tests this
+/// repository runs and which harness each needs. Read by
+/// `generate-w3c` and enumerated by `list-fixtures`, replacing the
+/// regex over `tests/CMakeLists.txt` that made the build script the
+/// source of truth.
+pub mod w3c_registry;
 /// W3C XInclude preprocessing. Runs between XSD validation and
 /// roxmltree's document parse so the AOT code generator consumes
 /// the same post-expansion document as the C++ runtime. See
