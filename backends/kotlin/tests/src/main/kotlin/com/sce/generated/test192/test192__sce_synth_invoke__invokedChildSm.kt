@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -162,6 +162,7 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
         when (source) {
         is Test192SceSynthInvokeInvokedChildState.Sub0 -> when {
             event is Test192SceSynthInvokeInvokedChildEvent.ParentToChild -> {
+                // SCE-MAP: test192__sce_synth_invoke__invokedChild.scxml:11
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

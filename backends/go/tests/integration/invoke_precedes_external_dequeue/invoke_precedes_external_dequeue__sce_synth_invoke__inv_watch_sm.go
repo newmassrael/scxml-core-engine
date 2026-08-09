@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 
@@ -436,6 +436,7 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw && idx == 0 {
+		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -450,6 +451,7 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 		return
 	}
 	if source == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting && idx == 1 {
+		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{

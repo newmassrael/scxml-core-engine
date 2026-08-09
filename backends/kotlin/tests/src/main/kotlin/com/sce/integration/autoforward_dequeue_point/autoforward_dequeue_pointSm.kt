@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -204,6 +204,7 @@ class AutoforwardDequeuePointStateMachine(
         when (source) {
         is AutoforwardDequeuePointState.Phase -> when {
             event is AutoforwardDequeuePointEvent.Ready -> {
+                // SCE-MAP: autoforward_dequeue_point.scxml:97
 
 
             send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
@@ -212,6 +213,7 @@ class AutoforwardDequeuePointStateMachine(
             send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             event is AutoforwardDequeuePointEvent.First -> {
+                // SCE-MAP: autoforward_dequeue_point.scxml:101
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child

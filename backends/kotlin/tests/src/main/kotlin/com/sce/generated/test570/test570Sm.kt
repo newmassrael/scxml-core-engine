@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -557,6 +557,7 @@ class Test570StateMachine(
         when (source) {
         is Test570State.P0 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
@@ -565,6 +566,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s1 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
@@ -573,6 +575,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s11 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
@@ -581,6 +584,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s1final -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
@@ -589,6 +593,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s2 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
@@ -597,6 +602,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s21 -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
@@ -605,6 +611,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s2final -> when {
             event is Test570Event.Done.State.P0s1 -> {
+                // SCE-MAP: test570.scxml:16
 
 
             executeAssign("Var1", "1")
