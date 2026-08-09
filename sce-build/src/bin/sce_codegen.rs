@@ -903,7 +903,15 @@ struct GenerateW3cArgs {
 struct CheckArgs {
     /// Input SCXML file path. Shorthand for a single-document run;
     /// `--scxml` names the rest of a set.
-    #[arg(required_unless_present = "scxml_set")]
+    ///
+    /// Exempted by the same three ids that put the run on the
+    /// document-set route and that the single-document-only flags below
+    /// conflict with. Exempting `--scxml` alone made a forge-only or
+    /// deploy-only set — both of which `orchestrate` accepts and builds
+    /// — unnameable to `check`: the only spelling left forced a forge
+    /// document into this statechart slot, where it was read as a
+    /// statechart and refused for having no initial state.
+    #[arg(required_unless_present_any = ["scxml_set", "forge", "deploy"])]
     scxml: Option<String>,
     /// Statechart document joining the set, mirroring `orchestrate`'s
     /// `--scxml`. Repeatable. Naming one puts the run on the
@@ -1013,50 +1021,7 @@ enum Commands {
     /// `<sce:outbox ref>`); single-file `Generate` does not
     /// build the cross-doc registry and silently skips cross-ref
     /// validation. Both lists may be empty (no-op).
-    Orchestrate {
-        /// Input SCXML file path (repeat for multiple files).
-        #[arg(long = "scxml")]
-        scxml: Vec<String>,
-        /// Input forge file path (repeat for multiple files).
-        #[arg(long = "forge")]
-        forge: Vec<String>,
-        /// Target language (rust, cpp, kotlin, go, c11).
-        #[arg(short, long)]
-        language: String,
-        /// Output directory (one entry per input doc; sidecars travel
-        /// with their primary in `GeneratedOutput::files`).
-        #[arg(short, long)]
-        output_dir: String,
-        /// Optional path to deploy.yaml. When provided, the orchestrator
-        /// runs SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators that
-        /// otherwise silent-skip:
-        ///   - `validate_links_cross_doc` (§synth-5-K)
-        ///   - `validate_links_burst_invariants` (§synth-5-K [lines 2489-2500])
-        ///   - `validate_reassembly_cross_doc` (§synth-5-M [lines 2946-2995])
-        ///
-        /// Omit to keep the multi-doc orchestrator deploy-unaware
-        /// (matching every pre-existing call site's silent-skip
-        /// semantics).
-        #[arg(long)]
-        deploy: Option<String>,
-        /// Directory to write per-doc AST envelopes into. One
-        /// `<doc_stem>.ast.json` is emitted per `--forge` input AND
-        /// per `--scxml` input — the v1 envelope's `oneOf` arm covers
-        /// statechart documents (`ast.document.kind = "statechart"`)
-        /// alongside the 15 forge kinds, so the orchestrate emit path
-        /// is uniform across both classifier outputs. Documents
-        /// rejected by §scxml-5.8 (`document_rejected`) skip emit
-        /// silently — matching the single-doc `generate --emit-ast`
-        /// contract.
-        ///
-        /// Envelope shape: `apis/forge-ast.v1.schema.json`. Consumer
-        /// contract: `docs/SCE_FORGE_AST.md`. Useful for batch tools
-        /// (sce-db-gen, sce-eventstore-adapter, sce-ui-gen) that
-        /// consume IR across an entire multi-doc build without
-        /// invoking SCE codegen per file.
-        #[arg(long)]
-        emit_ast_dir: Option<String>,
-    },
+    Orchestrate(Box<OrchestrateArgs>),
     /// Batch generate W3C test state machines and test classes
     GenerateW3c(Box<GenerateW3cArgs>),
     /// Batch generate integration-fixture state machines for the four
@@ -1358,6 +1323,79 @@ enum Commands {
     },
 }
 
+/// Multi-doc generate with cross-doc registry — wires
+/// `validate_on_sample_link_references` into production
+/// (SCE Protocol-Synthesis RFC §synth-5-D).
+/// Use this when the build has multiple SCXML/forge docs that
+/// reference each other across files (`<sce:on-sample link>`,
+/// `<sce:outbox ref>`); single-file `Generate` does not
+/// build the cross-doc registry and silently skips cross-ref
+/// validation. Both lists may be empty (no-op).
+#[derive(clap::Args)]
+struct OrchestrateArgs {
+    /// Input SCXML file path (repeat for multiple files).
+    #[arg(long = "scxml")]
+    scxml: Vec<String>,
+    /// Input forge file path (repeat for multiple files).
+    #[arg(long = "forge")]
+    forge: Vec<String>,
+    /// Target language (rust, cpp, kotlin, go, c11).
+    #[arg(short, long)]
+    language: String,
+    /// Output directory (one entry per input doc; sidecars travel
+    /// with their primary in `GeneratedOutput::files`).
+    #[arg(short, long)]
+    output_dir: String,
+    /// Optional path to deploy.yaml. When provided, the orchestrator
+    /// runs SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators that
+    /// otherwise silent-skip:
+    ///   - `validate_links_cross_doc` (§synth-5-K)
+    ///   - `validate_links_burst_invariants` (§synth-5-K [lines 2489-2500])
+    ///   - `validate_reassembly_cross_doc` (§synth-5-M [lines 2946-2995])
+    ///
+    /// Omit to keep the multi-doc orchestrator deploy-unaware
+    /// (matching every pre-existing call site's silent-skip
+    /// semantics).
+    #[arg(long)]
+    deploy: Option<String>,
+    /// Directory to write per-doc AST envelopes into. One
+    /// `<doc_stem>.ast.json` is emitted per `--forge` input AND
+    /// per `--scxml` input — the v1 envelope's `oneOf` arm covers
+    /// statechart documents (`ast.document.kind = "statechart"`)
+    /// alongside the 15 forge kinds, so the orchestrate emit path
+    /// is uniform across both classifier outputs. Documents
+    /// rejected by §scxml-5.8 (`document_rejected`) skip emit
+    /// silently — matching the single-doc `generate --emit-ast`
+    /// contract.
+    ///
+    /// Envelope shape: `apis/forge-ast.v1.schema.json`. Consumer
+    /// contract: `docs/SCE_FORGE_AST.md`. Useful for batch tools
+    /// (sce-db-gen, sce-eventstore-adapter, sce-ui-gen) that
+    /// consume IR across an entire multi-doc build without
+    /// invoking SCE codegen per file.
+    #[arg(long)]
+    emit_ast_dir: Option<String>,
+    /// Go module path hosting the generated forge packages.
+    /// Required to build any Go document carrying `<sce:import>`;
+    /// ignored for other backends.
+    ///
+    /// `check`'s document-set route takes this flag and names this
+    /// subcommand as the producer whose verdict it mirrors. Without
+    /// it here that mirror could not hold: `check --scxml A --forge
+    /// B -l go --go-module-prefix M` returned exit 0 while the run
+    /// it claimed to predict had no way to be given `M` and failed
+    /// with `<sce:import> with language=go requires
+    /// ForgeCompileOptions.go_module_prefix`.
+    #[arg(long)]
+    go_module_prefix: Option<String>,
+    /// Build-time const-fold iteration budget, capping the total
+    /// iteration count across every `<sce:fold>` body in the
+    /// document. Mirrors `generate` and `check`; unset uses the
+    /// RFC §synth-5-F default of 1_000_000.
+    #[arg(long)]
+    const_fold_budget: Option<u64>,
+}
+
 fn main() {
     let cli = Cli::parse();
     let error_format = cli.error_format;
@@ -1381,22 +1419,7 @@ fn main() {
     match cli.command {
         Commands::Generate(args) => cmd_generate(*args, error_format),
         Commands::Check(args) => cmd_check(*args, error_format),
-        Commands::Orchestrate {
-            scxml,
-            forge,
-            language,
-            output_dir,
-            deploy,
-            emit_ast_dir,
-        } => cmd_orchestrate(
-            &scxml,
-            &forge,
-            &language,
-            &output_dir,
-            deploy.as_deref(),
-            emit_ast_dir.as_deref(),
-            error_format,
-        ),
+        Commands::Orchestrate(args) => cmd_orchestrate(*args, error_format),
         Commands::GenerateW3c(args) => cmd_generate_w3c(*args),
         Commands::GenerateIntegration { language, stem } => {
             cmd_generate_integration(&language, stem.as_deref(), error_format)
@@ -1488,15 +1511,28 @@ fn main() {
 // this subcommand to gain cross-doc registry construction + cross-ref
 // validation that the single-file `Generate` cannot provide.
 
-fn cmd_orchestrate(
-    scxml_paths: &[String],
-    forge_paths: &[String],
-    language: &str,
-    output_dir: &str,
-    deploy_path: Option<&str>,
-    emit_ast_dir: Option<&str>,
-    error_format: ErrorFormat,
-) {
+fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
+    // Destructured once, into the borrowed shapes the body below reads.
+    // The arguments travel as a struct because `Generate`, `Check` and
+    // `GenerateW3c` already do: a flat parameter list crossed clippy's
+    // `too_many_arguments` the moment this subcommand gained the two
+    // options `check` had all along.
+    let OrchestrateArgs {
+        scxml,
+        forge,
+        language: language_arg,
+        output_dir: output_dir_arg,
+        deploy,
+        emit_ast_dir: emit_ast_dir_arg,
+        go_module_prefix,
+        const_fold_budget,
+    } = args;
+    let scxml_paths: &[String] = &scxml;
+    let forge_paths: &[String] = &forge;
+    let language: &str = &language_arg;
+    let output_dir: &str = &output_dir_arg;
+    let deploy_path: Option<&str> = deploy.as_deref();
+    let emit_ast_dir: Option<&str> = emit_ast_dir_arg.as_deref();
     // Per-doc AST emit runs *before* the multi-doc compile so the AST
     // surface is independent of any cross-doc validation outcome. A
     // failing cross-doc validator must still produce ASTs for the
@@ -1521,11 +1557,15 @@ fn cmd_orchestrate(
     let scxml_refs: Vec<&Path> = scxml_path_bufs.iter().map(|p| p.as_path()).collect();
     let forge_refs: Vec<&Path> = forge_path_bufs.iter().map(|p| p.as_path()).collect();
 
-    // Default options match `Generate`'s sentinel defaults. Future
-    // CLI flags can grow the surface (format-style, const_fold_budget)
-    // when consumer demand arrives; the minimal shape today keeps the
-    // subcommand's wire footprint bounded.
-    let options = sce_build::ForgeCompileOptions::default();
+    // The two options `check`'s document-set route accepts, since that
+    // route names this subcommand as the producer it mirrors: a verdict
+    // check can reach has to be a verdict this run can reach too.
+    // Everything else keeps `Generate`'s sentinel defaults.
+    let options = sce_build::ForgeCompileOptions {
+        go_module_prefix,
+        const_fold_budget,
+        ..Default::default()
+    };
 
     let template_dir = sce_build::find_template_dir_for(lang);
 
