@@ -42,6 +42,7 @@ use std::path::{Path, PathBuf};
 const UNFILTERABLE_GATES: &[&str] = &[
     "codegen_binary_resolution",
     "committed_sourcemap_drift",
+    "diagnostic_corpus_schema",
     "gate_registry_contract",
     "hook_ci_parity",
     "roadmap_marker_gate",
