@@ -188,6 +188,17 @@ name = "cli_orchestrate_check_parity"
 path = "tests/cli_orchestrate_check_parity.rs"
 required-features = ["cli"]
 
+# The forge naming rule: a document is named by its file stem and the
+# root `name` attribute is inert. Nothing validates that — the rule
+# lives in SCE_ACCEPTED_SUBSET.md prose — so this target pins both the
+# behaviour and the prose, and guards the eight templates that used to
+# quote a `name=` the source need not contain. Drives the binary, hence
+# the `cli` gate.
+[[test]]
+name = "forge_document_name_is_the_stem"
+path = "tests/forge_document_name_is_the_stem.rs"
+required-features = ["cli"]
+
 # Structural smoke validator for all four codegen backends. Depends on
 # the `sce-codegen` binary, hence the `cli` gate shared with the other
 # end-to-end tests. See `tests/codegen_smoke.rs` for the rationale
