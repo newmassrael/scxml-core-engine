@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-symbol-lookup.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE symbol lookup record (wire schema v1)",
+  "description": "One resolved symbol emitted by a sourcemap lookup. Both directions share this shape and are distinguished by `kind`: `addr2sce` resolves a mangled symbol to the SCXML coordinates it came from, `sce2sym` resolves SCXML coordinates to the symbols they lowered to. Emitted as NDJSON — one record per line, one line per hit — because a single SCXML coordinate legitimately lowers to several symbols, and a lookup may span several backends' sidecars in one invocation. Authoritative producer is sce-build/src/forge/sourcemap.rs; the symbol table itself is schemas/sce-sourcemap.v1.schema.json. Consumers MUST ignore unknown fields. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["v", "kind", "sourcemap", "symbol", "entry"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "description": "Record schema version. Always 1 for this revision.",
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "description": "Which direction produced this record. Kept in lockstep with the Rust LookupKind enum.",
+      "type": "string",
+      "enum": ["addr2sce", "sce2sym"]
+    },
+    "sourcemap": {
+      "description": "Path of the sce_sourcemap.json this hit came from. Named per record so a lookup spanning several backends stays attributable without correlating by position.",
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "description": "Mangled symbol name — the key under `symbols` in the sourcemap.",
+      "type": "string",
+      "minLength": 1
+    },
+    "entry": {
+      "description": "The symbol's row from the sourcemap, verbatim. Shape is `sourceSymbol` in schemas/sce-sourcemap.v1.schema.json.",
+      "type": "object",
+      "required": ["scxml_file", "scxml_state_path", "scxml_xpath", "line_range", "kind"],
+      "properties": {
+        "scxml_file": {
+          "description": "Author-facing path to the SCXML file the symbol traces back to.",
+          "type": "string"
+        },
+        "scxml_state_path": {
+          "description": "Canonical state-hierarchy path. Empty for the per-machine symbol and for forge-kind body symbols.",
+          "type": "string"
+        },
+        "scxml_xpath": {
+          "description": "Best-effort XPath approximation synthesised from the state path.",
+          "type": "string"
+        },
+        "line_range": {
+          "description": "[start, end] 1-based line range, inclusive at both ends.",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "kind": {
+          "description": "IR node kind.",
+          "type": "string",
+          "enum": ["state", "transition", "on_entry", "on_exit", "forge_body", "machine", "unknown"]
+        },
+        "event": {
+          "description": "Event name for transition / raise / send symbols.",
+          "type": "string"
+        },
+        "wcet_us": {
+          "description": "Worst-case execution-time hint in microseconds, when a profiler consumer injected one.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

@@ -44,6 +44,7 @@ const JSON_SURFACES: &[&str] = &[
     "apis/forge-ast.v1.schema.json",
     "schemas/sce-sourcemap.v1.schema.json",
     "schemas/sce-manifest.v1.schema.json",
+    "schemas/sce-symbol-lookup.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -103,7 +104,7 @@ const SCHEMA_DIRS: &[&str] = &["schemas", "apis"];
 /// that reads zero files passes every per-file assertion vacuously, so
 /// the count is asserted alongside them: the guard must fail when the
 /// walk stops finding the tree rather than quietly certifying nothing.
-const MIN_DISCOVERED_SURFACES: usize = 6;
+const MIN_DISCOVERED_SURFACES: usize = 7;
 
 /// Every schema file on disk is a declared surface.
 ///
