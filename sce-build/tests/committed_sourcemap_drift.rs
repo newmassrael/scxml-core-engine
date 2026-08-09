@@ -7,8 +7,8 @@
 // trees are generated artifacts, but nothing compared them against the
 // generator that produces them:
 //
-//   - `sce-codegen verify` reads the §synth-6.2.6 header, and a JSON
-//     sidecar carries no comment to put one in.
+//   - `sce-codegen verify` reads the drift header, and a JSON sidecar
+//     carries no comment syntax to put one in.
 //   - `b9_drift_detection::committed_trees_carry_a_pinned_generated_at`
 //     walks the same trees but only considers files with a
 //     `// generated-at:` line, so every sidecar falls through.
@@ -26,7 +26,7 @@
 // The check is a regeneration comparison because nothing weaker can
 // see that class of drift. It compares the `symbols` table only:
 // `source_hash` / `template_hash` depend on the input directory the
-// caller names and belong to the §synth-6.2.6 axis, which has its own
+// caller names and belong to the drift-hash axis, which has its own
 // gate.
 
 use std::collections::BTreeMap;
