@@ -59,3 +59,25 @@ sce_codegen_require() {
     echo "  cargo build --bin sce-codegen --features cli -p sce-build" >&2
     return 1
 }
+
+# Delete a release binary that the build about to run will not produce.
+#
+# Call this before a step that builds the debug profile alone while a
+# restored cache may still hold `target` from an earlier run. Release is
+# second in the search order above, so a stale release binary cannot
+# outrank a fresh debug one — but a debug-only build that finds no debug
+# binary yet leaves release as the only candidate, and every locator
+# would then hand out a binary predating the checkout. That is how CI
+# once ran a generator older than a filter its own templates use and
+# failed with "unknown filter: unsupported" against a self-consistent
+# source tree.
+#
+# It lives here because this file is one of the four locators allowed to
+# know that `target/release` can hold a binary at all. Spelling the path
+# into each workflow instead is what `codegen_binary_resolution.rs`
+# forbids, and for the reason the header describes: a build-layout
+# detail repeated across files moves at some of them and not the rest.
+sce_codegen_drop_stale_release() {
+    local root="${1:-$(git rev-parse --show-toplevel)}"
+    rm -f "$root/target/release/sce-codegen"
+}

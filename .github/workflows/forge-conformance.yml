@@ -93,12 +93,12 @@ jobs:
     - name: Build sce-codegen
       run: |
         # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile. A `target/release/sce-codegen` left
-        # by an older cache is not a product of this commit, and the
-        # CMake locator prefers it — which is how CI ran a binary
-        # predating a filter its own templates use ("unknown filter:
-        # unsupported"). Remove the stale one rather than trusting it.
-        rm -f target/release/sce-codegen
+        # builds the debug profile, so a release binary the cache still
+        # holds is not a product of this commit. The locator knows which
+        # path that is; naming it here would put a build-layout detail
+        # back into every workflow.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Upload sce-codegen Binary
