@@ -2453,6 +2453,20 @@ pub fn compile_scxml_with_imports(
     // `deploy.is_some()`.
     validate_link_pool_refs(&link_models_for_xref, &pool_reg)?;
 
+    // ── Link framer-ref cross-doc resolution ──
+    //
+    // The pool pass's twin, and ordered right behind it for the same
+    // reason it sits ahead of the deploy block: the slot-size join
+    // (`validate_link_pool_framer_resolution`, one layer down in
+    // `compile_forge_with_imports`) reaches the codec through this very
+    // ref and returns `Ok(())` on a miss. A ref proven to resolve is
+    // what makes that comparison well-founded rather than skipped.
+    //
+    // Pool before framer matches the element order a link document
+    // writes and keeps the first refusal predictable when a document
+    // dangles on both axes.
+    validate_link_framer_refs(&link_models_for_xref, &cross_doc)?;
+
     // ── Worker outbox cross-resolution ──
     //
     // Runs after pass-2 statechart registration so worker→statechart
@@ -3712,6 +3726,37 @@ fn validate_link_pool_framer_resolution(
 /// `validate_link_pool_framer_resolution` convention. Sides are walked
 /// rx → tx → stage over the links in input order, so the first
 /// refusal is deterministic for a given invocation.
+/// Repair candidates for a link ref that did not resolve: every name of
+/// the wanted kind the link could legally have written.
+///
+/// Both resolution routes contribute, because both are how the ref may
+/// resolve — the build's own document set (`build_names`) and the
+/// link's `<sce:import>` aliases of that kind. A candidate list built
+/// from the build set alone reports `[]` for a link whose only codec or
+/// pool arrives by import, which is not a conservative answer but a
+/// wrong one: `Fix::ReplaceOneOf` is a machine-applicable repair, and
+/// the name the author meant was reachable all along.
+///
+/// Sorted and deduplicated so the `Fix` payload — and therefore the
+/// diagnostic's FNV1a id — is reproducible for a given build, and so a
+/// name reachable both ways is offered once.
+fn link_ref_candidates(
+    build_names: Vec<String>,
+    imports: &[forge::model::ForgeImport],
+    kind: forge::model::ForgeKind,
+) -> Vec<String> {
+    let mut out = build_names;
+    out.extend(
+        imports
+            .iter()
+            .filter(|imp| imp.kind == kind)
+            .map(|imp| imp.alias.clone()),
+    );
+    out.sort();
+    out.dedup();
+    out
+}
+
 fn validate_link_pool_refs(
     links: &[(
         String,
@@ -3724,8 +3769,9 @@ fn validate_link_pool_refs(
     use forge::model::ForgeKind;
     use forge::pool_registry::ForgePoolKind;
 
-    let candidates = pool_reg.names_of_kind(ForgePoolKind::BufferPool);
+    let build_pools = pool_reg.names_of_kind(ForgePoolKind::BufferPool);
     for (diag_label, link, imports) in links {
+        let candidates = link_ref_candidates(build_pools.clone(), imports, ForgeKind::BufferPool);
         for (side, pool_ref) in [
             ("rx", &link.rx_pool),
             ("tx", &link.tx_pool),
@@ -3754,6 +3800,80 @@ fn validate_link_pool_refs(
                 None,
             ));
         }
+    }
+    Ok(())
+}
+
+/// RFC §synth-5-C cross-resolution: every `<sce:framer ref>` on a link
+/// kind must name a codec document this build can see.
+///
+/// The framer twin of [`validate_link_pool_refs`], and resolved the
+/// same two ways: the name may be a `sce:kind="codec"` document among
+/// the build's inputs (`cross_doc`) or a codec `<sce:import>` alias on
+/// the link document itself. Both routes are how a real build spells
+/// the dependency — the input-list form when the documents are siblings
+/// handed to one `orchestrate`, the import form when the link names a
+/// file the caller did not list — so requiring either alone would
+/// reject topologies the rest of the pipeline compiles.
+///
+/// Why the pass exists separately from
+/// [`validate_link_pool_framer_resolution`]: that pass *consumes* the
+/// resolved framer to compare the codec's worst-case encoded size
+/// against the bound pool's slot, and its framer arm returns `Ok(())`
+/// on a miss. The tolerance is right for a partial topology and wrong
+/// for a typo, and the two are indistinguishable from inside a pass
+/// handed one document. This entry point is handed the whole build, so
+/// it is the only layer that can separate them — the same argument
+/// that put the pool axis here, one join earlier.
+///
+/// The generated link wrapper is not an argument against the join, it
+/// is the request for it: the emitted header says the wrapper "treats
+/// the framer as opaque (no codegen-time codec import resolution here)
+/// … cross-file framer-codec resolution happens at generator level"
+/// and hands consumers a `*_LINK_FRAMER_REF` string to "resolve
+/// against the imported codec map". Opacity is a property of the
+/// wrapper; the resolution it defers is owed here.
+///
+/// Runs only from [`compile_scxml_with_imports`] for
+/// [`validate_link_pool_refs`]'s reason: the single-document entry
+/// points are handed one file and genuinely cannot know whether a name
+/// is declared elsewhere in the build.
+///
+/// The diagnostic anchors at the link document — the file that wrote
+/// the offending ref — and links are walked in input order, so the
+/// first refusal is deterministic for a given invocation.
+fn validate_link_framer_refs(
+    links: &[(
+        String,
+        forge::model::LinkModel,
+        Vec<forge::model::ForgeImport>,
+    )],
+    cross_doc: &forge::cross_doc_registry::SceCrossDocRegistry,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::cross_doc_registry::ScxmlDocKind;
+    use forge::error::{Located, ValidationError};
+    use forge::model::ForgeKind;
+
+    let build_codecs = cross_doc.names_of_kind(ScxmlDocKind::Codec);
+    for (diag_label, link, imports) in links {
+        let declared_in_build = cross_doc.lookup(&link.framer) == Some(ScxmlDocKind::Codec);
+        let imported_by_link = imports
+            .iter()
+            .any(|imp| imp.alias == link.framer && imp.kind == ForgeKind::Codec);
+        if declared_in_build || imported_by_link {
+            continue;
+        }
+        return Err(Located::new(
+            ValidationError::LinkFramerRefNotDeclared {
+                link_name: link.name.clone(),
+                framer_ref: link.framer.clone(),
+                candidates: link_ref_candidates(build_codecs.clone(), imports, ForgeKind::Codec),
+            }
+            .into(),
+            diag_label,
+            None,
+            None,
+        ));
     }
     Ok(())
 }
