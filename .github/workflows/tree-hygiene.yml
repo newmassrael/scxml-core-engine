@@ -91,6 +91,7 @@ jobs:
           --test workflow_trigger_coverage \
           --test hook_ci_parity \
           --test codegen_binary_resolution \
+          --test cmake_mesh_guard_scope \
           --test gate_registry_contract \
           --test committed_sourcemap_drift \
           --test diagnostic_corpus_schema \
