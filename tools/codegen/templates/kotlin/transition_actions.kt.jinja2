@@ -54,9 +54,15 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% if trans.actions and trans.event %}
 {% if trans.event == '*' %}
             event != null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
             ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
 {%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% else %}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
 {% set resolved_event = trans.prefix_matching_events[0] %}
@@ -65,8 +71,14 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% endif %}
 {% if trans.cond %}
             event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% else %}
             event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% endif %}
 {% endif %}
 {% for action in trans.actions %}
@@ -83,8 +95,14 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% if trans.actions and not trans.event %}
 {% if trans.cond %}
             event == null && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% else %}
             event == null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}

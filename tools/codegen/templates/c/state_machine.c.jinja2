@@ -180,9 +180,13 @@
 {% endif %}
 #endif
 
-{% if model.needs_script_engine %}
-#include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
-{% endif %}
+{# W3C SCXML 4.9: `<log>` lowers to `fprintf(stderr, …)` on this
+   backend, which needs `<stdio.h>` whether or not the document also
+   needs a script engine. Gating the include on `needs_script_engine`
+   alone left every script-free document carrying a `<log>` calling
+   `fprintf` with no declaration in scope — an implicit declaration,
+   which is an error under the `-Werror` the repo builds C11 with. #}
+#include <stdio.h>  /* fprintf for <log>; snprintf for body-bearing <foreach> */
 {% if model.needs_dom_helper %}
 /* W3C SCXML B.2: XML DOM helper (backends/c/runtime/include/sce/lua_dom_binding.h).
    cpp `LuaDOMBinding` 1:1 algorithmic mirror in pure C — pugixml is
@@ -2445,6 +2449,9 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
         {% for trans in state.transitions %}
         {% if trans.actions %}
         case {{ trans.transition_index }}: {  {{- annot.annotation_comment(trans, "c", "            ") }}
+{% if trans.source_location %}
+            {{ sce_map.source_marker(trans.source_location, "c", stmt_level=true) | trim }}
+{% endif %}
             /* W3C SCXML 3.13: transition body for `<transition{% if trans.event %} event="{{ trans.event }}"{% endif %}{% if trans.target %} target="{{ trans.target }}"{% endif %}>` */
             {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
