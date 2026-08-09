@@ -106,6 +106,29 @@ are described in `forge_phase3_complete.md`; inline-eligible kinds
 (`is_inline_eligible()` → true) may be embedded in a `<data>` element
 of an outer statechart.
 
+**Document name — the file stem, not the `name` attribute.** The
+compiled model's name, which every backend derives its type and file
+names from, is the document's file stem. A `name` attribute on the
+root `<scxml>` element of a forge document is accepted and ignored:
+`enum_hex_values.scxml` declaring `name="opcode"` compiles to
+`EnumHexValues`, and a document with no `name` attribute at all
+compiles the same way. Only the root element's attribute is inert —
+`name` on a child (`<sce:variant name>`, `<sce:flag name>`,
+`<sce:link name>`) names the thing it sits on and is used normally.
+
+The grammar admits the attribute (`name` is optional on the root) and
+many in-tree documents carry one, so this is stated rather than
+enforced: rejecting it would redefine the language against its own
+corpus instead of fixing a defect. Examples in this document that
+show a root `name` — the `sce:kind="enum"` opt-out sample under
+"Opt-out for open-set vocabularies" among them — are naming the
+document for the reader, not selecting the emitted type.
+
+This is the one place a forge kind departs from
+`sce:kind="statechart"`, where W3C SCXML 5.10 requires the root `name`
+attribute to be bound to the `_name` system variable (W3C tests
+323/324/329/346).
+
 ### §2.2 Typed fields — `<sce:field>`
 
 Structured data carriers used by codec / validator / filter / etc.
