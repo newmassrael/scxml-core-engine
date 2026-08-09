@@ -48,7 +48,22 @@
    available (e.g. JTAG hard-fault stack trace, panic backtrace).
 #}
 
-{%- macro source_marker(loc, backend, module_level=false, symbol_id="", line_end=none) -%}
+{#
+   `stmt_level=true` marks an emission site inside a function body —
+   a `match` arm, a `switch` case — rather than above an item. Rust is
+   the only backend that has to care: `#[doc = "..."]` is an item
+   attribute and does not parse in expression position, so the
+   statement form emits the `//` comment alone. Every other backend
+   emits exactly what it emits at function scope, because `#line`,
+   `//line` and comments are all valid mid-body.
+
+   Statement-level markers are what make the per-symbol attribution
+   real. A marker above `execute_entry_actions` can only name one
+   location for a function every state shares, which is why every
+   committed tree carried a single distinct marker value per file
+   until the call sites started passing the state's own location.
+#}
+{%- macro source_marker(loc, backend, module_level=false, symbol_id="", line_end=none, stmt_level=false) -%}
 {%- if loc and loc.line -%}
 {#- Construct the line-range fragment. `line_end` defaults to
     `loc.line` so a single-line marker still renders as `N`; the
@@ -74,6 +89,8 @@
 {%- elif backend == "rust" -%}
 {%- if module_level %}
 #![doc = "SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}"]
+// SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
+{%- elif stmt_level %}
 // SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
 {%- else %}
 #[doc = "SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}"]

@@ -2033,6 +2033,9 @@ SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t 
 {% if state.on_entry_blocks %}
 {% for block in state.on_entry_blocks %}
 {{ sce_map.source_marker(state.source_location, "c") }}
+{% if state.source_location %}
+{{ sce_map.source_marker(state.source_location, "c", stmt_level=true) | trim }}
+{% endif %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}
@@ -2049,6 +2052,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | l
 {% if state.on_exit_blocks %}
 {% for block in state.on_exit_blocks %}
 {{ sce_map.source_marker(state.source_location, "c") }}
+{% if state.source_location %}
+{{ sce_map.source_marker(state.source_location, "c", stmt_level=true) | trim }}
+{% endif %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
     {% for action in block %}

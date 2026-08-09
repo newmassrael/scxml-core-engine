@@ -45,6 +45,9 @@
 {% endif %}
 {% endif %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
+{% if state.source_location %}
+                {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("{{ state_id }}")) return
 {% if has_late_datamodel %}
@@ -375,6 +378,9 @@
 {% set exit_has_invokes = state_id in invoke_entries %}
 {% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
+{% if state.source_location %}
+                {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true) | trim }}
+{% endif %}
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)

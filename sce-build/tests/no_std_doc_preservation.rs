@@ -118,34 +118,79 @@ fn generate_rust_with_fixture(fixture_name: &str, fixture: &str, extra_args: &[&
     body
 }
 
-/// Assert the source carries BOTH the `#[doc = "SCE-MAP: ..."]` and
-/// `// SCE-MAP: ...` forms. Counts each so a template edit that drops
-/// one form (regressing the dual-emit contract) is observable.
+/// Assert the source carries both marker forms where the spec places
+/// them.
+///
+/// Spec lines 3112-3137 draw the arrangement directly: a `#[doc]`
+/// attribute on the emitted item, immediately followed by its `//`
+/// twin, and — inside the function body, at a *different* source line
+/// — a bare `// SCE-MAP:` comment. The prose says why: the comment is
+/// "a redundant fallback for in-line locations where attribute syntax
+/// is unwieldy (inside function bodies)". `#[doc]` is an item
+/// attribute; it does not parse in expression position, so a
+/// statement-level marker can only be a comment.
+///
+/// This is therefore not a whole-file 1:1 count. An earlier revision
+/// asserted `doc_count == comment_count`, which reads the "MUST emit
+/// BOTH" line as covering every marker in the file rather than every
+/// item — a constraint stricter than the spec, and one no per-state
+/// marker can satisfy. What the contract does require, and what is
+/// asserted here:
+///
+///   * every `#[doc]` marker is immediately followed by its `//` twin,
+///     so neither survival path (rustdoc JSON, grep) is closed for an
+///     item, and
+///   * at least one statement-level marker exists, so the per-symbol
+///     anchoring cannot silently regress to one marker per file.
 fn assert_dual_emit(body: &str, label: &str) {
-    let doc_count =
-        body.matches("#[doc = \"SCE-MAP:").count() + body.matches("#![doc = \"SCE-MAP:").count();
-    let comment_count = body.matches("// SCE-MAP:").count();
+    let lines: Vec<&str> = body.lines().collect();
+    let is_doc_marker =
+        |s: &str| s.starts_with("#[doc = \"SCE-MAP:") || s.starts_with("#![doc = \"SCE-MAP:");
+
+    let mut item_pairs = 0usize;
+    let mut unpaired: Vec<usize> = Vec::new();
+    let mut statement_level = 0usize;
+
+    for (i, raw) in lines.iter().enumerate() {
+        let line = raw.trim();
+        if is_doc_marker(line) {
+            let next = lines.get(i + 1).map(|l| l.trim()).unwrap_or("");
+            if next.starts_with("// SCE-MAP:") {
+                item_pairs += 1;
+            } else {
+                unpaired.push(i + 1);
+            }
+        } else if line.starts_with("// SCE-MAP:") {
+            let prev = i
+                .checked_sub(1)
+                .and_then(|j| lines.get(j))
+                .map(|l| l.trim())
+                .unwrap_or("");
+            if !is_doc_marker(prev) {
+                statement_level += 1;
+            }
+        }
+    }
+
     assert!(
-        doc_count >= 1,
-        "{label}: no `#[doc = \"SCE-MAP: ...\"]` form emitted. \
-         Spec lines 3135-3136 require BOTH forms.\nbody:\n{}",
+        item_pairs >= 1,
+        "{label}: no `#[doc = \"SCE-MAP: ...\"]` marker paired with its \
+         `// SCE-MAP:` twin. Spec lines 3135-3136 require BOTH forms on \
+         an emitted item.\nbody:\n{}",
         body.chars().take(2000).collect::<String>(),
     );
     assert!(
-        comment_count >= 1,
-        "{label}: no `// SCE-MAP: ...` form emitted. Spec lines \
-         3135-3136 require BOTH forms.\nbody:\n{}",
-        body.chars().take(2000).collect::<String>(),
+        unpaired.is_empty(),
+        "{label}: `#[doc]` markers at line(s) {unpaired:?} have no \
+         adjacent `// SCE-MAP:` twin. The macro emits the pair together; \
+         one form alone closes a survival path.",
     );
-    // Per spec the two emission counts should match in production:
-    // the macro emits them in pairs. A `>=` rather than `==` check
-    // tolerates module-level emission (inner attribute `#![doc]` +
-    // sibling `// SCE-MAP:` comment) which carries `module_level=true`
-    // through both fork arms — same count expected.
-    assert_eq!(
-        doc_count, comment_count,
-        "{label}: dual-emit count mismatch. doc={doc_count} comment={comment_count}. \
-         Macro should pair the forms 1:1.",
+    assert!(
+        statement_level >= 1,
+        "{label}: no statement-level `// SCE-MAP:` marker. Spec lines \
+         3112-3124 place one inside the function body at its own source \
+         line; without it every marker in the file names the document \
+         root and the file has no per-state attribution.",
     );
 }
 
@@ -159,12 +204,62 @@ fn rust_default_profile_emits_both_marker_forms() {
 fn rust_no_std_profile_emits_both_marker_forms() {
     // The C3 B-β `--no-std` flag toggles the alternate template path
     // (`#![no_std]` header + `core::*` swaps + invoke/HTTP rejection).
-    // The dual-emit must survive across both paths so
-    // the line-comment fallback covers a future rustdoc strip. The
-    // fixture is the script-free variant because `--no-std` rejects
-    // any `<log expr="...">` (the analyzer flags it as script-bound).
-    let body = generate_rust_with_fixture("nostd_path", STATECHART_FIXTURE, &["--no-std"]);
+    // The dual-emit must survive across both paths so the line-comment
+    // fallback covers a future rustdoc strip.
+    //
+    // The fixture carries an `<onentry>` because a document with no
+    // entry actions emits no per-state match arm, and therefore has no
+    // place for a statement-level marker — checking `--no-std` against
+    // such a document would exercise only the item-level half and let
+    // the profile regress on the other. `--no-std` rejects
+    // `<log expr="...">`, which the analyzer flags as script-bound;
+    // `<log label="...">` is not script-bound and generates cleanly.
+    let body = generate_rust_with_fixture("nostd_path", STATECHART_FIXTURE_WITH_LOG, &["--no-std"]);
     assert_dual_emit(&body, "rust --no-std");
+}
+
+/// A document with no executable content still carries item-level
+/// markers, and carries no statement-level one.
+///
+/// This is the boundary of the per-state anchoring: the markers sit
+/// inside the `match` arms of `execute_entry_actions` /
+/// `execute_exit_actions`, and a document with no entry or exit
+/// actions emits no arms. Pinning the boundary keeps a later reader
+/// from concluding that a marker-free function body is a regression
+/// when it is the absence of anything to attribute.
+#[test]
+fn action_free_document_carries_item_markers_only() {
+    let body = generate_rust_with_fixture("action_free", STATECHART_FIXTURE, &[]);
+    let lines: Vec<&str> = body.lines().collect();
+    let is_doc_marker =
+        |s: &str| s.starts_with("#[doc = \"SCE-MAP:") || s.starts_with("#![doc = \"SCE-MAP:");
+    let mut item_pairs = 0usize;
+    let mut statement_level: Vec<usize> = Vec::new();
+    for (i, raw) in lines.iter().enumerate() {
+        let line = raw.trim();
+        if is_doc_marker(line) {
+            item_pairs += 1;
+        } else if line.starts_with("// SCE-MAP:") {
+            let prev = i
+                .checked_sub(1)
+                .and_then(|j| lines.get(j))
+                .map(|l| l.trim())
+                .unwrap_or("");
+            if !is_doc_marker(prev) {
+                statement_level.push(i + 1);
+            }
+        }
+    }
+    assert!(
+        item_pairs >= 1,
+        "even an action-free document must carry item-level markers",
+    );
+    assert!(
+        statement_level.is_empty(),
+        "a document with no entry/exit actions emits no per-state match \
+         arm, so there is nothing for a statement-level marker to \
+         attribute; found some at line(s) {statement_level:?}",
+    );
 }
 
 #[test]
