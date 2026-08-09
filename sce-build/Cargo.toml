@@ -118,6 +118,15 @@ name = "error_format_json"
 path = "tests/error_format_json.rs"
 required-features = ["cli"]
 
+# W3C SCXML 4.9 `<log>` on C11 without a script engine. Compiles the
+# generated translation unit under the same `-Werror` the repo builds
+# C11 with; the `<stdio.h>` include used to be gated on the scripting
+# tier, so this combination emitted an implicit `fprintf` declaration.
+[[test]]
+name = "c11_log_without_script_engine"
+path = "tests/c11_log_without_script_engine.rs"
+required-features = ["cli"]
+
 # Diagnostic instance-validation gate. Sweeps the fixture corpus in
 # every backend through `check` and validates the emitted NDJSON
 # against the published schema — the only check that puts a produced

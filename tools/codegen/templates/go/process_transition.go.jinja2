@@ -355,6 +355,9 @@ func (p *{{ machine_name }}Policy) ExecuteTransitionActions(engine *sce.Engine[{
 {% for trans in state.transitions %}
 {% if trans.actions %}
 	if source == {{ machine_name }}State{{ state_id | to_state_variant }} && idx == {{ trans.transition_index | default(loop.index0) }} {  {{- annot.annotation_comment(trans, "go", "		") }}
+{% if trans.source_location %}
+		{{ sce_map.source_marker(trans.source_location, "go", stmt_level=true) | trim }}
+{% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "go", "		") -}}

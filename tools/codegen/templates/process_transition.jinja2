@@ -758,6 +758,9 @@ public:
                 switch (lastTransitionIndex_) {
 {% for trans in state.transitions %}
                 case {{ loop.index0 }}:  // Transition {{ loop.index0 }}{{ annot.annotation_comment(trans, "cpp", "                    ") }}
+{% if trans.source_location %}
+                    {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true) | trim }}
+{% endif %}
                     {
                         AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");
 {% if model.needs_script_engine %}
