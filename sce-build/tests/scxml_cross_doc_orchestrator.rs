@@ -803,7 +803,7 @@ fn c13_orchestrator_happy_path_emits_outputs() {
     assert!(!outputs.is_empty(), "happy path must emit outputs");
 }
 
-// ── Link pool-ref cross-doc resolution (RFC §synth-5-C / §synth-5-E) ──
+// ── Link pool-ref cross-doc resolution ───────────────────────────
 //
 // `<sce:rx-pool ref>` / `<sce:tx-pool ref>` / `<sce:stage-pool ref>`
 // name a `sce:kind="buffer-pool"` document. Every downstream consumer
