@@ -14,6 +14,11 @@
 //      first `<xs:documentation>` annotation.
 //   2. The registry lists every surface (keyed by its schema filename),
 //      so dropping a surface from the registry fails this test.
+//   3. Every schema file checked into `schemas/` and `apis/` appears in
+//      the surface lists above. Without this direction the lists are
+//      self-certifying: a schema can land on disk, be consumed by an
+//      external tool, and never acquire a status header or a registry
+//      row, because nothing walks from the tree back to the lists.
 //
 // Per-surface producer-const ↔ schema-header lockstep is guarded
 // separately next to each producer (diagnostic.rs, ast_export.rs,
@@ -38,6 +43,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-diagnostic.v1.schema.json",
     "apis/forge-ast.v1.schema.json",
     "schemas/sce-sourcemap.v1.schema.json",
+    "schemas/sce-manifest.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -86,6 +92,63 @@ fn every_xsd_surface_declares_valid_status() {
             "{rel}: x-sce-schema-status must be 'pre-release' or 'stable'; got {status:?}",
         );
     }
+}
+
+/// Directories that hold checked-in wire schemas. A schema landing in
+/// either one is a wire surface by construction — it exists to be read
+/// by something outside this crate.
+const SCHEMA_DIRS: &[&str] = &["schemas", "apis"];
+
+/// Lower bound on the surfaces the reverse walk must observe. A scan
+/// that reads zero files passes every per-file assertion vacuously, so
+/// the count is asserted alongside them: the guard must fail when the
+/// walk stops finding the tree rather than quietly certifying nothing.
+const MIN_DISCOVERED_SURFACES: usize = 6;
+
+/// Every schema file on disk is a declared surface.
+///
+/// The forward direction (`registry_lists_every_surface`) walks the
+/// hardcoded lists and cannot observe a file the lists never named.
+/// This walks the tree instead, so a new schema is a build failure
+/// until it is classified, given a status header, and registered.
+#[test]
+fn every_checked_in_schema_is_a_declared_surface() {
+    let mut discovered = 0usize;
+    for dir in SCHEMA_DIRS {
+        let abs = repo_root().join(dir);
+        let entries =
+            std::fs::read_dir(&abs).unwrap_or_else(|e| panic!("read_dir {}: {e}", abs.display()));
+        for entry in entries {
+            let path = entry.expect("dir entry readable").path();
+            let name = match path.file_name().and_then(|f| f.to_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+            let is_json_schema = name.ends_with(".schema.json");
+            let is_xsd = name.ends_with(".xsd");
+            if !is_json_schema && !is_xsd {
+                continue;
+            }
+            discovered += 1;
+            let rel = format!("{dir}/{name}");
+            let declared = if is_json_schema {
+                JSON_SURFACES.contains(&rel.as_str())
+            } else {
+                XSD_SURFACES.contains(&rel.as_str())
+            };
+            assert!(
+                declared,
+                "{rel} is checked in but is not a declared wire surface. Add it to \
+                 JSON_SURFACES / XSD_SURFACES, give it an x-sce-schema-status header, \
+                 and register it in SCE_WIRE_CONTRACTS.md.",
+            );
+        }
+    }
+    assert!(
+        discovered >= MIN_DISCOVERED_SURFACES,
+        "reverse walk found only {discovered} schema files; expected at least \
+         {MIN_DISCOVERED_SURFACES}. A walk that finds nothing certifies nothing.",
+    );
 }
 
 #[test]
