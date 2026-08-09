@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -120,18 +120,21 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
     override fun onEntry(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("clean")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("leaked")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("watch")) return
 
@@ -147,12 +150,15 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
     override fun onExit(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17
                 activeStateIds.remove("clean")
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16
                 activeStateIds.remove("leaked")
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
                 activeStateIds.remove("watch")
             }
         }

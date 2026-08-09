@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -247,18 +247,21 @@ class DonedataLateCompletionStateMachine(
     override fun onEntry(state: DonedataLateCompletionState) {
         when (state) {
             is DonedataLateCompletionState.Fail -> {
+                // SCE-MAP: donedata_late_completion.scxml:77
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLateCompletionState.Pass -> {
+                // SCE-MAP: donedata_late_completion.scxml:76
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLateCompletionState.Phase -> {
+                // SCE-MAP: donedata_late_completion.scxml:48
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -280,12 +283,15 @@ class DonedataLateCompletionStateMachine(
     override fun onExit(state: DonedataLateCompletionState) {
         when (state) {
             is DonedataLateCompletionState.Fail -> {
+                // SCE-MAP: donedata_late_completion.scxml:77
                 activeStateIds.remove("fail")
             }
             is DonedataLateCompletionState.Pass -> {
+                // SCE-MAP: donedata_late_completion.scxml:76
                 activeStateIds.remove("pass")
             }
             is DonedataLateCompletionState.Phase -> {
+                // SCE-MAP: donedata_late_completion.scxml:48
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit

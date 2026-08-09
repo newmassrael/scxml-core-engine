@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -111,6 +111,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
     override fun onEntry(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("emit")) return
 
@@ -124,6 +125,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
             }
             }
             is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sent")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -137,9 +139,11 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
     override fun onExit(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
                 activeStateIds.remove("emit")
             }
             is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13
                 activeStateIds.remove("sent")
             }
         }

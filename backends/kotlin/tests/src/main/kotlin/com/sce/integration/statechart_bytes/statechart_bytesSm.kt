@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -133,10 +133,12 @@ class StatechartBytesStateMachine(
     override fun onEntry(state: StatechartBytesState) {
         when (state) {
             is StatechartBytesState.Done -> {
+                // SCE-MAP: statechart_bytes.scxml:23
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
             }
             is StatechartBytesState.Waiting -> {
+                // SCE-MAP: statechart_bytes.scxml:20
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
             }
@@ -148,9 +150,11 @@ class StatechartBytesStateMachine(
     override fun onExit(state: StatechartBytesState) {
         when (state) {
             is StatechartBytesState.Done -> {
+                // SCE-MAP: statechart_bytes.scxml:23
                 activeStateIds.remove("done")
             }
             is StatechartBytesState.Waiting -> {
+                // SCE-MAP: statechart_bytes.scxml:20
                 activeStateIds.remove("waiting")
             }
         }

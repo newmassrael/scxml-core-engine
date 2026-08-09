@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -258,22 +258,26 @@ class Test558StateMachine(
     override fun onEntry(state: Test558State) {
         when (state) {
             is Test558State.Fail -> {
+                // SCE-MAP: test558.scxml:25
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test558State.Pass -> {
+                // SCE-MAP: test558.scxml:24
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test558State.S0 -> {
+                // SCE-MAP: test558.scxml:14
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test558State.S1 -> {
+                // SCE-MAP: test558.scxml:19
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
@@ -285,15 +289,19 @@ class Test558StateMachine(
     override fun onExit(state: Test558State) {
         when (state) {
             is Test558State.Fail -> {
+                // SCE-MAP: test558.scxml:25
                 activeStateIds.remove("fail")
             }
             is Test558State.Pass -> {
+                // SCE-MAP: test558.scxml:24
                 activeStateIds.remove("pass")
             }
             is Test558State.S0 -> {
+                // SCE-MAP: test558.scxml:14
                 activeStateIds.remove("s0")
             }
             is Test558State.S1 -> {
+                // SCE-MAP: test558.scxml:19
                 activeStateIds.remove("s1")
             }
         }

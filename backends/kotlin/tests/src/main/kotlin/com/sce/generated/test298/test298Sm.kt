@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -287,18 +287,21 @@ class Test298StateMachine(
     override fun onEntry(state: Test298State) {
         when (state) {
             is Test298State.Fail -> {
+                // SCE-MAP: test298.scxml:28
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test298State.Pass -> {
+                // SCE-MAP: test298.scxml:27
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test298State.S0 -> {
+                // SCE-MAP: test298.scxml:9
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -306,10 +309,12 @@ class Test298StateMachine(
             scheduleSend("__send_0", 1000L, Test298Event.Timeout)
             }
             is Test298State.S01 -> {
+                // SCE-MAP: test298.scxml:17
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test298State.S02 -> {
+                // SCE-MAP: test298.scxml:20
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
@@ -341,18 +346,23 @@ class Test298StateMachine(
     override fun onExit(state: Test298State) {
         when (state) {
             is Test298State.Fail -> {
+                // SCE-MAP: test298.scxml:28
                 activeStateIds.remove("fail")
             }
             is Test298State.Pass -> {
+                // SCE-MAP: test298.scxml:27
                 activeStateIds.remove("pass")
             }
             is Test298State.S0 -> {
+                // SCE-MAP: test298.scxml:9
                 activeStateIds.remove("s0")
             }
             is Test298State.S01 -> {
+                // SCE-MAP: test298.scxml:17
                 activeStateIds.remove("s01")
             }
             is Test298State.S02 -> {
+                // SCE-MAP: test298.scxml:20
                 activeStateIds.remove("s02")
             }
         }

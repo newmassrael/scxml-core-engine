@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -253,24 +253,28 @@ class Test318StateMachine(
     override fun onEntry(state: Test318State) {
         when (state) {
             is Test318State.Fail -> {
+                // SCE-MAP: test318.scxml:29
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test318State.Pass -> {
+                // SCE-MAP: test318.scxml:28
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test318State.S0 -> {
+                // SCE-MAP: test318.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
             raiseInternal(Test318Event.Foo)
             }
             is Test318State.S1 -> {
+                // SCE-MAP: test318.scxml:17
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -287,15 +291,19 @@ class Test318StateMachine(
     override fun onExit(state: Test318State) {
         when (state) {
             is Test318State.Fail -> {
+                // SCE-MAP: test318.scxml:29
                 activeStateIds.remove("fail")
             }
             is Test318State.Pass -> {
+                // SCE-MAP: test318.scxml:28
                 activeStateIds.remove("pass")
             }
             is Test318State.S0 -> {
+                // SCE-MAP: test318.scxml:10
                 activeStateIds.remove("s0")
             }
             is Test318State.S1 -> {
+                // SCE-MAP: test318.scxml:17
                 activeStateIds.remove("s1")
             }
         }

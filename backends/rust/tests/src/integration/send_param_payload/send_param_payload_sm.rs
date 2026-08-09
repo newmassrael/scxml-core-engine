@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -737,6 +737,7 @@ impl StatePolicy for SendParamPayloadPolicy {
     ) {
         match state {
             SendParamPayloadState::AwaitChild => {
+                // SCE-MAP: send_param_payload.scxml:42
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -751,6 +752,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 }
             }
             SendParamPayloadState::InternalPhase => {
+                // SCE-MAP: send_param_payload.scxml:67
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {

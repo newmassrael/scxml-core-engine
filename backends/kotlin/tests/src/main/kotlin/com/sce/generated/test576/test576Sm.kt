@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -251,22 +251,26 @@ class Test576StateMachine(
     override fun onEntry(state: Test576State) {
         when (state) {
             is Test576State.Fail -> {
+                // SCE-MAP: test576.scxml:40
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test576State.Pass -> {
+                // SCE-MAP: test576.scxml:39
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test576State.S0 -> {
+                // SCE-MAP: test576.scxml:9
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test576State.S1 -> {
+                // SCE-MAP: test576.scxml:13
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -278,6 +282,7 @@ class Test576StateMachine(
                 }
             }
             is Test576State.S11 -> {
+                // SCE-MAP: test576.scxml:18
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
                 if (!suppressChildEntry) {
@@ -286,10 +291,12 @@ class Test576StateMachine(
                 }
             }
             is Test576State.S111 -> {
+                // SCE-MAP: test576.scxml:19
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s111")) return
             }
             is Test576State.S11p1 -> {
+                // SCE-MAP: test576.scxml:20
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p1")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -298,6 +305,7 @@ class Test576StateMachine(
                 onEntry(Test576State.S11p12)
             }
             is Test576State.S11p11 -> {
+                // SCE-MAP: test576.scxml:21
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p11")) return
                 if (!suppressChildEntry) {
@@ -306,16 +314,19 @@ class Test576StateMachine(
                 }
             }
             is Test576State.S11p111 -> {
+                // SCE-MAP: test576.scxml:22
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p111")) return
             }
             is Test576State.S11p112 -> {
+                // SCE-MAP: test576.scxml:23
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p112")) return
 
             raiseInternal(Test576Event.InS11p112)
             }
             is Test576State.S11p12 -> {
+                // SCE-MAP: test576.scxml:29
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p12")) return
                 if (!suppressChildEntry) {
@@ -324,10 +335,12 @@ class Test576StateMachine(
                 }
             }
             is Test576State.S11p121 -> {
+                // SCE-MAP: test576.scxml:30
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p121")) return
             }
             is Test576State.S11p122 -> {
+                // SCE-MAP: test576.scxml:31
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p122")) return
             }
@@ -339,24 +352,31 @@ class Test576StateMachine(
     override fun onExit(state: Test576State) {
         when (state) {
             is Test576State.Fail -> {
+                // SCE-MAP: test576.scxml:40
                 activeStateIds.remove("fail")
             }
             is Test576State.Pass -> {
+                // SCE-MAP: test576.scxml:39
                 activeStateIds.remove("pass")
             }
             is Test576State.S0 -> {
+                // SCE-MAP: test576.scxml:9
                 activeStateIds.remove("s0")
             }
             is Test576State.S1 -> {
+                // SCE-MAP: test576.scxml:13
                 activeStateIds.remove("s1")
             }
             is Test576State.S11 -> {
+                // SCE-MAP: test576.scxml:18
                 activeStateIds.remove("s11")
             }
             is Test576State.S111 -> {
+                // SCE-MAP: test576.scxml:19
                 activeStateIds.remove("s111")
             }
             is Test576State.S11p1 -> {
+                // SCE-MAP: test576.scxml:20
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -388,21 +408,27 @@ class Test576StateMachine(
                 activeStateIds.remove("s11p1")
             }
             is Test576State.S11p11 -> {
+                // SCE-MAP: test576.scxml:21
                 activeStateIds.remove("s11p11")
             }
             is Test576State.S11p111 -> {
+                // SCE-MAP: test576.scxml:22
                 activeStateIds.remove("s11p111")
             }
             is Test576State.S11p112 -> {
+                // SCE-MAP: test576.scxml:23
                 activeStateIds.remove("s11p112")
             }
             is Test576State.S11p12 -> {
+                // SCE-MAP: test576.scxml:29
                 activeStateIds.remove("s11p12")
             }
             is Test576State.S11p121 -> {
+                // SCE-MAP: test576.scxml:30
                 activeStateIds.remove("s11p121")
             }
             is Test576State.S11p122 -> {
+                // SCE-MAP: test576.scxml:31
                 activeStateIds.remove("s11p122")
             }
         }

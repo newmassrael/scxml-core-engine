@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 
@@ -352,6 +352,7 @@ func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ClearEventMetadata
 func (p *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy) ExecuteEntryActions(state AutoforwardDequeuePointSceSynthInvokeInvProbeState, engine *sce.Engine[AutoforwardDequeuePointSceSynthInvokeInvProbeState, AutoforwardDequeuePointSceSynthInvokeInvProbeEvent]) {
 	switch state {
 	case AutoforwardDequeuePointSceSynthInvokeInvProbeStateProbe:
+		//line autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -256,6 +256,7 @@ class Test253SceSynthInvokeFooStateMachine(
     override fun onEntry(state: Test253SceSynthInvokeFooState) {
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
 
@@ -264,10 +265,12 @@ class Test253SceSynthInvokeFooStateMachine(
             onSendToParent?.invoke("childRunning", "")
             }
             is Test253SceSynthInvokeFooState.Sub1 -> {
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub1")) return
             }
             is Test253SceSynthInvokeFooState.SubFinal -> {
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:27
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -281,12 +284,15 @@ class Test253SceSynthInvokeFooStateMachine(
     override fun onExit(state: Test253SceSynthInvokeFooState) {
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7
                 activeStateIds.remove("sub0")
             }
             is Test253SceSynthInvokeFooState.Sub1 -> {
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16
                 activeStateIds.remove("sub1")
             }
             is Test253SceSynthInvokeFooState.SubFinal -> {
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:27
                 activeStateIds.remove("subFinal")
             }
         }

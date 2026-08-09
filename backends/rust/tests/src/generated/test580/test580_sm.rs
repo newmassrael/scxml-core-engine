@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -727,6 +727,7 @@ impl StatePolicy for Test580Policy {
         }
         match state {
             Test580State::P1 => {
+                // SCE-MAP: test580.scxml:10
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -749,6 +750,7 @@ impl StatePolicy for Test580Policy {
                 }
             }
             Test580State::S1 => {
+                // SCE-MAP: test580.scxml:22
                 // W3C SCXML 3.11: Initial transition targets history state sh1
                 if self.history_sh1.as_ref().map_or(true, |h| h.is_empty()) {
                     // No stored history, execute default transition actions
@@ -852,6 +854,7 @@ impl StatePolicy for Test580Policy {
         }
         match state {
             Test580State::S1 => {
+                // SCE-MAP: test580.scxml:22
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {

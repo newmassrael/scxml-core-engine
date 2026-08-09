@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -269,22 +269,26 @@ class Test322StateMachine(
     override fun onEntry(state: Test322State) {
         when (state) {
             is Test322State.Fail -> {
+                // SCE-MAP: test322.scxml:35
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test322State.Pass -> {
+                // SCE-MAP: test322.scxml:34
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test322State.S0 -> {
+                // SCE-MAP: test322.scxml:12
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test322State.S1 -> {
+                // SCE-MAP: test322.scxml:17
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -294,6 +298,7 @@ class Test322StateMachine(
             raiseInternal(Test322Event.Foo)
             }
             is Test322State.S2 -> {
+                // SCE-MAP: test322.scxml:27
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
@@ -305,18 +310,23 @@ class Test322StateMachine(
     override fun onExit(state: Test322State) {
         when (state) {
             is Test322State.Fail -> {
+                // SCE-MAP: test322.scxml:35
                 activeStateIds.remove("fail")
             }
             is Test322State.Pass -> {
+                // SCE-MAP: test322.scxml:34
                 activeStateIds.remove("pass")
             }
             is Test322State.S0 -> {
+                // SCE-MAP: test322.scxml:12
                 activeStateIds.remove("s0")
             }
             is Test322State.S1 -> {
+                // SCE-MAP: test322.scxml:17
                 activeStateIds.remove("s1")
             }
             is Test322State.S2 -> {
+                // SCE-MAP: test322.scxml:27
                 activeStateIds.remove("s2")
             }
         }

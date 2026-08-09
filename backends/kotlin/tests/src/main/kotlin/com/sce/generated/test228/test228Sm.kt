@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 87472be6c3c3f32bb0fc76df8bdb613c176bab0c4f79720c0934dff4542328b8
+// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -261,18 +261,21 @@ class Test228StateMachine(
     override fun onEntry(state: Test228State) {
         when (state) {
             is Test228State.Fail -> {
+                // SCE-MAP: test228.scxml:35
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test228State.Pass -> {
+                // SCE-MAP: test228.scxml:34
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test228State.S0 -> {
+                // SCE-MAP: test228.scxml:10
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -290,6 +293,7 @@ class Test228StateMachine(
                 }
             }
             is Test228State.S1 -> {
+                // SCE-MAP: test228.scxml:29
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
@@ -301,12 +305,15 @@ class Test228StateMachine(
     override fun onExit(state: Test228State) {
         when (state) {
             is Test228State.Fail -> {
+                // SCE-MAP: test228.scxml:35
                 activeStateIds.remove("fail")
             }
             is Test228State.Pass -> {
+                // SCE-MAP: test228.scxml:34
                 activeStateIds.remove("pass")
             }
             is Test228State.S0 -> {
+                // SCE-MAP: test228.scxml:10
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -314,6 +321,7 @@ class Test228StateMachine(
                 activeStateIds.remove("s0")
             }
             is Test228State.S1 -> {
+                // SCE-MAP: test228.scxml:29
                 activeStateIds.remove("s1")
             }
         }
