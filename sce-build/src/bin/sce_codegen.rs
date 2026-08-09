@@ -879,9 +879,9 @@ struct CheckArgs {
     #[arg(long = "forge", value_name = "PATH")]
     forge: Vec<String>,
     /// Path to `deploy.yaml`, mirroring `orchestrate`'s `--deploy`.
-    /// Fires the SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M
-    /// cross-doc validators, which otherwise silent-skip. Omit to keep
-    /// the run deploy-unaware.
+    /// Fires the deploy-aware cross-doc validators — link-vs-deploy
+    /// declaration, burst absorption, reassembly — which otherwise
+    /// silent-skip. Omit to keep the run deploy-unaware.
     #[arg(long = "deploy", value_name = "PATH")]
     deploy: Option<String>,
     /// Backend to check against (rust, cpp, kotlin, go, python, c11).
