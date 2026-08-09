@@ -24,10 +24,14 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-cargo test -p sce-build \
+# `--features cli` because `committed_sourcemap_drift` drives the real
+# `sce-codegen` binary; the other targets do not need it and are
+# unaffected by its presence.
+cargo test -p sce-build --features cli \
     --test roadmap_marker_gate \
     --test workflow_trigger_coverage \
     --test hook_ci_parity \
     --test codegen_binary_resolution \
     --test gate_registry_contract \
+    --test committed_sourcemap_drift \
     || sce_gate_fail "tree-wide hygiene gates"

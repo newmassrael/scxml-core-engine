@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 /// that target by name.
 const UNFILTERABLE_GATES: &[&str] = &[
     "codegen_binary_resolution",
+    "committed_sourcemap_drift",
     "gate_registry_contract",
     "hook_ci_parity",
     "roadmap_marker_gate",

@@ -86,9 +86,10 @@ jobs:
     # repository rather than an exported tree. actions/checkout gives one.
     - name: Tree-wide hygiene gates
       run: |
-        cargo test -p sce-build \
+        cargo test -p sce-build --features cli \
           --test roadmap_marker_gate \
           --test workflow_trigger_coverage \
           --test hook_ci_parity \
           --test codegen_binary_resolution \
-          --test gate_registry_contract
+          --test gate_registry_contract \
+          --test committed_sourcemap_drift
