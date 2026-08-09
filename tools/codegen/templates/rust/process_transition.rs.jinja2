@@ -227,6 +227,9 @@
 {% for trans in state.transitions %}
 {% if trans.actions %}
                     {{ loop.index0 }} => {  {{- annot.annotation_comment(trans, "rust", "                        ") }}
+{% if trans.source_location %}
+                        {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true) | trim }}
+{% endif %}
                         // W3C SCXML 3.13: Transition {{ loop.index0 }} actions
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}

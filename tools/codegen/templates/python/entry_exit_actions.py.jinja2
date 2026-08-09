@@ -37,6 +37,9 @@
 {% set _final_with_parent = state.is_final and state.parent and (('done.state.' ~ state.parent) in model.events) %}
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_default_actions or _has_donedata or _final_with_parent %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:{{ annot.annotation_comment(state, "python", "            ") }}
+{% if state.source_location %}
+            {{ sce_map.source_marker(state.source_location, "python", stmt_level=true) | trim }}
+{% endif %}
 {% for block in state.on_entry_blocks %}
             try:
 {% for action in block %}
@@ -173,6 +176,9 @@
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:{{ annot.annotation_comment(state, "python", "            ") }}
+{% if state.source_location %}
+            {{ sce_map.source_marker(state.source_location, "python", stmt_level=true) | trim }}
+{% endif %}
 {% for block in state.on_exit_blocks %}
             try:
 {% for action in block %}
