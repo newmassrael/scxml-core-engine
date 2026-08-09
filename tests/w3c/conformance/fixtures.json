@@ -1,0 +1,1022 @@
+{
+  "$schema": "./fixtures.schema.json",
+  "version": 1,
+  "description": "W3C SCXML statechart conformance registry — the single source of truth for which upstream tests this repository runs and which harness each one needs. `sce-codegen generate-w3c --registry` reads it, `sce-codegen list-fixtures --manifest` enumerates it for build systems with no JSON parser, and tests/CMakeLists.txt derives its per-test registrations from it. Per-test prose (description, spec section, conformance level) is NOT duplicated here: it stays in resources/<id>/metadata.txt, which is upstream W3C data the generator reads separately. `summary` is this repository's own curation note, shown by `generate-w3c --list`.",
+  "harnesses": {
+    "simple": "Run the machine to completion and assert it settles in its pass state. The default when a fixture names no harness.",
+    "scheduled": "The machine depends on delayed `<send>` firing, so the runner needs a longer completion budget and a scheduler tick rather than a single run-to-completion step.",
+    "http": "The machine sends over BasicHTTPEventProcessor, so the runner needs the W3C HTTP fixture endpoint listening before it starts."
+  },
+  "fixtures": [
+    {
+      "id": "144",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.2: raise element inserts events at rear of internal queue (FIFO ordering) (Pure Static)"
+    },
+    {
+      "id": "147",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only) (Static Hybrid)"
+    },
+    {
+      "id": "148",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.3: else clause execution when if/elseif both false (Static Hybrid)"
+    },
+    {
+      "id": "149",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.3: if/elseif/else - neither clause executes (Static Hybrid)"
+    },
+    {
+      "id": "150",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach declares new variable if item doesn't exist (Static Hybrid)"
+    },
+    {
+      "id": "151",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach variable declaration persistence (Static Hybrid)"
+    },
+    {
+      "id": "152",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach error handling - illegal array/item raises error.execution (Static Hybrid)"
+    },
+    {
+      "id": "153",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach iteration order correctness (Static Hybrid)"
+    },
+    {
+      "id": "155",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach executes content once per item (Static Hybrid)"
+    },
+    {
+      "id": "156",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach stops execution on child action error (Static Hybrid)"
+    },
+    {
+      "id": "158",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.12.1: executable content executes in document order (Pure Static)"
+    },
+    {
+      "id": "159",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.12.1: error causes subsequent elements to be skipped (Static Hybrid)"
+    },
+    {
+      "id": "172",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.2: send eventexpr uses current value at evaluation time (Static Hybrid)"
+    },
+    {
+      "id": "173",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.3: send targetexpr uses current value at evaluation time (Static Hybrid)"
+    },
+    {
+      "id": "174",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.4: send typeexpr uses current value at evaluation time (Static Hybrid)"
+    },
+    {
+      "id": "175",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.2.5: send delayexpr uses current value at evaluation time (Static Hybrid)"
+    },
+    {
+      "id": "176",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.1: param uses current value at evaluation time (Static Hybrid)"
+    },
+    {
+      "id": "178",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.1: param - multiple key/value pairs with same keys (Static Hybrid)"
+    },
+    {
+      "id": "179",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.6: content element populates message body (Pure Static)"
+    },
+    {
+      "id": "183",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.2: send idlocation stores sendid value (Static Hybrid)"
+    },
+    {
+      "id": "185",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.2.5: send respects delay specification (Pure Static)"
+    },
+    {
+      "id": "186",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.2: send evaluates args at evaluation time, not send time (Static Hybrid)"
+    },
+    {
+      "id": "187",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.2: Delayed send cancellation on session termination (Pure Static)"
+    },
+    {
+      "id": "189",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: Internal queue priority via target=\"#_internal\" (Pure Static)"
+    },
+    {
+      "id": "190",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)"
+    },
+    {
+      "id": "191",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)"
+    },
+    {
+      "id": "192",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: Inline <content> invoke with #_<invokeid> target (Pure Static)"
+    },
+    {
+      "id": "193",
+      "harness": "simple",
+      "summary": "type attribute for queue routing (W3C SCXML 6.2.4)"
+    },
+    {
+      "id": "194",
+      "harness": "simple",
+      "summary": "invalid target raises error.execution (W3C SCXML 6.2)"
+    },
+    {
+      "id": "198",
+      "harness": "simple",
+      "summary": "default event processor type (W3C SCXML 6.2)"
+    },
+    {
+      "id": "199",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2: unsupported send type raises error.execution (Pure Static)"
+    },
+    {
+      "id": "200",
+      "harness": "simple",
+      "summary": "SCXML event processor support (W3C SCXML 6.2)"
+    },
+    {
+      "id": "201",
+      "harness": "http",
+      "summary": "BasicHTTP event processor (optional - W3C SCXML 6.2)"
+    },
+    {
+      "id": "205",
+      "harness": "simple",
+      "summary": "inline <content>"
+    },
+    {
+      "id": "207",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions (invoke + delayed send)"
+    },
+    {
+      "id": "208",
+      "harness": "scheduled",
+      "summary": "<cancel sendid=\"...\"/> for delayed send cancellation (W3C SCXML 6.3)"
+    },
+    {
+      "id": "210",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.3: sendidexpr for dynamic cancel (Static Hybrid)"
+    },
+    {
+      "id": "215",
+      "harness": "simple",
+      "summary": "typeexpr + inline <content>"
+    },
+    {
+      "id": "216",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: srcexpr runtime evaluation (Static Hybrid)"
+    },
+    {
+      "id": "220",
+      "harness": "simple",
+      "summary": "inline <content>"
+    },
+    {
+      "id": "223",
+      "harness": "simple",
+      "summary": "inline <content>"
+    },
+    {
+      "id": "224",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.3.1: invoke with idlocation (Static Hybrid)"
+    },
+    {
+      "id": "225",
+      "harness": "simple",
+      "summary": "inline <content>"
+    },
+    {
+      "id": "226",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2/6.4: auto-discovers test226sub1.txml"
+    },
+    {
+      "id": "228",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.3.1: invoke ID in done.invoke event (Static Hybrid)"
+    },
+    {
+      "id": "229",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4.1: autoforward with inline content (Pure Static)"
+    },
+    {
+      "id": "230",
+      "harness": "scheduled",
+      "summary": "inline <content> + autoforward (manual)"
+    },
+    {
+      "id": "232",
+      "harness": "simple",
+      "summary": "inline <content>"
+    },
+    {
+      "id": "233",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.5: finalize before done.invoke event processing (Static Hybrid)"
+    },
+    {
+      "id": "234",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.5: finalize only in invoking state (Static Hybrid)"
+    },
+    {
+      "id": "235",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.4: done.invoke.id event with inline content child (Pure Static)"
+    },
+    {
+      "id": "236",
+      "harness": "scheduled",
+      "summary": "inline <content>"
+    },
+    {
+      "id": "237",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: invoke cancellation on state exit with inline content child"
+    },
+    {
+      "id": "239",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: invoke with src attribute and inline content (Pure Static)"
+    },
+    {
+      "id": "240",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: invoke with namelist and param (Static Hybrid)"
+    },
+    {
+      "id": "241",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4.3: invoke namelist + param consistency validation (Static Hybrid)"
+    },
+    {
+      "id": "242",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: invoke src + inline content consistency (Pure Static)"
+    },
+    {
+      "id": "243",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: invoke inline content + param with child→parent event sending (Pure Static)"
+    },
+    {
+      "id": "244",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.3.2: invoke inline content + namelist datamodel value passing (Static Hybrid)"
+    },
+    {
+      "id": "245",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.3.2: invoke namelist with non-existent variable handling (Static Hybrid)"
+    },
+    {
+      "id": "247",
+      "harness": "simple",
+      "summary": "inline <content> + done.invoke"
+    },
+    {
+      "id": "250",
+      "harness": "scheduled",
+      "summary": "inline <content> + cancellation (manual test)"
+    },
+    {
+      "id": "252",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4: invoke cancellation ignores events from cancelled child (Pure Static)"
+    },
+    {
+      "id": "253",
+      "harness": "simple",
+      "summary": "W3C SCXML C.1: SCXML Event I/O Processor bidirectional communication with inline content child (Static Hybrid)"
+    },
+    {
+      "id": "276",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.2/6.4: auto-discovers test276sub1.txml"
+    },
+    {
+      "id": "277",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.3: datamodel init error.execution"
+    },
+    {
+      "id": "278",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: datamodel in non-entered state (requires wrapper)"
+    },
+    {
+      "id": "279",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2.2: early binding variable initialization"
+    },
+    {
+      "id": "280",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.3: late binding variable initialization"
+    },
+    {
+      "id": "286",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.3: error.execution for invalid assignment location"
+    },
+    {
+      "id": "287",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.4: valid assignment to valid location"
+    },
+    {
+      "id": "294",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.7.2: donedata with param and content (Static Hybrid)"
+    },
+    {
+      "id": "298",
+      "harness": "simple",
+      "summary": "dynamic donedata (invalid param location requires runtime evaluation)"
+    },
+    {
+      "id": "301",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.8: script element download timeout rejection (manual)"
+    },
+    {
+      "id": "302",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.8: script evaluation at load time"
+    },
+    {
+      "id": "303",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9: script execution in entry actions"
+    },
+    {
+      "id": "304",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.8: script-declared variables accessible in data model"
+    },
+    {
+      "id": "307",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2.2: late binding variable access error handling (Static Hybrid)"
+    },
+    {
+      "id": "309",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: invalid boolean expressions treated as false"
+    },
+    {
+      "id": "310",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.1: In() predicate (requires Interpreter wrapper)"
+    },
+    {
+      "id": "311",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: error.execution for invalid assign location"
+    },
+    {
+      "id": "312",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: assignment error handling"
+    },
+    {
+      "id": "313",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: assign illegal expression error.execution"
+    },
+    {
+      "id": "314",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: delayed evaluation of assign illegal expression"
+    },
+    {
+      "id": "318",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: _event variable binding and persistence"
+    },
+    {
+      "id": "319",
+      "harness": "simple",
+      "summary": "W3C SCXML B.1: _event system variable initially unbound"
+    },
+    {
+      "id": "321",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _sessionid system variable binding"
+    },
+    {
+      "id": "322",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2.1: _sessionid immutability"
+    },
+    {
+      "id": "323",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2.1: _name system variable binding"
+    },
+    {
+      "id": "324",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2.2: _name system variable immutability"
+    },
+    {
+      "id": "325",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: _ioprocessors system variable binding"
+    },
+    {
+      "id": "326",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2.3: _ioprocessors system variable immutability"
+    },
+    {
+      "id": "329",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: system variables immutability"
+    },
+    {
+      "id": "330",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: event field binding (internal and external events)"
+    },
+    {
+      "id": "331",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: event type classification (internal, platform, external)"
+    },
+    {
+      "id": "332",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.sendid field binding in error events, W3C SCXML 6.2.4: send idlocation attribute"
+    },
+    {
+      "id": "333",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.sendid field must be blank for non-error events without explicit sendid"
+    },
+    {
+      "id": "335",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: _event.origin field must be blank for internal events"
+    },
+    {
+      "id": "336",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.origin field bidirectional communication via targetexpr"
+    },
+    {
+      "id": "337",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.origintype field must be blank for internal events"
+    },
+    {
+      "id": "338",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.4: Static invoke with inline content child SCXML"
+    },
+    {
+      "id": "339",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: _event.invokeid field must be blank for non-invoked events"
+    },
+    {
+      "id": "342",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2: eventexpr dynamic event name evaluation"
+    },
+    {
+      "id": "343",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: Invalid param error.execution"
+    },
+    {
+      "id": "344",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9: Invalid cond expression error.execution"
+    },
+    {
+      "id": "346",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.1: System variable protection validation"
+    },
+    {
+      "id": "347",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.4: SCXML Event I/O processor parent-child communication"
+    },
+    {
+      "id": "348",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2: Send event parameter sets event name"
+    },
+    {
+      "id": "349",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.origin system variable"
+    },
+    {
+      "id": "350",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.6: Default initial state (first child in document order)"
+    },
+    {
+      "id": "351",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.sendid field validation"
+    },
+    {
+      "id": "352",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: _event.origintype field validation"
+    },
+    {
+      "id": "354",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: _event.data with namelist/param/content"
+    },
+    {
+      "id": "355",
+      "harness": "simple",
+      "summary": "no initial state (default to first child in document order)"
+    },
+    {
+      "id": "364",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.6/3.4: Default initial states and parallel configurations (Pure Static)"
+    },
+    {
+      "id": "372",
+      "harness": "simple",
+      "summary": "no initial state (done.state.parentid after final)"
+    },
+    {
+      "id": "375",
+      "harness": "simple",
+      "summary": "no initial state (onentry execution order)"
+    },
+    {
+      "id": "376",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.8: Independent onentry handler execution (Static Hybrid)"
+    },
+    {
+      "id": "377",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.8: Multiple onexit handlers in document order (Pure Static)"
+    },
+    {
+      "id": "378",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.8/3.9: Independent onexit handler execution with error.execution (Static Hybrid)"
+    },
+    {
+      "id": "387",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.11: history states with default transitions"
+    },
+    {
+      "id": "388",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.11: deep and shallow history states"
+    },
+    {
+      "id": "396",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.12.1: event name matching and document order transition selection"
+    },
+    {
+      "id": "399",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.3: event name matching with prefix and wildcard"
+    },
+    {
+      "id": "401",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.12.1: internal event queue priority over external events"
+    },
+    {
+      "id": "402",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.12: error events processed like any other event"
+    },
+    {
+      "id": "403a",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: optimal enabled transition set - basic case"
+    },
+    {
+      "id": "403b",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: optimal enabled transition set as SET - parallel regions (needs wrapper)"
+    },
+    {
+      "id": "403c",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: optimal enabled transition set with preemption - parallel regions (needs wrapper)"
+    },
+    {
+      "id": "404",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: parallel state exit order with document order tie-breaking"
+    },
+    {
+      "id": "405",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.9 / §scxml-D-executeTransitionContent: executable content execution order in transitions"
+    },
+    {
+      "id": "406",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.3: state entry order with parallel regions"
+    },
+    {
+      "id": "407",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.8: onexit handlers with datamodel variable updates"
+    },
+    {
+      "id": "409",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 3.12.1: state removal from active states during exit"
+    },
+    {
+      "id": "411",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 3.12.1: state addition to active states during entry"
+    },
+    {
+      "id": "412",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 3.3.2: initial transition executable content execution order"
+    },
+    {
+      "id": "413",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: parallel initial states with space-separated state IDs"
+    },
+    {
+      "id": "415",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.7.1: manual test (no Pass state)"
+    },
+    {
+      "id": "416",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.3.2: done.state.id event generation for compound states"
+    },
+    {
+      "id": "417",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.7.1: done.state event for parallel states"
+    },
+    {
+      "id": "419",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: eventless transition precedence over event-driven transitions"
+    },
+    {
+      "id": "421",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10.1: internal event priority over external events"
+    },
+    {
+      "id": "422",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.3: delayed send event scheduling"
+    },
+    {
+      "id": "423",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 5.9.2: external event queue processing"
+    },
+    {
+      "id": "436",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: In() predicate in null data model"
+    },
+    {
+      "id": "444",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2/5.9: ECMAScript datamodel variable in condition"
+    },
+    {
+      "id": "445",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2.2: ECMAScript undefined variable initialization"
+    },
+    {
+      "id": "446",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2.2: external file loading with src attribute"
+    },
+    {
+      "id": "448",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2: ECMAScript single global scope for all variables"
+    },
+    {
+      "id": "449",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2: ECMAScript boolean conversion for string literals"
+    },
+    {
+      "id": "451",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: In() predicate in parallel states"
+    },
+    {
+      "id": "452",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.3/5.4: datamodel substructure assignment (object properties)"
+    },
+    {
+      "id": "453",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2/3.12.1: ECMAScript function expression evaluation"
+    },
+    {
+      "id": "456",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2/5.9: ECMAScript script element execution"
+    },
+    {
+      "id": "457",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.4 / 3.12.2: foreach error handling with ECMAScript validation"
+    },
+    {
+      "id": "459",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.4: foreach iteration order and index validation"
+    },
+    {
+      "id": "460",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach shallow copy semantics with array modification"
+    },
+    {
+      "id": "487",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.3/5.4: illegal assignment error.execution event"
+    },
+    {
+      "id": "488",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.7: error handling in donedata param expressions"
+    },
+    {
+      "id": "495",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2: SCXML Event I/O Processor internal vs external queue handling"
+    },
+    {
+      "id": "496",
+      "harness": "simple",
+      "summary": "W3C SCXML C.1: error.communication for unreachable target (Static Hybrid)"
+    },
+    {
+      "id": "500",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.3.1: SCXML Event I/O processor location field access (Static Hybrid)"
+    },
+    {
+      "id": "501",
+      "harness": "simple",
+      "summary": "W3C SCXML C.1: SCXML Event I/O Processor location field as send target (Static Hybrid)"
+    },
+    {
+      "id": "503",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: targetless transitions do not exit/re-enter source state (Static Hybrid)"
+    },
+    {
+      "id": "504",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: external transition exit sets (LCCA) (Static Hybrid)"
+    },
+    {
+      "id": "505",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: internal transition does not exit source state (Static Hybrid)"
+    },
+    {
+      "id": "506",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: internal transition with non-descendant target behaves as external (Static Hybrid)"
+    },
+    {
+      "id": "509",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP Event I/O Processor POST method validation (Static Hybrid)"
+    },
+    {
+      "id": "510",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP messages go to external queue (Static Hybrid)"
+    },
+    {
+      "id": "513",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)"
+    },
+    {
+      "id": "518",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)"
+    },
+    {
+      "id": "519",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static Hybrid)"
+    },
+    {
+      "id": "520",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP content element as message body (Static Hybrid)"
+    },
+    {
+      "id": "521",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.2.4/6.2.5: error.communication on invalid targetexpr (Static Hybrid)"
+    },
+    {
+      "id": "522",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP location field usage (Static Hybrid)"
+    },
+    {
+      "id": "525",
+      "harness": "simple",
+      "summary": "W3C SCXML 4.6: foreach shallow copy semantics (minimal)"
+    },
+    {
+      "id": "527",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.5: donedata content expr evaluation"
+    },
+    {
+      "id": "528",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.5: donedata content expr error.execution"
+    },
+    {
+      "id": "529",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.5: donedata content integer literal"
+    },
+    {
+      "id": "530",
+      "harness": "simple",
+      "summary": "W3C SCXML 6.4: Hybrid invoke contentexpr evaluation (Static Hybrid)"
+    },
+    {
+      "id": "531",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: _scxmleventname param overrides event name (Static Hybrid)"
+    },
+    {
+      "id": "532",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: HTTP method name fallback for event naming (Static Hybrid)"
+    },
+    {
+      "id": "533",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: internal transition exit set for non-compound states (Static Hybrid)"
+    },
+    {
+      "id": "534",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP _scxmleventname parameter transmission (Static Hybrid)"
+    },
+    {
+      "id": "550",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2.2: early binding with expr attribute for data variable (Static Hybrid)"
+    },
+    {
+      "id": "551",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2.2: early binding with inline content (Static Hybrid)"
+    },
+    {
+      "id": "552",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.2.2: external data loading via src attribute (Static Hybrid)"
+    },
+    {
+      "id": "553",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.2.4 & 5.11: send namelist error handling (Static Hybrid)"
+    },
+    {
+      "id": "554",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 6.4 & B.1: invoke with invalid namelist error handling (Pure Static)"
+    },
+    {
+      "id": "557",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2: ECMAScript XML DOM assignment with inline and file content (Static Hybrid)"
+    },
+    {
+      "id": "558",
+      "harness": "simple",
+      "summary": "W3C SCXML B.2: ECMAScript whitespace normalization for non-XML content (Static Hybrid)"
+    },
+    {
+      "id": "560",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.10: _event.data param structure in ECMAScript datamodel (Static Hybrid)"
+    },
+    {
+      "id": "561",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: ECMAScript DOM object for XML event data (Static Hybrid)"
+    },
+    {
+      "id": "562",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9.2: ECMAScript content space normalization (Static Hybrid)"
+    },
+    {
+      "id": "567",
+      "harness": "http",
+      "summary": "W3C SCXML C.2: BasicHTTP param encoding in _event.data (Static Hybrid)"
+    },
+    {
+      "id": "569",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.8: SCXML Event I/O processor location field (Static Hybrid)"
+    },
+    {
+      "id": "570",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.12.1: Parallel state completion with done.state.id (Static Hybrid)"
+    },
+    {
+      "id": "576",
+      "harness": "simple",
+      "summary": "W3C SCXML 3.13: Parallel initial with space-separated states"
+    },
+    {
+      "id": "577",
+      "harness": "simple",
+      "summary": "W3C SCXML C.2: error.communication on BasicHTTP send with no target"
+    },
+    {
+      "id": "578",
+      "harness": "simple",
+      "summary": "W3C SCXML 5.9/5.10: ECMAScript _event.data JSON object (Static Hybrid)"
+    },
+    {
+      "id": "579",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 3.8: history default content execution (Static Hybrid)"
+    },
+    {
+      "id": "580",
+      "harness": "scheduled",
+      "summary": "W3C SCXML 3.11: history state not in configuration (parallel)"
+    }
+  ]
+}

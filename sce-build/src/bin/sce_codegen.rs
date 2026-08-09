@@ -1167,6 +1167,23 @@ enum Commands {
         /// Required when `--has-test-vectors` is set.
         #[arg(long)]
         resource_dir: Option<String>,
+        /// Which catalog `--manifest` points at.
+        ///
+        /// `forge` (default) is the numerical fixture catalog at
+        /// `tests/forge/conformance/fixtures.json`; `w3c` is the
+        /// statechart conformance registry at
+        /// `tests/w3c/conformance/fixtures.json`. Named rather than
+        /// sniffed from the file's shape: the two catalogs answer
+        /// different questions, and a reader that guesses would pick
+        /// one silently on a malformed file.
+        #[arg(long, default_value = "forge")]
+        catalog: String,
+        /// Restrict a `--catalog w3c` listing to fixtures naming this
+        /// harness (`simple`, `scheduled`, `http`). This is how a build
+        /// system reconstructs the per-harness registration groups
+        /// without parsing JSON. Unset lists every registered fixture.
+        #[arg(long)]
+        harness: Option<String>,
     },
 
     /// Verify generated-source drift per spec §synth-6.2.6.
@@ -1363,12 +1380,16 @@ fn main() {
             language,
             has_test_vectors,
             resource_dir,
+            catalog,
+            harness,
         } => cmd_list_fixtures(
             &manifest,
             &format,
             language.as_deref(),
             has_test_vectors,
             resource_dir.as_deref(),
+            &catalog,
+            harness.as_deref(),
         ),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
         Commands::Verify {
@@ -3515,9 +3536,9 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
     let resources_dir = resources
         .map(PathBuf::from)
         .unwrap_or_else(|| project_root.join("resources"));
-    let cmake_file = registry
+    let registry_file = registry
         .map(PathBuf::from)
-        .unwrap_or_else(|| project_root.join("tests/CMakeLists.txt"));
+        .unwrap_or_else(|| project_root.join(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH));
 
     let backend: Box<dyn W3cBackend> = match lang {
         Language::Rust => Box::new(RustBackend::new(&project_root)),
@@ -3536,7 +3557,7 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
     generate_w3c_unified(
         backend.as_ref(),
         &resources_dir,
-        &cmake_file,
+        &registry_file,
         single_test,
         clean,
         list,
@@ -3548,11 +3569,16 @@ fn find_project_root() -> PathBuf {
     // Try CARGO_MANIFEST_DIR ancestor, then CWD
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let candidate = crate_dir.join("..");
-    let root = if candidate.join("tests/CMakeLists.txt").exists() {
+    // The marker is the conformance registry, not `tests/CMakeLists.txt`:
+    // probing for the build script made a CMake-less checkout unable to
+    // resolve a root at all, which is the same coupling the registry
+    // format itself carried.
+    let marker = Path::new(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH);
+    let root = if candidate.join(marker).exists() {
         fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.to_path_buf())
     } else {
         let cwd = std::env::current_dir().expect("Cannot get CWD");
-        if !cwd.join("tests/CMakeLists.txt").exists() {
+        if !cwd.join(marker).exists() {
             cli_exit(CliError::ProjectRootNotFound);
         }
         cwd
@@ -3568,33 +3594,34 @@ fn find_project_root() -> PathBuf {
     root
 }
 
-/// Parse test registrations from CMakeLists.txt.
-fn parse_cmake_tests(cmake_file: &Path) -> BTreeMap<String, TestInfo> {
-    let content = fs::read_to_string(cmake_file).unwrap_or_else(|e| {
-        cli_exit(CliError::ReadInput {
-            path: cmake_file.display().to_string(),
-            source: e,
+/// Load the registered tests from the W3C conformance registry.
+///
+/// The registry used to be `tests/CMakeLists.txt`, read back with a
+/// regex over `sce_generate_static_w3c_test(...)` calls. Reading a build
+/// script as data made CMake the source of truth for a fact that is not
+/// a build fact, and it meant a repository vendoring SCE without CMake
+/// could not enumerate the fixture set at all. The catalog it reads now
+/// is the same shape the forge conformance harness has used all along.
+fn load_w3c_registry(registry_file: &Path) -> BTreeMap<String, TestInfo> {
+    let registry = sce_build::w3c_registry::W3cRegistry::load(registry_file).unwrap_or_else(|e| {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "w3c-registry",
+            detail: e.to_string(),
         })
     });
-
-    let re = regex::Regex::new(
-        r"sce_generate_static_w3c_test\((\S+)\s+\$\{STATIC_W3C_OUTPUT_DIR\}(?:\s+TYPE\s+(\w+))?\)\s*#\s*(.*)"
-    ).unwrap();
-
-    let mut tests = BTreeMap::new();
-    for line in content.lines() {
-        if let Some(caps) = re.captures(line) {
-            let test_id = caps[1].to_string();
-            let test_type = caps
-                .get(2)
-                .map(|m| m.as_str())
-                .unwrap_or("SIMPLE")
-                .to_string();
-            let comment = caps[3].trim().to_string();
-            tests.insert(test_id, TestInfo { test_type, comment });
-        }
-    }
-    tests
+    registry
+        .fixtures()
+        .iter()
+        .map(|f| {
+            (
+                f.id.clone(),
+                TestInfo {
+                    test_type: f.harness.clone(),
+                    comment: f.summary.clone(),
+                },
+            )
+        })
+        .collect()
 }
 
 /// Read metadata.txt for a test.
@@ -3965,7 +3992,7 @@ fn generate_child_sms(
 fn generate_w3c_unified(
     backend: &dyn W3cBackend,
     resources_dir: &Path,
-    cmake_file: &Path,
+    registry_file: &Path,
     single_test: Option<&str>,
     clean: bool,
     list: bool,
@@ -3981,7 +4008,7 @@ fn generate_w3c_unified(
     // + test harness across all 202 tests in this invocation.
     let drift_ctx = DriftContext::compute(resources_dir, None, None);
 
-    let cmake_tests = parse_cmake_tests(cmake_file);
+    let cmake_tests = load_w3c_registry(registry_file);
     println!("C++ test registry: {} tests", cmake_tests.len());
 
     if list {
@@ -4411,7 +4438,7 @@ impl W3cBackend for RustBackend {
             test_type,
             ..
         } = *spec;
-        let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" {
+        let timeout_secs = if test_type == "scheduled" || test_type == "http" {
             5
         } else {
             3
@@ -4430,7 +4457,7 @@ impl W3cBackend for RustBackend {
         } else {
             "()"
         };
-        let is_http = test_type == "HTTP" && uses_http;
+        let is_http = test_type == "http" && uses_http;
         let http_setup = if is_http {
             "    sce_rust_tests::harness::setup_http_test(&mut engine);\n"
         } else {
@@ -4612,8 +4639,8 @@ impl W3cBackend for GoBackend {
             test_type,
             metadata,
         } = *spec;
-        let is_http = test_type == "HTTP" && uses_http;
-        let timeout = if test_type == "SCHEDULED" {
+        let is_http = test_type == "http" && uses_http;
+        let timeout = if test_type == "scheduled" {
             "5 * time.Second"
         } else {
             "3 * time.Second"
@@ -4812,7 +4839,7 @@ impl W3cBackend for KotlinBackend {
         let sm_package = format!("test{test_id}");
 
         // §scxml-C-2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
-        let is_http = test_type == "HTTP" && uses_http;
+        let is_http = test_type == "http" && uses_http;
         let base_class = if is_http {
             "W3CHttpTestBase"
         } else {
@@ -4820,7 +4847,7 @@ impl W3cBackend for KotlinBackend {
         };
 
         // §scxml-6.2: SCHEDULED tests need longer timeout
-        let timeout_override = if test_type == "SCHEDULED" {
+        let timeout_override = if test_type == "scheduled" {
             "    override val timeoutMs: Long = 5000L\n"
         } else {
             ""
@@ -5083,7 +5110,7 @@ impl W3cBackend for PythonBackend {
         // by more than one tick; the SIMPLE path exits immediately
         // because `engine.initialize()` already drove every eventless
         // transition to a stable configuration.
-        let (max_ms, tick_ms) = if test_type == "SCHEDULED" {
+        let (max_ms, tick_ms) = if test_type == "scheduled" {
             (6_000_i64, 50_i64)
         } else {
             (50_i64, 50_i64)
@@ -5757,13 +5784,117 @@ fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> 
 
 // ── Subcommand: list-fixtures ──────────────────────────────────
 
+/// Emit `names` in the requested shape.
+///
+/// Shared by both catalogs so a build system reading one reads the other
+/// the same way: the format flag is about how the caller parses the
+/// output, not about which catalog produced it.
+fn emit_fixture_names(names: &[&str], format: &str) {
+    match format {
+        "plain" => {
+            for n in names {
+                println!("{n}");
+            }
+        }
+        "cmake" => println!("{}", names.join(";")),
+        "space" => println!("{}", names.join(" ")),
+        other => cli_exit(CliError::InvalidFormatOption {
+            value: other.to_string(),
+            expected: "plain|cmake|space".into(),
+        }),
+    }
+}
+
+/// List the W3C statechart conformance registry.
+///
+/// This is the enumeration path a build system uses when it has no JSON
+/// parser — the same role `list-fixtures` has always played for the
+/// forge catalog, and what lets `tests/CMakeLists.txt` derive its
+/// per-test registrations from the registry instead of being the
+/// registry.
+fn list_w3c_fixtures(
+    manifest_path: &str,
+    format: &str,
+    harness: Option<&str>,
+    language: Option<&str>,
+    has_test_vectors_only: bool,
+) {
+    // The forge-only selectors are refused rather than accepted and
+    // ignored: this catalog has no per-language product gate and no
+    // test-vector sidecar, so honouring them would answer a question
+    // the registry cannot express.
+    if language.is_some() || has_test_vectors_only {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: "--language and --has-test-vectors do not apply to --catalog w3c: \
+                     the statechart registry has no per-language product gate and no \
+                     test-vector sidecar. Filter with --harness instead."
+                .to_string(),
+        });
+    }
+    let registry = sce_build::w3c_registry::W3cRegistry::load(Path::new(manifest_path))
+        .unwrap_or_else(|e| {
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "w3c-registry",
+                detail: e.to_string(),
+            })
+        });
+    if let Some(h) = harness {
+        // An unknown harness lists nothing, and "nothing" is
+        // indistinguishable from "no fixture uses it" — so refuse
+        // instead, or a typo in a build script would silently drop a
+        // whole registration group.
+        if !registry.harnesses.contains_key(h) {
+            let known: Vec<&str> = registry.harnesses.keys().map(String::as_str).collect();
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "list-fixtures",
+                detail: format!(
+                    "unknown --harness `{h}`; the registry declares {}",
+                    known.join(", ")
+                ),
+            });
+        }
+    }
+    let names: Vec<&str> = match harness {
+        Some(h) => registry.ids_with_harness(h),
+        None => registry.fixtures().iter().map(|f| f.id.as_str()).collect(),
+    };
+    emit_fixture_names(&names, format);
+}
+
 fn cmd_list_fixtures(
     manifest_path: &str,
     format: &str,
     language: Option<&str>,
     has_test_vectors_only: bool,
     resource_dir: Option<&str>,
+    catalog: &str,
+    harness: Option<&str>,
 ) {
+    match catalog {
+        "forge" => {}
+        "w3c" => {
+            return list_w3c_fixtures(
+                manifest_path,
+                format,
+                harness,
+                language,
+                has_test_vectors_only,
+            )
+        }
+        other => cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: format!("unknown --catalog `{other}`; expected forge or w3c"),
+        }),
+    }
+    if harness.is_some() {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "list-fixtures",
+            detail: "--harness applies to --catalog w3c only; the forge catalog has \
+                     no harness axis."
+                .to_string(),
+        });
+    }
     let mut manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
         .unwrap_or_else(|e| {
             cli_exit(CliError::ReadInput {
@@ -5920,19 +6051,7 @@ fn cmd_list_fixtures(
         })
         .map(|f| f.name.as_str())
         .collect();
-    match format {
-        "plain" => {
-            for n in &names {
-                println!("{n}");
-            }
-        }
-        "cmake" => println!("{}", names.join(";")),
-        "space" => println!("{}", names.join(" ")),
-        other => cli_exit(CliError::InvalidFormatOption {
-            value: other.to_string(),
-            expected: "plain|cmake|space".into(),
-        }),
-    }
+    emit_fixture_names(&names, format);
 }
 
 // ── Utility functions ───────────────────────────────────────────
