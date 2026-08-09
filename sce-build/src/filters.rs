@@ -32,12 +32,14 @@ pub fn capitalize_first(s: &str) -> String {
     }
 }
 
-/// The value W3C SCXML 5.10 binds to `_name`.
+/// The value the SCXML specification binds to `_name`.
 ///
-/// The spec is explicit about both halves. §5.10 requires the processor
-/// to bind `_name` "at load time to the value of the `name` attribute of
-/// the `<scxml>` element", and §3.2.1 requires it to generate a name
-/// when the document declares none. `declared` is the attribute
+/// The spec is explicit about both halves: the processor binds `_name`
+/// "at load time to the value of the `name` attribute of the `<scxml>`
+/// element", and generates a name when the document declares none. The
+/// section is cited in the body rather than here — a doc comment does
+/// not resolve to its own symbol, so a citation placed here binds
+/// nothing and reports `binding_unbacked`. `declared` is the attribute
 /// (`SCXMLModel::scxml_name`, empty when absent) and `generated` is the
 /// identity the toolchain derives from the document itself
 /// (`SCXMLModel::name`, the file stem).
@@ -54,6 +56,10 @@ pub fn capitalize_first(s: &str) -> String {
 /// file stem this replaced, the value is author-controlled text that
 /// lands inside a host string literal.
 pub fn w3c_session_name(declared: &str, generated: &str) -> String {
+    // §scxml-5.10: `_name` is bound at load time to the value of the
+    // `name` attribute of the `<scxml>` element; §3.2.1 requires the
+    // processor to generate one when the attribute is absent, and the
+    // document identity is that generated name.
     if declared.is_empty() {
         generated.to_string()
     } else {

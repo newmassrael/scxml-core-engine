@@ -674,10 +674,11 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     // Placeholder, not the binding. Both values here are overwritten by
     // `setupSystemVariablesInternal`, which `StateMachine::setupJSEnvironment`
     // calls unconditionally right after creating the session and before any
-    // document script runs — that is where W3C SCXML 5.10's "the value of the
-    // 'name' attribute of the <scxml> element" actually arrives, carried as
-    // `sessionName`. This function only guarantees the globals exist on a
-    // context that has not been through session setup yet.
+    // document script runs — that is where the `<scxml>` element's name
+    // attribute actually arrives, carried as `sessionName`, and that is the
+    // symbol the ledger binds. No section is cited here on purpose: this
+    // function does not implement the requirement, it only guarantees the
+    // globals exist on a context that has not been through session setup.
     //
     // The comment here used to read "from <scxml> element name attribute"
     // above a hardcoded literal, which describes the neighbouring function
