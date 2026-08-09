@@ -3656,7 +3656,13 @@ impl DiagnosticCode {
 
     /// Slash-path string form used in the content hash. Must match the
     /// serde `rename` on each variant exactly.
-    pub(crate) fn as_str(&self) -> &'static str {
+    ///
+    /// Public because this string *is* the wire `code` — it already
+    /// leaves the crate on every NDJSON record, and a consumer that has
+    /// the typed value in hand (the `check` manifest's per-backend
+    /// verdict) must be able to name it without re-serialising a whole
+    /// diagnostic to read one field back out.
+    pub fn as_str(&self) -> &'static str {
         use DiagnosticCode::*;
         match self {
             XmlParse => "xml/parse",
