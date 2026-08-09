@@ -296,8 +296,23 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
 /// file's `source_hash` field IS the drift-detectable provenance.
 /// `sce-codegen verify` skips JSON in `is_drift_eligible_path`, so
 /// the file stays a plain JSON document.
-fn emit_sourcemap_for_machine(model: &SCXMLModel, target_dir: &Path, drift_ctx: &DriftContext) {
-    use sce_build::forge::sourcemap;
+/// Accumulated symbol table for one invocation's output directory.
+///
+/// There is one `sce_sourcemap.json` per directory but an invocation
+/// can emit several machines into it — a parent plus every
+/// inline-`<content>` synth-invoke child. Each machine's symbols are
+/// added here and the file is written once at the end.
+///
+/// Writing per machine, which is what this replaced, made the sidecar
+/// describe only whichever machine happened to be emitted last: a
+/// `generate` on a document with a synth-invoke child produced two
+/// `_sm.*` artifacts and a sourcemap covering only the child, so every
+/// parent symbol was unresolvable through `addr2sce` even though the
+/// manifest listed the parent's artifact.
+type SymbolAccumulator = BTreeMap<String, sce_build::forge::symbol_mangling::SymbolEntry>;
+
+/// Add `model`'s symbols to `acc`.
+fn collect_sourcemap_symbols(model: &SCXMLModel, acc: &mut SymbolAccumulator) {
     use sce_build::forge::symbol_mangling;
 
     let symbols = match symbol_mangling::build_symbol_table(model, &[]) {
@@ -312,8 +327,22 @@ fn emit_sourcemap_for_machine(model: &SCXMLModel, target_dir: &Path, drift_ctx: 
             return;
         }
     };
+    acc.extend(symbols);
+}
+
+/// Write the accumulated sourcemap for `target_dir`.
+///
+/// A no-op on an empty accumulator so a run that emitted no statechart
+/// symbols (forge-only output, a rejected document) leaves no sidecar
+/// rather than an empty one.
+fn flush_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, drift_ctx: &DriftContext) {
+    use sce_build::forge::sourcemap;
+
+    if acc.is_empty() {
+        return;
+    }
     let map = sourcemap::build(
-        &symbols,
+        acc,
         drift_ctx.hashes.source_hex(),
         drift_ctx.hashes.template_hex(),
     );
@@ -2188,6 +2217,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
         let out = Path::new(output_dir);
+        fs::create_dir_all(out).unwrap_or_else(|e| {
+            error_format.emit_and_exit(
+                &CliError::CreateOutputDir {
+                    path: out.display().to_string(),
+                    source: e,
+                },
+                "",
+            )
+        });
         let pascal = crate::filters::to_pascal_case(input_stem.to_string());
 
         // §synth-5-O traceability — every drift-headered file must carry an
@@ -2203,7 +2241,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .and_then(|s| s.to_str())
             .unwrap_or("unknown.scxml");
 
-        match lang {
+        // Each backend names its stub files and their contents; the
+        // write, the manifest bookkeeping, and the sourcemap emit are
+        // shared below. Previously each arm wrote its own files and
+        // none of them recorded what it wrote, so the manifest claimed
+        // `"artifacts":[]` for a run that had just written a stub —
+        // contradicting SCE_ERROR_CONTRACT.md §10.1, which defines the
+        // field as every file written during the run.
+        let stubs: Vec<(String, String)> = match lang {
             Language::Cpp => {
                 let header = format!(
                     "// W3C SCXML 5.8: Document rejected\n\
@@ -2217,73 +2262,47 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     name = input_stem,
                     pascal = pascal
                 );
-                let inl = "// W3C SCXML 5.8: Document rejected\n";
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.h")),
-                    &header,
-                    &drift_ctx,
-                );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.inl")),
-                    inl,
-                    &drift_ctx,
-                );
+                vec![
+                    (format!("{input_stem}_sm.h"), header),
+                    (
+                        format!("{input_stem}_sm.inl"),
+                        "// W3C SCXML 5.8: Document rejected\n".to_string(),
+                    ),
+                ]
             }
-            Language::Rust => {
-                let stub = format!(
+            Language::Rust => vec![(
+                format!("{input_stem}_sm.rs"),
+                format!(
                     "// W3C SCXML 5.8: Document rejected\n\
                      // SCE-MAP: {scxml_basename}:1\n\
                      // This state machine was rejected at parse time.\n"
-                );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.rs")),
-                    &stub,
-                    &drift_ctx,
-                );
-            }
-            Language::Kotlin => {
-                let stub = format!(
+                ),
+            )],
+            Language::Kotlin => vec![(
+                format!("{input_stem}Sm.kt"),
+                format!(
                     "// W3C SCXML 5.8: Document rejected\n\
                      // SCE-MAP: {scxml_basename}:1\n\
                      package com.sce.generated.{name}\n",
                     name = input_stem
-                );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}Sm.kt")),
-                    &stub,
-                    &drift_ctx,
-                );
-            }
-            Language::Go => {
-                let stub = format!(
+                ),
+            )],
+            Language::Go => vec![(
+                format!("{input_stem}_sm.go"),
+                format!(
                     "// W3C SCXML 5.8: Document rejected\n\
                      // SCE-MAP: {scxml_basename}:1\n\
                      package {name}\n",
                     name = input_stem
-                );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.go")),
-                    &stub,
-                    &drift_ctx,
-                );
-            }
-            Language::Python => {
-                let stub = format!(
+                ),
+            )],
+            Language::Python => vec![(
+                format!("{input_stem}_sm.py"),
+                format!(
                     "# W3C SCXML 5.8: Document rejected\n\
                      # SCE-MAP: {scxml_basename}:1\n"
-                );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.py")),
-                    &stub,
-                    &drift_ctx,
-                );
-            }
+                ),
+            )],
             Language::C11 => {
                 // C11 rejected-document sentinel: emit a header-only
                 // sentinel matching the C++ shape so any downstream
@@ -2315,20 +2334,29 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     input_stem = input_stem,
                     stem = input_stem
                 );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.h")),
-                    &header,
-                    &drift_ctx,
-                );
-                write_drift_aware(
-                    error_format,
-                    out.join(format!("{input_stem}_sm.c")),
-                    &body,
-                    &drift_ctx,
-                );
+                vec![
+                    (format!("{input_stem}_sm.h"), header),
+                    (format!("{input_stem}_sm.c"), body),
+                ]
             }
+        };
+
+        for (filename, content) in &stubs {
+            let path = out.join(filename);
+            write_drift_aware(error_format, &path, content, &drift_ctx);
+            report.artifacts.push(path);
         }
+
+        // The document parsed — §5.8 refuses to *generate* it, not to
+        // read it — so its symbols resolve and the sidecar is emitted
+        // exactly as the `generate-w3c` path already did. Without this
+        // the two paths disagreed: the committed W3C trees carry a
+        // sourcemap for a rejected document while a standalone
+        // `generate` on the same input produced none.
+        let mut sourcemap_acc = SymbolAccumulator::new();
+        collect_sourcemap_symbols(&model, &mut sourcemap_acc);
+        flush_sourcemap(&sourcemap_acc, out, &drift_ctx);
+
         report.rejected = Some(RejectedDocument {
             spec: "W3C SCXML 5.8",
             name: model.name.clone(),
@@ -2620,11 +2648,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         }
 
         // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap JSON sidecar
-        // alongside the per-language SM output. The single-SCXML codegen
-        // path writes one sourcemap per emit; cross-backend byte-identity
-        // is preserved because the symbol table + hashes are language-
-        // agnostic.
-        emit_sourcemap_for_machine(&model, out_path, &drift_ctx);
+        // alongside the per-language SM output. Cross-backend
+        // byte-identity is preserved because the symbol table + hashes
+        // are language-agnostic.
+        //
+        // Accumulated rather than written here: the synth-invoke loop
+        // below emits further machines into the same directory, and
+        // there is one sidecar for all of them.
+        let mut sourcemap_acc = SymbolAccumulator::new();
+        collect_sourcemap_symbols(&model, &mut sourcemap_acc);
 
         // SCE_MESH.md §9.6.6: emit synth-invoke children alongside the
         // parent. Mirrors `generate_child_sms` (the W3C unified path) for
@@ -2675,8 +2707,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 report.artifacts.push(file_path.clone());
                 output_paths.push(file_path);
             }
-            emit_sourcemap_for_machine(&child_model, out_path, &drift_ctx);
+            collect_sourcemap_symbols(&child_model, &mut sourcemap_acc);
         }
+
+        // Every machine this invocation emitted into `out_path` is now
+        // in the table, so the sidecar covers the whole directory
+        // rather than whichever machine was written last.
+        flush_sourcemap(&sourcemap_acc, out_path, &drift_ctx);
 
         report.needs_script_engine = Some(model.needs_script_engine);
         // Projected from the list the analyzer stored on the model in the
@@ -3492,6 +3529,7 @@ fn generate_child_sms(
     scxml_path: &Path,
     test_mod_dir: &Path,
     drift_ctx: &DriftContext,
+    sourcemap_acc: &mut SymbolAccumulator,
 ) {
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let mut seen = BTreeSet::new();
@@ -3581,6 +3619,11 @@ fn generate_child_sms(
         if child_model.name != child_name {
             child_model.name = child_name.to_string();
         }
+
+        // The child's symbols belong in the same directory sidecar as
+        // the parent's — one `sce_sourcemap.json` describes the whole
+        // emitted directory, not just whichever machine wrote it last.
+        collect_sourcemap_symbols(&child_model, sourcemap_acc);
 
         match backend.generate_sm(&child_model, child_name) {
             Ok(files) => {
@@ -3703,8 +3746,10 @@ fn generate_w3c_unified(
 
                         // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap
                         // JSON sidecar. Byte-identical across backends
-                        // for the same SCXML input.
-                        emit_sourcemap_for_machine(&model, &test_mod_dir, &drift_ctx);
+                        // for the same SCXML input. Accumulated so the
+                        // child pass below lands in the same sidecar.
+                        let mut sourcemap_acc = SymbolAccumulator::new();
+                        collect_sourcemap_symbols(&model, &mut sourcemap_acc);
 
                         // §scxml-6.4: Generate hybrid SCXML stubs + child state machines
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
@@ -3717,8 +3762,13 @@ fn generate_w3c_unified(
                                 &scxml_path,
                                 &test_mod_dir,
                                 &drift_ctx,
+                                &mut sourcemap_acc,
                             );
                         }
+
+                        // One sidecar per emitted directory, covering
+                        // every machine that landed in it.
+                        flush_sourcemap(&sourcemap_acc, &test_mod_dir, &drift_ctx);
 
                         // Detect pass state and generate test file (if backend supports it)
                         if backend.generates_test_files() {
