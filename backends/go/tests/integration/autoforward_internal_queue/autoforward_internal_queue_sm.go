@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 
@@ -568,6 +568,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionActions(engine *sce.En
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == AutoforwardInternalQueueStatePhase && idx == 0 {
+		//line autoforward_internal_queue.scxml:75
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -584,6 +585,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionActions(engine *sce.En
 		return
 	}
 	if source == AutoforwardInternalQueueStatePhase && idx == 1 {
+		//line autoforward_internal_queue.scxml:78
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{

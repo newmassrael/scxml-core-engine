@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 
@@ -627,6 +627,7 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecuteTransitionActions(engine *sce
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == InvokePrecedesDequeueMidrunStatePhase && idx == 1 {
+		//line invoke_precedes_dequeue_midrun.scxml:82
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -174,12 +174,14 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
         when (source) {
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> when {
             event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawInternal", "")
             }
             event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> {
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

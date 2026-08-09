@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 392bbcde4466dbc0cb9cb0e8b35901796c2cabcfe17ca0552a2f1bf1fe87d8de
+// template-hash: f5fde488bb26d050ed6ca4285c6964cc031a9d1311486db8d9c07efbb803316f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -435,6 +435,7 @@ class Test253StateMachine(
         when (source) {
         is Test253State.S01 -> when {
             event is Test253Event.ChildRunning -> {
+                // SCE-MAP: test253.scxml:54
 
 
             executeAssign("Var1", "_event.origintype")
@@ -443,12 +444,14 @@ class Test253StateMachine(
         }
         is Test253State.S02 -> when {
             event == null && safeEvaluateGuard("Var1 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> {
+                // SCE-MAP: test253.scxml:61
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child
             sendToChild("foo", "parentToChild")
             }
             event == null && safeEvaluateGuard("Var1 == 'scxml'") -> {
+                // SCE-MAP: test253.scxml:64
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child
