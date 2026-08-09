@@ -1,68 +1,32 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 #
-# SCE pre-push hook: mirror the GitHub CI gates that have actually broken
-# push in the past so they fail locally, not on the runner. Stages are
-# ordered cheapest-first; the first failure short-circuits the rest.
+# SCE pre-push hook: work out what this push changes, and hand that to the
+# gate runner.
 #
-# Gates:
-#   1.  cargo build sce-codegen              — every downstream gate uses it
-#   1b. Rust mod.rs ↔ subdir drift check     — fail fast on orphaned modules
-#                                              before the heavy test stage
-#                                              compiles to the same error
-#   1c. emit_embed_manifest fail-fast TC     — clang degraded-AST regression
-#   1d. tree-wide hygiene gates              — mirrors tree-hygiene.yml;
-#                                              roadmap markers over every
-#                                              tracked file, plus the two
-#                                              gates keeping such tests on
-#                                              an unfiltered workflow and
-#                                              hook stages no weaker than
-#                                              the CI they mirror
-#   2.  cargo clippy --workspace             — mirrors clippy-check.yml;
-#                                              catches stable-toolchain lint
-#                                              drift (unnecessary_sort_by,
-#                                              collapsible_match) before CI
-#   3.  embed manifest/payload/consumer      — embed/MANIFEST.json public-API
-#                                              drift, the same manifest left
-#                                              stale by a sce/ edit, and a
-#                                              consumer build over a freshly
-#                                              packaged embed/ tree; mirrors
-#                                              embed-vendor-smoke.yml in full
-#   4.  cargo test --workspace               — Rust unit + integration suite
-#                                              (covers forge goldens, mesh,
-#                                              diagnostic contract tests)
-#   4b. cargo test -p sce-build --features    — B9 §6.2.6 drift gate +
-#       cli (drift + sourcemap suites)          §5.O sourcemap; mirrors
-#                                              drift-verify.yml. Stage 4's
-#                                              --workspace run omits
-#                                              --features cli, so these
-#                                              required-features=["cli"]
-#                                              targets are SILENTLY skipped
-#                                              by cargo — the gap that let a
-#                                              committed-tree template-hash
-#                                              drift reach CI red unseen here
-#   5.  Go forge conformance regen + build   — catches Go codegen drift
-#                                              (crossfile package-alias bug)
-#   6.  C++ forge conformance build          — catches C++ codegen drift
-#                                              (harness include-name mismatch)
-#   7.  Example codegen (doom / smart_light) — catches namespace /
-#                                              statechart-parser drift
-#   8.  Spec-citation ledgers                 — mirrors spec-citations.yml;
-#                                              catches §<ns>-<id> cites added
-#                                              without a ledger section/binding
-#                                              (the gap that turned main red
-#                                              after the doc-hygiene rounds)
+# The hook used to carry every gate inline, guarded by `stage_on "N"` blocks
+# whose physical order in the file WAS the run order. That coupling is what
+# this delegation removes. Gates now live one-per-file under
+# `scripts/gates/`, `tools/git-hooks/gate_registry.py` records what each one
+# needs and what it costs, and `scripts/gate` derives the order. The
+# practical differences:
 #
-# Note (2026-05-23): the cargo-fmt gate that used to live as Stage 0 here
-# moved to `pre-commit` so fmt drift fails at commit time, before the
-# offending content lands in local history. Same CI contract — the
-# rustfmt check runs in both hooks via shared `cargo fmt --all -- --check`
-# invocation; pre-commit is the earliest gate, pre-push remains
-# defense-in-depth-free for fmt since the commit hook caught it.
+#   - A gate can be run on its own (`scripts/gate ledger-citations`), so
+#     "check this before pushing" is a command instead of a recipe written
+#     down somewhere.
+#   - Order follows measured cost, so the cheapest gate that can fail runs
+#     first. Under the inline arrangement a sub-minute check sat behind
+#     fifteen gates because that was where it had been added.
+#   - Adding a gate does not renumber anything, so nothing that refers to a
+#     gate by name goes stale.
 #
+# What stays here is what only a push knows: which refs are being pushed and
+# what they change relative to the remote.
+#
+# `PREPUSH_FULL=1` runs every gate regardless of paths.
 # Bypass (for genuine emergencies): `SKIP_PREPUSH=1 git push ...`.
-# Do not skip hooks by habit — every gate here corresponds to a CI
-# failure that has already cost a round-trip.
+# Do not skip by habit — every gate corresponds to a CI failure that has
+# already cost a round-trip.
 
 set -euo pipefail
 
@@ -74,673 +38,70 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-log_step() { printf '\n==> pre-push: %s\n' "$1" >&2; }
-fail_step() { printf '\nERROR pre-push: %s FAILED — push aborted.\n  Fix the issue or bypass with SKIP_PREPUSH=1 for emergencies.\n' "$1" >&2; exit 1; }
-
-# Single composed cleanup so each resource added by a later stage
-# (HTTP server PID, scratch dirs) is reliably reclaimed even when
-# `set -e` aborts mid-stage. The two earlier inline `trap '...rm...' EXIT`
-# overwrites at Stage 4/6 leaked the HTTP server process when Stage 2
-# raced through them.
-HTTP_SERVER_PID=""
-HTTP_SERVER_LOG=""
-BUILD_DIR=""
-GEN_OUT=""
-cleanup() {
-    [[ -n "${HTTP_SERVER_PID}" ]] && kill "${HTTP_SERVER_PID}" 2>/dev/null || true
-    [[ -n "${HTTP_SERVER_LOG}" ]] && rm -f "${HTTP_SERVER_LOG}"
-    [[ -n "${BUILD_DIR}"      ]] && rm -rf "${BUILD_DIR}"
-    [[ -n "${GEN_OUT}"        ]] && rm -rf "${GEN_OUT}"
-    # An EXIT trap's last status becomes the script's exit status, and every
-    # line above is a `[[ ]] &&` that returns 1 when its variable is unset.
-    # Before stage selection the last one always ran (Stage 7 set GEN_OUT), so
-    # the bug was invisible; a push that skips Stage 7 now leaves GEN_OUT empty
-    # and the trap would turn a clean run into a rejected push.
-    return 0
+RUNNER="$REPO_ROOT/scripts/gate"
+[[ -x "$RUNNER" ]] || {
+    printf '\nERROR pre-push: gate runner missing at %s\n' "$RUNNER" >&2
+    exit 1
 }
-trap cleanup EXIT
 
-# Note: cargo-fmt gate moved to pre-commit (2026-05-23). The
-# `.github/workflows/rust-ci.yml` rustfmt check now mirrors via the
-# pre-commit hook instead — fmt drift fails at `git commit` rather
-# than at `git push`, before the offending content lands in local
-# history. The previous "Stage 0/6" numbering stays gone; downstream
-# stages renumbered accordingly.
-
-# ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
-# Every Rust CI job installs the LATEST stable via
-# `dtolnay/rust-toolchain@stable`. rustup does NOT auto-update a
-# developer's local `stable`, so it can silently lag the runner — and
-# the clippy lint set is version-sensitive: a lint newly stabilised in
-# a fresher stable (e.g. useless_borrows_in_formatting / for_kv_map in
-# rust 1.97) passes locally yet fails the cloud clippy gate. The old
-# policy — a code comment asking developers to run `rustup update
-# stable` by hand — was a silently-broken safeguard: skip it once and
-# every clippy stage below goes blind to CI's newer lints (this is the
-# exact drift that let a `useless_borrows_in_formatting` regression
-# reach `main` red).
-#
-# Instead, sync `stable` to the newest release here and pin the whole
-# hook to it via RUSTUP_TOOLCHAIN, so every stage lints/builds under the
-# same toolchain CI will use. `git push` always has network, so this
-# sync is reliable whenever a push actually happens; if it somehow fails
-# we fall back to the existing toolchain with a loud warning rather than
-# blocking the push.
-log_step "toolchain — sync 'stable' to match CI (dtolnay/rust-toolchain@stable)"
-rustup toolchain install stable --profile minimal \
-    --component clippy --no-self-update >/dev/null 2>&1 || true
-if rustup run stable rustc --version >/dev/null 2>&1; then
-    export RUSTUP_TOOLCHAIN=stable
-    printf '  pinned to %s for this hook\n' "$(rustup run stable rustc --version)" >&2
-else
-    printf '  WARNING: no resolvable "stable" toolchain; clippy lint parity\n  with CI is NOT guaranteed for this push.\n' >&2
-fi
-
-# ── Path-scoped stage selection ───────────────────────────────────
-# Running every stage on every push costs 20-30 minutes, most of it
-# irrelevant to the change being pushed: a ledger-only edit does not need
-# the no_std MCU build, and a docs edit needs only the tree-wide gates.
-#
-# Which gate a change needs is already answered by the `paths:` filter on
-# the CI workflow each stage mirrors, so `select_stages.py` reads those
-# filters rather than restating them — the hook cannot drift from CI the
-# way a hand-copied table would. See that file for the two rules that
-# keep the filtering from becoming a coverage hole; the important one is
-# that a path matching nothing known forces the FULL run, so an
-# unrecognised directory gets more verification, never less.
-#
-# `PREPUSH_FULL=1` forces every stage regardless of paths.
-SELECTOR="$REPO_ROOT/tools/git-hooks/select_stages.py"
-
-# The selector decides what runs, so a broken selector is a silent
-# coverage loss rather than a loud failure. Exercise its own cases first —
-# milliseconds, and it is the only thing standing between a table typo and
-# a stage that quietly stops running.
-if ! python3 "$SELECTOR" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
-    python3 "$SELECTOR" --self-test --repo-root "$REPO_ROOT" >&2 || true
-    fail_step "stage selector self-test (tools/git-hooks/select_stages.py)"
+if [[ "${PREPUSH_FULL:-0}" == "1" ]]; then
+    printf '\n==> pre-push: PREPUSH_FULL=1 — running every gate\n' >&2
+    exec "$RUNNER" --all
 fi
 
 # git feeds `<local ref> <local sha> <remote ref> <remote sha>` per pushed
 # ref on stdin. Union the changed paths over every ref in the push.
 ZERO="0000000000000000000000000000000000000000"
 CHANGED_FILE="$(mktemp)"
-SELECTED_FILE="$(mktemp)"
-STAGE_SELECTION=""
+trap 'rm -f "$CHANGED_FILE"' EXIT
+
+saw_ref=0
 force_full=0
-
-if [[ "${PREPUSH_FULL:-0}" == "1" ]]; then
-    force_full=1
-    printf '\n==> pre-push: PREPUSH_FULL=1 — running every stage\n' >&2
-else
-    saw_ref=0
-    while read -r _local_ref local_sha _remote_ref remote_sha; do
-        [[ -z "${local_sha:-}" ]] && continue
-        saw_ref=1
-        # Branch deletion: nothing of ours is being added.
-        [[ "$local_sha" == "$ZERO" ]] && continue
-        if [[ "$remote_sha" == "$ZERO" ]]; then
-            # New branch — diff against whatever it forked from. If that
-            # cannot be resolved, fall back to the full run rather than
-            # guessing a range.
-            base="$(git merge-base "$local_sha" origin/HEAD 2>/dev/null || true)"
-            if [[ -z "$base" ]]; then
-                force_full=1
-                continue
-            fi
-            git diff --name-only "$base" "$local_sha" >>"$CHANGED_FILE"
-        else
-            git diff --name-only "$remote_sha" "$local_sha" >>"$CHANGED_FILE"
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [[ -z "${local_sha:-}" ]] && continue
+    saw_ref=1
+    # Branch deletion: nothing of ours is being added.
+    [[ "$local_sha" == "$ZERO" ]] && continue
+    if [[ "$remote_sha" == "$ZERO" ]]; then
+        # New branch — diff against whatever it forked from. If that cannot
+        # be resolved, fall back to the full run rather than guessing a range.
+        base="$(git merge-base "$local_sha" origin/HEAD 2>/dev/null || true)"
+        if [[ -z "$base" ]]; then
+            force_full=1
+            continue
         fi
-    done
-    # githooks(5): git writes one line per ref it is about to push. No lines
-    # therefore means there is nothing to push — an already-up-to-date `git
-    # push`, which git still invokes the hook for. Treating that as "range
-    # unknown, verify everything" made a no-op push run the entire 20-minute
-    # suite, the exact opposite of what this selection exists for. Nothing to
-    # push is nothing to verify.
-    #
-    # The same applies to a by-hand invocation with no stdin: there is no
-    # range to derive, so there is nothing to check. `PREPUSH_FULL=1` is the
-    # way to run the suite deliberately.
-    if (( ! saw_ref )); then
-        printf '\n==> pre-push: no refs to push — nothing to verify\n' >&2
-        exit 0
+        git diff --name-only "$base" "$local_sha" >>"$CHANGED_FILE"
+    else
+        git diff --name-only "$remote_sha" "$local_sha" >>"$CHANGED_FILE"
     fi
-fi
+done
 
-if (( force_full )); then
-    STAGE_SELECTION="$(python3 - "$SELECTOR" <<'PYEOF'
-import runpy, sys
-mod = runpy.run_path(sys.argv[1])
-print("\n".join(sorted(mod["STAGES"], key=mod["stage_sort_key"])))
-PYEOF
-)"
-else
-    sort -u "$CHANGED_FILE" -o "$CHANGED_FILE"
-    changed_count="$(wc -l <"$CHANGED_FILE" | tr -d ' ')"
-    STAGE_SELECTION="$(python3 "$SELECTOR" --repo-root "$REPO_ROOT" \
-        --changed-from "$CHANGED_FILE" --explain 2>"$SELECTED_FILE")" \
-        || fail_step "stage selection"
-    printf '\n==> pre-push: %s changed path(s); stages: %s\n' \
-        "$changed_count" "$(echo "$STAGE_SELECTION" | tr '\n' ' ')" >&2
-    sed 's/^/    /' "$SELECTED_FILE" >&2
-    printf '    (PREPUSH_FULL=1 forces every stage)\n' >&2
-fi
-rm -f "$CHANGED_FILE" "$SELECTED_FILE"
-
-stage_on() {
-    [[ " ${STAGE_SELECTION//$'\n'/ } " == *" $1 "* ]]
-}
-
-if [[ -z "${STAGE_SELECTION// /}" ]]; then
-    printf '\n==> pre-push: no stage applies to this change — nothing to verify\n' >&2
+# githooks(5): git writes one line per ref it is about to push. No lines
+# therefore means there is nothing to push — an already-up-to-date `git
+# push`, which git still invokes the hook for. Treating that as "range
+# unknown, verify everything" made a no-op push run the entire suite, the
+# exact opposite of what path scoping exists for. Nothing to push is nothing
+# to verify.
+#
+# The same applies to a by-hand invocation with no stdin: there is no range
+# to derive, so there is nothing to check. `PREPUSH_FULL=1` is the way to
+# run the suite deliberately, and `scripts/gate` is the way to run part of
+# it.
+if (( ! saw_ref )); then
+    printf '\n==> pre-push: no refs to push — nothing to verify\n' >&2
     exit 0
 fi
 
-if stage_on "1"; then
-# ── Stage 1: sce-codegen build (baseline) ─────────────────────────
-#
-# Debug profile. The generator's cost is process start-up and I/O, not
-# optimisation — measured at 2.75s vs 2.89s over forty runs of the
-# largest fixture, with the two profiles producing byte-identical
-# output across all 1588 committed generated files. Building it in
-# release compiled the entire dependency tree a second time, sharing
-# nothing with Stage 2's clippy or Stage 4's test run: 145.7s against
-# 24.6s in a tree those stages had already warmed. `cargo test
-# --release` in Stage 5b is a different thing and stays — that one
-# pins optimised floating-point output, which is what ships.
-    log_step "Stage 1/8 — cargo build sce-codegen"
-    cargo build --bin sce-codegen --features cli -p sce-build \
-        || fail_step "Stage 1 (sce-codegen build)"
-
-fi
-if stage_on "1b"; then
-    # ── Stage 1b: Rust mod.rs ↔ subdir drift check ────────────────────
-    # Catch the exact failure mode that motivated the integration/ tree
-    # split: a `pub mod X;` in an aggregator mod.rs whose `X/` subdir is
-    # missing (rustc → E0432 "unresolved import"), or an `X/` subdir on
-    # disk that the aggregator forgot to `pub mod` (silently dead code OR
-    # downstream E0432 from a test that imports it). Either way Stage 2's
-    # `cargo test --workspace` catches it eventually — but only after
-    # ~30 s of compilation; this fast structural check fails in under a
-    # second with a precise diff that points at the offending file.
-    log_step "Stage 1b/8 — Rust mod.rs ↔ subdir drift check"
-    check_mod_tree() {
-        local mod_file="$1"
-        local parent_dir
-        parent_dir="$(dirname "$mod_file")"
-        [[ -f "$mod_file" ]] || { printf '  SKIP: %s (missing)\n' "$mod_file" >&2; return 0; }
-
-        # `pub mod X;` lines in mod.rs (ignore commented-out / nested
-        # forms — the aggregator convention is a flat top-level list).
-        local listed
-        listed="$(grep -E '^pub mod [a-zA-Z_][a-zA-Z0-9_]*;' "$mod_file" \
-            | sed -E 's/^pub mod ([a-zA-Z_][a-zA-Z0-9_]*);.*/\1/' \
-            | sort)"
-
-        # Subdirectories sitting next to mod.rs. Every codegen-output
-        # subdir here is a Rust module by convention (carries its own
-        # mod.rs). A future non-module sibling dir would need a small
-        # exclusion list; flag it loudly rather than ignore silently.
-        local on_disk
-        on_disk="$(find "$parent_dir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)"
-
-        # Symmetric diff: line 1 = mod.rs entries with no dir; line 2 = dirs
-        # with no `pub mod` entry. `comm -3` prints both lines indented so
-        # the location of each drift type is clear from the report.
-        local listed_only on_disk_only
-        listed_only="$(comm -23 <(echo "$listed") <(echo "$on_disk"))"
-        on_disk_only="$(comm -13 <(echo "$listed") <(echo "$on_disk"))"
-        if [[ -n "$listed_only" || -n "$on_disk_only" ]]; then
-            printf '  FAIL: %s\n' "$mod_file" >&2
-            [[ -n "$listed_only" ]] && {
-                printf '    pub mod entries with no matching subdir (rustc E0432):\n' >&2
-                printf '      %s\n' $listed_only >&2
-            }
-            [[ -n "$on_disk_only" ]] && {
-                printf '    subdirs not registered in mod.rs (orphaned modules):\n' >&2
-                printf '      %s\n' $on_disk_only >&2
-            }
-            return 1
-        fi
-        return 0
-    }
-
-    drift_count=0
-    for mod_file in \
-        backends/rust/tests/src/generated/mod.rs \
-        backends/rust/tests/src/integration/mod.rs; do
-        check_mod_tree "$mod_file" || drift_count=$((drift_count + 1))
-    done
-    (( drift_count == 0 )) || fail_step "Stage 1b ($drift_count mod.rs drift)"
-
-fi
-if stage_on "1c"; then
-    # ── Stage 1c: emit_embed_manifest.sh fail-fast regression TC ──────
-    # Reproduces the May 2026 embed-vendor-smoke CI failure where
-    # emit_embed_manifest.sh silently consumed clang's degraded AST when
-    # JSEngine.h's transitive quickjs.h was unresolvable on the runner.
-    # The result: a manifest that was a function of the parse environment
-    # (locally clean, CI broken) instead of the source tree, and a
-    # verify_embed_manifest.sh diff with ghost duplicate symbols carrying
-    # placeholder types like `int` for `std::vector<std::string>`.
-    #
-    # The fix (commit window: 2026-05-16) moved emit to fail-fast on any
-    # clang parse error. This TC plants a synthetic header that includes a
-    # nonexistent file, runs emit, and asserts non-zero exit + diagnostic
-    # present + no manifest written. Runs in ~1s, no toolchain beyond
-    # clang-19 already required by Stage 4. Catches the silent-degrade
-    # pattern's reintroduction before any developer pays the CI round-trip.
-    log_step "Stage 1c/8 — emit_embed_manifest.sh fail-fast regression TC"
-    bash scripts/test_emit_manifest_fail_fast.sh \
-        || fail_step "Stage 1c (emit_embed_manifest fail-fast TC)"
-
-fi
-if stage_on "1d"; then
-    # ── Stage 1d: tree-wide hygiene gates (mirror tree-hygiene.yml) ───
-    # Two gates whose inputs are wider than any `paths:` list.
-    # `roadmap_marker_gate` reads every tracked file; when it rode the
-    # workspace suite, a violation under a path outside that suite's
-    # filter never started CI and reached main green (2026-08-04).
-    # `workflow_trigger_coverage` reads every workflow and is what keeps
-    # the arrangement from rotting: it fails if a gate like that is ever
-    # run only by a filtered workflow again. `hook_ci_parity` covers the
-    # neighbouring failure — a stage that fires correctly but runs a
-    # weaker command than the workflow it mirrors.
-    # `codegen_binary_resolution` reads every tracked file too: it holds
-    # that no harness names a cargo build profile when reaching for the
-    # sce-codegen binary, and those sites span five languages with no
-    # common path prefix.
-    #
-    # tree-hygiene.yml declares no filter, so the selector derives "always"
-    # for this stage the same way it derives every other trigger. Every
-    # target is named explicitly rather than swept, so this costs one
-    # cached build and sub-second tests instead of Stage 4's full suite.
-    log_step "Stage 1d/8 — tree-wide hygiene gates (marker + trigger + parity)"
-    cargo test -p sce-build \
-        --test roadmap_marker_gate \
-        --test workflow_trigger_coverage \
-        --test hook_ci_parity \
-        --test codegen_binary_resolution \
-        || fail_step "Stage 1d (tree-wide hygiene gates)"
-
-fi
-if stage_on "2"; then
-    # ── Stage 2: cargo clippy (mirror clippy-check.yml) ───────────────
-    # clippy-check.yml runs `cargo clippy --workspace --all-targets -- -D
-    # warnings` on dtolnay/rust-toolchain@stable. The lint set is
-    # version-sensitive: a stale local `stable` (behind the CI runner's
-    # fresh stable) passes locally and only breaks CI on a newly-stabilised
-    # lint — exactly the unnecessary_sort_by / collapsible_match drift that
-    # motivated this gate. Toolchain parity is now enforced up front (the
-    # `RUSTUP_TOOLCHAIN=stable` sync above) rather than by a manual
-    # `rustup update stable`, so this `cargo clippy` sees the same lints CI
-    # will. Runs before the heavy test/build stages so a lint failure
-    # aborts fast.
-    log_step "Stage 2/8 — cargo clippy --workspace --all-targets -- -D warnings"
-    cargo clippy --workspace --all-targets -- -D warnings \
-        || fail_step "Stage 2 (cargo clippy)"
-
-fi
-if stage_on "2b"; then
-    # ── Stage 2b: no_std MCU-target mirror (sce-rust-runtime-no-std.yml) ─
-    # Stage 2 above only lints the host target with default features, so it
-    # never sees the `heapless`-sized types the `no_std` cfg selects — a
-    # regression that compiles on host but breaks the bare-metal build (a
-    # reintroduced `std::*` import, an alloc-coupled emission, or a no_std-
-    # only clippy lint like result_large_err) slips every host-target gate
-    # and surfaces only on the cloud no_std workflow. Mirror that workflow
-    # here: build + clippy the runtime for thumbv7em, then generate and
-    # compile the allocator-free probe machine (reusing the Stage 1
-    # sce-codegen build). `rustup target add` is idempotent — a no-op when
-    # the target is already present, an auto-install otherwise — so the gate
-    # always runs rather than silently skipping on a fresh checkout.
-    log_step "Stage 2b/8 — no_std MCU build + clippy + probe (thumbv7em-none-eabihf)"
-    rustup target add thumbv7em-none-eabihf >/dev/null 2>&1 || true
-    cargo build -p sce-rust-runtime --no-default-features --features=no_std \
-        --target=thumbv7em-none-eabihf \
-        || fail_step "Stage 2b (no_std runtime build)"
-    cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
-        --target=thumbv7em-none-eabihf -- -D warnings \
-        || fail_step "Stage 2b (no_std runtime clippy)"
-    "$REPO_ROOT/target/debug/sce-codegen" --workspace-root "$REPO_ROOT" generate \
-        -l rust --no-std --output-dir backends/rust/probes/nostd-build/src \
-        sce-build/tests/fixtures/no_std/parallel_history_probe.scxml >/dev/null 2>&1 \
-        || fail_step "Stage 2b (no_std probe generation)"
-    cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
-        --target=thumbv7em-none-eabihf \
-        || fail_step "Stage 2b (no_std probe compile)"
-    # Single-emit portability (mirror sce-rust-runtime-no-std.yml): ONE --no-std
-    # emission compiles against BOTH the std runtime (host, AP profile) and the
-    # no_std runtime (thumb, MCU profile). Regression gate for the bytes-field
-    # `E0433: cannot find heapless in sce_rust_runtime` against the std runtime.
-    "$REPO_ROOT/target/debug/sce-codegen" --workspace-root "$REPO_ROOT" generate \
-        -l rust --no-std --output-dir backends/rust/probes/portable-emit/src \
-        sce-build/tests/fixtures/no_std/portable_probe.scxml >/dev/null 2>&1 \
-        || fail_step "Stage 2b (portability probe generation)"
-    cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
-        || fail_step "Stage 2b (portability probe — std runtime, host)"
-    cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
-        --target=thumbv7em-none-eabihf --features mcu \
-        || fail_step "Stage 2b (portability probe — no_std runtime, thumb)"
-    # Per-machine event-queue sizing (mirror sce-rust-runtime-no-std.yml): a
-    # `<scxml sce:capacity="2">` machine must size its no_std queues to depth 2,
-    # not the crate-global depth-64 default. The const size assertion catches a
-    # silent revert of the per-machine `StatePolicy::EventQueue` to the bare
-    # (depth-64) form — which a plain compile gate misses, since the bare form
-    # still compiles. This is the downstream MCU SRAM blocker class.
-    "$REPO_ROOT/target/debug/sce-codegen" --workspace-root "$REPO_ROOT" generate \
-        -l rust --no-std --output-dir backends/rust/probes/nostd-queue-size/machine/src \
-        sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml >/dev/null 2>&1 \
-        || fail_step "Stage 2b (queue-size probe generation)"
-    cargo build --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
-        --target=thumbv7em-none-eabihf \
-        || fail_step "Stage 2b (queue-size gate — const size assertion)"
-
-fi
-if stage_on "2c"; then
-    # ── Stage 2c: cargo doc broken-link gate (mirror doc-check.yml) ────
-    # sce-rust-runtime opts into the workspace `[lints]` broken-intra-doc-
-    # links=deny policy, but that policy only bites when something runs
-    # `cargo doc`. Both feature profiles are gated: a doc link that crosses
-    # a `#[cfg]` boundary (e.g. into a `!no_std`-gated module) resolves in
-    # the default-features docs yet breaks in the no_std docs, so the
-    # std-only run cannot see that breakage class. All runtime doc links
-    # are kept profile-stable (cfg-gated targets are plain code spans).
-    log_step "Stage 2c/8 — cargo doc -p sce-rust-runtime (broken-link gate, both profiles)"
-    RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
-        || fail_step "Stage 2c (cargo doc broken intra-doc links, std)"
-    RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
-        --no-default-features --features no_std \
-        || fail_step "Stage 2c (cargo doc broken intra-doc links, no_std)"
-
-fi
-if stage_on "3"; then
-    # ── Stage 3: embed/MANIFEST.json drift (mirror verify_embed_manifest) ─
-    # embed/MANIFEST.json is the tracked snapshot of the embeddable public
-    # API surface. A header edit under sce/include/ that forgets
-    # `scripts/package_embed.sh` lands a stale manifest that only CI's
-    # verify_embed_manifest job catches. Stage 1c covers the emit
-    # fail-fast path; this covers the orthogonal DRIFT path (committed
-    # manifest vs the current header surface) — the gap that let the
-    # SetCurrentEventArgs surface change land stale.
-    # The workflow runs three checks and this stage ran only the first
-    # until 2026-08-04, which is the harder kind of gap to notice: the
-    # stage fires on the right changes and still misses two thirds of
-    # what CI will run. The other two cover different halves —
-    # verify_embed_payload.sh catches a manifest left stale by a sce/
-    # edit (the upstream direction verify_embed_manifest.sh cannot see,
-    # since it re-emits from whatever embed/include/ is on disk), and
-    # smoke_embed_consumer.sh builds a consumer against a freshly
-    # packaged tree, catching assets that sce_codegen_assets.cmake lists
-    # but package_embed.sh never ships.
-    #
-    # Measured locally: 112s and 116s. Both work in `mktemp -d` scratch
-    # directories with `trap rm -rf`, so neither can leave the working
-    # tree dirty the way an interrupted verify_embed_manifest.sh can.
-    # The stage triggers only on public-header and packaging paths, so
-    # the cost lands on exactly the changes that can break the channel.
-    log_step "Stage 3/8 — embed manifest drift + payload lag + consumer smoke"
-    bash scripts/verify_embed_manifest.sh \
-        || fail_step "Stage 3 (embed/MANIFEST.json drift)"
-    bash scripts/verify_embed_payload.sh \
-        || fail_step "Stage 3 (embed/MANIFEST.json stale relative to sce/)"
-    bash scripts/smoke_embed_consumer.sh \
-        || fail_step "Stage 3 (embed consumer smoke build)"
-
-fi
-if stage_on "4"; then
-    # ── W3C HTTP test server (mirror w3c-tests.yml:379) ───────────────
-    # Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
-    # (test_201, test_509, test_513, test_518-520, test_532, test_534,
-    # test_567) issue real HTTP POSTs to localhost:8080/test. Without the
-    # server running they panic on connection-refused and Stage 2 fails;
-    # CI starts the same server in `.github/workflows/w3c-tests.yml`
-    # before its `cargo test` step, so the pre-push hook must mirror that
-    # to stay symmetric with CI.
-    log_step "Starting W3C HTTP test server on localhost:8080 (mirrors w3c-tests.yml)"
-    if ! command -v node >/dev/null 2>&1; then
-        fail_step "node.js required for W3C HTTP test server (apt install nodejs)"
-    fi
-    HTTP_SERVER_LOG="$(mktemp)"
-    node tests/w3c/standalone_http_server.js 8080 /test >"${HTTP_SERVER_LOG}" 2>&1 &
-    HTTP_SERVER_PID=$!
-    # Match the CI workflow's `sleep 1` settle window before issuing requests.
-    sleep 1
-    if ! kill -0 "${HTTP_SERVER_PID}" 2>/dev/null; then
-        cat "${HTTP_SERVER_LOG}" >&2
-        fail_step "W3C HTTP test server failed to start (port 8080 already in use?)"
-    fi
-
-    # ── Stage 4: Rust workspace tests (mirror rust-workspace-tests.yml) ─
-    # Default test profile, matching CI. This ran `--release` until
-    # 2026-08-04, which was weaker and slower at once. Weaker because
-    # `[profile.test]` keeps debug-assertions on and release turns them
-    # off: an integer overflow panics for CI and wraps here, so the one
-    # gate meant to catch it before the runner could not. Slower because
-    # development builds are unoptimised, so a release sweep shared no
-    # artifacts with the tree and rebuilt the workspace every push.
-    # Release bought no parity — CI never runs this suite optimised.
-    # `hook_ci_parity` (Stage 1d) fails if either side drifts back.
-    # `--features cli` is load-bearing, not decoration. sce-build declares
-    # 15 test targets with `required-features = ["cli"]`; cargo excludes an
-    # unmet-features target SILENTLY — it is never built, never reported as
-    # skipped — so without the flag this stage ran a strictly smaller suite
-    # than its own name claims. Stage 4b below used to carry two of those
-    # fifteen explicitly; the other thirteen ran in neither the hook nor CI.
-    log_step "Stage 4/8 — cargo test --workspace --features cli"
-    cargo test --workspace --features cli \
-        || fail_step "Stage 4 (cargo test --workspace --features cli)"
-
-    # Stage 2 done — release the HTTP server before the heavier later
-    # stages so a stuck node process cannot survive into Stages 3-5.
-    kill "${HTTP_SERVER_PID}" 2>/dev/null || true
-    HTTP_SERVER_PID=""
-
-fi
-if stage_on "4b"; then
-    # ── Stage 4b: cli-gated drift + sourcemap suites ──────────────────
-    # Stage 4 now runs with `--features cli`, so these two are already in
-    # its set. They are re-run here for one property that stage cannot
-    # give them: `--test-threads=1`. Both invoke the freshly built binary
-    # against the real committed tree, and drift-verify.yml runs them
-    # serially for that reason — a parallel run has two verify steps
-    # reading and rebuilding the same tree. The duplicate cost is seconds;
-    # the alternative is a drift gate that passes or fails by scheduling.
-    log_step "Stage 4b/8 — cli-gated B9 drift + §5.O sourcemap suites"
-    cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1 \
-        || fail_step "Stage 4b (b9_drift_detection — committed-tree §6.2.6 drift)"
-    cargo test -p sce-build --features cli --test sourcemap_addr2sce \
-        || fail_step "Stage 4b (sourcemap_addr2sce — §5.O traceability drift)"
-
-fi
-if stage_on "5"; then
-    # ── Stage 3: Go forge conformance ─────────────────────────────────
-    # generate.sh already runs `go build ./conformance/...` as a smoke check,
-    # so a codegen drift that produces uncompilable Go (the package-alias bug
-    # this hook was born to catch) surfaces right here.
-    log_step "Stage 5/8 — Go forge conformance regenerate + test"
-    ( cd backends/go/forge-runtime/conformance && bash generate.sh ) \
-        || fail_step "Stage 5 (Go forge conformance generate)"
-    # The regenerate above is the expensive half; running the suite it
-    # just produced costs milliseconds. Building an artifact and then
-    # not looking at the result is how `forge-conformance.yml` came to
-    # be mirrored in name only.
-    ( cd backends/go/forge-runtime && go test ./conformance/ -count=1 ) \
-        || fail_step "Stage 5 (Go forge conformance)"
-    # ./round_trip/ is the committed tree, orthogonal to the §6.2.6
-    # header-hash drift gate: that one checks parity, this checks the
-    # tree still functions.
-    ( cd backends/go/forge-runtime && go test ./round_trip/ -count=1 ) \
-        || fail_step "Stage 5 (Go forge round-trip)"
-
-fi
-if stage_on "5b"; then
-    # ── Stage 5b: Rust forge conformance ──────────────────────────────
-    # `--release` is not incidental: the numerical conformance vectors
-    # are compared against optimised floating-point output, which is
-    # what ships. Stage 4 runs the workspace in debug and cannot stand
-    # in for it. The separate profile costs a one-time release build
-    # (~50s); afterwards it is incremental — ~0.1s on a push that does
-    # not touch the crate, which is most of them.
-    log_step "Stage 5b/8 — Rust forge conformance (numerical)"
-    cargo test --release -p sce-forge-runtime --features alloc --test numerical_conformance \
-        || fail_step "Stage 5b (Rust forge conformance)"
-
-fi
-if stage_on "5c"; then
-    # ── Stage 5c: Python forge conformance ────────────────────────────
-    # No build step, so this is the cheapest of the five language arms.
-    log_step "Stage 5c/8 — Python forge conformance (numerical)"
-    ( cd backends/python/forge-runtime && PYTHONPATH=tests python3 -m unittest \
-        tests.test_numerical_conformance tests.test_default_round_trip ) \
-        || fail_step "Stage 5c (Python forge conformance)"
-
-fi
-if stage_on "6"; then
-    # ── Stage 4: C++ forge conformance build ──────────────────────────
-    # Uses a dedicated scratch build dir so it does not clobber a developer's
-    # main build tree. The codegen dependency is passed explicitly via
-    # -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
-    log_step "Stage 6/8 — C++ forge conformance build"
-    BUILD_DIR="$(mktemp -d)"
-    cmake -S backends/cpp/forge-runtime/tests/conformance \
-          -B "$BUILD_DIR" \
-          -DSCE_CODEGEN="$REPO_ROOT/target/debug/sce-codegen" \
-          -Wno-dev >/dev/null \
-        || fail_step "Stage 6 (C++ forge conformance configure)"
-    cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
-        || fail_step "Stage 6 (C++ forge conformance build)"
-    # Same reasoning as Stage 5: the build dominates and is already
-    # paid. This is NOT the W3C ctest suite the hook deliberately
-    # leaves to CI — it is the conformance fixture that was just built
-    # here, and it runs in hundredths of a second.
-    ctest --test-dir "$BUILD_DIR" --output-on-failure \
-        || fail_step "Stage 6 (C++ forge conformance)"
-
-fi
-if stage_on "7"; then
-    # ── Stage 5: Example codegen smoke test ───────────────────────────
-    # The emscripten-backed doom_wasm / visualizer builds are too heavy for
-    # a push-time gate, but codegen failures (the kind that broke the
-    # `urn:sce:extensions` → `http://sce.dev/ext` namespace migration) surface
-    # well before link time. Run sce-codegen over each example SCXML in a
-    # scratch output dir and abort push if any fail to produce artifacts.
-    log_step "Stage 7/8 — Example SCXML codegen smoke"
-    GEN_OUT="$(mktemp -d)"
-    example_failures=0
-    for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
-        [[ -f "$scxml" ]] || continue
-        if ! "$REPO_ROOT/target/debug/sce-codegen" generate "$scxml" \
-                --language cpp \
-                --output-dir "$GEN_OUT/" >/dev/null 2>&1; then
-            printf '  FAIL: %s\n' "$scxml" >&2
-            example_failures=$((example_failures + 1))
-        fi
-    done
-    (( example_failures == 0 )) || fail_step "Stage 7 ($example_failures example(s) failed codegen)"
-
-fi
-if stage_on "8"; then
-    # ── Stage 8: Spec-citation ledgers (mirror spec-citations.yml) ────
-    # Sub-second per workspace, measured 2026-06-10. This is the gate that
-    # was missing when the doc-hygiene rounds added §mesh-13 / §wire-W*
-    # cites without bindings and main went red post-push: the CI workflow
-    # validates every workspace, the hook did not. Same commands, same
-    # order; the migrate-citations form gates force every free-text cite
-    # through the §-token channel the validator inspects.
-    #
-    # The binary is REVISION-PINNED, not PATH-resolved. `~/.cargo/bin` is a
-    # shared slot that any `cargo install` silently overwrites, so a
-    # PATH-resolved `mnemosyne-cli` makes this stage mirror "whatever is
-    # installed" rather than the revision CI runs — and the two disagree in
-    # both directions. Resolving PATH was a silently-broken safeguard of the
-    # same class as the pre-sync clippy toolchain above: the slot was
-    # overwritten to a newer revision whose `validate-workspace` rejects all
-    # five of these workspaces (its scan-coverage precheck resolves
-    # [plugins.set_equality_validator].paths against each workspace's own
-    # directory instead of [workspace] root, so correctly-configured paths
-    # "resolve to nothing"), while CI's pinned revision validates them clean.
-    # A gate that fails on a tree CI passes is as broken as one that passes on
-    # a tree CI fails. MNEMOSYNE_REV is read from spec-citations.yml so the pin
-    # keeps a single SSOT and a CI bump carries here automatically; the hook
-    # refuses to run under any other revision instead of reporting a verdict
-    # CI will not reproduce. Override the location (not the revision) with
-    # MNEMOSYNE_BIN.
-    log_step "Stage 8/8 — spec-citation ledger validation (5 workspaces)"
-    mnemosyne_rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
-        "$REPO_ROOT/.github/workflows/spec-citations.yml")"
-    [[ -n "$mnemosyne_rev" ]] \
-        || fail_step "Stage 8 (no MNEMOSYNE_REV pin found in .github/workflows/spec-citations.yml)"
-    mnemosyne_short="${mnemosyne_rev:0:8}"
-    mnemosyne_root="${HOME}/.local/share/mnemosyne-rev/${mnemosyne_short}"
-    MNEMOSYNE_BIN="${MNEMOSYNE_BIN:-${mnemosyne_root}/bin/mnemosyne-cli}"
-    mnemosyne_hint="cargo install --git https://github.com/newmassrael/mnemosyne --rev ${mnemosyne_rev} --locked --root ${mnemosyne_root} mnemosyne-cli"
-    [[ -x "$MNEMOSYNE_BIN" ]] \
-        || fail_step "Stage 8 (no rev-pinned mnemosyne-cli at ${MNEMOSYNE_BIN} — install it with: ${mnemosyne_hint})"
-    mnemosyne_have="$("$MNEMOSYNE_BIN" --version 2>&1 || true)"
-    [[ "$mnemosyne_have" == *"$mnemosyne_short"* ]] \
-        || fail_step "Stage 8 (${MNEMOSYNE_BIN} reports '${mnemosyne_have}', expected revision ${mnemosyne_short} — reinstall with: ${mnemosyne_hint})"
-    printf '  pinned to %s for this hook\n' "$mnemosyne_have" >&2
-    for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
-        ( cd "$ws" \
-            && "$MNEMOSYNE_BIN" validate-workspace >/dev/null \
-            && "$MNEMOSYNE_BIN" validate-code-refs >/dev/null \
-            && "$MNEMOSYNE_BIN" validate-verifies-linkage >/dev/null \
-            && "$MNEMOSYNE_BIN" validate-content-drift >/dev/null ) \
-            || fail_step "Stage 8 (${ws} ledger validation)"
-    done
-    python3 tools/mnemosyne-adoption/migrate_citations.py --check \
-        --from-toml docs/spec/scxml/mnemosyne.toml >/dev/null \
-        || fail_step "Stage 8 (scxml citation-form gate)"
-    python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth \
-        --from-toml docs/spec/synth/mnemosyne.toml >/dev/null \
-        || fail_step "Stage 8 (synth citation-form gate)"
-    python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesguard \
-        --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml >/dev/null \
-        || fail_step "Stage 8 (bytesguard citation-form gate)"
-    # Ledger-existence gate over the trees deliberately kept in PROSE. The form
-    # gates above cover only the dirs enrolled in a ledger's `paths`, which leaves
-    # the codegen templates and every backend/test tree free to cite a section
-    # number that does not exist — and templates are the propagation source: one
-    # fabricated number reached 168 sites through generated copies before this gate
-    # existed. §-form is NOT demanded here (template comments ship verbatim inside
-    # generated code and stay readable to consumers); only the claim that the cited
-    # section exists is enforced.
-    for tree in tools/codegen/templates tests backends examples web; do
-        python3 tools/mnemosyne-adoption/migrate_citations.py "$tree" --check-ledger >/dev/null \
-            || fail_step "Stage 8 (ledger-existence gate: ${tree})"
-    done
+# Not `exec` past this point: the EXIT trap above owns the temp file, and
+# exec replaces the shell without running it.
+if (( force_full )); then
+    printf '\n==> pre-push: push range unresolvable — running every gate\n' >&2
+    "$RUNNER" --all
+    exit $?
 fi
 
-# ── Stage 8b: verifies-catalog drift (mirror spec-snapshot-drift.yml) ─
-# The gate whose absence turned main red on 2026-08-04. A `SCE-VERIFIES:`
-# marker inside a test file is the catalog's SSOT, so adding a marked test
-# without regenerating the catalog is drift — and Stage 8 could not see it,
-# because that stage runs `mnemosyne-cli` while this check is a separate
-# python generator wired only into the CI workflow. A hook that mirrors CI
-# stage-by-stage has to mirror this one too; the push it blocked otherwise
-# succeeds locally and fails on the runner.
-if stage_on "8b"; then
-    log_step "Stage 8b/8 — spec snapshot + verifies-catalog drift"
-    # Snapshot integrity is a sha256 comparison against the pinned
-    # provenance — no network, no build. `--mode upstream` is the one
-    # that fetches, and it stays CI-only (see CI_ONLY in
-    # sce-build/tests/hook_ci_parity.rs).
-    python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity \
-        || fail_step "Stage 8b (spec snapshot drift — snapshot does not match its provenance)"
-    # Two catalogs, two scripts, different files. The hook ran only the
-    # mesh one for long enough that the asymmetry read as intentional.
-    python3 tools/mnemosyne-adoption/gen_verifies_catalog.py --check \
-        || fail_step "Stage 8b (verifies-catalog stale — regenerate with tools/mnemosyne-adoption/gen_verifies_catalog.py)"
-    python3 tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py --check \
-        || fail_step "Stage 8b (mesh verifies-catalog stale — regenerate with tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py)"
-    # These tools drive Stage 8's ledger validation. If they regress,
-    # the stage above answers confidently and wrongly, so their own
-    # tests belong on the same side of the push.
-    python3 -m unittest discover -s tools/mnemosyne-adoption/tests \
-        || fail_step "Stage 8b (mnemosyne-adoption tooling regression)"
-fi
+sort -u "$CHANGED_FILE" -o "$CHANGED_FILE"
+printf '\n==> pre-push: %s changed path(s)\n' \
+    "$(wc -l <"$CHANGED_FILE" | tr -d ' ')" >&2
 
-printf '\npre-push: selected gates passed — push allowed.\n' >&2
+"$RUNNER" --changed-from "$CHANGED_FILE"

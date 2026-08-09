@@ -6,7 +6,7 @@
 // no filter at all.
 //
 // One direction of hook/CI agreement is already structural.
-// `select_stages.py` reads the `paths:` filters out of the workflows
+// `gate_registry.py` reads the `paths:` filters out of the workflows
 // instead of restating them, so a pre-push stage cannot drift from the CI
 // trigger it mirrors. Nothing played that role for the other direction —
 // whether a test's *inputs* stay inside the trigger of the workflow that
@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 /// that target by name.
 const UNFILTERABLE_GATES: &[&str] = &[
     "codegen_binary_resolution",
+    "gate_registry_contract",
     "hook_ci_parity",
     "roadmap_marker_gate",
     "workflow_trigger_coverage",
@@ -220,10 +221,10 @@ fn every_unfilterable_gate_runs_in_a_workflow_without_a_path_filter() {
 
 #[test]
 fn the_pre_push_hook_runs_every_unfilterable_gate() {
-    // Half one: the hook's stage table maps the carrying workflow, which is
+    // Half one: the gate registry maps the carrying workflow, which is
     // how the selector derives "run this stage always" — an unfiltered
     // workflow yields the catch-all trigger.
-    let selector_path = repo_root().join("tools/git-hooks/select_stages.py");
+    let selector_path = repo_root().join("tools/git-hooks/gate_registry.py");
     let selector = fs::read_to_string(&selector_path)
         .unwrap_or_else(|e| panic!("read {}: {}", selector_path.display(), e));
 
@@ -241,32 +242,51 @@ fn the_pre_push_hook_runs_every_unfilterable_gate() {
     assert!(
         unmapped.is_empty(),
         "workflow(s) carrying a tree-wide gate are absent from the pre-push \
-         stage table, so the hook skips a gate CI runs on every push: {:?}\n\
-         Add a stage in {} mapping the workflow; its missing `paths:` filter \
+         gate registry, so the hook skips a gate CI runs on every push: {:?}\n\
+         Add a gate in {} mapping the workflow; its missing `paths:` filter \
          makes the stage unconditional, which is the intent.",
         unmapped,
         selector_path.display()
     );
 
-    // Half two: a mapped stage that runs nothing is a table entry, not a
-    // gate. Selecting a stage and executing the target are separate edits,
-    // so check the hook body names each target too.
-    let hook_path = repo_root().join("tools/git-hooks/pre-push");
-    let hook = fs::read_to_string(&hook_path)
-        .unwrap_or_else(|e| panic!("read {}: {}", hook_path.display(), e));
+    // Half two: a registered gate that runs nothing is a table entry, not a
+    // gate. Selecting a gate and executing the target are separate edits, so
+    // check that some gate script names each target too. The body to read is
+    // `scripts/gates/`, not the hook: the hook now only decides which gates a
+    // change needs, and the commands live one per file there.
+    let gates_dir = repo_root().join("scripts/gates");
+    let mut gate_bodies = String::new();
+    let mut scripts: Vec<PathBuf> = fs::read_dir(&gates_dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", gates_dir.display(), e))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "sh"))
+        .collect();
+    assert!(
+        !scripts.is_empty(),
+        "no gate scripts under {} — this half would pass by reading nothing",
+        gates_dir.display()
+    );
+    scripts.sort();
+    for path in scripts {
+        gate_bodies.push('\n');
+        gate_bodies.push_str(
+            &fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e)),
+        );
+    }
 
     let unrun: Vec<&&str> = UNFILTERABLE_GATES
         .iter()
-        .filter(|gate| !runs_target_by_name(&hook, gate))
+        .filter(|gate| !runs_target_by_name(&gate_bodies, gate))
         .collect();
     assert!(
         unrun.is_empty(),
-        "the pre-push hook selects the tree-wide stage but never runs \
+        "a tree-wide gate is registered but no gate script runs \
          target(s) {:?}, so the gate holds locally only by way of the full \
          workspace sweep — the coupling this arrangement exists to break.\n\
-         Name each target in the stage 1d body of {}.",
+         Name each target in {}/tree-hygiene.sh.",
         unrun,
-        hook_path.display()
+        gates_dir.display()
     );
 }
 

@@ -1,0 +1,589 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The gate registry: what gates exist, what triggers each, what each needs
+# built first, and what each costs.
+#
+# Gates are identified by a slug, never by position. The previous table
+# keyed them by run order ("1", "1b", "2c", "8b"), which made the identifier
+# and the schedule the same thing: reordering renamed gates, so the order
+# could not be improved without breaking every reference to it, and each new
+# gate had to be wedged in with a letter suffix instead of taking a place of
+# its own. The evidence that this had stopped working was in the hook
+# itself — three gates carried block comments naming a number two lower than
+# their own label, left behind by an earlier renumbering, four gates
+# mirroring one workflow were split across two number families, five gates
+# were missing from the header list, and every label read "N/8" while
+# seventeen gates existed.
+#
+# With slugs, order is derived rather than declared: `deps` says what must
+# run first, `cost_s` says what is cheap, and the runner sorts by both. A
+# gate added tomorrow lands in the right place without touching any other
+# entry.
+#
+# Which gate a change needs is answered by the `paths:` filter on the CI
+# workflow it mirrors, so those filters are read out of
+# `.github/workflows/*.yml` rather than restated here — the hook cannot
+# drift from CI the way a hand-copied table would, and a workflow that gains
+# a path starts triggering its gate on the same commit that widens CI.
+#
+# Three rules keep the filtering from becoming a coverage hole, which is the
+# failure mode a selective hook invites:
+#
+#   1. A changed path matching NO known glob — not a gate trigger and not
+#      the inert list below — forces the FULL run. A new top-level directory
+#      therefore gets more verification, never less.
+#   2. Gates with no CI counterpart carry an explicit local trigger with the
+#      reason written next to it, rather than being silently always-on or
+#      silently never-on.
+#   3. A gate whose trigger is the catch-all `**` is selected always and
+#      counts as classifying nothing. Its workflow runs on every push, so a
+#      match carries no information about whether a path is understood —
+#      letting it count would mark every path in the repository known and
+#      rule 1 would never fire again.
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+# ── Gate table ────────────────────────────────────────────────────
+#
+# `workflows` names the CI workflow(s) a gate mirrors; its `paths:` filter
+# is the trigger. `extra` adds locally-known triggers for what the
+# workflow's filter cannot express, and `local` is for gates CI has no
+# counterpart for. `deps` names gates whose output this one executes.
+#
+# `cost_s` is wall-clock seconds, MEASURED by `scripts/gate --measure --all`
+# on a warm tree, not estimated. Warm is the right basis: a push happens on
+# a tree the developer has just built, and a cold first build is paid once
+# in whatever order the gates run. Two limits are worth stating rather than
+# discovering later. The numbers come from a full run, so a gate that
+# benefits from an earlier gate having warmed the cargo cache reads cheaper
+# here than it would in isolation — which is the number that matters for
+# ordering a full run, and the wrong one for judging a single gate. And the
+# clock is whole seconds, so everything under a second reads 0.
+#
+# Re-measure after any gate's work changes materially; a stale cost is a
+# wrong order, not a wrong comment. The value that motivated all of this
+# was `ledger-citations`: the hook's prose called it "sub-second per
+# workspace" and it sat last of seventeen, while a measurement puts the
+# whole gate at 145s — still nowhere near last, and the prose was
+# describing one step of it.
+GATES: dict[str, dict] = {
+    # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
+    # Triggered by its own sources, and forced on by its dependents.
+    "codegen-build": {
+        "local": ["sce-build/**", "Cargo.toml", "Cargo.lock"],
+        "cost_s": 1,
+        "summary": "build target/debug/sce-codegen",
+    },
+    # Structural check over the Rust module tree — only a .rs add/remove can
+    # break it, so the Rust trigger set is exactly right.
+    "rust-modrs-drift": {
+        "local": ["**/*.rs"],
+        "cost_s": 0,
+        "summary": "mod.rs <-> subdirectory drift",
+    },
+    # Guards the clang degraded-AST regression in the manifest emitter.
+    "embed-manifest-failfast": {
+        "local": ["scripts/emit_embed_manifest.sh", "scripts/package_embed.sh",
+                  "sce/include/**"],
+        "cost_s": 0,
+        "summary": "emit_embed_manifest fail-fast case",
+    },
+    # `roadmap_marker_gate` reads every tracked file and
+    # `workflow_trigger_coverage` reads every workflow, so tree-hygiene.yml
+    # declares no `paths:` filter — no glob list is both correct and
+    # narrower than the tree. That missing filter is what makes this gate
+    # unconditional, derived the same way every other workflow-backed
+    # trigger is rather than hand-set to "always".
+    "tree-hygiene": {
+        "workflows": ["tree-hygiene.yml"],
+        "cost_s": 2,
+        "summary": "tree-wide marker + trigger + parity gates",
+    },
+    "clippy": {
+        "workflows": ["clippy-check.yml"],
+        "cost_s": 0,
+        "summary": "cargo clippy --workspace --all-targets",
+    },
+    "nostd-mcu": {
+        "workflows": ["sce-rust-runtime-no-std.yml"],
+        "deps": ["codegen-build"],
+        "cost_s": 1,
+        "summary": "no_std MCU build + clippy + probes",
+    },
+    # Mirrors doc-check.yml. The numbered table mapped this to
+    # sce-rust-runtime-no-std.yml while the gate's own comment named
+    # doc-check.yml; the two share the `backends/rust/runtime/**` trigger,
+    # so the mismatch never showed as a missed run except for edits to
+    # doc-check.yml itself.
+    "rustdoc-links": {
+        "workflows": ["doc-check.yml"],
+        "cost_s": 4,
+        "summary": "cargo doc broken intra-doc links, both profiles",
+    },
+    "embed-vendor": {
+        "workflows": ["embed-vendor-smoke.yml"],
+        "extra": ["sce/include/**", "embed/MANIFEST.json"],
+        # The most expensive gate in the set: three scratch-directory builds,
+        # one of which packages embed/ from scratch and builds a consumer
+        # against it.
+        "cost_s": 399,
+        "summary": "embed manifest drift + payload lag + consumer smoke",
+    },
+    # Mirrors the Rust workspace suite only. `w3c-tests.yml` is deliberately
+    # NOT listed: it has no `paths:` filter (it runs on every CI push) and
+    # it drives the C++ ctest suite, which this hook does not mirror at all.
+    # Mapping it here would make its catch-all the trigger for the hook's
+    # longest gate and, worse, would classify every path — defeating the
+    # unclassified-forces-FULL rule that keeps this file honest.
+    # `extra` covers inputs the workflow filter misses because they are
+    # `include_str!`-ed into the suite rather than compiled: the acceptance
+    # doc, the wire schemas, and the forge-AST export schema.
+    "workspace-tests": {
+        "workflows": ["rust-workspace-tests.yml"],
+        "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
+        "cost_s": 138,
+        "summary": "cargo test --workspace --features cli",
+    },
+    "drift-suites": {
+        "workflows": ["drift-verify.yml"],
+        "cost_s": 1,
+        "summary": "committed-tree drift + sourcemap, serial",
+    },
+    # forge-conformance.yml verifies the language arms in parallel jobs, and
+    # its path filter is workflow-wide: a change under
+    # backends/*/forge-runtime/** starts all of them in CI. These gates
+    # therefore fire together too, which is the parity we want. The split is
+    # for attribution — a failure names its arm — and each `extra` widens
+    # the trigger past the workflow filter rather than narrowing it, so a
+    # change outside forge-runtime still reaches the arm it could break.
+    "forge-go": {
+        "workflows": ["forge-conformance.yml"],
+        "extra": ["backends/go/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 11,
+        "summary": "Go forge conformance regenerate + test",
+    },
+    "forge-rust": {
+        "workflows": ["forge-conformance.yml"],
+        "extra": ["backends/rust/**"],
+        # Warm reads as 0; the release profile it needs is a separate build
+        # tree from every other gate, so a cold run pays that once.
+        "cost_s": 0,
+        "summary": "Rust forge conformance (numerical, release)",
+    },
+    "forge-python": {
+        "workflows": ["forge-conformance.yml"],
+        "extra": ["backends/python/**"],
+        "cost_s": 11,
+        "summary": "Python forge conformance (numerical)",
+    },
+    "forge-cpp": {
+        "workflows": ["forge-conformance.yml"],
+        "extra": ["backends/cpp/**", "sce/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 6,
+        "summary": "C++ forge conformance build + test",
+    },
+    # No CI counterpart: catches codegen breakage in the example documents
+    # (the namespace migration that broke them shipped green otherwise).
+    "example-codegen": {
+        "local": ["examples/**", "tools/codegen/templates/**", "sce-build/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 1,
+        "summary": "example SCXML codegen smoke",
+    },
+    "ledger-citations": {
+        "workflows": ["spec-citations.yml"],
+        # The mnemosyne validators are the sub-second part the hook's prose
+        # described; the ledger-existence sweep over five source trees that
+        # follows them is the rest of the 145s.
+        "cost_s": 145,
+        "summary": "spec-citation ledgers, 5 workspaces",
+    },
+    # The gate whose absence let a stale verifies-catalog reach CI red:
+    # `ledger-citations` runs mnemosyne-cli, this workflow runs a separate
+    # python generator, and the hook mirrored only the first.
+    "spec-snapshot": {
+        "workflows": ["spec-snapshot-drift.yml"],
+        "cost_s": 1,
+        "summary": "spec snapshot integrity + verifies-catalog drift",
+    },
+}
+
+# Paths that drive no path-scoped gate. Anything here is classified — and
+# therefore may skip the full run — so an entry is a claim that no such gate
+# reads it. Rule 3 gates are outside that claim by construction: they run
+# for every change, so an inert path is still judged by them. Everything NOT
+# matched here and NOT matched by a gate trigger forces FULL, which is what
+# keeps this list from being load-bearing in the unsafe direction.
+INERT = [
+    ".claude/**",
+    ".gitignore",
+    ".gitattributes",
+    "*.md",
+    "docs/adr/**",
+    "LICENSE*",
+    # Local tooling — no CI workflow consumes the hooks, so no mirrored gate
+    # has them as an input. The one gate that does read them,
+    # `roadmap_marker_gate`, reaches every change through `tree-hygiene`,
+    # and this file's own cases run unconditionally before any gate is
+    # chosen.
+    "tools/git-hooks/**",
+    "scripts/gates/**",
+    "scripts/gate",
+]
+
+# Entries here list only TRACKED paths, because a changed path comes from
+# `git diff --name-only` and a gitignored one can never appear there. An
+# ignored directory in this list would be dead config that reads as a
+# decision.
+
+
+def gate_script(repo_root: Path, slug: str) -> Path:
+    return repo_root / "scripts" / "gates" / f"{slug}.sh"
+
+
+def glob_to_regex(glob: str) -> re.Pattern:
+    """Translate a GitHub Actions path glob into an anchored regex.
+
+    Handles the three shapes the workflows actually use — `dir/**`,
+    `**/*.ext`, and literal paths — plus the single-segment `*` that
+    `backends/*/forge-runtime/**` needs. `**` crosses separators, `*` does
+    not, matching Actions' own semantics.
+    """
+    out = ["^"]
+    i = 0
+    while i < len(glob):
+        c = glob[i]
+        if glob.startswith("**/", i):
+            out.append("(.*/)?")
+            i += 3
+        elif glob.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif c == "*":
+            out.append("[^/]*")
+            i += 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    out.append("$")
+    return re.compile("".join(out))
+
+
+def workflow_paths(repo_root: Path, name: str) -> list[str]:
+    """The deduped `paths:` globs a workflow declares under `on:`.
+
+    A workflow with no `paths:` filter runs on every push, so it returns the
+    catch-all — the honest translation of "CI always runs this".
+    """
+    wf = repo_root / ".github" / "workflows" / name
+    if not wf.is_file():
+        # Missing workflow: refuse to guess. The caller turns an empty
+        # trigger set into "always run", which is the safe direction.
+        return ["**"]
+    text = wf.read_text(encoding="utf-8")
+    on_block = re.search(r"^on:\n(.*?)(?=^\S)", text, re.S | re.M)
+    if not on_block:
+        return ["**"]
+    globs: list[str] = []
+    for block in re.finditer(r"^(\s+)paths:\s*\n((?:\1\s+-.*\n|\s*#.*\n)*)",
+                             on_block.group(1), re.M):
+        for line in block.group(2).splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                globs.append(line[2:].strip().strip("'\""))
+    if not globs:
+        return ["**"]
+    return list(dict.fromkeys(globs))
+
+
+def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
+    triggers: dict[str, list[str]] = {}
+    for slug, spec in GATES.items():
+        globs: list[str] = list(spec.get("local", []))
+        for wf in spec.get("workflows", []):
+            globs.extend(workflow_paths(repo_root, wf))
+        globs.extend(spec.get("extra", []))
+        triggers[slug] = list(dict.fromkeys(globs))
+    return triggers
+
+
+def run_order(slugs, table=None) -> list[str]:
+    """Order the given gates: dependencies first, then cheapest first.
+
+    Two properties, in that priority. A gate never runs before something it
+    executes the output of, and among gates that are free to move, the one
+    that can fail soonest goes first. Nothing about the order is written
+    down as an order — it falls out of `deps` and `cost_s`, so adding a gate
+    cannot silently push a cheap check behind an expensive one the way the
+    hand-placed sequence did.
+
+    A gate with no measured cost sorts last among the gates available at
+    that moment rather than being guessed at: an unmeasured gate should not
+    claim a cheap slot it has not earned.
+
+    One gate is taken at a time, not one dependency level at a time. Level
+    order looks equivalent and is not: it puts every dependent behind every
+    independent gate, so a 1s gate that only needs the 1s generator build
+    would run after the 399s vendor smoke. Taking the cheapest currently
+    available gate lets a dependency unlock cheap work that then goes
+    straight to the front.
+    """
+    table = GATES if table is None else table
+    remaining = set(slugs)
+    ordered: list[str] = []
+    while remaining:
+        ready = [s for s in remaining
+                 if all(d not in remaining for d in table[s].get("deps", []))]
+        if not ready:
+            # A dependency cycle is a registry bug, not a runtime condition.
+            raise ValueError(f"dependency cycle among {sorted(remaining)}")
+        pick = min(ready, key=lambda s: (table[s].get("cost_s") is None,
+                                         table[s].get("cost_s") or 0.0,
+                                         s))
+        ordered.append(pick)
+        remaining.discard(pick)
+    return ordered
+
+
+def transitive_deps(slug: str, table=None) -> set[str]:
+    """Every gate `slug` needs, directly or through another gate."""
+    table = GATES if table is None else table
+    seen: set[str] = set()
+    stack = list(table[slug].get("deps", []))
+    while stack:
+        d = stack.pop()
+        if d in seen:
+            continue
+        seen.add(d)
+        stack.extend(table[d].get("deps", []))
+    return seen
+
+
+def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
+    """Return (gates to run in order, reason). Empty list means nothing to do."""
+    if not changed:
+        return ([], "no changed paths — nothing to verify")
+
+    triggers = gate_triggers(repo_root)
+    # Rule 3. Held out of `compiled` so they cannot classify a path, and
+    # seeded into `selected` so they still run. `workflow_paths` also
+    # returns the catch-all for a workflow it cannot find, which lands here
+    # as "run it, learn nothing" — the safe reading of a missing file.
+    always_on = {k for k, globs in triggers.items() if "**" in globs}
+    compiled = {k: [glob_to_regex(g) for g in v]
+                for k, v in triggers.items() if k not in always_on}
+    inert = [glob_to_regex(g) for g in INERT]
+
+    selected: set[str] = set(always_on)
+    for path in changed:
+        hit = False
+        for slug, pats in compiled.items():
+            if any(p.match(path) for p in pats):
+                selected.add(slug)
+                hit = True
+        if hit:
+            continue
+        if any(p.match(path) for p in inert):
+            continue
+        # Rule 1: an unclassified path buys the full run rather than silence.
+        return (run_order(GATES.keys()),
+                f"unclassified path '{path}' — running every gate")
+
+    # Dependency closure, applied until it stops growing: a dep may itself
+    # have deps.
+    changed_set = True
+    while changed_set:
+        changed_set = False
+        for slug in list(selected):
+            for dep in GATES[slug].get("deps", []):
+                if dep not in selected:
+                    selected.add(dep)
+                    changed_set = True
+
+    return (run_order(selected), "path-scoped selection")
+
+
+def self_test(repo_root: Path) -> int:
+    """Cases that pin the rules the registry must not break."""
+    failures = []
+    cases = 0
+
+    def check(label, changed, want_full=None, want_has=(), want_lacks=()):
+        nonlocal cases
+        cases += 1
+        keys, reason = select(repo_root, changed)
+        full = len(keys) == len(GATES)
+        if want_full is not None and full != want_full:
+            failures.append(f"{label}: full={full}, wanted {want_full} ({reason})")
+        for k in want_has:
+            if k not in keys:
+                failures.append(f"{label}: gate {k} missing from {keys}")
+        for k in want_lacks:
+            if k in keys:
+                failures.append(f"{label}: gate {k} unexpectedly selected")
+
+    # Rule 1 — the safety property. A path nobody classified runs everything.
+    check("unclassified", ["some_new_top_level_dir/thing.txt"], want_full=True)
+    # Rule 3 — an always-on gate must not classify. Were the catch-all
+    # allowed to count, this path would read as known and rule 1 would never
+    # fire again for anything.
+    check("catch-all-does-not-classify", ["brand_new_dir/file.xyz"],
+          want_full=True, want_has=["tree-hygiene"])
+    # Every other workflow classifies its own edits by naming itself in its
+    # `paths:`. The unfiltered one has no such list to name itself in, so
+    # editing it is unclassified and buys the full run.
+    check("unfiltered-workflow-self", [".github/workflows/tree-hygiene.yml"],
+          want_full=True)
+    # Docs-only runs the tree-wide gates and nothing else: prose is still
+    # tracked source as far as the marker gate is concerned.
+    check("inert", ["README.md", ".claude/settings.json"],
+          want_full=False, want_has=["tree-hygiene"], want_lacks=["workspace-tests"])
+    # A SCE-VERIFIES marker must reach the catalog gate.
+    check("verifies-marker", ["tests/mesh/CustomTcpSocketOptionsTest.cpp"],
+          want_has=["spec-snapshot"])
+    # The hook's own sources are read by the tree-wide gates. They reach the
+    # change through the unfiltered workflow, so the whole workspace sweep
+    # no longer has to run to judge a hook edit.
+    check("hook-self", ["tools/git-hooks/gate_registry.py"],
+          want_full=False, want_has=["tree-hygiene"], want_lacks=["workspace-tests"])
+    # A gate script edit is judged the same way, for the same reason.
+    check("gate-script-self", ["scripts/gates/clippy.sh"],
+          want_full=False, want_has=["tree-hygiene"], want_lacks=["workspace-tests"])
+    # A ledger-only edit needs the citation gates, not the C++ build.
+    check("ledger-only", ["docs/sce-ledger/mesh/.atomic/workspace.atomic.json"],
+          want_has=["ledger-citations"], want_lacks=["nostd-mcu", "forge-cpp"])
+    # Rust source pulls in clippy and the workspace suite.
+    check("rust", ["sce-build/src/mesh/deploy.rs"],
+          want_has=["codegen-build", "rust-modrs-drift", "clippy", "workspace-tests"])
+    # Dependency closure: an example-only change still builds sce-codegen.
+    check("example-dep", ["examples/smart_light/smart_light.scxml"],
+          want_has=["codegen-build", "example-codegen"])
+    # A template edit must reach the committed-tree drift gate.
+    check("template", ["tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2"],
+          want_has=["drift-suites"])
+    # doc-check.yml edits must reach the gate that mirrors it. Under the
+    # numbered table this gate was mapped to the no_std workflow, so an edit
+    # to doc-check.yml alone did not select it.
+    cases += 1
+    keys, _ = select(repo_root, [".github/workflows/doc-check.yml"])
+    if "rustdoc-links" not in keys:
+        failures.append("doc-check-self: rustdoc-links missing from " + str(keys))
+
+    # Every gate in the table has a script, and every script is in the table.
+    cases += 1
+    for slug in GATES:
+        if not gate_script(repo_root, slug).is_file():
+            failures.append(f"registry: {slug} has no scripts/gates/{slug}.sh")
+    script_dir = repo_root / "scripts" / "gates"
+    if script_dir.is_dir():
+        for path in sorted(script_dir.glob("*.sh")):
+            if path.name == "lib.sh":
+                continue
+            if path.stem not in GATES:
+                failures.append(f"registry: scripts/gates/{path.name} is not registered")
+
+    # Order is derived, not declared: dependencies first, then cheapest.
+    cases += 1
+    order = run_order(GATES.keys())
+    pos = {s: i for i, s in enumerate(order)}
+    for slug, spec in GATES.items():
+        for dep in spec.get("deps", []):
+            if pos[dep] > pos[slug]:
+                failures.append(f"order: {slug} runs before its dependency {dep}")
+
+    # Nothing expensive runs ahead of something cheap unless the cheap one
+    # was waiting on it. Note what this does and does not catch: because the
+    # order is computed from `cost_s`, editing a cost moves the gate and the
+    # property still holds — so this cannot detect a stale measurement. What
+    # it does detect is an ordering that stops consulting cost at all.
+    cases += 1
+    for i, earlier in enumerate(order):
+        for later in order[i + 1:]:
+            ce = GATES[earlier].get("cost_s")
+            cl = GATES[later].get("cost_s")
+            if ce is None or cl is None:
+                continue
+            if ce > cl and earlier not in transitive_deps(later):
+                failures.append(
+                    f"order: {earlier} ({ce}s) runs before the cheaper "
+                    f"{later} ({cl}s) without being its dependency")
+
+    # The distinction the check above is blind to, on a fixture that pins it.
+    # Taking one dependency LEVEL at a time satisfies every property stated
+    # so far and still puts a 1s gate behind a 999s one, because the cheap
+    # gate happens to have a dependency. Only taking the cheapest currently
+    # available gate gets this right, and only a synthetic table can tell the
+    # two apart — the real one would have to be reshaped to expose it.
+    cases += 1
+    fixture = {
+        "prereq": {"cost_s": 1},
+        "cheap-dependent": {"deps": ["prereq"], "cost_s": 1},
+        "expensive-independent": {"cost_s": 999},
+    }
+    got = run_order(fixture.keys(), table=fixture)
+    want = ["prereq", "cheap-dependent", "expensive-independent"]
+    if got != want:
+        failures.append(f"order: level-at-a-time regression — got {got}, want {want}")
+
+    if failures:
+        for f in failures:
+            print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
+        return 1
+    print(f"gate_registry self-test: {cases} cases OK", file=sys.stderr)
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--repo-root", default=".", type=Path)
+    ap.add_argument("--changed-from", type=Path,
+                    help="file with one changed path per line ('-' for stdin)")
+    ap.add_argument("--changed", nargs="*", default=None)
+    ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--list", action="store_true",
+                    help="print every gate in run order")
+    ap.add_argument("--explain", action="store_true",
+                    help="also print the selection reason to stderr")
+    args = ap.parse_args()
+
+    repo_root = args.repo_root.resolve()
+
+    if args.self_test:
+        return self_test(repo_root)
+
+    if args.list:
+        for slug in run_order(GATES.keys()):
+            cost = GATES[slug].get("cost_s")
+            cost_s = f"{cost:>7.1f}s" if cost is not None else "      ?"
+            print(f"{cost_s}  {slug:<26} {GATES[slug].get('summary', '')}")
+        return 0
+
+    if args.changed is not None:
+        changed = list(args.changed)
+    elif args.changed_from:
+        text = sys.stdin.read() if str(args.changed_from) == "-" \
+            else args.changed_from.read_text(encoding="utf-8")
+        changed = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    else:
+        ap.error("one of --changed / --changed-from / --self-test / --list is required")
+        return 2
+
+    keys, reason = select(repo_root, changed)
+    if args.explain:
+        print(f"  selection: {reason}", file=sys.stderr)
+    for k in keys:
+        print(k)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

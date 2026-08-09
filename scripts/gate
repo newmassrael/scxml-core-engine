@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Run the repository's CI-mirroring gates.
+#
+#   scripts/gate <slug> [<slug>...]   run named gates (plus their deps)
+#   scripts/gate --all                run every gate
+#   scripts/gate --changed-from FILE  run the gates a change set requires
+#   scripts/gate --list               show every gate in run order
+#   scripts/gate --measure --all      run and report each gate's wall clock
+#
+# The order is derived, never typed: `tools/git-hooks/gate_registry.py`
+# holds each gate's dependencies and measured cost, and the runner sorts by
+# dependencies first, cheapest first within that. A gate added tomorrow
+# lands in the right place without anyone rearranging a script.
+#
+# `--measure` is how `cost_s` in the registry gets its values. They are
+# measurements, not estimates, and re-measuring is a matter of running this.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+REGISTRY="$REPO_ROOT/tools/git-hooks/gate_registry.py"
+MEASURE=0
+SLUGS=()
+MODE=""
+CHANGED_FILE=""
+
+while (( $# )); do
+    case "$1" in
+        --all)          MODE="all" ;;
+        --list)         MODE="list" ;;
+        --measure)      MEASURE=1 ;;
+        --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
+        -h|--help)      sed -n '5,20p' "$0"; exit 0 ;;
+        -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
+        *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
+    esac
+    shift
+done
+
+# The registry decides what runs and in what order, so a broken registry is
+# a silent coverage loss rather than a loud failure. Exercise its own cases
+# first — milliseconds, and it is the only thing standing between a table
+# typo and a gate that quietly stops running.
+if ! python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+    python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >&2 || true
+    printf '\nERROR gate: registry self-test failed — refusing to run.\n' >&2
+    exit 1
+fi
+
+case "$MODE" in
+    list)
+        exec python3 "$REGISTRY" --list --repo-root "$REPO_ROOT"
+        ;;
+    all)
+        mapfile -t ORDER < <(python3 - "$REGISTRY" <<'PYEOF'
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+print("\n".join(mod["run_order"](mod["GATES"].keys())))
+PYEOF
+)
+        ;;
+    changed)
+        mapfile -t ORDER < <(python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
+            --changed-from "$CHANGED_FILE" --explain)
+        ;;
+    named)
+        # Named gates still get their dependency closure and the derived
+        # order — asking for `forge-cpp` alone must not run it against a
+        # generator that was never built.
+        mapfile -t ORDER < <(python3 - "$REGISTRY" "${SLUGS[@]}" <<'PYEOF'
+import runpy, sys
+mod = runpy.run_path(sys.argv[1])
+want = set(sys.argv[2:])
+unknown = want - set(mod["GATES"])
+if unknown:
+    print("gate: unknown slug(s): " + ", ".join(sorted(unknown)), file=sys.stderr)
+    raise SystemExit(2)
+grew = True
+while grew:
+    grew = False
+    for s in list(want):
+        for d in mod["GATES"][s].get("deps", []):
+            if d not in want:
+                want.add(d); grew = True
+print("\n".join(mod["run_order"](want)))
+PYEOF
+)
+        ;;
+    *)
+        printf 'gate: nothing to do — pass a slug, --all, --changed-from or --list\n' >&2
+        exit 2
+        ;;
+esac
+
+if (( ${#ORDER[@]} == 0 )); then
+    printf 'gate: no gate applies — nothing to verify\n' >&2
+    exit 0
+fi
+
+# ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
+# Every Rust CI job installs the LATEST stable. rustup does NOT auto-update
+# a developer's local `stable`, so it can silently lag the runner — and the
+# clippy lint set is version-sensitive: a lint newly stabilised in a fresher
+# stable passes locally yet fails the cloud clippy gate. The old policy — a
+# code comment asking developers to run `rustup update stable` by hand — was
+# a silently-broken safeguard: skip it once and every lint gate goes blind
+# to CI's newer lints, which is how a useless_borrows_in_formatting
+# regression reached main red.
+#
+# This lives in the runner rather than in the push hook so that running a
+# gate by hand gets the same toolchain the hook would give it. A gate whose
+# by-hand result can differ from its in-hook result is not a gate you can
+# check with before pushing.
+#
+# A push always has network, so the sync is reliable when it matters; if it
+# fails we fall back to the existing toolchain with a loud warning rather
+# than refusing to run.
+printf '\ngate: syncing "stable" to match CI (dtolnay/rust-toolchain@stable)\n' >&2
+rustup toolchain install stable --profile minimal \
+    --component clippy --no-self-update >/dev/null 2>&1 || true
+if rustup run stable rustc --version >/dev/null 2>&1; then
+    export RUSTUP_TOOLCHAIN=stable
+    printf '  pinned to %s\n' "$(rustup run stable rustc --version)" >&2
+else
+    printf '  WARNING: no resolvable "stable" toolchain; clippy lint parity\n  with CI is NOT guaranteed for this run.\n' >&2
+fi
+
+printf '\ngate: running %d gate(s): %s\n' "${#ORDER[@]}" "${ORDER[*]}" >&2
+
+declare -A ELAPSED=()
+for slug in "${ORDER[@]}"; do
+    [[ -n "$slug" ]] || continue
+    script="$REPO_ROOT/scripts/gates/${slug}.sh"
+    [[ -x "$script" ]] || { printf '\nERROR gate: %s is not executable\n' "$script" >&2; exit 1; }
+    printf '\n==> gate[%s]\n' "$slug" >&2
+    start=$SECONDS
+    bash "$script" || {
+        printf '\nERROR gate: %s FAILED — run just this one with: scripts/gate %s\n' \
+            "$slug" "$slug" >&2
+        exit 1
+    }
+    ELAPSED["$slug"]=$(( SECONDS - start ))
+done
+
+if (( MEASURE )); then
+    printf '\ngate: measured wall clock (put these in gate_registry.py cost_s)\n' >&2
+    for slug in "${ORDER[@]}"; do
+        [[ -n "$slug" ]] || continue
+        printf '    "%s": %s,\n' "$slug" "${ELAPSED[$slug]}" >&2
+    done
+fi
+
+printf '\ngate: %d gate(s) passed.\n' "${#ORDER[@]}" >&2
