@@ -304,9 +304,26 @@ fn verification_invocations(text: &str) -> BTreeSet<String> {
 
         for (i, token) in tokens.iter().enumerate() {
             let after = |n: usize| tokens.get(i + n).copied();
+            let before = || (i > 0).then(|| tokens[i - 1]);
             match *token {
                 // `scripts/foo.sh` — the original axis.
-                t if t.starts_with("scripts/") && t.ends_with(".sh") => {
+                //
+                // `source scripts/lib/foo.sh` is excluded: sourcing loads
+                // function definitions into the current shell, so the
+                // caller decides what runs on the next line, and that
+                // call is what this extractor should see. Keying on the
+                // preceding word rather than on a `scripts/lib/`
+                // directory convention states the actual distinction —
+                // how the file is used, not where it sits.
+                //
+                // The over-approximation the header describes still
+                // holds for execution: only sourcing is dropped, so a
+                // script that is run rather than loaded stays visible
+                // whatever its path.
+                t if t.starts_with("scripts/")
+                    && t.ends_with(".sh")
+                    && !matches!(before(), Some("source") | Some(".")) =>
+                {
                     out.insert(t.to_string());
                 }
                 // `python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity`
