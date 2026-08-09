@@ -1127,19 +1127,27 @@ enum Commands {
     /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
     ///                     <artifact>` identifier in
     ///                     `<sourcemap>/sce_sourcemap.json`.
-    /// `--pc <ADDR>`       Resolve an ELF program-counter address to a
-    ///                     function symbol via DWARF + then look that
-    ///                     symbol up in the sourcemap. Requires
-    ///                     `--elf <path>`.
-    /// `--hardfault`       Read newline-separated PC addresses from
-    ///                     stdin, resolve each through the same path
-    ///                     as `--pc`, emit one NDJSON record per
-    ///                     resolved frame.
+    /// `--pc <ADDR>`       NOT IMPLEMENTED — exits 2. Would resolve an
+    ///                     ELF program-counter address to a function
+    ///                     symbol via DWARF and then look that symbol
+    ///                     up in the sourcemap.
+    /// `--hardfault`       NOT IMPLEMENTED — exits 2. Would read
+    ///                     newline-separated PC addresses from stdin
+    ///                     and resolve each as `--pc` would.
+    ///
+    /// The two DWARF-backed modes are declared by spec lines 3253-3278
+    /// but have no implementation: they refuse with exit 2 rather than
+    /// resolving. They are described here as unimplemented because a
+    /// help text that presents them as working is a claim the binary
+    /// does not honour — `--symbol` is the only mode that resolves.
     ///
     /// Spec lines 3253-3278 fix the tool's resolution contract:
     /// PC → symbol → sourcemap → SCXML file:line + state_path. The
     /// per-symbol attribution data ships in the sourcemap, not the
     /// DWARF; addr2sce composes the two layers.
+    ///
+    /// For the opposite direction — SCXML coordinates to the symbols
+    /// they lowered to — see `sce2sym`.
     #[command(name = "addr2sce")]
     Addr2Sce {
         /// Directory containing `sce_sourcemap.json` (per-machine
@@ -1149,18 +1157,70 @@ enum Commands {
         /// with `--pc` / `--hardfault`).
         #[arg(long)]
         symbol: Option<String>,
-        /// ELF program-counter address (hex with or without `0x`
-        /// prefix). Requires `--elf`.
+        /// NOT IMPLEMENTED (exits 2). ELF program-counter address
+        /// (hex with or without `0x` prefix).
         #[arg(long)]
         pc: Option<String>,
-        /// ELF binary path for DWARF lookup (required when `--pc` or
-        /// `--hardfault` is used).
+        /// ELF binary path for DWARF lookup. Only meaningful to the
+        /// unimplemented `--pc` / `--hardfault` modes.
         #[arg(long)]
         elf: Option<String>,
-        /// Read PC addresses from stdin (one per line) and resolve
-        /// each as `--pc` would.
+        /// NOT IMPLEMENTED (exits 2). Read PC addresses from stdin,
+        /// one per line, and resolve each as `--pc` would.
         #[arg(long, default_value_t = false)]
         hardfault: bool,
+    },
+    /// Resolve SCXML coordinates to the symbols they lowered to — the
+    /// reverse of `addr2sce`.
+    ///
+    /// `addr2sce` answers "which line of SCXML produced this symbol";
+    /// this answers "which symbols did this line of SCXML produce".
+    /// The two are not mirror images in shape: a mangled symbol is a
+    /// map key, so the forward direction is one exact lookup, while a
+    /// single SCXML coordinate legitimately lowers to several symbols
+    /// (a state's body, its entry block, each of its transitions) and,
+    /// across backends, to several sidecars. Output is therefore
+    /// NDJSON — one record per hit — against
+    /// `schemas/sce-symbol-lookup.v1.schema.json`.
+    ///
+    /// Pass more than one sourcemap directory to ask the same question
+    /// of several backends at once; each record names the sidecar it
+    /// came from.
+    ///
+    /// Every filter is optional and they intersect. With none, the
+    /// whole table is listed — the useful default for "what did this
+    /// document lower to", which a lookup that demanded a key could
+    /// not express.
+    // Named explicitly: clap's derived kebab-case renders this variant
+    // as `sce2-sym`, which does not match the `addr2sce` it is the
+    // reverse of. The pair reads as a pair only if both spell the
+    // direction the same way.
+    #[command(name = "sce2sym")]
+    Sce2Sym {
+        /// Directory containing `sce_sourcemap.json`. Repeat to query
+        /// several backends in one invocation.
+        #[arg(required = true)]
+        sourcemap_dir: Vec<String>,
+        /// Canonical state-hierarchy path, matched exactly (e.g.
+        /// `s1/s1p1`). The machine-level symbol carries an empty path.
+        #[arg(long)]
+        state: Option<String>,
+        /// 1-based source line that must fall inside the symbol's
+        /// line range, inclusive at both ends.
+        #[arg(long)]
+        line: Option<u32>,
+        /// IR node kind, matched exactly: `state`, `transition`,
+        /// `on_entry`, `on_exit`, `forge_body`, `machine`.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Event name, matched exactly. Symbols carrying no event
+        /// never match a constrained query.
+        #[arg(long)]
+        event: Option<String>,
+        /// Author-facing SCXML path, matched exactly. Narrows a
+        /// sourcemap that covers several documents.
+        #[arg(long)]
+        file: Option<String>,
     },
 }
 
@@ -1259,6 +1319,23 @@ fn main() {
             elf.as_deref(),
             hardfault,
             error_format,
+        ),
+        Commands::Sce2Sym {
+            sourcemap_dir,
+            state,
+            line,
+            kind,
+            event,
+            file,
+        } => cmd_sce2sym(
+            &sourcemap_dir,
+            sce_build::forge::sourcemap::SymbolQuery {
+                state_path: state.as_deref(),
+                line,
+                kind: kind.as_deref(),
+                event: event.as_deref(),
+                file: file.as_deref(),
+            },
         ),
     }
 }
@@ -5604,21 +5681,7 @@ fn cmd_addr2sce(
     hardfault: bool,
     error_format: ErrorFormat,
 ) {
-    let map_path = Path::new(sourcemap_dir).join("sce_sourcemap.json");
-    let raw = match fs::read_to_string(&map_path) {
-        Ok(s) => s,
-        Err(e) => cli_exit(CliError::ReadInput {
-            path: map_path.display().to_string(),
-            source: e,
-        }),
-    };
-    let map: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(e) => cli_exit(CliError::ReadInput {
-            path: map_path.display().to_string(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-        }),
-    };
+    let (map, map_path) = load_sourcemap(sourcemap_dir);
 
     // Mode dispatch: exactly one of `--symbol` / `--pc` / `--hardfault`.
     match (symbol, pc, hardfault) {
@@ -5647,31 +5710,97 @@ fn cmd_addr2sce(
     }
 }
 
+/// Read and parse the `sce_sourcemap.json` under `dir`.
+///
+/// The single load path for both lookup directions. Typed through
+/// `sourcemap::from_json` rather than `serde_json::Value`: the shape
+/// has a struct, and re-stating its field names at each consumer is
+/// how one direction ends up understanding a row the other does not.
+fn load_sourcemap(dir: &str) -> (sce_build::forge::sourcemap::Sourcemap, PathBuf) {
+    let map_path = Path::new(dir).join("sce_sourcemap.json");
+    let raw = match fs::read_to_string(&map_path) {
+        Ok(s) => s,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: map_path.display().to_string(),
+            source: e,
+        }),
+    };
+    match sce_build::forge::sourcemap::from_json(&raw) {
+        Ok(m) => (m, map_path),
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: map_path.display().to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        }),
+    }
+}
+
+/// Emit one lookup hit as an NDJSON line on stdout.
+fn print_lookup_record(
+    kind: sce_build::forge::sourcemap::LookupKind,
+    map_path: &Path,
+    symbol: &str,
+    entry: &sce_build::forge::sourcemap::SourceSymbol,
+) {
+    let record = sce_build::forge::sourcemap::SymbolLookupRecord {
+        v: sce_build::forge::sourcemap::SYMBOL_LOOKUP_SCHEMA_VERSION,
+        kind: kind.as_str(),
+        sourcemap: map_path.display().to_string(),
+        symbol,
+        entry,
+    };
+    println!("{}", record.to_line());
+}
+
 /// Look `symbol` up in the loaded sourcemap and print the resolved
 /// SCXML coordinates as a single JSON line on stdout. Returns
 /// process exit 0 on a hit, 1 on a miss (so a CI gate using addr2sce
 /// to verify symbol presence can fail loudly).
-fn addr2sce_resolve_symbol(map: &serde_json::Value, symbol: &str, map_path: &Path) {
-    let Some(symbols) = map.get("symbols").and_then(|v| v.as_object()) else {
-        eprintln!(
-            "addr2sce: malformed sourcemap at {} (no `symbols` object)",
-            map_path.display()
-        );
-        std::process::exit(1);
-    };
-    let Some(entry) = symbols.get(symbol) else {
+fn addr2sce_resolve_symbol(
+    map: &sce_build::forge::sourcemap::Sourcemap,
+    symbol: &str,
+    map_path: &Path,
+) {
+    let Some(entry) = map.symbols.get(symbol) else {
         eprintln!(
             "addr2sce: symbol '{symbol}' not found in {}",
             map_path.display()
         );
         std::process::exit(1);
     };
-    // Echo the entry as a JSON line with the mangled symbol pinned.
-    let out = serde_json::json!({
-        "v": 1,
-        "kind": "addr2sce",
-        "symbol": symbol,
-        "entry": entry,
-    });
-    println!("{}", out);
+    print_lookup_record(
+        sce_build::forge::sourcemap::LookupKind::Addr2Sce,
+        map_path,
+        symbol,
+        entry,
+    );
+}
+
+/// `sce-codegen sce2sym` — resolve SCXML coordinates to the symbols
+/// they lowered to, across one or more backends' sidecars.
+///
+/// Exit 0 on at least one hit, 1 when the query matched nothing in any
+/// sourcemap. A miss is a failure rather than an empty success for the
+/// same reason `addr2sce`'s is: the caller asked where something went,
+/// and "nowhere" is an answer a build gate must be able to fail on.
+fn cmd_sce2sym(sourcemap_dirs: &[String], query: sce_build::forge::sourcemap::SymbolQuery<'_>) {
+    let mut hits = 0usize;
+    for dir in sourcemap_dirs {
+        let (map, map_path) = load_sourcemap(dir);
+        for (symbol, entry) in sce_build::forge::sourcemap::find_symbols(&map, &query) {
+            print_lookup_record(
+                sce_build::forge::sourcemap::LookupKind::Sce2Sym,
+                &map_path,
+                symbol,
+                entry,
+            );
+            hits += 1;
+        }
+    }
+    if hits == 0 {
+        eprintln!(
+            "sce2sym: no symbol matched the query in {} sourcemap(s)",
+            sourcemap_dirs.len()
+        );
+        std::process::exit(1);
+    }
 }

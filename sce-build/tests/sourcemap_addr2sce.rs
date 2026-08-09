@@ -327,6 +327,425 @@ fn addr2sce_rejects_unknown_symbol() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+// ── Reverse direction: sce2sym ──────────────────────────────────
+//
+// `addr2sce` answers "which SCXML produced this symbol"; `sce2sym`
+// answers the opposite. The two read one table from opposite ends, so
+// the load-bearing claim is that they agree about it — asserted below
+// as a round trip over every symbol the fixture emits, not over one
+// hand-picked entry.
+
+/// Run `sce2sym` and return (exit-success, NDJSON records).
+fn sce2sym(args: &[&str]) -> (bool, Vec<serde_json::Value>) {
+    let out = Command::new(sce_codegen_bin())
+        .arg("sce2sym")
+        .args(args)
+        .output()
+        .expect("invoke sce2sym");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let records = stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("record is JSON: {e}\n{l}")))
+        .collect();
+    (out.status.success(), records)
+}
+
+/// Every symbol resolves forward and back to itself.
+///
+/// For each entry in the sourcemap: `addr2sce --symbol S` yields
+/// coordinates, and `sce2sym` on those coordinates must list `S`
+/// again. A one-symbol spot check would pass even if the reverse
+/// filter mishandled a whole kind (the machine symbol carries an empty
+/// state path, transitions carry events, and so on), so the round trip
+/// is asserted over the full table.
+#[test]
+fn every_symbol_round_trips_between_the_two_directions() {
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+    let symbols = map["symbols"].as_object().expect("symbols object");
+    assert!(
+        symbols.len() >= 3,
+        "fixture must emit several symbols to make the round trip meaningful; got {}",
+        symbols.len(),
+    );
+
+    let mut checked = 0usize;
+    for (name, entry) in symbols {
+        let state = entry["scxml_state_path"].as_str().expect("state path");
+        let kind = entry["kind"].as_str().expect("kind");
+        let (ok, records) = sce2sym(&[tmp.to_str().unwrap(), "--state", state, "--kind", kind]);
+        assert!(
+            ok,
+            "sce2sym found nothing for {name} (state={state:?} kind={kind:?})"
+        );
+        let names: Vec<&str> = records
+            .iter()
+            .map(|r| r["symbol"].as_str().expect("symbol"))
+            .collect();
+        assert!(
+            names.contains(&name.as_str()),
+            "reverse lookup for state={state:?} kind={kind:?} did not list {name}; got {names:?}",
+        );
+        // Every record must agree with the forward table verbatim.
+        for record in &records {
+            let listed = record["symbol"].as_str().unwrap();
+            assert_eq!(
+                &record["entry"], &map["symbols"][listed],
+                "sce2sym reported an entry that differs from the sourcemap row for {listed}",
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(
+        checked,
+        symbols.len(),
+        "round trip must cover every symbol in the table",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// One invocation spans several backends' sidecars, and each record
+/// names the one it came from.
+#[test]
+fn sce2sym_queries_several_backends_in_one_invocation() {
+    let (rust_dir, _) = generate("rust");
+    let (cpp_dir, _) = generate("cpp");
+    let (ok, records) = sce2sym(&[
+        rust_dir.to_str().unwrap(),
+        cpp_dir.to_str().unwrap(),
+        "--state",
+        "s1",
+    ]);
+    assert!(ok, "s1 must resolve in both backends");
+
+    let mut sources: Vec<String> = records
+        .iter()
+        .map(|r| r["sourcemap"].as_str().expect("sourcemap path").to_string())
+        .collect();
+    sources.sort();
+    sources.dedup();
+    assert_eq!(
+        sources.len(),
+        2,
+        "records must be attributed to both sidecars; got {sources:?}",
+    );
+    for record in &records {
+        assert_eq!(record["kind"], "sce2sym");
+        assert_eq!(record["v"], 1);
+    }
+    let _ = std::fs::remove_dir_all(&rust_dir);
+    let _ = std::fs::remove_dir_all(&cpp_dir);
+}
+
+/// Filters intersect rather than union — a query naming a real state
+/// and a kind that state has no symbol for must miss, not fall back to
+/// the state alone.
+#[test]
+fn sce2sym_filters_intersect() {
+    let (tmp, _) = generate("rust");
+    let (ok_state, by_state) = sce2sym(&[tmp.to_str().unwrap(), "--state", "s1"]);
+    assert!(ok_state, "s1 exists");
+    assert!(
+        by_state.iter().any(|r| r["entry"]["kind"] == "transition"),
+        "s1 has a transition symbol",
+    );
+
+    // s1 has no on_exit block, so intersecting with that kind misses.
+    let (ok_both, records) =
+        sce2sym(&[tmp.to_str().unwrap(), "--state", "s1", "--kind", "on_exit"]);
+    assert!(
+        !ok_both && records.is_empty(),
+        "intersecting a real state with an absent kind must miss: {records:?}",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Transition symbols carry their triggering event, and nothing else
+/// does.
+///
+/// The sourcemap has always declared an `event` field and the schema
+/// has always documented it, but the value came from an
+/// `extract_event(artifact)` stub that returned `None` unconditionally
+/// — the artifact string is `_transition_<idx>` and never held the
+/// name. Across the 404 committed sidecars the key appeared zero
+/// times. This pins that it now appears exactly where it is claimed to.
+#[test]
+fn transition_symbols_carry_their_event() {
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+
+    let mut with_event = 0usize;
+    for (name, entry) in map["symbols"].as_object().expect("symbols") {
+        let kind = entry["kind"].as_str().expect("kind");
+        match entry.get("event").and_then(|v| v.as_str()) {
+            Some(event) => {
+                assert_eq!(
+                    kind, "transition",
+                    "only transitions carry an event; {name} is a {kind}",
+                );
+                assert!(!event.is_empty(), "{name} carries an empty event name");
+                with_event += 1;
+            }
+            None => assert_ne!(
+                kind, "transition",
+                "{name} is a transition with a declared event but no event on the wire",
+            ),
+        }
+    }
+    assert!(
+        with_event >= 1,
+        "the fixture declares `event=\"go\"`, so at least one symbol must carry it",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// `--event` selects only symbols that actually carry that event.
+///
+/// The negative half is the load-bearing one: a symbol with no event
+/// must not satisfy an event constraint, otherwise the filter would
+/// answer "which symbol handles event X" with every state body in the
+/// machine.
+#[test]
+fn sce2sym_event_filter_excludes_symbols_without_that_event() {
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+    let dir = tmp.to_str().unwrap();
+
+    let (ok, records) = sce2sym(&[dir, "--event", "go"]);
+    assert!(ok, "the fixture declares event=\"go\"");
+    assert!(!records.is_empty());
+    for record in &records {
+        assert_eq!(
+            record["entry"]["event"], "go",
+            "an --event query returned a symbol carrying a different event (or none)",
+        );
+    }
+
+    // Every eventless symbol in the table must be absent from that result.
+    let selected: Vec<&str> = records
+        .iter()
+        .map(|r| r["symbol"].as_str().unwrap())
+        .collect();
+    let mut eventless = 0usize;
+    for (name, entry) in map["symbols"].as_object().expect("symbols") {
+        if entry.get("event").is_none() {
+            eventless += 1;
+            assert!(
+                !selected.contains(&name.as_str()),
+                "{name} carries no event but matched --event go",
+            );
+        }
+    }
+    assert!(
+        eventless >= 2,
+        "the fixture must contain eventless symbols for this to prove anything; got {eventless}",
+    );
+
+    // An event nobody declares matches nothing.
+    let (ok_missing, missing) = sce2sym(&[dir, "--event", "no_such_event"]);
+    assert!(!ok_missing && missing.is_empty());
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// `--line` matches a symbol whose range contains the line, and the
+/// range is inclusive at both ends.
+///
+/// Asserted against the table's own `line_range` values rather than
+/// literals so the test cannot drift from the fixture's formatting:
+/// both endpoints must hit, and the lines immediately outside must not.
+#[test]
+fn sce2sym_line_filter_is_inclusive_at_both_ends() {
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+    let dir = tmp.to_str().unwrap();
+
+    let mut probed = 0usize;
+    for (name, entry) in map["symbols"].as_object().expect("symbols") {
+        let range = entry["line_range"].as_array().expect("line_range");
+        let start = range[0].as_u64().expect("start");
+        let end = range[1].as_u64().expect("end");
+
+        for endpoint in [start, end] {
+            let (ok, records) = sce2sym(&[dir, "--line", &endpoint.to_string()]);
+            assert!(ok, "line {endpoint} must match at least {name}");
+            let names: Vec<&str> = records
+                .iter()
+                .map(|r| r["symbol"].as_str().unwrap())
+                .collect();
+            assert!(
+                names.contains(&name.as_str()),
+                "line {endpoint} is an endpoint of {name}'s range [{start},{end}] \
+                 but the lookup did not list it; got {names:?}",
+            );
+        }
+
+        // A line outside the range must not report this symbol. Guard
+        // against underflow at line 0, which is not a valid 1-based line.
+        if start > 1 {
+            let (_, records) = sce2sym(&[dir, "--line", &(start - 1).to_string()]);
+            let names: Vec<&str> = records
+                .iter()
+                .map(|r| r["symbol"].as_str().unwrap())
+                .collect();
+            assert!(
+                !names.contains(&name.as_str()),
+                "line {} is before {name}'s range [{start},{end}] but it was listed",
+                start - 1,
+            );
+        }
+        let (_, records) = sce2sym(&[dir, "--line", &(end + 1).to_string()]);
+        let names: Vec<&str> = records
+            .iter()
+            .map(|r| r["symbol"].as_str().unwrap())
+            .collect();
+        assert!(
+            !names.contains(&name.as_str()),
+            "line {} is past {name}'s range [{start},{end}] but it was listed",
+            end + 1,
+        );
+        probed += 1;
+    }
+    assert!(
+        probed >= 3,
+        "line probe covered only {probed} symbols; the fixture should emit more",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// A query matching nothing exits non-zero, so a build gate asking
+/// "did this state lower to anything" can fail on the answer.
+#[test]
+fn sce2sym_rejects_a_query_that_matches_nothing() {
+    let (tmp, _) = generate("rust");
+    let out = Command::new(sce_codegen_bin())
+        .arg("sce2sym")
+        .arg(&tmp)
+        .arg("--state")
+        .arg("definitely_not_a_state")
+        .output()
+        .expect("invoke sce2sym");
+    assert!(!out.status.success(), "a miss must exit non-zero");
+    assert!(out.stdout.is_empty(), "a miss must emit no records");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no symbol matched"), "stderr: {stderr}");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// An unconstrained query lists the whole table — the "what did this
+/// document lower to" question a key-demanding lookup cannot express.
+#[test]
+fn sce2sym_without_filters_lists_every_symbol() {
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+    let expected = map["symbols"].as_object().expect("symbols").len();
+    let (ok, records) = sce2sym(&[tmp.to_str().unwrap()]);
+    assert!(ok);
+    assert_eq!(
+        records.len(),
+        expected,
+        "an unconstrained query must list every symbol",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Both directions emit records valid against the shared wire schema.
+#[test]
+fn both_lookup_directions_validate_against_the_wire_schema() {
+    let schema_value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../schemas/sce-symbol-lookup.v1.schema.json"
+    ))
+    .expect("lookup schema is JSON");
+
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+    let first = map["symbols"]
+        .as_object()
+        .expect("symbols")
+        .keys()
+        .next()
+        .expect("at least one symbol")
+        .clone();
+
+    let forward = Command::new(sce_codegen_bin())
+        .arg("addr2sce")
+        .arg(&tmp)
+        .arg("--symbol")
+        .arg(&first)
+        .output()
+        .expect("invoke addr2sce");
+    assert!(forward.status.success());
+    let forward_line = String::from_utf8_lossy(&forward.stdout).trim().to_string();
+
+    let (ok, reverse) = sce2sym(&[tmp.to_str().unwrap()]);
+    assert!(ok);
+
+    let mut instances: Vec<serde_json::Value> =
+        vec![serde_json::from_str(&forward_line).expect("forward record is JSON")];
+    instances.extend(reverse);
+    assert!(
+        instances.len() >= 2,
+        "both directions must contribute records",
+    );
+
+    for instance in &instances {
+        let validator = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(&schema_value)
+            .expect("lookup schema compiles");
+        let msgs: Vec<String> = match validator.validate(instance) {
+            Ok(()) => Vec::new(),
+            Err(errors) => errors.map(|e| e.to_string()).collect(),
+        };
+        assert!(
+            msgs.is_empty(),
+            "lookup record violates the wire schema: {msgs:?}\n{instance}",
+        );
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// The two DWARF-backed modes are declared but unimplemented. Pin that
+/// they refuse loudly (exit 2, no stdout) rather than resolving or
+/// silently succeeding — and that the help text says so, so the
+/// declaration and the behaviour cannot drift apart again.
+#[test]
+fn unimplemented_addr2sce_modes_refuse_loudly_and_say_so_in_help() {
+    let (tmp, _) = generate("rust");
+    for args in [
+        vec!["--pc", "0x08001234", "--elf", "/dev/null"],
+        vec!["--hardfault", "--elf", "/dev/null"],
+    ] {
+        let out = Command::new(sce_codegen_bin())
+            .arg("addr2sce")
+            .arg(&tmp)
+            .args(&args)
+            .output()
+            .expect("invoke addr2sce");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "unimplemented mode {args:?} must exit 2",
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "unimplemented mode {args:?} must emit no record",
+        );
+    }
+
+    let help = Command::new(sce_codegen_bin())
+        .arg("addr2sce")
+        .arg("--help")
+        .output()
+        .expect("invoke addr2sce --help");
+    let text = String::from_utf8_lossy(&help.stdout);
+    assert!(
+        text.contains("NOT IMPLEMENTED"),
+        "help must not present the unimplemented modes as working:\n{text}",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 #[allow(dead_code)]
 fn _force_bin_link() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_sce-codegen"))

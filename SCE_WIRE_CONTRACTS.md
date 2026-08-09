@@ -23,8 +23,9 @@ doc (linked below).
 | Sourcemap sidecar (`out/{lang}/sce_sourcemap.json`) | `schemas/sce-sourcemap.v1.schema.json` | `SOURCEMAP_SCHEMA_STATUS` (`sce-build/src/forge/sourcemap.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/sourcemap.rs` (producer); reverse-lookup via `sce-codegen addr2sce` |
 | Authoring grammar (Extended SCXML) | `schemas/sce-forge.xsd`, `schemas/sce-forge-ext.xsd` | `<xs:documentation>x-sce-schema-status: …</xs:documentation>` (first child of `<xs:schema>`) | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` |
 | Stdout manifest (`generate`, `check`) | `schemas/sce-manifest.v1.schema.json` | `MANIFEST_SCHEMA_STATUS` (`sce-build/src/manifest.rs`) ↔ `x-sce-schema-status` | `pre-release` | `SCE_ERROR_CONTRACT.md` §10 |
+| Symbol lookup (`addr2sce`, `sce2sym`) | `schemas/sce-symbol-lookup.v1.schema.json` | `SYMBOL_LOOKUP_SCHEMA_STATUS` (`sce-build/src/forge/sourcemap.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/sourcemap.rs` (producer) |
 
-All five surfaces are currently **`pre-release`**. SCE has not yet made
+All six surfaces are currently **`pre-release`**. SCE has not yet made
 a stability promise on any of them.
 
 ## Where to read the status
@@ -60,6 +61,7 @@ checked-in schema without linking the `sce-build` crate.
    - `ast_export` / `forge_ast_export` schema-header test
    - `sourcemap.rs::tests::schema_file_declares_status`
    - `manifest.rs::tests::schema_file_declares_status`
+   - `sourcemap.rs::tests::symbol_lookup_schema_file_declares_status`
    - `sce-build/tests/wire_surface_stability.rs` (cross-surface: every
      surface declares a valid status, this registry lists every
      surface, and — walking the other way — every schema checked into

@@ -33,7 +33,7 @@
 #[cfg(test)]
 use crate::forge::error::SourceLocation;
 use crate::forge::symbol_mangling::SymbolEntry;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Current sourcemap schema version. Bumped only on breaking shape
@@ -63,7 +63,14 @@ pub const SOURCEMAP_SCHEMA_STATUS: &str = "pre-release";
 /// matching the §synth-6.2.6 header values for the same artifact. Reused
 /// from `forge::drift::DriftHashes::source_hex()` /
 /// `template_hex()` so a hash drift surfaces immediately.
-#[derive(Debug, Clone, Serialize)]
+/// `Deserialize` alongside `Serialize` because the sourcemap is read
+/// back, not only written: both lookup directions (`addr2sce`,
+/// `sce2sym`) load this file. Reading it as an untyped
+/// `serde_json::Value` — which is what the CLI did before these
+/// derives existed — means every consumer re-states the field names by
+/// hand and a shape change breaks them silently at runtime instead of
+/// at compile time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sourcemap {
     pub version: u32,
     pub source_hash: String,
@@ -79,7 +86,7 @@ pub struct Sourcemap {
 /// (lines 3219-3243) so a `serde_json::to_string_pretty` matches the
 /// hand-authored shape. Optional fields are skipped on `None` so the
 /// JSON stays tight where the runtime metadata is absent.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceSymbol {
     /// Author-facing path to the SCXML file the symbol traces back to.
     /// Always populated — the symbol was constructed from a
@@ -129,7 +136,7 @@ pub fn build(
     let mut out: BTreeMap<String, SourceSymbol> = BTreeMap::new();
     for (mangled, entry) in symbols {
         let kind = classify_kind(&entry.artifact);
-        let event = extract_event(&entry.artifact);
+        let event = entry.event.clone();
         let line = entry.location.line.unwrap_or(0);
         let xpath = synth_xpath(&entry.state_path, &entry.artifact);
         out.insert(
@@ -184,15 +191,6 @@ fn classify_kind(artifact: &str) -> &'static str {
     }
 }
 
-/// Extract the `event=` payload from a transition artifact. Foundation
-/// emit returns `None` because the artifact convention does not
-/// currently fold the event name in. Future enrichment can extend the
-/// artifact format with `_transition_<idx>_event_<name>` (escape-rule
-/// driven) without breaking the rest of the pipeline.
-fn extract_event(_artifact: &str) -> Option<String> {
-    None
-}
-
 /// Synthesise an XPath approximation from the state-path + artifact.
 /// `//state[@id='s1']` for a state body; `//state[@id='s1']/transition[1]`
 /// for a transition; `//scxml` for the machine-level symbol.
@@ -221,6 +219,169 @@ fn synth_xpath(state_path: &str, artifact: &str) -> String {
         format!("{}/onexit", base)
     } else {
         base
+    }
+}
+
+/// Load a sourcemap from the JSON text of an `sce_sourcemap.json`.
+///
+/// The single read path for both lookup directions. Typed rather than
+/// `serde_json::Value` so a shape change is a compile error at every
+/// consumer instead of a `None` at runtime.
+pub fn from_json(text: &str) -> Result<Sourcemap, serde_json::Error> {
+    serde_json::from_str(text)
+}
+
+/// Which symbols a reverse lookup is asking for.
+///
+/// Every field is an independent narrowing predicate and `None` means
+/// "do not constrain this axis". An all-`None` query therefore matches
+/// the whole table, which is the useful default for "what did this
+/// document lower to" — a reverse lookup with no way to ask a broad
+/// question would force the caller to already know the answer.
+///
+/// The forward direction (`addr2sce`) needs no such struct: a mangled
+/// symbol is a map key, so it is one exact-match lookup. The asymmetry
+/// is real — one SCXML coordinate legitimately lowers to several
+/// symbols (a state's body, its entry block, each of its transitions),
+/// and across backends to several files.
+#[derive(Debug, Default, Clone)]
+pub struct SymbolQuery<'a> {
+    /// Canonical state-hierarchy path, matched exactly (e.g. `s1/s1p1`).
+    pub state_path: Option<&'a str>,
+    /// 1-based source line that must fall inside the symbol's
+    /// `line_range`, inclusive at both ends.
+    pub line: Option<u32>,
+    /// IR node kind, matched exactly (`state`, `transition`, …).
+    pub kind: Option<&'a str>,
+    /// Event name, matched exactly. Symbols carrying no event never
+    /// match a constrained query.
+    pub event: Option<&'a str>,
+    /// Author-facing SCXML path, matched exactly. Useful when one
+    /// sourcemap covers a machine assembled from several documents.
+    pub file: Option<&'a str>,
+}
+
+impl SymbolQuery<'_> {
+    /// Whether this query constrains nothing — every symbol matches.
+    pub fn is_unconstrained(&self) -> bool {
+        self.state_path.is_none()
+            && self.line.is_none()
+            && self.kind.is_none()
+            && self.event.is_none()
+            && self.file.is_none()
+    }
+
+    /// Whether `symbol` satisfies every constrained axis.
+    fn matches(&self, symbol: &SourceSymbol) -> bool {
+        if let Some(want) = self.state_path {
+            if symbol.scxml_state_path != want {
+                return false;
+            }
+        }
+        if let Some(want) = self.kind {
+            if symbol.kind != want {
+                return false;
+            }
+        }
+        if let Some(want) = self.file {
+            if symbol.scxml_file != want {
+                return false;
+            }
+        }
+        if let Some(want) = self.event {
+            // A symbol with no event cannot satisfy an event
+            // constraint — matching it would report a state body as an
+            // answer to "which symbol handles event X".
+            match symbol.event.as_deref() {
+                Some(have) if have == want => {}
+                _ => return false,
+            }
+        }
+        if let Some(line) = self.line {
+            let [start, end] = symbol.line_range;
+            if line < start || line > end {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// Every symbol in `map` matching `query`, in the table's own order.
+///
+/// `Sourcemap::symbols` is a `BTreeMap`, so the result is sorted by
+/// mangled symbol name and stable across runs and platforms — a
+/// reverse lookup that reordered its hits between invocations could not
+/// be diffed in a build log.
+pub fn find_symbols<'a>(
+    map: &'a Sourcemap,
+    query: &SymbolQuery<'_>,
+) -> Vec<(&'a str, &'a SourceSymbol)> {
+    map.symbols
+        .iter()
+        .filter(|(_, symbol)| query.matches(symbol))
+        .map(|(name, symbol)| (name.as_str(), symbol))
+        .collect()
+}
+
+/// Schema version of a symbol-lookup record.
+pub const SYMBOL_LOOKUP_SCHEMA_VERSION: u32 = 1;
+
+/// Stability status of the symbol-lookup wire surface. Pinned to the
+/// `x-sce-schema-status` header of
+/// `schemas/sce-symbol-lookup.v1.schema.json`.
+pub const SYMBOL_LOOKUP_SCHEMA_STATUS: &str = "pre-release";
+
+/// Which direction produced a lookup record.
+///
+/// The two directions answer opposite questions over the same table
+/// and share one record shape, so a consumer parses one schema and
+/// branches on this field rather than maintaining two readers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LookupKind {
+    /// Mangled symbol (or PC) resolved to SCXML coordinates.
+    Addr2Sce,
+    /// SCXML coordinates resolved to the symbols they lowered to.
+    Sce2Sym,
+}
+
+impl LookupKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LookupKind::Addr2Sce => "addr2sce",
+            LookupKind::Sce2Sym => "sce2sym",
+        }
+    }
+}
+
+/// Every lookup kind, checked against the schema's `kind.enum`.
+pub const ALL_LOOKUP_KINDS: &[LookupKind] = &[LookupKind::Addr2Sce, LookupKind::Sce2Sym];
+
+/// One resolved symbol on the wire.
+///
+/// Field order is the wire order and puts `v` first, matching the
+/// diagnostic and manifest surfaces. The pre-existing `addr2sce`
+/// emitter built this object through `serde_json::json!`, whose
+/// alphabetical key order put `v` last — the same record, spelled in a
+/// way no other SCE surface spells it.
+#[derive(Debug, Serialize)]
+pub struct SymbolLookupRecord<'a> {
+    pub v: u32,
+    pub kind: &'static str,
+    /// Path of the `sce_sourcemap.json` this hit came from. A reverse
+    /// lookup may span several backends' sidecars in one invocation,
+    /// so the record names its own source rather than leaving the
+    /// caller to correlate by position.
+    pub sourcemap: String,
+    /// Mangled symbol name.
+    pub symbol: &'a str,
+    pub entry: &'a SourceSymbol,
+}
+
+impl SymbolLookupRecord<'_> {
+    /// Serialise to the single line that goes on stdout.
+    pub fn to_line(&self) -> String {
+        serde_json::to_string(self).expect("SymbolLookupRecord serialises")
     }
 }
 
@@ -468,6 +629,97 @@ mod tests {
             "schema file's x-sce-schema-status drifted from \
              SOURCEMAP_SCHEMA_STATUS const — update one to match the \
              other in the same commit (see SCE_WIRE_CONTRACTS.md)",
+        );
+    }
+
+    const LOOKUP_SCHEMA_BYTES: &str =
+        include_str!("../../../schemas/sce-symbol-lookup.v1.schema.json");
+
+    fn lookup_schema() -> serde_json::Value {
+        serde_json::from_str(LOOKUP_SCHEMA_BYTES).expect("lookup schema is valid JSON")
+    }
+
+    /// Same producer-const ↔ schema-header lockstep the sourcemap
+    /// surface has, for the lookup-record surface it feeds.
+    #[test]
+    fn symbol_lookup_schema_file_declares_status() {
+        let declared = lookup_schema()["x-sce-schema-status"]
+            .as_str()
+            .expect("lookup schema declares x-sce-schema-status")
+            .to_string();
+        assert!(
+            matches!(declared.as_str(), "pre-release" | "stable"),
+            "x-sce-schema-status must be 'pre-release' or 'stable'; got {declared:?}",
+        );
+        assert_eq!(
+            declared, SYMBOL_LOOKUP_SCHEMA_STATUS,
+            "sce-symbol-lookup.v1.schema.json x-sce-schema-status drifted from \
+             SYMBOL_LOOKUP_SCHEMA_STATUS",
+        );
+    }
+
+    #[test]
+    fn symbol_lookup_schema_declares_matching_version() {
+        let declared = lookup_schema()["properties"]["v"]["const"]
+            .as_u64()
+            .expect("lookup schema pins properties.v.const");
+        assert_eq!(
+            declared as u32, SYMBOL_LOOKUP_SCHEMA_VERSION,
+            "lookup schema v.const drifted from SYMBOL_LOOKUP_SCHEMA_VERSION",
+        );
+    }
+
+    /// A third lookup direction must reach the schema in the same
+    /// commit that adds it, or every record it emits is invalid on a
+    /// consumer's validator while the producer tests stay green.
+    #[test]
+    fn symbol_lookup_schema_kind_enum_matches_rust_source_of_truth() {
+        let mut declared: Vec<String> = lookup_schema()["properties"]["kind"]["enum"]
+            .as_array()
+            .expect("kind.enum is an array")
+            .iter()
+            .map(|v| v.as_str().expect("kind is a string").to_string())
+            .collect();
+        declared.sort();
+        let mut actual: Vec<String> = ALL_LOOKUP_KINDS
+            .iter()
+            .map(|k| k.as_str().to_string())
+            .collect();
+        actual.sort();
+        assert_eq!(
+            declared, actual,
+            "lookup schema kind.enum drifted from ALL_LOOKUP_KINDS",
+        );
+    }
+
+    /// The `entry` sub-object must accept the very shape the sourcemap
+    /// emits — the two schemas describe the same row and would
+    /// otherwise be free to disagree about which fields are required.
+    #[test]
+    fn symbol_lookup_entry_required_fields_match_the_sourcemap_schema() {
+        let sourcemap_schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../schemas/sce-sourcemap.v1.schema.json"
+        ))
+        .expect("sourcemap schema is valid JSON");
+        let mut from_sourcemap: Vec<String> = sourcemap_schema["definitions"]["sourceSymbol"]
+            ["required"]
+            .as_array()
+            .expect("sourceSymbol.required is an array")
+            .iter()
+            .map(|v| v.as_str().expect("field name").to_string())
+            .collect();
+        from_sourcemap.sort();
+        let mut from_lookup: Vec<String> = lookup_schema()["properties"]["entry"]["required"]
+            .as_array()
+            .expect("entry.required is an array")
+            .iter()
+            .map(|v| v.as_str().expect("field name").to_string())
+            .collect();
+        from_lookup.sort();
+        assert_eq!(
+            from_lookup, from_sourcemap,
+            "the lookup record's `entry` and the sourcemap's `sourceSymbol` \
+             disagree about required fields; they describe the same row",
         );
     }
 
