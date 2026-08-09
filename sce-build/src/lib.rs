@@ -2427,10 +2427,10 @@ pub fn compile_scxml_with_imports(
     // ── Link pool-ref cross-doc resolution ──
     //
     // First of the forge→forge cross-doc validators, per the
-    // spec-section walk order the passes below follow (§synth-5-C link
-    // before §synth-5-D outbox before §synth-5-L bounded-collection).
-    // Needs only pass-1 captures, so it does not wait on pass-2
-    // statechart registration.
+    // spec-section walk order the passes below follow: the link kind,
+    // then the worker outbox, then bounded collections. Needs only
+    // pass-1 captures, so it does not wait on pass-2 statechart
+    // registration.
     //
     // Ordering it ahead of the deploy-aware block is also what makes
     // that block's joins well-founded: those reach the pool through
