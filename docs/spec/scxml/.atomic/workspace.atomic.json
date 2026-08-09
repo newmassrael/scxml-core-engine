@@ -7440,6 +7440,50 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/kotlin.rs",
+          "symbol": "compute_invoke_entries",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "static_invoke_targets",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/InvokeExecutor.h",
+          "symbol": "InvokeHandlerFactory",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/InvokeExecutor.h",
+          "symbol": "isSupportedType",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "InvokeHandlerFactory::isSupportedType",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "InvokeHandlerFactory::createHandler",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "InvokeExecutor::executeInvoke",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
