@@ -340,3 +340,262 @@ fn orchestrate_with_malformed_deploy_yaml_fails_cleanly() {
         "malformed deploy must carry stage=mesh-deploy; stderr: {stderr}",
     );
 }
+
+// ── §10 stdout manifest ──────────────────────────────────────────
+//
+// `orchestrate` materialises a whole build and used to say nothing on
+// stdout. `generate` and `check` each emit one manifest line, and
+// `check`'s document-set route mirrors this subcommand's verdict — but
+// its `artifacts` is `[]` by contract, so no record on the wire named
+// the files a multi-doc build had just written. A consumer driving the
+// multi-doc entry point had to guess the output layout or re-walk the
+// directory, which cannot distinguish this run's artifacts from what
+// was already there.
+
+/// Repo root, for reading the schema the consumers compile against.
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent")
+        .to_path_buf()
+}
+
+/// Compile the manifest wire schema once per call site.
+fn manifest_validator() -> jsonschema::JSONSchema {
+    let schema_value: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo_root().join("schemas/sce-manifest.v1.schema.json"))
+            .expect("read manifest schema"),
+    )
+    .expect("manifest schema is JSON");
+    jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("manifest schema compiles as draft-07")
+}
+
+/// The manifest names every file the run wrote, and nothing else.
+///
+/// Asserted as set equality against a walk of the output directory
+/// rather than as a count: a manifest listing four paths while the run
+/// wrote four different ones would satisfy any weaker check. The
+/// directory starts empty, so everything in it came from this run.
+#[test]
+fn orchestrate_manifest_names_exactly_the_files_it_wrote() {
+    let bin = sce_codegen_bin();
+    let staged = ScratchDir::new("orch-manifest-in");
+    let out = ScratchDir::new("orch-manifest-out");
+
+    let scxml = write_doc(
+        staged.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    let pool = write_doc(
+        staged.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool("rx_data_pool", 2000, 1536),
+    );
+    let link = write_doc(
+        staged.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+    let deploy = write_doc(
+        staged.path(),
+        "deploy.yaml",
+        &deploy_yaml(
+            r#"          udp_data:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+"#,
+        ),
+    );
+
+    let output = run_orchestrate(
+        &bin,
+        &scxml,
+        &[pool.as_path(), link.as_path()],
+        out.path(),
+        Some(deploy.as_path()),
+        "json",
+    );
+    assert!(
+        output.status.success(),
+        "well-formed set must orchestrate cleanly; stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(
+        stdout.lines().count(),
+        1,
+        "the manifest is exactly one line (§10.2): {stdout}",
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("orchestrate emits one JSON manifest");
+    assert_eq!(
+        manifest["kind"], "orchestrate",
+        "the kind names the producing subcommand: {stdout}",
+    );
+
+    let msgs: Vec<String> = match manifest_validator().validate(&manifest) {
+        Ok(()) => Vec::new(),
+        Err(errors) => errors.map(|e| e.to_string()).collect(),
+    };
+    assert!(
+        msgs.is_empty(),
+        "orchestrate manifest violates the wire schema: {msgs:?}\n{stdout}",
+    );
+
+    let declared: std::collections::BTreeSet<String> = manifest["artifacts"]
+        .as_array()
+        .expect("artifacts is an array")
+        .iter()
+        .map(|a| a["path"].as_str().expect("path is a string").to_string())
+        .collect();
+    let on_disk: std::collections::BTreeSet<String> = std::fs::read_dir(out.path())
+        .expect("read output dir")
+        .map(|e| e.expect("dir entry").path().display().to_string())
+        .collect();
+
+    assert!(
+        !on_disk.is_empty(),
+        "the control is vacuous unless the run wrote something",
+    );
+    assert_eq!(
+        declared, on_disk,
+        "§10.1: artifacts must be every file written, and only those",
+    );
+}
+
+/// A refused run writes no manifest.
+///
+/// §10.2 makes stdout meaningful only on exit 0, so a consumer reading
+/// stdout before checking the status must find nothing to parse.
+#[test]
+fn orchestrate_emits_no_manifest_when_it_refuses() {
+    let bin = sce_codegen_bin();
+    let staged = ScratchDir::new("orch-manifest-refuse-in");
+    let out = ScratchDir::new("orch-manifest-refuse-out");
+
+    let scxml = write_doc(
+        staged.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    let pool = write_doc(
+        staged.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool("rx_data_pool", 2000, 1536),
+    );
+    // Deploy names a link the forge set does not declare.
+    let link = write_doc(
+        staged.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_pool"),
+    );
+    let deploy = write_doc(
+        staged.path(),
+        "deploy.yaml",
+        &deploy_yaml(
+            r#"          udp_scout:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+"#,
+        ),
+    );
+
+    let output = run_orchestrate(
+        &bin,
+        &scxml,
+        &[pool.as_path(), link.as_path()],
+        out.path(),
+        Some(deploy.as_path()),
+        "json",
+    );
+    assert!(
+        !output.status.success(),
+        "a link declared in forge but absent from deploy must be refused",
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "§10.2: a failing run leaves stdout empty, got {:?}",
+        String::from_utf8_lossy(&output.stdout),
+    );
+}
+
+/// `needs_script_engine` answers for the **set**, not for one document.
+///
+/// A build links the engine once, so the question a multi-doc consumer
+/// asks is whether *any* input needs it. Driven with the engine-needing
+/// document second so a producer that reported only the first input
+/// would answer `false` here.
+#[test]
+fn orchestrate_manifest_reports_the_script_engine_union() {
+    let bin = sce_codegen_bin();
+    let staged = ScratchDir::new("orch-manifest-union-in");
+
+    let plain = write_doc(
+        staged.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // A `cond` the static lowering cannot fold needs the engine.
+    let scripted = write_doc(
+        staged.path(),
+        "scripted_fsm.scxml",
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="scripted_fsm"
+       version="1.0"
+       initial="idle"
+       datamodel="ecmascript">
+  <datamodel><data id="retry" expr="0"/></datamodel>
+  <state id="idle">
+    <transition event="go" cond="retry &lt; 3" target="idle"/>
+  </state>
+</scxml>"##,
+    );
+
+    let read_flag = |first: &Path, second: &Path| -> bool {
+        let out = ScratchDir::new("orch-manifest-union-out");
+        let mut cmd = Command::new(&bin);
+        cmd.arg("orchestrate")
+            .arg("--scxml")
+            .arg(first)
+            .arg("--scxml")
+            .arg(second)
+            .arg("--language")
+            .arg("rust")
+            .arg("--output-dir")
+            .arg(out.path());
+        let output = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("spawn orchestrate");
+        assert!(
+            output.status.success(),
+            "both documents must orchestrate; stderr: {}",
+            String::from_utf8_lossy(&output.stderr),
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let manifest: serde_json::Value =
+            serde_json::from_str(stdout.trim()).expect("manifest parses");
+        manifest["needs_script_engine"]
+            .as_bool()
+            .expect("needs_script_engine is a bool")
+    };
+
+    // The control: this document alone is what forces the engine in, so
+    // the union claim is about the set rather than about a flag that is
+    // always true.
+    assert!(
+        !read_flag(&plain, &plain),
+        "a set of pure-static documents must not claim to need an engine",
+    );
+    assert!(
+        read_flag(&plain, &scripted),
+        "the flag is the union over the set, so a later input still sets it",
+    );
+}
