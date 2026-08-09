@@ -11,7 +11,7 @@ name: Tree Hygiene
 # its rule. The gate looks enforced and is not.
 #
 # That is measured, not hypothetical. On 2026-08-04 a reference to a
-# gitignored doc directory landed in `tools/git-hooks/select_stages.py`.
+# gitignored doc directory landed in `tools/git-hooks/gate_registry.py`.
 # rust-workspace-tests.yml runs the gate as part of `cargo test
 # --workspace`, but its `paths:` filter does not list `tools/git-hooks/**`,
 # so no workflow started and the violation reached main green. A local
@@ -90,4 +90,5 @@ jobs:
           --test roadmap_marker_gate \
           --test workflow_trigger_coverage \
           --test hook_ci_parity \
-          --test codegen_binary_resolution
+          --test codegen_binary_resolution \
+          --test gate_registry_contract

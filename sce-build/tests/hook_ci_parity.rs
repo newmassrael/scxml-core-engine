@@ -40,6 +40,40 @@ fn read(rel: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e))
 }
 
+/// Everything a push actually runs: the hook plus every gate script it
+/// delegates to.
+///
+/// The gates used to sit inline in the hook, so reading one file was the
+/// whole surface. They now live one per file under `scripts/gates/` and the
+/// hook only works out which of them a change needs. These parity tests ask
+/// "does a push run what CI runs", so the surface they read has to follow
+/// the commands rather than the filename — a test still pointed at the hook
+/// alone would find no `cargo test` at all and pass by reading nothing.
+fn hook_surface() -> String {
+    let mut out = read("tools/git-hooks/pre-push");
+    let dir = repo_root().join("scripts/gates");
+    let mut scripts: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "sh"))
+        .collect();
+    assert!(
+        !scripts.is_empty(),
+        "no gate scripts under scripts/gates/ — the hook delegates to a \
+         directory that is empty, so every parity test below would pass by \
+         finding nothing"
+    );
+    scripts.sort();
+    for path in scripts {
+        out.push('\n');
+        out.push_str(
+            &fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e)),
+        );
+    }
+    out
+}
+
 /// Command lines invoking the workspace test suite, whitespace-normalised.
 ///
 /// Continuations are joined first, and comment lines dropped — the hook
@@ -131,7 +165,7 @@ fn the_workspace_suite_runs_with_the_same_features_in_hook_and_ci() {
         out
     }
 
-    let hook = read("tools/git-hooks/pre-push");
+    let hook = hook_surface();
     let ci = read(".github/workflows/rust-workspace-tests.yml");
 
     let hook_cmds = workspace_suite_invocations(&hook);
@@ -168,7 +202,7 @@ fn the_workspace_suite_runs_with_the_same_features_in_hook_and_ci() {
 #[test]
 fn the_workspace_suite_runs_with_debug_assertions_in_hook_and_ci() {
     let sources = [
-        ("tools/git-hooks/pre-push", read("tools/git-hooks/pre-push")),
+        ("pre-push + scripts/gates/", hook_surface()),
         (
             ".github/workflows/rust-workspace-tests.yml",
             read(".github/workflows/rust-workspace-tests.yml"),
@@ -408,7 +442,7 @@ fn mirrored_workflows(selector: &str) -> BTreeSet<String> {
 
 #[test]
 fn the_hook_runs_every_verification_the_workflows_it_mirrors_run() {
-    let selector = read("tools/git-hooks/select_stages.py");
+    let selector = read("tools/git-hooks/gate_registry.py");
     let mirrored = mirrored_workflows(&selector);
     assert!(
         mirrored.len() > 3,
@@ -417,7 +451,7 @@ fn the_hook_runs_every_verification_the_workflows_it_mirrors_run() {
         mirrored.len()
     );
 
-    let hook = verification_invocations(&read("tools/git-hooks/pre-push"));
+    let hook = verification_invocations(&hook_surface());
     assert!(
         hook.len() > 5,
         "read only {} verification(s) from the hook — the extractor is \
