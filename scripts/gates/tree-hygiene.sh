@@ -35,4 +35,5 @@ cargo test -p sce-build --features cli \
     --test gate_registry_contract \
     --test committed_sourcemap_drift \
     --test diagnostic_corpus_schema \
+    --test sourced_scripts_are_tracked \
     || sce_gate_fail "tree-wide hygiene gates"
