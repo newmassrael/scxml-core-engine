@@ -126,6 +126,57 @@
       ],
       "kind": "transition",
       "event": "timeout"
+    },
+    "test347_u_sce_synth_invoke_u_child_____machine": {
+      "scxml_file": "test347__sce_synth_invoke__child.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test347_u_sce_synth_invoke_u_child__sub0___on_entry_0_0": {
+      "scxml_file": "test347__sce_synth_invoke__child.scxml",
+      "scxml_state_path": "sub0",
+      "scxml_xpath": "//state[@id='sub0']/onentry",
+      "line_range": [
+        6,
+        6
+      ],
+      "kind": "on_entry"
+    },
+    "test347_u_sce_synth_invoke_u_child__sub0___state_body": {
+      "scxml_file": "test347__sce_synth_invoke__child.scxml",
+      "scxml_state_path": "sub0",
+      "scxml_xpath": "//state[@id='sub0']",
+      "line_range": [
+        4,
+        4
+      ],
+      "kind": "state"
+    },
+    "test347_u_sce_synth_invoke_u_child__sub0___transition_0": {
+      "scxml_file": "test347__sce_synth_invoke__child.scxml",
+      "scxml_state_path": "sub0",
+      "scxml_xpath": "//state[@id='sub0']/transition[1]",
+      "line_range": [
+        8,
+        8
+      ],
+      "kind": "transition",
+      "event": "parentToChild"
+    },
+    "test347_u_sce_synth_invoke_u_child__subFinal___state_body": {
+      "scxml_file": "test347__sce_synth_invoke__child.scxml",
+      "scxml_state_path": "subFinal",
+      "scxml_xpath": "//state[@id='subFinal']",
+      "line_range": [
+        10,
+        10
+      ],
+      "kind": "state"
     }
   }
 }
