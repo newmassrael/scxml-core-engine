@@ -145,14 +145,24 @@
         (void)luaL_dostring(sm->L,
             "_sessionid = '{{ model.name | escape_c }}_session'");
         /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
-           (cpp `LuaEngine.cpp` calls this `sessionName`). Empty string
-           when the SCXML omits the attribute — still a valid Lua string
-           and therefore "bound" per W3C 5.10's typeof check. Same
-           read-only enforcement as _sessionid: the codegen-time assign
-           guard rejects <assign location="_name"> before any luaL_dostring
-           is invoked. */
+           (cpp `LuaEngine.cpp` calls this `sessionName`). Falls back to
+           the document identity when the SCXML omits the attribute, which
+           is W3C 5.10 §3.2.1's "the processor MUST generate a name".
+
+           The value crosses two literal boundaries here and only here:
+           it is Lua source, and that Lua source sits inside a C string
+           literal. `escape_lua | escape_c` is the composition the send
+           path already uses for the same reason; a host-only escape
+           yields a translation unit that compiles and Lua that does not
+           parse. Emitted into a double-quoted Lua string because
+           `escape_lua` escapes `"` and not `'` — with single quotes, a
+           name of `it's` produced `_name = 'it's'`.
+
+           Same read-only enforcement as _sessionid: the codegen-time
+           assign guard rejects <assign location="_name"> before any
+           luaL_dostring is invoked. */
         (void)luaL_dostring(sm->L,
-            "_name = '{{ model.scxml_name | default('') | escape_c }}'");
+            "_name = \"{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_lua | escape_c }}\"");
         /* W3C SCXML C.1.1 / C.2.3: `_ioprocessors` holds one entry per
            processor the deployment supports, each with a `location` field
            naming the address that reaches this session through it. Entry

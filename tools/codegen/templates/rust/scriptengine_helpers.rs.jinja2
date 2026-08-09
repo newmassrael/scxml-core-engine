@@ -60,7 +60,7 @@
             &sid,
             &self.basic_http_access_uri,
         );
-        if let Err(e) = se.setup_system_variables(&sid, "{{ model.name }}", &io_processors) {
+        if let Err(e) = se.setup_system_variables(&sid, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_rust }}", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
 
@@ -110,7 +110,7 @@
             &sid,
             &self.basic_http_access_uri,
         );
-        if let Err(e) = se.setup_system_variables(&sid, "{{ model.name }}", &io_processors) {
+        if let Err(e) = se.setup_system_variables(&sid, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_rust }}", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
 

@@ -187,7 +187,7 @@ void ensureScriptEngine() const {
     // same helper the Interpreter uses, so a machine reads the same entry
     // names and the same addresses whichever engine runs it.
     auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
-    auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "inline_mixed", ioProcessors).get();
+    auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "inline_mixed_test", ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
     }
@@ -217,7 +217,7 @@ void initializeDataModel([[maybe_unused]] Engine& engine) {
     // same helper the Interpreter uses, so a machine reads the same entry
     // names and the same addresses whichever engine runs it.
     auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
-    auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "inline_mixed", ioProcessors).get();
+    auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "inline_mixed_test", ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
     }

@@ -671,7 +671,17 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
                                                             .count());
     JS_SetPropertyStr(ctx, global, "_sessionid", JS_NewString(ctx, sessionId.c_str()));
 
-    // Setup _name (from <scxml> element name attribute)
+    // Placeholder, not the binding. Both values here are overwritten by
+    // `setupSystemVariablesInternal`, which `StateMachine::setupJSEnvironment`
+    // calls unconditionally right after creating the session and before any
+    // document script runs — that is where W3C SCXML 5.10's "the value of the
+    // 'name' attribute of the <scxml> element" actually arrives, carried as
+    // `sessionName`. This function only guarantees the globals exist on a
+    // context that has not been through session setup yet.
+    //
+    // The comment here used to read "from <scxml> element name attribute"
+    // above a hardcoded literal, which describes the neighbouring function
+    // rather than this one and reads as a defect that is not there.
     JS_SetPropertyStr(ctx, global, "_name", JS_NewString(ctx, "RSMStateMachine"));
 
     // Setup _ioprocessors (Event I/O Processors)
