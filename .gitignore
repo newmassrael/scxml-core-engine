@@ -14,6 +14,11 @@ build_round_trip_c/
 build_mesh_test/
 /bin/
 lib/
+# ...but scripts/lib/ is source, not build output. The rule above is
+# unanchored, so it swallowed the shell locator every regen_*.sh and
+# backends/go/forge-runtime/generate.sh sources — present locally,
+# absent in a fresh checkout, so CI failed where developers passed.
+!scripts/lib/
 out/
 cmake-build-*/
 
