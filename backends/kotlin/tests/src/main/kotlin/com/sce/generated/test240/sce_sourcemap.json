@@ -127,6 +127,106 @@
       ],
       "kind": "transition",
       "event": "timeout"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_0_____machine": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_0__sub01___state_body": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "sub01",
+      "scxml_xpath": "//state[@id='sub01']",
+      "line_range": [
+        7,
+        7
+      ],
+      "kind": "state"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_0__sub01___transition_0": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "sub01",
+      "scxml_xpath": "//state[@id='sub01']/transition[1]",
+      "line_range": [
+        8,
+        8
+      ],
+      "kind": "transition"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_0__sub01___transition_1": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "sub01",
+      "scxml_xpath": "//state[@id='sub01']/transition[2]",
+      "line_range": [
+        11,
+        11
+      ],
+      "kind": "transition"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_0__subFinal1___state_body": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "subFinal1",
+      "scxml_xpath": "//state[@id='subFinal1']",
+      "line_range": [
+        15,
+        15
+      ],
+      "kind": "state"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_1_____machine": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_1__sub02___state_body": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "sub02",
+      "scxml_xpath": "//state[@id='sub02']",
+      "line_range": [
+        8,
+        8
+      ],
+      "kind": "state"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_1__sub02___transition_0": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "sub02",
+      "scxml_xpath": "//state[@id='sub02']/transition[1]",
+      "line_range": [
+        9,
+        9
+      ],
+      "kind": "transition"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_1__sub02___transition_1": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "sub02",
+      "scxml_xpath": "//state[@id='sub02']/transition[2]",
+      "line_range": [
+        12,
+        12
+      ],
+      "kind": "transition"
+    },
+    "test240_u_sce_synth_invoke_u_invoke_1__subFinal2___state_body": {
+      "scxml_file": "test240__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "subFinal2",
+      "scxml_xpath": "//state[@id='subFinal2']",
+      "line_range": [
+        16,
+        16
+      ],
+      "kind": "state"
     }
   }
 }

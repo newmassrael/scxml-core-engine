@@ -93,6 +93,46 @@
         36
       ],
       "kind": "transition"
+    },
+    "test225_u_sce_synth_invoke_u_invoke_0_____machine": {
+      "scxml_file": "test225__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test225_u_sce_synth_invoke_u_invoke_0__subFinal1___state_body": {
+      "scxml_file": "test225__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "subFinal1",
+      "scxml_xpath": "//state[@id='subFinal1']",
+      "line_range": [
+        4,
+        4
+      ],
+      "kind": "state"
+    },
+    "test225_u_sce_synth_invoke_u_invoke_1_____machine": {
+      "scxml_file": "test225__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test225_u_sce_synth_invoke_u_invoke_1__subFinal2___state_body": {
+      "scxml_file": "test225__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "subFinal2",
+      "scxml_xpath": "//state[@id='subFinal2']",
+      "line_range": [
+        4,
+        4
+      ],
+      "kind": "state"
     }
   }
 }

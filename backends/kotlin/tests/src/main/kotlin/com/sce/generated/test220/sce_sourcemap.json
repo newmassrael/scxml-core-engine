@@ -74,6 +74,26 @@
       ],
       "kind": "transition",
       "event": "*"
+    },
+    "test220_u_sce_synth_invoke_u_invoke_0_____machine": {
+      "scxml_file": "test220__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test220_u_sce_synth_invoke_u_invoke_0__subFinal___state_body": {
+      "scxml_file": "test220__sce_synth_invoke__invoke_0.scxml",
+      "scxml_state_path": "subFinal",
+      "scxml_xpath": "//state[@id='subFinal']",
+      "line_range": [
+        4,
+        4
+      ],
+      "kind": "state"
     }
   }
 }
