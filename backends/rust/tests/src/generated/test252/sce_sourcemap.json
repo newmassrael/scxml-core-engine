@@ -61,7 +61,8 @@
         42,
         42
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test252__s02___state_body": {
       "scxml_file": "test252.scxml",
@@ -101,7 +102,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test252__s0___transition_1": {
       "scxml_file": "test252.scxml",
@@ -111,7 +113,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test252__s0___transition_2": {
       "scxml_file": "test252.scxml",
@@ -121,7 +124,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     }
   }
 }

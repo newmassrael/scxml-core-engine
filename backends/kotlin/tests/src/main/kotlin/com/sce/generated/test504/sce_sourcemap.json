@@ -51,7 +51,8 @@
         31,
         31
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test504__p___transition_1": {
       "scxml_file": "test504.scxml",
@@ -61,7 +62,8 @@
         36,
         36
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bar"
     },
     "test504__p___transition_2": {
       "scxml_file": "test504.scxml",
@@ -71,7 +73,8 @@
         37,
         37
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bar"
     },
     "test504__pass___state_body": {
       "scxml_file": "test504.scxml",

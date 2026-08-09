@@ -101,7 +101,8 @@
         20,
         20
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test505__s1___transition_1": {
       "scxml_file": "test505.scxml",
@@ -111,7 +112,8 @@
         25,
         25
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bar"
     },
     "test505__s1___transition_2": {
       "scxml_file": "test505.scxml",
@@ -121,7 +123,8 @@
         26,
         26
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bar"
     },
     "test505__s2___state_body": {
       "scxml_file": "test505.scxml",

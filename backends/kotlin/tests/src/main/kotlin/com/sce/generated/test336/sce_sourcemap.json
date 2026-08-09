@@ -61,7 +61,8 @@
         12,
         12
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "foo"
     },
     "test336__s0___transition_1": {
       "scxml_file": "test336.scxml",
@@ -71,7 +72,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test336__s1___on_entry_0_0": {
       "scxml_file": "test336.scxml",
@@ -101,7 +103,8 @@
         22,
         22
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bar"
     },
     "test336__s1___transition_1": {
       "scxml_file": "test336.scxml",
@@ -111,7 +114,8 @@
         23,
         23
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

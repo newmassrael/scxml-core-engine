@@ -101,7 +101,8 @@
         22,
         22
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test326__s1___transition_1": {
       "scxml_file": "test326.scxml",
@@ -111,7 +112,8 @@
         23,
         23
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test326__s2___on_entry_0_0": {
       "scxml_file": "test326.scxml",

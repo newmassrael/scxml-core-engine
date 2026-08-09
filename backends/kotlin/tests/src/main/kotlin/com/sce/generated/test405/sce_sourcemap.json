@@ -151,7 +151,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test405__s02___state_body": {
       "scxml_file": "test405.scxml",
@@ -171,7 +172,8 @@
         50,
         50
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test405__s02___transition_1": {
       "scxml_file": "test405.scxml",
@@ -181,7 +183,8 @@
         51,
         51
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test405__s03___state_body": {
       "scxml_file": "test405.scxml",
@@ -201,7 +204,8 @@
         55,
         55
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event3"
     },
     "test405__s03___transition_1": {
       "scxml_file": "test405.scxml",
@@ -211,7 +215,8 @@
         56,
         56
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test405__s04___state_body": {
       "scxml_file": "test405.scxml",
@@ -231,7 +236,8 @@
         61,
         61
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event4"
     },
     "test405__s04___transition_1": {
       "scxml_file": "test405.scxml",
@@ -241,7 +247,8 @@
         62,
         62
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test405__s0___on_entry_0_0": {
       "scxml_file": "test405.scxml",
@@ -271,7 +278,8 @@
         12,
         12
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

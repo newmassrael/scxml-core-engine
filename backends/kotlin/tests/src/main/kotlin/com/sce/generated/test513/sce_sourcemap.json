@@ -91,7 +91,8 @@
         36,
         36
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "test"
     },
     "test513__s0___transition_1": {
       "scxml_file": "test513.scxml",
@@ -101,7 +102,8 @@
         41,
         41
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

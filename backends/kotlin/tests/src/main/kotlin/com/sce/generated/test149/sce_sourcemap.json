@@ -71,7 +71,8 @@
         20,
         20
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "bat"
     },
     "test149__s0___transition_1": {
       "scxml_file": "test149.scxml",
@@ -81,7 +82,8 @@
         21,
         21
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

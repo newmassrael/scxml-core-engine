@@ -71,7 +71,8 @@
         24,
         24
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test402__s01___transition_1": {
       "scxml_file": "test402.scxml",
@@ -81,7 +82,8 @@
         27,
         27
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test402__s02___state_body": {
       "scxml_file": "test402.scxml",
@@ -101,7 +103,8 @@
         31,
         31
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error"
     },
     "test402__s02___transition_1": {
       "scxml_file": "test402.scxml",
@@ -111,7 +114,8 @@
         32,
         32
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test402__s03___state_body": {
       "scxml_file": "test402.scxml",
@@ -131,7 +135,8 @@
         36,
         36
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test402__s03___transition_1": {
       "scxml_file": "test402.scxml",
@@ -141,7 +146,8 @@
         37,
         37
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test402__s0___on_entry_0_0": {
       "scxml_file": "test402.scxml",
@@ -171,7 +177,8 @@
         14,
         14
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

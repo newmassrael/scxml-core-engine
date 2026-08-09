@@ -71,7 +71,8 @@
         19,
         19
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test216__s0___transition_1": {
       "scxml_file": "test216.scxml",
@@ -81,7 +82,8 @@
         20,
         20
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

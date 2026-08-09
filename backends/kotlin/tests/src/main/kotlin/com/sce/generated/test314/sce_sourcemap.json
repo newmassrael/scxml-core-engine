@@ -111,7 +111,8 @@
         29,
         29
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     },
     "test314__s03___transition_1": {
       "scxml_file": "test314.scxml",
@@ -121,7 +122,8 @@
         30,
         30
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": ".*"
     },
     "test314__s0___state_body": {
       "scxml_file": "test314.scxml",
@@ -141,7 +143,8 @@
         14,
         14
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "error.execution"
     }
   }
 }

@@ -61,7 +61,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.state.s0"
     },
     "test372__s0___transition_1": {
       "scxml_file": "test372.scxml",
@@ -71,7 +72,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test372__s0final___on_entry_0_0": {
       "scxml_file": "test372.scxml",

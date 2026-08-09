@@ -61,7 +61,8 @@
         26,
         26
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test236__s0___transition_1": {
       "scxml_file": "test236.scxml",
@@ -71,7 +72,8 @@
         27,
         27
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test236__s1___state_body": {
       "scxml_file": "test236.scxml",
@@ -91,7 +93,8 @@
         32,
         32
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test236__s1___transition_1": {
       "scxml_file": "test236.scxml",
@@ -101,7 +104,8 @@
         33,
         33
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test236__s2___state_body": {
       "scxml_file": "test236.scxml",
@@ -121,7 +125,8 @@
         37,
         37
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test236__s2___transition_1": {
       "scxml_file": "test236.scxml",
@@ -131,7 +136,8 @@
         38,
         38
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

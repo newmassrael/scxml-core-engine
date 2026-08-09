@@ -61,7 +61,8 @@
         38,
         38
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "childToParent"
     },
     "test229__s0___transition_1": {
       "scxml_file": "test229.scxml",
@@ -71,7 +72,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "eventReceived"
     },
     "test229__s0___transition_2": {
       "scxml_file": "test229.scxml",
@@ -81,7 +83,8 @@
         40,
         40
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

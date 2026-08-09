@@ -121,7 +121,8 @@
         28,
         28
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "In-s11p112"
     },
     "test364__s11p12___state_body": {
       "scxml_file": "test364.scxml",
@@ -171,7 +172,8 @@
         13,
         13
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test364__s211___state_body": {
       "scxml_file": "test364.scxml",
@@ -261,7 +263,8 @@
         54,
         54
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "In-s21p112"
     },
     "test364__s21p12___state_body": {
       "scxml_file": "test364.scxml",
@@ -301,7 +304,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test364__s3111___state_body": {
       "scxml_file": "test364.scxml",
