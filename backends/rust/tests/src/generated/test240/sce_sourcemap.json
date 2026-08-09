@@ -51,7 +51,8 @@
         38,
         38
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "success"
     },
     "test240__s01___transition_1": {
       "scxml_file": "test240.scxml",
@@ -61,7 +62,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "failure"
     },
     "test240__s02___state_body": {
       "scxml_file": "test240.scxml",
@@ -81,7 +83,8 @@
         63,
         63
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "success"
     },
     "test240__s02___transition_1": {
       "scxml_file": "test240.scxml",
@@ -91,7 +94,8 @@
         64,
         64
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "failure"
     },
     "test240__s0___on_entry_0_0": {
       "scxml_file": "test240.scxml",
@@ -121,7 +125,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

@@ -71,7 +71,8 @@
         14,
         14
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test419__s1___transition_1": {
       "scxml_file": "test419.scxml",

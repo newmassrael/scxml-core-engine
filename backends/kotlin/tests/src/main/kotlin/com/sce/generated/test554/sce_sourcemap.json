@@ -61,7 +61,8 @@
         23,
         23
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timer"
     },
     "test554__s0___transition_1": {
       "scxml_file": "test554.scxml",
@@ -71,7 +72,8 @@
         24,
         24
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     }
   }
 }

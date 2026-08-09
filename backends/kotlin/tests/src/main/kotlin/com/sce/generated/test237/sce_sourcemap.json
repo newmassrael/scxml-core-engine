@@ -61,7 +61,8 @@
         30,
         30
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout1"
     },
     "test237__s1___on_entry_0_0": {
       "scxml_file": "test237.scxml",
@@ -91,7 +92,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test237__s1___transition_1": {
       "scxml_file": "test237.scxml",
@@ -101,7 +103,8 @@
         40,
         40
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

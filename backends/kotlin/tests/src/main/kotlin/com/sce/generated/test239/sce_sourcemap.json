@@ -51,7 +51,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test239__s02___state_body": {
       "scxml_file": "test239.scxml",
@@ -71,7 +72,8 @@
         29,
         29
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.invoke"
     },
     "test239__s0___on_entry_0_0": {
       "scxml_file": "test239.scxml",
@@ -101,7 +103,8 @@
         12,
         12
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

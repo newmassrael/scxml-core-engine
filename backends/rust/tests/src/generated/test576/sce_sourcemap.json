@@ -141,7 +141,8 @@
         32,
         32
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "In-s11p112"
     },
     "test576__s11p12___state_body": {
       "scxml_file": "test576.scxml",
@@ -191,7 +192,8 @@
         17,
         17
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     }
   }
 }

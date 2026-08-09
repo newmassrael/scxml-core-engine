@@ -81,7 +81,8 @@
         18,
         18
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test580__s11___state_body": {
       "scxml_file": "test580.scxml",

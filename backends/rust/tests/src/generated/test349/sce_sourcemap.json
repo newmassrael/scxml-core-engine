@@ -61,7 +61,8 @@
         15,
         15
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "s0Event"
     },
     "test349__s0___transition_1": {
       "scxml_file": "test349.scxml",
@@ -71,7 +72,8 @@
         18,
         18
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test349__s2___on_entry_0_0": {
       "scxml_file": "test349.scxml",
@@ -101,7 +103,8 @@
         26,
         26
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "s0Event2"
     },
     "test349__s2___transition_1": {
       "scxml_file": "test349.scxml",
@@ -111,7 +114,8 @@
         27,
         27
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

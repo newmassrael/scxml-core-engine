@@ -91,7 +91,8 @@
         22,
         22
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test377__s1___transition_1": {
       "scxml_file": "test377.scxml",
@@ -101,7 +102,8 @@
         23,
         23
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test377__s2___state_body": {
       "scxml_file": "test377.scxml",
@@ -121,7 +123,8 @@
         28,
         28
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test377__s2___transition_1": {
       "scxml_file": "test377.scxml",
@@ -131,7 +134,8 @@
         29,
         29
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     }
   }
 }

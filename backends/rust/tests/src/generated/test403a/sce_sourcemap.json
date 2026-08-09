@@ -61,7 +61,8 @@
         29,
         29
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test403a__s01___transition_1": {
       "scxml_file": "test403a.scxml",
@@ -71,7 +72,8 @@
         30,
         30
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "*"
     },
     "test403a__s02___on_entry_0_0": {
       "scxml_file": "test403a.scxml",
@@ -101,7 +103,8 @@
         39,
         39
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test403a__s02___transition_1": {
       "scxml_file": "test403a.scxml",
@@ -111,7 +114,8 @@
         40,
         40
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test403a__s0___on_entry_0_0": {
       "scxml_file": "test403a.scxml",
@@ -141,7 +145,8 @@
         19,
         19
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test403a__s0___transition_1": {
       "scxml_file": "test403a.scxml",
@@ -151,7 +156,8 @@
         20,
         20
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test403a__s0___transition_2": {
       "scxml_file": "test403a.scxml",
@@ -161,7 +167,8 @@
         21,
         21
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     }
   }
 }

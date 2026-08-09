@@ -61,7 +61,8 @@
         13,
         13
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "timeout"
     },
     "test417__s1p111___state_body": {
       "scxml_file": "test417.scxml",
@@ -161,7 +162,8 @@
         16,
         16
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "done.state.s1p1"
     }
   }
 }

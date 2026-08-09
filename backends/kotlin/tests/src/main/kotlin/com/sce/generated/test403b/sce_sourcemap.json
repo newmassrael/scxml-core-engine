@@ -61,7 +61,8 @@
         28,
         28
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     },
     "test403b__p0s1___state_body": {
       "scxml_file": "test403b.scxml",
@@ -81,7 +82,8 @@
         33,
         33
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test403b__p0s1___transition_1": {
       "scxml_file": "test403b.scxml",
@@ -91,7 +93,8 @@
         34,
         34
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event2"
     },
     "test403b__p0s2___state_body": {
       "scxml_file": "test403b.scxml",
@@ -131,7 +134,8 @@
         14,
         14
       ],
-      "kind": "transition"
+      "kind": "transition",
+      "event": "event1"
     }
   }
 }
