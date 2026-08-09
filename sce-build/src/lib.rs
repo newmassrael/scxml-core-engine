@@ -26,6 +26,11 @@ pub mod formatter;
 pub mod generator;
 pub mod kotlin;
 pub mod lua_transformer;
+/// The stdout manifest wire surface — the single JSON line
+/// `sce-codegen` writes on success. Shape, schema-file lockstep, and
+/// instance validation live together here; `SCE_ERROR_CONTRACT.md` §10
+/// carries the prose contract.
+pub mod manifest;
 pub mod mesh;
 pub mod model;
 pub mod parser;
@@ -2906,22 +2911,14 @@ pub fn compile_scxml_with_imports(
     Ok(outputs)
 }
 
-/// Wire-format name for a [`generator::Language`] — mirrors
-/// [`forge::codegen_matrix::language_wire_name`] but accessible from
-/// `lib.rs` without crossing the matrix module boundary. Kept private;
-/// callers go through this function so the lowercase lock matches the
-/// `codegen/mcu-class-kind-on-non-mcu-language` `actual` field's
-/// existing case convention.
-fn language_wire_name(lang: generator::Language) -> &'static str {
-    match lang {
-        generator::Language::Cpp => "cpp",
-        generator::Language::Kotlin => "kotlin",
-        generator::Language::Rust => "rust",
-        generator::Language::Go => "go",
-        generator::Language::Python => "python",
-        generator::Language::C11 => "c11",
-    }
-}
+/// Wire-format name for a [`generator::Language`].
+///
+/// Re-exported from the codegen matrix rather than restated here. The
+/// local copy this replaced justified itself as "accessible from
+/// `lib.rs` without crossing the matrix module boundary", but two
+/// tables spelling the same six backends are free to disagree, and only
+/// the arms a test happens to reach would notice.
+use forge::codegen_matrix::language_wire_name;
 
 /// Recursively resolve a codec's full encode-buffer max bytes — RFC §synth-5-B.
 /// Mirrors the parent generator's `m.max_frame_bytes() + body_max`

@@ -42,6 +42,23 @@ pub enum Language {
 }
 
 impl Language {
+    /// Every backend, in the canonical order used wherever a run spans
+    /// all of them (the `check` sweep, the codegen-matrix coverage
+    /// tests, the manifest schema's language enum).
+    ///
+    /// A seventh backend lands here once and every all-backends site
+    /// widens with it. The alternative — each site restating the six —
+    /// is how a new backend ends up covered by some of them and
+    /// silently skipped by the rest.
+    pub const ALL: &'static [Language] = &[
+        Language::Rust,
+        Language::Cpp,
+        Language::Kotlin,
+        Language::Go,
+        Language::Python,
+        Language::C11,
+    ];
+
     /// Subdirectory of `tools/codegen/templates/` holding this
     /// language's templates, or `""` when they live at the tree root.
     ///
