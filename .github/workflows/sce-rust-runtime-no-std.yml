@@ -115,7 +115,15 @@ jobs:
     # target with no `#[global_allocator]`; any reachable `alloc` symbol is a
     # hard compile error. See backends/rust/probes/nostd-build/README.md.
     - name: Build sce-codegen
-      run: cargo build --bin sce-codegen --features cli -p sce-build
+      run: |
+        # The Cargo cache restores all of `target`, but this step only
+        # builds the debug profile. A `target/release/sce-codegen` left
+        # by an older cache is not a product of this commit, and the
+        # CMake locator prefers it — which is how CI ran a binary
+        # predating a filter its own templates use ("unknown filter:
+        # unsupported"). Remove the stale one rather than trusting it.
+        rm -f target/release/sce-codegen
+        cargo build --bin sce-codegen --features cli -p sce-build
 
     - name: Generate the no_std probe machine
       run: |
