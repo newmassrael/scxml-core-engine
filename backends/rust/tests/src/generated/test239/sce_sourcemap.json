@@ -105,6 +105,46 @@
       ],
       "kind": "transition",
       "event": "timeout"
+    },
+    "test239_u_sce_synth_invoke_u_invoke_1_____machine": {
+      "scxml_file": "test239__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test239_u_sce_synth_invoke_u_invoke_1__final___state_body": {
+      "scxml_file": "test239__sce_synth_invoke__invoke_1.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']",
+      "line_range": [
+        4,
+        4
+      ],
+      "kind": "state"
+    },
+    "test239sub1_____machine": {
+      "scxml_file": "test239sub1.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        5,
+        5
+      ],
+      "kind": "machine"
+    },
+    "test239sub1__final___state_body": {
+      "scxml_file": "test239sub1.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']",
+      "line_range": [
+        7,
+        7
+      ],
+      "kind": "state"
     }
   }
 }

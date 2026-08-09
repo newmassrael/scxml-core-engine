@@ -104,6 +104,26 @@
         31
       ],
       "kind": "transition"
+    },
+    "test228_u_sce_synth_invoke_u_foo_____machine": {
+      "scxml_file": "test228__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test228_u_sce_synth_invoke_u_foo__subFinal___state_body": {
+      "scxml_file": "test228__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "subFinal",
+      "scxml_xpath": "//state[@id='subFinal']",
+      "line_range": [
+        4,
+        4
+      ],
+      "kind": "state"
     }
   }
 }

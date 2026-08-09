@@ -156,6 +156,97 @@
       ],
       "kind": "transition",
       "event": "timeout"
+    },
+    "test253_u_sce_synth_invoke_u_foo_____machine": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub0___on_entry_0_0": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub0",
+      "scxml_xpath": "//state[@id='sub0']/onentry",
+      "line_range": [
+        9,
+        9
+      ],
+      "kind": "on_entry"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub0___state_body": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub0",
+      "scxml_xpath": "//state[@id='sub0']",
+      "line_range": [
+        7,
+        7
+      ],
+      "kind": "state"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub0___transition_0": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub0",
+      "scxml_xpath": "//state[@id='sub0']/transition[1]",
+      "line_range": [
+        12,
+        12
+      ],
+      "kind": "transition",
+      "event": "parentToChild"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub1___state_body": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub1",
+      "scxml_xpath": "//state[@id='sub1']",
+      "line_range": [
+        16,
+        16
+      ],
+      "kind": "state"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub1___transition_0": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub1",
+      "scxml_xpath": "//state[@id='sub1']/transition[1]",
+      "line_range": [
+        17,
+        17
+      ],
+      "kind": "transition"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub1___transition_1": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub1",
+      "scxml_xpath": "//state[@id='sub1']/transition[2]",
+      "line_range": [
+        20,
+        20
+      ],
+      "kind": "transition"
+    },
+    "test253_u_sce_synth_invoke_u_foo__sub1___transition_2": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "sub1",
+      "scxml_xpath": "//state[@id='sub1']/transition[3]",
+      "line_range": [
+        23,
+        23
+      ],
+      "kind": "transition"
+    },
+    "test253_u_sce_synth_invoke_u_foo__subFinal___state_body": {
+      "scxml_file": "test253__sce_synth_invoke__foo.scxml",
+      "scxml_state_path": "subFinal",
+      "scxml_xpath": "//state[@id='subFinal']",
+      "line_range": [
+        27,
+        27
+      ],
+      "kind": "state"
     }
   }
 }

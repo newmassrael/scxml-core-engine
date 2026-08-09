@@ -74,6 +74,56 @@
       ],
       "kind": "transition",
       "event": "*"
+    },
+    "test226sub1_____machine": {
+      "scxml_file": "test226sub1.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        5,
+        5
+      ],
+      "kind": "machine"
+    },
+    "test226sub1__final___state_body": {
+      "scxml_file": "test226sub1.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']",
+      "line_range": [
+        18,
+        18
+      ],
+      "kind": "state"
+    },
+    "test226sub1__s0___state_body": {
+      "scxml_file": "test226sub1.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']",
+      "line_range": [
+        11,
+        11
+      ],
+      "kind": "state"
+    },
+    "test226sub1__s0___transition_0": {
+      "scxml_file": "test226sub1.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']/transition[1]",
+      "line_range": [
+        12,
+        12
+      ],
+      "kind": "transition"
+    },
+    "test226sub1__s0___transition_1": {
+      "scxml_file": "test226sub1.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']/transition[2]",
+      "line_range": [
+        15,
+        15
+      ],
+      "kind": "transition"
     }
   }
 }

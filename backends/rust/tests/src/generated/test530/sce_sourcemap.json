@@ -84,6 +84,26 @@
       ],
       "kind": "transition",
       "event": "*"
+    },
+    "test530_hybrid0_____machine": {
+      "scxml_file": "test530_hybrid0.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        2,
+        2
+      ],
+      "kind": "machine"
+    },
+    "test530_hybrid0__final___state_body": {
+      "scxml_file": "test530_hybrid0.scxml",
+      "scxml_state_path": "final",
+      "scxml_xpath": "//state[@id='final']",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "state"
     }
   }
 }
