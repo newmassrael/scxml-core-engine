@@ -160,6 +160,7 @@
         "link/backpressure-undeclared",
         "link/class-unsupported-on-target",
         "link/pool-slot-smaller-than-framer-max",
+        "link/pool-ref-not-declared",
         "mem/pool-section-conflict",
         "mem/pool-too-large",
         "mem/inter-pool-padding-not-emitted",

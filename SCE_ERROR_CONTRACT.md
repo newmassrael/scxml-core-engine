@@ -558,6 +558,25 @@ keep the routes honest, both swept in
   against a control run of `orchestrate` over the same set that does
   write.
 
+The document-set route is also the only one that can hold a
+cross-document **name** to account. `<sce:rx-pool ref>`,
+`<sce:tx-pool ref>` and `<sce:stage-pool ref>` on a link kind name a
+buffer-pool document, and every consumer of those refs — the
+§synth-5-K burst-absorption check, the §synth-5-M reassembly check,
+the §synth-5-C slot-size-vs-framer check — resolves them by joining on
+that name and **skips the link when the join misses**. Skipping is
+right for a partial topology and wrong for a typo, which looks
+identical at those layers; the result was that a one-character slip in
+a pool ref switched the MCU capacity validators off instead of failing
+the build. Only this route is handed the whole build, so only it can
+tell the two apart: it refuses an unresolved ref with
+`link/pool-ref-not-declared` before the deploy validators run, which
+is the same join `deploy.yaml`'s `stage_pool:` has always been held to
+(`mesh/deploy-stage-pool-not-declared`). A ref resolves either through
+the build's input documents or through the link's own `<sce:import>`.
+Single-document `generate` keeps its tolerance — it is handed one file
+and cannot know what else the build declares.
+
 On this route `needs_script_engine` describes the **set**: the union
 over its statechart inputs, which is the form the question takes for a
 build system deciding whether to link an engine. `-I`,

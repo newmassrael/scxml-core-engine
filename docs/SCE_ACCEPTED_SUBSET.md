@@ -1138,7 +1138,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (338 codes)
+## Appendix — `DiagnosticCode` index (339 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1262,6 +1262,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `link/backpressure-undeclared` | Validation |
 | `link/class-unsupported-on-target` | Validation |
 | `link/pool-slot-smaller-than-framer-max` | Validation |
+| `link/pool-ref-not-declared` | Validation |
 | `mem/pool-section-conflict` | Validation |
 | `mem/pool-too-large` | Validation |
 | `mem/inter-pool-padding-not-emitted` | Validation |

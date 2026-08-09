@@ -133,9 +133,18 @@ fn happy_orchestrator_compiles_multi_doc() {
         &statechart_with_on_sample("session_fsm", "scout_link"),
     );
     let forge = write_doc(dir.path(), "scout_link.scxml", link_with_stage_pool());
+    // `link_with_stage_pool`'s `<sce:stage-pool ref>` names this
+    // document. `Sample::take()` copies into it, so the ref has to
+    // resolve to something the build can see — `link/pool-ref-not-
+    // declared` refuses a link whose pool ref names nothing.
+    let stage_pool = write_doc(
+        dir.path(),
+        "scout_stage_pool.scxml",
+        &buffer_pool_default("scout_stage_pool", 8, 1536),
+    );
 
     let scxml_refs: &[&Path] = &[scxml.as_path()];
-    let forge_refs: &[&Path] = &[forge.as_path()];
+    let forge_refs: &[&Path] = &[stage_pool.as_path(), forge.as_path()];
 
     let outputs = compile_scxml_with_imports(
         scxml_refs,
@@ -147,10 +156,11 @@ fn happy_orchestrator_compiles_multi_doc() {
     )
     .expect("happy multi-doc compile must succeed");
 
-    assert_eq!(outputs.len(), 2, "expected 1 forge + 1 scxml = 2 outputs");
+    assert_eq!(outputs.len(), 3, "expected 2 forge + 1 scxml = 3 outputs");
     // Forge emits first (input order), then SCXML.
-    assert_eq!(outputs[0].0, "scout_link.scxml");
-    assert_eq!(outputs[1].0, "session_fsm.scxml");
+    assert_eq!(outputs[0].0, "scout_stage_pool.scxml");
+    assert_eq!(outputs[1].0, "scout_link.scxml");
+    assert_eq!(outputs[2].0, "session_fsm.scxml");
 }
 
 // ─── 2. on-sample-link-not-declared fires in production ─────────────
@@ -168,9 +178,18 @@ fn on_sample_link_not_declared_fires_in_production() {
         &statechart_with_on_sample("session_fsm", "unknown_link"),
     );
     let forge = write_doc(dir.path(), "scout_link.scxml", link_with_stage_pool());
+    // `link_with_stage_pool`'s `<sce:stage-pool ref>` names this
+    // document. `Sample::take()` copies into it, so the ref has to
+    // resolve to something the build can see — `link/pool-ref-not-
+    // declared` refuses a link whose pool ref names nothing.
+    let stage_pool = write_doc(
+        dir.path(),
+        "scout_stage_pool.scxml",
+        &buffer_pool_default("scout_stage_pool", 8, 1536),
+    );
 
     let scxml_refs: &[&Path] = &[scxml.as_path()];
-    let forge_refs: &[&Path] = &[forge.as_path()];
+    let forge_refs: &[&Path] = &[stage_pool.as_path(), forge.as_path()];
 
     let err = match compile_scxml_with_imports(
         scxml_refs,
@@ -339,6 +358,15 @@ fn worker_doc_records_into_cross_doc_registry() {
     // Worker fixture needs sibling link doc for its `<sce:import>`
     // to resolve at parse time.
     let link_sib = write_doc(dir.path(), "scout_link.scxml", link_with_stage_pool());
+    // `link_with_stage_pool`'s `<sce:stage-pool ref>` names this
+    // document. `Sample::take()` copies into it, so the ref has to
+    // resolve to something the build can see — `link/pool-ref-not-
+    // declared` refuses a link whose pool ref names nothing.
+    let stage_pool = write_doc(
+        dir.path(),
+        "scout_stage_pool.scxml",
+        &buffer_pool_default("scout_stage_pool", 8, 1536),
+    );
     let worker = write_doc(dir.path(), "rx_loop.scxml", &worker_minimal("rx_loop"));
     let main = write_doc(
         dir.path(),
@@ -350,7 +378,7 @@ fn worker_doc_records_into_cross_doc_registry() {
     // Order matters: the link sibling registers first so the worker
     // doc's `<sce:import as="scout_link" kind="link"/>` resolves to a
     // known-registered link when the worker parse runs.
-    let forge_refs: &[&Path] = &[link_sib.as_path(), worker.as_path()];
+    let forge_refs: &[&Path] = &[stage_pool.as_path(), link_sib.as_path(), worker.as_path()];
 
     let err = match compile_scxml_with_imports(
         scxml_refs,
@@ -773,4 +801,300 @@ fn c13_orchestrator_happy_path_emits_outputs() {
     )
     .expect("well-formed inputs ⇒ orchestrator succeeds");
     assert!(!outputs.is_empty(), "happy path must emit outputs");
+}
+
+// ── Link pool-ref cross-doc resolution (RFC §synth-5-C / §synth-5-E) ──
+//
+// `<sce:rx-pool ref>` / `<sce:tx-pool ref>` / `<sce:stage-pool ref>`
+// name a `sce:kind="buffer-pool"` document. Every downstream consumer
+// of those refs resolves them by *join*, and every one of those joins
+// is written to skip on a miss: `resolve_link_rx_pool_slot_count`
+// returns `None`, `validate_links_burst_invariants` and
+// `validate_reassembly_cross_doc` `continue`, and
+// `validate_link_pool_framer_resolution` falls through its `None` arm.
+// A skip is the right behaviour for a *partial topology* — the pool
+// genuinely is not part of this build — but it is the wrong behaviour
+// for a *typo*, which is indistinguishable from a partial topology
+// unless somebody checks that the name resolves at all.
+//
+// The tests below pin the difference. The orchestrator owns the closed
+// world (it is handed every document in the build), so it is the layer
+// that can tell the two apart, and it must refuse the typo rather than
+// let it turn the MCU capacity validators off.
+
+/// Forge `<sce:link>` carrying any combination of the three pool refs.
+/// Generalises [`link_with_rx_pool`]; the `Option` arms let one test
+/// body drive the rx / tx / stage axes independently.
+fn link_with_pools(
+    name: &str,
+    rx_pool: Option<&str>,
+    tx_pool: Option<&str>,
+    stage_pool: Option<&str>,
+) -> String {
+    let elem = |tag: &str, r: Option<&str>| match r {
+        Some(v) => format!("  <sce:{tag} ref=\"{v}\"/>\n"),
+        None => String::new(),
+    };
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="{name}" version="1.0">
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+{rx}{tx}{stage}</scxml>"##,
+        rx = elem("rx-pool", rx_pool),
+        tx = elem("tx-pool", tx_pool),
+        stage = elem("stage-pool", stage_pool),
+    )
+}
+
+/// A typo in `<sce:rx-pool ref>` must not silently switch the burst
+/// validator off.
+///
+/// This is the same document set and the same deploy topology as
+/// [`c13_burst_absorption_fires_through_orchestrator`] — 16 slots
+/// against 50k pps, which that test pins as a refusal. The only edit
+/// is one character in the pool ref. If the orchestrator accepts the
+/// edited set, then a typo is a way to *pass* a deploy that the spec
+/// says must fail, which is strictly worse than the typo being
+/// reported.
+#[test]
+fn rx_pool_ref_typo_does_not_silently_disable_the_burst_validator() {
+    use sce_build::mesh::deploy::parse_deploy_str;
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    let pool = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 16, 1536),
+    );
+    // `rx_data_poool` — one keystroke away from the pool above.
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_rx_pool("udp_data", "rx_data_poool"),
+    );
+
+    let deploy = parse_deploy_str(&deploy_with_links(
+        r#"          udp_data:
+            bind: "0.0.0.0:7447"
+            driver: lwip_udp
+            burst_pps: 50000
+            rx_dispatch: isr_to_pool
+"#,
+    ))
+    .expect("deploy parses");
+
+    let err = match compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[pool.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        Some(&deploy),
+    ) {
+        Ok(_) => panic!(
+            "a typo in <sce:rx-pool ref> made a refused deploy topology pass: \
+             the same set with the ref spelled correctly fires \
+             deploy/link-burst-absorption-insufficient"
+        ),
+        Err(e) => e,
+    };
+
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::LinkPoolRefNotDeclared {
+                link_name,
+                pool_side,
+                pool_ref,
+                candidates,
+            } => {
+                assert_eq!(link_name, "udp_data");
+                assert_eq!(pool_side, "rx");
+                assert_eq!(pool_ref, "rx_data_poool");
+                assert_eq!(
+                    candidates,
+                    vec!["rx_data_pool".to_string()],
+                    "the repair candidates must be the build's declared buffer-pool names"
+                );
+            }
+            other => panic!("expected ValidationError::LinkPoolRefNotDeclared, got: {other:?}"),
+        },
+        other => panic!("expected ForgeError::Validation, got: {other:?}"),
+    }
+}
+
+/// One pool-ref site: the side label the diagnostic is expected to
+/// report, paired with a builder that puts a ref on that side alone.
+type PoolRefSite = (&'static str, fn(&str) -> String);
+
+/// Each of the three pool-ref sites is joined against the build.
+///
+/// Driven per site rather than through one representative ref: a
+/// validator that only walks `rx_pool` passes a single-ref test while
+/// leaving two sites unguarded, and "the gate is green" would not
+/// distinguish the two.
+#[test]
+fn every_pool_ref_site_is_joined_against_the_build() {
+    let sites: [PoolRefSite; 3] = [
+        ("rx", |r| link_with_pools("udp_data", Some(r), None, None)),
+        ("tx", |r| link_with_pools("udp_data", None, Some(r), None)),
+        ("stage", |r| {
+            link_with_pools("udp_data", None, None, Some(r))
+        }),
+    ];
+
+    for (expected_side, build_link) in sites {
+        let dir = tempdir().expect("tempdir");
+        let scxml = write_doc(
+            dir.path(),
+            "session_fsm.scxml",
+            &statechart_minimal("session_fsm"),
+        );
+        let pool = write_doc(
+            dir.path(),
+            "rx_data_pool.scxml",
+            &buffer_pool_default("rx_data_pool", 2000, 1536),
+        );
+        let link = write_doc(dir.path(), "udp_data.scxml", &build_link("nosuch_pool"));
+
+        let err = match compile_scxml_with_imports(
+            &[scxml.as_path()],
+            &[pool.as_path(), link.as_path()],
+            &template_dir(),
+            Language::Rust,
+            &default_options(),
+            None,
+        ) {
+            Ok(_) => panic!("dangling <sce:{expected_side}-pool ref> must be refused"),
+            Err(e) => e,
+        };
+
+        match err.error {
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::LinkPoolRefNotDeclared {
+                    pool_side,
+                    pool_ref,
+                    ..
+                } => {
+                    assert_eq!(
+                        pool_side, expected_side,
+                        "the diagnostic must name the side that actually dangles"
+                    );
+                    assert_eq!(pool_ref, "nosuch_pool");
+                }
+                other => {
+                    panic!("[{expected_side}] expected LinkPoolRefNotDeclared, got: {other:?}")
+                }
+            },
+            other => panic!("[{expected_side}] expected ForgeError::Validation, got: {other:?}"),
+        }
+    }
+}
+
+/// The control for the two tests above: with every ref spelled
+/// correctly the same shapes compile. Without this, a validator that
+/// refused *every* link would satisfy both refusal tests.
+#[test]
+fn resolving_pool_refs_on_all_three_sites_still_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    let rx = write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 2000, 1536),
+    );
+    let tx = write_doc(
+        dir.path(),
+        "tx_data_pool.scxml",
+        &buffer_pool_default("tx_data_pool", 2000, 1536),
+    );
+    let stage = write_doc(
+        dir.path(),
+        "stage_data_pool.scxml",
+        &buffer_pool_default("stage_data_pool", 2000, 1536),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        &link_with_pools(
+            "udp_data",
+            Some("rx_data_pool"),
+            Some("tx_data_pool"),
+            Some("stage_data_pool"),
+        ),
+    );
+
+    let outputs = compile_scxml_with_imports(
+        &[scxml.as_path()],
+        &[rx.as_path(), tx.as_path(), stage.as_path(), link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    )
+    .expect("every pool ref resolves ⇒ orchestrator succeeds");
+    assert!(!outputs.is_empty(), "control must emit outputs");
+}
+
+/// A pool ref also resolves through the link's own `<sce:import>`,
+/// with the pool document absent from the build's input list.
+///
+/// Both routes are genuine: the import form is how a link document
+/// names a pool the caller did not hand to the orchestrator, and
+/// `validate_link_pool_framer_resolution` already follows it to
+/// compare slot sizes. Pinning it separately because a resolution
+/// check written against the input list alone would reject this shape,
+/// and the input-list tests above would not notice.
+#[test]
+fn a_pool_ref_resolves_through_the_links_own_import() {
+    let dir = tempdir().expect("tempdir");
+    let scxml = write_doc(
+        dir.path(),
+        "session_fsm.scxml",
+        &statechart_minimal("session_fsm"),
+    );
+    // Written next to the link so the `src` resolves at parse time,
+    // but deliberately NOT passed as a build input below.
+    write_doc(
+        dir.path(),
+        "rx_data_pool.scxml",
+        &buffer_pool_default("rx_data_pool", 2000, 1536),
+    );
+    let link = write_doc(
+        dir.path(),
+        "udp_data.scxml",
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="link" name="udp_data" version="1.0">
+  <sce:import as="rx_data_pool" src="rx_data_pool.scxml" kind="buffer-pool"/>
+  <sce:link-class>udp</sce:link-class>
+  <sce:framer ref="scout_frame_codec"/>
+  <sce:backpressure>drop</sce:backpressure>
+  <sce:rx-pool ref="rx_data_pool"/>
+</scxml>"##,
+    );
+
+    let outputs = compile_scxml_with_imports(
+        &[scxml.as_path()],
+        // Link only — the pool reaches the build through the import.
+        &[link.as_path()],
+        &template_dir(),
+        Language::Rust,
+        &default_options(),
+        None,
+    )
+    .expect("an imported pool is a resolved pool");
+    assert!(!outputs.is_empty(), "import route must still emit outputs");
 }
