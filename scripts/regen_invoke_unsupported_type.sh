@@ -19,7 +19,7 @@
 # No tmp staging of the fixture, no `// From:` sed rewrite, no
 # `--input-root` override: codegen sets `model.scxml_source_path` directly
 # from the canonical input path, so the embedded `// From:` and the
-# §synth-6.2.6 `source-hash` already point at `integration_resources/...`.
+# drift `source-hash` already point at `integration_resources/...`.
 #
 # Usage (from repo root):
 #   scripts/regen_invoke_unsupported_type.sh
