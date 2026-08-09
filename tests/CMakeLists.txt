@@ -7680,6 +7680,219 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     # disjoint across tests, so S5+ additions can run truly in parallel
     # under `ctest -j` without a RESOURCE_LOCK family.
     sce_generate_distributed_w3c_test(417)
+
+    # ── DDS multi-pattern verification ───────────────────────────────
+    # Gated on Cyclone DDS being installed, the same way the zenoh and SOME/IP
+    # fixtures gate on theirs: a developer without the transport gets a tree
+    # that configures rather than a hard failure.
+    #
+    # Inside the mesh guard, not after it. These fixtures read MESH_TEST_DIR
+    # and SCE_MESH_CPP_TEMPLATE and link sce_mesh_common, none of which exist
+    # when SCE_ENABLE_MESH is OFF — which is the default. Registered outside
+    # the guard they still configured cleanly on a machine with Cyclone
+    # installed, and emitted rules whose input path was the empty variable
+    # expanded to `/`, so the failure surfaced only at build time as
+    # `ninja: error: '/brake_dds_multi.scxml' ... missing`.
+    find_package(CycloneDDS QUIET)
+    find_package(CycloneDDS-CXX QUIET)
+    if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
+        # One IDL type for the whole mesh (sce/idl/sce_mesh.idl): an opaque
+        # octet sequence carrying the CBOR MeshEnvelope. Adding an event or a
+        # machine changes no IDL, so this target never goes stale against a
+        # topology — the divergence from OMG DDS-RPC's interface-per-service.
+        idlcxx_generate(TARGET sce_mesh_dds_types
+            FILES "${CMAKE_SOURCE_DIR}/sce/idl/sce_mesh.idl"
+            WARNINGS no-implicit-extensibility)
+
+        set(MESH_DDS_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_multi_generated")
+
+        foreach(_dds_machine brake_dds_multi motor_dds_multi)
+            add_custom_command(
+                OUTPUT "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MULTI_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_machine}.scxml" -l cpp
+                        -o "${MESH_DDS_MULTI_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
+                        --write-deps "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/${_dds_machine}.scxml" "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
+                        "${MESH_TEST_DIR}/brake_dds_multi.scxml" "${MESH_TEST_DIR}/motor_dds_multi.scxml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
+                COMMENT "Mesh dds multi: Generating ${_dds_machine}_sm.h + _transport.h"
+                VERBATIM
+            )
+        endforeach()
+
+        add_executable(mesh_dds_multipattern_test
+            mesh/test_mesh_dds_multipattern.cpp
+            "${MESH_DDS_MULTI_OUTPUT_DIR}/brake_dds_multi_sm.h"
+            "${MESH_DDS_MULTI_OUTPUT_DIR}/motor_dds_multi_sm.h"
+        )
+        target_include_directories(mesh_dds_multipattern_test
+            PRIVATE "${MESH_DDS_MULTI_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        target_link_libraries(mesh_dds_multipattern_test
+            PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+        )
+        target_compile_features(mesh_dds_multipattern_test PRIVATE cxx_std_17)
+        # DDS is the one transport with no compile-only target of its own, so
+        # its emitted shape reaches C++17 through this runtime target.
+        sce_pin_cxx17(mesh_dds_multipattern_test)
+        apply_sce_test_policies(mesh_dds_multipattern_test)
+        add_test(NAME mesh_dds_multipattern COMMAND mesh_dds_multipattern_test)
+        set_tests_properties(mesh_dds_multipattern PROPERTIES
+            TIMEOUT 90
+        )
+
+        # ── DDS server response deadline (SCE Mesh §9.5) ──
+        # The DDS arm of the deadline matrix. Sibling of the SOME/IP and
+        # custom_tcp arms; what it adds is the transport that parks the least
+        # state — only the admitted correlation, because the reply rides the
+        # paired topic rather than the request — so erase-before-publish IS
+        # the one-shot guarantee here and has to be proven, not inferred.
+        set(MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_server_deadline_generated")
+
+        foreach(_dds_sd_machine brake_dds_server_deadline motor_dds_server_deadline)
+            add_custom_command(
+                OUTPUT "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h"
+                       "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml" -l cpp
+                        -o "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
+                        --write-deps "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml"
+                        "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
+                        "${MESH_TEST_DIR}/brake_dds_server_deadline.scxml"
+                        "${MESH_TEST_DIR}/motor_dds_server_deadline.scxml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
+                COMMENT "Mesh dds server deadline: Generating ${_dds_sd_machine}_sm.h + _transport.h"
+                VERBATIM
+            )
+        endforeach()
+
+        add_executable(mesh_dds_server_deadline_test
+            mesh/test_mesh_dds_server_deadline.cpp
+            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_sm.h"
+            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_transport.h"
+            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_sm.h"
+            "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_transport.h"
+        )
+        target_include_directories(mesh_dds_server_deadline_test
+            PRIVATE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        target_link_libraries(mesh_dds_server_deadline_test
+            PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+        )
+        target_compile_features(mesh_dds_server_deadline_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_dds_server_deadline_test)
+        add_test(NAME mesh_dds_server_deadline_verification COMMAND mesh_dds_server_deadline_test)
+        set_tests_properties(mesh_dds_server_deadline_verification PROPERTIES
+            TIMEOUT 90
+        )
+
+        # ── DDS machine-lifetime subscription (SCE Mesh §13) ──
+        # The DDS arm of the machine-lifetime axis, sibling of
+        # mesh_tcp_machine_lifetime_subscribe_runtime. What it adds over the
+        # custom_tcp arm is the teardown half: on DDS a subscription is a
+        # notification reader the router destroys while the participant stays
+        # up, so a publish issued after `shutdown()` is still a real publish
+        # and whether it arrives is a fact about the reader. A control
+        # subscriber that is never shut down keeps the negative attributable.
+        set(MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_machine_lifetime_generated")
+
+        foreach(_dds_mls_machine brake_dds_machine_lifetime_subscribe motor_dds_machine_lifetime_subscribe)
+            add_custom_command(
+                OUTPUT "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h"
+                       "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_transport.h"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
+                COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml" -l cpp
+                        -o "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
+                        --deploy "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
+                        --write-deps "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
+                DEPENDS "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml"
+                        "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
+                        "${MESH_TEST_DIR}/brake_dds_machine_lifetime_subscribe.scxml"
+                        "${MESH_TEST_DIR}/motor_dds_machine_lifetime_subscribe.scxml"
+                        "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+                DEPFILE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
+                COMMENT "Mesh dds machine-lifetime: Generating ${_dds_mls_machine}_sm.h + _transport.h"
+                VERBATIM
+            )
+        endforeach()
+
+        add_executable(mesh_dds_machine_lifetime_subscribe_test
+            mesh/test_mesh_dds_machine_lifetime_subscribe.cpp
+            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_sm.h"
+            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_transport.h"
+            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_sm.h"
+            "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_transport.h"
+        )
+        target_include_directories(mesh_dds_machine_lifetime_subscribe_test
+            PRIVATE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        target_link_libraries(mesh_dds_machine_lifetime_subscribe_test
+            PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+        )
+        target_compile_features(mesh_dds_machine_lifetime_subscribe_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_dds_machine_lifetime_subscribe_test)
+        add_test(NAME mesh_dds_machine_lifetime_subscribe_runtime
+                 COMMAND mesh_dds_machine_lifetime_subscribe_test)
+        set_tests_properties(mesh_dds_machine_lifetime_subscribe_runtime PROPERTIES
+            TIMEOUT 90
+        )
+
+        # ── DDS bounded pool dispatch (SCE Mesh §14.4) ──
+        # The runtime half of the DDS pool arm. The §14.4 compile fixture
+        # (deploy_pool.yaml) proves the three carriers render together; this
+        # one proves the runtime `<param>` value selects WHICH declared
+        # member endpoint a send lands on, and that a value outside the
+        # declared set is refused rather than dispatched through an endpoint
+        # that was never built.
+        #
+        # The observers are raw `Dds::Server`s rather than generated routers
+        # because a generated router binds one topic and the claim is about
+        # telling two apart.
+        set(MESH_DDS_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_pool_generated")
+
+        add_custom_command(
+            OUTPUT "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
+                   "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_POOL_OUTPUT_DIR}"
+            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_dds.scxml" -l cpp
+                    -o "${MESH_DDS_POOL_OUTPUT_DIR}"
+                    --deploy "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
+                    --write-deps "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
+            DEPENDS "${MESH_TEST_DIR}/pool_sender_dds.scxml"
+                    "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
+                    "${MESH_TEST_DIR}/sensor_dds_pool.scxml"
+                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
+            DEPFILE "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
+            COMMENT "Mesh dds pool: Generating pool_sender_dds_sm.h + _transport.h"
+            VERBATIM
+        )
+
+        add_executable(mesh_dds_pool_test
+            mesh/test_mesh_dds_pool.cpp
+            "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
+            "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
+        )
+        target_include_directories(mesh_dds_pool_test
+            PRIVATE "${MESH_DDS_POOL_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        target_link_libraries(mesh_dds_pool_test
+            PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
+        )
+        target_compile_features(mesh_dds_pool_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_dds_pool_test)
+        add_test(NAME mesh_dds_pool_runtime COMMAND mesh_dds_pool_test)
+        set_tests_properties(mesh_dds_pool_runtime PROPERTIES
+            TIMEOUT 90
+        )
+    endif()
 endif()
 
 # ============================================================================
@@ -7912,211 +8125,6 @@ endif()
 option(SCE_BUILD_INSTALL_CONSUMER_TEST
     "Add tests/install_tree_consumer smoke test (ctest label install-consumer)"
     OFF)
-
-# ── DDS multi-pattern verification ───────────────────────────────
-# Gated on Cyclone DDS being installed, the same way the zenoh and SOME/IP
-# fixtures gate on theirs: a developer without the transport gets a tree
-# that configures rather than a hard failure.
-find_package(CycloneDDS QUIET)
-find_package(CycloneDDS-CXX QUIET)
-if(CycloneDDS_FOUND AND CycloneDDS-CXX_FOUND)
-    # One IDL type for the whole mesh (sce/idl/sce_mesh.idl): an opaque
-    # octet sequence carrying the CBOR MeshEnvelope. Adding an event or a
-    # machine changes no IDL, so this target never goes stale against a
-    # topology — the divergence from OMG DDS-RPC's interface-per-service.
-    idlcxx_generate(TARGET sce_mesh_dds_types
-        FILES "${CMAKE_SOURCE_DIR}/sce/idl/sce_mesh.idl"
-        WARNINGS no-implicit-extensibility)
-
-    set(MESH_DDS_MULTI_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_multi_generated")
-
-    foreach(_dds_machine brake_dds_multi motor_dds_multi)
-        add_custom_command(
-            OUTPUT "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MULTI_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_machine}.scxml" -l cpp
-                    -o "${MESH_DDS_MULTI_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
-                    --write-deps "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/${_dds_machine}.scxml" "${MESH_TEST_DIR}/deploy_dds_multi.yaml"
-                    "${MESH_TEST_DIR}/brake_dds_multi.scxml" "${MESH_TEST_DIR}/motor_dds_multi.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_DDS_MULTI_OUTPUT_DIR}/${_dds_machine}_sm.h.d"
-            COMMENT "Mesh dds multi: Generating ${_dds_machine}_sm.h + _transport.h"
-            VERBATIM
-        )
-    endforeach()
-
-    add_executable(mesh_dds_multipattern_test
-        mesh/test_mesh_dds_multipattern.cpp
-        "${MESH_DDS_MULTI_OUTPUT_DIR}/brake_dds_multi_sm.h"
-        "${MESH_DDS_MULTI_OUTPUT_DIR}/motor_dds_multi_sm.h"
-    )
-    target_include_directories(mesh_dds_multipattern_test
-        PRIVATE "${MESH_DDS_MULTI_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-    target_link_libraries(mesh_dds_multipattern_test
-        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
-    )
-    target_compile_features(mesh_dds_multipattern_test PRIVATE cxx_std_17)
-    # DDS is the one transport with no compile-only target of its own, so
-    # its emitted shape reaches C++17 through this runtime target.
-    sce_pin_cxx17(mesh_dds_multipattern_test)
-    apply_sce_test_policies(mesh_dds_multipattern_test)
-    add_test(NAME mesh_dds_multipattern COMMAND mesh_dds_multipattern_test)
-    set_tests_properties(mesh_dds_multipattern PROPERTIES
-        TIMEOUT 90
-    )
-
-    # ── DDS server response deadline (SCE Mesh §9.5) ──
-    # The DDS arm of the deadline matrix. Sibling of the SOME/IP and
-    # custom_tcp arms; what it adds is the transport that parks the least
-    # state — only the admitted correlation, because the reply rides the
-    # paired topic rather than the request — so erase-before-publish IS
-    # the one-shot guarantee here and has to be proven, not inferred.
-    set(MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR
-        "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_server_deadline_generated")
-
-    foreach(_dds_sd_machine brake_dds_server_deadline motor_dds_server_deadline)
-        add_custom_command(
-            OUTPUT "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h"
-                   "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml" -l cpp
-                    -o "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
-                    --write-deps "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/${_dds_sd_machine}.scxml"
-                    "${MESH_TEST_DIR}/deploy_dds_server_deadline.yaml"
-                    "${MESH_TEST_DIR}/brake_dds_server_deadline.scxml"
-                    "${MESH_TEST_DIR}/motor_dds_server_deadline.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/${_dds_sd_machine}_sm.h.d"
-            COMMENT "Mesh dds server deadline: Generating ${_dds_sd_machine}_sm.h + _transport.h"
-            VERBATIM
-        )
-    endforeach()
-
-    add_executable(mesh_dds_server_deadline_test
-        mesh/test_mesh_dds_server_deadline.cpp
-        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_sm.h"
-        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/brake_dds_server_deadline_transport.h"
-        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_sm.h"
-        "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}/motor_dds_server_deadline_transport.h"
-    )
-    target_include_directories(mesh_dds_server_deadline_test
-        PRIVATE "${MESH_DDS_SERVER_DEADLINE_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-    target_link_libraries(mesh_dds_server_deadline_test
-        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
-    )
-    target_compile_features(mesh_dds_server_deadline_test PRIVATE cxx_std_17)
-    apply_sce_test_policies(mesh_dds_server_deadline_test)
-    add_test(NAME mesh_dds_server_deadline_verification COMMAND mesh_dds_server_deadline_test)
-    set_tests_properties(mesh_dds_server_deadline_verification PROPERTIES
-        TIMEOUT 90
-    )
-
-    # ── DDS machine-lifetime subscription (SCE Mesh §13) ──
-    # The DDS arm of the machine-lifetime axis, sibling of
-    # mesh_tcp_machine_lifetime_subscribe_runtime. What it adds over the
-    # custom_tcp arm is the teardown half: on DDS a subscription is a
-    # notification reader the router destroys while the participant stays
-    # up, so a publish issued after `shutdown()` is still a real publish
-    # and whether it arrives is a fact about the reader. A control
-    # subscriber that is never shut down keeps the negative attributable.
-    set(MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR
-        "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_machine_lifetime_generated")
-
-    foreach(_dds_mls_machine brake_dds_machine_lifetime_subscribe motor_dds_machine_lifetime_subscribe)
-        add_custom_command(
-            OUTPUT "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h"
-                   "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_transport.h"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
-            COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml" -l cpp
-                    -o "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}"
-                    --deploy "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
-                    --write-deps "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
-            DEPENDS "${MESH_TEST_DIR}/${_dds_mls_machine}.scxml"
-                    "${MESH_TEST_DIR}/deploy_dds_machine_lifetime_subscribe.yaml"
-                    "${MESH_TEST_DIR}/brake_dds_machine_lifetime_subscribe.scxml"
-                    "${MESH_TEST_DIR}/motor_dds_machine_lifetime_subscribe.scxml"
-                    "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-            DEPFILE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/${_dds_mls_machine}_sm.h.d"
-            COMMENT "Mesh dds machine-lifetime: Generating ${_dds_mls_machine}_sm.h + _transport.h"
-            VERBATIM
-        )
-    endforeach()
-
-    add_executable(mesh_dds_machine_lifetime_subscribe_test
-        mesh/test_mesh_dds_machine_lifetime_subscribe.cpp
-        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_sm.h"
-        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/brake_dds_machine_lifetime_subscribe_transport.h"
-        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_sm.h"
-        "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}/motor_dds_machine_lifetime_subscribe_transport.h"
-    )
-    target_include_directories(mesh_dds_machine_lifetime_subscribe_test
-        PRIVATE "${MESH_DDS_MACHINE_LIFETIME_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-    target_link_libraries(mesh_dds_machine_lifetime_subscribe_test
-        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
-    )
-    target_compile_features(mesh_dds_machine_lifetime_subscribe_test PRIVATE cxx_std_17)
-    apply_sce_test_policies(mesh_dds_machine_lifetime_subscribe_test)
-    add_test(NAME mesh_dds_machine_lifetime_subscribe_runtime
-             COMMAND mesh_dds_machine_lifetime_subscribe_test)
-    set_tests_properties(mesh_dds_machine_lifetime_subscribe_runtime PROPERTIES
-        TIMEOUT 90
-    )
-
-    # ── DDS bounded pool dispatch (SCE Mesh §14.4) ──
-    # The runtime half of the DDS pool arm. The §14.4 compile fixture
-    # (deploy_pool.yaml) proves the three carriers render together; this
-    # one proves the runtime `<param>` value selects WHICH declared
-    # member endpoint a send lands on, and that a value outside the
-    # declared set is refused rather than dispatched through an endpoint
-    # that was never built.
-    #
-    # The observers are raw `Dds::Server`s rather than generated routers
-    # because a generated router binds one topic and the claim is about
-    # telling two apart.
-    set(MESH_DDS_POOL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_dds_pool_generated")
-
-    add_custom_command(
-        OUTPUT "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
-               "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${MESH_DDS_POOL_OUTPUT_DIR}"
-        COMMAND "${SCE_CODEGEN}" generate "${MESH_TEST_DIR}/pool_sender_dds.scxml" -l cpp
-                -o "${MESH_DDS_POOL_OUTPUT_DIR}"
-                --deploy "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
-                --write-deps "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
-        DEPENDS "${MESH_TEST_DIR}/pool_sender_dds.scxml"
-                "${MESH_TEST_DIR}/deploy_dds_pool.yaml"
-                "${MESH_TEST_DIR}/sensor_dds_pool.scxml"
-                "${SCE_CODEGEN}" "${SCE_MESH_CPP_TEMPLATE}"
-        DEPFILE "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h.d"
-        COMMENT "Mesh dds pool: Generating pool_sender_dds_sm.h + _transport.h"
-        VERBATIM
-    )
-
-    add_executable(mesh_dds_pool_test
-        mesh/test_mesh_dds_pool.cpp
-        "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_sm.h"
-        "${MESH_DDS_POOL_OUTPUT_DIR}/pool_sender_dds_transport.h"
-    )
-    target_include_directories(mesh_dds_pool_test
-        PRIVATE "${MESH_DDS_POOL_OUTPUT_DIR}" "${MESH_TEST_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-    target_link_libraries(mesh_dds_pool_test
-        PRIVATE sce_mesh_common sce_base sce_mesh_dds_types CycloneDDS-CXX::ddscxx
-    )
-    target_compile_features(mesh_dds_pool_test PRIVATE cxx_std_17)
-    apply_sce_test_policies(mesh_dds_pool_test)
-    add_test(NAME mesh_dds_pool_runtime COMMAND mesh_dds_pool_test)
-    set_tests_properties(mesh_dds_pool_runtime PROPERTIES
-        TIMEOUT 90
-    )
-endif()
 
 if(SCE_BUILD_INSTALL_CONSUMER_TEST)
     add_test(
