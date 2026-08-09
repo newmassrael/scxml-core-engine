@@ -46,6 +46,7 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "gate_registry_contract",
     "hook_ci_parity",
     "roadmap_marker_gate",
+    "sourced_scripts_are_tracked",
     "workflow_trigger_coverage",
 ];
 
