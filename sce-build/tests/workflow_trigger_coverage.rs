@@ -320,3 +320,59 @@ fn the_registry_lists_every_gate_whose_inputs_outgrow_a_filter() {
          that a normal path filter would now cover."
     );
 }
+
+/// Lower bound on the debug-only build steps this gate must observe.
+const MIN_CODEGEN_BUILD_STEPS: usize = 12;
+
+/// A step that builds only the debug binary must first delete the
+/// release one the cache may have restored.
+///
+/// The Cargo cache in these workflows restores all of `target`, while
+/// every `Build sce-codegen` step builds the debug profile alone. A
+/// `target/release/sce-codegen` left by an older cache therefore
+/// survives into a run that never produced it, and the CMake locator
+/// prefers the release path — which is how CI once executed a binary
+/// predating a filter its own templates use and failed with
+/// "unknown filter: unsupported" while the source tree was consistent.
+///
+/// Nothing else can see that: the source is self-consistent, every
+/// local run builds both profiles from the same tree, and the only
+/// evidence is a binary older than the checkout that produced it.
+#[test]
+fn debug_only_codegen_builds_drop_the_stale_release_binary() {
+    const BUILD: &str = "cargo build --bin sce-codegen";
+    const DROP: &str = "rm -f target/release/sce-codegen";
+
+    let mut builds = 0usize;
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (name, text) in workflows() {
+        let joined = text.replace("\\\n", " ");
+        let n_build = joined.matches(BUILD).count();
+        if n_build == 0 {
+            continue;
+        }
+        builds += n_build;
+        let n_drop = joined.matches(DROP).count();
+        if n_drop < n_build {
+            offenders.push(format!(
+                "{name}: {n_build} debug-only build step(s) but only \
+                 {n_drop} drop the stale release binary"
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "a build step that produces only the debug binary must delete \
+         `target/release/sce-codegen` first, or the cache decides which \
+         binary CI runs:\n  {}",
+        offenders.join("\n  "),
+    );
+    assert!(
+        builds >= MIN_CODEGEN_BUILD_STEPS,
+        "found only {builds} sce-codegen build step(s); expected at \
+         least {MIN_CODEGEN_BUILD_STEPS}. A scan that matches nothing \
+         certifies nothing.",
+    );
+}
