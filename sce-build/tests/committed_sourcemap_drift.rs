@@ -327,6 +327,137 @@ fn committed_sourcemaps_match_regeneration() {
     );
 }
 
+/// SCXML line numbers named by the in-source markers in `text`.
+///
+/// Three spellings, one meaning — the backends differ because `#line`
+/// and `//line` are understood by the C and Go toolchains while the
+/// rest can only carry a comment:
+///   `// SCE-MAP: file.scxml:12`  ·  `#line 12 "file.scxml"`  ·
+///   `//line file.scxml:12`
+fn marker_lines(text: &str) -> std::collections::BTreeSet<u32> {
+    let mut out = std::collections::BTreeSet::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.split("SCE-MAP: ").nth(1).or_else(|| {
+            line.strip_prefix("//line ")
+                .filter(|_| !line.contains("SCE-MAP"))
+        }) {
+            // `<file>:<start>[-<end>][ (symbol=…)]` — take the number
+            // right after the last colon of the file:line pair.
+            let head = rest.split_whitespace().next().unwrap_or("");
+            if let Some((_, tail)) = head.rsplit_once(':') {
+                let start = tail.split('-').next().unwrap_or("");
+                if let Ok(n) = start.trim_end_matches('"').parse::<u32>() {
+                    out.insert(n);
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("#line ") {
+            if let Ok(n) = rest.split_whitespace().next().unwrap_or("").parse::<u32>() {
+                out.insert(n);
+            }
+        }
+    }
+    out
+}
+
+/// Lower bound on the directories this gate must judge.
+const MIN_MARKER_DIRS: usize = 100;
+
+/// In-source markers must distinguish the states they sit in.
+///
+/// The markers exist so a listing-only context — a JTAG hard-fault
+/// trace, a panic backtrace — can be walked back to SCXML without the
+/// sidecar. A marker that names the same line in every function cannot
+/// do that, and `validate_emitted_files_have_markers` cannot tell:
+/// it checks that the string `SCE-MAP:` occurs, which a file naming
+/// one location ten times satisfies exactly as well as a file naming
+/// ten.
+///
+/// Measured before this gate existed: every committed tree carried a
+/// single distinct marker value per file, because every call site
+/// passed `model.source_location` — the document root — rather than
+/// the location of the state or transition it sat in.
+///
+/// The sidecar beside the emitted files says how many distinct source
+/// lines that document actually has, which is what makes this a
+/// comparison rather than a magic number.
+#[test]
+fn committed_markers_distinguish_the_states_they_sit_in() {
+    let sidecars = committed_sidecars();
+    assert!(
+        sidecars.len() >= MIN_SIDECARS,
+        "found only {} committed sidecars; expected at least {MIN_SIDECARS}",
+        sidecars.len(),
+    );
+
+    let mut flat: Vec<String> = Vec::new();
+    let mut judged = 0usize;
+
+    for sidecar in &sidecars {
+        let dir = sidecar.parent().expect("sidecar has a parent directory");
+        let map: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(sidecar).expect("read sidecar"))
+                .expect("sidecar is JSON");
+        let want: std::collections::BTreeSet<u64> = map["symbols"]
+            .as_object()
+            .expect("symbols object")
+            .values()
+            .filter_map(|s| s["line_range"][0].as_u64())
+            .collect();
+        // A document whose symbols all start on one line has nothing
+        // for a marker to distinguish.
+        if want.len() < 2 {
+            continue;
+        }
+
+        let mut got = std::collections::BTreeSet::new();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_source = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| matches!(e, "rs" | "kt" | "go" | "py" | "c" | "h" | "cpp"));
+            if !is_source {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                got.extend(marker_lines(&text));
+            }
+        }
+        judged += 1;
+        if got.len() < 2 {
+            flat.push(format!(
+                "{}: {} distinct source lines in the sidecar but {} distinct \
+                 marker value(s) in the emitted files",
+                dir.display(),
+                want.len(),
+                got.len(),
+            ));
+        }
+    }
+
+    assert!(
+        flat.is_empty(),
+        "{} of {judged} emitted directories carry markers that cannot tell \
+         their states apart. The call sites must pass the state's or \
+         transition's own `source_location`, not the document root:\n  {}",
+        flat.len(),
+        flat.iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n  "),
+    );
+    assert!(
+        judged >= MIN_MARKER_DIRS,
+        "judged only {judged} directories; expected at least \
+         {MIN_MARKER_DIRS}. A gate that judges nothing certifies nothing.",
+    );
+}
+
 /// The published sourcemap schema, compiled as draft-07.
 fn sourcemap_schema() -> serde_json::Value {
     serde_json::from_str(include_str!("../../schemas/sce-sourcemap.v1.schema.json"))
