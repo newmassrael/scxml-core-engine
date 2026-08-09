@@ -65,10 +65,13 @@ fn emit_ndjson(diag: &Diagnostic) {
             let meta = Diagnostic::meta_failure(format!("diagnostic serialization failed: {e}"));
             // Second serde pass on a schema-identical value. If this
             // also fails the process is terminally wedged; emit the
-            // shortest legal NDJSON record so downstream parsers at
-            // least advance past the line.
+            // pre-serialized fallback record so downstream parsers at
+            // least advance past the line. It lives on `Diagnostic`
+            // because the tests there hold it to the schema — a
+            // literal spelled here would be the one record no
+            // validator ever sees.
             let line = serde_json::to_string(&meta)
-                .unwrap_or_else(|_| "{\"v\":1,\"id\":\"fnv1a:0\",\"code\":\"io/filesystem\",\"stage\":\"io\",\"message\":\"double serialization failure\"}".to_string());
+                .unwrap_or_else(|_| Diagnostic::TERMINAL_FALLBACK_NDJSON.to_string());
             eprintln!("{line}");
         }
     }

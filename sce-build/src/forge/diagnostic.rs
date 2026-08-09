@@ -3032,6 +3032,27 @@ impl Diagnostic {
             question_kind: None,
         }
     }
+
+    /// Message carried by the terminal-fallback record.
+    pub const TERMINAL_FALLBACK_MESSAGE: &'static str = "double serialization failure";
+
+    /// Last-resort NDJSON line for the case where serializing a
+    /// diagnostic fails twice.
+    ///
+    /// A literal, because at that point serde is the thing that
+    /// failed. It lives here rather than at the emitter so the tests
+    /// that own the wire contract can hold it to that contract: one
+    /// line, valid against `schemas/sce-diagnostic.v1.schema.json`,
+    /// and byte-identical to what [`Diagnostic::meta_failure`] would
+    /// have produced for the same message.
+    ///
+    /// A hand-built literal no test compares against the schema is the
+    /// drift the rest of this module exists to prevent. The earlier
+    /// spelling of this line carried `"id":"fnv1a:0"`, which the
+    /// schema's `^fnv1a:[0-9a-f]{16}$` pattern rejects — a record
+    /// documented as "the shortest legal NDJSON record" that no
+    /// consumer's validator would have accepted.
+    pub const TERMINAL_FALLBACK_NDJSON: &'static str = "{\"v\":1,\"id\":\"fnv1a:2d6d674d44088d0d\",\"code\":\"io/filesystem\",\"stage\":\"io\",\"message\":\"double serialization failure\"}";
 }
 
 impl DiagnosticCode {
@@ -13782,5 +13803,203 @@ mod tests {
              from ALL_QUESTION_KINDS. Update the schema (or the constant) \
              together so the wire contract matches the Rust source of truth.",
         );
+    }
+
+    /// Every golden record, as `(label, json)`.
+    ///
+    /// The four tables carry different error types, so a caller that
+    /// needs the instances must walk them separately. A caller that
+    /// needs only the wire bytes does not, and this collapses the
+    /// four-arm walk to one place.
+    fn all_golden_json() -> Vec<(&'static str, &'static str)> {
+        let mut out: Vec<(&'static str, &'static str)> = Vec::new();
+        for (label, _err, golden) in forge_golden_entries() {
+            out.push((label, golden));
+        }
+        for (label, _err, golden) in mesh_golden_entries() {
+            out.push((label, golden));
+        }
+        for (label, _err, golden) in xsd_golden_entries() {
+            out.push((label, golden));
+        }
+        for (label, _err, golden) in cli_golden_entries() {
+            out.push((label, golden));
+        }
+        out
+    }
+
+    /// The published schema, compiled as draft-07.
+    fn diagnostic_schema() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../../schemas/sce-diagnostic.v1.schema.json"
+        ))
+        .expect("diagnostic schema is valid JSON")
+    }
+
+    /// Schema violations for one record, as message strings.
+    ///
+    /// The instance is bound before the validator runs and the error
+    /// iterator is drained into owned strings inside the match, so the
+    /// borrow it holds ends before the instance drops.
+    fn diagnostic_schema_violations(line: &str) -> Vec<String> {
+        let instance: serde_json::Value =
+            serde_json::from_str(line).expect("diagnostic record is JSON");
+        let schema_value = diagnostic_schema();
+        let validator = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(&schema_value)
+            .expect("diagnostic schema compiles as draft-07");
+        let msgs: Vec<String> = match validator.validate(&instance) {
+            Ok(()) => Vec::new(),
+            Err(errors) => errors.map(|e| e.to_string()).collect(),
+        };
+        msgs
+    }
+
+    /// Every diagnostic this crate can emit validates against the
+    /// published schema.
+    ///
+    /// [`json_schema_enums_match_rust_source_of_truth`] compares two
+    /// lists of strings. That guard cannot see a record carrying a
+    /// field the schema forbids (`additionalProperties: false`), a
+    /// required key the producer stopped emitting, or a type the
+    /// schema narrows — those are properties of an instance, and no
+    /// instance was ever run through a validator.
+    ///
+    /// The coverage is total rather than sampled: each golden is
+    /// `serde_json::to_string` of a real diagnostic, pinned by
+    /// [`diagnostic_goldens_are_byte_stable`], and
+    /// [`every_code_has_a_golden`] proves the tables reach every
+    /// [`DiagnosticCode`] variant. Validating the tables therefore
+    /// certifies every code, not a chosen few.
+    #[test]
+    fn every_golden_record_validates_against_the_wire_schema() {
+        let goldens = all_golden_json();
+        assert!(
+            goldens.len() >= ALL_DIAGNOSTIC_CODES.len(),
+            "collected {} goldens for {} codes; a walk that reaches \
+             fewer records than there are codes certifies nothing",
+            goldens.len(),
+            ALL_DIAGNOSTIC_CODES.len(),
+        );
+
+        let mut violations: Vec<String> = Vec::new();
+        for (label, golden) in &goldens {
+            let msgs = diagnostic_schema_violations(golden);
+            if !msgs.is_empty() {
+                violations.push(format!("\n[{label}] {msgs:?}\n  {golden}"));
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "{} of {} golden records violate \
+             schemas/sce-diagnostic.v1.schema.json:{}",
+            violations.len(),
+            goldens.len(),
+            violations.join(""),
+        );
+    }
+
+    /// Label of the golden every negative case mutates from.
+    const NEGATIVE_BASE_GOLDEN: &str = "forge/xml-parse";
+
+    fn golden_by_label(label: &str) -> serde_json::Value {
+        let (_, json) = all_golden_json()
+            .into_iter()
+            .find(|(l, _)| *l == label)
+            .unwrap_or_else(|| panic!("no golden labelled {label}"));
+        serde_json::from_str(json).expect("golden record is JSON")
+    }
+
+    /// A record the schema must reject, built by changing exactly one
+    /// thing in a real producer record.
+    ///
+    /// The control assertion is what makes the negative mean anything.
+    /// Hand-typed records reject for whichever constraint they trip
+    /// first: an earlier revision of these cases used the placeholder
+    /// `"id":"fnv1a:0"`, which fails the schema's
+    /// `^fnv1a:[0-9a-f]{16}$` pattern, so all three rejected on the id
+    /// and not one of them reached the constraint it was named after.
+    /// Starting from a valid record and asserting its validity first
+    /// pins the rejection to the single mutated field.
+    fn assert_one_change_is_rejected(
+        why: &str,
+        mutate: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+    ) {
+        let mut record = golden_by_label(NEGATIVE_BASE_GOLDEN);
+        let control = record.to_string();
+        assert!(
+            diagnostic_schema_violations(&control).is_empty(),
+            "the control record must be valid before mutation, \
+             otherwise the rejection below proves nothing: {control}",
+        );
+        mutate(record.as_object_mut().expect("record is an object"));
+        let mutated = record.to_string();
+        assert!(
+            !diagnostic_schema_violations(&mutated).is_empty(),
+            "schema must reject this record ({why}): {mutated}",
+        );
+    }
+
+    /// The terminal fallback is the one record that never goes through
+    /// serde, so nothing else in the suite would notice it drifting
+    /// from the shape serde produces.
+    #[test]
+    fn terminal_fallback_line_matches_what_serde_would_emit() {
+        let expected = serde_json::to_string(&Diagnostic::meta_failure(
+            Diagnostic::TERMINAL_FALLBACK_MESSAGE,
+        ))
+        .expect("meta_failure serializes");
+        assert_eq!(
+            Diagnostic::TERMINAL_FALLBACK_NDJSON,
+            expected,
+            "the hand-built fallback line drifted from the shape \
+             Diagnostic serializes to; update the constant",
+        );
+    }
+
+    #[test]
+    fn terminal_fallback_line_validates_against_the_wire_schema() {
+        assert!(
+            !Diagnostic::TERMINAL_FALLBACK_NDJSON.contains('\n'),
+            "the fallback must be one NDJSON line",
+        );
+        let msgs = diagnostic_schema_violations(Diagnostic::TERMINAL_FALLBACK_NDJSON);
+        assert!(
+            msgs.is_empty(),
+            "the terminal fallback record violates the wire schema \
+             {msgs:?}: {}",
+            Diagnostic::TERMINAL_FALLBACK_NDJSON,
+        );
+    }
+
+    #[test]
+    fn diagnostic_schema_rejects_an_unknown_code() {
+        assert_one_change_is_rejected("code outside ALL_DIAGNOSTIC_CODES", |obj| {
+            obj.insert(
+                "code".to_string(),
+                serde_json::Value::String("xml/no-such-code".to_string()),
+            );
+        });
+    }
+
+    #[test]
+    fn diagnostic_schema_rejects_a_missing_required_field() {
+        assert_one_change_is_rejected("message absent", |obj| {
+            obj.remove("message");
+        });
+    }
+
+    /// The schema closes its object. A producer that starts emitting a
+    /// field without declaring it would otherwise ship records every
+    /// external validator rejects while this crate stays green.
+    #[test]
+    fn diagnostic_schema_rejects_an_undeclared_field() {
+        assert_one_change_is_rejected("field not declared in properties", |obj| {
+            obj.insert(
+                "severity".to_string(),
+                serde_json::Value::String("warning".to_string()),
+            );
+        });
     }
 }
