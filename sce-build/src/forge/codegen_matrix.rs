@@ -343,7 +343,14 @@ fn section_name_rejection(name: &str) -> Option<String> {
 
 /// Stable wire-name for a `Language`, matching `Language::from_str`
 /// accept-set so diagnostic `actual` values round-trip cleanly.
-const fn language_wire_name(lang: Language) -> &'static str {
+/// Wire-format name for a backend.
+///
+/// The single spelling table for the six backends: the codegen matrix's
+/// own diagnostics, `lib.rs`'s `codegen/mcu-class-kind-on-non-mcu-language`
+/// family, and the stdout manifest's per-language verdict all read it
+/// here. A second table would be free to disagree — and did, until this
+/// one absorbed it.
+pub const fn language_wire_name(lang: Language) -> &'static str {
     match lang {
         Language::Rust => "rust",
         Language::Cpp => "cpp",
@@ -361,14 +368,9 @@ mod tests {
     /// All 11 baseline kinds × all 6 backends emit at `758aea3f`.
     #[test]
     fn baseline_kinds_emit_on_all_backends() {
-        const ALL_LANGS: &[Language] = &[
-            Language::Rust,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-            Language::C11,
-        ];
+        // `Language::ALL` rather than a local restatement: a seventh
+        // backend must widen this coverage claim automatically.
+        const ALL_LANGS: &[Language] = Language::ALL;
         const BASELINE_KINDS: &[ForgeKind] = &[
             ForgeKind::Statechart,
             ForgeKind::Transform,
@@ -397,14 +399,7 @@ mod tests {
     #[test]
     fn algorithm_kind_ships_on_all_backends() {
         assert_eq!(kind_class(ForgeKind::Algorithm), KindClass::Generic);
-        for lang in [
-            Language::Rust,
-            Language::Cpp,
-            Language::C11,
-            Language::Go,
-            Language::Kotlin,
-            Language::Python,
-        ] {
+        for &lang in Language::ALL {
             assert_eq!(
                 lookup(ForgeKind::Algorithm, lang),
                 EmitOutcome::Emit,
