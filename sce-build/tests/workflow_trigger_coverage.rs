@@ -36,14 +36,14 @@ use std::path::{Path, PathBuf};
 ///
 /// `roadmap_marker_gate` and `codegen_binary_resolution` read every
 /// tracked file; this test and `hook_ci_parity` read every workflow;
-/// `cmake_mesh_guard_scope` reads every tracked CMake file, and a
+/// `cmake_option_guard_scope` reads every tracked CMake file, and a
 /// directory acquiring a `CMakeLists.txt` is exactly the change a glob
 /// list written today would not cover.
 /// Adding an entry is a claim that the target's inputs cannot be
 /// enumerated as globs — and it obliges the unfiltered workflow to run
 /// that target by name.
 const UNFILTERABLE_GATES: &[&str] = &[
-    "cmake_mesh_guard_scope",
+    "cmake_option_guard_scope",
     "codegen_binary_resolution",
     "committed_sourcemap_drift",
     "diagnostic_corpus_schema",
