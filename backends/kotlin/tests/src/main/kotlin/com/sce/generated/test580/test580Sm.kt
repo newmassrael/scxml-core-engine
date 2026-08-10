@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/580/test580.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test580.scxml:5
+// SCE-MAP: test580.scxml:5 :: _machine
 
 package com.sce.generated.test580
 
@@ -314,18 +314,18 @@ class Test580StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test580.scxml:5
+    // SCE-MAP: test580.scxml:5 :: _machine
     override fun onEntry(state: Test580State) {
         when (state) {
             is Test580State.Fail -> {
-                // SCE-MAP: test580.scxml:50
+                // SCE-MAP: test580.scxml:50 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test580State.P1 -> {
-                // SCE-MAP: test580.scxml:10
+                // SCE-MAP: test580.scxml:10 :: p1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p1")) return
 
@@ -337,19 +337,19 @@ class Test580StateMachine(
                 onEntry(Test580State.S1)
             }
             is Test580State.Pass -> {
-                // SCE-MAP: test580.scxml:49
+                // SCE-MAP: test580.scxml:49 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test580State.S0 -> {
-                // SCE-MAP: test580.scxml:16
+                // SCE-MAP: test580.scxml:16 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test580State.S1 -> {
-                // SCE-MAP: test580.scxml:22
+                // SCE-MAP: test580.scxml:22 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
                 if (!suppressChildEntry) {
@@ -370,12 +370,12 @@ class Test580StateMachine(
                 }
             }
             is Test580State.S11 -> {
-                // SCE-MAP: test580.scxml:32
+                // SCE-MAP: test580.scxml:32 :: s11 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
             }
             is Test580State.S12 -> {
-                // SCE-MAP: test580.scxml:37
+                // SCE-MAP: test580.scxml:37 :: s12 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
             }
@@ -383,15 +383,15 @@ class Test580StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test580.scxml:5
+    // SCE-MAP: test580.scxml:5 :: _machine
     override fun onExit(state: Test580State) {
         when (state) {
             is Test580State.Fail -> {
-                // SCE-MAP: test580.scxml:50
+                // SCE-MAP: test580.scxml:50 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test580State.P1 -> {
-                // SCE-MAP: test580.scxml:10
+                // SCE-MAP: test580.scxml:10 :: p1 :: _state_body
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -417,15 +417,15 @@ class Test580StateMachine(
                 activeStateIds.remove("p1")
             }
             is Test580State.Pass -> {
-                // SCE-MAP: test580.scxml:49
+                // SCE-MAP: test580.scxml:49 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test580State.S0 -> {
-                // SCE-MAP: test580.scxml:16
+                // SCE-MAP: test580.scxml:16 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test580State.S1 -> {
-                // SCE-MAP: test580.scxml:22
+                // SCE-MAP: test580.scxml:22 :: s1 :: _state_body
                 // W3C SCXML 3.11: Record shallow history for sh1
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
                 historyStore["sh1"] = preTransitionActiveStates.filter { stateId ->
@@ -438,11 +438,11 @@ class Test580StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test580State.S11 -> {
-                // SCE-MAP: test580.scxml:32
+                // SCE-MAP: test580.scxml:32 :: s11 :: _state_body
                 activeStateIds.remove("s11")
             }
             is Test580State.S12 -> {
-                // SCE-MAP: test580.scxml:37
+                // SCE-MAP: test580.scxml:37 :: s12 :: _state_body
                 activeStateIds.remove("s12")
             }
         }
@@ -450,7 +450,7 @@ class Test580StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test580.scxml:5
+    // SCE-MAP: test580.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test580State,
         event: Test580Event?

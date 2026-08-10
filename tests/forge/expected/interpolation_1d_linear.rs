@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: interpolation_1d_linear:1"]
-// SCE-MAP: interpolation_1d_linear:1
+#![doc = "SCE-MAP: interpolation_1d_linear:1 :: _forge_body"]
+// SCE-MAP: interpolation_1d_linear:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
 // Runtime: sce_forge_runtime

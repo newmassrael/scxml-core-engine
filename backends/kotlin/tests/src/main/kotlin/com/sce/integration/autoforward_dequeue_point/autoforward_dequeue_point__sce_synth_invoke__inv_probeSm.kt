@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_dequeue_point/autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3
+// SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
 
 package com.sce.integration.autoforward_dequeue_point
 
@@ -148,35 +148,35 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3
+    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState) {
         when (state) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11 :: awaiting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("awaiting")) return
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22 :: early :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("early")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17 :: marked :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("marked")) return
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23 :: ordered :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ordered")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("probe")) return
 
@@ -188,27 +188,27 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3
+    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun onExit(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState) {
         when (state) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11 :: awaiting :: _state_body
                 activeStateIds.remove("awaiting")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22 :: early :: _state_body
                 activeStateIds.remove("early")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17 :: marked :: _state_body
                 activeStateIds.remove("marked")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23 :: ordered :: _state_body
                 activeStateIds.remove("ordered")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
                 activeStateIds.remove("probe")
             }
         }
@@ -216,7 +216,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3
+    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDequeuePointSceSynthInvokeInvProbeState,
         event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent?
@@ -224,7 +224,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
         when (source) {
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> when {
             event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13 :: awaiting :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -234,7 +234,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
         }
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> when {
             event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18
+                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18 :: marked :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

@@ -1,0 +1,24 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{#
+   Rust module index (`mod.rs`) for a generated state machine directory.
+
+   It exists because Rust resolves a sibling module through its parent
+   `mod.rs`, unlike C++ (`-I`) or Kotlin (package path). The file is a
+   generated artifact and carries the drift header, so the traceability
+   contract requires it to carry an SCE-MAP marker as well.
+
+   The marker names the machine symbol, at the machine's own source
+   location. It renders through `_macros/sce_map_marker.jinja2` like
+   every other marker in the tree: a hand-written marker string in the
+   emitter is a second copy of the shape AND a second copy of the
+   location, and the copy that lived here drifted — it cited line 1
+   unconditionally, which is the XML declaration, not the `<scxml>`
+   element the `_machine` symbol resolves to.
+#}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map -%}
+// GENERATED -- DO NOT EDIT (sce-codegen)
+{{ sce_map.source_marker(model.source_location, "rust", module_level=true, symbol_artifact=sce_artifact.machine) }}
+
+mod {{ module_stem }}_sm;
+pub use {{ module_stem }}_sm::*;

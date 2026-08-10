@@ -33,7 +33,7 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above `executeTransitionActions`. Kotlin comment-form is the only
        safe surface inside a class body. #}
-    {{ sce_map.source_marker(model.source_location, "kotlin") }}
+    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
     override fun executeTransitionActions(
         source: {{ machine_name }}State,
         event: {{ machine_name }}Event?
@@ -55,13 +55,13 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% if trans.event == '*' %}
             event != null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
             ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
 {%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% else %}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
@@ -72,12 +72,12 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% if trans.cond %}
             event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% else %}
             event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% endif %}
 {% endif %}
@@ -96,12 +96,12 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% if trans.cond %}
             event == null && {{ render_cond(trans) }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% else %}
             event == null -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
-                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% endif %}
 {% for action in trans.actions %}

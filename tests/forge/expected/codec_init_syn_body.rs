@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_init_syn_body:30"]
-// SCE-MAP: codec_init_syn_body:30
+#![doc = "SCE-MAP: codec_init_syn_body:30 :: _forge_body"]
+// SCE-MAP: codec_init_syn_body:30 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

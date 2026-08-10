@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_dequeue_point/autoforward_dequeue_point.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_dequeue_point.scxml:67
+// SCE-MAP: autoforward_dequeue_point.scxml:67 :: _machine
 
 package com.sce.integration.autoforward_dequeue_point
 
@@ -136,25 +136,25 @@ class AutoforwardDequeuePointStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_dequeue_point.scxml:67
+    // SCE-MAP: autoforward_dequeue_point.scxml:67 :: _machine
     override fun onEntry(state: AutoforwardDequeuePointState) {
         when (state) {
             is AutoforwardDequeuePointState.Fail -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:108
+                // SCE-MAP: autoforward_dequeue_point.scxml:108 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDequeuePointState.Pass -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:107
+                // SCE-MAP: autoforward_dequeue_point.scxml:107 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDequeuePointState.Phase -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:70
+                // SCE-MAP: autoforward_dequeue_point.scxml:70 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -172,19 +172,19 @@ class AutoforwardDequeuePointStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_dequeue_point.scxml:67
+    // SCE-MAP: autoforward_dequeue_point.scxml:67 :: _machine
     override fun onExit(state: AutoforwardDequeuePointState) {
         when (state) {
             is AutoforwardDequeuePointState.Fail -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:108
+                // SCE-MAP: autoforward_dequeue_point.scxml:108 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is AutoforwardDequeuePointState.Pass -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:107
+                // SCE-MAP: autoforward_dequeue_point.scxml:107 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is AutoforwardDequeuePointState.Phase -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:70
+                // SCE-MAP: autoforward_dequeue_point.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -196,7 +196,7 @@ class AutoforwardDequeuePointStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_dequeue_point.scxml:67
+    // SCE-MAP: autoforward_dequeue_point.scxml:67 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDequeuePointState,
         event: AutoforwardDequeuePointEvent?
@@ -204,7 +204,7 @@ class AutoforwardDequeuePointStateMachine(
         when (source) {
         is AutoforwardDequeuePointState.Phase -> when {
             event is AutoforwardDequeuePointEvent.Ready -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:97
+                // SCE-MAP: autoforward_dequeue_point.scxml:97 :: phase :: _transition_0
 
 
             send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
@@ -213,7 +213,7 @@ class AutoforwardDequeuePointStateMachine(
             send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
             event is AutoforwardDequeuePointEvent.First -> {
-                // SCE-MAP: autoforward_dequeue_point.scxml:101
+                // SCE-MAP: autoforward_dequeue_point.scxml:101 :: phase :: _transition_1
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child

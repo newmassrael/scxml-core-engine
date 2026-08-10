@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_decl_queryable:46"]
-// SCE-MAP: codec_zenoh_decl_queryable:46
+#![doc = "SCE-MAP: codec_zenoh_decl_queryable:46 :: _forge_body"]
+// SCE-MAP: codec_zenoh_decl_queryable:46 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

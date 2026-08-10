@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke__sce_synth_invoke__inv_short.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3
+// SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
 
 package com.sce.integration.autoforward_done_invoke
 
@@ -87,11 +87,11 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3
+    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("over")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -101,11 +101,11 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3
+    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun onExit(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
                 activeStateIds.remove("over")
             }
         }
@@ -113,7 +113,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3
+    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDoneInvokeSceSynthInvokeInvShortState,
         event: AutoforwardDoneInvokeSceSynthInvokeInvShortEvent?

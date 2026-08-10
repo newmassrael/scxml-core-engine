@@ -3,7 +3,7 @@
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/forge_rust_flag_accessors.jinja2' as flags %}
-{{ sce_map.source_marker(source_location, "rust", module_level=true) }}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: {{ runtime_dep }}

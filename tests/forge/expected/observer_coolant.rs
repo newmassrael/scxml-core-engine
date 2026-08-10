@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: observer_coolant:1"]
-// SCE-MAP: observer_coolant:1
+#![doc = "SCE-MAP: observer_coolant:1 :: _forge_body"]
+// SCE-MAP: observer_coolant:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
 // Runtime: sce_forge_runtime

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/donedata_local_invoke/donedata_local_invoke__sce_synth_invoke__inv_param.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
+// SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
 
 package com.sce.integration.donedata_local_invoke
 
@@ -199,11 +199,11 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
     override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvParamState) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> {
-                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5
+                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5 :: done :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
@@ -238,11 +238,11 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
     override fun onExit(state: DonedataLocalInvokeSceSynthInvokeInvParamState) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvParamState.Done -> {
-                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5
+                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:5 :: done :: _state_body
                 activeStateIds.remove("done")
             }
         }
@@ -250,7 +250,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: DonedataLocalInvokeSceSynthInvokeInvParamState,
         event: DonedataLocalInvokeSceSynthInvokeInvParamEvent?

@@ -48,6 +48,40 @@ pub const C99_EXTERNAL_IDENTIFIER_LIMIT: usize = 31;
 /// unambiguously.
 const DELIM: &str = "__";
 
+/// Artifact label for the document-root symbol. Underscore-prefixed so
+/// it can never collide with an author-supplied artifact name.
+///
+/// The four `ARTIFACT_*` constants below are the whole artifact
+/// vocabulary. They are `pub` because the SCE-MAP marker emit sites
+/// name the same artifact the sourcemap keys off — a template that
+/// spelled `"_state_body"` as a literal would be a second, silently
+/// driftable copy of this vocabulary
+/// [[feedback-declared-coverage-is-not-coverage]].
+pub const ARTIFACT_MACHINE: &str = "_machine";
+
+/// Artifact label for a state's body (its entry/exit dispatch arm).
+pub const ARTIFACT_STATE_BODY: &str = "_state_body";
+
+/// Artifact label for a forge document's per-kind body function.
+pub const ARTIFACT_FORGE_BODY: &str = "_forge_body";
+
+/// Prefix for per-transition artifact labels; see [`transition_artifact`].
+pub const ARTIFACT_TRANSITION_PREFIX: &str = "_transition_";
+
+/// Artifact label for the `idx`-th transition of a state, where `idx`
+/// indexes the state's own `transitions` list. The index is per-state,
+/// never machine-wide — the owning state path is the other half of the
+/// identity.
+pub fn transition_artifact(idx: usize) -> String {
+    format!("{ARTIFACT_TRANSITION_PREFIX}{idx}")
+}
+
+/// Artifact label for the `action_idx`-th action of the `block_idx`-th
+/// `<onentry>` / `<onexit>` block. `kind` is `_on_entry` or `_on_exit`.
+fn action_artifact(kind: &str, block_idx: usize, action_idx: usize) -> String {
+    format!("{kind}_{block_idx}_{action_idx}")
+}
+
 /// Escape sequence for a literal `__` inside a segment. Never produced
 /// by a conformant SCXML id (id grammar forbids consecutive
 /// underscores in XML NCName, but author content may), so the
@@ -197,7 +231,7 @@ pub fn build_symbol_table(
     //    reserved tag so it can never collide with an author-supplied
     //    artifact name like "on_entry" or "on_exit").
     if let Some(ref loc) = model.source_location {
-        push_entry(&mut table, &machine_name, "", "_machine", loc, None)?;
+        push_entry(&mut table, &machine_name, "", ARTIFACT_MACHINE, loc, None)?;
     }
 
     // 2. Per-state walk — emits a SymbolEntry for the state's body
@@ -214,7 +248,7 @@ pub fn build_symbol_table(
     for doc in forge_docs {
         if let Some(loc) = forge_doc_source_location(doc) {
             let name = forge_doc_name(doc);
-            push_entry(&mut table, name, "", "_forge_body", loc, None)?;
+            push_entry(&mut table, name, "", ARTIFACT_FORGE_BODY, loc, None)?;
         }
     }
 
@@ -266,12 +300,12 @@ fn walk_state(
     state: &State,
 ) -> Result<(), Box<Collision>> {
     if let Some(ref loc) = state.source_location {
-        push_entry(table, machine, state_id, "_state_body", loc, None)?;
+        push_entry(table, machine, state_id, ARTIFACT_STATE_BODY, loc, None)?;
     }
 
     for (idx, trans) in state.transitions.iter().enumerate() {
         if let Some(ref loc) = trans.source_location {
-            let artifact = format!("_transition_{}", idx);
+            let artifact = transition_artifact(idx);
             push_entry(table, machine, state_id, &artifact, loc, Some(&trans.event))?;
         }
     }
@@ -299,11 +333,42 @@ fn walk_action_block(
 ) -> Result<(), Box<Collision>> {
     for (action_idx, action) in actions.iter().enumerate() {
         if let Some(ref loc) = action.source_location {
-            let artifact = format!("{}_{}_{}", kind, block_idx, action_idx);
+            let artifact = action_artifact(kind, block_idx, action_idx);
             push_entry(table, machine, state_id, &artifact, loc, None)?;
         }
     }
     Ok(())
+}
+
+/// Stamp every transition with the `(state_path, artifact)` identity
+/// [`build_symbol_table`] assigns it, so the SCE-MAP marker emit sites
+/// carry the symbol rather than re-deriving it from the render site.
+///
+/// Re-derivation at the render site is not merely duplication, it is
+/// wrong: the Kotlin backend renders a state's *effective* transitions
+/// (its own plus every ancestor's, per
+/// [`crate::kotlin::compute_effective_transitions`]), so the arm a
+/// transition renders under is frequently not the state that owns it.
+/// A marker built from the arm would cite a symbol belonging to a
+/// different transition, or none at all. Riding the identity home on
+/// the transition makes that unrepresentable — the value survives the
+/// `serde_json` round trip `compute_effective_transitions` performs.
+///
+/// States need no stamp: `_state_body` is the constant this module
+/// exports as [`ARTIFACT_STATE_BODY`], and entry/exit dispatch arms are
+/// never inherited, so the owning state id is always the arm's own.
+///
+/// Called once per generate pass on the language-lowered clone. The
+/// parsed model stays unstamped, which is why the fields skip
+/// serialization when empty: the `--emit-ast` export is the
+/// language-agnostic IR and gains no codegen-derived field.
+pub fn stamp_symbol_attribution(model: &mut SCXMLModel) {
+    for (state_id, state) in model.states.iter_mut() {
+        for (idx, trans) in state.transitions.iter_mut().enumerate() {
+            trans.symbol_state_path = state_id.clone();
+            trans.symbol_artifact = transition_artifact(idx);
+        }
+    }
 }
 
 /// Read the name of a `ForgeDocument` variant. Exhaustive match so a

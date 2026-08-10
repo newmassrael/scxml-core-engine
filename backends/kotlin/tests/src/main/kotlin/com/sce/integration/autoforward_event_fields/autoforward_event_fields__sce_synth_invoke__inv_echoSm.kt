@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_event_fields/autoforward_event_fields__sce_synth_invoke__inv_echo.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3
+// SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
 
 package com.sce.integration.autoforward_event_fields
 
@@ -223,11 +223,11 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3
+    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("emit")) return
 
@@ -244,7 +244,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
             }
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("reported")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -254,15 +254,15 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3
+    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
     override fun onExit(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
                 activeStateIds.remove("emit")
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
                 activeStateIds.remove("reported")
             }
         }
@@ -270,7 +270,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3
+    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardEventFieldsSceSynthInvokeInvEchoState,
         event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?
@@ -278,14 +278,14 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
         when (source) {
         is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> when {
             event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard("_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''") -> {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11 :: emit :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("fieldsPreserved", "")
             }
             event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18
+                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18 :: emit :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

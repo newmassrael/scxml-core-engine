@@ -54,7 +54,7 @@
    body remaps subsequent line numbers for the function only; the
    next per-function marker (executeExitActions below) resets the
    directive's effect for the rest of the translation unit. #}
-    {{ sce_map.source_marker(model.source_location, "cpp") }}
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
 {% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
@@ -83,7 +83,7 @@
 {% for state_id, state in model.states | dictsort %}
         case State::{{ state_id | capitalize }}:{{ annot.annotation_comment(state, "cpp", "                ") }}
 {% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "cpp", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(state.source_location, "cpp", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | scxml_remote or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | unsupported or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
@@ -603,7 +603,7 @@
 {% endif %}
     }
 
-    {{ sce_map.source_marker(model.source_location, "cpp") }}
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
 {# W3C SCXML 3.11: history recording mutates the non-static history_{id}   #}
 {# members declared in the Policy class, so executeExitActions must be an  #}
@@ -702,7 +702,7 @@
 {% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote or state.invokes | unsupported %}
         case State::{{ state_id | capitalize }}:{{ annot.annotation_comment(state, "cpp", "                ") }}
 {% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "cpp", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(state.source_location, "cpp", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
 {% if state.on_exit_blocks or state.invokes | scxml or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | scxml_remote or state.invokes | unsupported %}

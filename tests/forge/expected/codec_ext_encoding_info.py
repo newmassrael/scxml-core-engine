@@ -1,4 +1,4 @@
-# SCE-MAP: codec_ext_encoding_info:44
+# SCE-MAP: codec_ext_encoding_info:44 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none

@@ -1737,6 +1737,9 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         })?;
 
     let mut env = minijinja::Environment::new();
+    // The transport header carries a module-level SCE-MAP marker, so this
+    // env needs the same artifact vocabulary the statechart envs publish.
+    crate::generator::register_symbol_artifact_global(&mut env);
     env.add_template_owned(macro_template_name.to_string(), macro_template_content)
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
     env.add_template("mesh_transport.h.jinja2", &template_content)

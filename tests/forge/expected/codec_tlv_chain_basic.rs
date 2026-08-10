@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_tlv_chain_basic:16"]
-// SCE-MAP: codec_tlv_chain_basic:16
+#![doc = "SCE-MAP: codec_tlv_chain_basic:16 :: _forge_body"]
+// SCE-MAP: codec_tlv_chain_basic:16 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

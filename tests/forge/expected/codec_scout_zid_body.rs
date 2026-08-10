@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_scout_zid_body:35"]
-// SCE-MAP: codec_scout_zid_body:35
+#![doc = "SCE-MAP: codec_scout_zid_body:35 :: _forge_body"]
+// SCE-MAP: codec_scout_zid_body:35 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

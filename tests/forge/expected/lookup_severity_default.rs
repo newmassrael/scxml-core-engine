@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: lookup_severity_default:9"]
-// SCE-MAP: lookup_severity_default:9
+#![doc = "SCE-MAP: lookup_severity_default:9 :: _forge_body"]
+// SCE-MAP: lookup_severity_default:9 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
 // Runtime: sce_forge_runtime

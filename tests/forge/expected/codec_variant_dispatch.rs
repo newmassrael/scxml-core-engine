@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_variant_dispatch:8"]
-// SCE-MAP: codec_variant_dispatch:8
+#![doc = "SCE-MAP: codec_variant_dispatch:8 :: _forge_body"]
+// SCE-MAP: codec_variant_dispatch:8 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

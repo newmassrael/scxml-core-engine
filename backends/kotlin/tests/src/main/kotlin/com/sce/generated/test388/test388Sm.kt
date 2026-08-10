@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/388/test388.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test388.scxml:9
+// SCE-MAP: test388.scxml:9 :: _machine
 
 package com.sce.generated.test388
 
@@ -367,25 +367,25 @@ class Test388StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test388.scxml:9
+    // SCE-MAP: test388.scxml:9 :: _machine
     override fun onEntry(state: Test388State) {
         when (state) {
             is Test388State.Fail -> {
-                // SCE-MAP: test388.scxml:78
+                // SCE-MAP: test388.scxml:78 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test388State.Pass -> {
-                // SCE-MAP: test388.scxml:77
+                // SCE-MAP: test388.scxml:77 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test388State.S0 -> {
-                // SCE-MAP: test388.scxml:14
+                // SCE-MAP: test388.scxml:14 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -393,50 +393,50 @@ class Test388StateMachine(
             executeAssign("Var1", "Var1 + 1")
             }
             is Test388State.S01 -> {
-                // SCE-MAP: test388.scxml:41
+                // SCE-MAP: test388.scxml:41 :: s01 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test388State.S011 -> {
-                // SCE-MAP: test388.scxml:42
+                // SCE-MAP: test388.scxml:42 :: s011 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
 
             raiseInternal(Test388Event.Entering.S011)
             }
             is Test388State.S012 -> {
-                // SCE-MAP: test388.scxml:47
+                // SCE-MAP: test388.scxml:47 :: s012 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s012")) return
 
             raiseInternal(Test388Event.Entering.S012)
             }
             is Test388State.S02 -> {
-                // SCE-MAP: test388.scxml:53
+                // SCE-MAP: test388.scxml:53 :: s02 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
             is Test388State.S021 -> {
-                // SCE-MAP: test388.scxml:54
+                // SCE-MAP: test388.scxml:54 :: s021 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s021")) return
 
             raiseInternal(Test388Event.Entering.S021)
             }
             is Test388State.S022 -> {
-                // SCE-MAP: test388.scxml:59
+                // SCE-MAP: test388.scxml:59 :: s022 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s022")) return
 
             raiseInternal(Test388Event.Entering.S022)
             }
             is Test388State.S1 -> {
-                // SCE-MAP: test388.scxml:69
+                // SCE-MAP: test388.scxml:69 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             is Test388State.S2 -> {
-                // SCE-MAP: test388.scxml:73
+                // SCE-MAP: test388.scxml:73 :: s2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
@@ -444,19 +444,19 @@ class Test388StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test388.scxml:9
+    // SCE-MAP: test388.scxml:9 :: _machine
     override fun onExit(state: Test388State) {
         when (state) {
             is Test388State.Fail -> {
-                // SCE-MAP: test388.scxml:78
+                // SCE-MAP: test388.scxml:78 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test388State.Pass -> {
-                // SCE-MAP: test388.scxml:77
+                // SCE-MAP: test388.scxml:77 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test388State.S0 -> {
-                // SCE-MAP: test388.scxml:14
+                // SCE-MAP: test388.scxml:14 :: s0 :: _state_body
                 // W3C SCXML 3.11: Record deep history for s0HistDeep
                 historyStore["s0HistDeep"] = preTransitionActiveStates.filter { stateId ->
                     val st = resolveState(stateId) ?: return@filter false
@@ -471,35 +471,35 @@ class Test388StateMachine(
                 activeStateIds.remove("s0")
             }
             is Test388State.S01 -> {
-                // SCE-MAP: test388.scxml:41
+                // SCE-MAP: test388.scxml:41 :: s01 :: _state_body
                 activeStateIds.remove("s01")
             }
             is Test388State.S011 -> {
-                // SCE-MAP: test388.scxml:42
+                // SCE-MAP: test388.scxml:42 :: s011 :: _state_body
                 activeStateIds.remove("s011")
             }
             is Test388State.S012 -> {
-                // SCE-MAP: test388.scxml:47
+                // SCE-MAP: test388.scxml:47 :: s012 :: _state_body
                 activeStateIds.remove("s012")
             }
             is Test388State.S02 -> {
-                // SCE-MAP: test388.scxml:53
+                // SCE-MAP: test388.scxml:53 :: s02 :: _state_body
                 activeStateIds.remove("s02")
             }
             is Test388State.S021 -> {
-                // SCE-MAP: test388.scxml:54
+                // SCE-MAP: test388.scxml:54 :: s021 :: _state_body
                 activeStateIds.remove("s021")
             }
             is Test388State.S022 -> {
-                // SCE-MAP: test388.scxml:59
+                // SCE-MAP: test388.scxml:59 :: s022 :: _state_body
                 activeStateIds.remove("s022")
             }
             is Test388State.S1 -> {
-                // SCE-MAP: test388.scxml:69
+                // SCE-MAP: test388.scxml:69 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
             is Test388State.S2 -> {
-                // SCE-MAP: test388.scxml:73
+                // SCE-MAP: test388.scxml:73 :: s2 :: _state_body
                 activeStateIds.remove("s2")
             }
         }
@@ -507,7 +507,7 @@ class Test388StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test388.scxml:9
+    // SCE-MAP: test388.scxml:9 :: _machine
     override fun executeTransitionActions(
         source: Test388State,
         event: Test388Event?
@@ -515,7 +515,7 @@ class Test388StateMachine(
         when (source) {
         is Test388State.S0 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
@@ -524,7 +524,7 @@ class Test388StateMachine(
         }
         is Test388State.S01 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
@@ -533,7 +533,7 @@ class Test388StateMachine(
         }
         is Test388State.S011 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
@@ -542,7 +542,7 @@ class Test388StateMachine(
         }
         is Test388State.S012 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
@@ -551,7 +551,7 @@ class Test388StateMachine(
         }
         is Test388State.S02 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
@@ -560,7 +560,7 @@ class Test388StateMachine(
         }
         is Test388State.S021 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)
@@ -569,7 +569,7 @@ class Test388StateMachine(
         }
         is Test388State.S022 -> when {
             event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> {
-                // SCE-MAP: test388.scxml:20
+                // SCE-MAP: test388.scxml:20 :: s0 :: _transition_0
 
 
             scheduleSend("__send_0", 2000L, Test388Event.Timeout)

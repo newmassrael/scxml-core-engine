@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/405/test405.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test405.scxml:6
+// SCE-MAP: test405.scxml:6 :: _machine
 
 package com.sce.generated.test405
 
@@ -321,25 +321,25 @@ class Test405StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test405.scxml:6
+    // SCE-MAP: test405.scxml:6 :: _machine
     override fun onEntry(state: Test405State) {
         when (state) {
             is Test405State.Fail -> {
-                // SCE-MAP: test405.scxml:69
+                // SCE-MAP: test405.scxml:69 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test405State.Pass -> {
-                // SCE-MAP: test405.scxml:68
+                // SCE-MAP: test405.scxml:68 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test405State.S0 -> {
-                // SCE-MAP: test405.scxml:8
+                // SCE-MAP: test405.scxml:8 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -351,7 +351,7 @@ class Test405StateMachine(
                 }
             }
             is Test405State.S01p -> {
-                // SCE-MAP: test405.scxml:14
+                // SCE-MAP: test405.scxml:14 :: s01p :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -360,7 +360,7 @@ class Test405StateMachine(
                 onEntry(Test405State.S01p2)
             }
             is Test405State.S01p1 -> {
-                // SCE-MAP: test405.scxml:18
+                // SCE-MAP: test405.scxml:18 :: s01p1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p1")) return
                 if (!suppressChildEntry) {
@@ -369,17 +369,17 @@ class Test405StateMachine(
                 }
             }
             is Test405State.S01p11 -> {
-                // SCE-MAP: test405.scxml:19
+                // SCE-MAP: test405.scxml:19 :: s01p11 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p11")) return
             }
             is Test405State.S01p12 -> {
-                // SCE-MAP: test405.scxml:29
+                // SCE-MAP: test405.scxml:29 :: s01p12 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p12")) return
             }
             is Test405State.S01p2 -> {
-                // SCE-MAP: test405.scxml:32
+                // SCE-MAP: test405.scxml:32 :: s01p2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p2")) return
                 if (!suppressChildEntry) {
@@ -388,27 +388,27 @@ class Test405StateMachine(
                 }
             }
             is Test405State.S01p21 -> {
-                // SCE-MAP: test405.scxml:33
+                // SCE-MAP: test405.scxml:33 :: s01p21 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p21")) return
             }
             is Test405State.S01p22 -> {
-                // SCE-MAP: test405.scxml:43
+                // SCE-MAP: test405.scxml:43 :: s01p22 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p22")) return
             }
             is Test405State.S02 -> {
-                // SCE-MAP: test405.scxml:49
+                // SCE-MAP: test405.scxml:49 :: s02 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
             is Test405State.S03 -> {
-                // SCE-MAP: test405.scxml:54
+                // SCE-MAP: test405.scxml:54 :: s03 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
             }
             is Test405State.S04 -> {
-                // SCE-MAP: test405.scxml:60
+                // SCE-MAP: test405.scxml:60 :: s04 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s04")) return
             }
@@ -416,23 +416,23 @@ class Test405StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test405.scxml:6
+    // SCE-MAP: test405.scxml:6 :: _machine
     override fun onExit(state: Test405State) {
         when (state) {
             is Test405State.Fail -> {
-                // SCE-MAP: test405.scxml:69
+                // SCE-MAP: test405.scxml:69 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test405State.Pass -> {
-                // SCE-MAP: test405.scxml:68
+                // SCE-MAP: test405.scxml:68 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test405State.S0 -> {
-                // SCE-MAP: test405.scxml:8
+                // SCE-MAP: test405.scxml:8 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test405State.S01p -> {
-                // SCE-MAP: test405.scxml:14
+                // SCE-MAP: test405.scxml:14 :: s01p :: _state_body
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -464,43 +464,43 @@ class Test405StateMachine(
                 activeStateIds.remove("s01p")
             }
             is Test405State.S01p1 -> {
-                // SCE-MAP: test405.scxml:18
+                // SCE-MAP: test405.scxml:18 :: s01p1 :: _state_body
                 activeStateIds.remove("s01p1")
             }
             is Test405State.S01p11 -> {
-                // SCE-MAP: test405.scxml:19
+                // SCE-MAP: test405.scxml:19 :: s01p11 :: _state_body
                 activeStateIds.remove("s01p11")
 
             raiseInternal(Test405Event.Event2)
             }
             is Test405State.S01p12 -> {
-                // SCE-MAP: test405.scxml:29
+                // SCE-MAP: test405.scxml:29 :: s01p12 :: _state_body
                 activeStateIds.remove("s01p12")
             }
             is Test405State.S01p2 -> {
-                // SCE-MAP: test405.scxml:32
+                // SCE-MAP: test405.scxml:32 :: s01p2 :: _state_body
                 activeStateIds.remove("s01p2")
             }
             is Test405State.S01p21 -> {
-                // SCE-MAP: test405.scxml:33
+                // SCE-MAP: test405.scxml:33 :: s01p21 :: _state_body
                 activeStateIds.remove("s01p21")
 
             raiseInternal(Test405Event.Event1)
             }
             is Test405State.S01p22 -> {
-                // SCE-MAP: test405.scxml:43
+                // SCE-MAP: test405.scxml:43 :: s01p22 :: _state_body
                 activeStateIds.remove("s01p22")
             }
             is Test405State.S02 -> {
-                // SCE-MAP: test405.scxml:49
+                // SCE-MAP: test405.scxml:49 :: s02 :: _state_body
                 activeStateIds.remove("s02")
             }
             is Test405State.S03 -> {
-                // SCE-MAP: test405.scxml:54
+                // SCE-MAP: test405.scxml:54 :: s03 :: _state_body
                 activeStateIds.remove("s03")
             }
             is Test405State.S04 -> {
-                // SCE-MAP: test405.scxml:60
+                // SCE-MAP: test405.scxml:60 :: s04 :: _state_body
                 activeStateIds.remove("s04")
             }
         }
@@ -508,7 +508,7 @@ class Test405StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test405.scxml:6
+    // SCE-MAP: test405.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test405State,
         event: Test405Event?
@@ -516,7 +516,7 @@ class Test405StateMachine(
         when (source) {
         is Test405State.S01p11 -> when {
             event == null -> {
-                // SCE-MAP: test405.scxml:24
+                // SCE-MAP: test405.scxml:24 :: s01p11 :: _transition_0
 
             raiseInternal(Test405Event.Event3)
             }
@@ -524,7 +524,7 @@ class Test405StateMachine(
         }
         is Test405State.S01p21 -> when {
             event == null -> {
-                // SCE-MAP: test405.scxml:38
+                // SCE-MAP: test405.scxml:38 :: s01p21 :: _transition_0
 
             raiseInternal(Test405Event.Event4)
             }

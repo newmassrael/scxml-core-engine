@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_wireexpr:53"]
-// SCE-MAP: codec_zenoh_wireexpr:53
+#![doc = "SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body"]
+// SCE-MAP: codec_zenoh_wireexpr:53 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

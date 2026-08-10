@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: filter_moving_average:1"]
-// SCE-MAP: filter_moving_average:1
+#![doc = "SCE-MAP: filter_moving_average:1 :: _forge_body"]
+// SCE-MAP: filter_moving_average:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")
 // Runtime: sce_forge_runtime

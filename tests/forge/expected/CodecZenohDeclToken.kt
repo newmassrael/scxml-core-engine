@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_decl_token:28
+// SCE-MAP: codec_zenoh_decl_token:28 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

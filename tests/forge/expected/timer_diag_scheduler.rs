@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: timer_diag_scheduler:1"]
-// SCE-MAP: timer_diag_scheduler:1
+#![doc = "SCE-MAP: timer_diag_scheduler:1 :: _forge_body"]
+// SCE-MAP: timer_diag_scheduler:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
 // Shape: SCE Protocol-Synthesis RFC §synth-5-D line 880-886 — single timer per

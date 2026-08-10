@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: crossfile_validator_filter:14"]
-// SCE-MAP: crossfile_validator_filter:14
+#![doc = "SCE-MAP: crossfile_validator_filter:14 :: _forge_body"]
+// SCE-MAP: crossfile_validator_filter:14 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Runtime: none

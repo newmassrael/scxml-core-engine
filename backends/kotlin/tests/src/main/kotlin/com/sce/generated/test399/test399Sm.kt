@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/399/test399.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test399.scxml:6
+// SCE-MAP: test399.scxml:6 :: _machine
 
 package com.sce.generated.test399
 
@@ -252,25 +252,25 @@ class Test399StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test399.scxml:6
+    // SCE-MAP: test399.scxml:6 :: _machine
     override fun onEntry(state: Test399State) {
         when (state) {
             is Test399State.Fail -> {
-                // SCE-MAP: test399.scxml:69
+                // SCE-MAP: test399.scxml:69 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test399State.Pass -> {
-                // SCE-MAP: test399.scxml:68
+                // SCE-MAP: test399.scxml:68 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test399State.S0 -> {
-                // SCE-MAP: test399.scxml:9
+                // SCE-MAP: test399.scxml:9 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -278,42 +278,42 @@ class Test399StateMachine(
             scheduleSend("__send_0", 2000L, Test399Event.Timeout)
             }
             is Test399State.S01 -> {
-                // SCE-MAP: test399.scxml:17
+                // SCE-MAP: test399.scxml:17 :: s01 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
 
             raiseInternal(Test399Event.Foo.Self)
             }
             is Test399State.S02 -> {
-                // SCE-MAP: test399.scxml:25
+                // SCE-MAP: test399.scxml:25 :: s02 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
 
             raiseInternal(Test399Event.Bar)
             }
             is Test399State.S03 -> {
-                // SCE-MAP: test399.scxml:33
+                // SCE-MAP: test399.scxml:33 :: s03 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
 
             raiseInternal(Test399Event.Foo.Zoo)
             }
             is Test399State.S04 -> {
-                // SCE-MAP: test399.scxml:41
+                // SCE-MAP: test399.scxml:41 :: s04 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s04")) return
 
             raiseInternal(Test399Event.Foos)
             }
             is Test399State.S05 -> {
-                // SCE-MAP: test399.scxml:50
+                // SCE-MAP: test399.scxml:50 :: s05 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s05")) return
 
             raiseInternal(Test399Event.Foo.Zoo)
             }
             is Test399State.S06 -> {
-                // SCE-MAP: test399.scxml:58
+                // SCE-MAP: test399.scxml:58 :: s06 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s06")) return
 
@@ -323,43 +323,43 @@ class Test399StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test399.scxml:6
+    // SCE-MAP: test399.scxml:6 :: _machine
     override fun onExit(state: Test399State) {
         when (state) {
             is Test399State.Fail -> {
-                // SCE-MAP: test399.scxml:69
+                // SCE-MAP: test399.scxml:69 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test399State.Pass -> {
-                // SCE-MAP: test399.scxml:68
+                // SCE-MAP: test399.scxml:68 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test399State.S0 -> {
-                // SCE-MAP: test399.scxml:9
+                // SCE-MAP: test399.scxml:9 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test399State.S01 -> {
-                // SCE-MAP: test399.scxml:17
+                // SCE-MAP: test399.scxml:17 :: s01 :: _state_body
                 activeStateIds.remove("s01")
             }
             is Test399State.S02 -> {
-                // SCE-MAP: test399.scxml:25
+                // SCE-MAP: test399.scxml:25 :: s02 :: _state_body
                 activeStateIds.remove("s02")
             }
             is Test399State.S03 -> {
-                // SCE-MAP: test399.scxml:33
+                // SCE-MAP: test399.scxml:33 :: s03 :: _state_body
                 activeStateIds.remove("s03")
             }
             is Test399State.S04 -> {
-                // SCE-MAP: test399.scxml:41
+                // SCE-MAP: test399.scxml:41 :: s04 :: _state_body
                 activeStateIds.remove("s04")
             }
             is Test399State.S05 -> {
-                // SCE-MAP: test399.scxml:50
+                // SCE-MAP: test399.scxml:50 :: s05 :: _state_body
                 activeStateIds.remove("s05")
             }
             is Test399State.S06 -> {
-                // SCE-MAP: test399.scxml:58
+                // SCE-MAP: test399.scxml:58 :: s06 :: _state_body
                 activeStateIds.remove("s06")
             }
         }
@@ -367,7 +367,7 @@ class Test399StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test399.scxml:6
+    // SCE-MAP: test399.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test399State,
         event: Test399Event?

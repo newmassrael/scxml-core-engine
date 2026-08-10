@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: crossfile_validator_transform:3"]
-// SCE-MAP: crossfile_validator_transform:3
+#![doc = "SCE-MAP: crossfile_validator_transform:3 :: _forge_body"]
+// SCE-MAP: crossfile_validator_transform:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Runtime: none

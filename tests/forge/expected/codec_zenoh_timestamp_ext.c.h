@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_timestamp_ext:48
+// SCE-MAP: codec_zenoh_timestamp_ext:48 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: donedata_late_completion.scxml:45"]
-// SCE-MAP: donedata_late_completion.scxml:45
+#![doc = "SCE-MAP: donedata_late_completion.scxml:45 :: _machine"]
+// SCE-MAP: donedata_late_completion.scxml:45 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -725,8 +725,8 @@ impl StatePolicy for DonedataLateCompletionPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: donedata_late_completion.scxml:45"]
-    // SCE-MAP: donedata_late_completion.scxml:45
+    #[doc = "SCE-MAP: donedata_late_completion.scxml:45 :: _machine"]
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -734,7 +734,7 @@ impl StatePolicy for DonedataLateCompletionPolicy {
     ) {
         match state {
             DonedataLateCompletionState::Phase => {
-                // SCE-MAP: donedata_late_completion.scxml:48
+                // SCE-MAP: donedata_late_completion.scxml:48 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -753,8 +753,8 @@ impl StatePolicy for DonedataLateCompletionPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: donedata_late_completion.scxml:45"]
-    // SCE-MAP: donedata_late_completion.scxml:45
+    #[doc = "SCE-MAP: donedata_late_completion.scxml:45 :: _machine"]
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -791,8 +791,8 @@ impl StatePolicy for DonedataLateCompletionPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: donedata_late_completion.scxml:45"]
-    // SCE-MAP: donedata_late_completion.scxml:45
+    #[doc = "SCE-MAP: donedata_late_completion.scxml:45 :: _machine"]
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -847,8 +847,8 @@ impl StatePolicy for DonedataLateCompletionPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: donedata_late_completion.scxml:45"]
-    // SCE-MAP: donedata_late_completion.scxml:45
+    #[doc = "SCE-MAP: donedata_late_completion.scxml:45 :: _machine"]
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -859,7 +859,7 @@ impl StatePolicy for DonedataLateCompletionPolicy {
             DonedataLateCompletionState::Phase => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: donedata_late_completion.scxml:67
+                        // SCE-MAP: donedata_late_completion.scxml:67 :: phase :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {

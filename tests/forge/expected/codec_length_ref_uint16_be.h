@@ -1,4 +1,4 @@
-// SCE-MAP: codec_length_ref_uint16_be:12
+// SCE-MAP: codec_length_ref_uint16_be:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_internal_queue/autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3
+// SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
 
 package com.sce.integration.autoforward_internal_queue
 
@@ -116,25 +116,25 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17 :: clean :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("clean")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16 :: leaked :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("leaked")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("watch")) return
 
@@ -146,19 +146,19 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onExit(state: AutoforwardInternalQueueSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Clean -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:17 :: clean :: _state_body
                 activeStateIds.remove("clean")
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Leaked -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:16 :: leaked :: _state_body
                 activeStateIds.remove("leaked")
             }
             is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
                 activeStateIds.remove("watch")
             }
         }
@@ -166,7 +166,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardInternalQueueSceSynthInvokeInvWatchState,
         event: AutoforwardInternalQueueSceSynthInvokeInvWatchEvent?
@@ -174,14 +174,14 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
         when (source) {
         is AutoforwardInternalQueueSceSynthInvokeInvWatchState.Watch -> when {
             event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Execution -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:9 :: watch :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawInternal", "")
             }
             event is AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Probe -> {
-                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12
+                // SCE-MAP: autoforward_internal_queue__sce_synth_invoke__inv_watch.scxml:12 :: watch :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

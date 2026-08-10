@@ -20,7 +20,7 @@
 // Returns true if a transition was taken.
 {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP markers
    above each Go transition function. #}
-{{ sce_map.source_marker(model.source_location, "go") }}
+{{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_name }}State, event {{ machine_name }}Event, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
 {% if model.needs_script_engine %}
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
@@ -145,7 +145,7 @@ func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_na
 
 {% if model.has_parallel_states %}
 // tryCollectTransition checks if a state has a matching transition and returns it as transitionInfo.
-{{ sce_map.source_marker(model.source_location, "go") }}
+{{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_name }}State, event {{ machine_name }}Event, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) *transitionInfo {
 	switch checkState {
 {% for state_id, state in model.states | dictsort %}
@@ -239,7 +239,7 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% endif %}
 
 // tryTransitionInState checks transitions for a single state.
-{{ sce_map.source_marker(model.source_location, "go") }}
+{{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_name }}State, event {{ machine_name }}Event, currentState *{{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
 	switch checkState {
 {% for state_id, state in model.states | dictsort %}
@@ -340,7 +340,7 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 }
 
 // ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-{{ sce_map.source_marker(model.source_location, "go") }}
+{{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ExecuteTransitionActions(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 {% if model.has_transition_actions %}
 {% if model.needs_script_engine %}
@@ -356,7 +356,7 @@ func (p *{{ machine_name }}Policy) ExecuteTransitionActions(engine *sce.Engine[{
 {% if trans.actions %}
 	if source == {{ machine_name }}State{{ state_id | to_state_variant }} && idx == {{ trans.transition_index | default(loop.index0) }} {  {{- annot.annotation_comment(trans, "go", "		") }}
 {% if trans.source_location %}
-		{{ sce_map.source_marker(trans.source_location, "go", stmt_level=true) | trim }}
+		{{ sce_map.source_marker(trans.source_location, "go", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}

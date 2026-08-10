@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: crossfile_procedure_codec:3"]
-// SCE-MAP: crossfile_procedure_codec:3
+#![doc = "SCE-MAP: crossfile_procedure_codec:3 :: _forge_body"]
+// SCE-MAP: crossfile_procedure_codec:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Runtime: sce_forge_runtime

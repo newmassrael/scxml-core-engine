@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/422/test422.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test422.scxml:10
+// SCE-MAP: test422.scxml:10 :: _machine
 
 package com.sce.generated.test422
 
@@ -300,25 +300,25 @@ class Test422StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test422.scxml:10
+    // SCE-MAP: test422.scxml:10 :: _machine
     override fun onEntry(state: Test422State) {
         when (state) {
             is Test422State.Fail -> {
-                // SCE-MAP: test422.scxml:77
+                // SCE-MAP: test422.scxml:77 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test422State.Pass -> {
-                // SCE-MAP: test422.scxml:76
+                // SCE-MAP: test422.scxml:76 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test422State.S1 -> {
-                // SCE-MAP: test422.scxml:14
+                // SCE-MAP: test422.scxml:14 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -336,7 +336,7 @@ class Test422StateMachine(
                 }
             }
             is Test422State.S11 -> {
-                // SCE-MAP: test422.scxml:40
+                // SCE-MAP: test422.scxml:40 :: s11 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -351,7 +351,7 @@ class Test422StateMachine(
                 }
             }
             is Test422State.S12 -> {
-                // SCE-MAP: test422.scxml:57
+                // SCE-MAP: test422.scxml:57 :: s12 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -369,19 +369,19 @@ class Test422StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test422.scxml:10
+    // SCE-MAP: test422.scxml:10 :: _machine
     override fun onExit(state: Test422State) {
         when (state) {
             is Test422State.Fail -> {
-                // SCE-MAP: test422.scxml:77
+                // SCE-MAP: test422.scxml:77 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test422State.Pass -> {
-                // SCE-MAP: test422.scxml:76
+                // SCE-MAP: test422.scxml:76 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test422State.S1 -> {
-                // SCE-MAP: test422.scxml:14
+                // SCE-MAP: test422.scxml:14 :: s1 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -389,7 +389,7 @@ class Test422StateMachine(
                 activeStateIds.remove("s1")
             }
             is Test422State.S11 -> {
-                // SCE-MAP: test422.scxml:40
+                // SCE-MAP: test422.scxml:40 :: s11 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -397,7 +397,7 @@ class Test422StateMachine(
                 activeStateIds.remove("s11")
             }
             is Test422State.S12 -> {
-                // SCE-MAP: test422.scxml:57
+                // SCE-MAP: test422.scxml:57 :: s12 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -409,7 +409,7 @@ class Test422StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test422.scxml:10
+    // SCE-MAP: test422.scxml:10 :: _machine
     override fun executeTransitionActions(
         source: Test422State,
         event: Test422Event?
@@ -417,7 +417,7 @@ class Test422StateMachine(
         when (source) {
         is Test422State.S1 -> when {
             (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
-                // SCE-MAP: test422.scxml:18
+                // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
@@ -426,7 +426,7 @@ class Test422StateMachine(
         }
         is Test422State.S11 -> when {
             (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
-                // SCE-MAP: test422.scxml:18
+                // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
@@ -435,7 +435,7 @@ class Test422StateMachine(
         }
         is Test422State.S12 -> when {
             (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> {
-                // SCE-MAP: test422.scxml:18
+                // SCE-MAP: test422.scxml:18 :: s1 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")

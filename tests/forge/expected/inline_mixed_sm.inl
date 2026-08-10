@@ -1,7 +1,7 @@
 
 // SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring
 // these method implementations to the `<scxml>` root position.
-// SCE-MAP: inline_mixed.scxml:3
+// SCE-MAP: inline_mixed.scxml:3 :: _machine
 
 // ============================================================================
 // inline_mixedPolicy method implementations

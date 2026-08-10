@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_network_envelope:60"]
-// SCE-MAP: codec_zenoh_network_envelope:60
+#![doc = "SCE-MAP: codec_zenoh_network_envelope:60 :: _forge_body"]
+// SCE-MAP: codec_zenoh_network_envelope:60 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

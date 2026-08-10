@@ -9,7 +9,7 @@
    (not `#line`) because `#line` remapping in a header would
    propagate into every consumer translation unit. #}
 
-{{ sce_map.source_marker(model.source_location, "cpp", module_level=true) }}
+{{ sce_map.source_marker(model.source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 #pragma once
 #include <cstdint>

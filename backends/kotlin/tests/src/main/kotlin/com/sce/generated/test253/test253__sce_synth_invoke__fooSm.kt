@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: 
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
+// SCE-MAP: test253__sce_synth_invoke__foo.scxml:3 :: _machine
 
 package com.sce.generated.test253
 
@@ -252,11 +252,11 @@ class Test253SceSynthInvokeFooStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
+    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3 :: _machine
     override fun onEntry(state: Test253SceSynthInvokeFooState) {
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7 :: sub0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
 
@@ -265,12 +265,12 @@ class Test253SceSynthInvokeFooStateMachine(
             onSendToParent?.invoke("childRunning", "")
             }
             is Test253SceSynthInvokeFooState.Sub1 -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16 :: sub1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub1")) return
             }
             is Test253SceSynthInvokeFooState.SubFinal -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:27
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:27 :: subFinal :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -280,19 +280,19 @@ class Test253SceSynthInvokeFooStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
+    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3 :: _machine
     override fun onExit(state: Test253SceSynthInvokeFooState) {
         when (state) {
             is Test253SceSynthInvokeFooState.Sub0 -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:7 :: sub0 :: _state_body
                 activeStateIds.remove("sub0")
             }
             is Test253SceSynthInvokeFooState.Sub1 -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:16 :: sub1 :: _state_body
                 activeStateIds.remove("sub1")
             }
             is Test253SceSynthInvokeFooState.SubFinal -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:27
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:27 :: subFinal :: _state_body
                 activeStateIds.remove("subFinal")
             }
         }
@@ -300,7 +300,7 @@ class Test253SceSynthInvokeFooStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3
+    // SCE-MAP: test253__sce_synth_invoke__foo.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test253SceSynthInvokeFooState,
         event: Test253SceSynthInvokeFooEvent?
@@ -308,7 +308,7 @@ class Test253SceSynthInvokeFooStateMachine(
         when (source) {
         is Test253SceSynthInvokeFooState.Sub0 -> when {
             event is Test253SceSynthInvokeFooEvent.ParentToChild -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:12
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:12 :: sub0 :: _transition_0
 
 
             executeAssign("Var2", "_event.origintype")
@@ -317,21 +317,21 @@ class Test253SceSynthInvokeFooStateMachine(
         }
         is Test253SceSynthInvokeFooState.Sub1 -> when {
             event == null && safeEvaluateGuard("Var2 == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:17
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:17 :: sub1 :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
             event == null && safeEvaluateGuard("Var2 == 'scxml'") -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:20
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:20 :: sub1 :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("success", "")
             }
             event == null -> {
-                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:23
+                // SCE-MAP: test253__sce_synth_invoke__foo.scxml:23 :: sub1 :: _transition_2
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

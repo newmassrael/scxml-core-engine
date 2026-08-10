@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: procedure_security_access:1"]
-// SCE-MAP: procedure_security_access:1
+#![doc = "SCE-MAP: procedure_security_access:1 :: _forge_body"]
+// SCE-MAP: procedure_security_access:1 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Runtime: sce_forge_runtime

@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: procedure_diamond:2"]
-// SCE-MAP: procedure_diamond:2
+#![doc = "SCE-MAP: procedure_diamond:2 :: _forge_body"]
+// SCE-MAP: procedure_diamond:2 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Runtime: none

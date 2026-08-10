@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/239/test239sub1.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test239sub1.scxml:5
+// SCE-MAP: test239sub1.scxml:5 :: _machine
 
 package com.sce.generated.test239
 
@@ -73,11 +73,11 @@ class Test239sub1StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test239sub1.scxml:5
+    // SCE-MAP: test239sub1.scxml:5 :: _machine
     override fun onEntry(state: Test239sub1State) {
         when (state) {
             is Test239sub1State.Final -> {
-                // SCE-MAP: test239sub1.scxml:7
+                // SCE-MAP: test239sub1.scxml:7 :: final :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -87,11 +87,11 @@ class Test239sub1StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test239sub1.scxml:5
+    // SCE-MAP: test239sub1.scxml:5 :: _machine
     override fun onExit(state: Test239sub1State) {
         when (state) {
             is Test239sub1State.Final -> {
-                // SCE-MAP: test239sub1.scxml:7
+                // SCE-MAP: test239sub1.scxml:7 :: final :: _state_body
                 activeStateIds.remove("final")
             }
         }
@@ -99,7 +99,7 @@ class Test239sub1StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test239sub1.scxml:5
+    // SCE-MAP: test239sub1.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test239sub1State,
         event: Test239sub1Event?

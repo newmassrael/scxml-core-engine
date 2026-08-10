@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: 
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
+// SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3 :: _machine
 
 package com.sce.generated.test229
 
@@ -108,11 +108,11 @@ class Test229SceSynthInvokeInvoke0StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun onEntry(state: Test229SceSynthInvokeInvoke0State) {
         when (state) {
             is Test229SceSynthInvokeInvoke0State.Sub0 -> {
-                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:4
+                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sub0")) return
 
@@ -124,7 +124,7 @@ class Test229SceSynthInvokeInvoke0StateMachine(
             scheduleSend("__send_2", 3000L, Test229SceSynthInvokeInvoke0Event.Timeout)
             }
             is Test229SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:14
+                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:14 :: subFinal :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -134,15 +134,15 @@ class Test229SceSynthInvokeInvoke0StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun onExit(state: Test229SceSynthInvokeInvoke0State) {
         when (state) {
             is Test229SceSynthInvokeInvoke0State.Sub0 -> {
-                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:4
+                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:4 :: sub0 :: _state_body
                 activeStateIds.remove("sub0")
             }
             is Test229SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:14
+                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:14 :: subFinal :: _state_body
                 activeStateIds.remove("subFinal")
             }
         }
@@ -150,7 +150,7 @@ class Test229SceSynthInvokeInvoke0StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test229SceSynthInvokeInvoke0State,
         event: Test229SceSynthInvokeInvoke0Event?
@@ -158,7 +158,7 @@ class Test229SceSynthInvokeInvoke0StateMachine(
         when (source) {
         is Test229SceSynthInvokeInvoke0State.Sub0 -> when {
             event is Test229SceSynthInvokeInvoke0Event.ChildToParent -> {
-                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:9
+                // SCE-MAP: test229__sce_synth_invoke__invoke_0.scxml:9 :: sub0 :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

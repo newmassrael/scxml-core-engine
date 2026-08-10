@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/240/test240.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test240.scxml:8
+// SCE-MAP: test240.scxml:8 :: _machine
 
 package com.sce.generated.test240
 
@@ -304,25 +304,25 @@ class Test240StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test240.scxml:8
+    // SCE-MAP: test240.scxml:8 :: _machine
     override fun onEntry(state: Test240State) {
         when (state) {
             is Test240State.Fail -> {
-                // SCE-MAP: test240.scxml:70
+                // SCE-MAP: test240.scxml:70 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test240State.Pass -> {
-                // SCE-MAP: test240.scxml:69
+                // SCE-MAP: test240.scxml:69 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test240State.S0 -> {
-                // SCE-MAP: test240.scxml:13
+                // SCE-MAP: test240.scxml:13 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -330,7 +330,7 @@ class Test240StateMachine(
             scheduleSend("__send_0", 2000L, Test240Event.Timeout)
             }
             is Test240State.S01 -> {
-                // SCE-MAP: test240.scxml:19
+                // SCE-MAP: test240.scxml:19 :: s01 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -357,7 +357,7 @@ class Test240StateMachine(
                 }
             }
             is Test240State.S02 -> {
-                // SCE-MAP: test240.scxml:42
+                // SCE-MAP: test240.scxml:42 :: s02 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -387,23 +387,23 @@ class Test240StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test240.scxml:8
+    // SCE-MAP: test240.scxml:8 :: _machine
     override fun onExit(state: Test240State) {
         when (state) {
             is Test240State.Fail -> {
-                // SCE-MAP: test240.scxml:70
+                // SCE-MAP: test240.scxml:70 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test240State.Pass -> {
-                // SCE-MAP: test240.scxml:69
+                // SCE-MAP: test240.scxml:69 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test240State.S0 -> {
-                // SCE-MAP: test240.scxml:13
+                // SCE-MAP: test240.scxml:13 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test240State.S01 -> {
-                // SCE-MAP: test240.scxml:19
+                // SCE-MAP: test240.scxml:19 :: s01 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -411,7 +411,7 @@ class Test240StateMachine(
                 activeStateIds.remove("s01")
             }
             is Test240State.S02 -> {
-                // SCE-MAP: test240.scxml:42
+                // SCE-MAP: test240.scxml:42 :: s02 :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -423,7 +423,7 @@ class Test240StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test240.scxml:8
+    // SCE-MAP: test240.scxml:8 :: _machine
     override fun executeTransitionActions(
         source: Test240State,
         event: Test240Event?

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_precedes_dequeue_midrun/invoke_precedes_dequeue_midrun.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42
+// SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
 
 package com.sce.integration.invoke_precedes_dequeue_midrun
 
@@ -149,11 +149,11 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42
+    // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
     override fun onEntry(state: InvokePrecedesDequeueMidrunState) {
         when (state) {
             is InvokePrecedesDequeueMidrunState.Arm -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("arm")) return
 
@@ -161,21 +161,21 @@ class InvokePrecedesDequeueMidrunStateMachine(
             send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is InvokePrecedesDequeueMidrunState.Fail -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunState.Pass -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:88
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:88 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunState.Phase -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
 
@@ -196,23 +196,23 @@ class InvokePrecedesDequeueMidrunStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42
+    // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
     override fun onExit(state: InvokePrecedesDequeueMidrunState) {
         when (state) {
             is InvokePrecedesDequeueMidrunState.Arm -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body
                 activeStateIds.remove("arm")
             }
             is InvokePrecedesDequeueMidrunState.Fail -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is InvokePrecedesDequeueMidrunState.Pass -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:88
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:88 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is InvokePrecedesDequeueMidrunState.Phase -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -224,7 +224,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42
+    // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
     override fun executeTransitionActions(
         source: InvokePrecedesDequeueMidrunState,
         event: InvokePrecedesDequeueMidrunEvent?
@@ -232,7 +232,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
         when (source) {
         is InvokePrecedesDequeueMidrunState.Phase -> when {
             event is InvokePrecedesDequeueMidrunEvent.Ready -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:82
+                // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:82 :: phase :: _transition_1
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child
