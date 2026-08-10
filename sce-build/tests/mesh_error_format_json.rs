@@ -185,7 +185,7 @@ topology:
 fn deploy_parse_error_is_ndjson() {
     // Malformed YAML (control character in `version:` scalar) routes
     // through serde_yaml → `mesh/deploy-parse`. Stage taxonomy must
-    // report `mesh-deploy`, not `cli/*`, so agents triage to the YAML
+    // report `mesh-deploy`, not `cli/*`, so consumers triage to the YAML
     // repair path and not the CLI-flag one.
     let dir = ScratchDir::new("mesh-deploy-parse");
     let scxml = dir.write("brake.scxml", BRAKE_SCXML);
@@ -207,7 +207,7 @@ fn deploy_parse_error_is_ndjson() {
     assert_eq!(rec["code"], "mesh/deploy-parse", "record: {rec}");
     assert_eq!(rec["stage"], "mesh-deploy");
     // Parse failures cannot name a deterministic repair — `fix` is
-    // absent so agents do not try to apply a non-existent transform.
+    // absent so consumers do not try to apply a non-existent transform.
     assert!(
         rec.get("fix").is_none(),
         "fix must be absent for unstructured parse failures: {rec}"

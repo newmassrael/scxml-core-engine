@@ -141,7 +141,7 @@ struct DriftContext {
 /// descent ceiling points at the *layout* of the input: a directory link
 /// naming a sibling multiplies the paths beneath it, and the fix is where
 /// `--input-root` points, not what mode the files carry. Both used to
-/// collapse onto `cli/read-input`, which sent a repair agent hunting
+/// collapse onto `cli/read-input`, which sent a repair consumer hunting
 /// permissions for a tree whose only problem was aliasing.
 fn drift_hash_failure(walked: &Path, axis: &str, err: drift::DriftHashError) -> CliError {
     match err {
@@ -364,7 +364,7 @@ fn flush_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, drift_ctx: &Drift
 /// How diagnostics are rendered to stderr.
 ///
 /// `Human` is the default and preserves existing CLI output verbatim.
-/// `Json` is the machine-readable contract consumed by upstream agents
+/// `Json` is the machine-readable contract consumed by upstream consumers
 /// (LangGraph triage, IDE LSP bridges, CI bots). In JSON mode each
 /// diagnostic is a single NDJSON line on stderr; stdout continues to
 /// carry artifact paths and progress text so build systems that parse
@@ -606,7 +606,7 @@ struct Cli {
     /// the existing CLI text. `json` emits one NDJSON record per error
     /// for machine consumption; stdout output is unchanged. The flag
     /// is global — every subcommand routes failure through the same
-    /// emitter (`cli_exit` / `ErrorFormat::emit_and_exit`), so agents
+    /// emitter (`cli_exit` / `ErrorFormat::emit_and_exit`), so consumers
     /// see a uniform wire contract regardless of which subcommand ran.
     #[arg(
         long,
@@ -1836,7 +1836,7 @@ fn emit_orchestrate_asts(
 
 /// Wire `code` of the first diagnostic an error expands to.
 ///
-/// The per-backend verdict carries the same code an agent would read
+/// The per-backend verdict carries the same code a consumer would read
 /// off stderr, so a refusal surfaced through the manifest routes to the
 /// repair path the diagnostic wire already defines.
 fn first_diagnostic_code<E: ToDiagnostics>(err: &E) -> String {
@@ -2686,7 +2686,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // Typed parser failures (XML/XSD/validation) flow straight to the
     // unified diagnostic emitter — the old CliError::ScxmlParse
     // wrapper collapsed forge codes into cli/scxml-parse, losing the
-    // xml/* / validation/* signal agents dispatch on.
+    // xml/* / validation/* signal consumers dispatch on.
     let mut model = match parser.parse_file(scxml_path) {
         Ok(m) => m,
         Err(e) => error_format.emit_and_exit(&e, ""),
@@ -2970,7 +2970,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // template-render, invalid-config) instead of collapsing to
     // `cli/scxml-generate`. minijinja does not surface the failing
     // template's row/col through its public error surface, so `None`
-    // line/col is honest — fabricating `(1, 1)` would misroute agent
+    // line/col is honest — fabricating `(1, 1)` would misroute consumer
     // repair loops to the top of the source (see
     // `feedback_correctness_before_features`).
     // out_path is needed early so synth-invoke SCXMLs can be
@@ -4545,7 +4545,7 @@ fn generate_w3c_unified(
     if !failed.is_empty() {
         // Per-test failures are already printed above in human mode.
         // In JSON mode we still emit a single structured summary so
-        // agents see a record (not just a silent non-zero exit) and
+        // consumers see a record (not just a silent non-zero exit) and
         // can dedup via the id — the failed list is part of the key.
         cli_exit(CliError::ScxmlGenerate {
             stage: "w3c-batch",

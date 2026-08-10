@@ -65,7 +65,7 @@ pub struct XsdErrors {
 /// run surfaces N violations and each violation becomes its own
 /// `Diagnostic` with its own `message` (from libxml2) and line number.
 /// Collapsing them into a single record would hide the per-violation
-/// line data upstream agents rely on, so this type deliberately does
+/// line data upstream consumers rely on, so this type deliberately does
 /// **not** implement
 /// [`SingleDiagnostic`](crate::forge::diagnostic::SingleDiagnostic) —
 /// the trait split at the diagnostic layer makes "no single payload"
@@ -588,7 +588,7 @@ mod tests {
         );
     }
 
-    /// Drift guard: every value the agent-facing XSD
+    /// Drift guard: every value the XSD
     /// (`schemas/sce-forge-ext.xsd`) enumerates for a closed-set grammar
     /// type must be a token the engine's `from_attr` parser accepts. The
     /// XSD is the structural gate SCE itself runs (see [`validate`]); if

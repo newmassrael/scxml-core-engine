@@ -13,7 +13,7 @@
 // records. Each diagnostic emits one JSON record per line via
 // `Diagnostic::to_json().dump()` followed by `'\n'` — same shape
 // the Rust producer's `--error-format=json` flag emits, so a
-// downstream consumer (telemetry, IDE, repair agent) can read
+// downstream consumer (telemetry, IDE, repair consumer) can read
 // either side's stream with the same line-based parser.
 //
 // `SCXMLParser::getDiagnostics()` is the typical input source; the

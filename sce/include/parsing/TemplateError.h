@@ -77,7 +77,7 @@ private:
 // `<sce:param name="...">` declaration on the target template.
 // Mirrors `sce-build/src/template.rs::TemplateError::UnknownParam`
 // (fields `template`, `param`, `declared`) and maps 1:1 to the
-// Rust `xml/template-unknown-param` DiagnosticCode. Agent
+// Rust `xml/template-unknown-param` DiagnosticCode. Consumer
 // dispatch in the AOT path keys on the message naming both the
 // template and the offending parameter; the C++ runtime message
 // follows the same shape so downstream repair heuristics stay
@@ -122,7 +122,7 @@ public:
 // full chain as `outer → middle → inner` so the operator can see
 // which file eventually loops back — same rendering convention as
 // Rust's `render_chain`, which keeps the discriminant key stable
-// for agent dispatch across the language boundary.
+// for consumer dispatch across the language boundary.
 class TemplateCycle : public TemplateError {
 public:
     using TemplateError::TemplateError;
@@ -211,7 +211,7 @@ public:
 // `xml/template-malformed` DiagnosticCode. The three repair
 // surfaces share a single subtype because each points at the
 // template file itself; call-site attribute omissions ride
-// `TemplateMissingAttribute` instead so repair agents can
+// `TemplateMissingAttribute` instead so repair consumers can
 // dispatch call-site vs file-side fixes without text parsing.
 class TemplateMalformed : public TemplateError {
 public:
@@ -236,7 +236,7 @@ public:
 // `xml/template-missing-attribute` DiagnosticCode. The
 // separation from `TemplateMalformed` keeps
 // `xml/template-malformed` focused on file-side issues so repair
-// agents dispatching on the code do not have to re-parse the
+// consumers dispatching on the code do not have to re-parse the
 // message body to pick the right fix kind.
 class TemplateMissingAttribute : public TemplateError {
 public:

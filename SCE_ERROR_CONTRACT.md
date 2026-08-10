@@ -2,7 +2,7 @@
 
 Machine-readable error format produced by `sce-codegen --error-format=json`.
 Consumed by upstream automation — LangGraph triage nodes, IDE language
-servers, CI repair bots, and any other agent that needs to branch on
+servers, CI repair bots, and any other consumer that needs to branch on
 SCE's rejection signals without parsing human text.
 
 This document is the **wire contract**. It must move only in the directions
@@ -27,7 +27,7 @@ enforcement is `forge::diagnostic::tests::diagnostic_goldens_are_byte_stable`
 | **stdout** | On success: a single JSON manifest line per run (see [§10](#10-stdout-manifest)). On failure: empty. Never carries diagnostics. |
 | **stderr** | Exactly one NDJSON diagnostic per line when `--error-format=json`. In `human` mode, free-form text. |
 
-Agents **must** split the two streams by fd. A parser that reads
+Consumers **must** split the two streams by fd. A parser that reads
 stdout looking for errors is reading the wrong stream.
 
 ## 2. Record shape
@@ -58,7 +58,7 @@ compatibility.
 | `v` | integer | Schema version. Currently `1`. First key in every record. |
 | `id` | `fnv1a:<16hex>` | Content hash over `(code, stage, location.file, key_fragments)`. Same semantic error → same id, **independent of message rewording**. Use for dedup, caching, "seen this before" checks. |
 | `generator` | short commit, or `unknown` | Commit of the generator that emitted the record — the same value [§10](#10-stdout-manifest)'s manifest carries as `generator` and `--version` reports in parentheses. Present on **every** record, because a rejected run writes no manifest (stdout is empty, [§1](#1-streams)): on the failure path this record is the only thing the consumer receives. [§8.1](#81-stability) tells consumers to pin a specific commit rather than rely on `v1` while the schema is `pre-release`, and that is unfollowable if the payload does not name the commit it came from. `unknown` when the build had no git checkout to read (vendored crate, release tarball). |
-| `code` | slash-path string | Closed enum. See [§5 Code Catalog](#5-code-catalog). Agents dispatch on `code`, never on `message`. |
+| `code` | slash-path string | Closed enum. See [§5 Code Catalog](#5-code-catalog). Consumers dispatch on `code`, never on `message`. |
 | `stage` | lowercase / kebab-case string | Pipeline stage. Routes to the correct repair loop. See [§4 Stage Taxonomy](#4-stage-taxonomy). |
 | `spec` | string | Specification anchor (e.g. `"W3C SCXML 3.13"`). Present when the rule is spec-derived. Enables LLM grounding. |
 | `message` | English prose | Human-readable one-liner. **Not** machine-parsed. Not part of `id`. |
@@ -84,7 +84,7 @@ machine / binding / target names carried by the error fields themselves.
 `fix` is the **sole channel** for repair signals. Whenever the producer
 can name a change that would satisfy the rejected constraint — single
 value, closed candidate list, attribute to add — the payload lives on
-this field, never on `expected`. Agents drive repair by dispatching on
+this field, never on `expected`. Consumers drive repair by dispatching on
 `fix.kind` and reading the variant's payload.
 
 `fix` is absent only when no structured repair can be named — e.g. an
@@ -101,15 +101,15 @@ There is no fallback from `fix` to `expected`.
 | `rename_duplicate` | `what`, `id` | The id `id` of kind `what` appears more than once; rename one occurrence. Deterministic. |
 | `remove_fields` | `location`, `fields[]` | At the config path `location`, remove every key in `fields`. Deterministic. |
 | `replace_with` | `to` | Replace the value carried in the record's `actual` field with `to`. Emitted when exactly one legal replacement exists — e.g. `==` → `===` under strict equality, or a `<sce:import kind>` declaration corrected to the imported file's real kind. Deterministic. |
-| `replace_one_of` | `candidates[]` | Replace `actual` with one of `candidates`. Emitted when the producer knows the closed set of legal values (attribute-value enums, cross-reference resolution, supported language list) but cannot pick a single answer — the agent or human chooses from the list. |
+| `replace_one_of` | `candidates[]` | Replace `actual` with one of `candidates`. Emitted when the producer knows the closed set of legal values (attribute-value enums, cross-reference resolution, supported language list) but cannot pick a single answer — the consumer or human chooses from the list. |
 | `add_one_of` | `element`, `attrs[]` | Add one of the listed `attrs` to `element`. Used for "require either X or Y" constraints (e.g. `<send>` needs `event` or `eventexpr`). Choice-based. |
 
 The variant name encodes the *shape* of the repair: deterministic
 variants can be applied without further judgment; choice variants
-(`replace_one_of`, `add_one_of`) require the agent or human to pick
+(`replace_one_of`, `add_one_of`) require the consumer or human to pick
 from the closed candidate set.
 
-Agents holding a dispatch table keyed on `fix.kind` may safely
+Consumers holding a dispatch table keyed on `fix.kind` may safely
 enumerate these — the set only grows in backward-compatible ways
 ([§8](#8-evolution-policy)).
 
@@ -139,8 +139,8 @@ Concretely:
   required cardinality (e.g. `["1"]`) and leaves `fix` absent — the
   number is a rule description, not a replacement value for `actual`.
 
-Agents that want "the closed set of legal values" should always read
-`fix`. Agents that want "what the producer was grammatically expecting
+Consumers that want "the closed set of legal values" should always read
+`fix`. Consumers that want "what the producer was grammatically expecting
 at this position" should read `expected`. These needs never coincide.
 
 ## 4. Stage taxonomy
@@ -162,7 +162,7 @@ at this position" should read `expected`. These needs never coincide.
 
 ### 4.1 Pipeline routing
 
-`stage` is the repair-routing key for agents. Its value is determined
+`stage` is the repair-routing key for consumers. Its value is determined
 by the `sce:kind` attribute on the `<scxml>` root, *not* by whether
 the document happens to parse successfully:
 
@@ -178,7 +178,7 @@ The last row is a contract guarantee. An author who wrote
 surface through the forge pipeline — where the bundled XSD identifies
 the violation and the `message` field enumerates the legal values.
 Reporting such a failure through the SCXML parser's XML stage would
-mis-route repair agents and is explicitly forbidden.
+mis-route repair consumers and is explicitly forbidden.
 
 Malformed XML that never reaches the root attribute list falls back
 to the SCXML parser: intent cannot be inferred, and the SCXML
@@ -355,9 +355,9 @@ A non-zero exit with no NDJSON record is a contract violation.
 
 **Additive-only at v1**:
 
-- Adding a new `code` ✔ (agents must treat unknown codes as "unknown;
+- Adding a new `code` ✔ (consumers must treat unknown codes as "unknown;
   inspect `stage` for routing, fall back to `exit_code` family").
-- Adding a new `Fix` variant ✔ (agents must ignore unknown `kind`).
+- Adding a new `Fix` variant ✔ (consumers must ignore unknown `kind`).
 - Adding a new optional field ✔ (consumers must ignore unknown keys).
 - Adding a new `Stage` variant ✔ (unknown stage → inspect `code` prefix).
 
@@ -401,7 +401,7 @@ commit.
 
 This surface is one row in the cross-surface stability registry
 `SCE_WIRE_CONTRACTS.md`, which states the shared `pre-release` policy
-and flip-to-`stable` procedure for every agent-facing wire surface.
+and flip-to-`stable` procedure for every wire surface.
 
 ## 9. Reference implementation
 
@@ -483,7 +483,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 ### 10.2 Stream discipline
 
 - On **failure** the manifest is not emitted; stdout is empty and the
-  NDJSON diagnostic on stderr is the sole signal. Agents must
+  NDJSON diagnostic on stderr is the sole signal. Consumers must
   treat stdout as valid only when the process exit code is `0`.
 - No legacy prose is emitted. Anything grepping for `Generated:`,
   `Needs ScriptEngine:`, `Document rejected:`, or `Reason:` in

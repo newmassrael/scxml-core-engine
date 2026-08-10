@@ -1210,7 +1210,7 @@ pub fn supports(transport: &str, capability: TransportCapability) -> bool {
 
 /// Wire-facing list of currently-implemented transport names. Used by
 /// diagnostic emission (`MeshCodegenUnsupportedTransport`) so upstream
-/// agents receive a structured candidate list instead of having to
+/// consumers receive a structured candidate list instead of having to
 /// parse the error prose. Order matches the `lookup()` dispatch so
 /// drift between the two is obvious in code review.
 pub fn implemented_names() -> &'static [&'static str] {

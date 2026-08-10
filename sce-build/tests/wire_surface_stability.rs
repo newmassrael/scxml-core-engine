@@ -4,7 +4,7 @@
 // Cross-surface stability registry guard.
 //
 // `SCE_WIRE_CONTRACTS.md` is the single registry declaring the
-// stability status of every agent-facing wire surface. Per the
+// stability status of every wire surface. Per the
 // doc-as-contract rule, the registry's claims must be machine-anchored
 // so it cannot silently go stale:
 //

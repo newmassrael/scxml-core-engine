@@ -564,7 +564,7 @@ pub fn compile_scxml_with_derives(
 
 /// Adapt an arbitrary ForgeError-convertible codegen error into the
 /// public typed channel. `source_name` tags the file/record label so
-/// downstream agents can route repairs; `line`/`col` stay `None`
+/// downstream consumers can route repairs; `line`/`col` stay `None`
 /// because `GenerateError` is raised by minijinja well after the DOM
 /// is discarded — fabricating `(1, 1)` would mislead the repair loop
 /// (see the `feedback_correctness_before_features` memory).
@@ -1029,7 +1029,7 @@ pub fn compile_forge_file(
 /// The error type is [`Located<ForgeError>`]: location is part of the
 /// error contract — every failure ties back to the `label` the caller
 /// supplied, so downstream consumers (CLI diagnostics, build scripts,
-/// agents) never have to attach file context after the fact.
+/// consumers) never have to attach file context after the fact.
 pub fn compile_forge_from_string(
     content: &str,
     label: DocumentLabel<'_>,
@@ -5190,7 +5190,7 @@ fn forge_qualified_call(
 /// and produces a JSON-serializable manifest with topological build order.
 ///
 /// Errors carry the scanned directory as their `location.file` so CLI
-/// diagnostics and agents see *where* the manifest build failed even
+/// diagnostics and consumers see *where* the manifest build failed even
 /// when the failure is a cross-file concern (circular imports, missing
 /// files) rather than a single-document parse error.
 pub fn build_forge_manifest(
@@ -6809,7 +6809,7 @@ pub enum Pipeline {
 ///    rejection on its own when the document is otherwise script-clean).
 ///
 /// `document` is the SCXML basename; `locations` is a single
-/// human-readable summary so downstream agents can dispatch on
+/// human-readable summary so downstream consumers can dispatch on
 /// `key_fragments` while authors get a readable message.
 ///
 /// Returns `Ok(())` when no axis fires. The author-visible

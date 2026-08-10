@@ -767,7 +767,7 @@ TEST(TemplateParity, Malformed) {
 // `add_attribute` fix payload); C++ throws
 // `SCE::parsing::TemplateMissingAttribute`. The fix payload is
 // not inspected by the discriminant-only contract, but the
-// DiagnosticCode assertion pins the wire name so agent dispatch
+// DiagnosticCode assertion pins the wire name so consumer dispatch
 // keys on the code without having to parse the payload.
 TEST(TemplateParity, MissingAttribute) {
     runErrorParityFixture("missing_attribute", "xml/template-missing-attribute",
@@ -806,7 +806,7 @@ TEST(TemplateParity, CoordCallsiteParam) {
 // caller's `<sce:use>` in main.scxml even though the offending
 // bytes sit inside the template file — depth-1 collapse pulls
 // the diagnostic to the author's call site per RFC §6.3 Q3 so
-// repair agents see one pointed line in the caller.
+// repair consumers see one pointed line in the caller.
 TEST(TemplateParity, CoordTemplateBody) {
     runErrorParityFixture(
         "coord_template_body", "xml/template-malformed", "SCE::parsing::TemplateMalformed",

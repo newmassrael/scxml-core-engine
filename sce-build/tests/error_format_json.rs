@@ -6,7 +6,7 @@
 // These tests launch the real CLI binary (the one cargo builds for
 // integration tests and exposes via `CARGO_BIN_EXE_*`) on a forge
 // document crafted to fail validation. The assertions pin the wire
-// contract consumed by upstream agents:
+// contract consumed by upstream consumers:
 //
 //   * stderr is NDJSON (one JSON object per line)
 //   * each line carries a stable `code`, `stage`, and `id`
@@ -151,7 +151,7 @@ fn json_mode_does_not_pollute_stdout_with_diagnostics() {
     let out = run_generate(&sce_codegen_bin(), &scxml, "json");
     let stdout = String::from_utf8(out.stdout).expect("stdout utf8");
     // stdout is for artifact manifests / progress text; error payloads
-    // must ride on stderr so agents can split streams by fd without
+    // must ride on stderr so consumers can split streams by fd without
     // parsing.
     assert!(
         !stdout.contains("validation/missing-element"),
@@ -201,7 +201,7 @@ fn json_mode_covers_cli_boundary_errors() {
     assert_eq!(parsed["v"].as_u64(), Some(1));
     // Candidate list rides `fix` — repair signals live in one place
     // under the non-overlap rule (contract §3.2). `expected` must
-    // stay absent, or upstream agents would face two sources of
+    // stay absent, or upstream consumers would face two sources of
     // truth for the same data.
     assert!(
         parsed.get("expected").is_none(),
@@ -288,7 +288,7 @@ fn json_mode_undeclared_initial_routes_through_invalid_reference() {
 /// same boolean), so the document was misrouted through the SCXML
 /// parser and reported with `stage="cli"` / `code="cli/scxml-parse"`.
 /// The contract promises `stage` is the repair-routing key, so the bug
-/// caused agents to branch on the wrong arm.
+/// caused consumers to branch on the wrong arm.
 ///
 /// The fixture locks in the post-fix routing: any `sce:kind` attribute
 /// — known or unknown — dispatches through the forge pipeline, so the
@@ -345,7 +345,7 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     assert_eq!(parsed["v"].as_u64(), Some(1));
 
     // Location pinning: XSD diagnostics MUST carry file + line from
-    // libxml2. Agents route repairs by `stage + location`, so a
+    // libxml2. Consumers route repairs by `stage + location`, so a
     // missing line here reduces them to prose-parsing the message.
     // CLI passes the full basename (with extension) so downstream
     // tooling can open the file without guessing the suffix.
@@ -364,7 +364,7 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
         "location.line must be populated and > 0: {line}"
     );
 
-    // The `message` field quotes the XSD enumeration so an agent can
+    // The `message` field quotes the XSD enumeration so a consumer can
     // repair without consulting SCE_ERROR_CONTRACT.md — pin this guarantee.
     let message = parsed["message"].as_str().unwrap_or_default();
     assert!(
@@ -374,7 +374,7 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     for legal_kind in ["statechart", "transform", "lookup"] {
         assert!(
             message.contains(&format!("'{legal_kind}'")),
-            "message must enumerate legal kinds so agents can repair: missing '{legal_kind}' in {line}"
+            "message must enumerate legal kinds so consumers can repair: missing '{legal_kind}' in {line}"
         );
     }
 }
@@ -485,7 +485,7 @@ fn write_condition_missing_expr_fixture() -> (ScratchDir, PathBuf) {
 /// Leaf-precision acceptance test for `parse_condition`.
 ///
 /// Before per-leaf wiring this fixture reported `location.line` equal
-/// to the `<scxml>` root line (2), so upstream agents could not tell
+/// to the `<scxml>` root line (2), so upstream consumers could not tell
 /// which child element violated the contract. The expected behaviour
 /// is that the diagnostic points at the offending `<data>` element's
 /// own line — proving `located(&data, ...)` fires at the raise-site
@@ -899,7 +899,7 @@ fn json_mode_lookup_duplicate_key_reports_duplicate_entry_line() {
 /// an explicit default and an `error` miss policy — the two are
 /// mutually exclusive. The diagnostic must anchor at the
 /// declaring `<data>` element, not the surrounding `<datamodel>`,
-/// so an agent can edit the offending element directly.
+/// so a consumer can edit the offending element directly.
 fn write_lookup_default_with_error_policy_fixture() -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new("leaf-precision");
     let path = dir.path().join("lookup_incompat.scxml");
@@ -937,7 +937,7 @@ fn json_mode_lookup_default_with_error_policy_reports_data_line() {
 }
 
 /// Lookup `<data sce:on-miss="bogus">` must report at the declaring
-/// `<data>` element — the agent needs to edit *that* element to
+/// `<data>` element — the consumer needs to edit *that* element to
 /// repair, not the parent `<datamodel>`.
 fn write_lookup_invalid_on_miss_fixture() -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new("leaf-precision");
@@ -1238,7 +1238,7 @@ fn stdout_emits_single_json_manifest_on_success() {
         );
     }
 
-    // `rejected` is absent on clean runs — agents branch on presence.
+    // `rejected` is absent on clean runs — consumers branch on presence.
     assert!(
         !obj.contains_key("rejected"),
         "rejected field must be omitted on clean generate: {line}"
@@ -1290,7 +1290,7 @@ fn stdout_does_not_emit_human_prose() {
 // Exercises the full CLI path (read file → xinclude → template
 // expansion → parse → validate → emit diagnostic) for `<sce:use>`
 // failure modes. Each negative test confirms the `code`, `stage`,
-// and `exit_code` an upstream agent keys on. A positive test pins
+// and `exit_code` an upstream consumer keys on. A positive test pins
 // that a successfully-expanded template document produces clean
 // codegen output (no diagnostic line on stderr).
 
