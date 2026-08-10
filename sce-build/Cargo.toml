@@ -52,6 +52,18 @@ minijinja-contrib = { version = "2", features = ["pycompat"] }
 sha2 = { workspace = true }
 # CLI argument parsing (for sce-codegen binary)
 clap = { version = "4", features = ["derive"], optional = true }
+# ELF symbol-table reader for `addr2sce --pc` / `--hardfault`
+# (SCE Protocol-Synthesis RFC §synth-5-O lines 3253-3278). The spec's
+# resolution contract is PC -> function symbol -> sourcemap; the
+# symbol table is what carries the first hop, and the sourcemap
+# carries the SCXML coordinates, so no DWARF line program is read.
+# Optional and gated behind `cli` — the library emit paths never
+# touch an ELF.
+object = { version = "0.36", default-features = false, features = [
+    "read_core",
+    "elf",
+    "std",
+], optional = true }
 
 [features]
 # `xsd` is on by default so every native build validates at the parser entry
@@ -59,7 +71,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 # success as a validating one.
 default = ["xsd"]
 xsd = ["libxml"]
-cli = ["clap"]
+cli = ["clap", "object"]
 
 # JSON Schema derivation for the conformance manifest. Dev-only so release
 # builds and downstream consumers don't pick up the extra dependency — the
@@ -88,6 +100,15 @@ mlua = { workspace = true }
 # `#[test]` build a transient file tree without touching the crate's
 # own files (avoids race conditions under `cargo test -- --test-threads`).
 tempfile = "3"
+# ELF writer — synthesises the fixture binaries the `addr2sce --pc`
+# tests resolve against, so the suite carries no checked-in blob and
+# the symbol layout under test is written next to the assertion.
+object = { version = "0.36", default-features = false, features = [
+    "read_core",
+    "write",
+    "elf",
+    "std",
+] }
 
 [lib]
 # `rlib` only for native builds. Native consumers (workspace runtime

@@ -705,13 +705,20 @@ fn both_lookup_directions_validate_against_the_wire_schema() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-/// The two DWARF-backed modes are declared but unimplemented. Pin that
-/// they refuse loudly (exit 2, no stdout) rather than resolving or
-/// silently succeeding — and that the help text says so, so the
-/// declaration and the behaviour cannot drift apart again.
+/// `--pc` / `--hardfault` refuse loudly when the image they were given
+/// cannot answer, rather than resolving to nothing or exiting 0. The
+/// resolution paths themselves are pinned by
+/// `sce-build/tests/addr2sce_pc.rs`, which synthesises ELF images with
+/// known symbol layouts; this case covers the argument-level refusals
+/// that share the `--symbol` entry point.
 #[test]
-fn unimplemented_addr2sce_modes_refuse_loudly_and_say_so_in_help() {
+fn addr2sce_pc_modes_refuse_an_image_that_cannot_answer() {
     let (tmp, _) = generate("rust");
+
+    // `/dev/null` is the degenerate image: readable, but not an ELF.
+    // That is a CLI-boundary input failure — SCE_ERROR_CONTRACT §6 maps
+    // `cli/*` to exit 20 — not an argument error, which is what exit 2
+    // would claim.
     for args in [
         vec!["--pc", "0x08001234", "--elf", "/dev/null"],
         vec!["--hardfault", "--elf", "/dev/null"],
@@ -724,15 +731,27 @@ fn unimplemented_addr2sce_modes_refuse_loudly_and_say_so_in_help() {
             .expect("invoke addr2sce");
         assert_eq!(
             out.status.code(),
-            Some(2),
-            "unimplemented mode {args:?} must exit 2",
+            Some(20),
+            "mode {args:?} must refuse an unparseable image as cli/* (exit 20)",
         );
         assert!(
             out.stdout.is_empty(),
-            "unimplemented mode {args:?} must emit no record",
+            "mode {args:?} must emit no record when the image is unusable",
         );
     }
 
+    // Omitting `--elf` is an argument error, and that one is exit 2.
+    let out = Command::new(sce_codegen_bin())
+        .arg("addr2sce")
+        .arg(&tmp)
+        .args(["--pc", "0x08001234"])
+        .output()
+        .expect("invoke addr2sce");
+    assert_eq!(out.status.code(), Some(2), "missing --elf is exit 2");
+
+    // The help text must describe the modes as they behave. It said
+    // "NOT IMPLEMENTED" while they exited 2; it must not keep saying so
+    // now that they resolve.
     let help = Command::new(sce_codegen_bin())
         .arg("addr2sce")
         .arg("--help")
@@ -740,8 +759,12 @@ fn unimplemented_addr2sce_modes_refuse_loudly_and_say_so_in_help() {
         .expect("invoke addr2sce --help");
     let text = String::from_utf8_lossy(&help.stdout);
     assert!(
-        text.contains("NOT IMPLEMENTED"),
-        "help must not present the unimplemented modes as working:\n{text}",
+        !text.contains("NOT IMPLEMENTED"),
+        "help still presents an implemented mode as unimplemented:\n{text}",
+    );
+    assert!(
+        text.contains("--hardfault"),
+        "help must document the mode it ships:\n{text}",
     );
     let _ = std::fs::remove_dir_all(&tmp);
 }
