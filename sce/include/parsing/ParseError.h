@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace SCE::parsing {
 
@@ -39,36 +40,40 @@ namespace SCE::parsing {
 // is dropped under D1-C because PugiXMLParser throws on internal
 // failure instead of returning nullptr — callers therefore never
 // observe a null document and the leaf would be unreachable.
+//
+// Location stamping follows the §wire-W3 design pin, which this
+// family now inherits from the `Diagnostic` base rather than
+// declaring for itself: the parser boundary names the document, and
+// a leaf that resolved coordinates attaches them.
 
 class ParseError : public std::runtime_error, public Diagnostic {
 public:
-    using std::runtime_error::runtime_error;
-
-    // Reserved for location stamping. No throw site populates
-    // this today (parser-entry failures fire before sub-parsers
-    // resolve a node-precise position; pugi's error offset is
-    // already embedded in the message text for `ParseXmlFailed`).
-    // Mirrors `XIncludeExpansionError::setLocation` (§wire-W3
-    // design pin).
-    void setLocation(SourcePos pos) {
-        location_ = std::move(pos);
-    }
-
     // `Diagnostic` interface. Subtypes override `code()` with their
-    // wire string; `location()` and `to_json()` are shared on the
-    // base because every parser-entry diagnostic carries the same
-    // envelope (stage = "xml", id derived through the canonical key
-    // shape, message read from `runtime_error::what()`).
+    // wire string; `stage()`, `location()` and `to_json()` are shared
+    // on the base because every parser-entry diagnostic carries the
+    // same envelope.
     std::string_view code() const noexcept override = 0;
 
-    const std::optional<SourcePos> &location() const noexcept override {
-        return location_;
+    // Every parser-entry `xml/*` `DiagnosticCode` reports the `xml`
+    // stage in the Rust authority — see `DiagnosticCode::stage()` in
+    // `sce-build/src/forge/diagnostic.rs`.
+    std::string_view stage() const noexcept override {
+        return "xml";
     }
 
     nlohmann::ordered_json to_json() const override;
 
+protected:
+    ParseError(std::string message, std::vector<std::string> keyFragments, std::optional<std::string> actual)
+        : std::runtime_error(std::move(message)), Diagnostic(std::move(keyFragments)), actual_(std::move(actual)) {}
+
+    // `expected` — the closed set of values that would have been
+    // accepted. Only the wrong-root leaf has one; the default emits
+    // nothing.
+    virtual void appendExpected(nlohmann::ordered_json &out) const;
+
 private:
-    std::optional<SourcePos> location_;
+    std::optional<std::string> actual_;
 };
 
 // SCXML source file does not exist at the resolved path. Distinct
@@ -80,7 +85,16 @@ private:
 // returns false (D1-C typed-throw refit per §wire-W4 Stage C).
 class ParseFileNotFound : public ParseError {
 public:
-    using ParseError::ParseError;
+    // `detail` is empty for the not-found case and carries the open
+    // failure for the exists-but-unreadable one, which routes here
+    // because no Rust producer distinguishes it either. It renders
+    // into the message and stays out of the key fragments — the path
+    // is what identifies the failure, and the platform\'s errno text
+    // would make the id platform-specific.
+    explicit ParseFileNotFound(std::string path, std::string detail = {})
+        : ParseError(detail.empty() ? "SCXML file not found: " + path
+                                    : "SCXML file not found: " + path + " (cannot open: " + detail + ")",
+                     {path}, path) {}
 
     std::string_view code() const noexcept override {
         return "xml/file-not-found";
@@ -101,7 +115,7 @@ public:
 // `xml_parse_result` evaluates to false.
 class ParseXmlFailed : public ParseError {
 public:
-    using ParseError::ParseError;
+    explicit ParseXmlFailed(std::string detail) : ParseError("XML parse error: " + detail, {}, std::nullopt) {}
 
     std::string_view code() const noexcept override {
         return "xml/parse";
@@ -125,7 +139,7 @@ public:
 // `what()` text is the only payload.
 class ParseException : public ParseError {
 public:
-    using ParseError::ParseError;
+    explicit ParseException(std::string detail) : ParseError("XML parse error: " + detail, {}, std::nullopt) {}
 
     std::string_view code() const noexcept override {
         return "xml/parse";
@@ -146,7 +160,7 @@ public:
 // returns null.
 class ParseNoRootElement : public ParseError {
 public:
-    using ParseError::ParseError;
+    ParseNoRootElement() : ParseError("XML parse error: no root element found", {}, std::nullopt) {}
 
     std::string_view code() const noexcept override {
         return "xml/parse";
@@ -168,7 +182,8 @@ public:
 // "scxml")` returns false.
 class ParseWrongRootElement : public ParseError {
 public:
-    using ParseError::ParseError;
+    explicit ParseWrongRootElement(std::string found)
+        : ParseError("Root element is not <scxml>, found: <" + found + ">", {found}, found) {}
 
     std::string_view code() const noexcept override {
         return "xml/wrong-root-element";
@@ -177,6 +192,9 @@ public:
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<ParseWrongRootElement>(*this);
     }
+
+protected:
+    void appendExpected(nlohmann::ordered_json &out) const override;
 };
 
 }  // namespace SCE::parsing

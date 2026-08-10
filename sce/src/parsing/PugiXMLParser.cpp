@@ -10,6 +10,7 @@
 #include "parsing/TemplateExpander.h"
 #include "parsing/XIncludeError.h"
 #include "parsing/XIncludeExpander.h"
+#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -423,7 +424,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
         // std::bad_alloc propagating through expandStringX) folds
         // into the `xml/xinclude-malformed` family — the catch-all
         // for "expansion failed for an unspecified reason".
-        throw SCE::parsing::XIncludeMalformed("XInclude processing failed: " + std::string(ex.what()));
+        throw SCE::parsing::XIncludeMalformed(std::string{}, "XInclude processing failed: " + std::string(ex.what()));
     }
 }
 
@@ -522,7 +523,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
     // Check if file exists
     if (!std::filesystem::exists(filename)) {
         SCE_LOG_ERROR("PugiXMLParser: File not found: {}", filename);
-        throw SCE::parsing::ParseFileNotFound("File not found: " + filename);
+        throw SCE::parsing::ParseFileNotFound(filename);
     }
 
     SCE_LOG_INFO("PugiXMLParser: Parsing file: {}", filename);
@@ -542,7 +543,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
         // producer distinguishes this case either — the wire still
         // routes through xml/file-not-found with a refined message.
         SCE_LOG_ERROR("PugiXMLParser: Cannot open file: {}", filename);
-        throw SCE::parsing::ParseFileNotFound("Cannot open file: " + filename);
+        throw SCE::parsing::ParseFileNotFound(filename, std::strerror(errno));
     }
     std::ostringstream buffer;
     buffer << in.rdbuf();
@@ -552,8 +553,8 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
     pugi::xml_parse_result result = doc->load_buffer(sourceText.data(), sourceText.size());
 
     if (!result) {
-        const std::string msg = "Parse error: " + std::string(result.description());
-        SCE_LOG_ERROR("PugiXMLParser: {}", msg);
+        const std::string msg = result.description();
+        SCE_LOG_ERROR("PugiXMLParser: Parse error: {}", msg);
         throw SCE::parsing::ParseXmlFailed(msg);
     }
 
@@ -587,8 +588,8 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
     pugi::xml_parse_result result = doc->load_string(content.c_str());
 
     if (!result) {
-        const std::string msg = "Parse error: " + std::string(result.description());
-        SCE_LOG_ERROR("PugiXMLParser: {}", msg);
+        const std::string msg = result.description();
+        SCE_LOG_ERROR("PugiXMLParser: Parse error: {}", msg);
         throw SCE::parsing::ParseXmlFailed(msg);
     }
 

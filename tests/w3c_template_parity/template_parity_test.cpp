@@ -589,7 +589,7 @@ void runErrorParityFixture(const std::string &fixtureName, const std::string &ru
     bool threwExpected = false;
     std::string actualType;
     std::string actualMessage;
-    std::optional<SCE::parsing::SourcePos> cppLocation;
+    std::optional<SCE::parsing::DiagnosticLocation> cppLocation;
     try {
         const std::string sourceText = readFileOrEmpty(fixturePath);
         ASSERT_FALSE(sourceText.empty()) << "Failed to read fixture source text: " << fixturePath;
@@ -649,15 +649,19 @@ void runErrorParityFixture(const std::string &fixtureName, const std::string &ru
                                             "`<sce:use>` processing loop — see TemplateExpander.cpp "
                                             "`useLocation` stamping.";
 
-    const std::string cppFile = cppLocation->file.filename().string();
+    const std::string cppFile = std::filesystem::path(cppLocation->file).filename().string();
     ASSERT_EQ(rustLoc->file, cppFile) << "Coordinate-agreement on '" << fixtureName << "': Rust file='" << rustLoc->file
                                       << "', C++ file='" << cppFile << "'.";
-    ASSERT_EQ(rustLoc->line, cppLocation->row)
+    ASSERT_TRUE(cppLocation->line.has_value() && cppLocation->col.has_value())
+        << "Coordinate-agreement on '" << fixtureName
+        << "': the C++ leaf carries a file but no (line, col) — the wire shape allows that, but a "
+           "fixture that opted into coordinate agreement expects the throw site to have stamped them.";
+    ASSERT_EQ(rustLoc->line, *cppLocation->line)
         << "Coordinate-agreement on '" << fixtureName << "': Rust line=" << rustLoc->line
-        << ", C++ row=" << cppLocation->row << ".";
-    ASSERT_EQ(rustLoc->col, cppLocation->col)
+        << ", C++ line=" << *cppLocation->line << ".";
+    ASSERT_EQ(rustLoc->col, *cppLocation->col)
         << "Coordinate-agreement on '" << fixtureName << "': Rust col=" << rustLoc->col
-        << ", C++ col=" << cppLocation->col << ".";
+        << ", C++ col=" << *cppLocation->col << ".";
 }
 
 // Success-path coordinate-lookup driver. Drives the

@@ -239,6 +239,15 @@ private:
      */
     void recordDiagnostic(std::unique_ptr<SCE::parsing::Diagnostic> diag);
 
+    // Single site where a typed leaf becomes a recorded failure:
+    // stamps the document path the caller named, then populates both
+    // the legacy string surface and the typed one. Every catch arm in
+    // `parseFile` / `parseContent` routes through it so the two
+    // entries cannot drift on what they record — they had already
+    // drifted on which families got a location suffix.
+    void recordTypedFailure(SCE::parsing::Diagnostic &diag, const std::string &documentPath,
+                            const std::string &message);
+
     /**
      * @brief Validate model
      * @param model Model to validate

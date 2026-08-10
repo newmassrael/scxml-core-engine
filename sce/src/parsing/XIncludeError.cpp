@@ -12,39 +12,31 @@
 
 namespace SCE::parsing {
 
-namespace {
-
-// Every `xml/xinclude-*` `DiagnosticCode` shares the `xml` Stage in
-// the Rust authority (see `DiagnosticCode::stage()` in
-// `sce-build/src/forge/diagnostic.rs`). Mirrors `kTemplateStage` in
-// `TemplateError.cpp`; both stage constants stay file-local because
-// the Rust prefix→stage table is not 1:1 (e.g. `cli/*` codes map to
-// `cli`, `mesh/deploy-*` map to `mesh-deploy`), so a shared
-// stage-mapping helper would carry per-prefix logic that would have
-// to grow in lockstep with each future W milestone — deferred until
-// a third stage shows up.
-constexpr std::string_view kXIncludeStage = "xml";
-
-}  // namespace
-
 nlohmann::ordered_json XIncludeExpansionError::to_json() const {
-    const std::string_view codeStr = code();
-    const std::string fileStr = location_.has_value() ? location_->file.string() : std::string{};
-    const std::string_view messageView{what()};
-    const std::string idStr = computeFnv1aDiagnosticId(codeStr, kXIncludeStage, fileStr, messageView);
-
-    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kXIncludeStage, idStr);
-    out["message"] = std::string{messageView};
-
-    if (location_.has_value()) {
-        nlohmann::ordered_json loc;
-        loc["file"] = location_->file.string();
-        loc["line"] = location_->row;
-        loc["col"] = location_->col;
-        out["location"] = std::move(loc);
+    // Field order follows the Rust struct's member order so
+    // canonicalised byte-diffs against `--error-format=json` agree:
+    // envelope, message, location, actual, fix.
+    nlohmann::ordered_json out = beginRecord();
+    out["message"] = std::string{what()};
+    appendLocation(out);
+    if (actual_.has_value()) {
+        out["actual"] = *actual_;
     }
-
+    appendFix(out);
     return out;
+}
+
+void XIncludeExpansionError::appendFix(nlohmann::ordered_json &) const {}
+
+void XIncludeMissingHref::appendFix(nlohmann::ordered_json &out) const {
+    // Mirrors the Rust payload for this variant: the repair is
+    // deterministic (`add_attribute`), so the consumer can apply it
+    // without a candidate list. SCE_ERROR_CONTRACT.md §3.1.
+    nlohmann::ordered_json fix;
+    fix["kind"] = "add_attribute";
+    fix["element"] = "xi:include";
+    fix["attr"] = "href";
+    out["fix"] = std::move(fix);
 }
 
 }  // namespace SCE::parsing
