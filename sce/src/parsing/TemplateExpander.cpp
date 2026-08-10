@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -179,7 +181,8 @@ std::vector<ByteRange> collectTopLevelSceUseRanges(std::string_view source) {
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(source.data(), source.size());
     if (!parseResult) {
-        throw TemplateMalformed(std::string("source document is malformed: ") + parseResult.description());
+        throw TemplateMalformed(std::string{},
+                                std::string("source document is malformed: ") + parseResult.description());
     }
 
     // Walk the tree; push top-level `<sce:use>` byte ranges only.
@@ -296,15 +299,12 @@ ParamDecl parseParamDecl(pugi::xml_node node, std::string_view templateHref) {
     // heuristics can dispatch without re-reading the body.
     const auto nameAttr = node.attribute("name");
     if (!nameAttr) {
-        throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: template is malformed: <sce:param> missing required `name` "
-                                "attribute");
+        throw TemplateMalformed(std::string(templateHref), "<sce:param> missing required `name` attribute");
     }
     std::string paramName = nameAttr.value();
     if (!is_valid_param_name(paramName)) {
-        throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: template is malformed: <sce:param name=\"" + paramName + "\"> name must match " +
-                                std::string(PARAM_NAME_PATTERN));
+        throw TemplateMalformed(std::string(templateHref), "<sce:param name=\"" + paramName + "\"> name must match " +
+                                                               std::string(PARAM_NAME_PATTERN));
     }
 
     ParamDecl decl;
@@ -314,9 +314,9 @@ ParamDecl parseParamDecl(pugi::xml_node node, std::string_view templateHref) {
         if (reqVal == "true") {
             decl.required = true;
         } else if (reqVal != "false") {
-            throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                    "\">: template is malformed: <sce:param name=\"" + decl.name +
-                                    "\"> `required` must be \"true\" or \"false\", got \"" + reqVal + "\"");
+            throw TemplateMalformed(std::string(templateHref),
+                                    "<sce:param name=\"" + decl.name +
+                                        "\"> `required` must be \"true\" or \"false\", got \"" + reqVal + "\"");
         }
     }
     if (const auto defAttr = node.attribute("default")) {
@@ -324,10 +324,10 @@ ParamDecl parseParamDecl(pugi::xml_node node, std::string_view templateHref) {
         decl.defaultValue = defAttr.value();
     }
     if (decl.required && decl.hasDefault) {
-        throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: template is malformed: <sce:param name=\"" + decl.name +
-                                "\"> declares both `required=\"true\"` and `default=\"...\"` — "
-                                "mutually exclusive");
+        throw TemplateMalformed(std::string(templateHref),
+                                "<sce:param name=\"" + decl.name +
+                                    "\"> declares both `required=\"true\"` and `default=\"...\"` — "
+                                    "mutually exclusive");
     }
     return decl;
 }
@@ -391,13 +391,12 @@ std::string renderChain(const std::vector<std::filesystem::path> &stack, const s
 std::string readTemplateText(const std::filesystem::path &path, std::string_view templateHref) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        throw TemplateReadError("<sce:use template=\"" + std::string(templateHref) + "\">: cannot read: open failed");
+        throw TemplateReadError(std::string(templateHref), std::strerror(errno));
     }
     std::ostringstream buffer;
     buffer << in.rdbuf();
     if (in.bad()) {
-        throw TemplateReadError("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: cannot read: I/O failure during read");
+        throw TemplateReadError(std::string(templateHref), "I/O failure during read");
     }
     return buffer.str();
 }
@@ -413,16 +412,13 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(std::string_view temp
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(templateRaw.data(), templateRaw.size());
     if (!parseResult) {
-        throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: template is malformed: " + parseResult.description());
+        throw TemplateMalformed(std::string(templateHref), parseResult.description());
     }
     const auto root = doc.document_element();
     if (!root || std::string(root.name()) != "sce:template") {
         const std::string rootName = root ? root.name() : "<none>";
-        throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: template is malformed: root element must be <sce:template>, "
-                                "got <" +
-                                rootName + ">");
+        throw TemplateMalformed(std::string(templateHref),
+                                "root element must be <sce:template>, got <" + rootName + ">");
     }
 
     // Collect `<sce:param>` declarations + compute body byte span.
@@ -436,10 +432,8 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(std::string_view temp
         if (child.type() == pugi::node_element && std::string(child.name()) == "sce:param") {
             ParamDecl decl = parseParamDecl(child, templateHref);
             if (!seenNames.insert(decl.name).second) {
-                throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                        "\">: template is malformed: duplicate <sce:param "
-                                        "name=\"" +
-                                        decl.name + "\"> declaration");
+                throw TemplateMalformed(std::string(templateHref),
+                                        "duplicate <sce:param name=\"" + decl.name + "\"> declaration");
             }
             decls.push_back(std::move(decl));
             continue;
@@ -493,8 +487,7 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(std::string_view temp
         const bool known =
             std::any_of(decls.begin(), decls.end(), [&](const ParamDecl &d) { return d.name == kv.first; });
         if (!known) {
-            throw TemplateUnknownParam("<sce:use template=\"" + std::string(templateHref) + "\">: unknown parameter '" +
-                                       kv.first + "' (declared: " + declaredList + ")");
+            throw TemplateUnknownParam(std::string(templateHref), kv.first, declaredList);
         }
     }
 
@@ -507,8 +500,7 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(std::string_view temp
             continue;
         }
         if (d.required) {
-            throw TemplateMissingParam("<sce:use template=\"" + std::string(templateHref) +
-                                       "\">: missing required parameter '" + d.name + "'");
+            throw TemplateMissingParam(std::string(templateHref), d.name);
         }
         params.emplace(d.name, d.hasDefault ? d.defaultValue : std::string());
     }
@@ -551,15 +543,12 @@ std::vector<ByteRange> extractTemplateBodyRanges(std::string_view expandedTempla
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(expandedTemplate.data(), expandedTemplate.size());
     if (!parseResult) {
-        throw TemplateMalformed(
-            "<sce:use template=\"" + std::string(templateHref) +
-            "\">: template is malformed: expanded template is malformed: " + parseResult.description());
+        throw TemplateMalformed(std::string(templateHref),
+                                std::string("expanded template is malformed: ") + parseResult.description());
     }
     const auto root = doc.document_element();
     if (!root || std::string(root.name()) != "sce:template") {
-        throw TemplateMalformed("<sce:use template=\"" + std::string(templateHref) +
-                                "\">: template is malformed: expanded template root is not "
-                                "<sce:template>");
+        throw TemplateMalformed(std::string(templateHref), "expanded template root is not <sce:template>");
     }
     std::vector<ByteRange> ranges;
     for (const auto child : root.children()) {
@@ -606,14 +595,14 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
                                 const std::vector<std::string> &includeDirs, std::uint32_t depth,
                                 std::vector<std::filesystem::path> &stack, const PositionMap &inputMap) {
     if (depth >= static_cast<std::uint32_t>(MAX_TEMPLATE_DEPTH)) {
-        throw TemplateTooDeep("<sce:use> template nesting exceeds depth limit of " +
-                              std::to_string(MAX_TEMPLATE_DEPTH));
+        throw TemplateTooDeep(MAX_TEMPLATE_DEPTH);
     }
 
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(content.data(), content.size());
     if (!parseResult) {
-        throw TemplateMalformed(std::string("source document is malformed: ") + parseResult.description());
+        throw TemplateMalformed(std::string{},
+                                std::string("source document is malformed: ") + parseResult.description());
     }
 
     struct SceUseHit {
@@ -684,12 +673,17 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
         const SourcePos useLocation = inputMap.lookup(useRange.start);
         const std::uint32_t callerRow = useLocation.row;
         const std::uint32_t callerCol = useLocation.col;
+        // Wire shape of the same coordinate. `SourcePos` is the
+        // position-map type (row/col always known); `DiagnosticLocation`
+        // is what the record carries, where they are optional. Built
+        // once here because every throw in this loop stamps it.
+        const DiagnosticLocation useDiagLocation{useLocation.file.string(), useLocation.row, useLocation.col};
 
         const auto templateAttr = useNode.attribute("template");
         const std::string templateHref = templateAttr ? templateAttr.value() : std::string();
         if (templateHref.empty()) {
-            TemplateMissingAttribute err("<sce:use> missing required `template` attribute");
-            err.setLocation(useLocation);
+            TemplateMissingAttribute err;
+            err.setLocation(useDiagLocation);
             throw err;
         }
 
@@ -703,18 +697,16 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
                 }
                 trail.append(entry);
             }
-            TemplateNotFound err("<sce:use template=\"" + templateHref + "\">: file not found (searched: " + trail +
-                                 ")");
-            err.setLocation(useLocation);
+            TemplateNotFound err(templateHref, trail);
+            err.setLocation(useDiagLocation);
             throw err;
         }
 
         const auto canon = canonicaliseForCycle(resolvedPath);
         for (const auto &entry : stack) {
             if (entry == canon) {
-                TemplateCycle err("<sce:use template=\"" + templateHref + "\">: cycle detected (" +
-                                  renderChain(stack, canon) + ")");
-                err.setLocation(useLocation);
+                TemplateCycle err(templateHref, renderChain(stack, canon));
+                err.setLocation(useDiagLocation);
                 throw err;
             }
         }
@@ -723,7 +715,7 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
         try {
             templateText = readTemplateText(resolvedPath, templateHref);
         } catch (TemplateReadError &e) {
-            e.setLocation(useLocation);
+            e.setLocation(useDiagLocation);
             throw;
         }
         const auto bindings = collectUseBindings(useNode);
@@ -739,7 +731,7 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
             // RFC §6.3 Q3 depth-1 rule so the operator sees which
             // `<sce:use>` to fix first.
             if (!e.location().has_value()) {
-                e.setLocation(useLocation);
+                e.setLocation(useDiagLocation);
             }
             throw;
         }
@@ -756,9 +748,18 @@ TemplateExpandResult expandImpl(std::string_view content, const std::filesystem:
             // failure surfaces at the outer `<sce:use>` callsite the
             // operator can see, even if the inner expansion stamped
             // its own leaf location. Mirrors Rust template.rs's
-            // `.map_err(|(err, _)| (remap_nested(err, ...), loc))`.
-            e.setLocation(useLocation);
-            throw;
+            // `.map_err(|(err, _)| (remap_nested(err, ...), loc))` —
+            // including the `remap_nested` half, which re-attributes
+            // the diagnostic to the `<sce:use>` the operator sees.
+            // The template name is one of the id's key fragments, so
+            // without it the two producers disagree on every nested
+            // failure even after agreeing on the direct ones.
+            try {
+                e.rethrowAttributedTo(templateHref);
+            } catch (TemplateError &attributed) {
+                attributed.setLocation(useDiagLocation);
+                throw;
+            }
         } catch (...) {
             stack.pop_back();
             throw;

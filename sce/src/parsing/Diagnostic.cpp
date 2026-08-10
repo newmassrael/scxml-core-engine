@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace SCE::parsing {
 
@@ -41,19 +43,23 @@ private:
     uint64_t state_{kOffset};
 };
 
-}  // namespace
-
+// Content-addressed FNV-1a 64-bit id. Canonical key shape mirrors
+// `compute_id` in `sce-build/src/forge/diagnostic.rs`:
+//
+//     code | stage | file_or_empty  (<0x1f> fragment)*
+//
+// The unit separator PRECEDES each fragment rather than joining them,
+// which is what makes a zero-fragment diagnostic hash without any
+// separator at all — the shape Rust's `for frag in key_fragments`
+// loop produces, and the reason a C++ side that always wrote one
+// separator could not match `XIncludeError::MissingHref` (a unit
+// variant, zero fragments) even after the fragment values agreed.
+//
+// Returned string satisfies the schema's `^fnv1a:[0-9a-f]{16}$`.
+// File-local: the only caller is `Diagnostic::beginRecord`, so no
+// leaf can reach past its declared fragments and hash something else.
 std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view stage, std::string_view file,
-                                     std::string_view messageFragment) {
-    // Canonical key shape mirrors `compute_id` in
-    // `sce-build/src/forge/diagnostic.rs`:
-    //   code | stage | file_or_empty <0x1f> messageFragment
-    //
-    // The Rust authority feeds *structured* `key_fragments` after the
-    // unit-separator byte; the C++ side currently sends a single
-    // rendered-message fragment. Schema-valid on both sides; not
-    // byte-equivalent for the same logical error. Lifting structured
-    // fields onto C++ subtypes is W3+ scope (RFC §1 Q5).
+                                     const std::vector<std::string> &keyFragments) {
     Fnv1a64 hasher;
     hasher.write(code);
     hasher.write("|");
@@ -61,8 +67,10 @@ std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view sta
     hasher.write("|");
     hasher.write(file);
     constexpr char kUnitSeparator = static_cast<char>(0x1f);
-    hasher.write(std::string_view{&kUnitSeparator, 1});
-    hasher.write(messageFragment);
+    for (const auto &fragment : keyFragments) {
+        hasher.write(std::string_view{&kUnitSeparator, 1});
+        hasher.write(fragment);
+    }
 
     std::array<char, 32> buffer{};
     const int written =
@@ -70,6 +78,20 @@ std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view sta
     return std::string(buffer.data(), static_cast<std::size_t>(written));
 }
 
+// Open a v1 record with the envelope every leaf shares.
+//
+// Exists because these keys were spelled out in all eight `to_json()`
+// overrides. Adding `generator` to the schema meant editing eight sites
+// that each had to be found, and an override that had been missed would
+// have emitted a record the shared schema rejects while every other
+// subtype's fixture stayed green. One assembly point makes the required
+// set a property of this function rather than of whoever remembered.
+//
+// `generator` is the commit the library was built from, supplied by
+// `SCE_GIT_COMMIT` from `sce/CMakeLists.txt`; see there for why the git
+// refs are configure-dependencies. `unknown` when the build had no
+// checkout to read — the value the schema's pattern allows alongside a
+// hex commit, and the honest answer rather than a fabricated one.
 nlohmann::ordered_json beginDiagnosticRecord(std::string_view code, std::string_view stage, const std::string &id) {
 #ifdef SCE_GIT_COMMIT
     constexpr std::string_view kGeneratorCommit = SCE_GIT_COMMIT;
@@ -88,6 +110,29 @@ nlohmann::ordered_json beginDiagnosticRecord(std::string_view code, std::string_
     out["code"] = std::string{code};
     out["stage"] = std::string{stage};
     return out;
+}
+
+}  // namespace
+
+nlohmann::ordered_json Diagnostic::beginRecord() const {
+    const std::string_view file = location_.has_value() ? std::string_view{location_->file} : std::string_view{};
+    const std::string id = computeFnv1aDiagnosticId(code(), stage(), file, keyFragments_);
+    return beginDiagnosticRecord(code(), stage(), id);
+}
+
+void Diagnostic::appendLocation(nlohmann::ordered_json &out) const {
+    if (!location_.has_value() || location_->file.empty()) {
+        return;
+    }
+    nlohmann::ordered_json loc;
+    loc["file"] = location_->file;
+    if (location_->line.has_value()) {
+        loc["line"] = *location_->line;
+    }
+    if (location_->col.has_value()) {
+        loc["col"] = *location_->col;
+    }
+    out["location"] = std::move(loc);
 }
 
 std::string Diagnostic::to_canonical_json_string() const {

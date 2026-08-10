@@ -12,38 +12,16 @@
 
 namespace SCE::parsing {
 
-namespace {
-
-// Every `validation/*` and `scxml/*` `DiagnosticCode` shares the
-// `validation` Stage in the Rust authority (see
-// `DiagnosticCode::stage()` in `sce-build/src/forge/diagnostic.rs`
-// and §wire-W5 D2's Stage::Validation reuse). Mirrors `kParseStage`
-// in `ParseError.cpp` and `kXIncludeStage` in `XIncludeError.cpp`;
-// stage constant stays file-local for the same reason — Rust
-// prefix→stage table is not 1:1 (`mesh/deploy-*` map to
-// `mesh-deploy`, etc.), so a shared mapping helper would carry per-
-// prefix logic that grows with each future W milestone.
-constexpr std::string_view kSemanticStage = "validation";
-
-}  // namespace
+// Every `validation/*` and `scxml/*` `DiagnosticCode` in this family
+// reports the `validation` stage (§wire-W5 D2's `Stage::Validation`
+// reuse). The value is declared once on `SemanticError::stage()`
+// rather than as a file-local constant, because the base computes the
+// id and needs to read it.
 
 nlohmann::ordered_json SemanticError::baseEnvelope() const {
-    const std::string_view codeStr = code();
-    const std::string fileStr = location().has_value() ? location()->file.string() : std::string{};
-    const std::string_view messageView{what()};
-    const std::string idStr = computeFnv1aDiagnosticId(codeStr, kSemanticStage, fileStr, messageView);
-
-    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kSemanticStage, idStr);
-    out["message"] = std::string{messageView};
-
-    if (location().has_value()) {
-        nlohmann::ordered_json loc;
-        loc["file"] = location()->file.string();
-        loc["line"] = location()->row;
-        loc["col"] = location()->col;
-        out["location"] = std::move(loc);
-    }
-
+    nlohmann::ordered_json out = beginRecord();
+    out["message"] = std::string{what()};
+    appendLocation(out);
     return out;
 }
 
@@ -99,26 +77,29 @@ nlohmann::ordered_json SemanticNoStates::to_json() const {
 }
 
 nlohmann::ordered_json SemanticTopLevelScriptUnloaded::to_json() const {
-    auto out = baseEnvelope();
-    // The 1 NEW wire code with a `spec` anchor in this RFC. Inserted
-    // after `stage` and before `message` to match the canonical key
-    // ordering enforced by `code_serde_rename_matches_as_str` /
-    // `CanonicalJsonStringHasAlphabeticalKeyOrder` test invariants on
-    // the Rust side.
-    nlohmann::ordered_json reordered;
-    reordered["v"] = out.at("v");
-    reordered["id"] = out.at("id");
-    reordered["code"] = out.at("code");
-    reordered["stage"] = out.at("stage");
-    reordered["spec"] = "W3C SCXML §5.8";
-    reordered["message"] = out.at("message");
-    if (out.contains("location")) {
-        reordered["location"] = std::move(out.at("location"));
+    // The one NEW wire code in this family that carries a `spec`
+    // anchor. It is spliced in after `stage` — the position the Rust
+    // struct declares it at — by rebuilding the envelope in order.
+    //
+    // The rebuild used to enumerate the keys it carried over and
+    // dropped `generator` on the floor, so this leaf alone emitted a
+    // record the shared schema rejects (`generator` is required). It
+    // survived because the suite\'s per-family assertion restated the
+    // required key set by hand instead of reading the schema. Copying
+    // the envelope wholesale and inserting into it keeps any future
+    // envelope field without a second edit here.
+    auto envelope = baseEnvelope();
+    nlohmann::ordered_json out;
+    for (auto it = envelope.begin(); it != envelope.end(); ++it) {
+        out[it.key()] = *it;
+        if (it.key() == "stage") {
+            out["spec"] = "W3C SCXML §5.8";
+        }
     }
     if (src_.has_value()) {
-        reordered["actual"] = *src_;
+        out["actual"] = *src_;
     }
-    return reordered;
+    return out;
 }
 
 }  // namespace SCE::parsing

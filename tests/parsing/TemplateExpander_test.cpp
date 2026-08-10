@@ -403,11 +403,13 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
     } catch (const SCE::parsing::TemplateNotFound &e) {
         const auto &loc = e.location();
         ASSERT_TRUE(loc.has_value());
-        EXPECT_EQ(loc->file, std::filesystem::path(callerPath));
-        EXPECT_EQ(loc->row, 2u);
+        EXPECT_EQ(loc->file, std::string(callerPath));
+        ASSERT_TRUE(loc->line.has_value());
+        EXPECT_EQ(*loc->line, 2u);
         // The `<sce:use>` element starts at column 3 on line 2
         // (two leading spaces + `<`).
-        EXPECT_EQ(loc->col, 3u);
+        ASSERT_TRUE(loc->col.has_value());
+        EXPECT_EQ(*loc->col, 3u);
     }
 }
 

@@ -7,6 +7,8 @@
 
 #include <pugixml.hpp>
 
+#include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -110,8 +112,7 @@ RootChildrenRender renderRootChildren(std::string_view expanded, std::string_vie
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(expanded.data(), expanded.size());
     if (!parseResult) {
-        throw XIncludeMalformed("<xi:include href=\"" + std::string(href) +
-                                "\">: included file is malformed: " + parseResult.description());
+        throw XIncludeMalformed(std::string(href), parseResult.description());
     }
     const auto root = doc.document_element();
     if (!root || !root.first_child()) {
@@ -192,6 +193,18 @@ std::string renderCycleChain(const std::vector<std::filesystem::path> &stack, co
     return out;
 }
 
+// 1-based (row, col) of `offset` within `content`. Mirrors Rust
+// `doc_loc`, which asks roxmltree for the same translation.
+//
+// Built on `PositionMap::identity` rather than a local newline scan so
+// the column convention (Unicode scalars, not bytes — see
+// `SourcePos::col`) is the tree's one convention rather than a second
+// one that agrees until the first multibyte character. Constructing a
+// map per diagnostic is an error-path cost only.
+SourcePos offsetPosition(std::string_view content, const std::filesystem::path &contentFile, std::size_t offset) {
+    return PositionMap::identity(contentFile, content).lookup(offset);
+}
+
 // Reject XInclude features the pugixml runtime does not implement.
 // Mirrors Rust `reject_unsupported`: `parse="text"`, `xpointer=`,
 // and `<xi:fallback>` children. The C++ expander preserves the
@@ -200,15 +213,18 @@ std::string renderCycleChain(const std::vector<std::filesystem::path> &stack, co
 void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href) {
     const auto parseAttr = node.attribute("parse");
     if (parseAttr) {
+        // `parse=""` is rejected too — Rust's `if mode != "xml"` admits
+        // exactly one value, and an empty `parse` that the C++ side let
+        // through would have the two pipelines disagree on which
+        // documents are accepted, which is the whole point of mirroring
+        // this rejection set.
         const std::string mode = parseAttr.value();
-        if (!mode.empty() && mode != "xml") {
-            throw XIncludeUnsupported("<xi:include href=\"" + std::string(href) + "\">: unsupported feature: parse=\"" +
-                                      mode + "\" (only parse=\"xml\" is supported)");
+        if (mode != "xml") {
+            throw XIncludeUnsupported(std::string(href), "parse=\"" + mode + "\" (only parse=\"xml\" is supported)");
         }
     }
     if (node.attribute("xpointer")) {
-        throw XIncludeUnsupported("<xi:include href=\"" + std::string(href) +
-                                  "\">: unsupported feature: xpointer selection is not implemented");
+        throw XIncludeUnsupported(std::string(href), "xpointer selection is not implemented");
     }
     for (const auto &child : node.children()) {
         if (child.type() != pugi::node_element) {
@@ -216,9 +232,7 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href
         }
         const std::string n = child.name();
         if (n == "fallback" || n == "xi:fallback") {
-            throw XIncludeUnsupported("<xi:include href=\"" + std::string(href) +
-                                      "\">: unsupported feature: <xi:fallback> alternative content "
-                                      "is not implemented");
+            throw XIncludeUnsupported(std::string(href), "<xi:fallback> alternative content is not implemented");
         }
     }
 }
@@ -228,7 +242,10 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href
 std::string readFragmentText(const std::filesystem::path &path, std::string_view href) {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
-        throw XIncludeReadError("<xi:include href=\"" + std::string(href) + "\">: cannot read file: " + path.string());
+        // The failure cause, not the resolved path: Rust renders the
+        // `std::io::Error` here and the resolved path is derivable
+        // from the href the message already carries.
+        throw XIncludeReadError(std::string(href), std::strerror(errno));
     }
     std::ostringstream buf;
     buf << ifs.rdbuf();
@@ -242,13 +259,26 @@ XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem:
                                 const std::filesystem::path &baseDir, const std::vector<std::string> &includeDirs,
                                 unsigned depth, std::vector<std::filesystem::path> &stack) {
     if (depth >= MAX_XINCLUDE_DEPTH) {
-        throw XIncludeTooDeep("<xi:include> nesting exceeds depth limit of " + std::to_string(MAX_XINCLUDE_DEPTH));
+        // Rust stamps (1, 1) here: the depth guard fires before any
+        // node of this level has been located, so there is no include
+        // element to point at.
+        XIncludeTooDeep err(MAX_XINCLUDE_DEPTH);
+        err.setPosition(1, 1);
+        throw err;
     }
 
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(content.data(), content.size());
     if (!parseResult) {
-        throw XIncludeMalformed(std::string("<xi:include> source document is malformed: ") + parseResult.description());
+        // No href: this is the document handed to this level, not a
+        // fragment it pulled in. The caller re-attributes it to the
+        // `<xi:include>` that pulled this content in when there is one
+        // (see `rethrowAttributedTo` below), exactly as Rust's
+        // `remap_nested` does.
+        XIncludeMalformed err(std::string{}, parseResult.description());
+        const auto pos = offsetPosition(content, contentFile, parseResult.offset);
+        err.setPosition(pos.row, pos.col);
+        throw err;
     }
 
     std::vector<XIncludeHit> includes;
@@ -283,66 +313,87 @@ XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem:
             map.push_entry(outStart, out.size(), FileOrigin{contentFile, cursor});
         }
 
-        // href validation comes before unsupported-feature rejection
-        // so the diagnostic can name the href in its message even
-        // when the feature itself is what fails. Empty / missing
-        // href is its own typed failure.
-        const auto hrefAttr = node.attribute("href");
-        const std::string href = hrefAttr ? hrefAttr.value() : std::string();
-        if (href.empty()) {
-            throw XIncludeMissingHref("<xi:include> missing or empty `href` attribute");
-        }
-
-        rejectUnsupportedFeatures(node, href);
-
-        std::vector<std::string> searched;
-        const auto resolved = resolveFragment(href, baseDir, includeDirs, searched);
-        if (resolved.empty()) {
-            std::string trail;
-            for (const auto &entry : searched) {
-                if (!trail.empty()) {
-                    trail.append(", ");
-                }
-                trail.append(entry);
-            }
-            throw XIncludeNotFound("<xi:include href=\"" + href + "\">: file not found (searched: " + trail + ")");
-        }
-
-        // Cycle detection. Canonicalise so `./foo.xml` and `foo.xml`
-        // resolve to the same stack entry. Mirrors Rust
-        // canonicalize-or-fallback at sce-build/src/xinclude.rs:283.
-        std::error_code canonEc;
-        auto canon = std::filesystem::canonical(resolved, canonEc);
-        if (canonEc) {
-            canon = resolved;
-        }
-        for (const auto &entry : stack) {
-            if (entry == canon) {
-                throw XIncludeCycle("<xi:include href=\"" + href + "\">: cycle detected (" +
-                                    renderCycleChain(stack, canon) + ")");
-            }
-        }
-
-        const std::string raw = readFragmentText(resolved, href);
-
-        stack.push_back(canon);
-        XIncludeExpandResult nested;
+        // Every failure raised while processing this element points at
+        // the element itself — including one raised inside the nested
+        // expansion, whose own coordinates reference the included file
+        // rather than the document the operator would edit. Mirrors
+        // Rust's `expand_impl`, which threads one `loc` through every
+        // `Err` in this loop and drops `nested_loc`.
+        const auto includePos = offsetPosition(content, contentFile, range.start);
         try {
-            const std::filesystem::path nestedBase = resolved.parent_path();
-            nested = expandImpl(raw, resolved, nestedBase, includeDirs, depth + 1, stack);
-        } catch (...) {
+            // href validation comes before unsupported-feature rejection
+            // so the diagnostic can name the href in its message even
+            // when the feature itself is what fails. Empty / missing
+            // href is its own typed failure.
+            const auto hrefAttr = node.attribute("href");
+            const std::string href = hrefAttr ? hrefAttr.value() : std::string();
+            if (href.empty()) {
+                throw XIncludeMissingHref();
+            }
+
+            rejectUnsupportedFeatures(node, href);
+
+            std::vector<std::string> searched;
+            const auto resolved = resolveFragment(href, baseDir, includeDirs, searched);
+            if (resolved.empty()) {
+                std::string trail;
+                for (const auto &entry : searched) {
+                    if (!trail.empty()) {
+                        trail.append(", ");
+                    }
+                    trail.append(entry);
+                }
+                throw XIncludeNotFound(href, trail);
+            }
+
+            // Cycle detection. Canonicalise so `./foo.xml` and `foo.xml`
+            // resolve to the same stack entry. Mirrors Rust
+            // canonicalize-or-fallback at sce-build/src/xinclude.rs:283.
+            std::error_code canonEc;
+            auto canon = std::filesystem::canonical(resolved, canonEc);
+            if (canonEc) {
+                canon = resolved;
+            }
+            for (const auto &entry : stack) {
+                if (entry == canon) {
+                    throw XIncludeCycle(href, renderCycleChain(stack, canon));
+                }
+            }
+
+            const std::string raw = readFragmentText(resolved, href);
+
+            stack.push_back(canon);
+            XIncludeExpandResult nested;
+            try {
+                const std::filesystem::path nestedBase = resolved.parent_path();
+                nested = expandImpl(raw, resolved, nestedBase, includeDirs, depth + 1, stack);
+            } catch (const XIncludeExpansionError &nestedErr) {
+                stack.pop_back();
+                // Re-attribute to the `<xi:include>` the operator sees.
+                // Without this the record names a transitive href — or,
+                // for a malformed fragment, no href at all — and the
+                // href is part of the id's key fragments, so the two
+                // producers would disagree on nested failures even
+                // after agreeing on every direct one. Mirrors Rust
+                // `remap_nested`.
+                nestedErr.rethrowAttributedTo(href);
+            } catch (...) {
+                stack.pop_back();
+                throw;
+            }
             stack.pop_back();
+
+            const auto rendered = renderRootChildren(nested.expanded_text, href);
+            const std::size_t spliceStart = out.size();
+            out.append(rendered.text);
+            // Compose nested map for the bytes just spliced in: clip
+            // nested entries to `[rendered.start, rendered.end)`, then
+            // shift them so they land at `spliceStart` in the outer map.
+            map.append_mapped_substring(nested.positions, rendered.start, rendered.end, spliceStart);
+        } catch (XIncludeExpansionError &err) {
+            err.setPosition(includePos.row, includePos.col);
             throw;
         }
-        stack.pop_back();
-
-        const auto rendered = renderRootChildren(nested.expanded_text, href);
-        const std::size_t spliceStart = out.size();
-        out.append(rendered.text);
-        // Compose nested map for the bytes just spliced in: clip
-        // nested entries to `[rendered.start, rendered.end)`, then
-        // shift them so they land at `spliceStart` in the outer map.
-        map.append_mapped_substring(nested.positions, rendered.start, rendered.end, spliceStart);
 
         cursor = range.end;
     }
@@ -380,7 +431,21 @@ XIncludeExpandResult expandStringX(std::string_view content, std::string_view se
         stack.push_back(ec ? selfFile : canon);
     }
 
-    return expandImpl(content, selfFile, baseFile, includeDirs, /*depth=*/0, stack);
+    try {
+        return expandImpl(content, selfFile, baseFile, includeDirs, /*depth=*/0, stack);
+    } catch (XIncludeExpansionError &err) {
+        // The expander levels know *where* in a document the failure
+        // is but not what that document is called — `expandImpl`
+        // recurses on fragment content and would name a fragment.
+        // Naming it here mirrors the Rust pipeline, which wraps the
+        // whole expansion in one `Located::new(..., scxml_path, ...)`
+        // at the parse boundary. `location.file` feeds the `id` hash,
+        // so a producer that leaves it empty cannot match one that
+        // fills it in — which is how the C++ ids diverged from Rust's
+        // for every XInclude failure.
+        err.stampFile(std::string(selfPath));
+        throw;
+    }
 }
 
 }  // namespace SCE::parsing

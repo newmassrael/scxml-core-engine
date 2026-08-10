@@ -19,6 +19,12 @@
 #include <filesystem>
 #include <utility>
 
+// Typed diagnostics raised anywhere in this file reach consumers
+// through `getDiagnostics()`, and every record they emit canonicalises
+// through the §wire-W2 byte-diff shape — one assembly point
+// (`recordTypedFailure`) so the legacy string surface and the typed
+// one cannot disagree about what was recorded.
+
 SCE::SCXMLParser::SCXMLParser(std::shared_ptr<SCE::NodeFactory> nodeFactory,
                               std::shared_ptr<SCE::IXIncludeProcessor> xincludeProcessor)
     : nodeFactory_(nodeFactory) {
@@ -93,50 +99,27 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
 
         // Parse document
         return parseAbstractDocument(doc);
-    } catch (const SCE::parsing::ParseError &pe) {
+    } catch (SCE::parsing::ParseError &pe) {
         // §wire-W4 D1-C: PugiXMLParser + parseAbstractDocument throw
         // typed `ParseError` subtypes for parser-entry failures
         // (file-not-found, malformed XML, no/wrong root element).
-        // Q4-B coexistence: `addError` populates the legacy string
-        // surface; `recordDiagnostic` populates the typed
-        // `getDiagnostics()` surface that consumers dispatch on
-        // (§wire-W4 D8 ParseErrorConsumer.TypedCodeDistinguishesFailureClass*).
-        addError(pe.what());
-        recordDiagnostic(pe.clone());
+        recordTypedFailure(pe, filename, pe.what());
         return nullptr;
-    } catch (const SCE::parsing::TemplateError &tpl) {
-        std::string msg = tpl.what();
-        if (tpl.location().has_value()) {
-            const auto &loc = *tpl.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
-        }
-        addError(msg);
-        recordDiagnostic(tpl.clone());
+    } catch (SCE::parsing::TemplateError &tpl) {
+        recordTypedFailure(tpl, filename, tpl.what());
         return nullptr;
-    } catch (const SCE::parsing::XIncludeExpansionError &xie) {
+    } catch (SCE::parsing::XIncludeExpansionError &xie) {
         // §wire-W3: re-thrown by `PugiXMLDocument::processXInclude`
         // so the typed leaf reaches `getDiagnostics()` with its
-        // `xml/xinclude-*` `code()` intact. `addError` populates the
-        // legacy string surface for Q4-B coexistence, paralleling
-        // the §wire-W2 TemplateError arm above.
-        std::string msg = "XInclude processing failed: " + std::string(xie.what());
-        if (xie.location().has_value()) {
-            const auto &loc = *xie.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
-        }
-        addError(msg);
-        recordDiagnostic(xie.clone());
+        // `xml/xinclude-*` `code()` intact.
+        recordTypedFailure(xie, filename, "XInclude processing failed: " + std::string(xie.what()));
         return nullptr;
-    } catch (const SCE::parsing::SemanticError &se) {
+    } catch (SCE::parsing::SemanticError &se) {
         // §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
         // top-level-script + no-states; validateModel initial-state +
         // transition-target + compound-state-initial +
         // history-default-missing) surface here.
-        // Q4-B coexistence: legacy `addError` populates
-        // `getErrorMessages()` while `recordDiagnostic` populates the
-        // typed `getDiagnostics()` surface consumers dispatch on.
-        addError(se.what());
-        recordDiagnostic(se.clone());
+        recordTypedFailure(se, filename, se.what());
         return nullptr;
     } catch (const std::exception &ex) {
         // §wire-W4 D1-C: wrap unexpected std::exception as typed
@@ -145,9 +128,8 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         // D4 α-strict, `typeid(ex).name()` is NOT included — the wire
         // detail field would emit different strings on libstdc++ /
         // libc++ / MSVC, breaking portability.
-        SCE::parsing::ParseException pe("Exception while parsing file: " + std::string(ex.what()));
-        addError(pe.what());
-        recordDiagnostic(pe.clone());
+        SCE::parsing::ParseException pe("exception while parsing file: " + std::string(ex.what()));
+        recordTypedFailure(pe, filename, pe.what());
         return nullptr;
     }
 }
@@ -180,52 +162,28 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
 
         // Parse document
         return parseAbstractDocument(doc);
-    } catch (const SCE::parsing::ParseError &pe) {
+    } catch (SCE::parsing::ParseError &pe) {
         // §wire-W4 D1-C: parser-entry typed surface (mirror of
-        // `parseFile`'s arm above).
-        addError(pe.what());
-        recordDiagnostic(pe.clone());
+        // `parseFile`'s arm above). No document path to stamp — an
+        // in-memory document is anonymous, the same reason Rust's
+        // `parse_string` carries only the label it was handed.
+        recordTypedFailure(pe, /*documentPath=*/std::string{}, pe.what());
         return nullptr;
-    } catch (const SCE::parsing::TemplateError &tpl) {
-        std::string msg = tpl.what();
-        if (tpl.location().has_value()) {
-            const auto &loc = *tpl.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
-        }
-        addError(msg);
-        recordDiagnostic(tpl.clone());
+    } catch (SCE::parsing::TemplateError &tpl) {
+        recordTypedFailure(tpl, /*documentPath=*/std::string{}, tpl.what());
         return nullptr;
-    } catch (const SCE::parsing::XIncludeExpansionError &xie) {
-        // §wire-W3: re-thrown by `PugiXMLDocument::processXInclude`
-        // so the typed leaf reaches `getDiagnostics()` with its
-        // `xml/xinclude-*` `code()` intact. `addError` populates the
-        // legacy string surface for Q4-B coexistence.
-        std::string msg = "XInclude processing failed: " + std::string(xie.what());
-        if (xie.location().has_value()) {
-            const auto &loc = *xie.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
-        }
-        addError(msg);
-        recordDiagnostic(xie.clone());
+    } catch (SCE::parsing::XIncludeExpansionError &xie) {
+        recordTypedFailure(xie, /*documentPath=*/std::string{},
+                           "XInclude processing failed: " + std::string(xie.what()));
         return nullptr;
-    } catch (const SCE::parsing::SemanticError &se) {
-        // §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
-        // top-level-script + no-states; validateModel initial-state +
-        // transition-target + compound-state-initial +
-        // history-default-missing) surface here.
-        // Q4-B coexistence: legacy `addError` populates
-        // `getErrorMessages()` while `recordDiagnostic` populates the
-        // typed `getDiagnostics()` surface consumers dispatch on.
-        // Mirror of the parseFile arm above.
-        addError(se.what());
-        recordDiagnostic(se.clone());
+    } catch (SCE::parsing::SemanticError &se) {
+        recordTypedFailure(se, /*documentPath=*/std::string{}, se.what());
         return nullptr;
     } catch (const std::exception &ex) {
         // §wire-W4 D1-C: wrap unexpected std::exception as typed
         // `ParseException`.
-        SCE::parsing::ParseException pe("Exception while parsing content: " + std::string(ex.what()));
-        addError(pe.what());
-        recordDiagnostic(pe.clone());
+        SCE::parsing::ParseException pe("exception while parsing content: " + std::string(ex.what()));
+        recordTypedFailure(pe, /*documentPath=*/std::string{}, pe.what());
         return nullptr;
     }
 }
@@ -244,7 +202,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
     // reuses `xml/parse` rather than introducing a new wire code.
     auto rootElement = doc->getRootElement();
     if (!rootElement) {
-        throw SCE::parsing::ParseNoRootElement("No root element found");
+        throw SCE::parsing::ParseNoRootElement();
     }
 
     // Check if root element is 'scxml' AND in the W3C SCXML namespace
@@ -257,7 +215,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
     // otherwise be matched by local-name-only dispatch.
     if (!ParsingCommon::matchNodeName(rootElement->getName(), "scxml") ||
         !ParsingCommon::isScxmlNamespace(rootElement)) {
-        throw SCE::parsing::ParseWrongRootElement("Root element is not 'scxml', found: " + rootElement->getName());
+        throw SCE::parsing::ParseWrongRootElement(rootElement->getName());
     }
 
     SCE_LOG_INFO("Valid SCXML document found, parsing structure");
@@ -400,9 +358,8 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
                 // §wire-W5 D5: typed-throw replaces addError + return-false
                 // so the parser-entry catch arm can record both the legacy
                 // string and the typed Diagnostic in one site.
-                throw SCE::parsing::SemanticTopLevelScriptUnloaded(std::move(errorDetail),
-                                                                   /*index=*/std::optional<std::size_t>{i + 1},
-                                                                   /*src=*/std::move(srcOpt));
+                throw SCE::parsing::SemanticTopLevelScriptUnloaded(
+                    /*index=*/std::optional<std::size_t>{i + 1}, /*src=*/std::move(srcOpt));
             }
         }
 
@@ -423,7 +380,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         // §wire-W5 D5: typed-throw — folded onto `validation/empty-collection`
         // per W4 D4 fold (concept identity with forge "kind requires at
         // least one X").
-        throw SCE::parsing::SemanticNoStates("No state nodes found in SCXML document");
+        throw SCE::parsing::SemanticNoStates();
     }
 
     SCE_LOG_INFO("Found {} root state nodes", rootStateElements.size());
@@ -556,6 +513,44 @@ void SCE::SCXMLParser::recordDiagnostic(std::unique_ptr<SCE::parsing::Diagnostic
     }
 }
 
+void SCE::SCXMLParser::recordTypedFailure(SCE::parsing::Diagnostic &diag, const std::string &documentPath,
+                                          const std::string &message) {
+    // Name the document. The layers that raise these know *where* in a
+    // document the failure is but not what the document is called —
+    // `validateModel` walks a model, the expanders recurse through
+    // fragments — so the path is stamped here, at the boundary that
+    // received it. Mirrors Rust's parse boundary, which wraps the whole
+    // parse in `Located::new(err, scxml_path, ...)` for the same
+    // reason. `location.file` feeds the `id` hash, so a producer that
+    // leaves it empty cannot share a dedup key with one that fills it
+    // in (SCE_ERROR_CONTRACT.md §2.1). Leaves that already resolved a
+    // more precise file — an `<xi:include>`'d fragment, a template
+    // body — keep theirs; `stampFile` only fills a blank.
+    if (!documentPath.empty()) {
+        diag.stampFile(documentPath);
+    }
+
+    // Q4-B coexistence: `addError` populates the legacy string surface
+    // `getErrorMessages()` returns, `recordDiagnostic` the typed
+    // `getDiagnostics()` surface consumers dispatch on. The location
+    // suffix is appended for the legacy surface only, and only when
+    // the diagnostic carries coordinates — a file-only location
+    // renders as ` at <file>` rather than as a fabricated `:0:0`.
+    std::string legacy = message;
+    if (diag.location().has_value()) {
+        const auto &loc = *diag.location();
+        legacy += " at " + loc.file;
+        if (loc.line.has_value()) {
+            legacy += ":" + std::to_string(*loc.line);
+            if (loc.col.has_value()) {
+                legacy += ":" + std::to_string(*loc.col);
+            }
+        }
+    }
+    addError(legacy);
+    recordDiagnostic(diag.clone());
+}
+
 bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     // §wire-W5 Stage E: removed `if (!model)` and `if
     // (!model->getRootState())` guards. The first is unreachable
@@ -590,8 +585,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                 // terminates the parse, paralleling the parser-entry
                 // ParseError catch arm).
                 throw SCE::parsing::SemanticInitialStateUnknown(
-                    "Initial state '" + initialStateId + "' not found", initialStateId,
-                    SCE::parsing::SemanticInitialStateUnknown::Scope::DocumentRoot,
+                    initialStateId, SCE::parsing::SemanticInitialStateUnknown::Scope::DocumentRoot,
                     /*parent_id=*/std::string{}, availableStateIds);
             }
         }
@@ -643,12 +637,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                         }
                     }
                 }
-                throw SCE::parsing::SemanticHistoryDefaultMissing(
-                    "History state '" + state->getId() + "' in state '" + parentId +
-                        "' declares no default <transition> — W3C SCXML 3.10.2 requires one naming "
-                        "the configuration to enter when '" +
-                        parentId + "' has no stored history",
-                    state->getId(), parentId, siblings);
+                throw SCE::parsing::SemanticHistoryDefaultMissing(state->getId(), parentId, siblings);
             }
         }
 
@@ -660,10 +649,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                     // §wire-W5 D5 typed-throw — folded onto
                     // `validation/invalid-reference` (concept identity
                     // with forge `ValidationError::InvalidReference`).
-                    throw SCE::parsing::SemanticTransitionTargetUnknown("Transition in state '" + state->getId() +
-                                                                            "' references non-existent target state '" +
-                                                                            target + "'",
-                                                                        state->getId(), target, availableStateIds);
+                    throw SCE::parsing::SemanticTransitionTargetUnknown(state->getId(), target, availableStateIds);
                 }
             }
         }
@@ -679,7 +665,6 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                     // discriminates root vs compound for in-process
                     // typed dispatch.
                     throw SCE::parsing::SemanticInitialStateUnknown(
-                        "State '" + state->getId() + "' references non-existent initial state '" + initialStateId + "'",
                         initialStateId, SCE::parsing::SemanticInitialStateUnknown::Scope::CompoundState,
                         /*parent_id=*/state->getId(), availableStateIds);
                 }

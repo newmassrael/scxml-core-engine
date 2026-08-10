@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
+#include "SourceScan.h"
 #include "factory/NodeFactory.h"
 #include "parsing/Diagnostic.h"
 #include "parsing/DiagnosticBatchFormatter.h"
@@ -52,13 +53,14 @@ namespace {
 
 class FakeDiagnostic : public Diagnostic {
 public:
+    FakeDiagnostic() : Diagnostic({}) {}
+
     std::string_view code() const noexcept override {
         return "xml/template-cycle";
     }
 
-    const std::optional<SourcePos> &location() const noexcept override {
-        static const std::optional<SourcePos> kNone;
-        return kNone;
+    std::string_view stage() const noexcept override {
+        return "xml";
     }
 
     nlohmann::ordered_json to_json() const override {
@@ -167,7 +169,8 @@ std::set<std::string> schemaRequired(const std::string &pointer, std::size_t min
     return keys;
 }
 
-void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
+void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_view expectedCode,
+                                std::string_view expectedStage = "xml") {
     // Every key the schema marks required must be present. Read from the
     // schema, so a field promoted to required there reds this suite until
     // the C++ producer emits it — rather than passing until someone
@@ -181,7 +184,7 @@ void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_vie
     // merely which keys exist.
     EXPECT_EQ(j.at("v").get<int>(), 1);
     EXPECT_EQ(j.at("code").get<std::string>(), std::string{expectedCode});
-    EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
+    EXPECT_EQ(j.at("stage").get<std::string>(), std::string{expectedStage});
     EXPECT_TRUE(matchesIdRegex(j.at("id").get<std::string>()))
         << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
     EXPECT_TRUE(matchesGeneratorRegex(j.at("generator").get<std::string>()))
@@ -203,8 +206,7 @@ void assertNoUnexpectedKeys(const nlohmann::ordered_json &j) {
 }  // namespace conformance
 
 TEST(TemplateErrorWire, TemplateNotFoundConformsToV1Schema) {
-    const TemplateNotFound err("<sce:use template=\"missing.sce-template.xml\">: file not "
-                               "found (searched: /project/missing.sce-template.xml)");
+    const TemplateNotFound err("missing.sce-template.xml", "/project/missing.sce-template.xml");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-not-found");
     conformance::assertNoUnexpectedKeys(j);
@@ -212,62 +214,57 @@ TEST(TemplateErrorWire, TemplateNotFoundConformsToV1Schema) {
 }
 
 TEST(TemplateErrorWire, TemplateReadErrorConformsToV1Schema) {
-    const TemplateReadError err("<sce:use template=\"unreadable.sce-template.xml\">: read error: "
-                                "permission denied");
+    const TemplateReadError err("unreadable.sce-template.xml", "permission denied");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-read-error");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateMalformedConformsToV1Schema) {
-    const TemplateMalformed err("<sce:use template=\"bad.sce-template.xml\">: template is "
-                                "malformed: expanded template is malformed: unexpected end of file");
+    const TemplateMalformed err("bad.sce-template.xml", "expanded template is malformed: unexpected end of file");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-malformed");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateMissingAttributeConformsToV1Schema) {
-    const TemplateMissingAttribute err("<sce:use> is missing required 'template' attribute");
+    const TemplateMissingAttribute err;
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-missing-attribute");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateMissingParamConformsToV1Schema) {
-    const TemplateMissingParam err("<sce:use template=\"guard.sce-template.xml\">: missing required "
-                                   "parameter 'condition'");
+    const TemplateMissingParam err("guard.sce-template.xml", "condition");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-missing-param");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateUnknownParamConformsToV1Schema) {
-    const TemplateUnknownParam err("<sce:use template=\"guard.sce-template.xml\">: unknown parameter "
-                                   "'state' (declared: condition, action)");
+    const TemplateUnknownParam err("guard.sce-template.xml", "state", "condition, action");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-unknown-param");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateCycleConformsToV1Schema) {
-    const TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected "
-                            "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
+    const TemplateCycle err("a.sce-template.xml", "/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-cycle");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateTooDeepConformsToV1Schema) {
-    const TemplateTooDeep err("<sce:use>: template depth limit (32) exceeded");
+    const TemplateTooDeep err(32);
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-too-deep");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
-    TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected");
-    err.setLocation(SourcePos{std::filesystem::path{"/project/main.scxml"}, 12u, 5u});
+    TemplateCycle err("a.sce-template.xml", "/a.sce-template.xml -> /a.sce-template.xml");
+    err.setLocation(DiagnosticLocation{"/project/main.scxml", 12u, 5u});
 
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-cycle");
@@ -294,7 +291,7 @@ TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
 TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
     // Identity is content-addressed (§wire-W1 / SCE_ERROR_CONTRACT.md):
     // re-rendering the same logical error must not shift its id.
-    const TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected");
+    const TemplateCycle err("a.sce-template.xml", "/a.sce-template.xml -> /a.sce-template.xml");
     EXPECT_EQ(err.to_json().at("id").get<std::string>(), err.to_json().at("id").get<std::string>());
 }
 
@@ -354,7 +351,7 @@ TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
 // curated checks against `schemas/sce-diagnostic.v1.schema.json`.
 
 TEST(XIncludeErrorWire, MissingHrefConformsToV1Schema) {
-    const XIncludeMissingHref err("<xi:include> missing or empty `href` attribute");
+    const XIncludeMissingHref err;
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-missing-href");
     conformance::assertNoUnexpectedKeys(j);
@@ -362,62 +359,55 @@ TEST(XIncludeErrorWire, MissingHrefConformsToV1Schema) {
 }
 
 TEST(XIncludeErrorWire, NotFoundConformsToV1Schema) {
-    const XIncludeNotFound err("<xi:include href=\"missing.xml\">: file not found "
-                               "(searched: /project/missing.xml)");
+    const XIncludeNotFound err("missing.xml", "/project/missing.xml");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-not-found");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, ReadErrorConformsToV1Schema) {
-    const XIncludeReadError err("<xi:include href=\"frag.xml\">: cannot read file: "
-                                "/project/frag.xml");
+    const XIncludeReadError err("frag.xml", "Permission denied");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-read-error");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, CycleConformsToV1Schema) {
-    const XIncludeCycle err("<xi:include href=\"a.xml\">: cycle detected "
-                            "(/a.xml -> /b.xml -> /a.xml)");
+    const XIncludeCycle err("a.xml", "/a.xml -> /b.xml -> /a.xml");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-cycle");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, TooDeepConformsToV1Schema) {
-    const XIncludeTooDeep err("<xi:include> nesting exceeds depth limit of 10");
+    const XIncludeTooDeep err(10);
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-too-deep");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, MalformedConformsToV1Schema) {
-    const XIncludeMalformed err("<xi:include href=\"bad.xml\">: included file is malformed: "
-                                "unexpected end of file");
+    const XIncludeMalformed err("bad.xml", "unexpected end of file");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-malformed");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, UnsupportedConformsToV1Schema) {
-    const XIncludeUnsupported err("<xi:include href=\"frag.xml\">: unsupported feature: "
-                                  "parse=\"text\" (only parse=\"xml\" is supported)");
+    const XIncludeUnsupported err("frag.xml", "parse=\"text\" (only parse=\"xml\" is supported)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-unsupported");
     conformance::assertNoUnexpectedKeys(j);
 }
 
-TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
-    // Mixing two subtypes' code() into the FNV-1a key keeps the id
-    // distinct even when the rendered message text happens to match
-    // (the canonical key prepends `code | stage | file` before the
-    // message fragment, so flipping code flips id). Mirrors the
-    // sister `TemplateErrorWire.IdDiffersAcrossSubtypesWithSameMessage`
-    // for the xinclude family.
-    const std::string msg = "shared message";
-    const XIncludeCycle a(msg);
-    const XIncludeMalformed b(msg);
+TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithTheSameKeyFragments) {
+    // Mixing each subtype's code() into the FNV-1a key keeps the id
+    // distinct even when the key fragments coincide — the canonical
+    // key prepends `code | stage | file` before them, so flipping the
+    // code flips the id. Mirrors the sister
+    // `TemplateErrorWire.IdDiffersAcrossSubtypesWithTheSameKeyFragments`.
+    const XIncludeCycle a("shared.xml", "shared detail");
+    const XIncludeMalformed b("shared.xml", "shared detail");
     EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>());
 }
 
@@ -435,8 +425,7 @@ TEST(TemplateErrorWire, CanonicalJsonStringIsKeyOrderStable) {
     // `Diagnostic.cpp` to `dump(2)` (pretty-print) and this test
     // stays green for the equality assertion BUT the no-whitespace
     // assertion below reds with a leading space at every key.
-    const TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected "
-                            "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
+    const TemplateCycle err("a.sce-template.xml", "/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml");
 
     const std::string a = err.to_canonical_json_string();
     const std::string b = err.to_canonical_json_string();
@@ -464,7 +453,7 @@ TEST(TemplateErrorWire, CanonicalJsonStringHasAlphabeticalKeyOrder) {
     // the location-less subtypes. Pin the alphabetisation by
     // checking that `code` precedes `v` in the canonical string
     // (it would not in the producer's insertion order).
-    const TemplateMissingAttribute err("<sce:use> is missing required 'template' attribute");
+    const TemplateMissingAttribute err;
     const std::string canonical = err.to_canonical_json_string();
 
     const auto code_pos = canonical.find("\"code\":");
@@ -487,9 +476,10 @@ TEST(TemplateErrorWire, BatchFormatterEmitsOneRecordPerDiagnosticAsNdjson) {
     // reds with `nlohmann::json::parse_error` on line 2 (the comma
     // glues two records into a single malformed line).
     std::vector<std::unique_ptr<Diagnostic>> diags;
-    diags.push_back(std::make_unique<TemplateCycle>("<sce:use template=\"a.sce-template.xml\">: cycle detected"));
-    diags.push_back(std::make_unique<TemplateMalformed>("<sce:use template=\"bad.sce-template.xml\">: malformed"));
-    diags.push_back(std::make_unique<TemplateMissingAttribute>("<sce:use> is missing required 'template' attribute"));
+    diags.push_back(
+        std::make_unique<TemplateCycle>("a.sce-template.xml", "/a.sce-template.xml -> /a.sce-template.xml"));
+    diags.push_back(std::make_unique<TemplateMalformed>("bad.sce-template.xml", "root element must be <sce:template>"));
+    diags.push_back(std::make_unique<TemplateMissingAttribute>());
 
     std::ostringstream oss;
     emit_json_diagnostics(diags, oss);
@@ -536,9 +526,9 @@ TEST(TemplateErrorWire, BatchFormatterSkipsNullEntries) {
     // not corrupt the line-based reader. The skip is documented
     // in `DiagnosticBatchFormatter.cpp`.
     std::vector<std::unique_ptr<Diagnostic>> diags;
-    diags.push_back(std::make_unique<TemplateCycle>("cycle"));
+    diags.push_back(std::make_unique<TemplateCycle>("a.sce-template.xml", "cycle"));
     diags.push_back(nullptr);
-    diags.push_back(std::make_unique<TemplateMalformed>("malformed"));
+    diags.push_back(std::make_unique<TemplateMalformed>("bad.sce-template.xml", "malformed"));
 
     std::ostringstream oss;
     emit_json_diagnostics(diags, oss);
@@ -735,13 +725,12 @@ TEST(SCXMLParserBoundary, GetDiagnosticsEmptyOnSuccessfulParse) {
 }
 
 TEST(TemplateErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
-    // Mixing two subtypes' code() into the FNV-1a key keeps the id
-    // distinct even when the rendered message text happens to match
-    // (the canonical key prepends `code | stage | file` before the
-    // message fragment, so flipping code flips id).
-    const std::string msg = "shared message";
-    const TemplateCycle a(msg);
-    const TemplateMalformed b(msg);
+    // Mixing each subtype's code() into the FNV-1a key keeps the id
+    // distinct even when the key fragments coincide — the canonical
+    // key prepends `code | stage | file` before them, so flipping the
+    // code flips the id.
+    const TemplateCycle a("shared.scxml", "shared detail");
+    const TemplateMalformed b("shared.scxml", "shared detail");
     EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>());
 }
 
@@ -787,7 +776,7 @@ TEST(ParseErrorWire, ParseExceptionConformsToV1Schema) {
 }
 
 TEST(ParseErrorWire, NoRootElementConformsToV1Schema) {
-    const ParseNoRootElement err("No root element found");
+    const ParseNoRootElement err;
     const auto j = err.to_json();
     // Reuses xml/parse (roxmltree rejects root-less input at parse
     // time, so no Rust producer for this specific scenario).
@@ -802,17 +791,17 @@ TEST(ParseErrorWire, WrongRootElementConformsToV1Schema) {
     conformance::assertNoUnexpectedKeys(j);
 }
 
-TEST(ParseErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
-    // Mixing two subtypes' code() into the FNV-1a key keeps the id
-    // distinct even when the rendered message text happens to match.
-    // Tests across leaves with DIFFERENT wire codes
-    // (file-not-found vs wrong-root-element) — the 3 reused-code
-    // leaves (ParseXmlFailed/Exception/NoRootElement) intentionally
-    // share `xml/parse` and would yield identical ids on identical
-    // messages, which is the documented α-strict tradeoff.
-    const std::string msg = "shared message";
-    const ParseFileNotFound a(msg);
-    const ParseWrongRootElement b(msg);
+TEST(ParseErrorWire, IdDiffersAcrossSubtypesWithTheSameKeyFragments) {
+    // Mixing each subtype's code() into the FNV-1a key keeps the id
+    // distinct even when the key fragments coincide. Tested across
+    // leaves with DIFFERENT wire codes (file-not-found vs
+    // wrong-root-element) — the three leaves that share `xml/parse`
+    // (ParseXmlFailed / ParseException / ParseNoRootElement) declare
+    // no key fragments at all, so within one document they collide by
+    // design: a document has one parse failure.
+    const std::string shared = "shared";
+    const ParseFileNotFound a(shared);
+    const ParseWrongRootElement b(shared);
     EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>());
 }
 
@@ -926,37 +915,42 @@ TEST(ParseErrorConsumer, TypedCodeDistinguishesFailureClassWhereStringParsingIsF
     EXPECT_EQ(retry_strategy(*p2.getDiagnostics()[0]), "SYNTAX_FIX");
 }
 
-TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
-    // Codifies that `code()` IS the wire-stable handle. Construct
-    // two `ParseFileNotFound` instances with intentionally divergent
-    // message-text pretexts (one as if from a future PR edit).
-    // Assert `code()` is byte-identical across both, while message()
-    // diverges. Bites if a future PR changes wire codes by editing
-    // message text — the typed code() returns the same wire string
-    // regardless of the message rendering choice.
-    const ParseFileNotFound today("File not found: /tmp/foo.scxml");
-    const ParseFileNotFound future_edit("ENOENT: cannot locate /tmp/foo.scxml on filesystem");
+TEST(ParseErrorConsumer, TypedCodeStableAcrossDivergentMessages) {
+    // Codifies that `code()` IS the wire-stable handle: two instances
+    // of one leaf whose payloads render different messages still
+    // dispatch to the same branch, while a consumer keyed on the
+    // rendered text follows only the instance it was written against.
+    //
+    // The older form of this test built the divergence by handing the
+    // two instances different message strings. That is no longer
+    // constructible — a leaf renders its own message from the Rust
+    // variant's fields, which is what stops the message and the id's
+    // key fragments from drifting apart — so the divergence comes from
+    // the payload instead. The invariant under test is unchanged.
+    const ParseFileNotFound today("/tmp/foo.scxml");
+    const ParseFileNotFound unreadable("/srv/build/bar.scxml", "Permission denied");
 
-    EXPECT_EQ(today.code(), future_edit.code()) << "wire code() must be invariant under message-text edits";
+    EXPECT_EQ(today.code(), unreadable.code()) << "wire code() must be invariant across payloads";
     EXPECT_EQ(today.code(), std::string_view{"xml/file-not-found"});
 
     // Messages diverge.
-    EXPECT_NE(std::string(today.what()), std::string(future_edit.what()));
+    EXPECT_NE(std::string(today.what()), std::string(unreadable.what()));
 
-    // Demonstrate the consumer's actual asymmetry: typed dispatch
-    // works on both; string-parsing-on-message would only catch one.
+    // Typed dispatch works on both.
     auto typed_dispatch = [](const ParseError &e) { return e.code() == std::string_view{"xml/file-not-found"}; };
     EXPECT_TRUE(typed_dispatch(today));
-    EXPECT_TRUE(typed_dispatch(future_edit));
+    EXPECT_TRUE(typed_dispatch(unreadable));
 
-    // For comparison: a fragile string-parsing alternative.
+    // For comparison: a fragile alternative that reads the rendered
+    // message. It is coupled to whatever the payload happened to put
+    // there, so it follows one instance and silently drops the other.
     auto fragile_string_dispatch = [](const std::exception &e) {
         const std::string m = e.what();
-        return m.rfind("File not found:", 0) == 0;
+        return m.find("/tmp/foo.scxml") != std::string::npos;
     };
     EXPECT_TRUE(fragile_string_dispatch(today));
-    EXPECT_FALSE(fragile_string_dispatch(future_edit)) << "string dispatch silently breaks when message text changes; "
-                                                          "typed code() does not. THIS is what the W4 surface unlocks.";
+    EXPECT_FALSE(fragile_string_dispatch(unreadable)) << "string dispatch silently breaks when the payload changes; "
+                                                         "typed code() does not. THIS is what the W4 surface unlocks.";
 }
 
 // ── §wire-W5: SCXML semantic-validation typed family ───────────────
@@ -979,20 +973,14 @@ namespace semantic_conformance {
 // "validation" because all four SemanticError leaves share that
 // stage (§wire-W5 D2).
 void assertSemanticBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
-    ASSERT_TRUE(j.contains("v")) << j.dump();
-    ASSERT_TRUE(j.contains("id")) << j.dump();
-    ASSERT_TRUE(j.contains("code")) << j.dump();
-    ASSERT_TRUE(j.contains("stage")) << j.dump();
-    ASSERT_TRUE(j.contains("message")) << j.dump();
-
-    EXPECT_EQ(j.at("v").get<int>(), 1);
-    EXPECT_EQ(j.at("code").get<std::string>(), std::string{expectedCode});
-    EXPECT_EQ(j.at("stage").get<std::string>(), "validation");
-    EXPECT_FALSE(j.at("message").get<std::string>().empty());
-    // Reuse the W4 helper's id regex via the existing matchesIdRegex
-    // visible from the conformance:: namespace.
-    EXPECT_TRUE(conformance::matchesIdRegex(j.at("id").get<std::string>()))
-        << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
+    // Delegates rather than restating. This used to be a hand-written
+    // list of five `contains` checks, and it did not name `generator`
+    // — so `SemanticTopLevelScriptUnloaded`, whose `to_json()` rebuilt
+    // the envelope key by key, emitted a record the shared schema
+    // rejects and this suite called it conformant. The envelope is one
+    // fact about the schema; reading it in one place is what makes the
+    // claim answerable by the file it is about.
+    conformance::assertSchemaConformantBase(j, expectedCode, "validation");
 }
 
 }  // namespace semantic_conformance
@@ -1003,8 +991,7 @@ TEST(SemanticErrorWire, InitialStateUnknownConformsToV1Schema) {
     // Test pins the fold: a consumer dispatching on
     // `validation/invalid-reference` MUST see this leaf's payload
     // identical to the forge counterpart's payload shape.
-    const SemanticInitialStateUnknown err("Initial state 'nope' not found",
-                                          /*state_id=*/"nope", SemanticInitialStateUnknown::Scope::DocumentRoot,
+    const SemanticInitialStateUnknown err(/*state_id=*/"nope", SemanticInitialStateUnknown::Scope::DocumentRoot,
                                           /*parent_id=*/"",
                                           /*available=*/{"s1", "s2"});
     const auto j = err.to_json();
@@ -1026,8 +1013,7 @@ TEST(SemanticErrorWire, InitialStateUnknownEmptyAvailableSuppressesFix) {
     // `replace_one_of` with no choices). Mirrors Rust
     // `scxml_semantic_fields` behaviour: `if available.is_empty()
     // { None } else { Some(Fix::ReplaceOneOf {...}) }`.
-    const SemanticInitialStateUnknown err("Initial state 'nope' not found",
-                                          /*state_id=*/"nope", SemanticInitialStateUnknown::Scope::DocumentRoot,
+    const SemanticInitialStateUnknown err(/*state_id=*/"nope", SemanticInitialStateUnknown::Scope::DocumentRoot,
                                           /*parent_id=*/"",
                                           /*available=*/{});
     const auto j = err.to_json();
@@ -1036,11 +1022,9 @@ TEST(SemanticErrorWire, InitialStateUnknownEmptyAvailableSuppressesFix) {
 }
 
 TEST(SemanticErrorWire, TransitionTargetUnknownConformsToV1Schema) {
-    const SemanticTransitionTargetUnknown err(
-        "Transition in state 'active' references non-existent target state 'ghost'",
-        /*state=*/"active",
-        /*target=*/"ghost",
-        /*available=*/{"idle", "active"});
+    const SemanticTransitionTargetUnknown err(/*state=*/"active",
+                                              /*target=*/"ghost",
+                                              /*available=*/{"idle", "active"});
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "validation/invalid-reference");
     conformance::assertNoUnexpectedKeys(j);
@@ -1060,8 +1044,7 @@ TEST(SemanticErrorWire, HistoryDefaultMissingConformsToV1Schema) {
     // `fix` — SCE_ERROR_CONTRACT §3.1 has no add-child-element variant,
     // so the legal defaults travel in `message`. A `fix` appearing here
     // would put the two producers at odds on one wire code.
-    const SemanticHistoryDefaultMissing err("<history id='h'>: no default transition and no stored configuration",
-                                            /*history_id=*/"h",
+    const SemanticHistoryDefaultMissing err(/*history_id=*/"h",
                                             /*parent_id=*/"s1",
                                             /*available=*/{"s1", "s2"});
     const auto j = err.to_json();
@@ -1072,7 +1055,7 @@ TEST(SemanticErrorWire, HistoryDefaultMissingConformsToV1Schema) {
 }
 
 TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
-    const SemanticNoStates err("No state nodes found in SCXML document");
+    const SemanticNoStates err;
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "validation/empty-collection");
     conformance::assertNoUnexpectedKeys(j);
@@ -1087,8 +1070,7 @@ TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
     // ("W3C SCXML §5.8") because the code has a spec_anchor on the
     // Rust side; key ordering is (v, id, code, stage, spec, message,
     // location?, actual?) per the schema's canonical order.
-    const SemanticTopLevelScriptUnloaded err("Top-level <script> rejected per W3C SCXML 5.8",
-                                             /*index=*/std::optional<std::size_t>{2},
+    const SemanticTopLevelScriptUnloaded err(/*index=*/std::optional<std::size_t>{2},
                                              /*src=*/std::optional<std::string>{"init.js"});
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "scxml/top-level-script-unloaded");
@@ -1106,8 +1088,7 @@ TEST(SemanticErrorWire, TopLevelScriptUnloadedAnalyzerPathOmitsActual) {
     // asymmetry symmetric across producers (§wire-W5 anti-pattern #5:
     // "NEW wire code count > NEW Rust producer count" — both sides
     // emit the same code; payload detail varies).
-    const SemanticTopLevelScriptUnloaded err("Top-level <script> rejected per W3C SCXML 5.8",
-                                             /*index=*/std::nullopt,
+    const SemanticTopLevelScriptUnloaded err(/*index=*/std::nullopt,
                                              /*src=*/std::nullopt);
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "scxml/top-level-script-unloaded");
@@ -1120,14 +1101,12 @@ TEST(SemanticErrorWire, IdDistinguishesScopeOnInitialStateUnknown) {
     // unresolved id but DIFFERENT scope (root vs compound) must yield
     // distinct content-hash ids — otherwise a document with the bug
     // at both the root and a compound state would look like one
-    // failure to consumers. The id derives from the message text
-    // (which differs across scopes when the throw-site message
-    // includes the parent state's id), which is the W4 D4 idiom
-    // applied here.
-    const SemanticInitialStateUnknown root("Initial state 'X' not found", "X",
-                                           SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
-    const SemanticInitialStateUnknown compound("State 'parent' references non-existent initial state 'X'", "X",
-                                               SemanticInitialStateUnknown::Scope::CompoundState, "parent", {});
+    // failure to consumers. The scope rides the id as its own key
+    // fragment (`scxml-root` vs `scxml-compound:<parent>`), which is
+    // what the Rust arm feeds the hash — the distinction no longer
+    // depends on the two scopes happening to render different prose.
+    const SemanticInitialStateUnknown root("X", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticInitialStateUnknown compound("X", SemanticInitialStateUnknown::Scope::CompoundState, "parent", {});
     EXPECT_NE(root.to_json().at("id").get<std::string>(), compound.to_json().at("id").get<std::string>())
         << "root vs compound scope must yield distinct ids";
 }
@@ -1139,11 +1118,10 @@ TEST(SemanticErrorWire, IdDiffersAcrossDifferentWireCodes) {
     // (InitialStateUnknown vs TransitionTargetUnknown) intentionally
     // collide on id when message+payload match — the documented
     // α-strict tradeoff for the fold.
-    const std::string msg = "shared message";
-    const SemanticInitialStateUnknown a(msg, "x", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
-    const SemanticNoStates b(msg);
+    const SemanticInitialStateUnknown a("x", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticNoStates b;
     EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>())
-        << "different wire codes must yield distinct ids even with shared message";
+        << "different wire codes must yield distinct ids";
 }
 
 // ── Test-as-consumer fragility tests (§wire-W5 D6) ─────────────────
@@ -1159,8 +1137,7 @@ TEST(SemanticErrorWire, IdDiffersAcrossDifferentWireCodes) {
 // uniformly.
 
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassInitialStateUnknown) {
-    const SemanticInitialStateUnknown err("Initial state 'nope' not found", "nope",
-                                          SemanticInitialStateUnknown::Scope::DocumentRoot, "", {"s1"});
+    const SemanticInitialStateUnknown err("nope", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {"s1"});
     auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/invalid-reference"}; };
     EXPECT_TRUE(dispatch(err));
 
@@ -1172,15 +1149,13 @@ TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassInitialStateUnknow
 }
 
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassTransitionTargetUnknown) {
-    const SemanticTransitionTargetUnknown err("Transition in state 'a' references non-existent target state 'b'", "a",
-                                              "b", {"a", "c"});
+    const SemanticTransitionTargetUnknown err("a", "b", {"a", "c"});
     auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/invalid-reference"}; };
     EXPECT_TRUE(dispatch(err));
 }
 
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassHistoryDefaultMissing) {
-    const SemanticHistoryDefaultMissing err("History state 'h' in state 'p' declares no default <transition>", "h", "p",
-                                            {"a", "b"});
+    const SemanticHistoryDefaultMissing err("h", "p", {"a", "b"});
     auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/missing-element"}; };
     EXPECT_TRUE(dispatch(err));
 
@@ -1200,14 +1175,13 @@ TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassHistoryDefaultMiss
 }
 
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassNoStates) {
-    const SemanticNoStates err("No state nodes found in SCXML document");
+    const SemanticNoStates err;
     auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/empty-collection"}; };
     EXPECT_TRUE(dispatch(err));
 }
 
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassTopLevelScriptUnloaded) {
-    const SemanticTopLevelScriptUnloaded err("Top-level <script> rejected per W3C SCXML 5.8", std::nullopt,
-                                             std::nullopt);
+    const SemanticTopLevelScriptUnloaded err(std::nullopt, std::nullopt);
     auto dispatch = [](const SemanticError &e) {
         return e.code() == std::string_view{"scxml/top-level-script-unloaded"};
     };
@@ -1228,25 +1202,26 @@ TEST(SemanticErrorConsumer, FoldHonestAtConsumerLevel) {
     // handles both. (The forge half is pinned by Rust's
     // `fold_invariant_holds_for_invalid_reference` test in
     // `sce-build/src/scxml_semantic.rs`.)
-    const SemanticInitialStateUnknown a("msg", "id", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
-    const SemanticTransitionTargetUnknown b("msg", "s", "t", {});
+    const SemanticInitialStateUnknown a("id", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticTransitionTargetUnknown b("s", "t", {});
     EXPECT_EQ(a.code(), b.code()) << "fold reuses `validation/invalid-reference` for both leaves";
     EXPECT_EQ(a.code(), std::string_view{"validation/invalid-reference"});
 }
 
-TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
+TEST(SemanticErrorConsumer, TypedCodeStableAcrossDivergentMessages) {
     // Mirrors W4's `ParseErrorConsumer.TypedCodeStableUnderMessageTextEdit`.
-    // Two leaves with intentionally divergent message text must
-    // still share `code()` — consumers dispatching on the wire code do
-    // not break when the message text changes (e.g. localization,
-    // refinement of the human-readable wording).
-    const SemanticInitialStateUnknown today("Initial state 'X' not found", "X",
-                                            SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
-    const SemanticInitialStateUnknown future_edit(
-        "scxml semantic check: cannot resolve initial=\"X\" to a declared state", "X",
-        SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
-    EXPECT_EQ(today.code(), future_edit.code());
-    EXPECT_NE(std::string(today.what()), std::string(future_edit.what()));
+    // Two instances of one leaf whose payloads render different
+    // messages must still share `code()` — a consumer dispatching on
+    // the wire code does not break when the human-readable wording
+    // varies.
+    //
+    // The message is no longer something a throw site can vary
+    // independently (it is rendered from the payload), so divergence
+    // is produced the only way that remains: different payloads.
+    const SemanticInitialStateUnknown root("X", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticInitialStateUnknown compound("X", SemanticInitialStateUnknown::Scope::CompoundState, "parent", {});
+    EXPECT_EQ(root.code(), compound.code());
+    EXPECT_NE(std::string(root.what()), std::string(compound.what()));
 }
 
 // ── SCXMLParser boundary surfacing for SemanticError leaves (W5) ──
@@ -1430,7 +1405,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
 // `unknown` means the resolution broke rather than that there was
 // nothing to resolve.
 TEST(DiagnosticWire, GeneratorStampNamesThisCheckout) {
-    const TemplateNotFound err("probe");
+    const TemplateNotFound err("probe.sce-template.xml", "/project/probe.sce-template.xml");
     const auto j = err.to_json();
     ASSERT_TRUE(j.contains("generator")) << j.dump();
     const auto generator = j.at("generator").get<std::string>();
@@ -1458,47 +1433,14 @@ TEST(DiagnosticWire, GeneratorStampNamesThisCheckout) {
 
 namespace coverage {
 
-// Comments are stripped before either scan. A code named in prose is not
-// a code under test, and — the direction that actually bit — the comment
-// explaining a curated list would otherwise "exercise" every code it
-// mentions, so the list could rot while its own explanation covered for
-// it.
-std::string stripComments(const std::string &src) {
-    std::string out;
-    out.reserve(src.size());
-    for (std::size_t i = 0; i < src.size();) {
-        if (src.compare(i, 2, "//") == 0) {
-            const auto eol = src.find('\n', i);
-            if (eol == std::string::npos) {
-                break;
-            }
-            i = eol;  // keep the newline so line-oriented shapes survive
-        } else if (src.compare(i, 2, "/*") == 0) {
-            const auto end = src.find("*/", i + 2);
-            i = (end == std::string::npos) ? src.size() : end + 2;
-        } else {
-            out.push_back(src[i]);
-            ++i;
-        }
-    }
-    return out;
-}
-
-std::set<std::string> matchAll(const std::string &text, const std::regex &pattern) {
-    std::set<std::string> out;
-    for (auto it = std::sregex_iterator{text.begin(), text.end(), pattern}; it != std::sregex_iterator{}; ++it) {
-        out.insert((*it)[1].str());
-    }
-    return out;
-}
-
-std::string readFile(const std::string &path) {
-    std::ifstream in{path};
-    EXPECT_TRUE(in.is_open()) << "cannot open " << path;
-    std::ostringstream buf;
-    buf << in.rdbuf();
-    return buf.str();
-}
+// The three scanning primitives live in `SourceScan.h`: the
+// cross-producer suite derives its declared-leaf set from the same
+// headers, and a second copy of `stripComments` would be a second
+// place for one rule to drift — the rule that keeps a code named in
+// prose from counting as a code under test.
+using SCE::TestSupport::matchAll;
+using SCE::TestSupport::readFile;
+using SCE::TestSupport::stripComments;
 
 // Every wire code a `Diagnostic` leaf returns from `code()`.
 //
