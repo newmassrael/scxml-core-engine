@@ -81,6 +81,13 @@ pub mod scxml_guard_analysis;
 /// the design-time reach set and rejects orphan states / dead
 /// transitions before codegen.
 pub mod scxml_reachability;
+/// Statechart state-reference resolution. Rejects `<transition
+/// target>`, `<state initial>`, `<initial>` and `<history>` default
+/// ids that name nothing in the document — the shapes that otherwise
+/// lower to a `State` enum variant the generator never declares.
+/// Invoked from [`analyzer::can_generate_static`], the one gate the
+/// library entry and the `sce-codegen` CLI both pass through.
+pub mod scxml_references;
 pub mod scxml_semantic;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
 /// parameterised composition adjacent to XInclude. AOT-only;

@@ -37,7 +37,10 @@ concrete pass sets — `rust_backend_next_steps.md`,
 The accepted surface comprises:
 
 - **Core constructs**: `<state>`, `<parallel>`, `<final>`, `<history>`
-  (shallow and deep), `<initial>`, nested compound states.
+  (shallow and deep — W3C §3.10.2 requires the default `<transition>`
+  child; see [state-reference
+  resolution](#statechart-state-reference-resolution)), `<initial>`,
+  nested compound states.
 - **Transitions**: event triggers, cond guards, targets, target sets,
   `type="internal"`, eventless transitions, wildcard event
   descriptors (`*`, `event.*`).
@@ -788,6 +791,49 @@ document's expressions reference another Forge document imported via
 The diagnostic codes themselves are kind-agnostic: a future
 Statechart→Forge binding would wire through the same validator
 without renaming codes or extending payload shape.
+
+---
+
+### Statechart state-reference resolution
+
+Every id an SCXML document uses to name a state must resolve to a
+`<state>`, `<parallel>`, `<final>`, or `<history>` declared in that
+document. Four reference positions carry the rule:
+
+| Position | Spec | Rule |
+|---|---|---|
+| `<transition target>` | W3C SCXML §3.5, §3.13 | Every whitespace-separated token resolves independently. A targetless transition (no `target` attribute) is not a reference. |
+| `<state initial>` | W3C SCXML §3.3 | Every token names a child of the owning state. |
+| `<initial>` child | W3C SCXML §3.6 | The initial element's transition target resolves; the parser folds it into the owning state's `initial`. |
+| `<history>` default | W3C SCXML §3.10.2 | The default `<transition>` child is **required**, and its target resolves. |
+
+Rejection codes:
+
+- `validation/invalid-reference` — a token names nothing. `actual`
+  carries the unresolved id and `fix.candidates` the legal set: every
+  declared state for a transition target, the owning state's children
+  for a compound `initial` (§3.3 restricts the initial configuration to
+  descendants, so a wider list would offer illegal values).
+- `validation/missing-element` — a `<history>` declares no default
+  `<transition>`. This is a declaration rule, not a use rule: the child
+  is required whether or not any transition names the pseudostate,
+  because without it the pseudostate can never be entered. The legal
+  default targets travel in `message` — SCE_ERROR_CONTRACT §3.1 has no
+  add-child-element `fix` variant.
+
+Both rules are enforced on every path that parses a document, and both
+engines carry them: the Rust producers are
+`sce-build/src/scxml_references.rs` and the `<history>` arm of
+`parser.rs`, and the C++ Interpreter's counterparts are
+`SemanticTransitionTargetUnknown` / `SemanticInitialStateUnknown` /
+`SemanticHistoryDefaultMissing` thrown from
+`SCXMLParser::validateModel`.
+
+Why these are rejections rather than warnings: the code generators
+lower a transition target to a `State` enum variant. An id that names
+nothing lowers to a variant the generated enum never declares, so the
+document would otherwise pass `check` with `status: ok`, pass
+`generate`, and fail in the consumer's compiler.
 
 ---
 

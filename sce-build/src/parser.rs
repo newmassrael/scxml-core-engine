@@ -1752,22 +1752,49 @@ impl SCXMLParser {
                 }
             }
 
-            if !default_target.is_empty() {
-                model
-                    .history_default_targets
-                    .insert(history_id.clone(), default_target.clone());
-                model.history_states.insert(
-                    history_id,
-                    HistoryInfo {
-                        parent: parent_id.unwrap_or("").to_string(),
-                        history_type,
-                        leaf_target: String::new(), // resolved later
-                        default_target,
-                        default_actions,
-                    },
-                );
-                model.has_history_states = true;
+            // §scxml-3.10.2: the default `<transition>` child is
+            // required. Rejecting here rather than dropping the element
+            // is what keeps the model faithful to the document — a
+            // silently discarded `<history>` left every transition
+            // naming it to fall through to `State::<HistoryId>`, a
+            // variant the generated enum never declares because a
+            // history pseudostate is not a state. The document then
+            // passed `check`, passed `generate`, and failed in the
+            // consumer's compiler.
+            if default_target.is_empty() {
+                let parent = parent_id.unwrap_or("").to_string();
+                let mut siblings: Vec<&crate::model::State> = model
+                    .states
+                    .values()
+                    .filter(|s| s.parent.as_deref() == parent_id)
+                    .collect();
+                siblings.sort_by_key(|s| s.document_order);
+                return Err(crate::forge::error::Located::new(
+                    crate::scxml_semantic::ScxmlSemanticError::HistoryDefaultTransitionMissing {
+                        history_id,
+                        parent_id: parent,
+                        available: siblings.into_iter().map(|s| s.id.clone()).collect(),
+                    }
+                    .into(),
+                    source_name,
+                    None,
+                    None,
+                ));
             }
+            model
+                .history_default_targets
+                .insert(history_id.clone(), default_target.clone());
+            model.history_states.insert(
+                history_id,
+                HistoryInfo {
+                    parent: parent_id.unwrap_or("").to_string(),
+                    history_type,
+                    leaf_target: String::new(), // resolved later
+                    default_target,
+                    default_actions,
+                },
+            );
+            model.has_history_states = true;
         }
         Ok(())
     }

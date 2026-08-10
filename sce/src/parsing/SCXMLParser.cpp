@@ -130,7 +130,8 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
     } catch (const SCE::parsing::SemanticError &se) {
         // §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
         // top-level-script + no-states; validateModel initial-state +
-        // transition-target + compound-state-initial) surface here.
+        // transition-target + compound-state-initial +
+        // history-default-missing) surface here.
         // Q4-B coexistence: legacy `addError` populates
         // `getErrorMessages()` while `recordDiagnostic` populates the
         // typed `getDiagnostics()` surface consumers dispatch on.
@@ -210,7 +211,8 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
     } catch (const SCE::parsing::SemanticError &se) {
         // §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
         // top-level-script + no-states; validateModel initial-state +
-        // transition-target + compound-state-initial) surface here.
+        // transition-target + compound-state-initial +
+        // history-default-missing) surface here.
         // Q4-B coexistence: legacy `addError` populates
         // `getErrorMessages()` while `recordDiagnostic` populates the
         // typed `getDiagnostics()` surface consumers dispatch on.
@@ -611,6 +613,45 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     // attaches state to parent in the same operation) and no
     // wire-code mapping. Removed per `feedback_silently_broken_hooks.md`.
     for (const auto &state : model->getAllStates()) {
+        // §scxml-3.10.2: a `<history>` carries a single unconditional
+        // `<transition>` naming the default configuration. Without it
+        // the pseudostate can never be entered — a transition that
+        // targets it has no configuration to resolve to — so the
+        // declaration is unusable rather than merely incomplete.
+        // Mirrors the Rust producer in `parser.rs`'s `<history>` arm.
+        if (state->getType() == Type::HISTORY) {
+            bool hasDefault = false;
+            for (const auto &transition : state->getTransitions()) {
+                for (const auto &target : transition->getTargets()) {
+                    if (!target.empty()) {
+                        hasDefault = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasDefault) {
+                const IStateNode *parent = state->getParent();
+                const std::string parentId = parent ? parent->getId() : std::string{};
+                // §scxml-3.10.2 restricts the default configuration to
+                // descendants of the containing state, so the candidate
+                // set is that state's children.
+                std::vector<std::string> siblings;
+                if (parent) {
+                    for (const auto &child : parent->getChildren()) {
+                        if (child && child->getType() != Type::HISTORY) {
+                            siblings.push_back(child->getId());
+                        }
+                    }
+                }
+                throw SCE::parsing::SemanticHistoryDefaultMissing(
+                    "History state '" + state->getId() + "' in state '" + parentId +
+                        "' declares no default <transition> — W3C SCXML 3.10.2 requires one naming "
+                        "the configuration to enter when '" +
+                        parentId + "' has no stored history",
+                    state->getId(), parentId, siblings);
+            }
+        }
+
         // Validate transition target states (§scxml-3.5)
         for (const auto &transition : state->getTransitions()) {
             const auto &targets = transition->getTargets();
