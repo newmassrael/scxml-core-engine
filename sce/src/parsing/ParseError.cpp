@@ -12,39 +12,26 @@
 
 namespace SCE::parsing {
 
-namespace {
-
-// Every parser-entry `xml/*` `DiagnosticCode` shares the `xml`
-// `Stage` in the Rust authority (see `DiagnosticCode::stage()` in
-// `sce-build/src/forge/diagnostic.rs`). Mirrors `kTemplateStage` in
-// `TemplateError.cpp` and `kXIncludeStage` in `XIncludeError.cpp`;
-// all three stage constants stay file-local because the Rust
-// prefix→stage table is not 1:1 (e.g. `cli/*` codes map to `cli`,
-// `mesh/deploy-*` map to `mesh-deploy`), so a shared stage-mapping
-// helper would carry per-prefix logic that would have to grow in
-// lockstep with each future W milestone.
-constexpr std::string_view kParseStage = "xml";
-
-}  // namespace
-
 nlohmann::ordered_json ParseError::to_json() const {
-    const std::string_view codeStr = code();
-    const std::string fileStr = location_.has_value() ? location_->file.string() : std::string{};
-    const std::string_view messageView{what()};
-    const std::string idStr = computeFnv1aDiagnosticId(codeStr, kParseStage, fileStr, messageView);
-
-    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kParseStage, idStr);
-    out["message"] = std::string{messageView};
-
-    if (location_.has_value()) {
-        nlohmann::ordered_json loc;
-        loc["file"] = location_->file.string();
-        loc["line"] = location_->row;
-        loc["col"] = location_->col;
-        out["location"] = std::move(loc);
+    // Field order follows the Rust struct's member order so
+    // canonicalised byte-diffs against `--error-format=json` agree:
+    // envelope, message, location, expected, actual.
+    nlohmann::ordered_json out = beginRecord();
+    out["message"] = std::string{what()};
+    appendLocation(out);
+    appendExpected(out);
+    if (actual_.has_value()) {
+        out["actual"] = *actual_;
     }
-
     return out;
+}
+
+void ParseError::appendExpected(nlohmann::ordered_json &) const {}
+
+void ParseWrongRootElement::appendExpected(nlohmann::ordered_json &out) const {
+    // Mirrors the Rust payload: the accepted set is closed and has one
+    // member, so the consumer can report it without reading the spec.
+    out["expected"] = nlohmann::ordered_json::array({"scxml"});
 }
 
 }  // namespace SCE::parsing

@@ -73,11 +73,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/parsing/XIncludeError.h",
-          "symbol": "setLocation",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/parsing/XIncludeExpander.h",
           "kind": "references"
         },
@@ -96,6 +91,11 @@
         {
           "file": "sce-build/src/xinclude.rs",
           "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/parsing/Diagnostic.h",
+          "symbol": "stampFile",
           "kind": "references"
         }
       ]

@@ -60,35 +60,32 @@ namespace SCE::parsing {
 
 class SemanticError : public std::runtime_error, public Diagnostic {
 public:
-    using std::runtime_error::runtime_error;
-
-    // Reserved for location stamping. No throw site populates
-    // this today (`parseScxmlNode` / `validateModel` callsites have
-    // SCXML-element node pointers but no captured source position, so
-    // there is nothing to stamp until the parse layer carries one).
-    void setLocation(SourcePos pos) {
-        location_ = std::move(pos);
-    }
-
     // `Diagnostic` interface. Subtypes override `code()` with their
     // wire string and `to_json()` with payload-aware serialization.
     std::string_view code() const noexcept override = 0;
 
-    const std::optional<SourcePos> &location() const noexcept override {
-        return location_;
+    // Every `validation/*` and `scxml/*` `DiagnosticCode` in this
+    // family reports the `validation` stage in the Rust authority —
+    // see `DiagnosticCode::stage()` in
+    // `sce-build/src/forge/diagnostic.rs`, and the stage-reuse note at
+    // namespace scope in `SemanticError.cpp`.
+    std::string_view stage() const noexcept override {
+        return "validation";
     }
 
     nlohmann::ordered_json to_json() const override = 0;
 
 protected:
-    // Shared envelope helper for subtypes — fills `v`, `id`, `code`,
-    // `stage`, `message`, and optional `location`. Subtypes call this
-    // first then append leaf-specific fields (`spec`, `actual`, `fix`)
-    // in the schema's canonical key order.
-    nlohmann::ordered_json baseEnvelope() const;
+    // Subtypes render their message and declare their key fragments
+    // from the Rust variant\'s fields, so the rendered text and the id
+    // input cannot drift apart.
+    SemanticError(std::string message, std::vector<std::string> keyFragments)
+        : std::runtime_error(std::move(message)), Diagnostic(std::move(keyFragments)) {}
 
-private:
-    std::optional<SourcePos> location_;
+    // Shared envelope for subtypes — the record every leaf opens with,
+    // plus `message` and `location`. Subtypes append their own
+    // payload fields (`actual`, `fix`) after it.
+    nlohmann::ordered_json baseEnvelope() const;
 };
 
 // `<scxml initial="X">` or `<state initial="X">` references a state
@@ -106,10 +103,12 @@ public:
         CompoundState,
     };
 
-    SemanticInitialStateUnknown(std::string message, std::string state_id, Scope scope, std::string parent_id,
+    SemanticInitialStateUnknown(std::string state_id, Scope scope, std::string parent_id,
                                 std::vector<std::string> available)
-        : SemanticError(std::move(message)), state_id_(std::move(state_id)), scope_(scope),
-          parent_id_(std::move(parent_id)), available_(std::move(available)) {}
+        : SemanticError("Initial state \'" + state_id + "\' not found (" + renderScope(scope, parent_id) + ")",
+                        {scopeKey(scope, parent_id), "initial-state", state_id}),
+          state_id_(std::move(state_id)), scope_(scope), parent_id_(std::move(parent_id)),
+          available_(std::move(available)) {}
 
     std::string_view code() const noexcept override {
         return "validation/invalid-reference";
@@ -140,6 +139,21 @@ public:
     }
 
 private:
+    // Rendered into the message. Mirrors Rust
+    // `InitialStateScope`\'s `Display`.
+    static std::string renderScope(Scope scope, const std::string &parent_id) {
+        return scope == Scope::DocumentRoot ? std::string{"document root"} : "state \'" + parent_id + "\'";
+    }
+
+    // Fed to the id hash. A separate spelling from the message form
+    // because Rust keys on a machine-facing discriminant
+    // (`scxml-root` / `scxml-compound:<parent>`) rather than on the
+    // prose — it is what keeps a root-level and a compound-level miss
+    // of the same state id distinct.
+    static std::string scopeKey(Scope scope, const std::string &parent_id) {
+        return scope == Scope::DocumentRoot ? std::string{"scxml-root"} : "scxml-compound:" + parent_id;
+    }
+
     std::string state_id_;
     Scope scope_;
     // Empty when scope_ == Scope::DocumentRoot.
@@ -153,10 +167,10 @@ private:
 // `actual` and `fix.candidates` listing the declared states.
 class SemanticTransitionTargetUnknown : public SemanticError {
 public:
-    SemanticTransitionTargetUnknown(std::string message, std::string state, std::string target,
-                                    std::vector<std::string> available)
-        : SemanticError(std::move(message)), state_(std::move(state)), target_(std::move(target)),
-          available_(std::move(available)) {}
+    SemanticTransitionTargetUnknown(std::string state, std::string target, std::vector<std::string> available)
+        : SemanticError("Transition in state \'" + state + "\' references non-existent target state \'" + target + "\'",
+                        {"scxml-state:" + state, "transition-target", target}),
+          state_(std::move(state)), target_(std::move(target)), available_(std::move(available)) {}
 
     std::string_view code() const noexcept override {
         return "validation/invalid-reference";
@@ -200,10 +214,13 @@ private:
 // the legal set the author picks from.
 class SemanticHistoryDefaultMissing : public SemanticError {
 public:
-    SemanticHistoryDefaultMissing(std::string message, std::string history_id, std::string parent_id,
-                                  std::vector<std::string> available)
-        : SemanticError(std::move(message)), history_id_(std::move(history_id)), parent_id_(std::move(parent_id)),
-          available_(std::move(available)) {}
+    SemanticHistoryDefaultMissing(std::string history_id, std::string parent_id, std::vector<std::string> available)
+        : SemanticError("History state \'" + history_id + "\' in state \'" + parent_id +
+                            "\' declares no default <transition> — W3C SCXML 3.10.2 requires one naming the "
+                            "configuration to enter when \'" +
+                            parent_id + "\' has no stored history",
+                        {"scxml-state:" + parent_id, "history-default-transition", history_id}),
+          history_id_(std::move(history_id)), parent_id_(std::move(parent_id)), available_(std::move(available)) {}
 
     std::string_view code() const noexcept override {
         return "validation/missing-element";
@@ -240,7 +257,7 @@ private:
 // identity with forge "kind requires at least one X" failures).
 class SemanticNoStates : public SemanticError {
 public:
-    using SemanticError::SemanticError;
+    SemanticNoStates() : SemanticError("No state nodes found in SCXML document", {"scxml", "state"}) {}
 
     std::string_view code() const noexcept override {
         return "validation/empty-collection";
@@ -266,9 +283,9 @@ public:
 // across the asymmetry per §wire-W5 anti-pattern #5.
 class SemanticTopLevelScriptUnloaded : public SemanticError {
 public:
-    SemanticTopLevelScriptUnloaded(std::string message, std::optional<std::size_t> index,
-                                   std::optional<std::string> src)
-        : SemanticError(std::move(message)), index_(std::move(index)), src_(std::move(src)) {}
+    SemanticTopLevelScriptUnloaded(std::optional<std::size_t> index, std::optional<std::string> src)
+        : SemanticError("Top-level <script> rejected per W3C SCXML 5.8", keyFragmentsFor(index, src)),
+          index_(std::move(index)), src_(std::move(src)) {}
 
     std::string_view code() const noexcept override {
         return "scxml/top-level-script-unloaded";
@@ -289,6 +306,21 @@ public:
     }
 
 private:
+    // Both payload fields are optional, and the Rust arm pushes only
+    // the ones it has — so a diagnostic with neither hashes on
+    // `code|stage|file` alone, with no unit separator.
+    static std::vector<std::string> keyFragmentsFor(const std::optional<std::size_t> &index,
+                                                    const std::optional<std::string> &src) {
+        std::vector<std::string> fragments;
+        if (index.has_value()) {
+            fragments.push_back(std::to_string(*index));
+        }
+        if (src.has_value()) {
+            fragments.push_back(*src);
+        }
+        return fragments;
+    }
+
     std::optional<std::size_t> index_;
     std::optional<std::string> src_;
 };

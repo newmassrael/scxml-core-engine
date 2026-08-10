@@ -4,7 +4,6 @@
 #pragma once
 
 #include "parsing/Diagnostic.h"
-#include "parsing/PositionMap.h"
 
 #include <nlohmann/json.hpp>
 
@@ -14,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace SCE::parsing {
 
@@ -34,43 +34,68 @@ namespace SCE::parsing {
 //
 // `XIncludeExpansionError` implements `SCE::parsing::Diagnostic`
 // (§wire-W3). Each subtype overrides `code()` with its
-// `xml/xinclude-*` wire string; the shared base contributes
-// `location()` (currently always `nullopt`: expander throw sites have
-// no captured source position to stamp, per §wire-W3) and
-// `to_json()` (the v1 schema NDJSON record). Subtype field shape is
-// unchanged — the existing message-string ctor stays the throw-site
-// API so the 10 expander throw sites read as before.
+// `xml/xinclude-*` wire string; `stage()`, `location()` and
+// `to_json()` come from the shared base, and the location the §wire-W3
+// design pin reserved is now stamped — (row, col) at the throw site,
+// the document path at the expander boundary.
+//
+// Each subtype takes the Rust variant's *fields*, not a rendered
+// message: the constructor renders `what()` and declares the `id` key
+// fragments from the same values, so the two cannot drift and a throw
+// site cannot supply one without the other. Before this, throw sites
+// passed a formatted string and the id was hashed from that string —
+// which no other producer can reproduce, while `id` is the contract's
+// dedup key (SCE_ERROR_CONTRACT.md §2.1). The rendered text mirrors
+// the Rust `#[error(...)]` attribute on the matching variant
+// verbatim, and `tests/parsing/CrossProducerDiagnosticId_test.cpp`
+// runs both producers over one document to keep it that way.
 
 class XIncludeExpansionError : public std::runtime_error, public Diagnostic {
 public:
-    using std::runtime_error::runtime_error;
-
-    // Attach a `SourcePos` to this error. Currently unused by the
-    // expander throw sites — the `<xi:include>` element's pre-
-    // expansion (row, col) is embedded in the message text only.
-    // Reserved for the location-stamping milestone (§wire-W3 design
-    // pin "(ii) stamps with the throw-site's pre-expansion outer-
-    // document (row, col)") so consumers do not need to reparse
-    // message text for coordinates once stamping lands.
-    void setLocation(SourcePos pos) {
-        location_ = std::move(pos);
-    }
-
     // `Diagnostic` interface. Subtypes override `code()` with their
-    // `xml/xinclude-*` wire string; `location()` and `to_json()` are
-    // shared on the base because every XInclude diagnostic carries
-    // the same envelope (stage = "xml", id derived through the same
-    // canonical key shape, message read from `runtime_error::what()`).
+    // `xml/xinclude-*` wire string; `stage()`, `location()` and
+    // `to_json()` are shared on the base because every XInclude
+    // diagnostic carries the same envelope.
     std::string_view code() const noexcept override = 0;
 
-    const std::optional<SourcePos> &location() const noexcept override {
-        return location_;
+    // Every `xml/xinclude-*` `DiagnosticCode` reports the `xml` stage
+    // in the Rust authority — see `DiagnosticCode::stage()` in
+    // `sce-build/src/forge/diagnostic.rs`.
+    std::string_view stage() const noexcept override {
+        return "xml";
     }
 
     nlohmann::ordered_json to_json() const override;
 
+    // Rethrow this diagnostic attributed to `outerHref` — the
+    // `<xi:include>` the operator can actually see and edit, rather
+    // than a href reached transitively inside the included chain.
+    // Mirrors Rust `remap_nested`.
+    //
+    // Pure rather than a defaulted "keep myself", because which
+    // variants re-attribute and which keep their own identity is a
+    // per-variant decision the Rust authority makes explicitly; a
+    // default would let a new leaf inherit the wrong half of it
+    // silently. The rethrow lives on the leaf because `throw *this`
+    // in a base body would slice the dynamic type away.
+    [[noreturn]] virtual void rethrowAttributedTo(const std::string &outerHref) const = 0;
+
+protected:
+    // `actual` is the wire field a repair tool acts on without parsing
+    // the message — the offending href for most variants, the rejected
+    // feature for `Unsupported`, absent for the two that name nothing.
+    XIncludeExpansionError(std::string message, std::vector<std::string> keyFragments,
+                           std::optional<std::string> actual)
+        : std::runtime_error(std::move(message)), Diagnostic(std::move(keyFragments)), actual_(std::move(actual)) {}
+
+    // Optional repair proposal, appended after `actual` in the
+    // schema's key order. Only `MissingHref` has one; the default
+    // emits nothing rather than an empty object, because `fix` absent
+    // and `fix` empty mean different things to a consumer.
+    virtual void appendFix(nlohmann::ordered_json &out) const;
+
 private:
-    std::optional<SourcePos> location_;
+    std::optional<std::string> actual_;
 };
 
 // `<xi:include>` is missing the required `href` attribute, or the
@@ -82,9 +107,13 @@ private:
 // `xml/xinclude-missing-href` `DiagnosticCode`. Both the missing-
 // href and empty-href shapes collapse onto this single subtype
 // because Rust's authority folds them at the variant level.
+//
+// A unit variant carries no key fragments, so its id hashes to
+// `code|stage|file` with no unit separator at all.
 class XIncludeMissingHref : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    XIncludeMissingHref()
+        : XIncludeExpansionError("<xi:include> missing or empty `href` attribute", {}, std::nullopt) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-missing-href";
@@ -93,6 +122,16 @@ public:
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeMissingHref>(*this);
     }
+
+    // Keeps its own identity: the missing `href` is on an element
+    // inside the included file, and naming the outer include would
+    // point the operator at a document that is not the one to edit.
+    [[noreturn]] void rethrowAttributedTo(const std::string &) const override {
+        throw *this;
+    }
+
+protected:
+    void appendFix(nlohmann::ordered_json &out) const override;
 };
 
 // `<xi:include href="...">` named a file that could not be located
@@ -106,7 +145,10 @@ public:
 // can pick the right one without guessing.
 class XIncludeNotFound : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    XIncludeNotFound(std::string href, std::string searched)
+        : XIncludeExpansionError("<xi:include href=\"" + href + "\">: file not found (searched: " + searched + ")",
+                                 {href, searched}, href),
+          searched_(std::move(searched)) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-not-found";
@@ -115,6 +157,13 @@ public:
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeNotFound>(*this);
     }
+
+    [[noreturn]] void rethrowAttributedTo(const std::string &outerHref) const override {
+        throw XIncludeNotFound(outerHref, searched_);
+    }
+
+private:
+    std::string searched_;
 };
 
 // Resolved fragment file exists but could not be read — permission
@@ -125,9 +174,16 @@ public:
 // `xml/xinclude-read-error` `DiagnosticCode`. Classified
 // "Diagnostic-only" in the acceptance doc: an infrastructure
 // failure the SCXML author cannot prevent by editing the document.
+//
+// `detail` renders into the message but stays out of the key
+// fragments, exactly as on the Rust side: the underlying I/O text is
+// the platform's, so hashing it would make the id platform-specific
+// for an error the href already identifies.
 class XIncludeReadError : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    XIncludeReadError(std::string href, std::string detail)
+        : XIncludeExpansionError("<xi:include href=\"" + href + "\">: cannot read: " + detail, {href}, href),
+          detail_(std::move(detail)) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-read-error";
@@ -136,6 +192,13 @@ public:
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeReadError>(*this);
     }
+
+    [[noreturn]] void rethrowAttributedTo(const std::string &outerHref) const override {
+        throw XIncludeReadError(outerHref, detail_);
+    }
+
+private:
+    std::string detail_;
 };
 
 // A cycle was detected in the `<xi:include>` graph — expanding the
@@ -150,7 +213,9 @@ public:
 // dispatch across the language boundary.
 class XIncludeCycle : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    XIncludeCycle(std::string href, std::string chain)
+        : XIncludeExpansionError("<xi:include href=\"" + href + "\">: cycle detected (" + chain + ")", {href, chain},
+                                 href) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-cycle";
@@ -158,6 +223,13 @@ public:
 
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeCycle>(*this);
+    }
+
+    // Keeps its own identity: the chain it already renders names every
+    // file involved, so the outer href would add nothing and lose the
+    // href that closed the loop.
+    [[noreturn]] void rethrowAttributedTo(const std::string &) const override {
+        throw *this;
     }
 };
 
@@ -170,7 +242,9 @@ public:
 // operator can see the enforced bound without reading the header.
 class XIncludeTooDeep : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    explicit XIncludeTooDeep(unsigned limit)
+        : XIncludeExpansionError("<xi:include> nesting exceeds depth limit of " + std::to_string(limit),
+                                 {std::to_string(limit)}, std::nullopt) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-too-deep";
@@ -178,6 +252,12 @@ public:
 
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeTooDeep>(*this);
+    }
+
+    // Keeps its own identity: the limit is a property of the expander,
+    // not of any one include.
+    [[noreturn]] void rethrowAttributedTo(const std::string &) const override {
+        throw *this;
     }
 };
 
@@ -188,10 +268,22 @@ public:
 // (fields `href`, `detail`) and maps 1:1 to the Rust
 // `xml/xinclude-malformed` `DiagnosticCode`. Covers both the outer
 // document's initial parse and any nested fragment's reparse —
-// Rust folds them at the variant level so the C++ side does too.
+// Rust folds them at the variant level so the C++ side does too, and
+// re-attributes a nested failure to the href that pulled the fragment
+// in (`attribute_to_href` on the Rust side) so the operator is told
+// which `<xi:include>` to look at rather than only that "a document"
+// was malformed.
+//
+// `detail` is the XML engine's own parse text — roxmltree on the Rust
+// side, pugixml here — so it renders into the message but stays out
+// of the key fragments: hashing it would make the id engine-specific
+// for an error the href already identifies.
 class XIncludeMalformed : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    XIncludeMalformed(std::string href, std::string detail)
+        : XIncludeExpansionError("<xi:include href=\"" + href + "\">: included file is malformed: " + detail, {href},
+                                 href),
+          detail_(std::move(detail)) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-malformed";
@@ -200,6 +292,13 @@ public:
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeMalformed>(*this);
     }
+
+    [[noreturn]] void rethrowAttributedTo(const std::string &outerHref) const override {
+        throw XIncludeMalformed(outerHref, detail_);
+    }
+
+private:
+    std::string detail_;
 };
 
 // `<xi:include>` requested an XInclude feature that the pugixml
@@ -210,9 +309,15 @@ public:
 // `xml/xinclude-unsupported` `DiagnosticCode`. The C++ expander
 // preserves this rejection set so the AOT and Interpreter pipelines agree on
 // which inputs are accepted.
+//
+// `actual` carries the feature rather than the href, matching the
+// Rust payload: the href is not what the consumer would act on here.
 class XIncludeUnsupported : public XIncludeExpansionError {
 public:
-    using XIncludeExpansionError::XIncludeExpansionError;
+    XIncludeUnsupported(std::string href, std::string feature)
+        : XIncludeExpansionError("<xi:include href=\"" + href + "\">: unsupported feature: " + feature, {href, feature},
+                                 feature),
+          feature_(std::move(feature)) {}
 
     std::string_view code() const noexcept override {
         return "xml/xinclude-unsupported";
@@ -221,6 +326,13 @@ public:
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeUnsupported>(*this);
     }
+
+    [[noreturn]] void rethrowAttributedTo(const std::string &outerHref) const override {
+        throw XIncludeUnsupported(outerHref, feature_);
+    }
+
+private:
+    std::string feature_;
 };
 
 }  // namespace SCE::parsing
