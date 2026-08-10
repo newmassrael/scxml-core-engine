@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -78,6 +79,11 @@ GATES: dict[str, dict] = {
     # Triggered by its own sources, and forced on by its dependents.
     "codegen-build": {
         "local": ["sce-build/**", "Cargo.toml", "Cargo.lock"],
+        "no_ci_reason": "not a check — it produces the binary other gates "
+                        "run. CI builds it per workflow that needs it "
+                        "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
+                        "counts those steps), so there is no verdict here "
+                        "for a workflow to mirror.",
         "cost_s": 1,
         "summary": "build target/debug/sce-codegen",
     },
@@ -85,13 +91,26 @@ GATES: dict[str, dict] = {
     # break it, so the Rust trigger set is exactly right.
     "rust-modrs-drift": {
         "local": ["**/*.rs"],
+        "no_ci_reason": "CI catches the same defect as a compile error in "
+                        "rust-workspace-tests.yml — an aggregator naming a "
+                        "missing subdir is E0432, and an unnamed subdir is "
+                        "dead code its importers fail on. This gate exists "
+                        "to say so in under a second instead of after 30s "
+                        "of compilation, so a bypass loses speed, not "
+                        "coverage.",
         "cost_s": 0,
         "summary": "mod.rs <-> subdirectory drift",
     },
     # Guards the clang degraded-AST regression in the manifest emitter.
+    # Its own lane in the embed workflow rather than a step in the smoke
+    # job: it needs clang and a second, and the smoke build takes seven
+    # minutes. Until that lane existed the emitter was outside every CI
+    # trigger — `embed-vendor-smoke.yml` filtered on package/verify but
+    # not on `emit_embed_manifest.sh` — so this ran at push time and
+    # nowhere else, which `--no-verify` skips.
     "embed-manifest-failfast": {
-        "local": ["scripts/emit_embed_manifest.sh", "scripts/package_embed.sh",
-                  "sce/include/**"],
+        "workflows": ["embed-vendor-smoke.yml"],
+        "runner_workflow": True,
         "cost_s": 0,
         "summary": "emit_embed_manifest fail-fast case",
     },
@@ -191,13 +210,26 @@ GATES: dict[str, dict] = {
         "cost_s": 6,
         "summary": "C++ forge conformance build + test",
     },
-    # No CI counterpart: catches codegen breakage in the example documents
-    # (the namespace migration that broke them shipped green otherwise).
+    # Catches codegen breakage in the example documents (the namespace
+    # migration that broke them shipped green otherwise) and lints every
+    # document this repository authors. The trigger comes from the
+    # workflow's `paths:` like every other mirrored gate; it used to be a
+    # `local` list, and that list named `examples/**` while the gate's own
+    # sweep also read `integration_resources/*/*.scxml` — so editing an
+    # authored document there ran the lint never. The self-test now
+    # compares a gate's sweep against its trigger.
     "example-codegen": {
-        "local": ["examples/**", "tools/codegen/templates/**", "sce-build/**"],
+        "workflows": ["example-codegen.yml"],
+        # The workflow runs `scripts/gate example-codegen` instead of
+        # restating this gate's commands, so the check has one spelling
+        # for both callers. Every other mirrored gate still carries a
+        # second copy of its commands in its workflow; this flag is what
+        # makes the difference measurable per gate rather than a claim
+        # about the set, and the self-test below holds the delegation.
+        "runner_workflow": True,
         "deps": ["codegen-build"],
         "cost_s": 1,
-        "summary": "example SCXML codegen smoke",
+        "summary": "example SCXML codegen smoke + authored-document lint",
     },
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
@@ -230,11 +262,17 @@ INERT = [
     "*.md",
     "docs/adr/**",
     "LICENSE*",
-    # Local tooling — no CI workflow consumes the hooks, so no mirrored gate
-    # has them as an input. The one gate that does read them,
-    # `roadmap_marker_gate`, reaches every change through `tree-hygiene`,
-    # and this file's own cases run unconditionally before any gate is
-    # chosen.
+    # Local tooling. The one gate that reads these, `roadmap_marker_gate`,
+    # reaches every change through `tree-hygiene`, and this file's own
+    # cases run unconditionally before any gate is chosen.
+    #
+    # Narrower than it reads: a gate whose workflow delegates to the
+    # runner (`runner_workflow`) names its own script, `scripts/gate` and
+    # `scripts/gates/lib.sh` in that workflow's `paths:`, and a gate
+    # trigger is consulted before this list — so editing one of those
+    # selects its gate rather than falling through to here. What stays
+    # inert is the scripts of gates CI still mirrors by restating their
+    # commands, where the script is not an input to any workflow.
     "tools/git-hooks/**",
     "scripts/gates/**",
     "scripts/gate",
@@ -303,6 +341,40 @@ def workflow_paths(repo_root: Path, name: str) -> list[str]:
     if not globs:
         return ["**"]
     return list(dict.fromkeys(globs))
+
+
+# Assembled rather than spelled so this file does not match itself when a
+# reader greps for scripts that enumerate the tree.
+_SWEEP_CALL = re.compile("ls-" + r"files((?:\s+'[^']*')+)")
+
+
+def swept_globs(src: str) -> list[str]:
+    """Globs a gate script hands to git's tracked-file enumeration.
+
+    A sweep is what makes a gate's input set wider than its trigger. The
+    trigger below decides WHEN a gate runs, from a path list written
+    here; a sweep inside the script decides WHAT it judges, from the tree
+    at run time. The two are separate statements about the same gate and
+    nothing kept them in step.
+    """
+    out: list[str] = []
+    for match in _SWEEP_CALL.finditer(src):
+        out.extend(re.findall(r"'([^']*)'", match.group(1)))
+    return out
+
+
+def tracked_matching(repo_root: Path, glob: str) -> list[str]:
+    """Tracked paths a sweep glob actually yields, asked of git itself.
+
+    Comparing the sweep glob to a trigger glob as text would need a
+    containment rule between two glob dialects. The tree answers the
+    question directly and without a rule to get wrong.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-" + "files", glob],
+        capture_output=True, text=True, check=False,
+    )
+    return [line for line in proc.stdout.splitlines() if line]
 
 
 def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
@@ -477,6 +549,89 @@ def self_test(repo_root: Path) -> int:
     keys, _ = select(repo_root, [".github/workflows/doc-check.yml"])
     if "rustdoc-links" not in keys:
         failures.append("doc-check-self: rustdoc-links missing from " + str(keys))
+
+    # A gate that enumerates the tree must be triggered by everything it
+    # enumerates. The two statements about a gate — when it runs and what
+    # it judges — were written in different places and nothing compared
+    # them, so they had drifted: `example-codegen` lints every authored
+    # document under `integration_resources/` and its trigger named only
+    # `examples/**`. Editing one of those documents ran the lint never.
+    #
+    # Worse than never-selected. Another gate's trigger matched the path,
+    # so it counted as classified and rule 1 did not fire either — the
+    # safety net that catches an unknown path cannot catch a known one
+    # routed to the wrong gate.
+    cases += 1
+    triggers = gate_triggers(repo_root)
+    sweeps_seen = 0
+    for slug in sorted(GATES):
+        script = gate_script(repo_root, slug)
+        if not script.is_file():
+            continue
+        pats = [glob_to_regex(g) for g in triggers[slug]]
+        for swept in swept_globs(script.read_text(encoding="utf-8")):
+            sweeps_seen += 1
+            for path in tracked_matching(repo_root, swept):
+                if not any(p.match(path) for p in pats):
+                    failures.append(
+                        f"trigger: {slug} sweeps '{swept}' and judges "
+                        f"'{path}', which no trigger of its own selects — "
+                        f"the gate reads a path that never starts it")
+                    break
+    # Lower bound: a sweep extractor that stops matching would leave this
+    # case reading nothing and still passing.
+    if sweeps_seen < 1:
+        failures.append(
+            "trigger: no gate script was seen sweeping tracked files — "
+            "the extractor is broken, not the gates")
+
+    # Rule 2, held rather than described. A gate with no CI counterpart
+    # states why in a field, not in a comment a reader has to find and a
+    # test cannot read. Checked both ways: a gate that maps a workflow
+    # must not also claim to have none, or the claim is stale the moment
+    # the counterpart lands.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        has_workflow = bool(spec.get("workflows"))
+        reason = spec.get("no_ci_reason")
+        if has_workflow and reason:
+            failures.append(
+                f"no-ci: {slug} maps {spec['workflows']} and also carries "
+                f"no_ci_reason — drop the reason, it now has a counterpart")
+        if not has_workflow and not reason:
+            failures.append(
+                f"no-ci: {slug} has no CI counterpart and no no_ci_reason. "
+                f"A gate that runs only at push time is skipped by "
+                f"`--no-verify`; say why that is acceptable here, or give "
+                f"it a workflow")
+
+    # A gate whose workflow delegates to the runner must actually call it.
+    #
+    # Mapping a workflow proves only that a file exists with the right
+    # `paths:`. A workflow that stopped running its gate would keep the
+    # trigger derivation working, keep every existing parity check green,
+    # and verify nothing — the shape a push-time-only gate takes when it
+    # is given a CI counterpart in name.
+    cases += 1
+    delegating = 0
+    for slug, spec in sorted(GATES.items()):
+        if not spec.get("runner_workflow"):
+            continue
+        delegating += 1
+        for name in spec.get("workflows", []):
+            wf = repo_root / ".github" / "workflows" / name
+            if not wf.is_file():
+                continue  # `every_workflow_the_registry_maps_exists` owns this
+            if f"scripts/gate {slug}" not in wf.read_text(encoding="utf-8"):
+                failures.append(
+                    f"delegation: {name} is declared as running {slug} "
+                    f"through the runner but never calls "
+                    f"`scripts/gate {slug}` — either restore the call or "
+                    f"drop `runner_workflow` and mirror the commands")
+    if delegating < 1:
+        failures.append(
+            "delegation: no gate declares runner_workflow — the flag that "
+            "tracks CI-calls-the-runner progress reads nothing")
 
     # Every gate in the table has a script, and every script is in the table.
     cases += 1
