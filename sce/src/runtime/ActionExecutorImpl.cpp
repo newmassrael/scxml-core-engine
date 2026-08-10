@@ -941,6 +941,22 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                                   eventName, result.sendId);
                 } else {
                     SCE_LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
+                    // §scxml-C-1: a send naming a session that does not exist
+                    // or is inaccessible MUST put error.communication on the
+                    // sending session's internal queue. The dispatcher already
+                    // knows — it answers TARGET_NOT_FOUND — but until this the
+                    // knowledge stopped at the log, so a document could not
+                    // transition on a failure it is entitled to observe.
+                    //
+                    // Only that one error type maps here. The others describe
+                    // failures of a target that WAS found (a timeout, a
+                    // refused connection), and §scxml-5.10 gives those their
+                    // own treatment; widening this would make every transport
+                    // hiccup indistinguishable from a dead address.
+                    if (result.errorType == SendResult::ErrorType::TARGET_NOT_FOUND && eventRaiser_) {
+                        eventRaiser_->raiseEvent("error.communication", result.errorMessage, sendId,
+                                                 false /* overload discriminator for sendId variant */);
+                    }
                 }
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("ActionExecutorImpl: Exception while getting send result: {}", e.what());
