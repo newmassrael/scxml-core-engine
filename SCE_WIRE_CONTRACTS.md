@@ -51,10 +51,28 @@ checked-in schema without linking the `sce-build` crate.
    version bump. **Consumers MUST pin to a specific SCE commit** rather
    than rely on a version number alone. (This is why, for example, a
    forge-AST consumer pins the exact commit it deserializes against.)
-2. **Additive growth is compatible.** Adding a new optional field is
+2. **A payload names the commit that produced it.** A MUST the consumer
+   cannot check is a convention, so the surfaces a consumer reads
+   without a second invocation carry the generator commit in-band:
+   `generator` on the stdout manifest, on every diagnostic record, and
+   on every symbol-lookup record; `sce_producer_version` on a forge-AST
+   export. The diagnostic case is the one that has to be per-record — a
+   rejected run writes **no** manifest at all (stdout is empty, the exit
+   code carries the failure), so on the path a repair loop iterates on,
+   the diagnostic is the only record the consumer receives.
+
+   The sourcemap sidecar deliberately does **not** carry it. The sidecar
+   is a committed artifact, so a commit stamp would be invalidated by
+   the very commit that wrote it, and every commit touching any tree
+   would have to regenerate all of them; its `source_hash` /
+   `template_hash` identify the inputs instead, per `build.rs` on why a
+   stamp that goes stale is worse than no stamp. A consumer needing the
+   emitting commit for a sidecar reads it from the manifest of the run
+   that produced it, or from a lookup record naming that sidecar.
+3. **Additive growth is compatible.** Adding a new optional field is
    compatible within the current version and does NOT bump it.
    Consumers MUST ignore unknown fields.
-3. **Each status claim is machine-checked.** A drift guard test pins
+4. **Each status claim is machine-checked.** A drift guard test pins
    the producer-side constant to the schema-file header for every
    surface, so the table above cannot silently go stale:
    - `diagnostic.rs::tests::schema_file_declares_status`
@@ -67,9 +85,9 @@ checked-in schema without linking the `sce-build` crate.
      surface, and — walking the other way — every schema checked into
      `schemas/` or `apis/` is a declared surface, so a schema cannot
      land on disk and stay unregistered)
-4. **Each shape claim is checked against real instances.** A schema
+5. **Each shape claim is checked against real instances.** A schema
    nothing is validated against is a document, not a contract: the
-   drift guards in item 3 compare a constant to a header and never put
+   drift guards in item 4 compare a constant to a header and never put
    a produced artifact through the schema. For every JSON surface a
    test runs emitted artifacts through a draft-07 validator, and a
    negative case pins that the validator rejects — a positive sweep
@@ -117,10 +135,11 @@ surface's shape-governance doc for the exact rule.
 
 ## Announcing changes
 
-- Where a surface carries a producer-version stamp (e.g. forge-AST's
-  optional `sce_producer_version`), a consumer reporting an issue can
-  pin the exact release that produced a payload.
+- Every surface a consumer reads without a second invocation stamps the
+  producing commit in-band (policy item 2), so an issue report can name
+  the exact generator that produced the payload it quotes — including
+  the failure path, where there is no manifest to correlate against.
 - Surface changes are tracked in git history against the schema file
   and this registry. There is no separate changelog feed while
-  `pre-release`; the commit-pin discipline in policy item 1 is the
+  `pre-release`; the commit-pin discipline in policy items 1-2 is the
   contract.

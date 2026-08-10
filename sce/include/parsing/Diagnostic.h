@@ -101,4 +101,23 @@ public:
 std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view stage, std::string_view file,
                                      std::string_view messageFragment);
 
+// Open a v1 record with the envelope every `Diagnostic` subtype shares:
+// `v`, `id`, `generator`, `code`, `stage`, in the Rust struct's field
+// order so canonicalised byte-diffs against `--error-format=json` agree.
+// The caller appends its own `message` and any optional fields.
+//
+// Exists because these keys were spelled out in all eight `to_json()`
+// overrides. Adding `generator` to the schema meant editing eight sites
+// that each had to be found, and an override that had been missed would
+// have emitted a record the shared schema rejects while every other
+// subtype's fixture stayed green. One assembly point makes the required
+// set a property of this function rather than of whoever remembered.
+//
+// `generator` is the commit the library was built from, supplied by
+// `SCE_GIT_COMMIT` from `sce/CMakeLists.txt`; see there for why the git
+// refs are configure-dependencies. `unknown` when the build had no
+// checkout to read — the value the schema's pattern allows alongside a
+// hex commit, and the honest answer rather than a fabricated one.
+nlohmann::ordered_json beginDiagnosticRecord(std::string_view code, std::string_view stage, const std::string &id);
+
 }  // namespace SCE::parsing

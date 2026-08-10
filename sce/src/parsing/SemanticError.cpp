@@ -33,11 +33,7 @@ nlohmann::ordered_json SemanticError::baseEnvelope() const {
     const std::string_view messageView{what()};
     const std::string idStr = computeFnv1aDiagnosticId(codeStr, kSemanticStage, fileStr, messageView);
 
-    nlohmann::ordered_json out;
-    out["v"] = 1;
-    out["id"] = idStr;
-    out["code"] = codeStr;
-    out["stage"] = kSemanticStage;
+    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kSemanticStage, idStr);
     out["message"] = std::string{messageView};
 
     if (location().has_value()) {

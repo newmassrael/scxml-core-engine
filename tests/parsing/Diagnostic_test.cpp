@@ -114,14 +114,20 @@ bool matchesIdRegex(const std::string &id) {
     return std::regex_match(id, kPattern);
 }
 
+bool matchesGeneratorRegex(const std::string &generator) {
+    static const std::regex kPattern{R"(^([0-9a-f]{7,40}|unknown)$)"};
+    return std::regex_match(generator, kPattern);
+}
+
 void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
-    // v1 schema requires v/id/code/stage/message; spec/location/
+    // v1 schema requires v/id/generator/code/stage/message; spec/location/
     // expected/actual/fix are optional. The C++ producer in W1 emits
     // exactly the required set (plus location when populated); the
     // assertions below pin both presence AND absence so a future
     // additive field surfaces as a curated-set drift.
     ASSERT_TRUE(j.contains("v")) << j.dump();
     ASSERT_TRUE(j.contains("id")) << j.dump();
+    ASSERT_TRUE(j.contains("generator")) << j.dump();
     ASSERT_TRUE(j.contains("code")) << j.dump();
     ASSERT_TRUE(j.contains("stage")) << j.dump();
     ASSERT_TRUE(j.contains("message")) << j.dump();
@@ -131,6 +137,14 @@ void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_vie
     EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
     EXPECT_TRUE(matchesIdRegex(j.at("id").get<std::string>()))
         << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
+    // The header declares this side conforms to the shared schema
+    // field-for-field. `generator` became required there because a
+    // rejected run writes no manifest, leaving the diagnostic as the
+    // only record a consumer receives — a C++ producer that omitted it
+    // would emit records the schema rejects while this fixture stayed
+    // green, which is exactly the drift the curated list exists to stop.
+    EXPECT_TRUE(matchesGeneratorRegex(j.at("generator").get<std::string>()))
+        << "generator '" << j.at("generator").get<std::string>() << "' does not match ^([0-9a-f]{7,40}|unknown)$";
     EXPECT_FALSE(j.at("message").get<std::string>().empty());
 }
 
@@ -139,7 +153,7 @@ void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_vie
 // nlohmann::json does not validate this for us, so we enforce it
 // explicitly here so a stray field added on the C++ side reds.
 const std::set<std::string> kAllowedTopLevelKeys = {
-    "v", "id", "code", "stage", "spec", "message", "location", "expected", "actual", "fix",
+    "v", "id", "generator", "code", "stage", "spec", "message", "location", "expected", "actual", "fix",
 };
 
 void assertNoUnexpectedKeys(const nlohmann::ordered_json &j) {
@@ -1395,6 +1409,35 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     EXPECT_EQ(*typed->index(), 1u);
     ASSERT_TRUE(typed->src().has_value());
     EXPECT_EQ(*typed->src(), "/this/path/should/not/exist/missing.js");
+}
+
+// ── generator stamp resolution ──────────────────────────────────────
+
+// A build made from this checkout must report a commit, not `unknown`.
+//
+// `unknown` is a legal schema value and the honest answer for a build
+// with no git checkout to read, so every schema-shaped assertion in this
+// file accepts it. That acceptance is exactly what makes the value
+// unable to police itself: when `SCE_GIT_COMMIT` was first attached to
+// `sce_base` — which does not compile `Diagnostic.cpp` — the macro was
+// simply undefined here, `beginDiagnosticRecord` took its fallback
+// branch, and all 65 tests passed while every record on the wire
+// claimed an unidentifiable producer.
+//
+// This test is the one place that knows something the schema cannot:
+// this suite runs inside the repository, so a checkout exists, so
+// `unknown` means the resolution broke rather than that there was
+// nothing to resolve.
+TEST(DiagnosticWire, GeneratorStampNamesThisCheckout) {
+    const TemplateNotFound err("probe");
+    const auto j = err.to_json();
+    ASSERT_TRUE(j.contains("generator")) << j.dump();
+    const auto generator = j.at("generator").get<std::string>();
+    EXPECT_NE(generator, "unknown") << "this suite builds from a git checkout, so `unknown` means the "
+                                       "SCE_GIT_COMMIT definition is not reaching the target that "
+                                       "compiles src/parsing/Diagnostic.cpp — see sce/CMakeLists.txt";
+    EXPECT_TRUE(std::regex_match(generator, std::regex{R"(^[0-9a-f]{7,40}$)"}))
+        << "generator '" << generator << "' is neither a hex commit nor `unknown`";
 }
 
 }  // namespace

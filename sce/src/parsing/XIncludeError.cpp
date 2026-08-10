@@ -33,11 +33,7 @@ nlohmann::ordered_json XIncludeExpansionError::to_json() const {
     const std::string_view messageView{what()};
     const std::string idStr = computeFnv1aDiagnosticId(codeStr, kXIncludeStage, fileStr, messageView);
 
-    nlohmann::ordered_json out;
-    out["v"] = 1;
-    out["id"] = idStr;
-    out["code"] = codeStr;
-    out["stage"] = kXIncludeStage;
+    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kXIncludeStage, idStr);
     out["message"] = std::string{messageView};
 
     if (location_.has_value()) {

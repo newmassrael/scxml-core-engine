@@ -5,7 +5,7 @@
   "title": "SCE Diagnostic (wire schema v1)",
   "description": "Machine-readable diagnostic record emitted on stderr as a single NDJSON line. Authoritative definition lives in sce-build/src/forge/diagnostic.rs (struct Diagnostic); see SCE_ERROR_CONTRACT.md §2 for the wire contract and §5 for the code catalog. Consumers MUST ignore unknown fields: any purely additive schema change (new optional field) is compatible with v1 and does not bump the schema_version.",
   "type": "object",
-  "required": ["v", "id", "code", "stage", "message"],
+  "required": ["v", "id", "generator", "code", "stage", "message"],
   "additionalProperties": false,
   "properties": {
     "v": {
@@ -17,6 +17,11 @@
       "description": "Content-addressed identifier. Prefix names the hash family (future migrations add new prefixes rather than redefining fnv1a). The canonical key is (code, stage, file, key_fragments) — re-wording the message never shifts the id.",
       "type": "string",
       "pattern": "^fnv1a:[0-9a-f]{16}$"
+    },
+    "generator": {
+      "description": "Commit of the generator that emitted this record — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unknown` on a build with no git checkout to read (vendored crate, release tarball). Required on every record because a rejected run writes no manifest: stdout stays empty and the exit code carries the failure, so on the failure path this record is the only thing the consumer receives, and SCE_ERROR_CONTRACT.md §8.1 tells consumers to pin a specific commit while the schema is pre-release.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{7,40}|unknown)$"
     },
     "code": {
       "description": "Closed enum of diagnostic codes. Adding a new entry is backwards-compatible; renaming an existing entry requires a schema bump per SCE_ERROR_CONTRACT.md §8.",
