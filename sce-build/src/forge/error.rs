@@ -284,23 +284,23 @@ pub enum XmlError {
     /// [`crate::parser::expand_preprocessors`] never ran on it.
     ///
     /// Every other `xml/template-*` code names a way expansion can
-    /// fail; this one names expansion not having been attempted, which
-    /// until it existed was the quietest failure of the set. The forge
-    /// parse entries take already-read content, so a caller that
-    /// assembles the pipeline itself can hand them raw bytes — and the
-    /// kind parsers select children by tag name with no else-branch,
-    /// so a surviving `<sce:use>` is skipped rather than refused. In a
+    /// fail; this one names expansion not having been attempted, the
+    /// quietest failure of the set. The in-memory parse entries take
+    /// already-read content, so a caller that assembles the pipeline
+    /// itself can hand them raw bytes — and both the statechart and
+    /// forge parsers select children by tag name with no else-branch,
+    /// so a surviving directive is skipped rather than refused. In a
     /// `lookup` with `sce:default` that turns a missing row into a
-    /// plausible answer.
+    /// plausible answer; in a statechart it drops whole states.
     ///
     /// The XSD cannot stand in for this check: `<sce:use>` is a
     /// declared element and its containers are `xs:any
     /// processContents="lax"`, so schema validation calls the
     /// unexpanded document valid (see `xsd_validator.rs`'s `VALID_USE`
     /// fixture). Raised by
-    /// [`crate::parser::reject_unexpanded_directives`] at the forge
-    /// parse entry, after the document tree exists and before any kind
-    /// parser walks it.
+    /// [`crate::parser::reject_unexpanded_directives`] at both parse
+    /// entries, after the document tree exists and before any parser
+    /// walks it.
     #[error(
         "<{element}> survived into parsing: the document was never run through \
          preprocessor expansion (expand_preprocessors)"
