@@ -10,8 +10,12 @@
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
 #include "core/LogMacros.h"
+#include "events/EventDispatcherImpl.h"
+#include "events/EventSchedulerImpl.h"
+#include "events/EventTargetFactoryImpl.h"
 #include "mocks/MockEventRaiser.h"
 #include "scripting/JSEngine.h"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -299,6 +303,44 @@ TEST_F(ActionExecutorImplTest, ConcurrentOperations) {
         std::string value = executor->evaluateExpression(varName);
         EXPECT_EQ(value, std::to_string(i));
     }
+}
+
+/// W3C SCXML C.1: "If the sending SCXML session specifies a session that does
+/// not exist or is inaccessible, the SCXML Processor MUST place the error
+/// error.communication on the internal event queue of the sending session."
+///
+/// The dispatcher already answers TARGET_NOT_FOUND for an unresolvable
+/// session — what was missing is the half that tells the MACHINE. The failure
+/// branch logged a warning and returned, so a document sending to a dead peer
+/// could not transition on the error it is entitled to observe.
+///
+/// The pre-dispatch guard nearby does not cover this: `isUnreachableTarget`
+/// tests whether the string is empty or the literal "undefined" (W3C test
+/// 496), which is a shape, not an answer about whether a session exists. It
+/// also only runs when 'targetexpr' was used, so a literal target skipped it
+/// entirely.
+TEST_F(ActionExecutorImplTest, SendToANonexistentSessionRaisesErrorCommunication) {
+    auto raiser = std::make_shared<SCE::Test::MockEventRaiser>();
+    executor->setEventRaiser(raiser);
+    auto scheduler = std::make_shared<SCE::EventSchedulerImpl>(
+        [](const SCE::EventDescriptor &event, std::shared_ptr<SCE::IEventTarget> target, const std::string &) {
+            return target ? target->send(event).valid() : false;
+        });
+    executor->setEventDispatcher(
+        std::make_shared<SCE::EventDispatcherImpl>(scheduler, std::make_shared<SCE::EventTargetFactoryImpl>(raiser)));
+
+    SendAction sendAction("test.event", "send_to_ghost");
+    sendAction.setSendId("ghost_send");
+    sendAction.setTarget("#_scxml_no-such-session");
+
+    executor->executeSendAction(sendAction);
+
+    const auto &raised = raiser->getRaisedEvents();
+    const bool sawCommunicationError =
+        std::any_of(raised.begin(), raised.end(),
+                    [](const std::pair<std::string, std::string> &e) { return e.first == "error.communication"; });
+    EXPECT_TRUE(sawCommunicationError)
+        << "a send naming a session that does not exist must raise error.communication on the sender";
 }
 
 // SCXML Compliance Tests
