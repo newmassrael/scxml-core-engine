@@ -61,5 +61,7 @@ jobs:
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
 
+    # Delegates to the gate runner rather than restating the command,
+    # so the lint set has one spelling for both callers.
     - name: cargo clippy --workspace --all-targets
-      run: cargo clippy --workspace --all-targets -- -D warnings
+      run: scripts/gate clippy

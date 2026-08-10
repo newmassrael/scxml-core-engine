@@ -289,6 +289,18 @@ fn steps_only(text: &str) -> String {
 /// "the hook runs every script the workflows run" and meant something
 /// far narrower than its name.
 fn verification_invocations(text: &str) -> BTreeSet<String> {
+    verification_invocations_depth(text, 0)
+}
+
+/// `depth` bounds the one expansion this extractor performs:
+/// `scripts/gate <slug>` runs the gate's own script, so the commands it
+/// verifies live one file away. Without expanding, a workflow that
+/// delegates contributes no verification at all and the parity check
+/// below passes it vacuously — the delegation would remove the workflow
+/// from the comparison rather than simplify it. `hook_surface` already
+/// reads every gate body, so expanding here is what puts the two sides
+/// back on the same footing.
+fn verification_invocations_depth(text: &str, depth: usize) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in text.lines() {
         if line.trim_start().starts_with('#') {
@@ -373,6 +385,18 @@ fn verification_invocations(text: &str) -> BTreeSet<String> {
                     for t in &tokens[i + 1..] {
                         if t.starts_with(':') {
                             out.insert(format!("gradlew {t}"));
+                        }
+                    }
+                }
+                // `scripts/gate <slug>` — delegation to the gate runner.
+                // Expanded rather than tokenised: the point of the
+                // parity check is which commands run, and a token
+                // naming the runner would compare a spelling instead.
+                "scripts/gate" if depth == 0 => {
+                    if let Some(slug) = after(1) {
+                        let gate = repo_root().join(format!("scripts/gates/{slug}.sh"));
+                        if let Ok(body) = std::fs::read_to_string(&gate) {
+                            out.extend(verification_invocations_depth(&body, depth + 1));
                         }
                     }
                 }
