@@ -396,6 +396,25 @@ fn expand_impl(
 /// itself sits inside another include's target file) are handled
 /// by the recursive [`expand_impl`] call — this walker only needs
 /// to see the top-level shape of the current document.
+/// Is this node an `<xi:include>` this expander would consume?
+///
+/// Match either the proper XInclude namespace or the bare local name
+/// `include`. The C++ runtime is lenient on the namespace declaration
+/// (PugiXMLParser.cpp:249), so the AOT side accepts the same inputs.
+///
+/// Public because the post-expansion guard
+/// ([`crate::parser::reject_unexpanded_directives`]) must ask exactly
+/// the question this expander answers. A guard with its own copy of
+/// the predicate could go on accepting an input shape the expander had
+/// stopped consuming — the leniency above is precisely the kind of
+/// detail two copies drift on.
+pub fn is_xinclude_element(node: &roxmltree::Node) -> bool {
+    let name = node.tag_name();
+    node.is_element()
+        && name.name() == "include"
+        && (name.namespace() == Some(XINCLUDE_NS) || name.namespace().is_none())
+}
+
 fn collect_includes<'a, 'input>(
     root: &roxmltree::Node<'a, 'input>,
 ) -> Vec<roxmltree::Node<'a, 'input>> {
@@ -412,14 +431,7 @@ fn collect_includes_into<'a, 'input>(
         if !child.is_element() {
             continue;
         }
-        let name = child.tag_name();
-        // Match either the proper XInclude namespace or the bare
-        // local name `include`. The C++ runtime is lenient on the
-        // namespace declaration (PugiXMLParser.cpp:249), so the
-        // AOT side accepts the same inputs.
-        let is_include = name.name() == "include"
-            && (name.namespace() == Some(XINCLUDE_NS) || name.namespace().is_none());
-        if is_include {
+        if is_xinclude_element(&child) {
             out.push(child);
         } else {
             collect_includes_into(&child, out);

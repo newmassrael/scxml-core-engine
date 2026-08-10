@@ -469,6 +469,22 @@ omitted `required="true"` parameter
 (`xml/template-cycle`), and depth overflow
 (`xml/template-too-deep`).
 
+Those eight name ways expansion can fail. Expansion *not having been
+attempted* is named separately by `xml/preprocessor-not-run`, raised
+when a `<sce:use>` or `<xi:include>` survives into parsing. It exists
+because the forge parse entries take already-read content, so a
+caller that drives the pipeline itself can hand them unexpanded
+bytes; the kind parsers then select children by tag name with no
+else-branch and skip the directive in silence. In a `lookup` with
+`sce:default` that turns a dropped row into a plausible answer rather
+than a visible failure. The check cannot live in the XSD — `<sce:use>`
+is a declared element whose containers are `xs:any
+processContents="lax"`, so the schema calls an unexpanded document
+valid by construction, and it must stay that way for template
+authoring and editor integrations. The statechart route reaches
+expansion through `SCXMLParser::parse_file` and so cannot arrive in
+this state.
+
 Post-expansion diagnostic attribution (RFC §6.3 Q3 depth-1 rule, as
 implemented by `crate::position_map::Origin::CallSite` and
 `Origin::File` emitted during `template::expand`):
@@ -1269,7 +1285,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (340 codes)
+## Appendix — `DiagnosticCode` index (341 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1308,6 +1324,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `xml/template-unknown-param` | Xml |
 | `xml/template-cycle` | Xml |
 | `xml/template-too-deep` | Xml |
+| `xml/preprocessor-not-run` | Xml |
 | `validation/missing-element` | Validation |
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |

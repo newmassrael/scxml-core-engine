@@ -227,6 +227,61 @@ pub fn expand_preprocessors(
     Ok((expanded, final_map, deps))
 }
 
+/// Refuse a document that still carries a preprocessor directive.
+///
+/// [`expand_preprocessors`] consumes every `<xi:include>` and
+/// `<sce:use>` it is given, so one surviving into a parsed tree means
+/// the pass never ran. That is a caller-side mistake, but it used to be
+/// an invisible one: the kind parsers select children by tag name and
+/// have no else-branch, so the directive was skipped in silence and
+/// whatever it was carrying simply never arrived. A `lookup` with
+/// `sce:default` then answers for the missing key, which reads as a
+/// correct table from every side — compiler, generated code, runtime.
+///
+/// This is deliberately not an XSD rule. `<sce:use>` is a declared
+/// element and the elements admitting it are `xs:any
+/// processContents="lax"`, so the schema calls an unexpanded document
+/// valid by construction; making it invalid there would also make the
+/// editor-integration and template-authoring cases invalid. The
+/// document tree is the layer that can tell "not yet expanded" from
+/// "not expandable", so the check lives here.
+///
+/// The predicates come from the two expanders rather than from a copy
+/// kept here, so the guard rejects exactly the shapes expansion would
+/// have consumed — including `<include>` written without its namespace
+/// prefix, which [`crate::xinclude`] accepts for C++ runtime parity.
+pub fn reject_unexpanded_directives(
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{ForgeError, Located, XmlError};
+
+    for node in root.descendants() {
+        let element = if crate::template::is_sce_use_element(&node) {
+            "sce:use"
+        } else if crate::xinclude::is_xinclude_element(&node) {
+            // Report the prefixed spelling even when the author wrote
+            // the bare `<include>`: the prefixed form is what the docs
+            // and the fix both name.
+            "xi:include"
+        } else {
+            continue;
+        };
+
+        let pos = node.document().text_pos_at(node.range().start);
+        return Err(Located::new(
+            ForgeError::Xml(XmlError::PreprocessorNotRun {
+                element: element.to_string(),
+            }),
+            doc_name,
+            Some(pos.row),
+            Some(pos.col),
+        ));
+    }
+
+    Ok(())
+}
+
 /// SCE Protocol-Synthesis RFC §synth-5-O: capture the post-preprocessor
 /// source position of an XML element for the SCE-MAP traceability
 /// chain. Templates lower the returned [`SourceLocation`] to a

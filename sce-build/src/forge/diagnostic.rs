@@ -441,6 +441,12 @@ pub enum DiagnosticCode {
     XmlTemplateCycle,
     #[serde(rename = "xml/template-too-deep")]
     XmlTemplateTooDeep,
+    /// The preprocessor pass never ran: a directive survived into
+    /// parsing. Sits with the `template-*` codes because it is the
+    /// ninth way template expansion can fail to deliver a row — the
+    /// one where nothing was attempted.
+    #[serde(rename = "xml/preprocessor-not-run")]
+    XmlPreprocessorNotRun,
 
     #[serde(rename = "validation/missing-element")]
     ValidationMissingElement,
@@ -2652,6 +2658,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         XmlTemplateUnknownParam,
         XmlTemplateCycle,
         XmlTemplateTooDeep,
+        XmlPreprocessorNotRun,
         // Validation
         ValidationMissingElement,
         ValidationMissingAttribute,
@@ -3612,6 +3619,7 @@ impl DiagnosticCode {
             | XmlTemplateUnknownParam
             | XmlTemplateCycle
             | XmlTemplateTooDeep
+            | XmlPreprocessorNotRun
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
@@ -3784,6 +3792,7 @@ impl DiagnosticCode {
             XmlTemplateUnknownParam => "xml/template-unknown-param",
             XmlTemplateCycle => "xml/template-cycle",
             XmlTemplateTooDeep => "xml/template-too-deep",
+            XmlPreprocessorNotRun => "xml/preprocessor-not-run",
             ValidationMissingElement => "validation/missing-element",
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
@@ -4597,6 +4606,19 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![limit.to_string()],
+        },
+        // No `fix`: the repair is a change to how the caller drives the
+        // pipeline, not an edit to the document the diagnostic points
+        // at. Naming the surviving element in `actual` is what lets an
+        // agent tell the two directives apart without re-reading the
+        // source.
+        XmlError::PreprocessorNotRun { element } => DiagnosticPayload {
+            code: DiagnosticCode::XmlPreprocessorNotRun,
+            stage: Stage::Xml,
+            expected: None,
+            actual: Some(element.clone()),
+            fix: None,
+            key_fragments: vec![element.clone()],
         },
     }
 }
@@ -9689,6 +9711,14 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b3b0c2c9723a4ca2","code":"xml/template-too-deep","stage":"xml","message":"<sce:use> template nesting exceeds depth limit of 10"}"#,
             ),
+            (
+                "forge/preprocessor-not-run",
+                XmlError::PreprocessorNotRun {
+                    element: "sce:use".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:91b4616df99fdbbc","code":"xml/preprocessor-not-run","stage":"xml","message":"<sce:use> survived into parsing: the document was never run through preprocessor expansion (expand_preprocessors)","actual":"sce:use"}"#,
+            ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5 codegen matrix shells.
             //    Producer constructors are reachable; the matrix walker
             //    in `forge/codegen_matrix.rs` invokes them. ──
@@ -12562,6 +12592,7 @@ mod tests {
             | XmlTemplateUnknownParam
             | XmlTemplateCycle
             | XmlTemplateTooDeep
+            | XmlPreprocessorNotRun
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationDuplicateId
@@ -13357,6 +13388,7 @@ mod tests {
                 | XmlTemplateMissingAttribute
                 | XmlTemplateMissingParam | XmlTemplateUnknownParam
                 | XmlTemplateCycle | XmlTemplateTooDeep
+                | XmlPreprocessorNotRun
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationUnsupportedKind | ValidationDuplicateId
@@ -13664,9 +13696,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            340,
+            341,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 340 distinct variants to match the DiagnosticCode \
+             expected 341 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

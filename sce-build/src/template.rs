@@ -880,6 +880,16 @@ fn is_sce(node: &roxmltree::Node, local_name: &str) -> bool {
         && node.tag_name().name() == local_name
 }
 
+/// Is this node a `<sce:use>` call site this expander would consume?
+///
+/// Public for the same reason as
+/// [`crate::xinclude::is_xinclude_element`]: the post-expansion guard
+/// ([`crate::parser::reject_unexpanded_directives`]) must ask the
+/// expander's own question rather than keep a second copy of it.
+pub fn is_sce_use_element(node: &roxmltree::Node) -> bool {
+    is_sce(node, "use")
+}
+
 /// Convert a byte offset into a 1-based (row, col) pair via
 /// [`roxmltree::Document::text_pos_at`]. Used to tag the offending
 /// `<sce:use>` node with a position the diagnostic pipeline can
