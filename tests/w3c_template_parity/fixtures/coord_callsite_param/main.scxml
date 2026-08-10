@@ -9,7 +9,7 @@
     - Pin the diagnostic's `location.{file, line, col}` at the
       caller's `<sce:use>` element in this file. The depth-1
       collapse rule collapses every call-site binding failure to the caller row
-      so repair agents see one pointed line in the author file.
+      so a repair loop sees one pointed line in the author file.
 
   This fixture is one of three P3 entries that opt in to
   coordinate-agreement assertion via the

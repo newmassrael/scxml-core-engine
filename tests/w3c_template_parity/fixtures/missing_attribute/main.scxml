@@ -6,7 +6,7 @@
   Both producers must FAIL with equivalent classifications:
     - Rust emits DiagnosticCode `xml/template-missing-attribute`
       on stderr, carrying a deterministic `add_attribute` fix so
-      repair agents can insert the attribute without reading
+      a repair consumer can insert the attribute without reading
       call-site context.
     - C++ throws `SCE::parsing::TemplateMissingAttribute`.
 

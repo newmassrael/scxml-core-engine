@@ -33,22 +33,24 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Extensions carrying SCE's own prose: source, contracts, schemas,
-/// build tooling and templates.
+/// Every tracked file is scanned. There is no extension list.
 ///
-/// The first four were the whole list, and the omission was not
-/// harmless: twelve occurrences sat in C++ headers, the C++ test suite
-/// and a template expander, which is where the diagnostic families are
-/// actually declared. A gate that reads only the Rust half of a
-/// two-producer project measures the vocabulary of one producer and
-/// reports it as the project's.
-const SCANNED_EXTENSIONS: &[&str] = &[
-    "md", "rs", "json", "xsd", "h", "hpp", "cpp", "py", "sh", "yml", "yaml", "cmake", "kt", "go",
-    "jinja2",
-];
-
-/// Extensionless files that still carry prose worth scanning.
-const SCANNED_FILENAMES: &[&str] = &["CMakeLists.txt"];
+/// There used to be one, and it was wrong twice for the same reason. It
+/// began as four extensions and missed twelve occurrences in the C++
+/// headers and test suite — the files where the diagnostic families are
+/// actually declared. Widening it to fifteen still missed `.c` (360
+/// tracked files: the C11 backend, a producer of its own), `.scxml` and
+/// `.txml` (the documents this project ships), and the web tree.
+///
+/// A curated list of what to read cannot be checked against the thing
+/// it is meant to cover, so each omission is invisible until someone
+/// counts by hand. Reading the whole tree removes the question: a file
+/// git tracks is a file this gate reads, and anything genuinely outside
+/// SCE's own voice is registered below with its reason.
+///
+/// Non-UTF8 blobs are skipped where they are read — there is no prose
+/// to scan in them, and that is a property of the bytes rather than of
+/// a list someone maintains.
 
 /// HTTP's own header name, which is not SCE's vocabulary.
 ///
@@ -97,28 +99,17 @@ const EXEMPT_PREFIXES: &[(&str, &str)] = &[
 ];
 
 /// Lower bound on files the scan must read. Measured, not guessed:
-/// 4685 tracked files matched when this landed, and the floor sits well
-/// under that so ordinary tree growth or pruning does not move it.
-const MIN_SCANNED_FILES: usize = 3000;
+/// 6328 of 6343 tracked files were read as text when the extension list was
+/// dropped, and the floor sits well under that so ordinary tree growth
+/// or pruning does not move it.
+const MIN_SCANNED_FILES: usize = 5000;
 
-/// Tracked files with a scanned extension, asked of git so untracked
-/// scratch files and ignored build output cannot affect the verdict.
+/// Every tracked file, asked of git so untracked scratch files and
+/// ignored build output cannot affect the verdict.
 fn tracked_sources() -> Vec<PathBuf> {
     let root = repo_root();
-    let mut args = vec![
-        "-C".to_string(),
-        root.display().to_string(),
-        "ls-files".to_string(),
-    ];
-    for ext in SCANNED_EXTENSIONS {
-        args.push(format!("*.{ext}"));
-    }
-    for name in SCANNED_FILENAMES {
-        args.push((*name).to_string());
-        args.push(format!("*/{name}"));
-    }
     let out = Command::new("git")
-        .args(&args)
+        .args(["-C", &root.display().to_string(), "ls-files"])
         .output()
         .expect("git ls-files runs");
     assert!(out.status.success(), "git ls-files failed");
