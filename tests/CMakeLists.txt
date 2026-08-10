@@ -341,6 +341,30 @@ target_link_libraries(http_bridge_tests
 )
 
 # ============================================================================
+# 4.4.1. Session Target Routing Tests (W3C SCXML C.1 `#_scxml_<sessionid>`)
+# ============================================================================
+
+add_executable(session_target_routing_tests
+    events/SessionTargetRoutingTest.cpp
+    mocks/MockEventRaiser.cpp
+)
+
+target_include_directories(session_target_routing_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(session_target_routing_tests
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# ============================================================================
 # 4.5. History Manager Tests (SOLID SCXML W3C Compliance)
 # ============================================================================
 
@@ -7920,6 +7944,7 @@ add_test(NAME CoreParserTests COMMAND core_parser_tests)
 add_test(NAME StatesTests COMMAND states_tests)
 add_test(NAME HistoryTests COMMAND history_tests)
 add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
+add_test(NAME SessionTargetRoutingTests COMMAND session_target_routing_tests)
 
 # Priority Level 2: Core component tests (basic functionality validation, ~1-5s)
 add_test(NAME StateMachineTests COMMAND state_machine_tests)

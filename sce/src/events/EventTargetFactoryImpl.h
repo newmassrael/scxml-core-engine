@@ -102,6 +102,20 @@ private:
      * @param sessionId Current session ID (parent session)
      * @return Invoke event target
      */
+    /**
+     * @brief Create a target addressing another SCXML session (§scxml-C-1)
+     *
+     * @param targetSessionId Session the URI names; empty means the sender's
+     *                        own external queue (W3C test 190 sends the bare
+     *                        `#_scxml_` prefix)
+     * @param originSessionId Session doing the sending — reported to the
+     *                        receiver as `_event.origin` (§scxml-5.10)
+     * @return Target for the addressed session, or nullptr when no session is
+     *         registered under `targetSessionId`
+     */
+    std::shared_ptr<IEventTarget> createSessionTarget(const std::string &targetSessionId,
+                                                      const std::string &originSessionId);
+
     std::shared_ptr<IEventTarget> createInvokeTarget(const std::string &invokeId, const std::string &sessionId);
 
     std::shared_ptr<IEventRaiser> eventRaiser_;
