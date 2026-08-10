@@ -497,6 +497,11 @@ struct GenerateReport {
     artifacts: Vec<PathBuf>,
     needs_script_engine: Option<bool>,
     script_engine_causes: Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
+    /// Whether any document in this run requires `Engine::tick()` rather
+    /// than `step()`. Accumulated as a union alongside
+    /// `needs_script_engine` because it answers the same kind of
+    /// question about the same set.
+    needs_event_scheduler: Option<bool>,
     rejected: Option<RejectedDocument>,
     /// Descriptive deploy declarations, present only on a `--deploy`
     /// run. `None` for every deploy-unaware invocation, which is what
@@ -534,6 +539,7 @@ fn build_manifest<'a>(
             .collect(),
         needs_script_engine: report.needs_script_engine.unwrap_or(false),
         script_engine_causes: &report.script_engine_causes,
+        needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
             name: rd.name.clone(),
@@ -1639,18 +1645,21 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         ..GenerateReport::default()
     };
     let mut needs_script_engine = false;
+    let mut needs_event_scheduler = false;
     for path in &scxml_path_bufs {
-        let Some((needs, causes)) = scxml_script_engine_facts(&path.to_string_lossy()) else {
+        let Some(facts) = scxml_host_requirement_facts(&path.to_string_lossy()) else {
             continue;
         };
-        needs_script_engine |= needs;
-        for cause in causes {
+        needs_script_engine |= facts.needs_script_engine;
+        needs_event_scheduler |= facts.needs_event_scheduler;
+        for cause in facts.script_engine_causes {
             if !report.script_engine_causes.contains(&cause) {
                 report.script_engine_causes.push(cause);
             }
         }
     }
     report.needs_script_engine = Some(needs_script_engine);
+    report.needs_event_scheduler = Some(needs_event_scheduler);
 
     for (basename, generated) in &outputs {
         for (file_name, code) in &generated.files {
@@ -1925,23 +1934,31 @@ fn load_deploy_config(
 /// the diagnostic code and exit status the producer would give. Failing
 /// here instead would put the first refusal on a pass whose job is to
 /// describe the run, not to judge it.
-fn scxml_script_engine_facts(
-    path: &str,
-) -> Option<(
-    bool,
-    Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
-)> {
+fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
     let mut parser = SCXMLParser::new();
     let mut model = parser.parse_file(path).ok()?;
     analyzer::analyze(&mut model, path);
-    Some((
-        model.needs_script_engine,
-        model
+    Some(HostRequirements {
+        needs_script_engine: model.needs_script_engine,
+        script_engine_causes: model
             .script_engine_causes
             .iter()
             .map(|c| c.to_wire())
             .collect(),
-    ))
+        needs_event_scheduler: model.needs_event_scheduler_driving(),
+    })
+}
+
+/// What one statechart document asks of the host that will run it.
+///
+/// Carried together because the manifest reports them together and the
+/// set-union routes accumulate them in one pass — splitting the walk
+/// would let the two answers be derived from two different parses of
+/// the same file.
+struct HostRequirements {
+    needs_script_engine: bool,
+    script_engine_causes: Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
+    needs_event_scheduler: bool,
 }
 
 /// `sce-codegen check` over a document set — every verdict
@@ -2005,18 +2022,21 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         ..GenerateReport::default()
     };
     let mut needs_script_engine = false;
+    let mut needs_event_scheduler = false;
     for path in &scxml_paths {
-        let Some((needs, causes)) = scxml_script_engine_facts(&path.to_string_lossy()) else {
+        let Some(facts) = scxml_host_requirement_facts(&path.to_string_lossy()) else {
             continue;
         };
-        needs_script_engine |= needs;
-        for cause in causes {
+        needs_script_engine |= facts.needs_script_engine;
+        needs_event_scheduler |= facts.needs_event_scheduler;
+        for cause in facts.script_engine_causes {
             if !report.script_engine_causes.contains(&cause) {
                 report.script_engine_causes.push(cause);
             }
         }
     }
     report.needs_script_engine = Some(needs_script_engine);
+    report.needs_event_scheduler = Some(needs_event_scheduler);
 
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix,
@@ -2181,8 +2201,10 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 );
             }
             // Forge kinds are stateless by construction — no script
-            // engine is reachable from them.
+            // engine is reachable from them, and nothing schedules or
+            // drives a child session, so `step()` suffices.
             report.needs_script_engine = Some(false);
+            report.needs_event_scheduler = Some(false);
         }
         sce_build::Pipeline::Scxml => {
             let mut parser = SCXMLParser::new()
@@ -2210,6 +2232,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     name: model.name.clone(),
                 });
                 report.needs_script_engine = Some(false);
+                report.needs_event_scheduler = Some(false);
                 for lang in &langs {
                     verdicts.push(LanguageVerdict::ok(
                         sce_build::manifest::language_wire_name(*lang),
@@ -2245,6 +2268,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 .unwrap_or("unknown");
 
             report.needs_script_engine = Some(model.needs_script_engine);
+            report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
             report.script_engine_causes = model
                 .script_engine_causes
                 .iter()
@@ -2539,6 +2563,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                         );
                     }
                     report.needs_script_engine = Some(false);
+                    report.needs_event_scheduler = Some(false);
                     emit_generate_manifest(&report);
                     return;
                 }
@@ -2784,6 +2809,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             name: model.name.clone(),
         });
         report.needs_script_engine = Some(false);
+        report.needs_event_scheduler = Some(false);
         emit_generate_manifest(&report);
         return;
     }
@@ -3138,6 +3164,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         flush_sourcemap(&sourcemap_acc, out_path, &drift_ctx);
 
         report.needs_script_engine = Some(model.needs_script_engine);
+        report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
         // Projected from the list the analyzer stored on the model in the
         // same statement that set the flag — not recomputed here, which
         // would re-derive it from a model later passes have since touched.

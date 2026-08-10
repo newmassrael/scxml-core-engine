@@ -36,11 +36,14 @@ build/tools/txml_converter/txml-converter resources/XXX/testXXX.txml /tmp/test_v
 sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
 
 # Emits ONE JSON manifest line to stdout, e.g.:
-#   {"v":1,"kind":"generate","artifacts":[{"path":".../testXXX_sm.h"}, ...],"needs_script_engine":false}
+#   {"v":1,"kind":"generate","artifacts":[{"path":".../testXXX_sm.h"}, ...],"needs_script_engine":false,"needs_event_scheduler":false}
 # Interpret:
 #   artifacts listed, no "rejected" key   → static generation OK
 #   "needs_script_engine": false          → pure static
 #   "needs_script_engine": true           → static + embedded script engine (Lua)
+#   "needs_event_scheduler": false        → the host may drive it with step()
+#   "needs_event_scheduler": true         → the host MUST drive it with tick()
+#                                           (delayed <send>/<cancel>, or a child session to tick)
 #   "rejected":{"spec":...,"name":...}    → cannot be statically generated (stub files written); Interpreter-only
 ```
 
