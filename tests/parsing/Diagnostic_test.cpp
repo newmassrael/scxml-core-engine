@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <regex>
@@ -119,46 +120,93 @@ bool matchesGeneratorRegex(const std::string &generator) {
     return std::regex_match(generator, kPattern);
 }
 
-void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
-    // v1 schema requires v/id/generator/code/stage/message; spec/location/
-    // expected/actual/fix are optional. The C++ producer in W1 emits
-    // exactly the required set (plus location when populated); the
-    // assertions below pin both presence AND absence so a future
-    // additive field surfaces as a curated-set drift.
-    ASSERT_TRUE(j.contains("v")) << j.dump();
-    ASSERT_TRUE(j.contains("id")) << j.dump();
-    ASSERT_TRUE(j.contains("generator")) << j.dump();
-    ASSERT_TRUE(j.contains("code")) << j.dump();
-    ASSERT_TRUE(j.contains("stage")) << j.dump();
-    ASSERT_TRUE(j.contains("message")) << j.dump();
+// ── schema-derived key sets ─────────────────────────────────────────
+//
+// The envelope's legal and required keys are READ from
+// `schemas/sce-diagnostic.v1.schema.json` rather than restated here.
+//
+// They used to be hand-written `std::set` literals whose comment claimed
+// to mirror the schema. The claim was never enforced: when `generator`
+// became required, this suite noticed nothing, and a probe that added a
+// required field the C++ producer does not emit still passed 66/66. A
+// mirror that only holds while someone remembers is not a guard, and
+// `parsing/Diagnostic.h` declares this side conforms *field-for-field*
+// — so the forgetting is a wire-contract break, not a test-hygiene nit.
+//
+// Deriving also inverts who has to act: adding a field to the schema now
+// reds this suite until the C++ producer emits it, which is the order
+// the contract wants.
 
+const nlohmann::json &diagnosticSchema() {
+    static const nlohmann::json schema = [] {
+        std::ifstream in{SCE_DIAGNOSTIC_SCHEMA_PATH};
+        EXPECT_TRUE(in.is_open()) << "cannot open wire schema at " << SCE_DIAGNOSTIC_SCHEMA_PATH;
+        nlohmann::json parsed;
+        in >> parsed;
+        return parsed;
+    }();
+    return schema;
+}
+
+// Keys the schema declares under a `properties` object, addressed by
+// JSON pointer so the envelope and the nested `location` object share
+// one reader.
+//
+// `minKeys` is the caller's measured floor, not a guess: a reader that
+// silently returned an empty set would make every "no unexpected key"
+// assertion vacuously true, and the suite would go green having checked
+// nothing at all.
+std::set<std::string> schemaProperties(const std::string &pointer, std::size_t minKeys) {
+    std::set<std::string> keys;
+    const auto &node = diagnosticSchema().at(nlohmann::json::json_pointer{pointer});
+    for (const auto &item : node.items()) {
+        keys.insert(item.key());
+    }
+    EXPECT_GE(keys.size(), minKeys) << "schema " << pointer << " yielded " << keys.size()
+                                    << " keys; below the measured floor the assertions are vacuous";
+    return keys;
+}
+
+std::set<std::string> schemaRequired(const std::string &pointer, std::size_t minKeys) {
+    std::set<std::string> keys;
+    for (const auto &item : diagnosticSchema().at(nlohmann::json::json_pointer{pointer})) {
+        keys.insert(item.get<std::string>());
+    }
+    EXPECT_GE(keys.size(), minKeys) << "schema " << pointer << " yielded " << keys.size()
+                                    << " required keys; below the measured floor this proves nothing";
+    return keys;
+}
+
+void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
+    // Every key the schema marks required must be present. Read from the
+    // schema, so a field promoted to required there reds this suite until
+    // the C++ producer emits it — rather than passing until someone
+    // remembers to add a line here.
+    for (const auto &key : schemaRequired("/required", 6)) {
+        ASSERT_TRUE(j.contains(key)) << "missing schema-required key '" << key << "': " << j.dump();
+    }
+
+    // Value-level checks the key set cannot express. These stay explicit
+    // because they encode what this producer specifically must say, not
+    // merely which keys exist.
     EXPECT_EQ(j.at("v").get<int>(), 1);
     EXPECT_EQ(j.at("code").get<std::string>(), std::string{expectedCode});
     EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
     EXPECT_TRUE(matchesIdRegex(j.at("id").get<std::string>()))
         << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
-    // The header declares this side conforms to the shared schema
-    // field-for-field. `generator` became required there because a
-    // rejected run writes no manifest, leaving the diagnostic as the
-    // only record a consumer receives — a C++ producer that omitted it
-    // would emit records the schema rejects while this fixture stayed
-    // green, which is exactly the drift the curated list exists to stop.
     EXPECT_TRUE(matchesGeneratorRegex(j.at("generator").get<std::string>()))
         << "generator '" << j.at("generator").get<std::string>() << "' does not match ^([0-9a-f]{7,40}|unknown)$";
     EXPECT_FALSE(j.at("message").get<std::string>().empty());
 }
 
-// Curated set of legal top-level keys (mirrors v1 schema's
-// `additionalProperties: false` constraint at the envelope level —
-// nlohmann::json does not validate this for us, so we enforce it
-// explicitly here so a stray field added on the C++ side reds.
-const std::set<std::string> kAllowedTopLevelKeys = {
-    "v", "id", "generator", "code", "stage", "spec", "message", "location", "expected", "actual", "fix",
-};
-
+// The schema closes its envelope with `additionalProperties: false`, and
+// nlohmann::json does not enforce that for us — so the legal set is read
+// from the schema's own `properties` and applied here.
 void assertNoUnexpectedKeys(const nlohmann::ordered_json &j) {
+    const auto allowed = schemaProperties("/properties", 11);
     for (const auto &item : j.items()) {
-        EXPECT_TRUE(kAllowedTopLevelKeys.count(item.key()) == 1) << "unexpected top-level key: '" << item.key() << "'";
+        EXPECT_TRUE(allowed.count(item.key()) == 1)
+            << "top-level key '" << item.key() << "' is not declared in the wire schema";
     }
 }
 
@@ -252,10 +300,12 @@ TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
     EXPECT_EQ(loc.at("line").get<unsigned>(), 12u);
     EXPECT_EQ(loc.at("col").get<unsigned>(), 5u);
 
-    // location envelope is closed at v1: only file/line/col allowed.
-    static const std::set<std::string> kAllowedLocationKeys = {"file", "line", "col"};
+    // The location envelope is closed too, and its legal set is read
+    // from the same schema for the same reason the top-level one is.
+    const auto allowedLocationKeys = conformance::schemaProperties("/properties/location/properties", 3);
     for (const auto &item : loc.items()) {
-        EXPECT_TRUE(kAllowedLocationKeys.count(item.key()) == 1) << "unexpected location key: '" << item.key() << "'";
+        EXPECT_TRUE(allowedLocationKeys.count(item.key()) == 1)
+            << "location key '" << item.key() << "' is not declared in the wire schema";
     }
 }
 

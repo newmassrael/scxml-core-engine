@@ -86,6 +86,22 @@ target_link_libraries(diagnostic_test
 
 target_compile_features(diagnostic_test PRIVATE cxx_std_17)
 
+# Path to the shared wire schema, so this suite can DERIVE the legal
+# key set instead of restating it.
+#
+# The C++ producer is a second independent conformer to
+# `schemas/sce-diagnostic.v1.schema.json` (see `parsing/Diagnostic.h`),
+# and this suite used to encode that schema's envelope as hand-written
+# `std::set` literals. A hand-written mirror only holds while someone
+# remembers to update it: when `generator` became a required field, this
+# suite noticed nothing, and a probe that added a required field the C++
+# side does not emit still passed 66/66. Reading the schema makes the
+# claim "this producer conforms" answerable by the file it conforms to.
+target_compile_definitions(diagnostic_test
+    PRIVATE
+        SCE_DIAGNOSTIC_SCHEMA_PATH="${CMAKE_SOURCE_DIR}/schemas/sce-diagnostic.v1.schema.json"
+)
+
 apply_sce_test_policies(diagnostic_test)
 
 add_test(NAME DiagnosticTests COMMAND diagnostic_test)
