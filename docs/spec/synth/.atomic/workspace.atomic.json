@@ -4007,6 +4007,16 @@
         {
           "file": "tools/codegen/templates/state_machine_inl.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_check",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_global_scripts",
+          "kind": "implements"
         }
       ]
     },

@@ -368,7 +368,7 @@ mod tests {
             .expect("real parser output must satisfy the sourcemap provenance contract");
     }
 
-    /// A top-level `<script>` (§scxml-5.8) is an emission-eligible
+    /// A top-level `<script>` is an emission-eligible
     /// `Action` that does **not** travel through
     /// `parse_executable_content_single`, the site this module's
     /// eligibility note credits with stamping every action. It is
