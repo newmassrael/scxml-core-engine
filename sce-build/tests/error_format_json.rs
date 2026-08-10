@@ -1758,20 +1758,28 @@ fn version_reports_the_generator_commit() {
     );
 }
 
+/// The commit `--version` reports, parsed once.
+///
+/// Every wire surface that stamps its producer has to agree with this
+/// value, so the parse lives here rather than being spelled again per
+/// surface — a second spelling is a second thing that can drift.
+fn generator_commit_from_version() -> String {
+    let out = Command::new(sce_codegen_bin())
+        .arg("--version")
+        .output()
+        .expect("sce-codegen must be runnable");
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(c, _)| c.to_string())
+        .unwrap_or_else(|| panic!("--version must carry a parenthesised commit, got: {text}"))
+}
+
 /// The manifest and `--version` must agree — two spellings of the same
 /// fact that can disagree are worse than one.
 #[test]
 fn manifest_generator_matches_version_output() {
-    let version_out = Command::new(sce_codegen_bin())
-        .arg("--version")
-        .output()
-        .expect("sce-codegen must be runnable");
-    let version_text = String::from_utf8_lossy(&version_out.stdout).into_owned();
-    let from_version = version_text
-        .split_once('(')
-        .and_then(|(_, rest)| rest.split_once(')'))
-        .map(|(c, _)| c.to_string())
-        .expect("--version carries a commit");
+    let from_version = generator_commit_from_version();
 
     let (dir, scxml) = write_trivial_statechart_fixture();
     let out = Command::new(sce_codegen_bin())
@@ -1787,4 +1795,60 @@ fn manifest_generator_matches_version_output() {
         .expect("spawn sce-codegen");
     let manifest = manifest_of(&out);
     assert_eq!(manifest["generator"], from_version);
+}
+
+/// A rejected run must name the generator that rejected the document.
+///
+/// `SCE_ERROR_CONTRACT.md` §8.1 tells consumers not to rely on `v1`
+/// stability while the schema is `pre-release` and to pin a specific SCE
+/// commit instead; `SCE_WIRE_CONTRACTS.md` policy 1 states the same rule
+/// as a MUST. Honouring it requires the payload to name the commit it
+/// came from, which is why the stdout manifest carries `generator`.
+///
+/// A rejected run writes no manifest at all — stdout is empty and the
+/// exit code carries the failure — so on the path an authoring loop
+/// actually iterates on, the diagnostic is the only record the consumer
+/// receives. Without the stamp there, a consumer that chokes on a `fix`
+/// shape cannot say which generator produced it, and attribution falls
+/// back to the hand-maintained sidecar that
+/// [`version_reports_the_generator_commit`] exists to remove.
+#[test]
+fn rejected_run_diagnostics_name_the_generator_commit() {
+    let from_version = generator_commit_from_version();
+    let (dir, scxml) = write_missing_datamodel_fixture();
+    let out = Command::new(sce_codegen_bin())
+        .args([
+            "generate",
+            scxml.to_str().unwrap(),
+            "--language",
+            "rust",
+            "--output-dir",
+            dir.path().to_str().unwrap(),
+            "--error-format=json",
+        ])
+        .output()
+        .expect("spawn sce-codegen");
+
+    assert!(
+        !out.status.success(),
+        "fixture must be rejected for this to be the failure path"
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "a rejected run writes no manifest, which is why the diagnostic \
+         has to carry the stamp itself; stdout was: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert!(!lines.is_empty(), "rejection must emit at least one record");
+    for line in lines {
+        let record: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|e| panic!("NDJSON line must parse: {e}\n{line}"));
+        assert_eq!(
+            record["generator"], from_version,
+            "every diagnostic record must name the generator commit: {line}"
+        );
+    }
 }

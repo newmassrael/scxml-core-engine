@@ -36,6 +36,7 @@ stdout looking for errors is reading the wrong stream.
 {
   "v": 1,
   "id": "fnv1a:dd04a37de468ffb4",
+  "generator": "2be6e02c2c2c",
   "code": "validation/invalid-attribute",
   "stage": "validation",
   "message": "sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)",
@@ -45,9 +46,10 @@ stdout looking for errors is reading the wrong stream.
 }
 ```
 
-All fields except `v`, `id`, `code`, `stage`, and `message` are optional.
-Omitted fields are absent from the JSON entirely (not `null`). Consumers
-**must** ignore unknown fields for forward compatibility.
+All fields except `v`, `id`, `generator`, `code`, `stage`, and `message`
+are optional. Omitted fields are absent from the JSON entirely (not
+`null`). Consumers **must** ignore unknown fields for forward
+compatibility.
 
 ### 2.1 Field semantics
 
@@ -55,6 +57,7 @@ Omitted fields are absent from the JSON entirely (not `null`). Consumers
 |---|---|---|
 | `v` | integer | Schema version. Currently `1`. First key in every record. |
 | `id` | `fnv1a:<16hex>` | Content hash over `(code, stage, location.file, key_fragments)`. Same semantic error → same id, **independent of message rewording**. Use for dedup, caching, "seen this before" checks. |
+| `generator` | short commit, or `unknown` | Commit of the generator that emitted the record — the same value [§10](#10-stdout-manifest)'s manifest carries as `generator` and `--version` reports in parentheses. Present on **every** record, because a rejected run writes no manifest (stdout is empty, [§1](#1-streams)): on the failure path this record is the only thing the consumer receives. [§8.1](#81-stability) tells consumers to pin a specific commit rather than rely on `v1` while the schema is `pre-release`, and that is unfollowable if the payload does not name the commit it came from. `unknown` when the build had no git checkout to read (vendored crate, release tarball). |
 | `code` | slash-path string | Closed enum. See [§5 Code Catalog](#5-code-catalog). Agents dispatch on `code`, never on `message`. |
 | `stage` | lowercase / kebab-case string | Pipeline stage. Routes to the correct repair loop. See [§4 Stage Taxonomy](#4-stage-taxonomy). |
 | `spec` | string | Specification anchor (e.g. `"W3C SCXML 3.13"`). Present when the rule is spec-derived. Enables LLM grounding. |
@@ -373,7 +376,12 @@ minor release behind a compatibility flag.
 Schema `v1` is currently marked `pre-release`. While `pre-release`,
 non-additive shape changes are permitted without a `v` bump —
 downstream consumers should pin to a specific commit rather than rely
-on `v1` stability. The flip to `stable` is a deliberate editorial act,
+on `v1` stability. Every record names the commit that produced it in
+`generator` ([§2.1](#21-field-semantics)), so a consumer can check a
+payload against the commit it pinned instead of assuming they match;
+without that field the instruction in this paragraph would be one a
+consumer had no way to act on, since a rejected run writes no manifest
+to read the commit from. The flip to `stable` is a deliberate editorial act,
 not an automated threshold: a maintainer decides the schema has
 settled (e.g. an external consumer has committed to the format, or
 the surface has been stable long enough that further churn is

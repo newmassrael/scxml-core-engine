@@ -368,6 +368,22 @@ pub const ALL_LOOKUP_KINDS: &[LookupKind] = &[LookupKind::Addr2Sce, LookupKind::
 pub struct SymbolLookupRecord<'a> {
     pub v: u32,
     pub kind: &'static str,
+    /// Commit of the generator that answered this lookup — the same
+    /// value the stdout manifest and every diagnostic carry, from
+    /// [`crate::GENERATOR_COMMIT`].
+    ///
+    /// A lookup record is consumed on its own (a debugger resolving a
+    /// fault address, a build step mapping a symbol back to its SCXML)
+    /// with no manifest alongside it, so it carries its own attribution
+    /// or has none. `SCE_WIRE_CONTRACTS.md` policy 1 makes pinning a
+    /// specific commit the consumer's obligation while this surface is
+    /// `pre-release`.
+    ///
+    /// The `sourcemap` field below cannot stand in for it: the sidecar's
+    /// `source_hash` / `template_hash` identify the *inputs*, and two
+    /// generators whose emit code differs while the document and
+    /// template tree do not produce the same pair of hashes.
+    pub generator: &'static str,
     /// Path of the `sce_sourcemap.json` this hit came from. A reverse
     /// lookup may span several backends' sidecars in one invocation,
     /// so the record names its own source rather than leaving the

@@ -102,6 +102,7 @@ pub trait SingleDiagnostic: ToDiagnostics {
         Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,
+            generator: crate::GENERATOR_COMMIT,
             code: payload.code,
             stage: payload.stage,
             spec: payload.code.spec_anchor(),
@@ -143,9 +144,16 @@ pub(crate) fn forge_to_diagnostics<T: SingleDiagnostic>(
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// Stability of wire schema `v1`. Transitions from `"pre-release"` to
-/// `"stable"` when the criterion in `SCE_ERROR_CONTRACT.md` §8.1 is
-/// met (first external consumer dependency, or 30 consecutive days at
-/// HEAD with no non-additive change). Emitted as `x-sce-schema-status`
+/// `"stable"` by the procedure in `SCE_ERROR_CONTRACT.md` §8.1, which
+/// is a deliberate editorial act and explicitly *not* an automated
+/// threshold: a maintainer decides the schema has settled — an external
+/// consumer having committed to the format, or churn having stopped —
+/// and lands the const, the schema header and the
+/// `SCE_WIRE_CONTRACTS.md` row in one commit. (An earlier spelling of
+/// this doc cited "30 consecutive days at HEAD" as the criterion §8.1
+/// sets; §8.1 sets no such number, and quoting a threshold the contract
+/// does not carry would have let a flip claim an authority it never
+/// had.) Emitted as `x-sce-schema-status`
 /// at the top of `schemas/sce-diagnostic.v1.schema.json` so downstream
 /// consumers can read the signal without linking this crate. The
 /// `schema_file_declares_status` test guards the two declarations
@@ -161,7 +169,8 @@ pub const SCHEMA_STATUS: &str = "pre-release";
 ///
 /// Serialized field order is fixed: `v` first so any consumer can
 /// version-gate before reading anything else, `id` second so streams
-/// can dedup without a full parse.
+/// can dedup without a full parse, `generator` third so attribution
+/// is available without reading the payload.
 #[derive(Debug, Clone, Serialize)]
 pub struct Diagnostic {
     /// Wire-format version. Always present, always first. Agents that
@@ -174,6 +183,28 @@ pub struct Diagnostic {
     /// (e.g. to blake3) can be rolled out without breaking consumers
     /// that pattern-match the format.
     pub id: String,
+
+    /// Commit of the generator that emitted this record — the same value
+    /// the stdout manifest carries as `generator` and `--version` reports
+    /// in parentheses. `"unknown"` on a build with no git checkout to
+    /// read; see [`crate::GENERATOR_COMMIT`].
+    ///
+    /// Present on **every** record because a rejected run writes no
+    /// manifest at all: stdout stays empty and the exit code carries the
+    /// failure, so on the path a repair loop actually iterates on, this
+    /// record is the only thing the consumer receives. §8.1 tells
+    /// consumers to pin a specific commit rather than rely on `v1` while
+    /// the schema is `pre-release` — an instruction that cannot be
+    /// followed if the payload does not name the commit it came from.
+    ///
+    /// Per-record rather than once per stream: a consumer that quotes a
+    /// single NDJSON line in a bug report must carry the attribution
+    /// with it, and a record that needs a sibling line to be interpreted
+    /// is not self-describing.
+    ///
+    /// Third rather than first so `v` and `id` keep the positions the
+    /// version-gate and stream-dedup below rely on.
+    pub generator: &'static str,
 
     /// Closed enum, serialized as a slash-path string. Agents dispatch
     /// on this field and may safely enumerate all variants at build time.
@@ -3051,6 +3082,7 @@ impl Diagnostic {
         Diagnostic {
             schema_version: SCHEMA_VERSION,
             id,
+            generator: crate::GENERATOR_COMMIT,
             code,
             stage,
             spec: code.spec_anchor(),
@@ -3083,7 +3115,21 @@ impl Diagnostic {
     /// schema's `^fnv1a:[0-9a-f]{16}$` pattern rejects — a record
     /// documented as "the shortest legal NDJSON record" that no
     /// consumer's validator would have accepted.
-    pub const TERMINAL_FALLBACK_NDJSON: &'static str = "{\"v\":1,\"id\":\"fnv1a:2d6d674d44088d0d\",\"code\":\"io/filesystem\",\"stage\":\"io\",\"message\":\"double serialization failure\"}";
+    ///
+    /// `generator` is spliced with `concat!`/`env!` rather than read
+    /// from [`crate::GENERATOR_COMMIT`] because `concat!` takes
+    /// literals, not constants. Both read the same build-script
+    /// variable in the same compilation, and
+    /// [`terminal_fallback_line_matches_what_serde_would_emit`] pins
+    /// this line to what the struct serializes to, so the two spellings
+    /// cannot disagree without a test failing. The stamp matters most
+    /// here: this is the record a consumer receives when everything
+    /// else about the diagnostic pipeline has already failed.
+    pub const TERMINAL_FALLBACK_NDJSON: &'static str = concat!(
+        "{\"v\":1,\"id\":\"fnv1a:2d6d674d44088d0d\",\"generator\":\"",
+        env!("SCE_GIT_COMMIT"),
+        "\",\"code\":\"io/filesystem\",\"stage\":\"io\",\"message\":\"double serialization failure\"}"
+    );
 }
 
 impl DiagnosticCode {
@@ -12108,6 +12154,29 @@ mod tests {
         ]
     }
 
+    /// Assert the generator stamp is present and correct, and return the
+    /// line without it.
+    ///
+    /// The goldens pin the wire *shape*, which is a property of the
+    /// source tree. The generator stamp is a property of the *build*:
+    /// its value changes on every commit, so a golden that spelled it
+    /// would have to be rewritten by every commit — and a golden table
+    /// rewritten that often stops being read.
+    ///
+    /// Removing it here rather than dropping the field from golden
+    /// coverage keeps the assertion strictly stronger than a byte match
+    /// would have been: every entry in the table is checked for the
+    /// stamp *and* for its exact value, against a value no golden could
+    /// have written down.
+    fn without_generator_stamp(line: &str) -> String {
+        let stamp = format!(",\"generator\":\"{}\"", crate::GENERATOR_COMMIT);
+        assert!(
+            line.contains(&stamp),
+            "every diagnostic record must carry {stamp}: {line}"
+        );
+        line.replacen(&stamp, "", 1)
+    }
+
     /// Byte-stable goldens: each error variant in
     /// [`forge_golden_entries`] / [`mesh_golden_entries`] produces the
     /// exact JSON string pinned in the table. A byte mismatch means a
@@ -12115,11 +12184,15 @@ mod tests {
     /// record for the same semantic error — a wire-format regression.
     /// Update the goldens deliberately (alongside a schema-version
     /// bump, when appropriate), never silently.
+    ///
+    /// The build-varying `generator` stamp is asserted and stripped by
+    /// [`without_generator_stamp`] before the comparison; see there for
+    /// why it is not part of the pinned bytes.
     #[test]
     fn diagnostic_goldens_are_byte_stable() {
         let mut mismatches: Vec<String> = Vec::new();
         for (label, err, golden) in forge_golden_entries() {
-            let actual = serde_json::to_string(&single(&err)).unwrap();
+            let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
             if actual != golden {
                 mismatches.push(format!(
                     "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
@@ -12127,7 +12200,7 @@ mod tests {
             }
         }
         for (label, err, golden) in mesh_golden_entries() {
-            let actual = serde_json::to_string(&single(&err)).unwrap();
+            let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
             if actual != golden {
                 mismatches.push(format!(
                     "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
@@ -12139,7 +12212,7 @@ mod tests {
             // diagnostic instance so `single()` applies. Structure is
             // validated the same way as forge/mesh: serialize and
             // compare to the pinned JSON.
-            let actual = serde_json::to_string(&single(&err)).unwrap();
+            let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
             if actual != golden {
                 mismatches.push(format!(
                     "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
@@ -12147,7 +12220,7 @@ mod tests {
             }
         }
         for (label, err, golden) in cli_golden_entries() {
-            let actual = serde_json::to_string(&single(&err)).unwrap();
+            let actual = without_generator_stamp(&serde_json::to_string(&single(&err)).unwrap());
             if actual != golden {
                 mismatches.push(format!(
                     "\n[{label}]\nexpected: {golden}\n  actual: {actual}"
@@ -13937,25 +14010,36 @@ mod tests {
         );
     }
 
-    /// Every golden record, as `(label, json)`.
+    /// Every golden record, as `(label, json)` — the bytes the producer
+    /// actually emits.
     ///
     /// The four tables carry different error types, so a caller that
     /// needs the instances must walk them separately. A caller that
     /// needs only the wire bytes does not, and this collapses the
     /// four-arm walk to one place.
-    fn all_golden_json() -> Vec<(&'static str, &'static str)> {
-        let mut out: Vec<(&'static str, &'static str)> = Vec::new();
-        for (label, _err, golden) in forge_golden_entries() {
-            out.push((label, golden));
+    ///
+    /// Serialising here rather than handing back the pinned table entry
+    /// is what keeps these callers looking at a whole record. The table
+    /// entries deliberately omit the build-varying `generator` stamp
+    /// (see [`without_generator_stamp`] for why it cannot be written
+    /// down), so a schema check run against them would be certifying a
+    /// shape no producer emits — and the negative cases below would be
+    /// mutating a control that was already invalid.
+    /// [`diagnostic_goldens_are_byte_stable`] is what holds these bytes
+    /// to the table.
+    fn all_golden_json() -> Vec<(&'static str, String)> {
+        let mut out: Vec<(&'static str, String)> = Vec::new();
+        for (label, err, _golden) in forge_golden_entries() {
+            out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
-        for (label, _err, golden) in mesh_golden_entries() {
-            out.push((label, golden));
+        for (label, err, _golden) in mesh_golden_entries() {
+            out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
-        for (label, _err, golden) in xsd_golden_entries() {
-            out.push((label, golden));
+        for (label, err, _golden) in xsd_golden_entries() {
+            out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
-        for (label, _err, golden) in cli_golden_entries() {
-            out.push((label, golden));
+        for (label, err, _golden) in cli_golden_entries() {
+            out.push((label, serde_json::to_string(&single(&err)).unwrap()));
         }
         out
     }
@@ -14040,7 +14124,7 @@ mod tests {
             .into_iter()
             .find(|(l, _)| *l == label)
             .unwrap_or_else(|| panic!("no golden labelled {label}"));
-        serde_json::from_str(json).expect("golden record is JSON")
+        serde_json::from_str(&json).expect("golden record is JSON")
     }
 
     /// A record the schema must reject, built by changing exactly one
@@ -14119,6 +14203,21 @@ mod tests {
     fn diagnostic_schema_rejects_a_missing_required_field() {
         assert_one_change_is_rejected("message absent", |obj| {
             obj.remove("message");
+        });
+    }
+
+    /// The generator stamp is required, not merely declared.
+    ///
+    /// Declaring `generator` under `properties` while leaving it out of
+    /// `required` would let a producer that stopped emitting it ship
+    /// records every consumer's validator still accepts — documented
+    /// and unenforced. That gap is precisely the state this surface was
+    /// in before the field existed: the contract told consumers to pin
+    /// a commit, and nothing made the payload name one.
+    #[test]
+    fn diagnostic_schema_rejects_a_missing_generator_stamp() {
+        assert_one_change_is_rejected("generator absent", |obj| {
+            obj.remove("generator");
         });
     }
 

@@ -30,11 +30,7 @@ nlohmann::ordered_json TemplateError::to_json() const {
     const std::string_view messageView{what()};
     const std::string idStr = computeFnv1aDiagnosticId(codeStr, kTemplateStage, fileStr, messageView);
 
-    nlohmann::ordered_json out;
-    out["v"] = 1;
-    out["id"] = idStr;
-    out["code"] = codeStr;
-    out["stage"] = kTemplateStage;
+    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kTemplateStage, idStr);
     out["message"] = std::string{messageView};
 
     if (location_.has_value()) {

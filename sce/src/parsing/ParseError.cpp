@@ -33,11 +33,7 @@ nlohmann::ordered_json ParseError::to_json() const {
     const std::string_view messageView{what()};
     const std::string idStr = computeFnv1aDiagnosticId(codeStr, kParseStage, fileStr, messageView);
 
-    nlohmann::ordered_json out;
-    out["v"] = 1;
-    out["id"] = idStr;
-    out["code"] = codeStr;
-    out["stage"] = kParseStage;
+    nlohmann::ordered_json out = beginDiagnosticRecord(codeStr, kParseStage, idStr);
     out["message"] = std::string{messageView};
 
     if (location_.has_value()) {

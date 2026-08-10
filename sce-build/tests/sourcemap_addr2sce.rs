@@ -705,6 +705,120 @@ fn both_lookup_directions_validate_against_the_wire_schema() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// The lookup schema rejects a record missing the generator stamp.
+///
+/// `SCE_WIRE_CONTRACTS.md` policy item 5 requires a negative case per
+/// surface, because a positive sweep alone proves only that everything
+/// is accepted — a schema that validated every input would pass it.
+/// This surface had no negative case at all until this one, so
+/// `both_lookup_directions_validate_against_the_wire_schema` was
+/// certifying acceptance without ever showing the validator refusing
+/// anything.
+///
+/// The control assertion is what gives the rejection meaning: the
+/// record is proven valid before the single field is removed, so the
+/// refusal is pinned to that removal and not to some other constraint
+/// a hand-typed record would have tripped first.
+#[test]
+fn lookup_schema_rejects_a_record_without_the_generator_stamp() {
+    let schema_value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../schemas/sce-symbol-lookup.v1.schema.json"
+    ))
+    .expect("lookup schema is JSON");
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("lookup schema compiles");
+
+    let (tmp, _json) = generate("rust");
+    let (ok, mut records) = sce2sym(&[tmp.to_str().unwrap()]);
+    assert!(ok);
+    let mut record = records.remove(0);
+
+    assert!(
+        validator.validate(&record).is_ok(),
+        "the control record must be valid before mutation, otherwise \
+         the rejection below proves nothing: {record}",
+    );
+    record
+        .as_object_mut()
+        .expect("record is an object")
+        .remove("generator")
+        .expect("control record carried the stamp");
+    assert!(
+        validator.validate(&record).is_err(),
+        "schema must reject a lookup record with no generator stamp: {record}",
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Both directions name the generator that produced the answer.
+///
+/// A lookup record is consumed on its own — a debugger resolving a
+/// fault address, a build step mapping a symbol back to its SCXML — with
+/// no manifest alongside it, so it has to carry its own attribution or
+/// have none. `SCE_WIRE_CONTRACTS.md` policy 1 makes pinning a specific
+/// SCE commit the consumer's obligation while the surface is
+/// `pre-release`; the record naming the commit is what makes that
+/// checkable rather than assumed.
+///
+/// The sourcemap the record points at cannot stand in for this: its
+/// `source_hash` / `template_hash` identify the *inputs* (document bytes,
+/// template tree), and two generators whose emit code differs while the
+/// templates and document do not produce the same pair of hashes.
+#[test]
+fn both_lookup_directions_name_the_generator_commit() {
+    let version_out = Command::new(sce_codegen_bin())
+        .arg("--version")
+        .output()
+        .expect("sce-codegen must be runnable");
+    let version_text = String::from_utf8_lossy(&version_out.stdout).into_owned();
+    let expected = version_text
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(c, _)| c.to_string())
+        .expect("--version carries a commit");
+
+    let (tmp, json) = generate("rust");
+    let map: serde_json::Value = serde_json::from_str(&json).expect("sourcemap JSON");
+    let first = map["symbols"]
+        .as_object()
+        .expect("symbols")
+        .keys()
+        .next()
+        .expect("at least one symbol")
+        .clone();
+
+    let forward = Command::new(sce_codegen_bin())
+        .arg("addr2sce")
+        .arg(&tmp)
+        .arg("--symbol")
+        .arg(&first)
+        .output()
+        .expect("invoke addr2sce");
+    assert!(forward.status.success());
+    let forward_record: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&forward.stdout).trim())
+            .expect("forward record is JSON");
+
+    let (ok, reverse) = sce2sym(&[tmp.to_str().unwrap()]);
+    assert!(ok);
+
+    let mut records = vec![forward_record];
+    records.extend(reverse);
+    assert!(
+        records.len() >= 2,
+        "both directions must contribute records"
+    );
+    for record in &records {
+        assert_eq!(
+            record["generator"], expected,
+            "every lookup record must name the generator commit: {record}",
+        );
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// `--pc` / `--hardfault` refuse loudly when the image they were given
 /// cannot answer, rather than resolving to nothing or exiting 0. The
 /// resolution paths themselves are pinned by

@@ -70,6 +70,26 @@ std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view sta
     return std::string(buffer.data(), static_cast<std::size_t>(written));
 }
 
+nlohmann::ordered_json beginDiagnosticRecord(std::string_view code, std::string_view stage, const std::string &id) {
+#ifdef SCE_GIT_COMMIT
+    constexpr std::string_view kGeneratorCommit = SCE_GIT_COMMIT;
+#else
+    // Reached only when this translation unit is compiled outside the
+    // `sce_base` target that defines the macro. Answering `unknown` is
+    // what the schema's pattern allows for a build with no commit to
+    // report; fabricating one would put a wrong commit on the wire.
+    constexpr std::string_view kGeneratorCommit = "unknown";
+#endif
+
+    nlohmann::ordered_json out;
+    out["v"] = 1;
+    out["id"] = id;
+    out["generator"] = std::string{kGeneratorCommit};
+    out["code"] = std::string{code};
+    out["stage"] = std::string{stage};
+    return out;
+}
+
 std::string Diagnostic::to_canonical_json_string() const {
     // `to_json()` returns `nlohmann::ordered_json` — keys are emitted
     // in producer insertion order, which is convenient for human

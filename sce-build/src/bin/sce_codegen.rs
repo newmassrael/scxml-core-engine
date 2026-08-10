@@ -529,7 +529,7 @@ fn build_manifest<'a>(
     Manifest {
         v: sce_build::manifest::MANIFEST_SCHEMA_VERSION,
         kind: kind.as_str(),
-        generator: env!("SCE_GIT_COMMIT"),
+        generator: sce_build::GENERATOR_COMMIT,
         artifacts: report
             .artifacts
             .iter()
@@ -6612,6 +6612,7 @@ fn print_lookup_record(
     let record = sce_build::forge::sourcemap::SymbolLookupRecord {
         v: sce_build::forge::sourcemap::SYMBOL_LOOKUP_SCHEMA_VERSION,
         kind: kind.as_str(),
+        generator: sce_build::GENERATOR_COMMIT,
         sourcemap: map_path.display().to_string(),
         symbol,
         entry,
