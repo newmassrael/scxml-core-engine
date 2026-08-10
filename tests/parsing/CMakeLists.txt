@@ -97,9 +97,20 @@ target_compile_features(diagnostic_test PRIVATE cxx_std_17)
 # suite noticed nothing, and a probe that added a required field the C++
 # side does not emit still passed 66/66. Reading the schema makes the
 # claim "this producer conforms" answerable by the file it conforms to.
+#
+# The header directory and this suite's own source, for the same reason
+# one level up: which wire codes exist is a fact about the headers, and
+# which ones this suite exercises is a fact about its source. Both were
+# restated here as curated `std::array` lists whose only assertions were
+# their own length and their own uniqueness — so a leaf that gained a
+# code without gaining a test looked identical to one that had both, and
+# `validation/missing-element` sat untested behind a list named
+# "EveryCuratedCodeIsExercised".
 target_compile_definitions(diagnostic_test
     PRIVATE
         SCE_DIAGNOSTIC_SCHEMA_PATH="${CMAKE_SOURCE_DIR}/schemas/sce-diagnostic.v1.schema.json"
+        SCE_PARSING_HEADER_DIR="${CMAKE_SOURCE_DIR}/sce/include/parsing"
+        SCE_DIAGNOSTIC_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/Diagnostic_test.cpp"
 )
 
 apply_sce_test_policies(diagnostic_test)
