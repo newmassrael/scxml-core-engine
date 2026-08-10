@@ -2294,8 +2294,11 @@ mod tests {
         // Gate 1: per-fixture generated Rust code
         for fixture in &manifest.fixtures {
             let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
-            let content = match std::fs::read_to_string(&scxml_path) {
-                Ok(c) => c,
+            // Read + expand: a fixture using `<sce:use>` must be checked
+            // as the author wrote it, not as the parser would see it with
+            // the expansion pass skipped.
+            let content = match crate::load_forge_source(&scxml_path, &[]) {
+                Ok(loaded) => loaded.text,
                 Err(e) => {
                     failures.push(format!("{}: read SCXML: {e}", fixture.name));
                     continue;

@@ -1787,6 +1787,24 @@ fn emit_orchestrate_asts(
             diagnostic_label: basename,
         };
 
+        // Expand before parsing, as the statechart loop above does via
+        // `parse_file`. An AST emitted from unexpanded source would
+        // describe a document the author never wrote — and every node a
+        // `<sce:use>` was carrying would simply be absent from it.
+        //
+        // `orchestrate` exposes no `--include-dir`, so fragments resolve
+        // relative to the document only; `generate` and `check` pass
+        // their operator-configured search path here.
+        let content = match sce_build::parser::expand_preprocessors(
+            &content,
+            forge_path_str,
+            forge_path.parent(),
+            &[],
+        ) {
+            Ok((expanded, _map, _deps)) => expanded,
+            Err(e) => error_format.emit_forge_and_exit(&e),
+        };
+
         let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
             Ok(Some(p)) => p,
             // Statechart: silent skip per v1 contract.
@@ -2179,6 +2197,20 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 .parent()
                 .unwrap_or_else(|| Path::new("."));
 
+            // Expand first. The statechart arm reaches the expander
+            // through `Parser::parse_file`; this arm had no equivalent,
+            // so the same command answered differently about whether
+            // templates exist depending on the document's kind.
+            let scxml_content = match sce_build::parser::expand_preprocessors(
+                &scxml_content,
+                scxml_path,
+                Some(base_dir),
+                &include_dir.iter().map(PathBuf::from).collect::<Vec<_>>(),
+            ) {
+                Ok((expanded, _map, _deps)) => expanded,
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+
             // Document axis: a parse failure is fatal regardless of
             // which backends were asked for.
             let parsed =
@@ -2503,6 +2535,18 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 ..Default::default()
             };
 
+            // Expand before parsing — see the `generate` arm for why
+            // this cannot be left to the caller.
+            let (scxml_content, preprocessor_deps) = match sce_build::parser::expand_preprocessors(
+                &scxml_content,
+                scxml_path,
+                Some(base_dir),
+                &include_dirs.iter().map(PathBuf::from).collect::<Vec<_>>(),
+            ) {
+                Ok((expanded, _map, deps)) => (expanded, deps),
+                Err(e) => error_format.emit_forge_and_exit(&e),
+            };
+
             // Single-parse path: parse once, emit AST if requested,
             // then run codegen against the same `ParsedForge` value via
             // `compile_forge_from_parsed`. Avoids the previous
@@ -2552,7 +2596,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 &forge_opts,
             ) {
                 Ok(output) => {
-                    let import_deps = output.deps;
+                    // Preprocessor inputs ahead of the import closure.
+                    // The field has always been named `preprocessor_deps`
+                    // but could only ever be handed imports, because this
+                    // route never ran the preprocessor — so editing a
+                    // `<sce:use>` template left the output stale with the
+                    // build reporting success, the same silent-staleness
+                    // the import fix above was written to end.
+                    let mut import_deps = preprocessor_deps;
+                    import_deps.extend(output.deps);
                     let files = maybe_format_files(output.files, &cpp_formatter);
                     let out = Path::new(output_dir);
                     for (filename, code) in &files {

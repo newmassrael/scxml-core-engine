@@ -926,6 +926,102 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
     }
 }
 
+/// A forge source file after preprocessor expansion.
+///
+/// `deps` is the list of files expansion actually read — template and
+/// XInclude targets. A build script needs exactly this list for
+/// `cargo:rerun-if-changed`; without it, editing a template leaves the
+/// generated artefact stale with nothing reporting a problem.
+pub struct LoadedForgeSource {
+    /// Post-expansion document text, ready for the forge parse entries.
+    pub text: String,
+    /// Files the expansion pass read, in pipeline order.
+    pub deps: Vec<PathBuf>,
+}
+
+/// Read a forge document from disk and expand its preprocessors.
+///
+/// The forge parse and compile entries all take already-read content,
+/// which leaves every caller to perform read-then-expand for itself —
+/// and a caller that skips the expansion step gets no complaint from
+/// the parser about it, only a document with fewer nodes than the
+/// author wrote. This is that step, written once.
+///
+/// The statechart route has had the equivalent since
+/// [`parser::SCXMLParser::parse_file`], which expands internally; a
+/// forge document has no such entry because kind detection has to
+/// happen before the pipeline is chosen. Callers that hold a
+/// `ParsedForge` for their own reasons (the CLI parses once to serve
+/// `--emit-ast`) use this and keep their parse; callers that just want
+/// code use [`compile_forge_file`].
+///
+/// Skipping this is no longer silent regardless:
+/// [`parser::reject_unexpanded_directives`] refuses a document that
+/// still carries a directive.
+pub fn load_forge_source(
+    path: &Path,
+    include_dirs: &[PathBuf],
+) -> Result<LoadedForgeSource, forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{ForgeError, Located, XmlError};
+
+    let label = path.to_string_lossy().into_owned();
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        let error = if e.kind() == std::io::ErrorKind::NotFound {
+            XmlError::FileNotFound {
+                path: label.clone(),
+            }
+        } else {
+            XmlError::Parse(format!("cannot read {label}: {e}"))
+        };
+        Located::new(ForgeError::Xml(error), label.clone(), None, None)
+    })?;
+
+    let (text, _map, deps) =
+        parser::expand_preprocessors(&content, &label, path.parent(), include_dirs)?;
+
+    Ok(LoadedForgeSource { text, deps })
+}
+
+/// Compile a forge document straight from a path.
+///
+/// The file-facing counterpart to [`compile_scxml`], which the forge
+/// half of the pipeline lacked: read, expand, parse, generate. A
+/// consumer that only wants code out of a file should not have to
+/// discover the order those four steps go in.
+///
+/// `output.deps` carries the preprocessor inputs as well as the
+/// `<sce:import>` closure, so a build script can hand the whole list to
+/// `cargo:rerun-if-changed` and have template edits trigger a rebuild.
+pub fn compile_forge_file(
+    path: &Path,
+    language: generator::Language,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
+    let loaded = load_forge_source(path, include_dirs)?;
+
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
+    let label = DocumentLabel {
+        identifier: stem,
+        diagnostic_label: basename,
+    };
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+
+    let mut output = compile_forge_with_imports(&loaded.text, label, language, base_dir, options)?;
+
+    // Preprocessor inputs first, import closure after — the same order
+    // the statechart route writes them, so a depfile reader sees one
+    // convention rather than two.
+    let mut deps = loaded.deps;
+    deps.append(&mut output.deps);
+    output.deps = deps;
+    Ok(output)
+}
+
 /// Compile a forge (non-statechart) SCXML from already-read content.
 ///
 /// Uses single-parse path: detects kind and parses model in one XML parse.
