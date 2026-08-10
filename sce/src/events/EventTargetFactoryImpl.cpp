@@ -80,10 +80,17 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
         return createParentTarget(targetUri, sessionId);
     }
 
-    // §scxml-C-1 (test 190, 350): #_scxml_sessionid → external queue
-    if (targetUri.starts_with("#_scxml_")) {
-        SCE_LOG_DEBUG("EventTargetFactoryImpl::createTarget() - #_scxml_sessionid → external queue");
-        return createExternalTarget(sessionId);
+    // §scxml-C-1 (test 190, 350): #_scxml_<sessionid> addresses the session
+    // with that id. The id is what decides the destination — routing every
+    // such URI to the SENDING session made tests 190 and 350 pass (both name
+    // the session they already are) while silently misdelivering every event
+    // addressed to a peer, which is the case `_event.origin` exists for.
+    // ARCHITECTURE.md Zero Duplication: uses SendHelper (Single Source of Truth).
+    if (SendHelper::isSessionTarget(targetUri)) {
+        const std::string targetSessionId = SendHelper::extractSessionId(targetUri);
+        SCE_LOG_DEBUG("EventTargetFactoryImpl::createTarget() - session target '{}' → session '{}'", targetUri,
+                      targetSessionId.empty() ? "<own external queue>" : targetSessionId);
+        return createSessionTarget(targetSessionId, sessionId);
     }
 
     // §scxml-6.4 (test192): Handle child invoke target (#_<invokeid>)
@@ -299,6 +306,41 @@ std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarg
         SCE_LOG_ERROR("EventTargetFactoryImpl: Error creating parent target: {}", e.what());
         return nullptr;
     }
+}
+
+std::shared_ptr<SCE::IEventTarget>
+SCE::EventTargetFactoryImpl::createSessionTarget(const std::string &targetSessionId,
+                                                 const std::string &originSessionId) {
+    // §scxml-C-1: a URI naming no session ("#_scxml_") is the sending
+    // session's own external queue — what W3C test 190 asserts. That case is
+    // exactly createExternalTarget, where lookup and origin are the same
+    // session, so it delegates rather than restating the construction.
+    if (targetSessionId.empty()) {
+        return createExternalTarget(originSessionId);
+    }
+
+    // The two session ids play DIFFERENT roles and must not be conflated:
+    // the addressee decides which queue receives the event, the sender is
+    // what `_event.origin` reports to the receiver (§scxml-5.10, test 336).
+    // They coincide only when a session addresses itself, which is why one
+    // parameter served both for as long as that was the only case tested.
+    auto targetEventRaiser = EventRaiserService::getInstance().getEventRaiser(targetSessionId);
+    if (!targetEventRaiser) {
+        // No silent fallback. Routing an unreachable addressee to the
+        // sender's own queue reports success at every layer above while the
+        // addressee waits forever; returning null makes the dispatcher answer
+        // TARGET_NOT_FOUND, which is a fact the caller can act on.
+        SCE_LOG_ERROR("EventTargetFactoryImpl: No session registered for target session '{}' (from session '{}')",
+                      targetSessionId, originSessionId);
+        return nullptr;
+    }
+
+    // External priority: §scxml-C-1 delivers a session-addressed event to the
+    // addressee's EXTERNAL queue, the same queue an empty target uses.
+    auto target = std::make_shared<InternalEventTarget>(targetEventRaiser, true, originSessionId);
+    SCE_LOG_DEBUG("EventTargetFactoryImpl: Created session target for '{}' with origin '{}'", targetSessionId,
+                  originSessionId);
+    return target;
 }
 
 std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createInvokeTarget(const std::string &invokeId,
