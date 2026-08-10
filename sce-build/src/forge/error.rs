@@ -393,7 +393,7 @@ pub enum ValidationError {
     /// reference external objects but the document carries no
     /// matching `<sce:context>` declaration. `site` names the offending
     /// surface ("cpp: condition", "kt: condition", "<cpp> action",
-    /// "<kt> action") so agents can route the repair at the generator
+    /// "<kt> action") so consumers can route the repair at the generator
     /// that owns that site; `detail` carries the offending expression.
     #[error("{site}: {detail}")]
     MissingContext { site: String, detail: String },
@@ -453,7 +453,7 @@ pub enum ValidationError {
     /// Statechart uses features the static AOT generator cannot
     /// express (`<invoke srcexpr=...>`, missing initial state,
     /// `_event` metadata, …). `reason` carries which specific blocker
-    /// the analyzer detected so agents know whether to rewrite the
+    /// the analyzer detected so consumers know whether to rewrite the
     /// document (missing initial) or accept the Interpreter fallback
     /// (dynamic invoke).
     #[error("cannot generate static code for '{name}': {reason}")]
@@ -487,7 +487,7 @@ pub enum ValidationError {
     /// (the prefix is reserved for future metadata); or
     /// `_mesh_deadline_ms` carries a non-integer value.
     ///
-    /// `param` names the offending `<param name="...">` so agents can
+    /// `param` names the offending `<param name="...">` so consumers can
     /// target the repair at the exact child element; `detail` explains
     /// which specific rule was broken. One variant covers the whole
     /// family because the repair surface is uniform — the author must
@@ -1203,7 +1203,7 @@ pub enum ValidationError {
     /// not in the closed enumeration (RFC §synth-5-C lines 765-771 — `udp` /
     /// `tcp` / `serial` / `websocket` / `raw_eth`). Promotes the
     /// generic `validation/invalid-attribute` to a
-    /// dedicated link-kind code so downstream agents can pattern-match
+    /// dedicated link-kind code so downstream consumers can pattern-match
     /// on link-class violations without inspecting the message prose.
     /// Repair: replace `value` with one of the listed candidates.
     #[error(

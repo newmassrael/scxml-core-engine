@@ -281,7 +281,7 @@ next regeneration.
 
 - `SCE_ERROR_CONTRACT.md` §10 — the stdout manifest, including
   `generator`.
-- `SCE_WIRE_CONTRACTS.md` — stability status of every agent-facing wire
+- `SCE_WIRE_CONTRACTS.md` — stability status of every wire
   surface.
 - `docs/SCE_ACCEPTED_SUBSET.md` — the `DiagnosticCode` index, including
   `forge/source-hash-input-uncovered`.

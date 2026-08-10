@@ -562,7 +562,7 @@ impl SCXMLParser {
     ///
     /// The error type is `Located<ForgeError>`: location is part of the
     /// error contract — every failure ties back to the file path so
-    /// downstream diagnostics (CLI NDJSON, build scripts, agents) do
+    /// downstream diagnostics (CLI NDJSON, build scripts, consumers) do
     /// not have to attach file context after the fact. I/O errors
     /// carry the path as `ForgeError::Io`; XML / validation errors
     /// use the file stem as the location label to match the naming
@@ -1242,7 +1242,7 @@ impl SCXMLParser {
     /// would mask the author's intent and hand the generator a type
     /// the rest of the pipeline was never told about (see the
     /// `feedback_silently_broken_hooks` memory). Errors flow through
-    /// `Located<ForgeError>` with roxmltree-derived row/col so agents
+    /// `Located<ForgeError>` with roxmltree-derived row/col so consumers
     /// receive the same precision the codec-field parser already
     /// delivers; the already-located codec-field error is propagated
     /// unchanged (no `.map_err(|l| l.error)` unwrap).

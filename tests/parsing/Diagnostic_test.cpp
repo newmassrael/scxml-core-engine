@@ -320,7 +320,7 @@ TEST(XIncludeErrorWire, MissingHrefCarriesActionableFragmentInMessage) {
     // and empty-href shapes collapse onto the same Rust code (the
     // empty string never resolves), so a single C++ subtype handles
     // both — `XIncludeMissingHref`. The message names the missing
-    // attribute so an operator/agent can dispatch the repair without
+    // attribute so an operator/consumer can dispatch the repair without
     // re-parsing the call site.
     const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
     try {
@@ -896,7 +896,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedWrongRootElementDiagnostic) {
 TEST(ParseErrorConsumer, TypedCodeDistinguishesFailureClassWhereStringParsingIsFragile) {
     // Two distinct parse failures — file-not-found (path retry
     // strategy) vs wrong-root-element (syntax suggestion strategy).
-    // A real consumer (LSP / CI report / build tool / agent) needs
+    // A real consumer (LSP / CI report / build tool / consumer) needs
     // to dispatch on the failure CLASS, not on the message text.
     // This test proves typed code() makes that dispatch reliable;
     // the parallel string-parsing path would have to
@@ -1237,7 +1237,7 @@ TEST(SemanticErrorConsumer, FoldHonestAtConsumerLevel) {
 TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
     // Mirrors W4's `ParseErrorConsumer.TypedCodeStableUnderMessageTextEdit`.
     // Two leaves with intentionally divergent message text must
-    // still share `code()` — agents dispatching on the wire code do
+    // still share `code()` — consumers dispatching on the wire code do
     // not break when the message text changes (e.g. localization,
     // refinement of the human-readable wording).
     const SemanticInitialStateUnknown today("Initial state 'X' not found", "X",

@@ -3,11 +3,11 @@
 //
 // Machine-readable diagnostic schema for SCE Forge errors.
 //
-// Upstream agents (LangGraph-style triage, IDEs, CI) consume this
+// Upstream consumers (LangGraph-style triage, IDEs, CI) consume this
 // format. The design leans on four invariants:
 //
 //   1. `code` is a closed enum (`DiagnosticCode`), not a free string —
-//      agents dispatch by variant, not by parsing text.
+//      consumers dispatch by variant, not by parsing text.
 //   2. The `id` is a content hash of semantic fields only (never the
 //      Display message) — rewording an error message does not shift
 //      its identity.
@@ -173,7 +173,7 @@ pub const SCHEMA_STATUS: &str = "pre-release";
 /// is available without reading the payload.
 #[derive(Debug, Clone, Serialize)]
 pub struct Diagnostic {
-    /// Wire-format version. Always present, always first. Agents that
+    /// Wire-format version. Always present, always first. Consumers that
     /// see a higher value than they were built against should fall
     /// back to a best-effort parse rather than crash.
     #[serde(rename = "v")]
@@ -206,7 +206,7 @@ pub struct Diagnostic {
     /// version-gate and stream-dedup below rely on.
     pub generator: &'static str,
 
-    /// Closed enum, serialized as a slash-path string. Agents dispatch
+    /// Closed enum, serialized as a slash-path string. Consumers dispatch
     /// on this field and may safely enumerate all variants at build time.
     pub code: DiagnosticCode,
 
@@ -244,7 +244,7 @@ pub struct Diagnostic {
     pub actual: Option<String>,
 
     /// Structured repair proposal. The sole channel for repair
-    /// signals — when populated, agents apply (or choose) based on
+    /// signals — when populated, consumers apply (or choose) based on
     /// the variant; when absent, no structured repair exists and
     /// there is no fallback to `expected`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -374,7 +374,7 @@ impl Stage {
 /// Closed set of diagnostic codes. Every `ForgeError` variant maps to
 /// exactly one code; adding a new error variant forces adding a new
 /// `DiagnosticCode` (compile-time exhaustiveness on the `to_fields`
-/// match). Agents depending on SCE can enumerate this type to build
+/// match). Consumers depending on SCE can enumerate this type to build
 /// a complete dispatch table.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum DiagnosticCode {
@@ -398,7 +398,7 @@ pub enum DiagnosticCode {
     XmlWrongRootElement,
     // ── XInclude preprocessing (runs before roxmltree; C++ runtime
     //    parity with PugiXMLDocument::processXInclude). Split by
-    //    repair shape so agents can dispatch: missing-href gets a
+    //    repair shape so consumers can dispatch: missing-href gets a
     //    deterministic add_attribute fix, cycle/too-deep indicate
     //    structural restructuring, malformed points at the included
     //    file, unsupported lists the feature to remove. ─────────
@@ -417,10 +417,10 @@ pub enum DiagnosticCode {
     #[serde(rename = "xml/xinclude-unsupported")]
     XmlXIncludeUnsupported,
     // ── sce:template preprocessing (AOT-only).
-    //    Split by repair shape so agents can dispatch without
+    //    Split by repair shape so consumers can dispatch without
     //    parsing message text: missing-attribute / missing-param
     //    carry deterministic add_attribute fixes, unknown-param
-    //    lists declared names so agents correct typos, cycle /
+    //    lists declared names so consumers correct typos, cycle /
     //    too-deep indicate structural chain problems, malformed
     //    points at the template file (call-site attribute errors
     //    ride missing-attribute), not-found / read-error are
@@ -1045,7 +1045,7 @@ pub enum DiagnosticCode {
     /// (`udp` / `tcp` / `serial` / `websocket` / `raw_eth` per RFC
     /// §synth-5-C lines 765-771). Promotes the generic
     /// `validation/invalid-attribute` to a dedicated link-kind code so
-    /// authors and downstream agents key on the link-class violation
+    /// authors and downstream consumers key on the link-class violation
     /// directly. Repair: replace the value with one of the listed
     /// candidates (`fix: ReplaceOneOf`).
     #[serde(rename = "link/link-class-unknown")]
@@ -3150,7 +3150,7 @@ impl DiagnosticCode {
     /// call-site. Returning `None` is explicit: a code with no
     /// anchor means "no verifiable citation exists". Inventing a
     /// plausible-looking section label here is strictly worse than
-    /// leaving it empty, because agents would ground hallucinated
+    /// leaving it empty, because consumers would ground hallucinated
     /// references against a real document and silently drift.
     ///
     /// Anchors currently use the following convention:
@@ -4263,7 +4263,7 @@ pub struct Location {
 ///
 /// `Fix` is the sole channel for repair signals: whenever the producer
 /// knows how the document could be changed to satisfy the rejected
-/// constraint, the payload is attached here. Agents therefore inspect
+/// constraint, the payload is attached here. Consumers therefore inspect
 /// `fix` and `fix` only to drive repair — `expected` carries a
 /// different kind of information (see `Diagnostic::expected`) and the
 /// two fields never overlap.
@@ -4273,7 +4273,7 @@ pub struct Location {
 /// * Deterministic: `AddAttribute`, `RenameDuplicate`, `RemoveFields`,
 ///   `ReplaceWith` — applicable without further judgment.
 /// * Choice-based: `ReplaceOneOf`, `AddOneOf` — the producer lists the
-///   closed candidate set and the agent (or the human) picks.
+///   closed candidate set and the consumer (or the human) picks.
 ///
 /// `fix` is absent when no structured repair can be named — e.g. an
 /// `Io` failure, a `generate/template-render` crash, or cardinality
@@ -4313,13 +4313,13 @@ pub enum Fix {
     /// the listed `candidates`. Emitted when the producer knows the
     /// closed enumeration of legal values (attribute value constraints,
     /// cross-reference resolution) but cannot deterministically pick a
-    /// single answer. The agent must choose which candidate fits the
+    /// single answer. The consumer must choose which candidate fits the
     /// surrounding context.
     ReplaceOneOf { candidates: Vec<String> },
 
     /// Add one of several legal attributes to the named element. Used
     /// for "require either X or Y" constraints (e.g. `<send>` needs
-    /// `event` or `eventexpr`). The agent must choose which of `attrs`
+    /// `event` or `eventexpr`). The consumer must choose which of `attrs`
     /// to emit based on surrounding context.
     AddOneOf { element: String, attrs: Vec<String> },
 }
@@ -4463,7 +4463,7 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             key_fragments: vec![found.clone()],
         },
         // XInclude failure modes. The leaf variant drives the code —
-        // agents can dispatch without text parsing. `actual` carries
+        // consumers can dispatch without text parsing. `actual` carries
         // the offending href when known so repair bots can substitute
         // without re-parsing the message; `key_fragments` tie into
         // the content-hash `id` so two runs against the same broken
@@ -4528,7 +4528,7 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             key_fragments: vec![href.clone(), feature.to_string()],
         },
         // `sce:template` failure modes. Parallel to XInclude: the
-        // leaf variant drives the code so agents can dispatch
+        // leaf variant drives the code so consumers can dispatch
         // without parsing text; `actual` carries the offending
         // template path (or parameter name, for the param-shaped
         // variants) so repair bots can act without re-parsing the
@@ -4610,7 +4610,7 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
         // No `fix`: the repair is a change to how the caller drives the
         // pipeline, not an edit to the document the diagnostic points
         // at. Naming the surviving element in `actual` is what lets an
-        // agent tell the two directives apart without re-reading the
+        // consumer tell the two directives apart without re-reading the
         // source.
         XmlError::PreprocessorNotRun { element } => DiagnosticPayload {
             code: DiagnosticCode::XmlPreprocessorNotRun,
@@ -4668,7 +4668,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(value.clone()),
             // `sce:kind` has a closed enumeration (`ForgeKind::from_attr`).
-            // The list is authoritative, so agents get a structured
+            // The list is authoritative, so consumers get a structured
             // replace-one-of instead of message-prose parsing.
             fix: Some(Fix::ReplaceOneOf {
                 candidates: crate::forge::model::ForgeKind::ALL_ATTR_NAMES
@@ -4820,7 +4820,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // `<sce:context>` is a document-wide scope, so the repair
             // surface is identical to any other duplicate id — rename
             // one of the declarations. `what` names the namespace so
-            // agents can disambiguate from state/field/event id reuse.
+            // consumers can disambiguate from state/field/event id reuse.
             fix: Some(Fix::RenameDuplicate {
                 what: "sce:context id".to_string(),
                 id: id.clone(),
@@ -4869,7 +4869,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         ValidationError::MissingContext { site, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMissingContext,
             stage: Stage::Validation,
-            // `actual` carries the offending expression so agents can
+            // `actual` carries the offending expression so consumers can
             // locate the reference in the source document; the repair
             // shape (add a sibling `<sce:context>` element) does not
             // match any existing `Fix` variant, so `fix` stays `None`
@@ -4974,7 +4974,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         ValidationError::DynamicFeatures { name, reason } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDynamicFeatures,
             stage: Stage::Validation,
-            // `actual` carries the specific blocker so agents route
+            // `actual` carries the specific blocker so consumers route
             // between Interpreter fallback (dynamic invoke) and
             // document rewrite (missing initial); no closed candidate
             // set exists for the repair, so `fix` stays `None`.
@@ -5014,7 +5014,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationMeshRpcReservedParam,
             stage: Stage::Validation,
             // `actual` carries the offending reserved param name so
-            // agents can locate the element to repair; `detail` flows
+            // consumers can locate the element to repair; `detail` flows
             // out in `message` via Display. No `Fix` — the repair
             // ("rename or retype your `<param>`") is author-specific,
             // not a closed candidate list, so fabricating a
@@ -5028,7 +5028,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationRemovedAttribute,
             stage: Stage::Validation,
             // `actual` carries the removed attribute name (including
-            // its `sce:` prefix) so agents can target the exact
+            // its `sce:` prefix) so consumers can target the exact
             // syntax node. The repair is "remove the attribute" —
             // deterministic enough to emit as a `RemoveFields`
             // structured fix. `location` uses `<send>` with the
@@ -5786,7 +5786,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::LinkLinkClassUnknown,
             stage: Stage::Validation,
             // Closed-enum candidate set (RFC §synth-5-C lines 765-771) —
-            // emit `Fix::ReplaceOneOf` so agents can mechanically
+            // emit `Fix::ReplaceOneOf` so consumers can mechanically
             // pick a legal class. Per the non-overlap invariant
             // (`FixCarriesCandidates` bucket) `expected` stays
             // `None`; the candidate list rides `fix`.
@@ -5825,7 +5825,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // OS-axis candidate set (the list of OSes the declared
             // class admits per RFC §synth-5-C lines 765-771) — emit
-            // `Fix::ReplaceOneOf` so agents can mechanically pick a
+            // `Fix::ReplaceOneOf` so consumers can mechanically pick a
             // legal target deployment OS. The author can also change
             // the class via the prose; both are valid repair surfaces
             // but the structured fix carries only the OS axis (one
@@ -5925,7 +5925,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // Section-name candidate set (the list of regions the
             // resolved machine declares in deploy.yaml) — `Fix::ReplaceOneOf`
-            // carries the region-name axis so agents can mechanically
+            // carries the region-name axis so consumers can mechanically
             // pick a legal section. The author can alternately extend
             // the deploy.yaml memory map; the message prose names
             // both repair surfaces. RFC §synth-5-E lines 1000-1023 + 1537.
@@ -6551,7 +6551,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // Single-value deterministic repair: keep the authored
             // owner, replace suffix with `inbox`. `Fix::ReplaceWith`
-            // carries `{owner}.inbox` so an agent applies the fix
+            // carries `{owner}.inbox` so a consumer applies the fix
             // without rewriting the prefix. NeutralOrDeterministic
             // non_overlap_class.
             expected: None,
@@ -7988,7 +7988,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
 
 /// Split a human-readable "expected" list ("foo, bar | baz") into a
 /// vector of individual tokens. Several validation errors carry this
-/// as free text for the Display impl; agents need it structured.
+/// as free text for the Display impl; consumers need it structured.
 fn split_expected(s: &str) -> Vec<String> {
     s.split([',', '|'])
         .map(|part| part.trim().to_string())
@@ -10446,7 +10446,7 @@ mod tests {
             //    Dual-location collision report. `actual` is the
             //    colliding mangled symbol; the `Fix::ReplaceOneOf`
             //    candidate list names the two offending sites so the
-            //    agent / human picks which to rename.
+            //    consumer / human picks which to rename.
             (
                 "traceability/state-id-collision",
                 ValidationError::TraceabilityStateIdCollision {
@@ -12155,7 +12155,7 @@ mod tests {
             //    fires at `verify` when an embedded hash has gone stale,
             //    this one refuses to embed a hash that never described the
             //    input in the first place. `actual` carries the root and
-            //    the collected count so an agent can distinguish "root
+            //    the collected count so a consumer can distinguish "root
             //    resolved to nothing" (`hashed=0`) from "input lives
             //    outside the root" without walking the tree itself.
             (
@@ -12280,10 +12280,10 @@ mod tests {
     ///      `Diagnostic::meta_failure`, should its contract change).
     ///
     /// Why this matters: operators read `format!("{}", err)` on stderr
-    /// via `ErrorFormat::Human`; upstream agents consume
+    /// via `ErrorFormat::Human`; upstream consumers consume
     /// `Diagnostic.message` via `--error-format=json`. If the two ever
     /// diverge, the same error gets described two different ways —
-    /// operator pages the agent, agent's memory references a wording
+    /// operator pages the consumer, consumer's memory references a wording
     /// the operator has never seen. The JSON byte-goldens cover the
     /// JSON surface; this test covers the human surface.
     ///
@@ -12511,7 +12511,7 @@ mod tests {
             | MeshDeployStatelessAcceptExternNotWhitelisted
             // ── §synth-5-O symbol collision dual-location report.
             //    The two `<file>:<line>` strings ride `Fix::ReplaceOneOf`
-            //    as the closed candidate set; the agent / author picks
+            //    as the closed candidate set; the consumer / author picks
             //    which site to rename to break the clash. Two-element
             //    closed set is the smallest legal FixCarriesCandidates
             //    case but the choice surface (which of two sites to
@@ -13942,7 +13942,7 @@ mod tests {
     /// duplicates the `code` enumeration and the `stage` enumeration
     /// for consumers that validate records without linking the
     /// sce-build library. Those enums must agree with the Rust source
-    /// of truth or agents will reject (or accept) the wrong records.
+    /// of truth or consumers will reject (or accept) the wrong records.
     ///
     /// Loaded via `include_str!` so the test fires at compile time —
     /// no external filesystem assumptions — and parsed with `serde_json`

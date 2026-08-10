@@ -146,7 +146,7 @@ public:
 // `DiagnosticCode`. The message renders the full chain as
 // `outer → middle → inner` so the operator can see which file
 // eventually loops back — same rendering convention as Rust's
-// `render_chain`, which keeps the discriminant key stable for agent
+// `render_chain`, which keeps the discriminant key stable for consumer
 // dispatch across the language boundary.
 class XIncludeCycle : public XIncludeExpansionError {
 public:

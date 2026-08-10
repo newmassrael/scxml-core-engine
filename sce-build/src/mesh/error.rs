@@ -2843,7 +2843,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             code: DiagnosticCode::MeshDeployUnknownBindingField,
             stage: Stage::MeshDeploy,
             // `actual` is the offending key; the legal set rides
-            // `Fix::ReplaceOneOf` closest-first, so an agent repairing
+            // `Fix::ReplaceOneOf` closest-first, so a consumer repairing
             // the file can take candidates[0] as the likely intent.
             actual: Some(field.clone()),
             expected: None,
@@ -2863,7 +2863,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             actual: Some(machine.clone()),
             // The key to add is deterministic once the transport is
             // known, but its *values* are the author's deployment
-            // topology — an agent cannot synthesise them, so the prose
+            // topology — a consumer cannot synthesise them, so the prose
             // names the key and no structured fix claims to repair it.
             // `expected` stays absent per the §3.2 non-overlap rule.
             expected: None,
@@ -2905,7 +2905,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // which is deterministic and safe. Renaming it to the
             // carrier's own key is a *different* deployment (it turns
             // the binding into a bounded pool), so that path stays in
-            // the prose rather than riding a structured fix an agent
+            // the prose rather than riding a structured fix a consumer
             // would apply unattended.
             expected: None,
             fix: Some(Fix::RemoveFields {
@@ -2938,7 +2938,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             // author wrote a `<param>` for — in place. The other repair
             // (move the pool binding to its own machine) restructures the
             // topology, so it stays in the prose rather than riding a
-            // structured fix an agent would apply unattended.
+            // structured fix a consumer would apply unattended.
             fix: Some(Fix::RemoveFields {
                 location: format!("topology.*.machines.{machine}"),
                 fields: vec![feature.clone()],
@@ -4089,7 +4089,7 @@ fn external_fields(e: &ExternalConfigError) -> DiagnosticPayload {
             // Fully deterministic repair: the reserved keys were
             // listed by the producer, and the fix is always "remove
             // them" — never "rename" or "replace". The dotted path
-            // names the binding precisely so agents apply without
+            // names the binding precisely so consumers apply without
             // re-parsing the error message.
             fix: Some(Fix::RemoveFields {
                 location: format!("machines.{machine}.bindings.{target}"),
@@ -4278,7 +4278,7 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             // The binding path and the missing field are both known;
             // the fix is to add one attribute. Reuses the same Fix
             // variant as forge ValidationError::MissingAttribute so
-            // agents share one dispatch arm.
+            // consumers share one dispatch arm.
             fix: Some(Fix::AddAttribute {
                 element: format!("machines.{machine}.bindings.{}", target.as_str()),
                 attr: field.clone(),
@@ -4342,7 +4342,7 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             // Two equally-valid repairs (switch transport OR drop the
             // ordering requirement). Neither is mechanically derivable
             // from this diagnostic alone — the author's intent decides.
-            // Leaving `fix: None` keeps agents from prescribing a
+            // Leaving `fix: None` keeps consumers from prescribing a
             // transport switch when the author may have meant to accept
             // arrival order.
             fix: None,
@@ -4364,7 +4364,7 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
             actual: Some(invoke_id.clone()),
             // Two equally-valid repairs (add the missing <param>(s) OR
             // drop the binding-level pool). Author intent decides;
-            // leaving fix unstructured keeps agents from prescribing
+            // leaving fix unstructured keeps consumers from prescribing
             // either automatically.
             expected: None,
             fix: None,
@@ -4434,7 +4434,7 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             // Closed set of currently-implemented mesh backends.
             // More languages will join over time; the structured list
-            // lets agents decide without regexing the message.
+            // lets consumers decide without regexing the message.
             fix: Some(Fix::ReplaceOneOf {
                 candidates: vec!["cpp".to_string()],
             }),
@@ -4447,7 +4447,7 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             // Implemented transports live in a single registry
             // (`mesh::transport::implemented_names`). The repair path
-            // is authoritative; agents don't parse error prose.
+            // is authoritative; consumers don't parse error prose.
             fix: Some(Fix::ReplaceOneOf {
                 candidates: super::transport::implemented_names()
                     .iter()

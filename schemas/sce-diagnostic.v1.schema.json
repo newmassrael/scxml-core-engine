@@ -393,7 +393,7 @@
       "type": "string"
     },
     "message": {
-      "description": "English one-line rendering. Not machine-parsed; agents dispatch on `code` and drive repair from `fix`/`expected`. Present as a tiebreaker for ambiguous triage and as UI text.",
+      "description": "English one-line rendering. Not machine-parsed; consumers dispatch on `code` and drive repair from `fix`/`expected`. Present as a tiebreaker for ambiguous triage and as UI text.",
       "type": "string"
     },
     "location": {

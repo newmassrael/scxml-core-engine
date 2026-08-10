@@ -124,7 +124,7 @@ which also carries `x-sce-schema-status` in the file header alone.
 This surface is one row in the cross-surface stability registry
 [`SCE_WIRE_CONTRACTS.md`](../SCE_WIRE_CONTRACTS.md), which states the
 shared `pre-release` policy and flip-to-`stable` procedure across every
-agent-facing wire surface. The rules below are the forge-AST specifics.
+wire surface. The rules below are the forge-AST specifics.
 
 * **`pre-release` window (until SCE 1.0).** Non-additive changes
   permitted within `v=1`. Consumers should pin to a specific SCE
