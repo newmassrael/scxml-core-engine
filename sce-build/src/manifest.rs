@@ -171,6 +171,24 @@ pub struct Manifest<'a> {
     /// Omitted (not `[]`) on a pure-static machine.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub script_engine_causes: &'a [ScriptEngineCauseRecord],
+    /// Which driving entry point the emitted machine requires of its
+    /// host: `true` means `Engine::tick()`, `false` means `step()` is
+    /// enough.
+    ///
+    /// `tick()` is two mechanisms — it drains the §scxml-6.2
+    /// delayed-send scheduler and ticks invoked child sessions — and
+    /// `step()` performs neither. A machine that schedules a `<send
+    /// delay>` / `<cancel>`, or that drives a session-bearing
+    /// `<invoke>`, and is driven by `step()` alone therefore loses
+    /// those events with no error and no diagnostic: the symptom is
+    /// events that simply never arrive.
+    ///
+    /// Reported for the same reason as [`Self::needs_script_engine`] —
+    /// both answer "what does the host have to supply?", and the
+    /// generator settles both while compiling. Always present, so a
+    /// consumer reads `false` as an answer rather than as a field it
+    /// has to guess the absence of.
+    pub needs_event_scheduler: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<RejectedInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -360,6 +378,7 @@ mod tests {
             }],
             needs_script_engine: false,
             script_engine_causes: &[],
+            needs_event_scheduler: false,
             rejected: None,
             deploy: None,
             languages: None,
@@ -378,6 +397,7 @@ mod tests {
             }],
             needs_script_engine: false,
             script_engine_causes: &[],
+            needs_event_scheduler: false,
             rejected: Some(RejectedInfo {
                 spec: "W3C SCXML 5.8",
                 name: "untestable_doc".to_string(),
@@ -399,6 +419,7 @@ mod tests {
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
+            needs_event_scheduler: false,
             rejected: None,
             deploy: None,
             languages: Some(vec![
@@ -414,7 +435,7 @@ mod tests {
     #[test]
     fn schema_rejects_an_unknown_manifest_kind() {
         assert_invalid(
-            r#"{"v":1,"kind":"generate-w3c","generator":"x","artifacts":[],"needs_script_engine":false}"#,
+            r#"{"v":1,"kind":"generate-w3c","generator":"x","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false}"#,
             "kind outside ALL_MANIFEST_KINDS",
         );
     }
@@ -430,7 +451,7 @@ mod tests {
     #[test]
     fn schema_rejects_an_unknown_language_in_a_check_verdict() {
         assert_invalid(
-            r#"{"v":1,"kind":"check","generator":"x","artifacts":[],"needs_script_engine":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
+            r#"{"v":1,"kind":"check","generator":"x","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
             "language outside the backend set",
         );
     }
