@@ -96,12 +96,11 @@ pub enum ScxmlSemanticError {
         available: Vec<String>,
     },
 
-    /// A `<history>` element declares no default configuration.
-    /// §scxml-3.10.2 requires a single unconditional `<transition>`
-    /// child naming the configuration to enter when the parent has no
-    /// stored history — without it the pseudostate can never be
-    /// entered, so the declaration is unusable rather than merely
-    /// incomplete.
+    /// A `<history>` element declares no default configuration. The
+    /// spec requires a single unconditional `<transition>` child naming
+    /// the configuration to enter when the parent has no stored
+    /// history; without it the pseudostate can never be entered, so the
+    /// declaration is unusable rather than merely incomplete.
     ///
     /// The rule is a declaration rule, not a use rule: the child is
     /// required whether or not any transition names the pseudostate.
@@ -115,9 +114,9 @@ pub enum ScxmlSemanticError {
     HistoryDefaultTransitionMissing {
         /// The `<history>` element's id.
         history_id: String,
-        /// The compound state containing the `<history>`. §scxml-3.10.2
-        /// restricts the default configuration to this state's
-        /// descendants, so it scopes the legal targets.
+        /// The compound state containing the `<history>`. The default
+        /// configuration is restricted to this state's descendants, so
+        /// it scopes the legal targets.
         parent_id: String,
         /// `parent_id`'s children in document order — the legal
         /// default-configuration set the author picks from.
@@ -635,8 +634,8 @@ mod tests {
         use std::collections::BTreeSet;
 
         // §wire-W5 D2 inventory: 1 NEW + 4 REUSED = 5 leaves total.
-        // §scxml-3.10.2 `SemanticHistoryDefaultMissing` joined the
-        // inventory with the state-reference-resolution round.
+        // `SemanticHistoryDefaultMissing` joined the inventory with
+        // the state-reference-resolution round.
         let rust_to_cpp: &[(&str, &str)] = &[
             (
                 "validation/invalid-reference",

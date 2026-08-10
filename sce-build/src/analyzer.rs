@@ -759,8 +759,9 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
             },
         )));
     }
-    // §scxml-3.5 / §scxml-3.3 / §scxml-3.10.2 state-reference
-    // resolution. Hosted here rather than in `lib.rs::compile_model`'s
+    // State-reference resolution — the rules and their spec
+    // citations live in `crate::scxml_references`. Hosted here rather
+    // than in `lib.rs::compile_model`'s
     // validator chain because this function is the only gate both
     // pipelines share: the CLI re-implements parse → analyze →
     // generate and never enters that chain. See

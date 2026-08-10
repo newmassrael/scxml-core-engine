@@ -9,7 +9,7 @@
 // `<state>` / `<parallel>` / `<final>` / `<history>` declared in that
 // document. This pass rejects the ones that do not.
 //
-// Two diagnostic surfaces, both REUSED from the existing §wire-W5
+// Two diagnostic surfaces, both REUSED from the existing wire-code
 // inventory (no new wire code):
 //
 //   * `ScxmlSemanticError::TransitionTargetUnknown` — a transition
@@ -143,8 +143,8 @@ fn resolves(model: &SCXMLModel, id: &str) -> bool {
     model.states.contains_key(id) || model.history_states.contains_key(id)
 }
 
-/// Direct children of `parent_id` in document order — the §scxml-3.3
-/// legal set for that state's `initial`.
+/// Direct children of `parent_id` in document order — the legal set
+/// for that state's `initial` (the rule is cited at the call site).
 fn child_ids(model: &SCXMLModel, parent_id: &str) -> Vec<String> {
     let mut children: Vec<&crate::model::State> = model
         .states
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn history_pseudostate_is_a_legal_transition_target() {
-        // §scxml-3.10 — the history id is not in `states`, so a
+        // The history id is not in `states`, so a
         // validator that only consulted `states` would reject the
         // legal shape.
         let mut a = state("a", 0);
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn targetless_transition_is_not_a_reference() {
-        // §scxml-5.9.2 executable-only transitions carry no target.
+        // Executable-only transitions carry no target.
         let mut a = state("a", 0);
         a.transitions.push(transition_to(""));
         a.transitions.push(transition_to("   "));
@@ -311,8 +311,8 @@ mod tests {
 
     #[test]
     fn compound_initial_candidates_are_scoped_to_children() {
-        // §scxml-3.3 restricts the initial configuration to the
-        // owning state's descendants, so the repair candidates must
+        // The spec restricts the initial configuration to the owning
+        // state's descendants, so the repair candidates must
         // not offer unrelated top-level ids.
         let mut outer = state("outer", 0);
         outer.initial = "ghost".to_string();

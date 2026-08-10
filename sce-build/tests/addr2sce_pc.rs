@@ -3,9 +3,8 @@
 //
 // `addr2sce --pc` / `--hardfault` — program counter to SCXML coordinates.
 //
-// SCE Protocol-Synthesis RFC §synth-5-O (lines 3253-3278) fixes the
-// resolution contract as PC -> function symbol -> sourcemap -> SCXML
-// file:line + state path. The first hop is the ELF symbol table; the
+// The Protocol-Synthesis RFC fixes the resolution contract as
+// PC -> function symbol -> sourcemap -> SCXML file:line + state path. The first hop is the ELF symbol table; the
 // second is the sidecar `--symbol` already reads. Both modes previously
 // exited 2 with "not implemented".
 //

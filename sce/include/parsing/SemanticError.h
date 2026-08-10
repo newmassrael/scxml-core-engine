@@ -186,7 +186,7 @@ private:
     std::vector<std::string> available_;
 };
 
-// `<history>` element declares no default configuration. §scxml-3.10.2
+// `<history>` element declares no default configuration. The spec
 // requires a single unconditional `<transition>` child naming the
 // configuration to enter when the parent state has no stored history;
 // without it the pseudostate can never be entered, so the declaration
@@ -195,9 +195,9 @@ private:
 // `validation/missing-element` per W4 D4 (concept identity with forge
 // "required child element is absent" failures).
 //
-// `available` lists the containing state's children — §scxml-3.10.2
-// restricts the default configuration to that state's descendants, so
-// it is the legal set the author picks from.
+// `available` lists the containing state's children — the default
+// configuration is restricted to that state's descendants, so it is
+// the legal set the author picks from.
 class SemanticHistoryDefaultMissing : public SemanticError {
 public:
     SemanticHistoryDefaultMissing(std::string message, std::string history_id, std::string parent_id,
