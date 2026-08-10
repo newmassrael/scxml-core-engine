@@ -19,6 +19,10 @@
 //!   with forge `ValidationError::InvalidReference`)
 //! - [`ScxmlSemanticError::TransitionTargetUnknown`] →
 //!   `validation/invalid-reference` (REUSE)
+//! - [`ScxmlSemanticError::HistoryDefaultTransitionMissing`] →
+//!   `validation/missing-element` (REUSE — concept identity with forge
+//!   `ValidationError::MissingElement`: a required child element is
+//!   absent)
 //! - [`ScxmlSemanticError::NoStates`] →
 //!   `validation/empty-collection` (REUSE)
 //! - [`ScxmlSemanticError::TopLevelScriptUnloaded`] →
@@ -58,9 +62,10 @@ impl std::fmt::Display for InitialStateScope {
 ///
 /// Each variant maps to a stable wire `DiagnosticCode` via
 /// [`crate::forge::diagnostic::scxml_semantic_fields`]. The mapping
-/// is intentional — three of the four variants reuse forge
-/// `validation/*` codes per the §wire-W4 D4 fold precedent (concept
-/// identity over namespace duplication).
+/// is intentional — of the five variants that pair with a C++
+/// `Semantic<Variant>` leaf, four reuse forge `validation/*` codes per
+/// the §wire-W4 D4 fold precedent (concept identity over namespace
+/// duplication) and one introduces `scxml/top-level-script-unloaded`.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ScxmlSemanticError {
     /// `initial` attribute names a state that is not declared.
@@ -88,6 +93,34 @@ pub enum ScxmlSemanticError {
         /// Unresolved target id.
         target: String,
         /// All declared state ids — used for repair candidates.
+        available: Vec<String>,
+    },
+
+    /// A `<history>` element declares no default configuration.
+    /// §scxml-3.10.2 requires a single unconditional `<transition>`
+    /// child naming the configuration to enter when the parent has no
+    /// stored history — without it the pseudostate can never be
+    /// entered, so the declaration is unusable rather than merely
+    /// incomplete.
+    ///
+    /// The rule is a declaration rule, not a use rule: the child is
+    /// required whether or not any transition names the pseudostate.
+    ///
+    /// Mirrors C++ `SemanticHistoryDefaultMissing`.
+    #[error(
+        "History state '{history_id}' in state '{parent_id}' declares no \
+         default <transition> — W3C SCXML 3.10.2 requires one naming the \
+         configuration to enter when '{parent_id}' has no stored history"
+    )]
+    HistoryDefaultTransitionMissing {
+        /// The `<history>` element's id.
+        history_id: String,
+        /// The compound state containing the `<history>`. §scxml-3.10.2
+        /// restricts the default configuration to this state's
+        /// descendants, so it scopes the legal targets.
+        parent_id: String,
+        /// `parent_id`'s children in document order — the legal
+        /// default-configuration set the author picks from.
         available: Vec<String>,
     },
 
@@ -353,6 +386,43 @@ mod tests {
     }
 
     #[test]
+    fn history_default_transition_missing_emits_validation_missing_element() {
+        let err: ForgeError = ScxmlSemanticError::HistoryDefaultTransitionMissing {
+            history_id: "resume".into(),
+            parent_id: "session".into(),
+            available: vec!["opening".into(), "running".into()],
+        }
+        .into();
+        assert_eq!(single_code(&err), "validation/missing-element");
+    }
+
+    /// `validation/missing-element` carries `actual` and no `fix`:
+    /// SCE_ERROR_CONTRACT §3.1 declares no add-child-element fix
+    /// variant, and the catalog row (§5.1) records the code as
+    /// fix-free. The C++ counterpart `SemanticHistoryDefaultMissing`
+    /// makes the same choice — a `fix` on one side only would make two
+    /// producers disagree about a shared wire code.
+    #[test]
+    fn history_default_transition_missing_names_the_element_without_a_fix() {
+        use crate::forge::diagnostic::ToDiagnostics;
+
+        let err: ForgeError = ScxmlSemanticError::HistoryDefaultTransitionMissing {
+            history_id: "resume".into(),
+            parent_id: "session".into(),
+            available: vec!["opening".into()],
+        }
+        .into();
+        let diags = err.to_diagnostics();
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].actual.as_deref(), Some("resume"));
+        assert!(
+            diags[0].fix.is_none(),
+            "missing-element has no structured repair on the wire, got {:?}",
+            diags[0].fix
+        );
+    }
+
+    #[test]
     fn no_states_emits_validation_empty_collection() {
         let err: ForgeError = ScxmlSemanticError::NoStates.into();
         assert_eq!(single_code(&err), "validation/empty-collection");
@@ -404,6 +474,11 @@ mod tests {
                 target: "t".into(),
                 available: vec![],
             },
+            ScxmlSemanticError::HistoryDefaultTransitionMissing {
+                history_id: "h".into(),
+                parent_id: "p".into(),
+                available: vec![],
+            },
             ScxmlSemanticError::NoStates,
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
@@ -433,12 +508,52 @@ mod tests {
                 shadowed_index: 1,
             },
         ];
+        // The list above is not self-checking: a new variant reaches
+        // `ForgeError` through the blanket `From` impl, so omitting it
+        // here left this test green while claiming to cover "every
+        // variant". `variant_name`'s match is exhaustive, so a new
+        // variant reds the build until it is named there — and the
+        // distinct-name count below then reds until it is also added
+        // to the list. Both directions are load-bearing.
+        let named: std::collections::BTreeSet<&'static str> =
+            variants.iter().map(variant_name).collect();
+        assert_eq!(
+            named.len(),
+            VARIANT_COUNT,
+            "every ScxmlSemanticError variant must appear in the list \
+             above — missing: the arms of `variant_name` not present in \
+             {named:?}"
+        );
+
         for v in variants {
             let err: ForgeError = v.into();
-            // Just constructing the From conversion is the test —
-            // adding a new variant without a From impl fails to
-            // compile.
+            // Constructing the conversion and rendering the wire
+            // payload is the assertion — a variant with no
+            // `scxml_semantic_fields` arm panics here.
             let _ = err.to_diagnostics();
+        }
+    }
+
+    /// Number of arms in [`variant_name`]. Kept next to it so the two
+    /// move together.
+    const VARIANT_COUNT: usize = 10;
+
+    /// Exhaustive discriminant projection — the compile-time half of
+    /// `every_variant_routes_through_forge_error`'s coverage claim.
+    fn variant_name(v: &ScxmlSemanticError) -> &'static str {
+        match v {
+            ScxmlSemanticError::InitialStateUnknown { .. } => "InitialStateUnknown",
+            ScxmlSemanticError::TransitionTargetUnknown { .. } => "TransitionTargetUnknown",
+            ScxmlSemanticError::HistoryDefaultTransitionMissing { .. } => {
+                "HistoryDefaultTransitionMissing"
+            }
+            ScxmlSemanticError::NoStates => "NoStates",
+            ScxmlSemanticError::TopLevelScriptUnloaded { .. } => "TopLevelScriptUnloaded",
+            ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
+            ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",
+            ScxmlSemanticError::NonExhaustiveEventHandling { .. } => "NonExhaustiveEventHandling",
+            ScxmlSemanticError::AlwaysFalseGuard { .. } => "AlwaysFalseGuard",
+            ScxmlSemanticError::ShadowedTransition { .. } => "ShadowedTransition",
         }
     }
 
@@ -519,7 +634,9 @@ mod tests {
     fn cpp_scxml_semantic_subtypes_match_rust_diagnostic_codes() {
         use std::collections::BTreeSet;
 
-        // §wire-W5 D2 inventory: 1 NEW + 3 REUSED = 4 leaves total.
+        // §wire-W5 D2 inventory: 1 NEW + 4 REUSED = 5 leaves total.
+        // §scxml-3.10.2 `SemanticHistoryDefaultMissing` joined the
+        // inventory with the state-reference-resolution round.
         let rust_to_cpp: &[(&str, &str)] = &[
             (
                 "validation/invalid-reference",
@@ -529,6 +646,10 @@ mod tests {
                 "validation/invalid-reference",
                 "SemanticTransitionTargetUnknown",
             ),
+            (
+                "validation/missing-element",
+                "SemanticHistoryDefaultMissing",
+            ),
             ("validation/empty-collection", "SemanticNoStates"),
             (
                 "scxml/top-level-script-unloaded",
@@ -537,15 +658,15 @@ mod tests {
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            4,
-            "Expected 4 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 3 REUSED)"
+            5,
+            "Expected 5 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 4 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            4,
-            "Expected 4 distinct SemanticError subtypes"
+            5,
+            "Expected 5 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
@@ -607,13 +728,17 @@ mod tests {
                 "SemanticTransitionTargetUnknown",
                 "validation/invalid-reference",
             ),
+            (
+                "SemanticHistoryDefaultMissing",
+                "validation/missing-element",
+            ),
             ("SemanticNoStates", "validation/empty-collection"),
             (
                 "SemanticTopLevelScriptUnloaded",
                 "scxml/top-level-script-unloaded",
             ),
         ];
-        assert_eq!(class_to_code.len(), 4);
+        assert_eq!(class_to_code.len(), 5);
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
 

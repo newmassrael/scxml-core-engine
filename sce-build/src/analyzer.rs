@@ -695,6 +695,17 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 ///   (`validation/invalid-reference`). Hard semantic violation.
 ///   Mis-classified prior to the §wire-W5 split — corrected here.
 ///
+/// - **Any other state reference names nothing** (`<transition
+///   target>`, a compound `<state initial>`, an `<initial>` child, a
+///   `<history>` default configuration) →
+///   [`ScxmlSemanticError::TransitionTargetUnknown`] /
+///   [`ScxmlSemanticError::InitialStateUnknown`] via
+///   [`crate::scxml_references::validate`]
+///   (`validation/invalid-reference`). Hard semantic violation: the
+///   emitters lower a target to a `State` enum variant, so an id that
+///   names nothing produces target code the consumer's compiler
+///   rejects.
+///
 /// [`ForgeError`]: crate::forge::error::ForgeError
 /// [`ScxmlSemanticError::TopLevelScriptUnloaded`]: crate::scxml_semantic::ScxmlSemanticError::TopLevelScriptUnloaded
 /// [`ScxmlSemanticError::InitialStateUnknown`]: crate::scxml_semantic::ScxmlSemanticError::InitialStateUnknown
@@ -748,6 +759,13 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
             },
         )));
     }
+    // §scxml-3.5 / §scxml-3.3 / §scxml-3.10.2 state-reference
+    // resolution. Hosted here rather than in `lib.rs::compile_model`'s
+    // validator chain because this function is the only gate both
+    // pipelines share: the CLI re-implements parse → analyze →
+    // generate and never enters that chain. See
+    // `crate::scxml_references` for the placement argument.
+    crate::scxml_references::validate(model)?;
     Ok(())
 }
 

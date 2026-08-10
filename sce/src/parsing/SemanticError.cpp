@@ -83,6 +83,18 @@ nlohmann::ordered_json SemanticTransitionTargetUnknown::to_json() const {
     return out;
 }
 
+nlohmann::ordered_json SemanticHistoryDefaultMissing::to_json() const {
+    auto out = baseEnvelope();
+    // `validation/missing-element` carries `actual` (the offending
+    // element) and no `fix` on the Rust side: SCE_ERROR_CONTRACT §3.1
+    // has no add-child-element fix variant, so the legal default
+    // targets travel in `message` rather than as candidates. The C++
+    // envelope mirrors that — an extra `fix` here would make the two
+    // producers disagree on the same wire code.
+    out["actual"] = history_id_;
+    return out;
+}
+
 nlohmann::ordered_json SemanticNoStates::to_json() const {
     // `validation/empty-collection` carries no extra payload on the
     // Rust side either (only `key_fragments` for id derivation, no

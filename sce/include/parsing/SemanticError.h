@@ -26,27 +26,29 @@ namespace SCE::parsing {
 // `getDiagnostics()` while populating the legacy `getErrorMessages()`
 // string vector for Q4-B coexistence.
 //
-// Three of the four leaves REUSE existing `validation/*` wire codes
+// Four of the five leaves REUSE existing `validation/*` wire codes
 // per the W4 D4 fold precedent (concept identity over namespace
 // duplication): `SemanticInitialStateUnknown` and
 // `SemanticTransitionTargetUnknown` both map to
 // `validation/invalid-reference` — the same wire code forge
-// `ValidationError::InvalidReference` emits — and `SemanticNoStates`
-// maps to `validation/empty-collection`. Wire-level consumers
-// dispatching on `code()` receive the SAME branch for forge-document
+// `ValidationError::InvalidReference` emits — `SemanticNoStates`
+// maps to `validation/empty-collection`, and
+// `SemanticHistoryDefaultMissing` to `validation/missing-element`.
+// Wire-level consumers dispatching on `code()` receive the SAME
+// branch for forge-document
 // "name does not resolve" failures and SCXML-document
 // "name does not resolve" failures; the fold is honest at the wire
 // level. In-process C++ consumers can still distinguish the
 // SCXML-specific subtypes via `dynamic_cast` if needed for richer
 // payload access.
 //
-// The fourth leaf, `SemanticTopLevelScriptUnloaded`, carries a NEW
+// The fifth leaf, `SemanticTopLevelScriptUnloaded`, carries a NEW
 // wire code `scxml/top-level-script-unloaded` because §scxml-5.8
 // has no forge analog — the rejection rule is unique to SCXML's
-// document-loading semantics. §wire-W5 D2 documents the 1-NEW + 3-
+// document-loading semantics. §wire-W5 D2 documents the 1-NEW + 4-
 // REUSE breakdown.
 //
-// Stage = "validation" for ALL four leaves: SCXML semantic validation
+// Stage = "validation" for ALL five leaves: SCXML semantic validation
 // IS post-parse semantic validation, the same analytical stage as
 // forge `validation/*`. A separate `Stage::ScxmlSemantic` is
 // deliberately not added: routing by stage would split one analytical
@@ -181,6 +183,53 @@ public:
 private:
     std::string state_;
     std::string target_;
+    std::vector<std::string> available_;
+};
+
+// `<history>` element declares no default configuration. §scxml-3.10.2
+// requires a single unconditional `<transition>` child naming the
+// configuration to enter when the parent state has no stored history;
+// without it the pseudostate can never be entered, so the declaration
+// is unusable rather than merely incomplete. Mirrors Rust
+// `ScxmlSemanticError::HistoryDefaultTransitionMissing`. Folded onto
+// `validation/missing-element` per W4 D4 (concept identity with forge
+// "required child element is absent" failures).
+//
+// `available` lists the containing state's children — §scxml-3.10.2
+// restricts the default configuration to that state's descendants, so
+// it is the legal set the author picks from.
+class SemanticHistoryDefaultMissing : public SemanticError {
+public:
+    SemanticHistoryDefaultMissing(std::string message, std::string history_id, std::string parent_id,
+                                  std::vector<std::string> available)
+        : SemanticError(std::move(message)), history_id_(std::move(history_id)), parent_id_(std::move(parent_id)),
+          available_(std::move(available)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/missing-element";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticHistoryDefaultMissing>(*this);
+    }
+
+    const std::string &history_id() const noexcept {
+        return history_id_;
+    }
+
+    const std::string &parent_id() const noexcept {
+        return parent_id_;
+    }
+
+    const std::vector<std::string> &available() const noexcept {
+        return available_;
+    }
+
+private:
+    std::string history_id_;
+    std::string parent_id_;
     std::vector<std::string> available_;
 };
 

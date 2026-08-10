@@ -41,6 +41,58 @@ TEST_F(SCXMLParserBasicTest, ParseSimpleStateMachine) {
     EXPECT_EQ(model->getInitialState(), "start");
 }
 
+// W3C SCXML 3.10.2: a `<history>` carries a single unconditional
+// `<transition>` naming the default configuration. Without it the
+// pseudostate can never be entered — a transition targeting it has no
+// configuration to resolve to — so `validateModel` rejects the
+// document. Mirrors the Rust producer
+// (`ScxmlSemanticError::HistoryDefaultTransitionMissing`); the two
+// engines must agree on which documents are legal, and the cross-side
+// pairing is pinned by
+// `cpp_scxml_semantic_subtypes_match_rust_diagnostic_codes`.
+TEST_F(SCXMLParserBasicTest, RejectHistoryWithoutDefaultTransition) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="session">
+    <state id="session" initial="opening">
+        <state id="opening">
+            <transition event="away" target="parked"/>
+        </state>
+        <history id="resume" type="shallow"/>
+    </state>
+    <state id="parked">
+        <transition event="back" target="resume"/>
+    </state>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    EXPECT_EQ(model, nullptr);
+    EXPECT_TRUE(parser_->hasErrors());
+}
+
+// The accepting counterpart: the same document with the §3.10.2 default
+// transition present parses clean. Without this case a rule that
+// rejected every `<history>` would satisfy the negative test above.
+TEST_F(SCXMLParserBasicTest, AcceptHistoryWithDefaultTransition) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="session">
+    <state id="session" initial="opening">
+        <state id="opening">
+            <transition event="away" target="parked"/>
+        </state>
+        <history id="resume" type="shallow">
+            <transition target="opening"/>
+        </history>
+    </state>
+    <state id="parked">
+        <transition event="back" target="resume"/>
+    </state>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+    EXPECT_FALSE(parser_->hasErrors());
+}
+
 // Test parser error handling
 TEST_F(SCXMLParserBasicTest, ParseInvalidXML) {
     std::string invalidContent = R"(<?xml version="1.0" encoding="UTF-8"?>
