@@ -175,8 +175,8 @@ pub struct Manifest<'a> {
     /// host: `true` means `Engine::tick()`, `false` means `step()` is
     /// enough.
     ///
-    /// `tick()` is two mechanisms — it drains the §scxml-6.2
-    /// delayed-send scheduler and ticks invoked child sessions — and
+    /// `tick()` is two mechanisms — it drains the delayed-send scheduler
+    /// and ticks invoked child sessions — and
     /// `step()` performs neither. A machine that schedules a `<send
     /// delay>` / `<cancel>`, or that drives a session-bearing
     /// `<invoke>`, and is driven by `step()` alone therefore loses
