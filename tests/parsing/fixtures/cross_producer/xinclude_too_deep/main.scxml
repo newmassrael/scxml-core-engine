@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: an acyclic `<xi:include>` chain deeper than
+  MAX_XINCLUDE_DEPTH. key_fragments are (limit) — a property of the
+  expander, so both producers must agree on the bound as well as on
+  the code.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="f1.scxml"/>
+  <state id="s1"/>
+</scxml>

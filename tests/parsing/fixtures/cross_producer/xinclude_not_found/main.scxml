@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: `href` names a file no resolver step finds.
+  key_fragments are (href, searched-trail) on the Rust side, so this
+  fixture also pins that both producers render the same trail.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="ghost.scxml"/>
+  <state id="s1"/>
+</scxml>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: `<sce:use>` passes an attribute the target
+  template never declares. key_fragments are (template, param,
+  declared-list).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <sce:use template="t.scxml" bogus="1"/>
+  </state>
+</scxml>

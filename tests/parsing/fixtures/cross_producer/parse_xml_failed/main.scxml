@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the document is not well-formed XML.
+  Both producers report `xml/parse`, and neither declares a key
+  fragment for it — the only value either has is its own XML engine's
+  parse text, which is exactly what a shared id cannot be derived
+  from.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+</scxml>

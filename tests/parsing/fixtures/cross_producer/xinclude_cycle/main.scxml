@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the document includes itself, so the
+  canonicalised self path is already on the expansion stack.
+  key_fragments are (href, chain).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="main.scxml"/>
+  <state id="s1"/>
+</scxml>

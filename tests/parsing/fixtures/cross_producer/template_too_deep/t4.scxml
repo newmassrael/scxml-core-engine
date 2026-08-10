@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sce:template xmlns:sce="http://sce.dev/ext" xmlns="http://www.w3.org/2005/07/scxml">
+  <state id="d4">
+    <sce:use template="t5.scxml"/>
+  </state>
+</sce:template>
