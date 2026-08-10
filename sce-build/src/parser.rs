@@ -231,12 +231,17 @@ pub fn expand_preprocessors(
 ///
 /// [`expand_preprocessors`] consumes every `<xi:include>` and
 /// `<sce:use>` it is given, so one surviving into a parsed tree means
-/// the pass never ran. That is a caller-side mistake, but it used to be
-/// an invisible one: the kind parsers select children by tag name and
-/// have no else-branch, so the directive was skipped in silence and
-/// whatever it was carrying simply never arrived. A `lookup` with
-/// `sce:default` then answers for the missing key, which reads as a
-/// correct table from every side — compiler, generated code, runtime.
+/// the pass never ran. That is a caller-side mistake, and without this
+/// check an invisible one: both the statechart and forge parsers select
+/// children by tag name and have no else-branch, so the directive is
+/// skipped in silence and whatever it was carrying never arrives. A
+/// `lookup` with `sce:default` then answers for the missing key, which
+/// reads as a correct table from every side — compiler, generated code,
+/// runtime — and a statechart loses whole states just as quietly.
+///
+/// Held at both parse entries rather than at one: the file-based entries
+/// expand for their callers, so only the in-memory ones can arrive in
+/// this state, and they exist on both pipelines.
 ///
 /// This is deliberately not an XSD rule. `<sce:use>` is a declared
 /// element and the elements admitting it are `xs:any
@@ -818,6 +823,15 @@ impl SCXMLParser {
                 None,
             ));
         }
+
+        // The same precondition the forge parse entry holds: a document
+        // reaching model construction has been through expansion.
+        // `parse_file` runs the expander itself, so only the in-memory
+        // entries can arrive unexpanded — and `parse_states` selects
+        // children by tag name, so a surviving directive is skipped and
+        // the states it was carrying are absent from a model that
+        // reports no error.
+        reject_unexpanded_directives(&root, diag_label)?;
 
         // §scxml-3.6: Get initial attribute
         let mut initial = root.attribute("initial").unwrap_or("").to_string();

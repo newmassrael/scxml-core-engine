@@ -955,7 +955,7 @@ pub struct LoadedForgeSource {
 /// `--emit-ast`) use this and keep their parse; callers that just want
 /// code use [`compile_forge_file`].
 ///
-/// Skipping this is no longer silent regardless:
+/// Skipping this step is not silent:
 /// [`parser::reject_unexpanded_directives`] refuses a document that
 /// still carries a directive.
 pub fn load_forge_source(
@@ -1850,6 +1850,18 @@ pub struct ForgeCompileOptions {
     /// matching the RFC's "default 1M" wording. The CLI surfaces this
     /// as `--const-fold-budget=N` on the `generate` subcommand.
     pub const_fold_budget: Option<u64>,
+    /// Extra directories searched, in declaration order, when resolving
+    /// `<xi:include href="...">` and `<sce:use template="...">` by name.
+    ///
+    /// Same search path the `expand` / `generate` / `check` subcommands
+    /// expose as `--include-dir`. It lives here rather than as a
+    /// parameter because it has to reach the preprocessor pass inside
+    /// [`compile_scxml_with_imports`], which resolves documents from
+    /// paths and so owns the read step its callers cannot reach.
+    ///
+    /// Empty (the default) resolves fragments relative to the including
+    /// document only.
+    pub include_dirs: Vec<PathBuf>,
     /// RFC §synth-5-E C5 cache-maintenance platform info. Populated by
     /// [`compile_forge_with_deploy`] from the resolved
     /// [`mesh::deploy::PlatformConfig`]; left `None` by deploy-unaware
@@ -2337,17 +2349,23 @@ pub fn compile_scxml_with_imports(
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
-        let content = std::fs::read_to_string(forge_path).map_err(|e| {
-            Located::new(
-                forge::error::GenerateError::InvalidConfig(format!(
-                    "compile_scxml_with_imports: cannot read {path_str}: {e}"
-                ))
-                .into(),
-                path_str,
-                None,
-                None,
-            )
-        })?;
+        // Read + expand. This function resolves its documents from paths,
+        // so it owns the preprocessor step its callers cannot reach — the
+        // statechart half already does, via `compile_model`.
+        let content = load_forge_source(forge_path, &options.include_dirs)
+            .map_err(|e| {
+                Located::new(
+                    forge::error::GenerateError::InvalidConfig(format!(
+                        "compile_scxml_with_imports: cannot read {path_str}: {}",
+                        e.error
+                    ))
+                    .into(),
+                    path_str,
+                    None,
+                    None,
+                )
+            })?
+            .text;
         let stem = forge_path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -2940,17 +2958,23 @@ pub fn compile_scxml_with_imports(
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
-        let content = std::fs::read_to_string(forge_path).map_err(|e| {
-            Located::new(
-                forge::error::GenerateError::InvalidConfig(format!(
-                    "compile_scxml_with_imports: cannot read {path_str}: {e}"
-                ))
-                .into(),
-                path_str,
-                None,
-                None,
-            )
-        })?;
+        // Read + expand. This function resolves its documents from paths,
+        // so it owns the preprocessor step its callers cannot reach — the
+        // statechart half already does, via `compile_model`.
+        let content = load_forge_source(forge_path, &options.include_dirs)
+            .map_err(|e| {
+                Located::new(
+                    forge::error::GenerateError::InvalidConfig(format!(
+                        "compile_scxml_with_imports: cannot read {path_str}: {}",
+                        e.error
+                    ))
+                    .into(),
+                    path_str,
+                    None,
+                    None,
+                )
+            })?
+            .text;
         let stem = forge_path
             .file_stem()
             .and_then(|s| s.to_str())
