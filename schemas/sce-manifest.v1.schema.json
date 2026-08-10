@@ -26,9 +26,9 @@
       "enum": ["generate", "check", "orchestrate"]
     },
     "generator": {
-      "description": "Commit of the sce-codegen build that produced this record, or \"unknown\" when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing on its own.",
+      "description": "Commit of the sce-codegen build that produced this record, or \"unknown\" when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing on its own, so the pattern excludes it: a required stamp whose shape is unconstrained is discharged by a value that names nothing. Same field, same pattern, on every surface a consumer reads without a second invocation (SCE_WIRE_CONTRACTS.md policy 2).",
       "type": "string",
-      "minLength": 1
+      "pattern": "^([0-9a-f]{7,40}|unknown)$"
     },
     "artifacts": {
       "description": "Every file written during the run, in emission order. Entries are objects rather than bare strings so the shape can grow additively (size, hash, artifact_kind) without a v-bump. Always empty for kind=\"check\", which is that subcommand's whole contract: it reaches the same verdict as generate while writing nothing.",

@@ -232,6 +232,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/forge_ast_export.rs",
     ),
     (
+        "apis/forge-ast.v1.schema.json",
+        "ast_schema_rejects_a_generator_that_names_no_commit",
+        "sce-build/tests/forge_ast_export.rs",
+    ),
+    (
         "schemas/sce-sourcemap.v1.schema.json",
         "sourcemap_schema_rejects_a_missing_required_field",
         "sce-build/tests/committed_sourcemap_drift.rs",
@@ -247,6 +252,122 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/sourcemap_addr2sce.rs",
     ),
 ];
+
+/// The field a surface carries the producing commit in.
+///
+/// One name across surfaces is part of the contract: a consumer that
+/// reads two surfaces from one run should not need a per-surface key
+/// to answer the same question.
+const ATTRIBUTION_FIELD: &str = "generator";
+
+/// Commit-shaped, or the `unknown` a build with no git checkout reads.
+///
+/// The required-key check alone is satisfied by any string. A stamp
+/// whose shape is unconstrained can hold a value that names nothing
+/// and still pass — which is exactly how this surface failed: it
+/// carried `CARGO_PKG_VERSION`, the crate version the manifest
+/// schema's own `generator` description calls out as identifying
+/// "nothing on its own" because it is frozen pre-1.0.
+const ATTRIBUTION_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
+
+/// Surfaces that deliberately do not carry the stamp, with the reason.
+///
+/// An exemption is a claim, so it is registered rather than assumed,
+/// and the test below checks it in both directions: an exempt surface
+/// must NOT carry the field (otherwise this list is stale), and the
+/// registry must state the reason where consumers read it.
+const ATTRIBUTION_EXEMPT: &[(&str, &str)] = &[(
+    "schemas/sce-sourcemap.v1.schema.json",
+    "committed artifact: a commit stamp would be invalidated by the \
+     very commit that writes it, so every commit touching any tree \
+     would have to regenerate every sidecar. source_hash / \
+     template_hash identify the inputs instead, and a consumer needing \
+     the emitting commit reads it from the manifest of the run that \
+     produced the sidecar, or from a lookup record naming it.",
+)];
+
+/// Lower bound on surfaces that must actually be checked for a stamp.
+/// Without it, an exemption list that grew to cover everything would
+/// leave this test asserting nothing while still passing.
+const MIN_ATTRIBUTED_SURFACES: usize = 4;
+
+/// Every JSON surface names the commit that produced it.
+///
+/// Registry policy 1 makes pinning a specific SCE commit the
+/// consumer's obligation while a surface is `pre-release`, and rules
+/// out relying on "a version number alone"; policy 2 answers that
+/// obligation from the payload side. Nothing enforced either.
+///
+/// The three checks that did exist — status header, instance
+/// validation, negative validation — all stayed green on a surface
+/// whose stamp was optional and held a crate version, because none of
+/// them looks at attribution. The failure path is where it costs: a
+/// rejected run writes no manifest at all, so a payload that cannot
+/// name its producer cannot be attributed by a second invocation
+/// either.
+#[test]
+fn every_json_surface_names_the_commit_that_produced_it() {
+    let registry = read("SCE_WIRE_CONTRACTS.md");
+    let mut attributed = 0usize;
+
+    for rel in JSON_SURFACES {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&read(rel)).unwrap_or_else(|e| panic!("{rel} invalid JSON: {e}"));
+        let field = parsed
+            .get("properties")
+            .and_then(|p| p.get(ATTRIBUTION_FIELD));
+
+        if let Some((_, reason)) = ATTRIBUTION_EXEMPT.iter().find(|(s, _)| s == rel) {
+            assert!(
+                field.is_none(),
+                "{rel} is registered as exempt from the `{ATTRIBUTION_FIELD}` \
+                 stamp but declares it. Drop the exemption from \
+                 ATTRIBUTION_EXEMPT and from SCE_WIRE_CONTRACTS.md, or drop \
+                 the field. Reason on record: {reason}",
+            );
+            assert!(
+                registry.contains("sourcemap sidecar deliberately does"),
+                "SCE_WIRE_CONTRACTS.md must state why {rel} carries no \
+                 `{ATTRIBUTION_FIELD}` — an exemption a consumer cannot read \
+                 is indistinguishable from an oversight.",
+            );
+            continue;
+        }
+
+        let required: Vec<&str> = parsed
+            .get("required")
+            .and_then(|r| r.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        assert!(
+            required.contains(&ATTRIBUTION_FIELD),
+            "{rel} must require `{ATTRIBUTION_FIELD}`. Registry policy 1 \
+             tells consumers to pin a specific SCE commit while a surface \
+             is pre-release and rules out relying on a version number \
+             alone; a stamp a producer MAY omit cannot discharge that. \
+             Either add it, or register an exemption with its reason in \
+             ATTRIBUTION_EXEMPT and SCE_WIRE_CONTRACTS.md.",
+        );
+        assert_eq!(
+            field
+                .and_then(|f| f.get("pattern"))
+                .and_then(|p| p.as_str()),
+            Some(ATTRIBUTION_PATTERN),
+            "{rel}: `{ATTRIBUTION_FIELD}` must constrain its shape to \
+             {ATTRIBUTION_PATTERN:?}. A required string with no pattern is \
+             satisfied by a value that identifies nothing.",
+        );
+        attributed += 1;
+    }
+
+    assert!(
+        attributed >= MIN_ATTRIBUTED_SURFACES,
+        "only {attributed} surface(s) were checked for a producer stamp, \
+         below the {MIN_ATTRIBUTED_SURFACES} on record. Either the surface \
+         list stopped being read or the exemption list swallowed it — \
+         both leave this guard certifying nothing.",
+    );
+}
 
 /// Every JSON surface can be shown refusing something, and every test
 /// the negative table names still exists where it says it does.
