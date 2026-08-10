@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: `<history>` declares no default
+  `<transition>`. key_fragments are (parent, "history-default-
+  transition", history id).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="p">
+  <state id="p" initial="c1">
+    <state id="c1"/>
+    <history id="h"/>
+  </state>
+</scxml>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the fragment resolves but is not well-formed
+  XML. key_fragments are (href, detail) — and `detail` is each XML
+  engine's own parse message, which is why this fixture is the one
+  that answers whether the two producers can agree on this code at
+  all.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="broken.xml"/>
+  <state id="s1"/>
+</scxml>

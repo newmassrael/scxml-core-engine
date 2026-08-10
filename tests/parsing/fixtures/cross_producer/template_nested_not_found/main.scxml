@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the failure happens one level down — t1
+  exists and references a template that does not. Both producers must
+  re-attribute it to the `<sce:use>` the operator can see (t1.scxml),
+  not to the transitive reference inside it; the template name is a
+  key fragment, so a producer that skips the re-attribution disagrees
+  on the id for every nested failure.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <sce:use template="t1.scxml"/>
+  </state>
+</scxml>

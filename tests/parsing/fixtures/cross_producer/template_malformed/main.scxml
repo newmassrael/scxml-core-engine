@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the referenced file exists but its root is
+  not `<sce:template>`. key_fragments are (template, detail).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <sce:use template="plain.scxml"/>
+  </state>
+</scxml>

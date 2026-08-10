@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: an acyclic `<sce:use>` chain deeper than
+  MAX_TEMPLATE_DEPTH. key_fragments are (limit).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <sce:use template="t1.scxml"/>
+  </state>
+</scxml>

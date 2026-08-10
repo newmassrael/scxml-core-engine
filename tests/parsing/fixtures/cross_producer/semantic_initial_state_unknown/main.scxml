@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the document root's `initial` names a state
+  that is not declared. key_fragments are (scope, "initial-state", id)
+  — the scope string is what keeps a root-level and a compound-level
+  miss of the same id distinct.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="nosuch">
+  <state id="s1"/>
+</scxml>

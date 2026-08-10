@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="p1">
+  <state id="p1"/>
+</scxml>

@@ -117,6 +117,49 @@ apply_sce_test_policies(diagnostic_test)
 
 add_test(NAME DiagnosticTests COMMAND diagnostic_test)
 
+# Cross-producer diagnostic-`id` parity.
+#
+# `id` is the dedup key (SCE_ERROR_CONTRACT.md §2.1) and this tree has
+# two producers for it — the Rust `sce-codegen` CLI and the C++ runtime
+# parser. The suite runs both over one fixture document and compares
+# what they emit, so the "second independent conformer" claim in
+# `parsing/Diagnostic.h` is answerable by a run rather than by prose.
+#
+# Spawns `sce-codegen` via popen, so it is excluded on WASM for the
+# same reason `w3c_template_parity` is.
+if(NOT EMSCRIPTEN)
+    add_executable(cross_producer_diagnostic_id_test
+        CrossProducerDiagnosticId_test.cpp
+    )
+
+    target_link_libraries(cross_producer_diagnostic_id_test
+        PRIVATE
+            sce_runtime
+            sce_core
+            GTest::GTest
+            GTest::Main
+            pthread
+    )
+
+    target_compile_features(cross_producer_diagnostic_id_test PRIVATE cxx_std_17)
+
+    # The header directory, so the suite can DERIVE which diagnostic
+    # leaves exist instead of restating them: a leaf added without a
+    # fixture is then red, which is the order the contract wants.
+    target_compile_definitions(cross_producer_diagnostic_id_test
+        PRIVATE
+            SCE_PARSING_HEADER_DIR="${CMAKE_SOURCE_DIR}/sce/include/parsing"
+    )
+
+    apply_sce_test_policies(cross_producer_diagnostic_id_test)
+
+    add_test(NAME CrossProducerDiagnosticIdTests COMMAND cross_producer_diagnostic_id_test)
+    set_tests_properties(CrossProducerDiagnosticIdTests PROPERTIES
+        ENVIRONMENT
+            "SCE_CODEGEN_BIN=${SCE_CODEGEN};SCE_CROSS_PRODUCER_FIXTURES_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cross_producer"
+    )
+endif()
+
 # Regression test for `PugiXMLElement::serializeChildContent` xmlns
 # propagation. Pins the W3C Test_338 / Test_347 / Test_530 interpreter
 # failure surfaced when `a46d2c27` flipped `isScxmlNamespace` strict.

@@ -8004,8 +8004,9 @@ if(NOT EMSCRIPTEN)
     add_subdirectory(w3c_template_parity)
 endif()
 
-# PositionMap unit-test family. Runs everywhere
-# (no subprocess dependency).
+# Parsing unit-test family (PositionMap, expanders, the diagnostic
+# wire surface). Runs everywhere except the cross-producer parity
+# suite, which spawns `sce-codegen` and guards itself on EMSCRIPTEN.
 add_subdirectory(parsing)
 
 # Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: an unsupported `parse` mode that is NOT
+  "text". The rejected feature is a key fragment, and the producer that
+  renders a fixed `parse="text"` regardless of what the author wrote
+  disagrees with the one that reads the attribute — on the message and
+  on the id — for every mode but the one the literal names. The
+  `parse="text"` fixture alone cannot see that.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="fragment.scxml" parse="html"/>
+  <state id="s1"/>
+</scxml>

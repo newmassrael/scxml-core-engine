@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: `<xi:include>` with no `href`.
+  Rust XIncludeError::MissingHref / C++ XIncludeMissingHref, both
+  `xml/xinclude-missing-href`. The Rust variant is a unit variant, so
+  its key_fragments are empty — the fixture that proves the C++ side
+  writes no fragment either, separator included.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include/>
+  <state id="s1"/>
+</scxml>
