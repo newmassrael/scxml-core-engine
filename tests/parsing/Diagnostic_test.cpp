@@ -1347,13 +1347,11 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     // `SemanticTopLevelScriptUnloaded`. This is the C++-side trigger
     // for the 1 NEW wire code §wire-W5 introduces.
     //
-    // Note: empty `<script/>` does NOT trigger the throw on C++ —
-    // `ActionParser` returns a ScriptAction with empty content (the
-    // C++ side doesn't enforce W3C §5.8's "empty script rejected"
-    // rule at parse time; that path is Rust-only via
-    // `analyzer::can_generate_static`'s `document_rejected` branch).
-    // C++ behaviour mirrors the typed surface for the file-load
-    // failure case which IS pinned here.
+    // The file-load failure case. The other two shapes §5.8 rejects
+    // are pinned by `TopLevelScriptMustSpecifyExactlyOneOfSrcOrBody`
+    // below; this note used to say the C++ side did not enforce them
+    // and that the rule was "Rust-only", which was true and stayed
+    // true for as long as the sentence sat here unchallenged.
     constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                                          "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
                                          "       version=\"1.0\""
@@ -1385,6 +1383,61 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     EXPECT_EQ(*typed->index(), 1u);
     ASSERT_TRUE(typed->src().has_value());
     EXPECT_EQ(*typed->src(), "/this/path/should/not/exist/missing.js");
+}
+
+// W3C SCXML §5.8: "A conformant SCXML document MUST specify either the
+// 'src' attribute or child content, but not both."
+//
+// Both halves reject the document, and neither was enforced here. The
+// leaf `SemanticTopLevelScriptUnloaded` has documented case (a) —
+// "empty content AND empty `src`" — since it landed, and the note in
+// the test above recorded the omission as a fact about the C++ side
+// rather than as something to fix. Meanwhile the Rust producer
+// rejected both shapes, so the two engines disagreed on whether a
+// document was acceptable at all — a wider disagreement than the id
+// mismatch the cross-producer harness was built for, and one that
+// harness cannot see: Rust reports this rejection in its stdout
+// manifest (`rejected`), not as a diagnostic.
+TEST(SCXMLParserBoundary, TopLevelScriptMustSpecifyExactlyOneOfSrcOrBody) {
+    auto parse = [](const char *doc) {
+        SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
+        auto model = parser.parseContent(doc);
+        struct Outcome {
+            bool accepted;
+            std::string code;
+        };
+        return Outcome{model != nullptr, parser.getDiagnostics().empty()
+                                             ? std::string{}
+                                             : std::string{parser.getDiagnostics().front()->code()}};
+    };
+    constexpr const char *kHead = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                  "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\""
+                                  "       initial=\"s1\" name=\"w5_script_cardinality\">";
+    constexpr const char *kTail = "  <state id=\"s1\"/></scxml>";
+
+    // Neither: an empty `<script/>` names no script at all.
+    const auto neither = parse((std::string{kHead} + "<script/>" + kTail).c_str());
+    EXPECT_FALSE(neither.accepted);
+    EXPECT_EQ(neither.code, "scxml/top-level-script-unloaded");
+
+    // Both: `src` and a body, where a reader has to guess which wins.
+    //
+    // `parseContent` has no base directory, so the `src` never resolves
+    // and the load-failure path would reject this document on its own —
+    // a first draft of this case named a nonexistent file and passed
+    // with the cardinality check disabled, proving nothing. The
+    // assertion below is on the payload instead: the load-failure path
+    // reports the src it failed to read, the cardinality path reports
+    // the element that declares two sources at once.
+    const auto both = parse((std::string{kHead} + "<script src=\"a.js\">var x = 1;</script>" + kTail).c_str());
+    EXPECT_FALSE(both.accepted);
+    EXPECT_EQ(both.code, "scxml/top-level-script-unloaded");
+
+    // Exactly one: the conformant shape stays accepted, so the rule
+    // rejects the two documents the spec names and not a third.
+    const auto body = parse((std::string{kHead} + "<script>var x = 1;</script>" + kTail).c_str());
+    EXPECT_TRUE(body.accepted);
+    EXPECT_TRUE(body.code.empty());
 }
 
 // ── generator stamp resolution ──────────────────────────────────────

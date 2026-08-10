@@ -1639,8 +1639,14 @@ fn typed_guard_loose_equality_is_rejected() {
     // makes the strictness affordable.
     assert_eq!(diag["fix"]["kind"], "replace_with");
     assert_eq!(diag["fix"]["to"], "===");
-    // Anchored on the offending transition, not the document.
-    assert_eq!(diag["location"]["file"], "m.scxml");
+    // Anchored on the offending transition, and naming the document the
+    // way the caller named it: `location.file` carries the path passed
+    // to the CLI, not its basename, so a consumer can open it and the
+    // `id` hash agrees with the other producer's
+    // (SCE_ERROR_CONTRACT.md §2.2). Compared against the fixture path
+    // rather than a literal, so the assertion states the contract
+    // instead of restating one machine's spelling.
+    assert_eq!(diag["location"]["file"], scxml.display().to_string());
 }
 
 /// An `_event.data.<field>` that the schema does not declare is a
