@@ -1651,6 +1651,28 @@ impl SCXMLModel {
     pub fn has_mesh_rpc_invoke(&self) -> bool {
         self.states.values().any(|s| s.has_mesh_rpc_invoke())
     }
+    /// True iff a host must drive this machine with the runtime's
+    /// `tick()` rather than `step()`.
+    ///
+    /// `tick()` carries two mechanisms `step()` does not: it drains the
+    /// §scxml-6.2 delayed-send scheduler, and it ticks invoked child
+    /// sessions. Either one alone makes it mandatory, which is why this
+    /// is a union rather than the scheduler flag on its own — a parent
+    /// that schedules nothing still reaches its child's queue only
+    /// through `tick_children`.
+    ///
+    /// The two terms are the same conditions codegen already gates on:
+    /// the analyzer sets [`Self::needs_event_scheduler`] from `<send
+    /// delay>` / `<cancel>`, and the emitted policy declares
+    /// `HAS_CHILD_TICK` for session-bearing invokes (`scxml` / `hybrid`
+    /// — a mesh-rpc or unsupported-type invoke has no child engine to
+    /// tick). Stated once here so the manifest's answer and the emitted
+    /// code cannot disagree about which entry point the machine needs.
+    pub fn needs_event_scheduler_driving(&self) -> bool {
+        self.needs_event_scheduler.unwrap_or(false)
+            || self.has_scxml_invoke()
+            || self.has_hybrid_invoke()
+    }
     /// True iff any state in the model declares an [`Invoke::Unsupported`]
     /// (§scxml-6.4.1 unsupported `type`). Drives the analyzer's
     /// `error.execution` event registration so `Event::Error_execution`

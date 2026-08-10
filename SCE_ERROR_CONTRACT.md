@@ -446,6 +446,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
     {"path": "/abs/path/foo_sm.rs"}
   ],
   "needs_script_engine": true,
+  "needs_event_scheduler": true,
   "script_engine_causes": [
     {"kind": "transition-guard", "state": "idle",
      "location": {"file": "m.scxml", "line": 7, "col": 5}},
@@ -466,6 +467,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 | `generator` | string | Commit of the `sce-codegen` build that produced these artifacts, or `"unknown"` when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing, so this is the field to record when attributing a committed artifact to a generator — reading it here costs no extra invocation and replaces a hand-maintained version sidecar. Identifies the committed state the generator was built from; uncommitted edits to the generator are not reflected (the §6.2.6 hashes cover the inputs, not the binary). Also available as `sce-codegen --version`. |
 | `artifacts` | array of `{path}` objects | Absolute path of every file written during the run, in emission order. Entries are objects (not bare strings) so the schema can grow additively — future fields (`size`, `hash`, `artifact_kind`) must extend the object without a `v` bump. |
 | `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |
+| `needs_event_scheduler` | bool | Which driving entry point the machine requires of its host: `true` means the runtime's `tick()`, `false` means `step()` is enough. `tick()` drains the [§6.2](#) delayed-send scheduler **and** ticks invoked child sessions; `step()` does neither. A machine carrying a `<send delay>` / `<cancel>`, or a session-bearing `<invoke>`, driven by `step()` alone loses those events with no error and no diagnostic — the symptom is events that never arrive, which is why the answer is published rather than left to be read off the runtime's source. Always present, so `false` is an answer rather than an absent field. |
 | `script_engine_causes` | optional array of objects | **Why** `needs_script_engine` is `true` — one record per construct that forced the engine in. Present exactly when the flag is `true`; omitted (not `[]`) otherwise, so a pure-static manifest carries no new bytes. See [§10.4](#104-script-engine-causes). |
 | `rejected` | optional object | Present only when the input triggered a W3C-spec rejection (currently `W3C SCXML 5.8`, "untestable manifest") and stub files were written in place of generated code. Absence means clean generation. Fields: `spec` (e.g. `"W3C SCXML 5.8"`) and `name` (the document's `name` attribute). |
 | `deploy` | optional object | Declarations read out of `--deploy` that SCE records without acting on. Omitted whole when the run had no deploy or the deploy declared none of them, so a deploy-unaware manifest carries no new bytes. See [§10.5](#105-deploy-declarations). |

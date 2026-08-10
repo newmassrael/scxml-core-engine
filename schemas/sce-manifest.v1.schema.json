@@ -5,7 +5,14 @@
   "title": "SCE stdout manifest (wire schema v1)",
   "description": "The single JSON line sce-codegen writes to stdout on success. One record per invocation, never pretty-printed, terminated by a single newline. Emitted only when the process exit code is 0 — on failure stdout is empty and the NDJSON diagnostic on stderr is the sole signal. The `kind` field names the subcommand that produced the record so a consumer branches before reading subcommand-specific fields. Authoritative producer is sce-build/src/manifest.rs; the prose contract is SCE_ERROR_CONTRACT.md §10. Consumers MUST ignore unknown fields: any purely additive change is compatible with v1 and does NOT bump `v`. The stability status of this surface lives in this header alone, not in the payload — see SCE_WIRE_CONTRACTS.md for the shared deprecation policy across SCE wire surfaces.",
   "type": "object",
-  "required": ["v", "kind", "generator", "artifacts", "needs_script_engine"],
+  "required": [
+    "v",
+    "kind",
+    "generator",
+    "artifacts",
+    "needs_script_engine",
+    "needs_event_scheduler"
+  ],
   "additionalProperties": false,
   "properties": {
     "v": {
@@ -30,6 +37,10 @@
     },
     "needs_script_engine": {
       "description": "Whether the compiled machine embeds ECMAScript requiring a runtime script engine.",
+      "type": "boolean"
+    },
+    "needs_event_scheduler": {
+      "description": "Which driving entry point the emitted machine requires of its host: true means the runtime's tick(), false means step() is enough. tick() drains the delayed-send scheduler and ticks invoked child sessions; step() does neither, so a machine with a <send delay> / <cancel> or a session-bearing <invoke> that is driven by step() alone loses those events with no error and no diagnostic. Always present, so false is an answer rather than an absent field.",
       "type": "boolean"
     },
     "script_engine_causes": {
