@@ -2,13 +2,25 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Example SCXML codegen smoke.
+# Example SCXML codegen smoke + authored-document lint.
 #
 # The emscripten-backed doom_wasm / visualizer builds are too heavy for a
 # push-time gate, but codegen failures (the kind that broke the
 # `urn:sce:extensions` -> `http://sce.dev/ext` namespace migration) surface
 # well before link time. Run sce-codegen over each example SCXML in a
 # scratch output dir and fail if any produce no artifacts.
+#
+# The second sweep runs `check --lint` over every document this repository
+# AUTHORS. The statechart lints are off by default because the W3C corpus
+# declares unreachable states on purpose (a fixture proving `initial` is
+# respected has states no event can enter), so a lint that rejected them
+# would be wrong about conformance fixtures. Documents we write ourselves
+# carry no such excuse, and until this sweep existed nothing in the repo
+# turned `--lint` on at all — the flag shipped and no caller used it.
+#
+# Measured when it was added: three of the doom examples had a compound
+# state whose children disagreed about an event, each an intentional gap now
+# annotated `sce:exhaustive="false"` with the reason beside it.
 #
 # No CI counterpart, which is why the registry carries an explicit local
 # trigger with the reason next to it rather than leaving the gate silently
@@ -32,3 +44,24 @@ for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.s
     fi
 done
 (( failures == 0 )) || sce_gate_fail "$failures example(s) failed codegen"
+
+# Authored documents must be lint-clean. `check` runs the whole pipeline and
+# discards the result, so this costs a parse and no disk.
+lint_failures=0
+lint_checked=0
+while IFS= read -r scxml; do
+    [[ -f "$scxml" ]] || continue
+    lint_checked=$((lint_checked + 1))
+    if ! "$CODEGEN" check "$scxml" --language rust --lint >/dev/null 2>&1; then
+        printf '  LINT: %s\n' "$scxml" >&2
+        "$CODEGEN" check "$scxml" --language rust --lint 2>&1 | sed 's/^/        /' >&2
+        lint_failures=$((lint_failures + 1))
+    fi
+done < <(git ls-files 'examples/*.scxml' 'integration_resources/*/*.scxml')
+
+# A discovery bug that swept nothing would otherwise read as a pass. The
+# corpus was 26 documents when this bound was set.
+if (( lint_checked < 20 )); then
+    sce_gate_fail "lint swept only $lint_checked authored document(s); expected at least 20"
+fi
+(( lint_failures == 0 )) || sce_gate_fail "$lint_failures authored document(s) failed --lint"

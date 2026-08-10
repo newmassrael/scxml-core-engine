@@ -45,7 +45,13 @@
     </state>
 
     <!-- Aim assist enabled - compound state with sub-states -->
-    <state id="enabled" initial="idle">
+    <!-- sce:exhaustive="false": `no_target` means "the search finished with
+         nothing found", so only `searching` can receive it. `idle` and
+         `locked` are not searching, and a fallthrough here would swallow a
+         `no_target` that arrived out of order instead of leaving it
+         unhandled, which is the honest outcome for an event this compound
+         never expects outside a search. -->
+    <state id="enabled" initial="idle" sce:exhaustive="false">
         <onentry>
             <script><cpp>aim.onEnabled()</cpp></script>
         </onentry>
