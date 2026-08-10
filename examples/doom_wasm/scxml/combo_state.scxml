@@ -47,7 +47,11 @@
     </state>
 
     <!-- Compound state: active combo (W3C SCXML 3.4) -->
-    <state id="active" initial="normal">
+    <!-- sce:exhaustive="false": `berserk_activate` fires when the combo
+         reaches 5 kills, which can only happen while in `normal`. `berserk`
+         is already berserk, so it has nothing to do with the event and
+         handling it would assert an entry the game never sends. -->
+    <state id="active" initial="normal" sce:exhaustive="false">
 
         <!-- Normal combo: kills 1-4 -->
         <state id="normal">
