@@ -454,6 +454,39 @@ fn registry_names_every_instance_validation_test() {
     }
 }
 
+/// Every surface file points back at the registry.
+///
+/// The reverse of `registry_lists_every_surface`, and the direction a
+/// consumer actually travels: they hold one schema file, read
+/// `x-sce-schema-status: pre-release` on it, and need somewhere to
+/// learn what that obliges them to do. §8.1 tells them to pin a
+/// commit — a sentence that lives in the registry, not in the schema.
+///
+/// Six of the seven surfaces carried the pointer and the diagnostic
+/// schema, the most-read one, did not. A convention six files follow
+/// is not a contract; nothing was going to notice the seventh.
+#[test]
+fn every_surface_points_at_the_registry() {
+    const REGISTRY: &str = "SCE_WIRE_CONTRACTS.md";
+    let mut checked = 0usize;
+    for rel in JSON_SURFACES.iter().chain(XSD_SURFACES.iter()) {
+        checked += 1;
+        let body = read(rel);
+        assert!(
+            body.contains(REGISTRY),
+            "{rel} declares a stability status but never names {REGISTRY}, so a \
+             consumer holding only this file has no route to the policy the \
+             status belongs to. Say where the shared policy lives, as the \
+             other surfaces do.",
+        );
+    }
+    assert!(
+        checked >= MIN_DISCOVERED_SURFACES,
+        "only {checked} surface(s) checked; the declared lists shrank and this \
+         guard would pass on almost nothing",
+    );
+}
+
 #[test]
 fn registry_lists_every_surface() {
     let registry = read("SCE_WIRE_CONTRACTS.md");
