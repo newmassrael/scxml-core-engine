@@ -1480,8 +1480,18 @@ impl SCXMLParser {
             let src = child.attribute("src").unwrap_or("").to_string();
             let mut content = child.text().unwrap_or("").to_string();
 
-            // §scxml-5.8: Empty <script/> → document rejection
+            // §scxml-5.8: "A conformant SCXML document MUST specify
+            // either the 'src' attribute or child content, but not
+            // both." Both halves of that sentence reject the document:
+            // neither is the empty `<script/>`, both is a `src` with a
+            // body beside it. Only the first was implemented, so a
+            // document naming a script twice over parsed cleanly and
+            // the `src` silently won.
             if src.is_empty() && content.trim().is_empty() {
+                model.document_rejected = true;
+                continue;
+            }
+            if !src.is_empty() && !content.trim().is_empty() {
                 model.document_rejected = true;
                 continue;
             }
