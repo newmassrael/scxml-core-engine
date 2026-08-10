@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the target template declares a required
+  `<sce:param>` the `<sce:use>` does not supply. key_fragments are
+  (template, param).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <sce:use template="t.scxml"/>
+  </state>
+</scxml>
