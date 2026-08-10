@@ -5522,12 +5522,10 @@
       ],
       "description": "Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`."
     },
-    "sce_producer_version": {
-      "description": "SCE release that produced this payload. Optional in the schema so older consumers and `new_unversioned()` golden fixtures remain compatible.",
-      "type": [
-        "string",
-        "null"
-      ]
+    "generator": {
+      "description": "Commit of the generator that produced this payload — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unknown` on a build with no git checkout to read (vendored crate, release tarball). Required on every envelope because SCE_WIRE_CONTRACTS.md policy 1 makes pinning a specific commit the consumer's obligation while this surface is pre-release, and because a rejected run writes no manifest at all — an export emitted next to a rejection has nothing else alongside it to be attributed by. The crate version cannot stand in: it is frozen pre-1.0 and identifies nothing on its own.",
+      "pattern": "^([0-9a-f]{7,40}|unknown)$",
+      "type": "string"
     },
     "v": {
       "const": 1,
@@ -5537,6 +5535,7 @@
   },
   "required": [
     "ast",
+    "generator",
     "v"
   ],
   "title": "SCE Forge AST (wire schema v1)",

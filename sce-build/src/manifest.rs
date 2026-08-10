@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn schema_rejects_an_unknown_manifest_kind() {
         assert_invalid(
-            r#"{"v":1,"kind":"generate-w3c","generator":"x","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false}"#,
+            r#"{"v":1,"kind":"generate-w3c","generator":"deadbeefcafe","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false}"#,
             "kind outside ALL_MANIFEST_KINDS",
         );
     }
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn schema_rejects_a_missing_required_field() {
         assert_invalid(
-            r#"{"v":1,"kind":"generate","generator":"x","artifacts":[]}"#,
+            r#"{"v":1,"kind":"generate","generator":"deadbeefcafe","artifacts":[]}"#,
             "needs_script_engine absent",
         );
     }
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn schema_rejects_an_unknown_language_in_a_check_verdict() {
         assert_invalid(
-            r#"{"v":1,"kind":"check","generator":"x","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
+            r#"{"v":1,"kind":"check","generator":"deadbeefcafe","artifacts":[],"needs_script_engine":false,"needs_event_scheduler":false,"languages":[{"language":"haskell","status":"ok"}]}"#,
             "language outside the backend set",
         );
     }

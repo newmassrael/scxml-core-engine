@@ -28,12 +28,20 @@ pub const FORGE_AST_WIRE_VERSION: u32 = 1;
 /// (`envelope_constants_match_schema_header`) guards the two-way sync.
 pub const FORGE_AST_SCHEMA_STATUS: &str = "pre-release";
 
-/// SCE producer version string. Stamped onto the envelope when the
-/// `--emit-ast` flag fires so downstream consumers reporting issues
-/// can pin the exact SCE release that produced a payload. Pulled
-/// from `Cargo.toml` at compile time — moves automatically with each
-/// release cut.
-pub const SCE_PRODUCER_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// JSON Schema constraint on the `generator` stamp — commit-shaped, or
+/// the `unknown` a build with no git checkout resolves to.
+///
+/// schemars cannot infer this from `&str`, so `render_generated`
+/// injects it the same way it injects the `v` const. Held here next to
+/// the producer so the constraint and the value it describes move
+/// together; `wire_surface_stability.rs` pins the same pattern across
+/// every attributed surface.
+///
+/// Test-gated because the schema file it lands in is rendered by the
+/// drift guard below; the constraint itself reaches consumers through
+/// the checked-in `apis/forge-ast.v1.schema.json`.
+#[cfg(test)]
+pub(crate) const GENERATOR_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
 
 /// Envelope serialised as the outer JSON object.
 ///
@@ -41,25 +49,27 @@ pub const SCE_PRODUCER_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// value is reused without a clone. The lifetime carries from the
 /// caller's owned `ParsedForge` value.
 ///
-/// Wire shape is `{v, sce_producer_version?, ast}` — schema lifecycle
+/// Wire shape is `{v, generator, ast}` — schema lifecycle
 /// status lives in the schema file header (see
-/// `FORGE_AST_SCHEMA_STATUS` doc). The producer version is optional
-/// (`None` skipped from serialisation) so the field is purely
-/// additive within v1.
+/// `FORGE_AST_SCHEMA_STATUS` doc).
 #[derive(Debug, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[cfg_attr(test, schemars(deny_unknown_fields))]
 pub struct ForgeAstEnvelope<'a> {
     /// Always `FORGE_AST_WIRE_VERSION` (1 for this schema revision).
     pub v: u32,
-    /// SCE release that produced this payload. Optional for back-compat
-    /// with consumers reading older envelopes — `None` omits the
-    /// field. The constructor [`ForgeAstEnvelope::new`] populates it
-    /// from [`SCE_PRODUCER_VERSION`]; tests that need byte-equal
-    /// goldens across SCE versions can use [`ForgeAstEnvelope::new_unversioned`]
-    /// to suppress the stamp.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sce_producer_version: Option<&'a str>,
+    /// Commit of the generator that produced this payload — the same
+    /// value the stdout manifest carries as `generator` and
+    /// `--version` reports in parentheses. `unknown` on a build with
+    /// no git checkout to read (vendored crate, release tarball).
+    /// Required on every envelope because SCE_WIRE_CONTRACTS.md policy
+    /// 1 makes pinning a specific commit the consumer's obligation
+    /// while this surface is pre-release, and because a rejected run
+    /// writes no manifest at all — an export emitted next to a
+    /// rejection has nothing else alongside it to be attributed by.
+    /// The crate version cannot stand in: it is frozen pre-1.0 and
+    /// identifies nothing on its own.
+    pub generator: &'a str,
     /// Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`.
     pub ast: &'a ParsedForge,
 }
@@ -87,33 +97,38 @@ pub struct ForgeAstEnvelope<'a> {
 struct ForgeAstEnvelopeOwned {
     /// Always `FORGE_AST_WIRE_VERSION` (1 for this schema revision).
     v: u32,
-    /// SCE release that produced this payload. Optional in the schema
-    /// so older consumers and `new_unversioned()` golden fixtures
-    /// remain compatible.
-    sce_producer_version: Option<String>,
+    /// Commit of the generator that produced this payload — the same
+    /// value the stdout manifest carries as `generator` and
+    /// `--version` reports in parentheses. `unknown` on a build with
+    /// no git checkout to read (vendored crate, release tarball).
+    /// Required on every envelope because SCE_WIRE_CONTRACTS.md policy
+    /// 1 makes pinning a specific commit the consumer's obligation
+    /// while this surface is pre-release, and because a rejected run
+    /// writes no manifest at all — an export emitted next to a
+    /// rejection has nothing else alongside it to be attributed by.
+    /// The crate version cannot stand in: it is frozen pre-1.0 and
+    /// identifies nothing on its own.
+    generator: String,
     /// Parsed forge document body — mirrors `serde_json::to_string(&ParsedForge)`.
     ast: ParsedForge,
 }
 
 impl<'a> ForgeAstEnvelope<'a> {
-    /// Production constructor — stamps the current SCE release into
-    /// `sce_producer_version`. Used by every `--emit-ast` call site.
+    /// The only constructor — stamps the producing commit into
+    /// `generator`. Used by every `--emit-ast` call site.
+    ///
+    /// There is deliberately no stamp-suppressing variant. One existed
+    /// for "byte-equal goldens across SCE versions", but no such
+    /// golden was ever checked in: an AST export is not a committed
+    /// artifact, so the stamp creates none of the self-referential
+    /// churn that keeps it off the sourcemap sidecar. What the variant
+    /// did provide was a way for production code to emit an
+    /// unattributable envelope, guarded only by a doc comment saying
+    /// not to.
     pub fn new(ast: &'a ParsedForge) -> Self {
         Self {
             v: FORGE_AST_WIRE_VERSION,
-            sce_producer_version: Some(SCE_PRODUCER_VERSION),
-            ast,
-        }
-    }
-
-    /// Test-only / golden-fixture constructor — omits the producer
-    /// version so byte-equal goldens remain stable across SCE
-    /// releases. Production code MUST use [`new`] instead so issue
-    /// reports can name the exact SCE revision.
-    pub fn new_unversioned(ast: &'a ParsedForge) -> Self {
-        Self {
-            v: FORGE_AST_WIRE_VERSION,
-            sce_producer_version: None,
+            generator: crate::GENERATOR_COMMIT,
             ast,
         }
     }
@@ -227,6 +242,24 @@ mod schema_drift {
             // the contract without adding constraint.
             v_prop.remove("minimum");
             v_prop.remove("format");
+        }
+
+        // Tighten the `generator` property the same way: schemars
+        // renders a `String` field as a bare `{type: string}`, which
+        // any value satisfies. The contract is a commit (or the
+        // `unknown` a checkout-less build resolves to), so inject the
+        // pattern that says so — a required stamp whose shape is
+        // unconstrained is discharged by a value naming nothing, which
+        // is how a crate version passed for a commit here before.
+        if let Some(gen_prop) = json
+            .get_mut("properties")
+            .and_then(|p| p.get_mut("generator"))
+            .and_then(|v| v.as_object_mut())
+        {
+            gen_prop.insert(
+                "pattern".into(),
+                serde_json::json!(super::GENERATOR_PATTERN),
+            );
         }
 
         // Inject SCE-specific headers schemars doesn't emit on its
