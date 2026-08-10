@@ -36,14 +36,15 @@ if [[ ! -x "${EMIT}" ]]; then
     exit 1
 fi
 
-# Skip silently if clang-19 is not installed — same policy as the script
-# under test (which exit 1's on missing clang). The TC's job is to verify
-# fail-fast SEMANTICS, not to bootstrap a toolchain.
+# The TC's job is to verify fail-fast SEMANTICS, not to bootstrap a
+# toolchain, so a developer without clang gets a skip. A lane that runs
+# this case is making a different claim — that the assertion ran — and
+# sets `SCE_REQUIRE_TOOLS` to turn the same absence into a failure.
+# Without that switch the gate reported green while verifying nothing,
+# which is the state the case itself exists to prevent one layer down.
 CLANG="${CLANG:-clang++-19}"
-if ! command -v "${CLANG}" >/dev/null 2>&1; then
-    echo "SKIP: ${CLANG} not on PATH — TC requires clang for AST dump" >&2
-    exit 0
-fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gates/lib.sh"
+sce_gate_requires_tool "${CLANG}" clang-19 || exit 0
 
 WORK="$(mktemp -d --suffix=.emit-fail-fast-tc)"
 trap 'rm -rf "${WORK}"' EXIT
