@@ -1,0 +1,87 @@
+name: Example Codegen + Authored-Document Lint
+
+# CI counterpart for the `example-codegen` gate.
+#
+# The gate ran at push time and nowhere else, and said so in its own
+# header ("No CI counterpart"). A `--no-verify` push therefore skipped it
+# outright, which is the one path a push-time-only gate cannot defend:
+# the check exists to catch codegen breakage in the documents this
+# repository authors, and the developer most likely to bypass the hook is
+# the one whose push is failing it.
+#
+# The step runs the gate runner rather than restating the gate's
+# commands. A workflow that spelled out `sce-codegen generate ...` and
+# `check --lint ...` would be a second copy of the gate body, free to
+# drift from `scripts/gates/example-codegen.sh` in either direction —
+# and `hook_ci_parity.rs` could not compare them, because it keys a
+# verification on the tool plus its target and would see two different
+# invocations of the same intent. Calling the runner keeps one command
+# for one check, and `scripts/gate` pulls in the `codegen-build`
+# prerequisite from the registry instead of this file repeating it.
+#
+# Trigger surface: the documents the gate sweeps (`examples/**` and the
+# authored `integration_resources/*/*.scxml`), the templates and
+# generator whose output it exercises, and the workflow itself. The
+# registry derives the push-time trigger from this list, so the two
+# cannot diverge — `gate_registry.py`'s self-test additionally checks
+# that everything the gate sweeps is covered here.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'examples/**'
+      - 'integration_resources/*/*.scxml'
+      - 'tools/codegen/templates/**'
+      - 'sce-build/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/example-codegen.sh'
+      - '.github/workflows/example-codegen.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'examples/**'
+      - 'integration_resources/*/*.scxml'
+      - 'tools/codegen/templates/**'
+      - 'sce-build/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/example-codegen.sh'
+      - '.github/workflows/example-codegen.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  example-codegen:
+    name: Example codegen smoke + authored-document lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-example-codegen-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-example-codegen-
+
+    # The gate builds `target/debug/sce-codegen` through its registered
+    # `codegen-build` dependency, runs codegen over every example SCXML,
+    # and sweeps `check --lint` over every document this repository
+    # authors. Its own lower bound (at least 20 documents linted) fails
+    # the run if the sweep stops finding the tree.
+    - name: Run example-codegen gate
+      run: scripts/gate example-codegen
