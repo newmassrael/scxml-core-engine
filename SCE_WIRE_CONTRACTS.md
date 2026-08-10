@@ -112,10 +112,24 @@ checked-in schema without linking the `sce-build` crate.
      pins the record against a walk of the directory it describes)
    - Symbol lookup — `both_lookup_directions_validate_against_the_wire_schema`
 
-   The authoring grammar is not in that table because it is not
-   validated by a test: `forge::xsd_validator` validates **every input
-   document** against `sce-forge.xsd` on the production path, before
-   codegen, which is the stronger property.
+   The negative half is enforced separately, by
+   `wire_surface_stability.rs::NEGATIVE_VALIDATION` and
+   `every_json_surface_has_a_negative_validation_test`. Listing only the
+   positives left the requirement unenforced, and the symbol-lookup
+   surface reached `pre-release` with no negative case at all while its
+   row above looked complete. Each of these starts from a record it
+   first asserts is valid and changes exactly one thing, so the refusal
+   is pinned to that change:
+   - Diagnostics — `diagnostic_schema_rejects_a_missing_required_field`
+   - Forge AST — `ast_schema_rejects_an_envelope_missing_a_required_field`
+   - Sourcemap sidecar — `sourcemap_schema_rejects_a_missing_required_field`
+   - Stdout manifest — `schema_rejects_a_missing_required_field`
+   - Symbol lookup — `lookup_schema_rejects_a_record_without_the_generator_stamp`
+
+   The authoring grammar is in neither table because it is not validated
+   by a test: `forge::xsd_validator` validates **every input document**
+   against `sce-forge.xsd` on the production path, before codegen, which
+   is the stronger property.
 
 ## Flipping a surface to `stable`
 

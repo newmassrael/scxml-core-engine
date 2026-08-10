@@ -645,3 +645,80 @@ fn statechart_typed_inject_events_absent_when_schemaless() {
         serde_json::json!(["go"]),
     );
 }
+
+/// The schema refuses an envelope that drops a required field.
+///
+/// `SCE_WIRE_CONTRACTS.md` policy item 5: a positive sweep alone proves
+/// only that everything is accepted — a validator that accepted every
+/// input would pass [`round_trip_every_kind`] just as happily. Until
+/// this case existed the forge-AST surface had no negative at all, so
+/// nothing had ever shown its schema refusing anything.
+///
+/// The control assertion is what gives the refusal meaning: the
+/// envelope is proven valid before the single field is removed, so the
+/// rejection is pinned to that removal rather than to some unrelated
+/// constraint a hand-typed record would have tripped first.
+#[test]
+fn ast_schema_rejects_an_envelope_missing_a_required_field() {
+    let schema_value = load_schema();
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("checked-in schema must be valid JSON Schema");
+
+    let (_, fixture_name) = FIXTURE_PER_KIND[0];
+    let parsed = parse_fixture(&fixture(fixture_name));
+    let mut buf = Vec::new();
+    write_envelope(&mut buf, &parsed).expect("write_envelope succeeds");
+    let mut json: Value = serde_json::from_slice(&buf).expect("emitted envelope re-parses as JSON");
+
+    assert!(
+        validator.validate(&json).is_ok(),
+        "the control envelope must be valid before mutation, otherwise \
+         the rejection below proves nothing: {json}",
+    );
+
+    json.as_object_mut()
+        .expect("envelope is a JSON object")
+        .remove("v")
+        .expect("control envelope carried the wire version");
+    assert!(
+        validator.validate(&json).is_err(),
+        "schema must reject an envelope with no `v`: {json}",
+    );
+}
+
+/// The schema closes the envelope: a field it does not declare is a
+/// rejection, not a tolerated extra.
+///
+/// Consumers are told to ignore unknown fields, which is about
+/// *forward* compatibility — it does not license this producer to emit
+/// undeclared keys. Without this case `additionalProperties: false`
+/// would be a line in a file that nothing exercises.
+#[test]
+fn ast_schema_rejects_an_undeclared_envelope_field() {
+    let schema_value = load_schema();
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("checked-in schema must be valid JSON Schema");
+
+    let (_, fixture_name) = FIXTURE_PER_KIND[0];
+    let parsed = parse_fixture(&fixture(fixture_name));
+    let mut buf = Vec::new();
+    write_envelope(&mut buf, &parsed).expect("write_envelope succeeds");
+    let mut json: Value = serde_json::from_slice(&buf).expect("emitted envelope re-parses as JSON");
+
+    assert!(
+        validator.validate(&json).is_ok(),
+        "the control envelope must be valid before mutation: {json}",
+    );
+
+    json.as_object_mut()
+        .expect("envelope is a JSON object")
+        .insert("not_a_declared_field".to_string(), Value::from(1));
+    assert!(
+        validator.validate(&json).is_err(),
+        "schema must reject an envelope carrying an undeclared field: {json}",
+    );
+}

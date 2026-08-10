@@ -203,6 +203,79 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Negative-case coverage: `(surface, test fn, file declaring it)`.
+///
+/// `SCE_WIRE_CONTRACTS.md` policy item 5 says a positive sweep alone
+/// proves only that everything is accepted — a validator that accepted
+/// every input would pass one. The negative case is what shows the
+/// schema refusing something.
+///
+/// That requirement went unenforced: the table above lists only
+/// positives, and the symbol-lookup surface reached `pre-release` with
+/// no negative case at all while its row here looked complete. Naming
+/// the negatives in their own table makes "which surfaces can actually
+/// reject" answerable instead of assumed.
+///
+/// Each named test must start from a record it first asserts is valid,
+/// then change exactly one thing. Without that control the refusal may
+/// be tripping some unrelated constraint, and the case proves nothing
+/// about the field it is named after.
+const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
+    (
+        "schemas/sce-diagnostic.v1.schema.json",
+        "diagnostic_schema_rejects_a_missing_required_field",
+        "sce-build/src/forge/diagnostic.rs",
+    ),
+    (
+        "apis/forge-ast.v1.schema.json",
+        "ast_schema_rejects_an_envelope_missing_a_required_field",
+        "sce-build/tests/forge_ast_export.rs",
+    ),
+    (
+        "schemas/sce-sourcemap.v1.schema.json",
+        "sourcemap_schema_rejects_a_missing_required_field",
+        "sce-build/tests/committed_sourcemap_drift.rs",
+    ),
+    (
+        "schemas/sce-manifest.v1.schema.json",
+        "schema_rejects_a_missing_required_field",
+        "sce-build/src/manifest.rs",
+    ),
+    (
+        "schemas/sce-symbol-lookup.v1.schema.json",
+        "lookup_schema_rejects_a_record_without_the_generator_stamp",
+        "sce-build/tests/sourcemap_addr2sce.rs",
+    ),
+];
+
+/// Every JSON surface can be shown refusing something, and every test
+/// the negative table names still exists where it says it does.
+#[test]
+fn every_json_surface_has_a_negative_validation_test() {
+    for rel in JSON_SURFACES {
+        assert!(
+            NEGATIVE_VALIDATION
+                .iter()
+                .any(|(surface, _, _)| surface == rel),
+            "{rel} has no negative-validation test. A positive sweep \
+             alone proves only that everything is accepted — add a case \
+             that mutates one field of a known-valid record and asserts \
+             the schema rejects it, then register it here and in \
+             SCE_WIRE_CONTRACTS.md.",
+        );
+    }
+
+    for (surface, test_fn, file) in NEGATIVE_VALIDATION {
+        let body = read(file);
+        assert!(
+            body.contains(&format!("fn {test_fn}(")),
+            "{file} no longer declares `fn {test_fn}` (registered as \
+             the negative-validation test for {surface}). Update the \
+             NEGATIVE_VALIDATION table and SCE_WIRE_CONTRACTS.md.",
+        );
+    }
+}
+
 /// Every JSON surface has at least one instance-validation test, and
 /// every test the table names still exists where it says it does.
 ///
@@ -248,6 +321,13 @@ fn registry_names_every_instance_validation_test() {
         assert!(
             registry.contains(test_fn),
             "SCE_WIRE_CONTRACTS.md must name the instance-validation \
+             test for {surface}; missing {test_fn:?}",
+        );
+    }
+    for (surface, test_fn, _) in NEGATIVE_VALIDATION {
+        assert!(
+            registry.contains(test_fn),
+            "SCE_WIRE_CONTRACTS.md must name the negative-validation \
              test for {surface}; missing {test_fn:?}",
         );
     }
