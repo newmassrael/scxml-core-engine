@@ -127,7 +127,7 @@ pub enum XIncludeError {
     /// time would produce state machines that differ from
     /// runtime parse — we reject them at the earliest stage.
     #[error("<xi:include href=\"{href}\">: unsupported feature: {feature}")]
-    Unsupported { href: String, feature: &'static str },
+    Unsupported { href: String, feature: String },
 }
 
 /// Location of an `<xi:include>` inside the source string —
@@ -449,7 +449,13 @@ fn reject_unsupported(
             return Err((
                 XIncludeError::Unsupported {
                     href: node.attribute("href").unwrap_or("").to_string(),
-                    feature: "parse=\"text\" (only parse=\"xml\" is supported)",
+                    // Names the mode the author actually wrote. A fixed
+                    // `parse="text"` was wrong for every other value —
+                    // and `feature` is one of the id's key fragments, so
+                    // it also put the two producers on different ids for
+                    // any document this branch rejected other than the
+                    // one the literal happened to describe.
+                    feature: format!("parse=\"{mode}\" (only parse=\"xml\" is supported)"),
                 },
                 *loc,
             ));
@@ -459,7 +465,7 @@ fn reject_unsupported(
         return Err((
             XIncludeError::Unsupported {
                 href: node.attribute("href").unwrap_or("").to_string(),
-                feature: "xpointer selection is not implemented",
+                feature: "xpointer selection is not implemented".to_string(),
             },
             *loc,
         ));
@@ -473,7 +479,7 @@ fn reject_unsupported(
             return Err((
                 XIncludeError::Unsupported {
                     href: node.attribute("href").unwrap_or("").to_string(),
-                    feature: "<xi:fallback> alternative content is not implemented",
+                    feature: "<xi:fallback> alternative content is not implemented".to_string(),
                 },
                 *loc,
             ));

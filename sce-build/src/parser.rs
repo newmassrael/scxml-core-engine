@@ -293,10 +293,10 @@ pub fn reject_unexpanded_directives(
 /// per-backend marker (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
 /// above the function header the IR node lowers to.
 ///
-/// `source_name` is the diagnostic label (file basename or stem) that
-/// the outer parser threads down — matches `location.file` on every
-/// other diagnostic emitted from the same site so a SCE-MAP marker
-/// points at the same authoring file an error would name.
+/// `source_name` is the document label the outer parser threads down —
+/// for [`SCXMLParser::parse_file`] the path the caller named, so that
+/// `location.file` on a diagnostic is something the consumer can open.
+/// Artifacts need the other spelling; see [`artifact_label`].
 #[inline]
 fn source_location_of(
     node: &roxmltree::Node,
@@ -304,10 +304,35 @@ fn source_location_of(
 ) -> Option<crate::forge::error::SourceLocation> {
     let pos = node.document().text_pos_at(node.range().start);
     Some(crate::forge::error::SourceLocation {
-        file: source_name.to_string(),
+        file: artifact_label(source_name),
         line: Some(pos.row),
         col: Some(pos.col),
     })
+}
+
+/// The artifact-facing spelling of a document label: its basename.
+///
+/// Two consumers read a document label and they need different
+/// spellings. A *diagnostic* names the document so a consumer can open
+/// it, which means the path the caller supplied — `main.scxml` alone
+/// is openable only from the one directory it happens to sit in, and
+/// the CLI-boundary validators have always emitted the full path, so a
+/// consumer reading one stream saw two conventions with nothing to
+/// tell them apart. An *artifact* — an SCE-MAP marker, a provenance
+/// record that lands in committed generated code — cannot carry a
+/// path: it would bake one machine's checkout into the tree and move
+/// whenever the checkout does.
+///
+/// Deriving here rather than threading a second parameter through
+/// every parse function keeps one value flowing and puts the choice at
+/// the two places that actually differ.
+#[inline]
+fn artifact_label(source_name: &str) -> String {
+    Path::new(source_name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(source_name)
+        .to_string()
 }
 
 /// Collect `<sce:unresolved>` markers attached to `node` — both
@@ -346,7 +371,7 @@ fn collect_sce_unresolved(
                 reason,
                 candidates,
                 location: Some(SourceLocation {
-                    file: source_name.to_string(),
+                    file: artifact_label(source_name),
                     line: Some(pos.row),
                     col: Some(pos.col),
                 }),
@@ -378,7 +403,7 @@ fn collect_sce_unresolved(
             reason,
             candidates,
             location: Some(SourceLocation {
-                file: source_name.to_string(),
+                file: artifact_label(source_name),
                 line: Some(pos.row),
                 col: Some(pos.col),
             }),
@@ -608,11 +633,15 @@ impl SCXMLParser {
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
-        let diag_label = Path::new(scxml_path)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&name)
-            .to_string();
+        // The document label diagnostics carry is the path the caller
+        // named, not its basename. `location.file` is what a consumer
+        // opens to apply a fix, and it feeds the `id` hash — so a
+        // producer that shortens it cannot share a dedup key with one
+        // that does not, which is exactly how the parse-time
+        // diagnostics diverged from the CLI-boundary ones inside this
+        // very binary. Artifacts still get the basename, derived at
+        // the two sites that need it (`artifact_label`).
+        let diag_label = scxml_path.to_string();
         let base_dir = Path::new(scxml_path).parent().map(|p| p.to_path_buf());
 
         // Clear any deps captured by a previous parse on this parser
@@ -891,7 +920,7 @@ impl SCXMLParser {
         // wrote, not the post-expansion outer document.
         let root_pos = root.document().text_pos_at(root.range().start);
         let root_source_location = Some(crate::forge::error::SourceLocation {
-            file: diag_label.to_string(),
+            file: artifact_label(diag_label),
             line: Some(root_pos.row),
             col: Some(root_pos.col),
         });
@@ -3593,7 +3622,7 @@ impl SCXMLParser {
             })?;
             let pos = child.document().text_pos_at(child.range().start);
             let source_location = Some(SourceLocation {
-                file: source_name.to_string(),
+                file: artifact_label(source_name),
                 line: Some(pos.row),
                 col: Some(pos.col),
             });

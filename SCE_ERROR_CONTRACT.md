@@ -56,7 +56,7 @@ compatibility.
 | Field | Type | Guarantee |
 |---|---|---|
 | `v` | integer | Schema version. Currently `1`. First key in every record. |
-| `id` | `fnv1a:<16hex>` | Content hash over `(code, stage, location.file, key_fragments)`. Same semantic error → same id, **independent of message rewording**. Use for dedup, caching, "seen this before" checks. |
+| `id` | `fnv1a:<16hex>` | Content hash over `(code, stage, location.file, key_fragments)`. Same semantic error → same id, **independent of message rewording**. Use for dedup, caching, "seen this before" checks. Shared across producers — see [§2.1.1](#211-key-fragments-and-the-id-namespace). |
 | `generator` | short commit, or `unknown` | Commit of the generator that emitted the record — the same value [§10](#10-stdout-manifest)'s manifest carries as `generator` and `--version` reports in parentheses. Present on **every** record, because a rejected run writes no manifest (stdout is empty, [§1](#1-streams)): on the failure path this record is the only thing the consumer receives. [§8.1](#81-stability) tells consumers to pin a specific commit rather than rely on `v1` while the schema is `pre-release`, and that is unfollowable if the payload does not name the commit it came from. `unknown` when the build had no git checkout to read (vendored crate, release tarball). |
 | `code` | slash-path string | Closed enum. See [§5 Code Catalog](#5-code-catalog). Consumers dispatch on `code`, never on `message`. |
 | `stage` | lowercase / kebab-case string | Pipeline stage. Routes to the correct repair loop. See [§4 Stage Taxonomy](#4-stage-taxonomy). |
@@ -69,6 +69,35 @@ compatibility.
 | `spec_provenance` | array of objects | NL→IR Mapping Roadmap Item 6 — spec-document anchors that justify the rejected node (`doc_id` + optional `rev`/`section`/`page`). SCE never infers this; IR generators (NL→IR pipelines, ARXML transcoders) populate it when they know the spec origin. Pass-through field on the wire — absent when the upstream did not record provenance. |
 | `question_kind` | string (enum) | NL→IR Mapping Roadmap Item 6 — coarse routing label so IDE / triage tooling can dispatch on the *kind* of question the diagnostic raises (`implicit_default` / `ambiguous_mapping` / `cross_doc_conflict` / `unit_unspecified` / `unknown_vocabulary` / `structural`). Extensible — consumers must treat unknown values as `structural`. Absent on purely structural rejections that map cleanly onto `code` alone. |
 
+### 2.1.1 Key fragments and the id namespace
+
+`id` is a **shared namespace, not a per-producer one**. Two producers
+emit records for the same document — the Rust `sce-codegen` CLI and the
+C++ runtime parser, which conforms to this same schema — and a consumer
+reading both (the W3C harness generates with one and loads with the
+other) must fold one logical error into one entry. That only holds if
+both derive the id from the same inputs, so `key_fragments` carry a
+rule:
+
+> A key fragment must be a value **SCE itself determined** — a name
+> from the document, a resolved path, a search trail, an enforced
+> limit, an SCE-authored classification.
+
+Text produced by a third-party parser is not such a value. It differs
+between the two XML engines (roxmltree here, pugixml in the runtime
+parser) and shifts when either is upgraded, so hashing it makes `id`
+unreproducible for the same document — across producers, and across a
+dependency bump within one producer. `xml/parse` therefore carries **no**
+fragments (a document has one parse failure; `code|stage|file` names
+it), and `xml/xinclude-malformed` / `xml/template-malformed` key on the
+href or template name alone, with the engine's reason travelling in
+`message`.
+
+`tests/parsing/CrossProducerDiagnosticId_test.cpp` is what enforces
+this: it runs both producers over one fixture document and compares the
+records. A leaf that hashes something the other producer cannot
+reproduce reds it.
+
 ### 2.2 Location object
 
 ```json
@@ -76,6 +105,16 @@ compatibility.
 ```
 
 `line` and `col` are optional; `file` is required when the object is present.
+
+`file` names the document **as the caller named it** — the path passed
+to `check` / `generate`, not its basename. A consumer opens it to apply
+a fix, and `file` is one of the id's hash inputs, so a producer that
+shortens it cannot share a dedup key with one that does not. Artifacts
+are the other way round: an SCE-MAP marker or a provenance record lands
+in generated source, so it carries the basename rather than baking one
+machine's checkout into the tree. Same document, two spellings, chosen
+by who reads them.
+
 Mesh errors currently omit `location` — their coordinates are the
 machine / binding / target names carried by the error fields themselves.
 
@@ -343,13 +382,16 @@ A non-zero exit with no NDJSON record is a contract violation.
 - **No timestamps, no wall-clock**, no PIDs, no absolute paths other
   than those the user passed in.
 - **No ANSI / color escapes** in JSON mode — ever.
-- **Field order** within a record is fixed: `v`, `id`, `code`,
-  `stage`, `spec`, `message`, `location`, `expected`, `actual`, `fix`.
+- **Field order** within a record is fixed: `v`, `id`, `generator`,
+  `code`, `stage`, `spec`, `message`, `location`, `expected`, `actual`,
+  `fix`.
 - **One record per line.** A record never contains a raw `\n`.
   Consumers may split stderr on `\n` without a JSON parser lookahead.
 - **`id` stability**: rewording a `thiserror` `#[error]` template
   does not shift `id`. Only changing the hashed semantic fields
-  (code, stage, file, key_fragments) does.
+  (code, stage, file, key_fragments) does — and those fields are
+  producer-independent by [§2.1.1](#211-key-fragments-and-the-id-namespace),
+  so the same document yields the same id whichever producer read it.
 
 ## 8. Evolution policy
 
