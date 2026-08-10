@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-diagnostic.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE Diagnostic (wire schema v1)",
-  "description": "Machine-readable diagnostic record emitted on stderr as a single NDJSON line. Authoritative definition lives in sce-build/src/forge/diagnostic.rs (struct Diagnostic); see SCE_ERROR_CONTRACT.md §2 for the wire contract and §5 for the code catalog. Consumers MUST ignore unknown fields: any purely additive schema change (new optional field) is compatible with v1 and does not bump the schema_version.",
+  "description": "Machine-readable diagnostic record emitted on stderr as a single NDJSON line. Authoritative definition lives in sce-build/src/forge/diagnostic.rs (struct Diagnostic); see SCE_ERROR_CONTRACT.md §2 for the wire contract and §5 for the code catalog. Consumers MUST ignore unknown fields: any purely additive schema change (new optional field) is compatible with v1 and does not bump the schema_version. The stability status above is machine-readable; SCE_WIRE_CONTRACTS.md carries the shared stability and deprecation policy across SCE wire surfaces, and is what tells a consumer holding only this file what `pre-release` obliges them to do.",
   "type": "object",
   "required": ["v", "id", "generator", "code", "stage", "message"],
   "additionalProperties": false,
