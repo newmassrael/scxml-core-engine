@@ -159,7 +159,7 @@ jobs:
       uses: actions/checkout@v6
 
     # clang-19 specifically: the case under test asserts a parse failure
-    # is reported rather than silently degraded, and the script SKIPs
+    # is reported rather than silently degraded, and the script skips
     # itself when clang is absent — an uninstalled toolchain would turn
     # this job green without running the assertion it exists for.
     - name: Install Dependencies
@@ -167,5 +167,13 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y clang-19
 
+    # `SCE_REQUIRE_TOOLS` is what turns the paragraph above into a
+    # checked claim: with it set, a missing clang fails the job instead
+    # of skipping past it. `lane_running_a_skip_capable_gate_requires_its_tools`
+    # asserts this pairing, so removing either the variable or the
+    # install reds the suite rather than quietly restoring the silent
+    # skip.
     - name: Run embed-manifest-failfast gate
+      env:
+        SCE_REQUIRE_TOOLS: '1'
       run: scripts/gate embed-manifest-failfast

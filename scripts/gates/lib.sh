@@ -64,3 +64,43 @@ sce_gate_codegen() {
     source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
     sce_codegen_require "$SCE_REPO_ROOT"
 }
+
+# Resolve a tool the gate needs, or decide honestly what its absence
+# means.
+#
+# Two callers want opposite things from a missing toolchain. A developer
+# on a machine without clang wants the rest of the suite to keep
+# running; a CI lane named for a check wants that check to have actually
+# run before it reports green. The switch between them is
+# `SCE_REQUIRE_TOOLS`, which is the same variable
+# `sce-build/src/toolchain.rs` uses on the Rust side, so both halves of
+# the harness answer to one setting.
+#
+# Without it: skip, saying so on stderr. With it: fail, naming the
+# package that supplies the binary.
+#
+# `sce_gate_requires_tool` is the marker `hook_ci_parity.rs` scans for.
+# The pairing it enforces — a lane that runs a skip-capable gate must
+# set the variable and install the package — is what makes "CI installs
+# it" a checked claim rather than a comment. The comment was already
+# there, above the clang-19 install in `embed-vendor-smoke.yml`, saying
+# an uninstalled toolchain "would turn this job green without running
+# the assertion it exists for". Nothing acted on it.
+#
+# Returns 1 when the caller should skip, so a call site reads:
+#   sce_gate_requires_tool clang++-19 clang-19 || exit 0
+sce_gate_requires_tool() {
+    local bin="$1" package="$2"
+    if command -v "$bin" >/dev/null 2>&1; then
+        return 0
+    fi
+    case "${SCE_REQUIRE_TOOLS:-}" in
+        "" | 0 | false)
+            echo "SKIP: ${bin} not on PATH (install ${package}, or set SCE_REQUIRE_TOOLS=1 to make this a failure)" >&2
+            return 1
+            ;;
+        *)
+            sce_gate_fail "${bin} not on PATH and SCE_REQUIRE_TOOLS is set — install ${package}. A lane that sets this variable is claiming the check ran."
+            ;;
+    esac
+}
