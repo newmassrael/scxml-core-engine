@@ -4137,6 +4137,11 @@
           "file": "sce-build/src/filters.rs",
           "symbol": "w3c_session_name",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/events/EventTargetFactoryImpl.cpp",
+          "symbol": "SCE::EventTargetFactoryImpl::createSessionTarget",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -9136,6 +9141,41 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "process_internal_queue",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/events/EventTargetFactoryImpl.cpp",
+          "symbol": "SCE::EventTargetFactoryImpl::createSessionTarget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::raiseEventWithPriority",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/IOProcessorHelper.h",
+          "symbol": "sessionIdFromScxmlLocation",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "SCXML_SESSION_PREFIX",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "isSessionTarget",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "extractSessionId",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::cancelEventsForSession",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

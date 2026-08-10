@@ -103,13 +103,16 @@ private:
      * @return Invoke event target
      */
     /**
-     * @brief Create a target addressing another SCXML session (§scxml-C-1)
+     * @brief Create a target addressing another SCXML session
+     *
+     * The clause this realizes is cited on the definition; a declaration
+     * describes the shape, not the requirement.
      *
      * @param targetSessionId Session the URI names; empty means the sender's
      *                        own external queue (W3C test 190 sends the bare
      *                        `#_scxml_` prefix)
      * @param originSessionId Session doing the sending — reported to the
-     *                        receiver as `_event.origin` (§scxml-5.10)
+     *                        receiver as the event's origin
      * @return Target for the addressed session, or nullptr when no session is
      *         registered under `targetSessionId`
      */
