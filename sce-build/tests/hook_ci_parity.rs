@@ -605,9 +605,10 @@ fn serde_json_string(s: &str) -> String {
     out
 }
 
-/// The section of the audit banner listing plan memos, or empty.
+/// The section of the banner listing memory-lifecycle violations, or
+/// empty when the validation never ran.
 fn memo_section(text: &str) -> String {
-    match text.find("Related plan memos:") {
+    match text.find("Violations:") {
         Some(i) => text[i..].to_string(),
         None => String::new(),
     }
@@ -630,13 +631,18 @@ fn memo_section(text: &str) -> String {
 /// agree rather than merely requiring neither to crash.
 ///
 /// The memory tree is seeded into a private HOME rather than read from
-/// the developer's own. Reading the ambient one made the probe pass on
-/// a machine that happens to have memos and fail on a CI runner that
-/// has none: with an absent directory the hook prints "plan memo
-/// directory is empty or absent" from both callers, which is
-/// indistinguishable from the bug being fixed and trips the guard
-/// below. A seeded HOME makes the two callers differ exactly when the
-/// slug is derived from the wrong worktree, on any machine.
+/// the developer's own, so the probe does not pass on a machine that
+/// happens to have memos and fail on a CI runner that has none. The
+/// seeded memo deliberately violates the lifecycle contract: the
+/// validation names the offending file, and a named file is the only
+/// evidence that the validation ran at all. A conforming memo leaves
+/// the hook silent from both callers, and two silences agree with each
+/// other while proving nothing.
+///
+/// The observable moved once already. It used to be the self-audit
+/// banner's plan-memo list, which was removed when the audit gate was
+/// retired; the memory-lifecycle banner is the surviving reader of the
+/// same tree.
 #[test]
 fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
     let root = repo_root();
@@ -646,21 +652,27 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
     let branch = format!("audit-hook-probe-{}", std::process::id());
 
     // The hook slugs the main worktree's path into a memory directory
-    // under $HOME; seed exactly that directory with one open plan memo
-    // so the banner has something to list.
+    // under $HOME; seed exactly that directory so the validation has
+    // something to report.
     let home = std::env::temp_dir().join(format!("sce-audit-hook-home-{}", std::process::id()));
     let _ = fs::remove_dir_all(&home);
     let slug = root.display().to_string().replace('/', "-");
     let memory = home.join(".claude/projects").join(&slug).join("memory");
     fs::create_dir_all(&memory).expect("seed memory dir");
+    // A memo that VIOLATES the lifecycle contract: `feedback_*.md` must
+    // declare `status:feedback`. The validation names the offending file
+    // in its banner, which is what makes "the same memory tree was read"
+    // observable from both callers. A conforming memo would leave the
+    // hook silent, and two silences agree with each other while proving
+    // nothing.
     fs::write(
-        memory.join("next_audit_hook_probe.md"),
-        "---\nname: next_audit_hook_probe\ndescription: seeded probe memo\n\
+        memory.join("feedback_audit_hook_probe.md"),
+        "---\nname: feedback_audit_hook_probe\ndescription: seeded probe memo\n\
          metadata:\n  type: project\n  status: open\n---\n\n\
-         Seeded by the worktree audit probe; the hook must list this file \
+         Seeded by the worktree audit probe; the hook must name this file \
          from either caller.\n",
     )
-    .expect("seed plan memo");
+    .expect("seed lifecycle-violating memo");
 
     let add = std::process::Command::new("git")
         .current_dir(&root)
@@ -716,9 +728,9 @@ fn the_audit_hook_reads_the_same_memory_tree_from_a_linked_worktree() {
     // earlier — at the COMMIT_FORMAT gate, say — and two empty strings
     // would then agree with each other while proving nothing.
     assert!(
-        memos_main.contains("next_audit_hook_probe.md"),
+        memos_main.contains("feedback_audit_hook_probe.md"),
         "the probe never reached the memory validation from the main tree; \
-         the banner did not list the memo seeded into its HOME:\nstdout:\n\
+         the banner did not name the violating memo seeded into its HOME:\nstdout:\n\
          {out_main}\nstderr:\n{err_main}",
     );
     assert_eq!(
