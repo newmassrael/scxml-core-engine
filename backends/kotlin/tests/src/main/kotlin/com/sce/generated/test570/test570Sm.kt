@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/570/test570.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test570.scxml:5
+// SCE-MAP: test570.scxml:5 :: _machine
 
 package com.sce.generated.test570
 
@@ -381,18 +381,18 @@ class Test570StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test570.scxml:5
+    // SCE-MAP: test570.scxml:5 :: _machine
     override fun onEntry(state: Test570State) {
         when (state) {
             is Test570State.Fail -> {
-                // SCE-MAP: test570.scxml:47
+                // SCE-MAP: test570.scxml:47 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test570State.P0 -> {
-                // SCE-MAP: test570.scxml:9
+                // SCE-MAP: test570.scxml:9 :: p0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
 
@@ -408,7 +408,7 @@ class Test570StateMachine(
                 onEntry(Test570State.P0s2)
             }
             is Test570State.P0s1 -> {
-                // SCE-MAP: test570.scxml:24
+                // SCE-MAP: test570.scxml:24 :: p0s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1")) return
                 if (!suppressChildEntry) {
@@ -417,12 +417,12 @@ class Test570StateMachine(
                 }
             }
             is Test570State.P0s11 -> {
-                // SCE-MAP: test570.scxml:25
+                // SCE-MAP: test570.scxml:25 :: p0s11 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s11")) return
             }
             is Test570State.P0s1final -> {
-                // SCE-MAP: test570.scxml:28
+                // SCE-MAP: test570.scxml:28 :: p0s1final :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
@@ -433,7 +433,7 @@ class Test570StateMachine(
                 }
             }
             is Test570State.P0s2 -> {
-                // SCE-MAP: test570.scxml:31
+                // SCE-MAP: test570.scxml:31 :: p0s2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2")) return
                 if (!suppressChildEntry) {
@@ -442,12 +442,12 @@ class Test570StateMachine(
                 }
             }
             is Test570State.P0s21 -> {
-                // SCE-MAP: test570.scxml:32
+                // SCE-MAP: test570.scxml:32 :: p0s21 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s21")) return
             }
             is Test570State.P0s2final -> {
-                // SCE-MAP: test570.scxml:35
+                // SCE-MAP: test570.scxml:35 :: p0s2final :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
@@ -458,14 +458,14 @@ class Test570StateMachine(
                 }
             }
             is Test570State.Pass -> {
-                // SCE-MAP: test570.scxml:46
+                // SCE-MAP: test570.scxml:46 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test570State.S1 -> {
-                // SCE-MAP: test570.scxml:40
+                // SCE-MAP: test570.scxml:40 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
@@ -473,15 +473,15 @@ class Test570StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test570.scxml:5
+    // SCE-MAP: test570.scxml:5 :: _machine
     override fun onExit(state: Test570State) {
         when (state) {
             is Test570State.Fail -> {
-                // SCE-MAP: test570.scxml:47
+                // SCE-MAP: test570.scxml:47 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test570State.P0 -> {
-                // SCE-MAP: test570.scxml:9
+                // SCE-MAP: test570.scxml:9 :: p0 :: _state_body
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -513,35 +513,35 @@ class Test570StateMachine(
                 activeStateIds.remove("p0")
             }
             is Test570State.P0s1 -> {
-                // SCE-MAP: test570.scxml:24
+                // SCE-MAP: test570.scxml:24 :: p0s1 :: _state_body
                 activeStateIds.remove("p0s1")
             }
             is Test570State.P0s11 -> {
-                // SCE-MAP: test570.scxml:25
+                // SCE-MAP: test570.scxml:25 :: p0s11 :: _state_body
                 activeStateIds.remove("p0s11")
             }
             is Test570State.P0s1final -> {
-                // SCE-MAP: test570.scxml:28
+                // SCE-MAP: test570.scxml:28 :: p0s1final :: _state_body
                 activeStateIds.remove("p0s1final")
             }
             is Test570State.P0s2 -> {
-                // SCE-MAP: test570.scxml:31
+                // SCE-MAP: test570.scxml:31 :: p0s2 :: _state_body
                 activeStateIds.remove("p0s2")
             }
             is Test570State.P0s21 -> {
-                // SCE-MAP: test570.scxml:32
+                // SCE-MAP: test570.scxml:32 :: p0s21 :: _state_body
                 activeStateIds.remove("p0s21")
             }
             is Test570State.P0s2final -> {
-                // SCE-MAP: test570.scxml:35
+                // SCE-MAP: test570.scxml:35 :: p0s2final :: _state_body
                 activeStateIds.remove("p0s2final")
             }
             is Test570State.Pass -> {
-                // SCE-MAP: test570.scxml:46
+                // SCE-MAP: test570.scxml:46 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test570State.S1 -> {
-                // SCE-MAP: test570.scxml:40
+                // SCE-MAP: test570.scxml:40 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
         }
@@ -549,7 +549,7 @@ class Test570StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test570.scxml:5
+    // SCE-MAP: test570.scxml:5 :: _machine
     override fun executeTransitionActions(
         source: Test570State,
         event: Test570Event?
@@ -557,7 +557,7 @@ class Test570StateMachine(
         when (source) {
         is Test570State.P0 -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")
@@ -566,7 +566,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s1 -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")
@@ -575,7 +575,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s11 -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")
@@ -584,7 +584,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s1final -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")
@@ -593,7 +593,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s2 -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")
@@ -602,7 +602,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s21 -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")
@@ -611,7 +611,7 @@ class Test570StateMachine(
         }
         is Test570State.P0s2final -> when {
             event is Test570Event.Done.State.P0s1 -> {
-                // SCE-MAP: test570.scxml:16
+                // SCE-MAP: test570.scxml:16 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "1")

@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_tail:3"]
-// SCE-MAP: codec_tail:3
+#![doc = "SCE-MAP: codec_tail:3 :: _forge_body"]
+// SCE-MAP: codec_tail:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

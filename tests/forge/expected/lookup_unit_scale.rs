@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: lookup_unit_scale:6"]
-// SCE-MAP: lookup_unit_scale:6
+#![doc = "SCE-MAP: lookup_unit_scale:6 :: _forge_body"]
+// SCE-MAP: lookup_unit_scale:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
 // Runtime: sce_forge_runtime

@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: algorithm_bytes_equal:18"]
-// SCE-MAP: algorithm_bytes_equal:18
+#![doc = "SCE-MAP: algorithm_bytes_equal:18 :: _forge_body"]
+// SCE-MAP: algorithm_bytes_equal:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none

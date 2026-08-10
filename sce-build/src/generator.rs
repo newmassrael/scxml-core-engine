@@ -6,6 +6,7 @@
 
 use crate::filters;
 use crate::forge::error::GenerateError;
+use crate::forge::symbol_mangling;
 use crate::model::SCXMLModel;
 use minijinja::Environment;
 use std::path::{Path, PathBuf};
@@ -22,7 +23,26 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
     //    silently becoming "" (Lenient). This catches template typos while still
     //    allowing optional attribute chains like `model.foo.bar` to work.
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
+    register_symbol_artifact_global(&mut env);
     env
+}
+
+/// Publish the artifact vocabulary the SCE-MAP markers name.
+///
+/// Registered as a template global rather than pushed into each backend's
+/// render context so all six backends, the forge per-kind templates, and the
+/// mesh transport template (which builds its own `Environment`) read one copy
+/// — and so no template ever spells an artifact label as a literal, which
+/// would fork the vocabulary the sourcemap keys off.
+pub(crate) fn register_symbol_artifact_global(env: &mut Environment<'_>) {
+    env.add_global(
+        "sce_artifact",
+        minijinja::Value::from_iter([
+            ("machine", symbol_mangling::ARTIFACT_MACHINE),
+            ("state_body", symbol_mangling::ARTIFACT_STATE_BODY),
+            ("forge_body", symbol_mangling::ARTIFACT_FORGE_BODY),
+        ]),
+    );
 }
 
 /// Target language for code generation.
@@ -492,6 +512,33 @@ pub fn generate_with_options(
     render_rust(&mut env, model, options)
 }
 
+/// Render the `mod.rs` module index for a generated Rust state-machine
+/// directory.
+///
+/// Separate from [`generate_with_options`] because it is a separate
+/// artifact with its own drift header, but it goes through the same
+/// template environment so its SCE-MAP marker is rendered by the one
+/// macro that owns the marker shape —
+/// and points at the machine's real source location rather than a
+/// hand-written guess.
+pub fn generate_rust_module_index(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    module_stem: &str,
+) -> Result<String, GenerateError> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_filters(&mut env);
+    let tmpl = env
+        .get_template("module_index.rs.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    tmpl.render(minijinja::context! {
+        model => minijinja::Value::from_serialize(model),
+        module_stem => module_stem,
+    })
+    .map_err(|e| GenerateError::TemplateRender(e.to_string()))
+}
+
 /// Generate Rust code using pre-loaded template strings (WASM-compatible).
 ///
 /// See [`StatechartCodegenOptions::no_std`] for `no_std` semantics. The
@@ -545,6 +592,10 @@ fn render_rust(
     // their owning transition so a per-state `transition_index` cannot
     // collide them across states.
     let mut model_lowered = model.clone();
+    // Stamp each transition with the
+    // symbol identity the sourcemap keys off, before any analysis pass
+    // clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
     // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native
     // host-trait dispatch (engine-free). Mutates each native action's
     // rendered call site on `model_lowered` and returns the generated
@@ -703,6 +754,10 @@ fn render_cpp(
     // selection as every backend).
     let payload = crate::forge::generator::build_cpp_event_payload(model);
     let mut model_lowered = model.clone();
+    // Stamp each transition with the
+    // symbol identity the sourcemap keys off, before any analysis pass
+    // clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
@@ -843,6 +898,10 @@ fn render_c11(
     // selection as every backend).
     let payload = crate::forge::generator::build_c11_event_payload(model);
     let mut model_lowered = model.clone();
+    // Stamp each transition with the
+    // symbol identity the sourcemap keys off, before any analysis pass
+    // clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
@@ -986,6 +1045,10 @@ fn render_kotlin(
     // selection as every backend).
     let payload = crate::forge::generator::build_kotlin_event_payload(model);
     let mut model_lowered = model.clone();
+    // Stamp each transition with the
+    // symbol identity the sourcemap keys off, before any analysis pass
+    // clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 
@@ -1374,6 +1437,10 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // as every backend).
     let payload = crate::forge::generator::build_python_event_payload(model);
     let mut model_lowered = model.clone();
+    // Stamp each transition with the
+    // symbol identity the sourcemap keys off, before any analysis pass
+    // clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 
@@ -1421,6 +1488,10 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
     // single-language clone (same SSOT guard selection as every backend).
     let payload = crate::forge::generator::build_go_event_payload(model);
     let mut model_lowered = model.clone();
+    // Stamp each transition with the
+    // symbol identity the sourcemap keys off, before any analysis pass
+    // clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 

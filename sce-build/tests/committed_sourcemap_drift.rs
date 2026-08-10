@@ -342,8 +342,8 @@ fn marker_lines(text: &str) -> std::collections::BTreeSet<u32> {
             line.strip_prefix("//line ")
                 .filter(|_| !line.contains("SCE-MAP"))
         }) {
-            // `<file>:<start>[-<end>][ (symbol=…)]` — take the number
-            // right after the last colon of the file:line pair.
+            // `<file>:<line>[ :: <state>] :: <artifact>` — take the
+            // number right after the last colon of the file:line pair.
             let head = rest.split_whitespace().next().unwrap_or("");
             if let Some((_, tail)) = head.rsplit_once(':') {
                 let start = tail.split('-').next().unwrap_or("");
@@ -361,7 +361,41 @@ fn marker_lines(text: &str) -> std::collections::BTreeSet<u32> {
 }
 
 /// Lower bound on the directories this gate must judge.
-const MIN_MARKER_DIRS: usize = 100;
+///
+/// Measured at 340 of the 404 committed sidecars once
+/// [`has_markable_sites`] skips the documents with no executable
+/// content. Pinned below that so ordinary fixture churn does not trip
+/// it, but high enough that a precondition bug which silences most of
+/// the sweep cannot pass as a green run.
+const MIN_MARKER_DIRS: usize = 300;
+
+/// Whether a document has any site a per-symbol marker could sit on.
+///
+/// Entry/exit dispatch arms and transition-action bodies are the only
+/// emitted code attributable to a state; a document whose states carry
+/// no executable content emits one shared dispatch function per axis
+/// and there is nothing for a second marker value to name. Asking such
+/// a document for two distinct marker values is asking the emitter to
+/// invent a location.
+///
+/// The two halves are read from different places because the sidecar
+/// records only one of them: `_on_entry_*` / `_on_exit_*` symbols exist
+/// per action, but `_transition_<i>` exists whether or not the
+/// transition has a body. The transition axis is therefore read off
+/// the emitted markers instead. Neither half can silence the gate on
+/// its own — a regression that collapsed every call site back to the
+/// document root would leave the 338 action-bearing documents judged.
+fn has_markable_sites(map: &serde_json::Value, marker_text: &[String]) -> bool {
+    let has_action_symbol = map["symbols"]
+        .as_object()
+        .expect("symbols object")
+        .keys()
+        .any(|k| k.contains("_on_entry_") || k.contains("_on_exit_"));
+    has_action_symbol
+        || marker_text
+            .iter()
+            .any(|text| text.contains(":: _transition_"))
+}
 
 /// In-source markers must distinguish the states they sit in.
 ///
@@ -411,6 +445,7 @@ fn committed_markers_distinguish_the_states_they_sit_in() {
         }
 
         let mut got = std::collections::BTreeSet::new();
+        let mut sources: Vec<String> = Vec::new();
         let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
         };
@@ -425,7 +460,11 @@ fn committed_markers_distinguish_the_states_they_sit_in() {
             }
             if let Ok(text) = std::fs::read_to_string(&path) {
                 got.extend(marker_lines(&text));
+                sources.push(text);
             }
+        }
+        if !has_markable_sites(&map, &sources) {
+            continue;
         }
         judged += 1;
         if got.len() < 2 {

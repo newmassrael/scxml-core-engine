@@ -3951,11 +3951,17 @@ trait W3cBackend {
     ) -> Result<Vec<(String, String)>, ForgeError>;
 
     /// Hook after writing parent SM (e.g. Rust writes mod.rs).
+    ///
+    /// Takes the model because the artifact it writes is a generated
+    /// file like any other: it carries a drift header and therefore a
+    /// source-traceability marker, and a marker needs the machine's real
+    /// location to name.
     fn post_write_parent(
         &self,
         _test_id: &str,
         _test_mod_dir: &Path,
         _input_stem: &str,
+        _model: &SCXMLModel,
         _drift_ctx: &DriftContext,
     ) {
     }
@@ -4272,7 +4278,13 @@ fn generate_w3c_unified(
                         }
 
                         // Post-write hook (e.g. Rust writes initial mod.rs)
-                        backend.post_write_parent(test_id, &test_mod_dir, input_stem, &drift_ctx);
+                        backend.post_write_parent(
+                            test_id,
+                            &test_mod_dir,
+                            input_stem,
+                            &model,
+                            &drift_ctx,
+                        );
 
                         // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap
                         // JSON sidecar. Byte-identical across backends
@@ -4553,6 +4565,7 @@ impl W3cBackend for RustBackend {
         _test_id: &str,
         test_mod_dir: &Path,
         input_stem: &str,
+        model: &SCXMLModel,
         drift_ctx: &DriftContext,
     ) {
         // Suppressions live on the generated `*_sm.rs` itself (see
@@ -4561,15 +4574,22 @@ impl W3cBackend for RustBackend {
         //
         // §synth-5-O traceability — `write_if_changed_drift_aware` prepends the
         // §synth-6.2.6 header, so the ownership-boundary walker requires this
-        // file to carry at least one `SCE-MAP:` marker line. The mod.rs
-        // is the entry point for the test's generated module; point the
-        // marker at the source SCXML so addr2sce traces back to it.
-        let mod_content = format!(
-            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
-             // SCE-MAP: {input_stem}.scxml:1\n\n\
-             mod {input_stem}_sm;\n\
-             pub use {input_stem}_sm::*;\n"
-        );
+        // file to carry at least one `SCE-MAP:` marker line. It renders from
+        // `rust/module_index.rs.jinja2` so the marker names the `_machine`
+        // symbol at the machine's own location; the string this replaced was
+        // written here by hand and cited line 1 of the SCXML unconditionally,
+        // which is the XML declaration, not the `<scxml>` element.
+        let mod_content = match sce_build::generator::generate_rust_module_index(
+            model,
+            &self.tmpl_dir,
+            input_stem,
+        ) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!("Failed to render mod.rs for {input_stem}: {e}");
+                return;
+            }
+        };
         write_if_changed_drift_aware(&test_mod_dir.join("mod.rs"), &mod_content, drift_ctx);
     }
 

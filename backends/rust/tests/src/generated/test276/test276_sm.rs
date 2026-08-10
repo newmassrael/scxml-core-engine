@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: test276.scxml:6"]
-// SCE-MAP: test276.scxml:6
+#![doc = "SCE-MAP: test276.scxml:6 :: _machine"]
+// SCE-MAP: test276.scxml:6 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -731,8 +731,8 @@ impl StatePolicy for Test276Policy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: test276.scxml:6"]
-    // SCE-MAP: test276.scxml:6
+    #[doc = "SCE-MAP: test276.scxml:6 :: _machine"]
+    // SCE-MAP: test276.scxml:6 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -740,7 +740,7 @@ impl StatePolicy for Test276Policy {
     ) {
         match state {
             Test276State::S0 => {
-                // SCE-MAP: test276.scxml:8
+                // SCE-MAP: test276.scxml:8 :: s0 :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -759,8 +759,8 @@ impl StatePolicy for Test276Policy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: test276.scxml:6"]
-    // SCE-MAP: test276.scxml:6
+    #[doc = "SCE-MAP: test276.scxml:6 :: _machine"]
+    // SCE-MAP: test276.scxml:6 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -797,8 +797,8 @@ impl StatePolicy for Test276Policy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: test276.scxml:6"]
-    // SCE-MAP: test276.scxml:6
+    #[doc = "SCE-MAP: test276.scxml:6 :: _machine"]
+    // SCE-MAP: test276.scxml:6 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -853,8 +853,8 @@ impl StatePolicy for Test276Policy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: test276.scxml:6"]
-    // SCE-MAP: test276.scxml:6
+    #[doc = "SCE-MAP: test276.scxml:6 :: _machine"]
+    // SCE-MAP: test276.scxml:6 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;

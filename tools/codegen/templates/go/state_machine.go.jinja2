@@ -16,7 +16,7 @@
    remaps subsequent line positions for the rest of the file — fine
    per-function but disruptive at file scope. #}
 
-{{ sce_map.source_marker(model.source_location, "go", module_level=true) }}
+{{ sce_map.source_marker(model.source_location, "go", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 package {{ model.name | to_snake_case }}
 

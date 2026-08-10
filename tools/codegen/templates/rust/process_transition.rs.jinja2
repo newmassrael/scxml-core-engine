@@ -19,7 +19,7 @@
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above `process_transition` and `execute_transition_actions`. #}
-    {{ sce_map.source_marker(model.source_location, "rust") }}
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -210,7 +210,7 @@
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    {{ sce_map.source_marker(model.source_location, "rust") }}
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% if model.has_transition_actions %}
         if !self.has_transition_actions {
@@ -228,7 +228,7 @@
 {% if trans.actions %}
                     {{ loop.index0 }} => {  {{- annot.annotation_comment(trans, "rust", "                        ") }}
 {% if trans.source_location %}
-                        {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true) | trim }}
+                        {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
                         // W3C SCXML 3.13: Transition {{ loop.index0 }} actions
 {% for action in trans.actions %}

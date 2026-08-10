@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_decl_ext_keyexpr:89"]
-// SCE-MAP: codec_zenoh_decl_ext_keyexpr:89
+#![doc = "SCE-MAP: codec_zenoh_decl_ext_keyexpr:89 :: _forge_body"]
+// SCE-MAP: codec_zenoh_decl_ext_keyexpr:89 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

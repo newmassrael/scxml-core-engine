@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3
+// SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
 
 package com.sce.integration.autoforward_done_invoke
 
@@ -120,25 +120,25 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14 :: missed :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("missed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13 :: saw :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("saw")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("watch")) return
             }
@@ -146,19 +146,19 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onExit(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14 :: missed :: _state_body
                 activeStateIds.remove("missed")
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13 :: saw :: _state_body
                 activeStateIds.remove("saw")
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
                 activeStateIds.remove("watch")
             }
         }
@@ -166,7 +166,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDoneInvokeSceSynthInvokeInvWatchState,
         event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent?
@@ -174,14 +174,14 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
         when (source) {
         is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> when {
             event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6 :: watch :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("sawPlatform", "")
             }
             event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9
+                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9 :: watch :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

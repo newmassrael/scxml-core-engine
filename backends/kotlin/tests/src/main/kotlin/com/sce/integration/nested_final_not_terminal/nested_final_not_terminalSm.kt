@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: nested_final_not_terminal.scxml:41
+// SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
 
 package com.sce.integration.nested_final_not_terminal
 
@@ -138,30 +138,30 @@ class NestedFinalNotTerminalStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: nested_final_not_terminal.scxml:41
+    // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
     override fun onEntry(state: NestedFinalNotTerminalState) {
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:51
+                // SCE-MAP: nested_final_not_terminal.scxml:51 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is NestedFinalNotTerminalState.Phase -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:44
+                // SCE-MAP: nested_final_not_terminal.scxml:44 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
             }
             is NestedFinalNotTerminalState.PhaseDone -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:48
+                // SCE-MAP: nested_final_not_terminal.scxml:48 :: phaseDone :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phaseDone")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(NestedFinalNotTerminalEvent.Done.State.Phase, EventMetadata.platform())
             }
             is NestedFinalNotTerminalState.Running -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:45
+                // SCE-MAP: nested_final_not_terminal.scxml:45 :: running :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("running")) return
             }
@@ -169,23 +169,23 @@ class NestedFinalNotTerminalStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: nested_final_not_terminal.scxml:41
+    // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
     override fun onExit(state: NestedFinalNotTerminalState) {
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:51
+                // SCE-MAP: nested_final_not_terminal.scxml:51 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is NestedFinalNotTerminalState.Phase -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:44
+                // SCE-MAP: nested_final_not_terminal.scxml:44 :: phase :: _state_body
                 activeStateIds.remove("phase")
             }
             is NestedFinalNotTerminalState.PhaseDone -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:48
+                // SCE-MAP: nested_final_not_terminal.scxml:48 :: phaseDone :: _state_body
                 activeStateIds.remove("phaseDone")
             }
             is NestedFinalNotTerminalState.Running -> {
-                // SCE-MAP: nested_final_not_terminal.scxml:45
+                // SCE-MAP: nested_final_not_terminal.scxml:45 :: running :: _state_body
                 activeStateIds.remove("running")
             }
         }
@@ -193,7 +193,7 @@ class NestedFinalNotTerminalStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: nested_final_not_terminal.scxml:41
+    // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
     override fun executeTransitionActions(
         source: NestedFinalNotTerminalState,
         event: NestedFinalNotTerminalEvent?

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_close:16
+// SCE-MAP: codec_zenoh_close:16 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

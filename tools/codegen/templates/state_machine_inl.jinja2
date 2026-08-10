@@ -22,7 +22,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
     // SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring
     // these method implementations to the `<scxml>` root position.
-    {{ sce_map.source_marker(model.source_location, "cpp", module_level=true) }}
+    {{ sce_map.source_marker(model.source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
     // ============================================================================
     // {{ model.name }}Policy method implementations

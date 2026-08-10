@@ -6,7 +6,7 @@
 
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated Python source to the `<scxml>` root element's position. #}
-{{ sce_map.source_marker(model.source_location, "python", module_level=true) }}
+{{ sce_map.source_marker(model.source_location, "python", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 """Generated Python state machine for `{{ model.name }}`.
 

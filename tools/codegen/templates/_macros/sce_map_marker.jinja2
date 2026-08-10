@@ -33,14 +33,30 @@
    forge per-kind body functions; the macro is single-source-of-truth
    so a syntax tweak there edits one place.
 
-   The macro signature carries optional `symbol_id` + `line_end`
-   parameters (SCE Protocol-Synthesis RFC §synth-5-O). When provided
-   the marker line gains a `(symbol=<mangled>)` suffix and the line
-   number widens into a `<start>-<end>` range so consumers can map
-   PC offsets within a function back to the originating SCXML
-   segment without re-walking the IR. The defaults render the
-   original single-line, suffix-free marker, so call sites that omit
-   them are unaffected.
+   `symbol_state` + `symbol_artifact` carry the marked symbol's
+   identity. Spec lines 3117 / 3153 / 3158 fix the comment-form marker
+   as `SCE-MAP: <scxml_file>:<line> :: <state> :: <artifact>` — the
+   two segments are exactly the identity half of the mangled symbol
+   (`forge::symbol_mangling::mangle`), so a consumer holding only the
+   source listing can rebuild the sidecar key without re-walking the
+   IR. Document-root symbols (`_machine`, `_forge_body`) have no state
+   path; they render the artifact alone (` :: <artifact>`), the
+   artifact staying the last ` :: ` field either way so the parse rule
+   is one rule.
+
+   The values are NEVER spelled as literals at a call site: constants
+   come from the `sce_artifact` global (registered in
+   `generator::new_env` off the `ARTIFACT_*` consts) and per-transition
+   labels ride home on the transition itself
+   (`symbol_state_path` / `symbol_artifact`, stamped by
+   `symbol_mangling::stamp_symbol_attribution`). A template that
+   derived the identity from its render site would be wrong wherever a
+   backend renders inherited transitions under a descendant's arm.
+
+   `line` is a single line, not a range: `SourceLocation` records one
+   line per node, which is the same reason the sidecar's `line_range`
+   is `[n, n]`. A range shape belongs to the round that gives the
+   parser spans, together with its producer.
 
    The per-symbol attribution is also emitted as JSON sidecar
    (`out/{language}/sce_sourcemap.json`); the in-source markers are
@@ -63,16 +79,16 @@
    committed tree carried a single distinct marker value per file
    until the call sites started passing the state's own location.
 #}
-{%- macro source_marker(loc, backend, module_level=false, symbol_id="", line_end=none, stmt_level=false) -%}
+{%- macro source_marker(loc, backend, module_level=false, symbol_state="", symbol_artifact="", stmt_level=false) -%}
 {%- if loc and loc.line -%}
-{#- Construct the line-range fragment. `line_end` defaults to
-    `loc.line` so a single-line marker still renders as `N`; the
-    macro accepts an explicit `line_end` for multi-line attribution
-    once a future producer (per-symbol IR walker) plumbs it. -#}
-{%- set start_line = loc.line -%}
-{%- set end_line = line_end if line_end else loc.line -%}
-{%- set range_part = start_line ~ "" if start_line == end_line else start_line ~ "-" ~ end_line -%}
-{%- set sym_suffix = " (symbol=" ~ symbol_id ~ ")" if symbol_id else "" -%}
+{%- set range_part = loc.line -%}
+{#- Attribution suffix per spec lines 3117/3153/3158. The artifact is
+    always the trailing ` :: ` field; the state field precedes it only
+    when the symbol has a state path. `#line` / `//line` directives
+    take no suffix — their syntax is fixed by the language and the
+    attribution reaches the consumer through DWARF instead. -#}
+{%- set state_part = " :: " ~ symbol_state if symbol_state else "" -%}
+{%- set sym_suffix = state_part ~ " :: " ~ symbol_artifact if symbol_artifact else "" -%}
 {%- if backend == "c" or backend == "cpp" -%}
 {#- C/Cpp `#line` is a preprocessor directive that remaps line
     numbers for the *rest of the translation unit*. At file scope

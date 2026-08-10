@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/send_param_payload/send_param_payload__sce_synth_invoke__inv_emitter.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3
+// SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
 
 package com.sce.integration.send_param_payload
 
@@ -107,11 +107,11 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3
+    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
     override fun onEntry(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("emit")) return
 
@@ -125,7 +125,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
             }
             }
             is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("sent")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -135,15 +135,15 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3
+    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
     override fun onExit(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
                 activeStateIds.remove("emit")
             }
             is SendParamPayloadSceSynthInvokeInvEmitterState.Sent -> {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13
+                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
                 activeStateIds.remove("sent")
             }
         }
@@ -151,7 +151,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3
+    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: SendParamPayloadSceSynthInvokeInvEmitterState,
         event: SendParamPayloadSceSynthInvokeInvEmitterEvent?

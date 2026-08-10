@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/488/test488.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test488.scxml:4
+// SCE-MAP: test488.scxml:4 :: _machine
 
 package com.sce.generated.test488
 
@@ -288,35 +288,35 @@ class Test488StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test488.scxml:4
+    // SCE-MAP: test488.scxml:4 :: _machine
     override fun onEntry(state: Test488State) {
         when (state) {
             is Test488State.Fail -> {
-                // SCE-MAP: test488.scxml:35
+                // SCE-MAP: test488.scxml:35 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test488State.Pass -> {
-                // SCE-MAP: test488.scxml:34
+                // SCE-MAP: test488.scxml:34 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test488State.S0 -> {
-                // SCE-MAP: test488.scxml:7
+                // SCE-MAP: test488.scxml:7 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test488State.S01 -> {
-                // SCE-MAP: test488.scxml:15
+                // SCE-MAP: test488.scxml:15 :: s01 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             }
             is Test488State.S02 -> {
-                // SCE-MAP: test488.scxml:18
+                // SCE-MAP: test488.scxml:18 :: s02 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
@@ -344,7 +344,7 @@ class Test488StateMachine(
                 }
             }
             is Test488State.S1 -> {
-                // SCE-MAP: test488.scxml:29
+                // SCE-MAP: test488.scxml:29 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
@@ -352,31 +352,31 @@ class Test488StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test488.scxml:4
+    // SCE-MAP: test488.scxml:4 :: _machine
     override fun onExit(state: Test488State) {
         when (state) {
             is Test488State.Fail -> {
-                // SCE-MAP: test488.scxml:35
+                // SCE-MAP: test488.scxml:35 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test488State.Pass -> {
-                // SCE-MAP: test488.scxml:34
+                // SCE-MAP: test488.scxml:34 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test488State.S0 -> {
-                // SCE-MAP: test488.scxml:7
+                // SCE-MAP: test488.scxml:7 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test488State.S01 -> {
-                // SCE-MAP: test488.scxml:15
+                // SCE-MAP: test488.scxml:15 :: s01 :: _state_body
                 activeStateIds.remove("s01")
             }
             is Test488State.S02 -> {
-                // SCE-MAP: test488.scxml:18
+                // SCE-MAP: test488.scxml:18 :: s02 :: _state_body
                 activeStateIds.remove("s02")
             }
             is Test488State.S1 -> {
-                // SCE-MAP: test488.scxml:29
+                // SCE-MAP: test488.scxml:29 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
         }
@@ -384,7 +384,7 @@ class Test488StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test488.scxml:4
+    // SCE-MAP: test488.scxml:4 :: _machine
     override fun executeTransitionActions(
         source: Test488State,
         event: Test488Event?

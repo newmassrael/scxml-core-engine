@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: 
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3
+// SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3 :: _machine
 
 package com.sce.generated.test236
 
@@ -88,11 +88,11 @@ class Test236SceSynthInvokeInvoke0StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun onEntry(state: Test236SceSynthInvokeInvoke0State) {
         when (state) {
             is Test236SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:4
+                // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:4 :: subFinal :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -102,11 +102,11 @@ class Test236SceSynthInvokeInvoke0StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun onExit(state: Test236SceSynthInvokeInvoke0State) {
         when (state) {
             is Test236SceSynthInvokeInvoke0State.SubFinal -> {
-                // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:4
+                // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:4 :: subFinal :: _state_body
                 activeStateIds.remove("subFinal")
 
 
@@ -118,7 +118,7 @@ class Test236SceSynthInvokeInvoke0StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3
+    // SCE-MAP: test236__sce_synth_invoke__invoke_0.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test236SceSynthInvokeInvoke0State,
         event: Test236SceSynthInvokeInvoke0Event?

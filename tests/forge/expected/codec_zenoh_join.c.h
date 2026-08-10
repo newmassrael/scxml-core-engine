@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_join:41
+// SCE-MAP: codec_zenoh_join:41 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52"]
-// SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+#![doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine"]
+// SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -560,8 +560,8 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52"]
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine"]
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -569,7 +569,7 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     ) {
         match state {
             InvokePrecedesExternalDequeueState::Phase => {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -614,8 +614,8 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52"]
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine"]
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -652,8 +652,8 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52"]
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine"]
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -675,8 +675,8 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52"]
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    #[doc = "SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine"]
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -687,7 +687,7 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
             InvokePrecedesExternalDequeueState::Phase => {
                 match self.last_transition_index {
                     1 => {
-                        // SCE-MAP: invoke_precedes_external_dequeue.scxml:85
+                        // SCE-MAP: invoke_precedes_external_dequeue.scxml:85 :: phase :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {

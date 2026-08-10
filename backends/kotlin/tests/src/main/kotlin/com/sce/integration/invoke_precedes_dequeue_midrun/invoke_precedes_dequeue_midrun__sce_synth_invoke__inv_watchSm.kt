@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_precedes_dequeue_midrun/invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3
+// SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
 
 package com.sce.integration.invoke_precedes_dequeue_midrun
 
@@ -132,30 +132,30 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onEntry(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState) {
         when (state) {
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("missed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ordered")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("saw")) return
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
 
@@ -167,23 +167,23 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun onExit(state: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState) {
         when (state) {
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Missed -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
                 activeStateIds.remove("missed")
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Ordered -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
                 activeStateIds.remove("ordered")
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
                 activeStateIds.remove("saw")
             }
             is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
                 activeStateIds.remove("waiting")
             }
         }
@@ -191,7 +191,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3
+    // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState,
         event: InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent?
@@ -199,7 +199,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         when (source) {
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Saw -> when {
             event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Probe -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:15
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:15 :: saw :: _transition_0
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -209,7 +209,7 @@ class InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(
         }
         is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState.Waiting -> when {
             event is InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent.Probe -> {
-                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:10
+                // SCE-MAP: invoke_precedes_dequeue_midrun__sce_synth_invoke__inv_watch.scxml:10 :: waiting :: _transition_1
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback

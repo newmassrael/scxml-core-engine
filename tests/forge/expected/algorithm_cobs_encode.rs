@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: algorithm_cobs_encode:32"]
-// SCE-MAP: algorithm_cobs_encode:32
+#![doc = "SCE-MAP: algorithm_cobs_encode:32 :: _forge_body"]
+// SCE-MAP: algorithm_cobs_encode:32 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none

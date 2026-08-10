@@ -1,4 +1,4 @@
-// SCE-MAP: interpolation_2d_bilinear:1
+// SCE-MAP: interpolation_2d_bilinear:1 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation") */
 /* Runtime: sce_forge_runtime */

@@ -78,7 +78,7 @@
 {% for transition in transitions_with_action_here %}
             if transition_index == {{ transition.transition_index }}:{{ annot.annotation_comment(transition, "python", "                ") }}
 {% if transition.source_location %}
-                {{ sce_map.source_marker(transition.source_location, "python", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(transition.source_location, "python", stmt_level=true, symbol_state=transition.symbol_state_path, symbol_artifact=transition.symbol_artifact) | trim }}
 {% endif %}
                 try:
 {% for action in transition.actions %}

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/donedata_late_completion/donedata_late_completion__sce_synth_invoke__inv_late.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3
+// SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
 
 package com.sce.integration.donedata_late_completion
 
@@ -218,11 +218,11 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3
+    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
     override fun onEntry(state: DonedataLateCompletionSceSynthInvokeInvLateState) {
         when (state) {
             is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11
+                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("settled")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
@@ -254,7 +254,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                 markFinalStateReached()
             }
             is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5
+                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
 
@@ -266,15 +266,15 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3
+    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
     override fun onExit(state: DonedataLateCompletionSceSynthInvokeInvLateState) {
         when (state) {
             is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11
+                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
                 activeStateIds.remove("settled")
             }
             is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5
+                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
                 activeStateIds.remove("waiting")
             }
         }
@@ -282,7 +282,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3
+    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: DonedataLateCompletionSceSynthInvokeInvLateState,
         event: DonedataLateCompletionSceSynthInvokeInvLateEvent?

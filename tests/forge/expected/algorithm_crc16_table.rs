@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: algorithm_crc16_table:20"]
-// SCE-MAP: algorithm_crc16_table:20
+#![doc = "SCE-MAP: algorithm_crc16_table:20 :: _forge_body"]
+// SCE-MAP: algorithm_crc16_table:20 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none

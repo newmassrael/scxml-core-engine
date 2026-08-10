@@ -38,7 +38,7 @@
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_default_actions or _has_donedata or _final_with_parent %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:{{ annot.annotation_comment(state, "python", "            ") }}
 {% if state.source_location %}
-            {{ sce_map.source_marker(state.source_location, "python", stmt_level=true) | trim }}
+            {{ sce_map.source_marker(state.source_location, "python", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_entry_blocks %}
             try:
@@ -177,7 +177,7 @@
 {% if state.on_exit_blocks %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:{{ annot.annotation_comment(state, "python", "            ") }}
 {% if state.source_location %}
-            {{ sce_map.source_marker(state.source_location, "python", stmt_level=true) | trim }}
+            {{ sce_map.source_marker(state.source_location, "python", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_exit_blocks %}
             try:

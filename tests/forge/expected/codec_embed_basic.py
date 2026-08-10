@@ -1,4 +1,4 @@
-# SCE-MAP: codec_embed_basic:43
+# SCE-MAP: codec_embed_basic:43 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 # Runtime: none

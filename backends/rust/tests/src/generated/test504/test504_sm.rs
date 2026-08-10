@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: test504.scxml:5"]
-// SCE-MAP: test504.scxml:5
+#![doc = "SCE-MAP: test504.scxml:5 :: _machine"]
+// SCE-MAP: test504.scxml:5 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -785,8 +785,8 @@ impl StatePolicy for Test504Policy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: test504.scxml:5"]
-    // SCE-MAP: test504.scxml:5
+    #[doc = "SCE-MAP: test504.scxml:5 :: _machine"]
+    // SCE-MAP: test504.scxml:5 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -805,7 +805,7 @@ impl StatePolicy for Test504Policy {
         }
         match state {
             Test504State::S1 => {
-                // SCE-MAP: test504.scxml:14
+                // SCE-MAP: test504.scxml:14 :: s1 :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -868,8 +868,8 @@ impl StatePolicy for Test504Policy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: test504.scxml:5"]
-    // SCE-MAP: test504.scxml:5
+    #[doc = "SCE-MAP: test504.scxml:5 :: _machine"]
+    // SCE-MAP: test504.scxml:5 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -902,7 +902,7 @@ impl StatePolicy for Test504Policy {
         self.active_states.retain(|&s| s != state);
         match state {
             Test504State::P => {
-                // SCE-MAP: test504.scxml:27
+                // SCE-MAP: test504.scxml:27 :: p :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -930,7 +930,7 @@ impl StatePolicy for Test504Policy {
                 }
             }
             Test504State::Ps1 => {
-                // SCE-MAP: test504.scxml:39
+                // SCE-MAP: test504.scxml:39 :: ps1 :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -958,7 +958,7 @@ impl StatePolicy for Test504Policy {
                 }
             }
             Test504State::Ps2 => {
-                // SCE-MAP: test504.scxml:44
+                // SCE-MAP: test504.scxml:44 :: ps2 :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -986,7 +986,7 @@ impl StatePolicy for Test504Policy {
                 }
             }
             Test504State::S2 => {
-                // SCE-MAP: test504.scxml:22
+                // SCE-MAP: test504.scxml:22 :: s2 :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -1018,8 +1018,8 @@ impl StatePolicy for Test504Policy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: test504.scxml:5"]
-    // SCE-MAP: test504.scxml:5
+    #[doc = "SCE-MAP: test504.scxml:5 :: _machine"]
+    // SCE-MAP: test504.scxml:5 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -1184,8 +1184,8 @@ impl StatePolicy for Test504Policy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: test504.scxml:5"]
-    // SCE-MAP: test504.scxml:5
+    #[doc = "SCE-MAP: test504.scxml:5 :: _machine"]
+    // SCE-MAP: test504.scxml:5 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -1196,7 +1196,7 @@ impl StatePolicy for Test504Policy {
             Test504State::P => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: test504.scxml:31
+                        // SCE-MAP: test504.scxml:31 :: p :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {

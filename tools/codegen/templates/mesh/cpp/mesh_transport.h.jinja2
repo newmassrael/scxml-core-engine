@@ -8,7 +8,7 @@
    file carrying a §synth-6.2.6 drift header — otherwise the codegen
    pre-emit walker (`validate_emitted_files_have_markers`) fails the
    build with `traceability/meta-generated-source-line-marker-missing`. #}
-{{ sce_map.source_marker(source_location, "cpp", module_level=true) }}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 {# §mesh-7.4: this template IS the "generated transport code" that section
    specifies — one dedicated send path per binding, calling the transport's

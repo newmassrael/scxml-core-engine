@@ -1,4 +1,4 @@
-// SCE-MAP: codec_subbyte:3
+// SCE-MAP: codec_subbyte:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

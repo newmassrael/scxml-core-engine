@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/521/test521.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test521.scxml:7
+// SCE-MAP: test521.scxml:7 :: _machine
 
 package com.sce.generated.test521
 
@@ -226,25 +226,25 @@ class Test521StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test521.scxml:7
+    // SCE-MAP: test521.scxml:7 :: _machine
     override fun onEntry(state: Test521State) {
         when (state) {
             is Test521State.Fail -> {
-                // SCE-MAP: test521.scxml:25
+                // SCE-MAP: test521.scxml:25 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test521State.Pass -> {
-                // SCE-MAP: test521.scxml:24
+                // SCE-MAP: test521.scxml:24 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test521State.S0 -> {
-                // SCE-MAP: test521.scxml:10
+                // SCE-MAP: test521.scxml:10 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -291,19 +291,19 @@ class Test521StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test521.scxml:7
+    // SCE-MAP: test521.scxml:7 :: _machine
     override fun onExit(state: Test521State) {
         when (state) {
             is Test521State.Fail -> {
-                // SCE-MAP: test521.scxml:25
+                // SCE-MAP: test521.scxml:25 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test521State.Pass -> {
-                // SCE-MAP: test521.scxml:24
+                // SCE-MAP: test521.scxml:24 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test521State.S0 -> {
-                // SCE-MAP: test521.scxml:10
+                // SCE-MAP: test521.scxml:10 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
         }
@@ -311,7 +311,7 @@ class Test521StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test521.scxml:7
+    // SCE-MAP: test521.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test521State,
         event: Test521Event?

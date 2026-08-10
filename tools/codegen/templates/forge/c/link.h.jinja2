@@ -2,7 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{{ sce_map.source_marker(source_location, "c", module_level=true) }}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="link") */
 /* Runtime: sce_forge_runtime_c (header-only INTERFACE library) */

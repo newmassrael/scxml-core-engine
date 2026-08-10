@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_zenoh_interest_body:56"]
-// SCE-MAP: codec_zenoh_interest_body:56
+#![doc = "SCE-MAP: codec_zenoh_interest_body:56 :: _forge_body"]
+// SCE-MAP: codec_zenoh_interest_body:56 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

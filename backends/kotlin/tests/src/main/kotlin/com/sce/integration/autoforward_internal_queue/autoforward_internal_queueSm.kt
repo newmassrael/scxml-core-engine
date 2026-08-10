@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_internal_queue.scxml:51
+// SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
 
 package com.sce.integration.autoforward_internal_queue
 
@@ -133,25 +133,25 @@ class AutoforwardInternalQueueStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_internal_queue.scxml:51
+    // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
     override fun onEntry(state: AutoforwardInternalQueueState) {
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:85
+                // SCE-MAP: autoforward_internal_queue.scxml:85 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueState.Pass -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:84
+                // SCE-MAP: autoforward_internal_queue.scxml:84 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueState.Phase -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:54
+                // SCE-MAP: autoforward_internal_queue.scxml:54 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -169,19 +169,19 @@ class AutoforwardInternalQueueStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_internal_queue.scxml:51
+    // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
     override fun onExit(state: AutoforwardInternalQueueState) {
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:85
+                // SCE-MAP: autoforward_internal_queue.scxml:85 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is AutoforwardInternalQueueState.Pass -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:84
+                // SCE-MAP: autoforward_internal_queue.scxml:84 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is AutoforwardInternalQueueState.Phase -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:54
+                // SCE-MAP: autoforward_internal_queue.scxml:54 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -193,7 +193,7 @@ class AutoforwardInternalQueueStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_internal_queue.scxml:51
+    // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardInternalQueueState,
         event: AutoforwardInternalQueueEvent?
@@ -201,7 +201,7 @@ class AutoforwardInternalQueueStateMachine(
         when (source) {
         is AutoforwardInternalQueueState.Phase -> when {
             event is AutoforwardInternalQueueEvent.Ready -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:75
+                // SCE-MAP: autoforward_internal_queue.scxml:75 :: phase :: _transition_0
 
 
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
@@ -209,7 +209,7 @@ class AutoforwardInternalQueueStateMachine(
             return  // W3C SCXML 5.10: Stop subsequent executable content
             }
             event is AutoforwardInternalQueueEvent.Error.Execution -> {
-                // SCE-MAP: autoforward_internal_queue.scxml:78
+                // SCE-MAP: autoforward_internal_queue.scxml:78 :: phase :: _transition_1
 
 
             send(AutoforwardInternalQueueEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))

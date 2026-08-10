@@ -1,4 +1,4 @@
-// SCE-MAP: codec_fixed_after_lengthref:19
+// SCE-MAP: codec_fixed_after_lengthref:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

@@ -22,7 +22,7 @@
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above the `onEntry` / `onExit` overrides. Kotlin's macro form is
        a plain `// SCE-MAP:` comment — non-syntactic, no compile cost. #}
-    {{ sce_map.source_marker(model.source_location, "kotlin") }}
+    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
     override fun onEntry(state: {{ machine_name }}State) {
         when (state) {
 {% for state_id in model.states | sort %}
@@ -46,7 +46,7 @@
 {% endif %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
 {% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("{{ state_id }}")) return
@@ -369,7 +369,7 @@
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    {{ sce_map.source_marker(model.source_location, "kotlin") }}
+    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
     override fun onExit(state: {{ machine_name }}State) {
         when (state) {
 {% for state_id in model.states | sort %}
@@ -379,7 +379,7 @@
 {% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
 {% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)

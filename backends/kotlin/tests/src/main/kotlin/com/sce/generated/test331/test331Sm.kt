@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/331/test331.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test331.scxml:3
+// SCE-MAP: test331.scxml:3 :: _machine
 
 package com.sce.generated.test331
 
@@ -303,37 +303,37 @@ class Test331StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test331.scxml:3
+    // SCE-MAP: test331.scxml:3 :: _machine
     override fun onEntry(state: Test331State) {
         when (state) {
             is Test331State.Fail -> {
-                // SCE-MAP: test331.scxml:60
+                // SCE-MAP: test331.scxml:60 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.Pass -> {
-                // SCE-MAP: test331.scxml:59
+                // SCE-MAP: test331.scxml:59 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.S0 -> {
-                // SCE-MAP: test331.scxml:10
+                // SCE-MAP: test331.scxml:10 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
             raiseInternal(Test331Event.Foo)
             }
             is Test331State.S1 -> {
-                // SCE-MAP: test331.scxml:21
+                // SCE-MAP: test331.scxml:21 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             is Test331State.S2 -> {
-                // SCE-MAP: test331.scxml:26
+                // SCE-MAP: test331.scxml:26 :: s2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
 
@@ -342,12 +342,12 @@ class Test331StateMachine(
             raiseInternal(Test331Event.Error.Execution, EventMetadata.platform())
             }
             is Test331State.S3 -> {
-                // SCE-MAP: test331.scxml:37
+                // SCE-MAP: test331.scxml:37 :: s3 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             }
             is Test331State.S4 -> {
-                // SCE-MAP: test331.scxml:42
+                // SCE-MAP: test331.scxml:42 :: s4 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
 
@@ -355,7 +355,7 @@ class Test331StateMachine(
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is Test331State.S5 -> {
-                // SCE-MAP: test331.scxml:53
+                // SCE-MAP: test331.scxml:53 :: s5 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s5")) return
             }
@@ -363,39 +363,39 @@ class Test331StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test331.scxml:3
+    // SCE-MAP: test331.scxml:3 :: _machine
     override fun onExit(state: Test331State) {
         when (state) {
             is Test331State.Fail -> {
-                // SCE-MAP: test331.scxml:60
+                // SCE-MAP: test331.scxml:60 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test331State.Pass -> {
-                // SCE-MAP: test331.scxml:59
+                // SCE-MAP: test331.scxml:59 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test331State.S0 -> {
-                // SCE-MAP: test331.scxml:10
+                // SCE-MAP: test331.scxml:10 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test331State.S1 -> {
-                // SCE-MAP: test331.scxml:21
+                // SCE-MAP: test331.scxml:21 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
             is Test331State.S2 -> {
-                // SCE-MAP: test331.scxml:26
+                // SCE-MAP: test331.scxml:26 :: s2 :: _state_body
                 activeStateIds.remove("s2")
             }
             is Test331State.S3 -> {
-                // SCE-MAP: test331.scxml:37
+                // SCE-MAP: test331.scxml:37 :: s3 :: _state_body
                 activeStateIds.remove("s3")
             }
             is Test331State.S4 -> {
-                // SCE-MAP: test331.scxml:42
+                // SCE-MAP: test331.scxml:42 :: s4 :: _state_body
                 activeStateIds.remove("s4")
             }
             is Test331State.S5 -> {
-                // SCE-MAP: test331.scxml:53
+                // SCE-MAP: test331.scxml:53 :: s5 :: _state_body
                 activeStateIds.remove("s5")
             }
         }
@@ -403,7 +403,7 @@ class Test331StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test331.scxml:3
+    // SCE-MAP: test331.scxml:3 :: _machine
     override fun executeTransitionActions(
         source: Test331State,
         event: Test331Event?
@@ -411,7 +411,7 @@ class Test331StateMachine(
         when (source) {
         is Test331State.S0 -> when {
             event is Test331Event.Foo -> {
-                // SCE-MAP: test331.scxml:15
+                // SCE-MAP: test331.scxml:15 :: s0 :: _transition_0
 
 
             executeAssign("Var1", "_event.type")
@@ -420,7 +420,7 @@ class Test331StateMachine(
         }
         is Test331State.S2 -> when {
             (event is Test331Event.Error || event is Test331Event.Error.Execution) -> {
-                // SCE-MAP: test331.scxml:31
+                // SCE-MAP: test331.scxml:31 :: s2 :: _transition_0
 
 
             executeAssign("Var1", "_event.type")
@@ -429,7 +429,7 @@ class Test331StateMachine(
         }
         is Test331State.S4 -> when {
             event is Test331Event.Foo -> {
-                // SCE-MAP: test331.scxml:47
+                // SCE-MAP: test331.scxml:47 :: s4 :: _transition_0
 
 
             executeAssign("Var1", "_event.type")

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_dma_aligned_basic:20
+// SCE-MAP: codec_dma_aligned_basic:20 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */

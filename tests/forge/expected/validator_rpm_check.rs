@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: validator_rpm_check:2"]
-// SCE-MAP: validator_rpm_check:2
+#![doc = "SCE-MAP: validator_rpm_check:2 :: _forge_body"]
+// SCE-MAP: validator_rpm_check:2 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Runtime: none

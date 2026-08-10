@@ -1,4 +1,4 @@
-# SCE-MAP: crossfile_validator_codec:4
+# SCE-MAP: crossfile_validator_codec:4 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 # Runtime: none

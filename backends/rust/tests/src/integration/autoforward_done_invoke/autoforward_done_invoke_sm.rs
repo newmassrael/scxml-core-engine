@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: autoforward_done_invoke.scxml:55"]
-// SCE-MAP: autoforward_done_invoke.scxml:55
+#![doc = "SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine"]
+// SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -682,8 +682,8 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55"]
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine"]
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -691,7 +691,7 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
     ) {
         match state {
             AutoforwardDoneInvokeState::Phase => {
-                // SCE-MAP: autoforward_done_invoke.scxml:58
+                // SCE-MAP: autoforward_done_invoke.scxml:58 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -721,8 +721,8 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55"]
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine"]
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -770,8 +770,8 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55"]
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine"]
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -793,8 +793,8 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55"]
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    #[doc = "SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine"]
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -805,7 +805,7 @@ impl StatePolicy for AutoforwardDoneInvokePolicy {
             AutoforwardDoneInvokeState::Phase => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: autoforward_done_invoke.scxml:84
+                        // SCE-MAP: autoforward_done_invoke.scxml:84 :: phase :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {

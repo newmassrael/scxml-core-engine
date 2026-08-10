@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{{ sce_map.source_marker(source_location, "rust", module_level=true) }}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="worker")
 // Runtime: self-contained on (rust, *) — no SCE-side helper crate.

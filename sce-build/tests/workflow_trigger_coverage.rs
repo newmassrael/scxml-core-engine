@@ -51,6 +51,7 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "hook_ci_parity",
     "roadmap_marker_gate",
     "sourced_scripts_are_tracked",
+    "sourcemap_symbol_markers",
     "workflow_trigger_coverage",
 ];
 

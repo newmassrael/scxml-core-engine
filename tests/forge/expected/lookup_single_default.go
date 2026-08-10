@@ -1,4 +1,4 @@
-// SCE-MAP: lookup_single_default:3
+// SCE-MAP: lookup_single_default:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
 // Runtime: none

@@ -1,4 +1,4 @@
-// SCE-MAP: codec_peek_arm_b:13
+// SCE-MAP: codec_peek_arm_b:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
