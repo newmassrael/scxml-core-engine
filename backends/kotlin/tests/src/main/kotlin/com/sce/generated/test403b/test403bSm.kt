@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/403/test403b.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test403b.scxml:6
+// SCE-MAP: test403b.scxml:6 :: _machine
 
 package com.sce.generated.test403b
 
@@ -313,18 +313,18 @@ class Test403bStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test403b.scxml:6
+    // SCE-MAP: test403b.scxml:6 :: _machine
     override fun onEntry(state: Test403bState) {
         when (state) {
             is Test403bState.Fail -> {
-                // SCE-MAP: test403b.scxml:43
+                // SCE-MAP: test403b.scxml:43 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test403bState.P0 -> {
-                // SCE-MAP: test403b.scxml:20
+                // SCE-MAP: test403b.scxml:20 :: p0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
 
@@ -337,24 +337,24 @@ class Test403bStateMachine(
                 onEntry(Test403bState.P0s2)
             }
             is Test403bState.P0s1 -> {
-                // SCE-MAP: test403b.scxml:32
+                // SCE-MAP: test403b.scxml:32 :: p0s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1")) return
             }
             is Test403bState.P0s2 -> {
-                // SCE-MAP: test403b.scxml:37
+                // SCE-MAP: test403b.scxml:37 :: p0s2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2")) return
             }
             is Test403bState.Pass -> {
-                // SCE-MAP: test403b.scxml:42
+                // SCE-MAP: test403b.scxml:42 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test403bState.S0 -> {
-                // SCE-MAP: test403b.scxml:11
+                // SCE-MAP: test403b.scxml:11 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
                 if (!suppressChildEntry) {
@@ -366,15 +366,15 @@ class Test403bStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test403b.scxml:6
+    // SCE-MAP: test403b.scxml:6 :: _machine
     override fun onExit(state: Test403bState) {
         when (state) {
             is Test403bState.Fail -> {
-                // SCE-MAP: test403b.scxml:43
+                // SCE-MAP: test403b.scxml:43 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test403bState.P0 -> {
-                // SCE-MAP: test403b.scxml:20
+                // SCE-MAP: test403b.scxml:20 :: p0 :: _state_body
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -394,19 +394,19 @@ class Test403bStateMachine(
                 activeStateIds.remove("p0")
             }
             is Test403bState.P0s1 -> {
-                // SCE-MAP: test403b.scxml:32
+                // SCE-MAP: test403b.scxml:32 :: p0s1 :: _state_body
                 activeStateIds.remove("p0s1")
             }
             is Test403bState.P0s2 -> {
-                // SCE-MAP: test403b.scxml:37
+                // SCE-MAP: test403b.scxml:37 :: p0s2 :: _state_body
                 activeStateIds.remove("p0s2")
             }
             is Test403bState.Pass -> {
-                // SCE-MAP: test403b.scxml:42
+                // SCE-MAP: test403b.scxml:42 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test403bState.S0 -> {
-                // SCE-MAP: test403b.scxml:11
+                // SCE-MAP: test403b.scxml:11 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
         }
@@ -414,7 +414,7 @@ class Test403bStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test403b.scxml:6
+    // SCE-MAP: test403b.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test403bState,
         event: Test403bEvent?
@@ -422,13 +422,13 @@ class Test403bStateMachine(
         when (source) {
         is Test403bState.P0 -> when {
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:28
+                // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
             }
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:14
+                // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
@@ -437,13 +437,13 @@ class Test403bStateMachine(
         }
         is Test403bState.P0s1 -> when {
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:28
+                // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
             }
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:14
+                // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
@@ -452,13 +452,13 @@ class Test403bStateMachine(
         }
         is Test403bState.P0s2 -> when {
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:28
+                // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
             }
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:14
+                // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")
@@ -467,7 +467,7 @@ class Test403bStateMachine(
         }
         is Test403bState.S0 -> when {
             event is Test403bEvent.Event1 -> {
-                // SCE-MAP: test403b.scxml:14
+                // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
 
 
             executeAssign("Var1", "Var1 + 1")

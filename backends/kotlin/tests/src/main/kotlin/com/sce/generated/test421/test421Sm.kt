@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/421/test421.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test421.scxml:7
+// SCE-MAP: test421.scxml:7 :: _machine
 
 package com.sce.generated.test421
 
@@ -153,25 +153,25 @@ class Test421StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test421.scxml:7
+    // SCE-MAP: test421.scxml:7 :: _machine
     override fun onEntry(state: Test421State) {
         when (state) {
             is Test421State.Fail -> {
-                // SCE-MAP: test421.scxml:32
+                // SCE-MAP: test421.scxml:32 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test421State.Pass -> {
-                // SCE-MAP: test421.scxml:31
+                // SCE-MAP: test421.scxml:31 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test421State.S1 -> {
-                // SCE-MAP: test421.scxml:9
+                // SCE-MAP: test421.scxml:9 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -187,12 +187,12 @@ class Test421StateMachine(
             raiseInternal(Test421Event.InternalEvent4)
             }
             is Test421State.S11 -> {
-                // SCE-MAP: test421.scxml:20
+                // SCE-MAP: test421.scxml:20 :: s11 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
             }
             is Test421State.S12 -> {
-                // SCE-MAP: test421.scxml:24
+                // SCE-MAP: test421.scxml:24 :: s12 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
             }
@@ -200,27 +200,27 @@ class Test421StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test421.scxml:7
+    // SCE-MAP: test421.scxml:7 :: _machine
     override fun onExit(state: Test421State) {
         when (state) {
             is Test421State.Fail -> {
-                // SCE-MAP: test421.scxml:32
+                // SCE-MAP: test421.scxml:32 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test421State.Pass -> {
-                // SCE-MAP: test421.scxml:31
+                // SCE-MAP: test421.scxml:31 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test421State.S1 -> {
-                // SCE-MAP: test421.scxml:9
+                // SCE-MAP: test421.scxml:9 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
             is Test421State.S11 -> {
-                // SCE-MAP: test421.scxml:20
+                // SCE-MAP: test421.scxml:20 :: s11 :: _state_body
                 activeStateIds.remove("s11")
             }
             is Test421State.S12 -> {
-                // SCE-MAP: test421.scxml:24
+                // SCE-MAP: test421.scxml:24 :: s12 :: _state_body
                 activeStateIds.remove("s12")
             }
         }
@@ -228,7 +228,7 @@ class Test421StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test421.scxml:7
+    // SCE-MAP: test421.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test421State,
         event: Test421Event?

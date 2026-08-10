@@ -1,4 +1,4 @@
-// SCE-MAP: algorithm_const_fold_smoke:24
+// SCE-MAP: algorithm_const_fold_smoke:24 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm") */
 /* Runtime: none */

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_unsupported_type.scxml:35
+// SCE-MAP: invoke_unsupported_type.scxml:35 :: _machine
 
 package com.sce.integration.invoke_unsupported_type
 
@@ -98,18 +98,18 @@ class InvokeUnsupportedTypeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_unsupported_type.scxml:35
+    // SCE-MAP: invoke_unsupported_type.scxml:35 :: _machine
     override fun onEntry(state: InvokeUnsupportedTypeState) {
         when (state) {
             is InvokeUnsupportedTypeState.Pass -> {
-                // SCE-MAP: invoke_unsupported_type.scxml:42
+                // SCE-MAP: invoke_unsupported_type.scxml:42 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokeUnsupportedTypeState.Probe -> {
-                // SCE-MAP: invoke_unsupported_type.scxml:38
+                // SCE-MAP: invoke_unsupported_type.scxml:38 :: probe :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("probe")) return
                 // W3C SCXML 6.4.1: `type` names no processor this platform
@@ -128,15 +128,15 @@ class InvokeUnsupportedTypeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_unsupported_type.scxml:35
+    // SCE-MAP: invoke_unsupported_type.scxml:35 :: _machine
     override fun onExit(state: InvokeUnsupportedTypeState) {
         when (state) {
             is InvokeUnsupportedTypeState.Pass -> {
-                // SCE-MAP: invoke_unsupported_type.scxml:42
+                // SCE-MAP: invoke_unsupported_type.scxml:42 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is InvokeUnsupportedTypeState.Probe -> {
-                // SCE-MAP: invoke_unsupported_type.scxml:38
+                // SCE-MAP: invoke_unsupported_type.scxml:38 :: probe :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 activeStateIds.remove("probe")
@@ -146,7 +146,7 @@ class InvokeUnsupportedTypeStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: invoke_unsupported_type.scxml:35
+    // SCE-MAP: invoke_unsupported_type.scxml:35 :: _machine
     override fun executeTransitionActions(
         source: InvokeUnsupportedTypeState,
         event: InvokeUnsupportedTypeEvent?

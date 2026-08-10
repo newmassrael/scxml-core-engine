@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/event_schema/statechart_bytes.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_bytes.scxml:13
+// SCE-MAP: statechart_bytes.scxml:13 :: _machine
 
 package com.sce.integration.statechart_bytes
 
@@ -129,16 +129,16 @@ class StatechartBytesStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_bytes.scxml:13
+    // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun onEntry(state: StatechartBytesState) {
         when (state) {
             is StatechartBytesState.Done -> {
-                // SCE-MAP: statechart_bytes.scxml:23
+                // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
             }
             is StatechartBytesState.Waiting -> {
-                // SCE-MAP: statechart_bytes.scxml:20
+                // SCE-MAP: statechart_bytes.scxml:20 :: waiting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
             }
@@ -146,15 +146,15 @@ class StatechartBytesStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_bytes.scxml:13
+    // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun onExit(state: StatechartBytesState) {
         when (state) {
             is StatechartBytesState.Done -> {
-                // SCE-MAP: statechart_bytes.scxml:23
+                // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body
                 activeStateIds.remove("done")
             }
             is StatechartBytesState.Waiting -> {
-                // SCE-MAP: statechart_bytes.scxml:20
+                // SCE-MAP: statechart_bytes.scxml:20 :: waiting :: _state_body
                 activeStateIds.remove("waiting")
             }
         }
@@ -162,7 +162,7 @@ class StatechartBytesStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: statechart_bytes.scxml:13
+    // SCE-MAP: statechart_bytes.scxml:13 :: _machine
     override fun executeTransitionActions(
         source: StatechartBytesState,
         event: StatechartBytesEvent?

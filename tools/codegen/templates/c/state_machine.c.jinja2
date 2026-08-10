@@ -108,7 +108,7 @@
    the same rationale as the header — per-function emission switches
    to `#line`, where the redirect scope is local. #}
 
-{{ sce_map.source_marker(model.source_location, "c", module_level=true) }}
+{{ sce_map.source_marker(model.source_location, "c", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 {# The header FILENAME is stem-derived, not symbol-prefixed — the suite
    prefix nests C symbols, not output filenames (mirrors the child
@@ -2036,9 +2036,9 @@ SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t 
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_entry_blocks %}
 {% for block in state.on_entry_blocks %}
-{{ sce_map.source_marker(state.source_location, "c") }}
+{{ sce_map.source_marker(state.source_location, "c", symbol_state=state_id, symbol_artifact=sce_artifact.state_body) }}
 {% if state.source_location %}
-{{ sce_map.source_marker(state.source_location, "c", stmt_level=true) | trim }}
+{{ sce_map.source_marker(state.source_location, "c", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
@@ -2055,9 +2055,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | l
 {% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks %}
 {% for block in state.on_exit_blocks %}
-{{ sce_map.source_marker(state.source_location, "c") }}
+{{ sce_map.source_marker(state.source_location, "c", symbol_state=state_id, symbol_artifact=sce_artifact.state_body) }}
 {% if state.source_location %}
-{{ sce_map.source_marker(state.source_location, "c", stmt_level=true) | trim }}
+{{ sce_map.source_marker(state.source_location, "c", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lower | replace('-', '_') | replace('.', '_') }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
@@ -2071,7 +2071,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | lo
 {% endfor %}
 {% endif %}
 {% endfor %}
-{{ sce_map.source_marker(model.source_location, "c") }}
+{{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
 SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
@@ -2352,7 +2352,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
     }
 }
 
-{{ sce_map.source_marker(model.source_location, "c") }}
+{{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
 SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
     (void)sm;
     switch (s) {
@@ -2437,7 +2437,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
 {% endfor %}
 {% endif %}
 {% endfor %}
-{{ sce_map.source_marker(model.source_location, "c") }}
+{{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
 SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name }}_t *sm) {
 {% if any_transition_actions.value %}
     switch (sm->policy.last_transition_source_state) {
@@ -2450,7 +2450,7 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
         {% if trans.actions %}
         case {{ trans.transition_index }}: {  {{- annot.annotation_comment(trans, "c", "            ") }}
 {% if trans.source_location %}
-            {{ sce_map.source_marker(trans.source_location, "c", stmt_level=true) | trim }}
+            {{ sce_map.source_marker(trans.source_location, "c", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
             /* W3C SCXML 3.13: transition body for `<transition{% if trans.event %} event="{{ trans.event }}"{% endif %}{% if trans.target %} target="{{ trans.target }}"{% endif %}>` */
             {% for action in trans.actions %}
@@ -2885,7 +2885,7 @@ SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
    Compound and parallel ancestors are excluded as candidate leaves; a
    future fixture forcing done.state events on a compound/parallel target
    relaxes that filter alongside the cpp `isDoneStateEvent` mirror. */
-{{ sce_map.source_marker(model.source_location, "c") }}
+{{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
 SCE_SM_FN static bool process_transition({{ csym_prefix }}{{ model.name }}_t *sm,
                                 {{ csym_prefix }}{{ model.name }}_event_t event,
                                 {{ csym_prefix }}{{ model.name }}_transition_info_t *out_list,

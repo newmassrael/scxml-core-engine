@@ -21,7 +21,7 @@
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above `execute_entry_actions`. `#[doc]` attaches to the function
        item; the `//` comment-form survives stable as a grep target. #}
-    {{ sce_map.source_marker(model.source_location, "rust") }}
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
@@ -42,7 +42,7 @@
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {  {{- annot.annotation_comment(state, "rust", "                ") }}
 {% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -338,7 +338,7 @@
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    {{ sce_map.source_marker(model.source_location, "rust") }}
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -441,7 +441,7 @@
 {% if state.on_exit_blocks %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {  {{- annot.annotation_comment(state, "rust", "                ") }}
 {% if state.source_location %}
-                {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true) | trim }}
+                {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_exit_blocks %}
                 // W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}

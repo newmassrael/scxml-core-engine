@@ -1,4 +1,4 @@
-// SCE-MAP: codec_present_if_vle:7
+// SCE-MAP: codec_present_if_vle:7 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */

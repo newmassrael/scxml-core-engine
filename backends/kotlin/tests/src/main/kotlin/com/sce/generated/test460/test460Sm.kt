@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/460/test460.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test460.scxml:4
+// SCE-MAP: test460.scxml:4 :: _machine
 
 package com.sce.generated.test460
 
@@ -239,11 +239,11 @@ class Test460StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test460.scxml:4
+    // SCE-MAP: test460.scxml:4 :: _machine
     override fun onEntry(state: Test460State) {
         when (state) {
             is Test460State.Fail -> {
-                // SCE-MAP: test460.scxml:25
+                // SCE-MAP: test460.scxml:25 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
 
@@ -255,7 +255,7 @@ class Test460StateMachine(
                 markFinalStateReached()
             }
             is Test460State.Pass -> {
-                // SCE-MAP: test460.scxml:24
+                // SCE-MAP: test460.scxml:24 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
 
@@ -267,7 +267,7 @@ class Test460StateMachine(
                 markFinalStateReached()
             }
             is Test460State.S0 -> {
-                // SCE-MAP: test460.scxml:10
+                // SCE-MAP: test460.scxml:10 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -294,19 +294,19 @@ class Test460StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test460.scxml:4
+    // SCE-MAP: test460.scxml:4 :: _machine
     override fun onExit(state: Test460State) {
         when (state) {
             is Test460State.Fail -> {
-                // SCE-MAP: test460.scxml:25
+                // SCE-MAP: test460.scxml:25 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test460State.Pass -> {
-                // SCE-MAP: test460.scxml:24
+                // SCE-MAP: test460.scxml:24 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test460State.S0 -> {
-                // SCE-MAP: test460.scxml:10
+                // SCE-MAP: test460.scxml:10 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
         }
@@ -314,7 +314,7 @@ class Test460StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test460.scxml:4
+    // SCE-MAP: test460.scxml:4 :: _machine
     override fun executeTransitionActions(
         source: Test460State,
         event: Test460Event?

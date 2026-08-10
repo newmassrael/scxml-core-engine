@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3"]
-// SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3
+#![doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine"]
+// SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -551,8 +551,8 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3"]
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3
+    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine"]
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -560,7 +560,7 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
     ) {
         match state {
             DonedataLocalInvokeSceSynthInvokeInvContentState::Done => {
-                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5
+                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 let mut done_event_data = String::new();
                 let mut done_data_ok = true;
@@ -596,8 +596,8 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3"]
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3
+    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine"]
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -607,8 +607,8 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3"]
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3
+    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine"]
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -663,8 +663,8 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3"]
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3
+    #[doc = "SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine"]
+    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;

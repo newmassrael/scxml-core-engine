@@ -1,4 +1,4 @@
-// SCE-MAP: codec_zenoh_ext_envelope:35
+// SCE-MAP: codec_zenoh_ext_envelope:35 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */

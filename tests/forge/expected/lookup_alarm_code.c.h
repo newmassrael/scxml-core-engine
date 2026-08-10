@@ -1,4 +1,4 @@
-// SCE-MAP: lookup_alarm_code:6
+// SCE-MAP: lookup_alarm_code:6 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup") */
 /* Runtime: sce_forge_runtime */

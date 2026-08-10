@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_qos_byte:15"]
-// SCE-MAP: codec_qos_byte:15
+#![doc = "SCE-MAP: codec_qos_byte:15 :: _forge_body"]
+// SCE-MAP: codec_qos_byte:15 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

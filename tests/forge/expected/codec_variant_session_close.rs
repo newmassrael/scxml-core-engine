@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_variant_session_close:5"]
-// SCE-MAP: codec_variant_session_close:5
+#![doc = "SCE-MAP: codec_variant_session_close:5 :: _forge_body"]
+// SCE-MAP: codec_variant_session_close:5 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_present_if_negation:12"]
-// SCE-MAP: codec_present_if_negation:12
+#![doc = "SCE-MAP: codec_present_if_negation:12 :: _forge_body"]
+// SCE-MAP: codec_present_if_negation:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

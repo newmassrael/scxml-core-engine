@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_present_if_basic:10"]
-// SCE-MAP: codec_present_if_basic:10
+#![doc = "SCE-MAP: codec_present_if_basic:10 :: _forge_body"]
+// SCE-MAP: codec_present_if_basic:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

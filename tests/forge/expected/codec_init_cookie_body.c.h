@@ -1,4 +1,4 @@
-// SCE-MAP: codec_init_cookie_body:36
+// SCE-MAP: codec_init_cookie_body:36 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
 /* Runtime: none */

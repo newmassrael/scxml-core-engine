@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_peek_arm_a:13"]
-// SCE-MAP: codec_peek_arm_a:13
+#![doc = "SCE-MAP: codec_peek_arm_a:13 :: _forge_body"]
+// SCE-MAP: codec_peek_arm_a:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

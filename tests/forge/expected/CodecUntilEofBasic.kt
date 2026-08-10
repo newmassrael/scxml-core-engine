@@ -1,4 +1,4 @@
-// SCE-MAP: codec_until_eof_basic:10
+// SCE-MAP: codec_until_eof_basic:10 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

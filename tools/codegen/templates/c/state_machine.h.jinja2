@@ -17,7 +17,7 @@
    `#line` directive — `#line` in a header would propagate into
    every including translation unit's diagnostics. #}
 
-{{ sce_map.source_marker(model.source_location, "c", module_level=true) }}
+{{ sce_map.source_marker(model.source_location, "c", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 #ifndef SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SM_H
 #define SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SM_H

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/donedata_late_completion/donedata_late_completion.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: donedata_late_completion.scxml:45
+// SCE-MAP: donedata_late_completion.scxml:45 :: _machine
 
 package com.sce.integration.donedata_late_completion
 
@@ -243,25 +243,25 @@ class DonedataLateCompletionStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: donedata_late_completion.scxml:45
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     override fun onEntry(state: DonedataLateCompletionState) {
         when (state) {
             is DonedataLateCompletionState.Fail -> {
-                // SCE-MAP: donedata_late_completion.scxml:77
+                // SCE-MAP: donedata_late_completion.scxml:77 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLateCompletionState.Pass -> {
-                // SCE-MAP: donedata_late_completion.scxml:76
+                // SCE-MAP: donedata_late_completion.scxml:76 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLateCompletionState.Phase -> {
-                // SCE-MAP: donedata_late_completion.scxml:48
+                // SCE-MAP: donedata_late_completion.scxml:48 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -279,19 +279,19 @@ class DonedataLateCompletionStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: donedata_late_completion.scxml:45
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     override fun onExit(state: DonedataLateCompletionState) {
         when (state) {
             is DonedataLateCompletionState.Fail -> {
-                // SCE-MAP: donedata_late_completion.scxml:77
+                // SCE-MAP: donedata_late_completion.scxml:77 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is DonedataLateCompletionState.Pass -> {
-                // SCE-MAP: donedata_late_completion.scxml:76
+                // SCE-MAP: donedata_late_completion.scxml:76 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is DonedataLateCompletionState.Phase -> {
-                // SCE-MAP: donedata_late_completion.scxml:48
+                // SCE-MAP: donedata_late_completion.scxml:48 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -303,7 +303,7 @@ class DonedataLateCompletionStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: donedata_late_completion.scxml:45
+    // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
     override fun executeTransitionActions(
         source: DonedataLateCompletionState,
         event: DonedataLateCompletionEvent?
@@ -311,7 +311,7 @@ class DonedataLateCompletionStateMachine(
         when (source) {
         is DonedataLateCompletionState.Phase -> when {
             event is DonedataLateCompletionEvent.Ready -> {
-                // SCE-MAP: donedata_late_completion.scxml:67
+                // SCE-MAP: donedata_late_completion.scxml:67 :: phase :: _transition_0
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child

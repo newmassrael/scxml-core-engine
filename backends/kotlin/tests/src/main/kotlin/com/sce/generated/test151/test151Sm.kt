@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/151/test151.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test151.scxml:6
+// SCE-MAP: test151.scxml:6 :: _machine
 
 package com.sce.generated.test151
 
@@ -281,25 +281,25 @@ class Test151StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test151.scxml:6
+    // SCE-MAP: test151.scxml:6 :: _machine
     override fun onEntry(state: Test151State) {
         when (state) {
             is Test151State.Fail -> {
-                // SCE-MAP: test151.scxml:41
+                // SCE-MAP: test151.scxml:41 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test151State.Pass -> {
-                // SCE-MAP: test151.scxml:40
+                // SCE-MAP: test151.scxml:40 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test151State.S0 -> {
-                // SCE-MAP: test151.scxml:15
+                // SCE-MAP: test151.scxml:15 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -319,7 +319,7 @@ class Test151StateMachine(
             raiseInternal(Test151Event.Foo)
             }
             is Test151State.S1 -> {
-                // SCE-MAP: test151.scxml:25
+                // SCE-MAP: test151.scxml:25 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
 
@@ -339,7 +339,7 @@ class Test151StateMachine(
             raiseInternal(Test151Event.Bar)
             }
             is Test151State.S2 -> {
-                // SCE-MAP: test151.scxml:35
+                // SCE-MAP: test151.scxml:35 :: s2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
@@ -347,27 +347,27 @@ class Test151StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test151.scxml:6
+    // SCE-MAP: test151.scxml:6 :: _machine
     override fun onExit(state: Test151State) {
         when (state) {
             is Test151State.Fail -> {
-                // SCE-MAP: test151.scxml:41
+                // SCE-MAP: test151.scxml:41 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test151State.Pass -> {
-                // SCE-MAP: test151.scxml:40
+                // SCE-MAP: test151.scxml:40 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test151State.S0 -> {
-                // SCE-MAP: test151.scxml:15
+                // SCE-MAP: test151.scxml:15 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test151State.S1 -> {
-                // SCE-MAP: test151.scxml:25
+                // SCE-MAP: test151.scxml:25 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
             is Test151State.S2 -> {
-                // SCE-MAP: test151.scxml:35
+                // SCE-MAP: test151.scxml:35 :: s2 :: _state_body
                 activeStateIds.remove("s2")
             }
         }
@@ -375,7 +375,7 @@ class Test151StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test151.scxml:6
+    // SCE-MAP: test151.scxml:6 :: _machine
     override fun executeTransitionActions(
         source: Test151State,
         event: Test151Event?

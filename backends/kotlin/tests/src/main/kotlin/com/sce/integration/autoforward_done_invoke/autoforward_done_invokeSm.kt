@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_done_invoke.scxml:55
+// SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
 
 package com.sce.integration.autoforward_done_invoke
 
@@ -132,25 +132,25 @@ class AutoforwardDoneInvokeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     override fun onEntry(state: AutoforwardDoneInvokeState) {
         when (state) {
             is AutoforwardDoneInvokeState.Fail -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:92
+                // SCE-MAP: autoforward_done_invoke.scxml:92 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeState.Pass -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:91
+                // SCE-MAP: autoforward_done_invoke.scxml:91 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeState.Phase -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:58
+                // SCE-MAP: autoforward_done_invoke.scxml:58 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -178,19 +178,19 @@ class AutoforwardDoneInvokeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     override fun onExit(state: AutoforwardDoneInvokeState) {
         when (state) {
             is AutoforwardDoneInvokeState.Fail -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:92
+                // SCE-MAP: autoforward_done_invoke.scxml:92 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is AutoforwardDoneInvokeState.Pass -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:91
+                // SCE-MAP: autoforward_done_invoke.scxml:91 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is AutoforwardDoneInvokeState.Phase -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:58
+                // SCE-MAP: autoforward_done_invoke.scxml:58 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -204,7 +204,7 @@ class AutoforwardDoneInvokeStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_done_invoke.scxml:55
+    // SCE-MAP: autoforward_done_invoke.scxml:55 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardDoneInvokeState,
         event: AutoforwardDoneInvokeEvent?
@@ -212,7 +212,7 @@ class AutoforwardDoneInvokeStateMachine(
         when (source) {
         is AutoforwardDoneInvokeState.Phase -> when {
             event is AutoforwardDoneInvokeEvent.Done.Invoke.InvShort -> {
-                // SCE-MAP: autoforward_done_invoke.scxml:84
+                // SCE-MAP: autoforward_done_invoke.scxml:84 :: phase :: _transition_0
 
 
             send(AutoforwardDoneInvokeEvent.Probe, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))

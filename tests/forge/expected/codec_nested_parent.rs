@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_nested_parent:22"]
-// SCE-MAP: codec_nested_parent:22
+#![doc = "SCE-MAP: codec_nested_parent:22 :: _forge_body"]
+// SCE-MAP: codec_nested_parent:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none

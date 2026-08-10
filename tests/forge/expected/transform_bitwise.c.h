@@ -1,4 +1,4 @@
-// SCE-MAP: transform_bitwise:3
+// SCE-MAP: transform_bitwise:3 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform") */
 /* Runtime: none */

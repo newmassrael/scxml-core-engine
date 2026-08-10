@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
+// SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
 
 package invoke_precedes_external_dequeue
 

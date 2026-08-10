@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+// SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
 
 package com.sce.integration.invoke_precedes_external_dequeue
 
@@ -133,25 +133,25 @@ class InvokePrecedesExternalDequeueStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     override fun onEntry(state: InvokePrecedesExternalDequeueState) {
         when (state) {
             is InvokePrecedesExternalDequeueState.Fail -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:92
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:92 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesExternalDequeueState.Pass -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:91
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:91 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesExternalDequeueState.Phase -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
 
@@ -172,19 +172,19 @@ class InvokePrecedesExternalDequeueStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     override fun onExit(state: InvokePrecedesExternalDequeueState) {
         when (state) {
             is InvokePrecedesExternalDequeueState.Fail -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:92
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:92 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is InvokePrecedesExternalDequeueState.Pass -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:91
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:91 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is InvokePrecedesExternalDequeueState.Phase -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:55 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -196,7 +196,7 @@ class InvokePrecedesExternalDequeueStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:52 :: _machine
     override fun executeTransitionActions(
         source: InvokePrecedesExternalDequeueState,
         event: InvokePrecedesExternalDequeueEvent?
@@ -204,7 +204,7 @@ class InvokePrecedesExternalDequeueStateMachine(
         when (source) {
         is InvokePrecedesExternalDequeueState.Phase -> when {
             event is InvokePrecedesExternalDequeueEvent.Ready -> {
-                // SCE-MAP: invoke_precedes_external_dequeue.scxml:85
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:85 :: phase :: _transition_1
 
 
             // W3C SCXML 6.4 (test192): Send event to invoked child

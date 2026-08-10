@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/autoforward_event_fields/autoforward_event_fields.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_event_fields.scxml:30
+// SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
 
 package com.sce.integration.autoforward_event_fields
 
@@ -241,25 +241,25 @@ class AutoforwardEventFieldsStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_event_fields.scxml:30
+    // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun onEntry(state: AutoforwardEventFieldsState) {
         when (state) {
             is AutoforwardEventFieldsState.Fail -> {
-                // SCE-MAP: autoforward_event_fields.scxml:65
+                // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardEventFieldsState.Pass -> {
-                // SCE-MAP: autoforward_event_fields.scxml:64
+                // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardEventFieldsState.Phase -> {
-                // SCE-MAP: autoforward_event_fields.scxml:33
+                // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -277,19 +277,19 @@ class AutoforwardEventFieldsStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_event_fields.scxml:30
+    // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun onExit(state: AutoforwardEventFieldsState) {
         when (state) {
             is AutoforwardEventFieldsState.Fail -> {
-                // SCE-MAP: autoforward_event_fields.scxml:65
+                // SCE-MAP: autoforward_event_fields.scxml:65 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is AutoforwardEventFieldsState.Pass -> {
-                // SCE-MAP: autoforward_event_fields.scxml:64
+                // SCE-MAP: autoforward_event_fields.scxml:64 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is AutoforwardEventFieldsState.Phase -> {
-                // SCE-MAP: autoforward_event_fields.scxml:33
+                // SCE-MAP: autoforward_event_fields.scxml:33 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -301,7 +301,7 @@ class AutoforwardEventFieldsStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_event_fields.scxml:30
+    // SCE-MAP: autoforward_event_fields.scxml:30 :: _machine
     override fun executeTransitionActions(
         source: AutoforwardEventFieldsState,
         event: AutoforwardEventFieldsEvent?

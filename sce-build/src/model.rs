@@ -94,6 +94,33 @@ pub struct Transition {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_payload_guard: String,
+    /// The canonical path of the
+    /// state that OWNS this transition, paired with
+    /// [`symbol_artifact`](Self::symbol_artifact) to form the identity
+    /// half of the transition's mangled symbol.
+    ///
+    /// Stamped by `forge::symbol_mangling::stamp_symbol_attribution`
+    /// from the same walk that builds the sourcemap, so the SCE-MAP
+    /// marker a template emits and the sidecar row a consumer resolves
+    /// it against cannot disagree. It rides on the transition rather
+    /// than being recomputed at the render site because the Kotlin
+    /// backend renders ancestor transitions under a descendant's arm —
+    /// the arm is not the owner.
+    ///
+    /// Transient by design, exactly like
+    /// [`native_payload_guard`](Self::native_payload_guard): the parse
+    /// model leaves it empty and each generate pass stamps its own
+    /// clone, so the `--emit-ast` export stays the language-agnostic IR.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub symbol_state_path: String,
+    /// This transition's artifact
+    /// label (`_transition_<idx>`, indexed within the owning state's
+    /// transition list). See
+    /// [`symbol_state_path`](Self::symbol_state_path).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub symbol_artifact: String,
     /// §scxml-3.11: History target if transition targets a history state
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_target: Option<String>,

@@ -78,7 +78,7 @@
    post-preprocessor source position. Both forms emitted per spec
    lines 3135-3136 — the `#![doc]` form survives in rustdoc, the
    `//` form survives as a stable comment grep target. #}
-{{ sce_map.source_marker(model.source_location, "rust", module_level=true) }}
+{{ sce_map.source_marker(model.source_location, "rust", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};

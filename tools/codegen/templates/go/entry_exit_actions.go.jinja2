@@ -19,7 +19,7 @@
    above `ExecuteEntryActions`. `//line file:N` is a Go compiler
    directive recognized by panic stack traces and `go vet`; it must
    start at column 0 (no leading indent). #}
-{{ sce_map.source_marker(model.source_location, "go") }}
+{{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 {% if model.needs_script_engine %}
 	p.ensureScriptEngine()
@@ -38,7 +38,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% if state.source_location %}
-		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true) | trim }}
+		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_entry_blocks %}
 		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
@@ -293,7 +293,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 }
 
 // ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
-{{ sce_map.source_marker(model.source_location, "go") }}
+{{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], preTransitionActive []{{ machine_name }}State) {
 {% if model.needs_script_engine %}
 	p.ensureScriptEngine()
@@ -360,7 +360,7 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 {% if state.on_exit_blocks %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:{{ annot.annotation_comment(state, "go", "		") }}
 {% if state.source_location %}
-		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true) | trim }}
+		{{ sce_map.source_marker(state.source_location, "go", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% for block in state.on_exit_blocks %}
 		// W3C SCXML 3.9: onexit block {{ loop.index0 }}

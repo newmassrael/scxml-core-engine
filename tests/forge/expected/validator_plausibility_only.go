@@ -1,4 +1,4 @@
-// SCE-MAP: validator_plausibility_only:2
+// SCE-MAP: validator_plausibility_only:2 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
 // Runtime: none

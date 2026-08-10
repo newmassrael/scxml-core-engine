@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/307/test307.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test307.scxml:1
+// SCE-MAP: test307.scxml:1 :: _machine
 
 package com.sce.generated.test307
 
@@ -240,18 +240,18 @@ class Test307StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test307.scxml:1
+    // SCE-MAP: test307.scxml:1 :: _machine
     override fun onEntry(state: Test307State) {
         when (state) {
             is Test307State.Final -> {
-                // SCE-MAP: test307.scxml:40
+                // SCE-MAP: test307.scxml:40 :: final :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test307State.S0 -> {
-                // SCE-MAP: test307.scxml:8
+                // SCE-MAP: test307.scxml:8 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
 
@@ -263,7 +263,7 @@ class Test307StateMachine(
             raiseInternal(Test307Event.Foo)
             }
             is Test307State.S1 -> {
-                // SCE-MAP: test307.scxml:21
+                // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
                 // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
@@ -290,19 +290,19 @@ class Test307StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test307.scxml:1
+    // SCE-MAP: test307.scxml:1 :: _machine
     override fun onExit(state: Test307State) {
         when (state) {
             is Test307State.Final -> {
-                // SCE-MAP: test307.scxml:40
+                // SCE-MAP: test307.scxml:40 :: final :: _state_body
                 activeStateIds.remove("final")
             }
             is Test307State.S0 -> {
-                // SCE-MAP: test307.scxml:8
+                // SCE-MAP: test307.scxml:8 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test307State.S1 -> {
-                // SCE-MAP: test307.scxml:21
+                // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
                 activeStateIds.remove("s1")
             }
         }
@@ -310,7 +310,7 @@ class Test307StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test307.scxml:1
+    // SCE-MAP: test307.scxml:1 :: _machine
     override fun executeTransitionActions(
         source: Test307State,
         event: Test307Event?
@@ -318,7 +318,7 @@ class Test307StateMachine(
         when (source) {
         is Test307State.S0 -> when {
             (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
-                // SCE-MAP: test307.scxml:13
+                // SCE-MAP: test307.scxml:13 :: s0 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
@@ -326,7 +326,7 @@ class Test307StateMachine(
             } catch (_: Exception) {}
             }
             event is Test307Event.Foo -> {
-                // SCE-MAP: test307.scxml:16
+                // SCE-MAP: test307.scxml:16 :: s0 :: _transition_1
 
             println("no error in s0")
             }
@@ -334,7 +334,7 @@ class Test307StateMachine(
         }
         is Test307State.S1 -> when {
             (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
-                // SCE-MAP: test307.scxml:31
+                // SCE-MAP: test307.scxml:31 :: s1 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
@@ -342,7 +342,7 @@ class Test307StateMachine(
             } catch (_: Exception) {}
             }
             event is Test307Event.Bar -> {
-                // SCE-MAP: test307.scxml:34
+                // SCE-MAP: test307.scxml:34 :: s1 :: _transition_1
 
             println("No error in s1")
             }

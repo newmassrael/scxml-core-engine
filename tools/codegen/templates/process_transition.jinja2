@@ -125,7 +125,7 @@
    function body; each successive function gets its own marker so
    per-function attribution stays coherent across the translation
    unit. #}
-    {{ sce_map.source_marker(model.source_location, "cpp") }}
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
     // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
     [[gnu::hot]]
@@ -365,7 +365,7 @@ private:
     // Appendix D microstepProcedure: Execute microstep with proper ordering
     // ARCHITECTURE.MD: Zero Duplication Principle - Uses ParallelTransitionHelper (Single Source of Truth)
     // Exit all → Transition content all → Enter all
-    {{ sce_map.source_marker(model.source_location, "cpp") }}
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
     void executeMicrostep(const ::std::vector<TransitionInfo>& transitions,
                          [[maybe_unused]] State& currentState,
@@ -538,7 +538,7 @@ private:
     // - collectMode = nullptr: Immediate execution (traditional behavior)
     // - collectMode = vector: Collection only (for optimal transition set)
 {% endif %}
-    {{ sce_map.source_marker(model.source_location, "cpp") }}
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
     [[gnu::hot]]
     bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
@@ -737,7 +737,7 @@ private:
 
 public:
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    {{ sce_map.source_marker(model.source_location, "cpp") }}
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
     void executeTransitionActions([[maybe_unused]] Engine& engine) {
 {% if model.has_transition_actions %}
@@ -759,7 +759,7 @@ public:
 {% for trans in state.transitions %}
                 case {{ loop.index0 }}:  // Transition {{ loop.index0 }}{{ annot.annotation_comment(trans, "cpp", "                    ") }}
 {% if trans.source_location %}
-                    {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true) | trim }}
+                    {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
                     {
                         AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");

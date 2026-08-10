@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 06c80ca1f364d1bd47dcf4355438c9eb8afe054b2712ace900a9053d7a3870aa
+// template-hash: c328b7a85ff2f465624a51fc9ec80940f3b78fbf4df26d1c6eaabfe6afd320f8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/404/test404.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: test404.scxml:7
+// SCE-MAP: test404.scxml:7 :: _machine
 
 package com.sce.generated.test404
 
@@ -198,25 +198,25 @@ class Test404StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: test404.scxml:7
+    // SCE-MAP: test404.scxml:7 :: _machine
     override fun onEntry(state: Test404State) {
         when (state) {
             is Test404State.Fail -> {
-                // SCE-MAP: test404.scxml:63
+                // SCE-MAP: test404.scxml:63 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test404State.Pass -> {
-                // SCE-MAP: test404.scxml:62
+                // SCE-MAP: test404.scxml:62 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test404State.S0 -> {
-                // SCE-MAP: test404.scxml:10
+                // SCE-MAP: test404.scxml:10 :: s0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
                 if (!suppressChildEntry) {
@@ -225,7 +225,7 @@ class Test404StateMachine(
                 }
             }
             is Test404State.S01p -> {
-                // SCE-MAP: test404.scxml:14
+                // SCE-MAP: test404.scxml:14 :: s01p :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p")) return
                 // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
@@ -234,32 +234,32 @@ class Test404StateMachine(
                 onEntry(Test404State.S01p2)
             }
             is Test404State.S01p1 -> {
-                // SCE-MAP: test404.scxml:24
+                // SCE-MAP: test404.scxml:24 :: s01p1 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p1")) return
             }
             is Test404State.S01p2 -> {
-                // SCE-MAP: test404.scxml:31
+                // SCE-MAP: test404.scxml:31 :: s01p2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p2")) return
             }
             is Test404State.S02 -> {
-                // SCE-MAP: test404.scxml:39
+                // SCE-MAP: test404.scxml:39 :: s02 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
             }
             is Test404State.S03 -> {
-                // SCE-MAP: test404.scxml:44
+                // SCE-MAP: test404.scxml:44 :: s03 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s03")) return
             }
             is Test404State.S04 -> {
-                // SCE-MAP: test404.scxml:49
+                // SCE-MAP: test404.scxml:49 :: s04 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s04")) return
             }
             is Test404State.S05 -> {
-                // SCE-MAP: test404.scxml:54
+                // SCE-MAP: test404.scxml:54 :: s05 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s05")) return
             }
@@ -267,23 +267,23 @@ class Test404StateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: test404.scxml:7
+    // SCE-MAP: test404.scxml:7 :: _machine
     override fun onExit(state: Test404State) {
         when (state) {
             is Test404State.Fail -> {
-                // SCE-MAP: test404.scxml:63
+                // SCE-MAP: test404.scxml:63 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is Test404State.Pass -> {
-                // SCE-MAP: test404.scxml:62
+                // SCE-MAP: test404.scxml:62 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is Test404State.S0 -> {
-                // SCE-MAP: test404.scxml:10
+                // SCE-MAP: test404.scxml:10 :: s0 :: _state_body
                 activeStateIds.remove("s0")
             }
             is Test404State.S01p -> {
-                // SCE-MAP: test404.scxml:14
+                // SCE-MAP: test404.scxml:14 :: s01p :: _state_body
                 // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
                 // in reverse document order (deepest states exit first).
                 // Defensive: when called from exitHierarchy, descendants are already
@@ -305,31 +305,31 @@ class Test404StateMachine(
             raiseInternal(Test404Event.Event3)
             }
             is Test404State.S01p1 -> {
-                // SCE-MAP: test404.scxml:24
+                // SCE-MAP: test404.scxml:24 :: s01p1 :: _state_body
                 activeStateIds.remove("s01p1")
 
             raiseInternal(Test404Event.Event2)
             }
             is Test404State.S01p2 -> {
-                // SCE-MAP: test404.scxml:31
+                // SCE-MAP: test404.scxml:31 :: s01p2 :: _state_body
                 activeStateIds.remove("s01p2")
 
             raiseInternal(Test404Event.Event1)
             }
             is Test404State.S02 -> {
-                // SCE-MAP: test404.scxml:39
+                // SCE-MAP: test404.scxml:39 :: s02 :: _state_body
                 activeStateIds.remove("s02")
             }
             is Test404State.S03 -> {
-                // SCE-MAP: test404.scxml:44
+                // SCE-MAP: test404.scxml:44 :: s03 :: _state_body
                 activeStateIds.remove("s03")
             }
             is Test404State.S04 -> {
-                // SCE-MAP: test404.scxml:49
+                // SCE-MAP: test404.scxml:49 :: s04 :: _state_body
                 activeStateIds.remove("s04")
             }
             is Test404State.S05 -> {
-                // SCE-MAP: test404.scxml:54
+                // SCE-MAP: test404.scxml:54 :: s05 :: _state_body
                 activeStateIds.remove("s05")
             }
         }
@@ -337,7 +337,7 @@ class Test404StateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: test404.scxml:7
+    // SCE-MAP: test404.scxml:7 :: _machine
     override fun executeTransitionActions(
         source: Test404State,
         event: Test404Event?
@@ -345,7 +345,7 @@ class Test404StateMachine(
         when (source) {
         is Test404State.S01p -> when {
             event == null -> {
-                // SCE-MAP: test404.scxml:19
+                // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
 
             raiseInternal(Test404Event.Event4)
             }
@@ -353,7 +353,7 @@ class Test404StateMachine(
         }
         is Test404State.S01p1 -> when {
             event == null -> {
-                // SCE-MAP: test404.scxml:19
+                // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
 
             raiseInternal(Test404Event.Event4)
             }
@@ -361,7 +361,7 @@ class Test404StateMachine(
         }
         is Test404State.S01p2 -> when {
             event == null -> {
-                // SCE-MAP: test404.scxml:19
+                // SCE-MAP: test404.scxml:19 :: s01p :: _transition_0
 
             raiseInternal(Test404Event.Event4)
             }

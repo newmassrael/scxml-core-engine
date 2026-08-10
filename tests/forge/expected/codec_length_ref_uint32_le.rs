@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: codec_length_ref_uint32_le:13"]
-// SCE-MAP: codec_length_ref_uint32_le:13
+#![doc = "SCE-MAP: codec_length_ref_uint32_le:13 :: _forge_body"]
+// SCE-MAP: codec_length_ref_uint32_le:13 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
 // Runtime: none
