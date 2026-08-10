@@ -14,14 +14,14 @@
 //                            == schema's `definitions.ForgeDocument.properties.kind.enum`
 //                            == schema's `definitions.ForgeDocument.oneOf[*].properties.kind.const`
 //   - envelope shape frozen: schema's top-level `required` is exactly
-//                            {v, schema_status, ast} and `additionalProperties: false`
+//                            {v, generator, ast} and `additionalProperties: false`
 //   - emitted envelope:      Every fixture under `tests/forge/resources/`
 //                            emits an envelope whose top-level keys are a
 //                            subset of the schema's, and whose `ast.document.kind`
 //                            sits in the closed enum.
 //
 // The point is to fail loudly the next time a developer renames a
-// `ForgeKind` variant, drops the `schema_status` field, or adds a new
+// `ForgeKind` variant, drops the `generator` stamp, or adds a new
 // kind without updating the schema — not to perform exhaustive JSON
 // Schema validation (which would pull in `jsonschema` for marginal
 // coverage given how few constraints the schema actually carries
@@ -29,7 +29,6 @@
 
 use sce_build::forge::ast_export::{
     write_envelope, ForgeAstEnvelope, FORGE_AST_SCHEMA_STATUS, FORGE_AST_WIRE_VERSION,
-    SCE_PRODUCER_VERSION,
 };
 // FORGE_AST_SCHEMA_STATUS is intentionally *not* a wire field — it is
 // the in-process mirror of the schema file's `x-sce-schema-status`
@@ -123,14 +122,19 @@ fn envelope_top_level_required_fields_frozen() {
         .iter()
         .map(|v| v.as_str().expect("required entries are strings"))
         .collect();
-    let expected: BTreeSet<&str> = ["v", "ast"].into_iter().collect();
+    let expected: BTreeSet<&str> = ["v", "generator", "ast"].into_iter().collect();
     assert_eq!(
         required, expected,
-        "envelope's top-level required keys must remain exactly {{v, ast}} — \
-         schema lifecycle status (pre-release / stable) is carried by the \
-         schema file's `x-sce-schema-status` header, NOT a wire field, \
-         matching the diagnostic schema precedent. Adding a required \
-         field is a breaking change and requires v2."
+        "envelope's top-level required keys must remain exactly \
+         {{v, generator, ast}} — schema lifecycle status (pre-release / \
+         stable) is carried by the schema file's `x-sce-schema-status` \
+         header, NOT a wire field, matching the diagnostic schema \
+         precedent. `generator` is required because registry policy 1 \
+         makes pinning a specific commit the consumer's obligation \
+         while this surface is pre-release; it landed as a required \
+         field under that same pre-release allowance (§8.1 permits a \
+         non-additive change without a version bump), following the \
+         diagnostic and symbol-lookup surfaces."
     );
     assert_eq!(
         schema["additionalProperties"].as_bool(),
@@ -520,43 +524,46 @@ fn schema_self_validates() {
         .expect("checked-in schema must compile as a valid JSON Schema");
 }
 
+/// The stamp names *this* checkout, not merely something schema-shaped.
+///
+/// Schema validation cannot make this assertion: the pattern admits
+/// `unknown` on purpose, so a build whose commit resolution broke
+/// emits a schema-valid envelope that attributes nothing. This suite
+/// runs from inside the repository, so a checkout exists to read —
+/// `unknown` here means the resolution is broken, not that there was
+/// nothing to resolve. `version_reports_the_generator_commit` makes
+/// the same argument for the CLI's `--version`.
 #[test]
-fn producer_stamps_sce_version_on_default_path() {
-    // Production `--emit-ast` path stamps the current SCE release so
-    // downstream issue reports can pin the exact producer. The
-    // version string is non-empty and matches the Cargo package
-    // version. `new_unversioned()` (test-only) suppresses the stamp.
+fn producer_stamps_the_generator_commit() {
     let parsed = parse_fixture(&fixture("transform_multi_output.scxml"));
-    let env_default = ForgeAstEnvelope::new(&parsed);
+    let env = ForgeAstEnvelope::new(&parsed);
     assert_eq!(
-        env_default.sce_producer_version,
-        Some(SCE_PRODUCER_VERSION),
-        "production constructor must stamp the producer version"
-    );
-    assert!(
-        !SCE_PRODUCER_VERSION.is_empty(),
-        "producer version must be non-empty"
+        env.generator,
+        sce_build::GENERATOR_COMMIT,
+        "production constructor must stamp the generator commit — the \
+         same constant the stdout manifest and every diagnostic record \
+         carry, so one run's surfaces agree on who produced them"
     );
 
-    let env_unversioned = ForgeAstEnvelope::new_unversioned(&parsed);
-    assert_eq!(
-        env_unversioned.sce_producer_version, None,
-        "test-only constructor must suppress the producer version"
+    let json = serde_json::to_value(&env).expect("serialise");
+    let stamp = json
+        .get("generator")
+        .and_then(|v| v.as_str())
+        .expect("wire form must carry `generator` as a string");
+    assert_ne!(
+        stamp, "unknown",
+        "the stamp resolved to the no-checkout fallback while running \
+         inside a git checkout — commit resolution in build.rs is \
+         broken. The schema admits `unknown` for vendored builds, so \
+         nothing downstream would have caught this."
     );
-
-    // Serialised form mirrors the in-process struct: present-when-some,
-    // absent-when-none. Drops the field key entirely on `None`, not
-    // emitting `"sce_producer_version": null` — consumers MAY check
-    // either form per the consumer compatibility checklist.
-    let json_default = serde_json::to_value(&env_default).expect("serialise");
     assert!(
-        json_default.get("sce_producer_version").is_some(),
-        "production wire form must carry the producer version"
-    );
-    let json_unversioned = serde_json::to_value(&env_unversioned).expect("serialise");
-    assert!(
-        json_unversioned.get("sce_producer_version").is_none(),
-        "unversioned wire form must omit the producer version key entirely"
+        stamp.len() >= 7
+            && stamp.len() <= 40
+            && stamp
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+        "stamp must be a lowercase hex commit; got {stamp:?}"
     );
 }
 
@@ -685,6 +692,62 @@ fn ast_schema_rejects_an_envelope_missing_a_required_field() {
     assert!(
         validator.validate(&json).is_err(),
         "schema must reject an envelope with no `v`: {json}",
+    );
+}
+
+/// The schema refuses an envelope that cannot name its producer.
+///
+/// Two ways to fail that, and the schema has to catch both. Dropping
+/// the key is the obvious one. The second is what this surface
+/// actually shipped: a stamp that is present, is a string, and names
+/// nothing — it carried `CARGO_PKG_VERSION`, frozen pre-1.0, so every
+/// commit emitted the same value. A required key with no shape
+/// constraint would still accept that, which is why the pattern is
+/// asserted from a rejection rather than trusted from the schema text.
+#[test]
+fn ast_schema_rejects_a_generator_that_names_no_commit() {
+    let schema_value = load_schema();
+    let validator = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(&schema_value)
+        .expect("checked-in schema must be valid JSON Schema");
+
+    let (_, fixture_name) = FIXTURE_PER_KIND[0];
+    let parsed = parse_fixture(&fixture(fixture_name));
+    let mut buf = Vec::new();
+    write_envelope(&mut buf, &parsed).expect("write_envelope succeeds");
+    let control: Value = serde_json::from_slice(&buf).expect("emitted envelope re-parses as JSON");
+
+    assert!(
+        validator.validate(&control).is_ok(),
+        "the control envelope must be valid before mutation, otherwise \
+         neither rejection below proves anything: {control}",
+    );
+
+    let mut dropped = control.clone();
+    dropped
+        .as_object_mut()
+        .expect("envelope is a JSON object")
+        .remove("generator")
+        .expect("control envelope carried the generator stamp");
+    assert!(
+        validator.validate(&dropped).is_err(),
+        "schema must reject an envelope with no `generator`: {dropped}",
+    );
+
+    let mut crate_version = control.clone();
+    crate_version
+        .as_object_mut()
+        .expect("envelope is a JSON object")
+        .insert(
+            "generator".to_string(),
+            Value::from(env!("CARGO_PKG_VERSION")),
+        );
+    assert!(
+        validator.validate(&crate_version).is_err(),
+        "schema must reject a `generator` holding the crate version — \
+         it is frozen pre-1.0 and identifies nothing on its own, which \
+         is exactly what this surface used to emit: {crate_version}",
     );
 }
 

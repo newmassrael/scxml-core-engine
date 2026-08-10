@@ -57,7 +57,7 @@ letting consumers be written in any language with a JSON parser.
 ```json
 {
   "v": 1,
-  "sce_producer_version": "0.1.0",
+  "generator": "896629cf07d4",
   "ast": {
     "document": { "kind": "...", "name": "...", ... },
     "imports": [ { "src": "...", "kind": "...", "alias": "..." } ],
@@ -68,12 +68,21 @@ letting consumers be written in any language with a JSON parser.
 
 * **`v` (integer, const `1`)** — wire-format version. A consumer
   written against v1 may reject any other value outright.
-* **`sce_producer_version` (string, optional)** — SCE release that
-  produced this payload (`env!("CARGO_PKG_VERSION")` of the
-  `sce-build` crate at emit time). Optional in the schema: omitted
-  by golden-fixture emitters that need version-independent byte
-  equality. Production `--emit-ast` paths always stamp it so issue
-  reports can pin the exact producer.
+* **`generator` (string, required)** — commit of the SCE build that
+  produced this payload, matching `^([0-9a-f]{7,40}|unknown)$`. Same
+  value the stdout manifest carries as `generator` and `--version`
+  reports in parentheses, so a consumer reading both surfaces from one
+  run gets one answer under one key. `unknown` only on a build with no
+  git checkout to read (vendored crate, release tarball).
+
+  This is what discharges `SCE_WIRE_CONTRACTS.md` policy 1, which
+  tells consumers to pin a specific SCE commit while the surface is
+  `pre-release`. The field previously held the `sce-build` crate
+  version under the name `sce_producer_version` and was optional; that
+  version is frozen pre-1.0, so it identified nothing and no consumer
+  could pin from it. It matters most on the failure path: a rejected
+  run writes no manifest at all, so an export sitting next to a
+  rejection has nothing else alongside it to be attributed by.
 * **`ast.document`** — per-kind parsed body. The closed set of
   `kind` discriminator values is given in
   [§5](#5-supported-kinds-v1).

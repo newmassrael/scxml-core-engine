@@ -52,14 +52,32 @@ checked-in schema without linking the `sce-build` crate.
    than rely on a version number alone. (This is why, for example, a
    forge-AST consumer pins the exact commit it deserializes against.)
 2. **A payload names the commit that produced it.** A MUST the consumer
-   cannot check is a convention, so the surfaces a consumer reads
-   without a second invocation carry the generator commit in-band:
-   `generator` on the stdout manifest, on every diagnostic record, and
-   on every symbol-lookup record; `sce_producer_version` on a forge-AST
-   export. The diagnostic case is the one that has to be per-record — a
-   rejected run writes **no** manifest at all (stdout is empty, the exit
-   code carries the failure), so on the path a repair loop iterates on,
-   the diagnostic is the only record the consumer receives.
+   cannot check is a convention, so every surface a consumer reads
+   without a second invocation carries the generator commit in-band
+   under one name — `generator`, matching
+   `^([0-9a-f]{7,40}|unknown)$` — on the stdout manifest, on every
+   diagnostic record, on every symbol-lookup record, and on every
+   forge-AST export. One name across surfaces means a consumer reading
+   two of them from the same run does not need a per-surface key to ask
+   the same question. The diagnostic case is the one that has to be
+   per-record — a rejected run writes **no** manifest at all (stdout is
+   empty, the exit code carries the failure), so on the path a repair
+   loop iterates on, the diagnostic is the only record the consumer
+   receives.
+
+   `wire_surface_stability.rs::every_json_surface_names_the_commit_that_produced_it`
+   enforces this per surface, including the pattern: a required stamp
+   whose shape is unconstrained is discharged by a value that names
+   nothing. The forge-AST export is why the check exists — it reached
+   `pre-release` carrying an optional `sce_producer_version` holding
+   the `sce-build` crate version, which is frozen pre-1.0 and so
+   identified nothing, while the status, instance and negative checks
+   all stayed green because none of them looks at attribution.
+
+   The sourcemap sidecar's exemption is registered in the same test
+   (`ATTRIBUTION_EXEMPT`, with its reason), and checked in both
+   directions: it must not carry the field, and this registry must
+   state why.
 
    The sourcemap sidecar deliberately does **not** carry it. The sidecar
    is a committed artifact, so a commit stamp would be invalidated by
@@ -122,6 +140,9 @@ checked-in schema without linking the `sce-build` crate.
    is pinned to that change:
    - Diagnostics — `diagnostic_schema_rejects_a_missing_required_field`
    - Forge AST — `ast_schema_rejects_an_envelope_missing_a_required_field`
+     and `ast_schema_rejects_a_generator_that_names_no_commit` (which
+     pins both ways the stamp can fail: absent, and present-but-naming-
+     nothing — the crate version this surface used to emit)
    - Sourcemap sidecar — `sourcemap_schema_rejects_a_missing_required_field`
    - Stdout manifest — `schema_rejects_a_missing_required_field`
    - Symbol lookup — `lookup_schema_rejects_a_record_without_the_generator_stamp`
