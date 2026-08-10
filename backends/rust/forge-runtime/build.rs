@@ -61,9 +61,8 @@ fn main() {
     for fixture in &manifest.fixtures {
         let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
 
-        // Read + expand. This script used to hand the raw bytes straight
-        // to the compiler, so a fixture using `<sce:use>` would have been
-        // generated with the templated nodes missing.
+        // Read + expand. Handing raw bytes to the compiler generates a
+        // fixture with its templated nodes missing, and says nothing.
         //
         // The label stays `symmetric(fixture.name)` rather than being
         // derived from the path: `conformance.rs` compiles these same

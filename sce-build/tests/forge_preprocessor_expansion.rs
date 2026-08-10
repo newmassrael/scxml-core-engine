@@ -4,15 +4,14 @@
 // A forge document that still carries `<sce:use>` / `<xi:include>` has
 // not been through `expand_preprocessors`, and must not compile.
 //
-// The defect this guards against was reported from a downstream
-// consumer and reproduced here. `parse_sce_entries` matches
-// `<sce:entry>` by tag name and has no else-branch, so any other
-// element under `<data>` is skipped without a word. An unexpanded
-// `<sce:use>` is therefore not a parse error — it is a row that never
-// arrives. With `sce:default` present the missing row answers with the
-// default, so the caller sees a well-formed lookup that is simply
-// wrong, and nothing on the path — compiler, generated code, runtime —
-// says anything.
+// The defect this guards against already happened.
+// `parse_sce_entries` matches `<sce:entry>` by tag name and has no
+// else-branch, so any other element under `<data>` is skipped without a
+// word. An unexpanded `<sce:use>` is therefore not a parse error — it is
+// a row that never arrives. With `sce:default` present the missing row
+// answers with the default, so the caller sees a well-formed lookup that
+// is simply wrong, and nothing on the path — compiler, generated code,
+// runtime — says anything.
 //
 // Two things kept this alive longer than it should have been:
 //
@@ -81,9 +80,9 @@ const DOC_WITH_USE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 "#;
 
 /// Same document, with the row delivered by `<xi:include>` instead.
-/// The report left this case unverified; it is asserted here because
-/// the two directives share `expand_preprocessors` and share the
-/// tag-name filter that drops them.
+/// The two directives share `expand_preprocessors` and share the
+/// tag-name filter that drops them, so they are asserted together
+/// rather than one standing in for the other.
 const DOC_WITH_XINCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -227,14 +226,14 @@ fn unexpanded_xinclude_is_rejected_rather_than_dropped() {
 /// The file facade does the whole sequence, and reports what it read.
 ///
 /// This is the entry a consumer that just wants code out of a file
-/// should reach for: the reason the gap existed is that the forge half
-/// had no counterpart to `compile_scxml`, so every caller assembled
-/// read-expand-parse-generate itself and a caller that got the order
-/// wrong was told nothing.
+/// should reach for. Without a counterpart to `compile_scxml` on the
+/// forge half, every caller assembles read-expand-parse-generate for
+/// itself, and getting that order wrong is exactly the mistake the
+/// guard above exists to catch.
 ///
-/// `deps` is asserted alongside the row because the missing-dependency
-/// case is the same defect wearing different clothes: the report that
-/// prompted this hit it too, editing a template and getting no rebuild.
+/// `deps` is asserted alongside the row because a missing dependency is
+/// the same defect wearing different clothes: the artefact goes stale
+/// on a template edit, and the build reports success.
 #[test]
 fn compile_forge_file_expands_and_reports_its_inputs() {
     let (dir, main) = fixture(DOC_WITH_USE);
@@ -259,14 +258,98 @@ fn compile_forge_file_expands_and_reports_its_inputs() {
     );
 }
 
+/// `orchestrate` resolves fragments through its own search path.
+///
+/// The multi-doc route resolves documents from paths, so it owns the
+/// read step its callers cannot reach — and a search path it does not
+/// accept is one an operator cannot supply. With the template held in a
+/// sibling directory, document-relative resolution alone cannot find
+/// it, so this fails unless `--include-dir` reaches the expander.
+#[test]
+fn orchestrate_resolves_templates_through_include_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let docs = dir.path().join("docs");
+    let shared = dir.path().join("shared");
+    let out_dir = dir.path().join("out");
+    for d in [&docs, &shared, &out_dir] {
+        std::fs::create_dir_all(d).expect("mkdir");
+    }
+    // Only reachable via the search path, never document-relative.
+    std::fs::write(shared.join(TEMPLATE_FILE), TEMPLATE_BODY).expect("write template");
+    let main = docs.join("probe.scxml");
+    std::fs::write(&main, DOC_WITH_USE).expect("write doc");
+
+    let output = Command::new(codegen_bin())
+        .arg("orchestrate")
+        .arg("--forge")
+        .arg(&main)
+        .arg("--include-dir")
+        .arg(&shared)
+        .arg("-l")
+        .arg("rust")
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .expect("run sce-codegen orchestrate");
+
+    assert!(
+        output.status.success(),
+        "orchestrate must resolve the template through --include-dir.\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let mut emitted = String::new();
+    for entry in std::fs::read_dir(&out_dir).expect("read out dir") {
+        let path = entry.expect("dir entry").path();
+        if path.is_file() {
+            emitted.push_str(&std::fs::read_to_string(&path).expect("read emitted"));
+        }
+    }
+    assert!(
+        emitted.contains(TEMPLATED_VARIANT),
+        "orchestrate dropped the templated row. Emitted:\n{emitted}"
+    );
+}
+
+/// The statechart route carries the same precondition.
+///
+/// `SCXMLParser::parse_file` expands before parsing, so the file-based
+/// entry cannot reach this state — but `parse_string` hands content
+/// straight to the parser, and the statechart parser selects children by
+/// tag name exactly as the forge kind parsers do. A surviving
+/// `<xi:include>` is skipped, and the states it was carrying are absent
+/// from a model that reports no error.
+#[test]
+fn statechart_parse_string_rejects_unexpanded_directives() {
+    const STATECHART_WITH_XINCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:xi="http://www.w3.org/2001/XInclude"
+       version="1.0" name="probe" initial="a">
+  <state id="a"/>
+  <xi:include href="extra_states.xml"/>
+</scxml>
+"#;
+
+    let err = sce_build::parser::SCXMLParser::new()
+        .parse_string(STATECHART_WITH_XINCLUDE, "probe")
+        .expect_err("an unexpanded <xi:include> must not parse into a model");
+
+    assert_eq!(
+        err.diagnostic_payload().code.as_str(),
+        "xml/preprocessor-not-run",
+        "rejection must name the missing expansion pass; got: {err}"
+    );
+}
+
 /// End-to-end through the documented entry point.
 ///
-/// The report attributed the gap to consumers assembling the pipeline
-/// themselves, but `sce-codegen generate` is the file facade and it
-/// took the same shortcut: read the file, hand the bytes to the forge
-/// parser, never expand. Its statechart arm goes through
-/// `Parser::parse_file`, which expands — so the two arms of one command
-/// disagreed about whether templates exist.
+/// `sce-codegen generate` is itself a file facade, and its forge arm
+/// took the shortcut this whole guard is about: read the file, hand the
+/// bytes to the forge parser, never expand. Its statechart arm goes
+/// through `Parser::parse_file`, which expands — so the two arms of one
+/// command answered differently about whether templates exist,
+/// depending only on the document's kind.
 #[test]
 fn cli_generate_expands_templates_on_the_forge_route() {
     let (dir, main) = fixture(DOC_WITH_USE);
@@ -302,12 +385,10 @@ fn cli_generate_expands_templates_on_the_forge_route() {
         }
     }
 
-    // The depfile field has always been called `preprocessor_deps`, but
-    // this route never ran the preprocessor, so it could only ever be
-    // handed the import closure. A template edit therefore left the
-    // output stale with the build reporting success — the same silent
-    // staleness in a second place, and the second failure the report
-    // that prompted this work hit for real.
+    // The depfile field is called `preprocessor_deps`, but while this
+    // route skipped expansion it could only ever be handed the import
+    // closure. A template edit then left the output stale with the build
+    // reporting success — the same silent staleness in a second place.
     let deps = std::fs::read_to_string(&depfile).expect("depfile must be written");
     assert!(
         deps.contains(TEMPLATE_FILE),

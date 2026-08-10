@@ -1365,6 +1365,13 @@ struct OrchestrateArgs {
     /// Input forge file path (repeat for multiple files).
     #[arg(long = "forge")]
     forge: Vec<String>,
+    /// Additional directories searched (in declaration order) to
+    /// resolve `<xi:include href="...">` and `<sce:use template="...">`
+    /// fragments by name — same semantics as `generate --include-dir`.
+    /// Without it, fragments resolve relative to the including document
+    /// only, which is the whole search path a multi-doc build had.
+    #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+    include_dir: Vec<String>,
     /// Target language (rust, cpp, kotlin, go, c11).
     #[arg(short, long)]
     language: String,
@@ -1546,6 +1553,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     let OrchestrateArgs {
         scxml,
         forge,
+        include_dir,
         language: language_arg,
         output_dir: output_dir_arg,
         deploy,
@@ -1553,6 +1561,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
     } = args;
+    let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
     let scxml_paths: &[String] = &scxml;
     let forge_paths: &[String] = &forge;
     let language: &str = &language_arg;
@@ -1565,7 +1574,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     // docs that parsed successfully — consumer tooling treats AST
     // emit as observation, not as compile commitment.
     if let Some(dir) = emit_ast_dir {
-        emit_orchestrate_asts(scxml_paths, forge_paths, dir, error_format);
+        emit_orchestrate_asts(scxml_paths, forge_paths, dir, &include_dirs, error_format);
     }
     let lang: Language = language.parse().unwrap_or_else(|_| {
         error_format.emit_and_exit(
@@ -1590,6 +1599,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix,
         const_fold_budget,
+        include_dirs: include_dirs.clone(),
         ..Default::default()
     };
 
@@ -1714,6 +1724,7 @@ fn emit_orchestrate_asts(
     scxml_paths: &[String],
     forge_paths: &[String],
     dir: &str,
+    include_dirs: &[PathBuf],
     error_format: ErrorFormat,
 ) {
     let dir_path = std::path::Path::new(dir);
@@ -1789,17 +1800,13 @@ fn emit_orchestrate_asts(
 
         // Expand before parsing, as the statechart loop above does via
         // `parse_file`. An AST emitted from unexpanded source would
-        // describe a document the author never wrote — and every node a
+        // describe a document the author never wrote — every node a
         // `<sce:use>` was carrying would simply be absent from it.
-        //
-        // `orchestrate` exposes no `--include-dir`, so fragments resolve
-        // relative to the document only; `generate` and `check` pass
-        // their operator-configured search path here.
         let content = match sce_build::parser::expand_preprocessors(
             &content,
             forge_path_str,
             forge_path.parent(),
-            &[],
+            include_dirs,
         ) {
             Ok((expanded, _map, _deps)) => expanded,
             Err(e) => error_format.emit_forge_and_exit(&e),
@@ -2022,7 +2029,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         forge,
         deploy,
         language,
-        include_dir: _,
+        include_dir,
         strict_unresolved: _,
         lint: _,
         go_module_prefix,
@@ -2080,6 +2087,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix,
         const_fold_budget,
+        include_dirs: include_dir.iter().map(PathBuf::from).collect(),
         ..Default::default()
     };
 
@@ -2597,12 +2605,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             ) {
                 Ok(output) => {
                     // Preprocessor inputs ahead of the import closure.
-                    // The field has always been named `preprocessor_deps`
-                    // but could only ever be handed imports, because this
-                    // route never ran the preprocessor — so editing a
-                    // `<sce:use>` template left the output stale with the
-                    // build reporting success, the same silent-staleness
-                    // the import fix above was written to end.
+                    // Both are files this compile read, and a template
+                    // edit has to trigger a rebuild exactly as an edit to
+                    // an imported document does — otherwise the output
+                    // goes stale while the build reports success, which
+                    // is the staleness the import entry above prevents.
                     let mut import_deps = preprocessor_deps;
                     import_deps.extend(output.deps);
                     let files = maybe_format_files(output.files, &cpp_formatter);
