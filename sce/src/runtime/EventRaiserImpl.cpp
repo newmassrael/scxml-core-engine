@@ -4,6 +4,7 @@
 #include "runtime/EventRaiserImpl.h"
 #include "common/EventDataHelper.h"
 #include "common/EventTypeHelper.h"
+#include "common/IOProcessorHelper.h"
 #include "common/StringUtils.h"
 #include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
@@ -74,8 +75,11 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
         QueuedEvent event = synchronousQueue_.top();
         synchronousQueue_.pop();
 
-        // Check if this event originated from the cancelled session
-        if (event.origin == originSessionId) {
+        // Check if this event originated from the cancelled session.
+        // `QueuedEvent::origin` holds the sender's published location
+        // (§scxml-C-1), so the raw session id callers pass is converted the
+        // same way rather than compared against a different spelling.
+        if (event.origin == IOProcessorHelper::scxmlLocation(originSessionId)) {
             cancelledCount++;
             SCE_LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
                           originSessionId);
@@ -241,6 +245,17 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
         typedData = EventDataHelper::jsonStringToScriptValue(eventData);
     }
 
+    // §scxml-C-1: `_event.origin` MUST be the SENDER's published
+    // `_ioprocessors` location, not its bare session id. Callers deal in
+    // session ids — that is their currency and every target hands one in —
+    // so the id becomes a wire value exactly here, once, rather than at each
+    // of the three event targets that would otherwise each need to remember.
+    // The empty case stays empty: an event with no originating session has no
+    // location to publish, and inventing one would make `_event.origin`
+    // non-empty for internally raised events.
+    const std::string originLocation =
+        originSessionId.empty() ? std::string() : IOProcessorHelper::scxmlLocation(originSessionId);
+
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
                  "immediateMode={}, EventRaiser instance={}",
                  eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),
@@ -307,7 +322,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                 try {
                     // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
                     EventContext ctx;
-                    ctx.originSessionId = originSessionId;
+                    ctx.originSessionId = originLocation;
                     ctx.sendId = sendId;
                     ctx.invokeId = invokeId;
                     ctx.originType = originType;
@@ -346,7 +361,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
             timestamp = std::chrono::steady_clock::time_point();  // Will be set to now() in constructor
         }
 
-        synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType,
+        synchronousQueue_.emplace(eventName, eventData, priority, originLocation, sendId, invokeId, originType,
                                   timestamp, std::move(typedData));
 
         // Enhanced logging: explain why event was queued instead of processed immediately
