@@ -1250,24 +1250,24 @@ enum Commands {
     /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
     ///                     <artifact>` identifier in
     ///                     `<sourcemap>/sce_sourcemap.json`.
-    /// `--pc <ADDR>`       NOT IMPLEMENTED — exits 2. Would resolve an
-    ///                     ELF program-counter address to a function
-    ///                     symbol via DWARF and then look that symbol
-    ///                     up in the sourcemap.
-    /// `--hardfault`       NOT IMPLEMENTED — exits 2. Would read
-    ///                     newline-separated PC addresses from stdin
-    ///                     and resolve each as `--pc` would.
-    ///
-    /// The two DWARF-backed modes are declared by spec lines 3253-3278
-    /// but have no implementation: they refuse with exit 2 rather than
-    /// resolving. They are described here as unimplemented because a
-    /// help text that presents them as working is a claim the binary
-    /// does not honour — `--symbol` is the only mode that resolves.
+    /// `--pc <ADDR>`       Resolve an ELF program-counter address to the
+    ///                     function symbol containing it (`--elf`
+    ///                     required), then look that symbol up.
+    /// `--hardfault`       Read newline-separated PC addresses from
+    ///                     stdin and resolve each as `--pc` would, one
+    ///                     record per frame in the order given. Exits 1
+    ///                     when any frame is unresolvable.
     ///
     /// Spec lines 3253-3278 fix the tool's resolution contract:
     /// PC → symbol → sourcemap → SCXML file:line + state_path. The
-    /// per-symbol attribution data ships in the sourcemap, not the
-    /// DWARF; addr2sce composes the two layers.
+    /// per-symbol attribution data ships in the sourcemap, so the
+    /// address→symbol hop reads the ELF symbol table rather than a
+    /// DWARF line program — `.symtab` carries the ranges this needs and
+    /// survives `--strip-debug`.
+    ///
+    /// On ARM the Thumb bit (bit 0) is cleared on both the symbol and
+    /// the query address, so a PC taken from a Cortex-M exception frame
+    /// resolves like its even neighbour.
     ///
     /// For the opposite direction — SCXML coordinates to the symbols
     /// they lowered to — see `sce2sym`.
@@ -1280,16 +1280,18 @@ enum Commands {
         /// with `--pc` / `--hardfault`).
         #[arg(long)]
         symbol: Option<String>,
-        /// NOT IMPLEMENTED (exits 2). ELF program-counter address
-        /// (hex with or without `0x` prefix).
+        /// ELF program-counter address, hexadecimal with or without a
+        /// `0x` prefix (a bare value is read as hex — every stack dump
+        /// prints hex). Requires `--elf`.
         #[arg(long)]
         pc: Option<String>,
-        /// ELF binary path for DWARF lookup. Only meaningful to the
-        /// unimplemented `--pc` / `--hardfault` modes.
+        /// ELF image whose symbol table maps an address to a function.
+        /// Required by `--pc` / `--hardfault`.
         #[arg(long)]
         elf: Option<String>,
-        /// NOT IMPLEMENTED (exits 2). Read PC addresses from stdin,
-        /// one per line, and resolve each as `--pc` would.
+        /// Read PC addresses from stdin, one per line, and resolve each
+        /// as `--pc` would. Blank lines are skipped so a pasted dump
+        /// works verbatim. Requires `--elf`.
         #[arg(long, default_value_t = false)]
         hardfault: bool,
     },
@@ -6334,20 +6336,27 @@ impl TestInfo {
 // line range).
 //
 // Three modes (spec lines 3253-3278):
-//   `--symbol <NAME>` — direct sourcemap key lookup. No DWARF needed.
-//   `--pc <ADDR>`     — ELF PC resolution. Deferred until a consumer
-//                        materialises (per [[feedback-silently-broken-
-//                        hooks]] we don't add the addr2line/gimli dep
-//                        until an MCU consumer tests it end-to-end).
-//   `--hardfault`     — bulk PC resolution from stdin. Same deferral
-//                        as `--pc`.
+//   `--symbol <NAME>` — direct sourcemap key lookup.
+//   `--pc <ADDR>`     — resolve the address to the function symbol
+//                        containing it, then look that symbol up.
+//   `--hardfault`     — the same resolution for every newline-separated
+//                        address on stdin, one record per frame in the
+//                        order the dump lists them.
 //
-// The `--symbol` path is live (the sourcemap-only path
-// the foundation actually consumes — integration tests exercise it,
-// the sourcemap-source-hash-mismatch diagnostic fires when the
-// sidecar JSON drifts). `--pc` / `--hardfault` print a clear "deferred"
-// message so authors that try those modes see a documented gap rather
-// than an opaque crash.
+// The address->symbol hop reads the ELF **symbol table**, not a DWARF
+// line program. The spec's contract is PC -> symbol -> sourcemap ->
+// SCXML file:line, and the SCXML coordinates live in the sourcemap, so
+// the line program would only re-derive the generated-language line the
+// sourcemap already supersedes. `.symtab` carries `st_value` / `st_size`
+// for every emitted function, which is exactly the containment test this
+// needs, and it survives a `--strip-debug` image — the shape an MCU
+// build ships.
+//
+// ARM Thumb: a PC harvested from a Cortex-M exception frame carries the
+// Thumb bit in bit 0, and Thumb function symbols carry it in `st_value`
+// too. Both sides are normalised on ARM so an odd address resolves to
+// the same function as its even neighbour; without that, every frame in
+// a hardfault dump misses.
 
 fn cmd_addr2sce(
     sourcemap_dir: &str,
@@ -6362,18 +6371,46 @@ fn cmd_addr2sce(
     // Mode dispatch: exactly one of `--symbol` / `--pc` / `--hardfault`.
     match (symbol, pc, hardfault) {
         (Some(name), None, false) => addr2sce_resolve_symbol(&map, name, &map_path),
-        (None, Some(_), false) | (None, None, true) => {
-            let _ = elf;
-            // Deferred — print a stable message so an automation
-            // consumer can detect the deferral without parsing
-            // human-readable prose. Exit non-zero so a CI gate that
-            // depends on resolution does not silently green.
-            eprintln!(
-                "addr2sce: --pc / --hardfault modes are not implemented; \
-                 --symbol is the supported mode. A consumer (e.g. an MCU JTAG \
-                 debugger config) is needed to drive the addr2line / gimli dependency in."
-            );
-            std::process::exit(2);
+        (None, Some(addr), false) => {
+            let symbols = addr2sce_load_symbol_table(elf);
+            let pc = addr2sce_parse_pc(addr);
+            if !addr2sce_resolve_pc(&map, &symbols, pc, &map_path) {
+                std::process::exit(1);
+            }
+        }
+        (None, None, true) => {
+            let symbols = addr2sce_load_symbol_table(elf);
+            let mut frames = 0usize;
+            let mut unresolved = 0usize;
+            for line in std::io::stdin().lines() {
+                let line = match line {
+                    Ok(l) => l,
+                    Err(e) => cli_exit(CliError::ReadInput {
+                        path: "<stdin>".to_string(),
+                        source: e,
+                    }),
+                };
+                let trimmed = line.trim();
+                // Blank lines keep a pasted dump usable verbatim.
+                if trimmed.is_empty() {
+                    continue;
+                }
+                frames += 1;
+                let pc = addr2sce_parse_pc(trimmed);
+                if !addr2sce_resolve_pc(&map, &symbols, pc, &map_path) {
+                    unresolved += 1;
+                }
+            }
+            if frames == 0 {
+                eprintln!("addr2sce: --hardfault read no addresses from stdin");
+                std::process::exit(2);
+            }
+            // A partially-resolved stack is a narrative with a hole in
+            // it; the frames that did resolve stay on stdout so the
+            // operator sees how far the walk got.
+            if unresolved > 0 {
+                std::process::exit(1);
+            }
         }
         _ => {
             let _ = error_format;
@@ -6384,6 +6421,141 @@ fn cmd_addr2sce(
             std::process::exit(2);
         }
     }
+}
+
+/// A function symbol's address range, normalised for the target's
+/// address convention.
+struct FunctionSymbol {
+    name: String,
+    addr: u64,
+    size: u64,
+}
+
+/// Every sized function symbol in `elf`, address-sorted.
+///
+/// `--elf` is required by both PC modes: the sourcemap keys on symbol
+/// names, and only the image knows which name owns an address.
+fn addr2sce_load_symbol_table(elf: Option<&str>) -> Vec<FunctionSymbol> {
+    use object::{Object, ObjectSymbol};
+
+    let Some(path) = elf else {
+        eprintln!(
+            "addr2sce: --pc / --hardfault require --elf <PATH> — the address \
+             is resolved to a function symbol through the image's symbol table"
+        );
+        std::process::exit(2);
+    };
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: path.to_string(),
+            source: e,
+        }),
+    };
+    let file = match object::File::parse(&*bytes) {
+        Ok(f) => f,
+        Err(e) => cli_exit(CliError::ReadInput {
+            path: path.to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        }),
+    };
+    // On ARM the Thumb bit lives in bit 0 of a function symbol's value
+    // and of any PC that reached the CPU in Thumb state. Clearing it on
+    // both sides is what makes the two comparable.
+    let thumb = matches!(file.architecture(), object::Architecture::Arm);
+
+    let mut symbols: Vec<FunctionSymbol> = file
+        .symbols()
+        .filter(|s| s.kind() == object::SymbolKind::Text)
+        .filter_map(|s| {
+            let name = s.name().ok()?;
+            if name.is_empty() {
+                return None;
+            }
+            Some(FunctionSymbol {
+                name: name.to_string(),
+                addr: if thumb { s.address() & !1 } else { s.address() },
+                size: s.size(),
+            })
+        })
+        .collect();
+    if symbols.is_empty() {
+        eprintln!(
+            "addr2sce: {path} carries no function symbols — a fully stripped \
+             image cannot be attributed; keep `.symtab` in the artifact used \
+             for triage"
+        );
+        std::process::exit(2);
+    }
+    symbols.sort_by_key(|s| s.addr);
+    symbols
+}
+
+/// Parse a PC written with or without the `0x` prefix.
+fn addr2sce_parse_pc(raw: &str) -> u64 {
+    let text = raw.trim();
+    let (digits, radix) = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => (hex, 16),
+        // Bare digits are hex too: every tool that prints a stack dump
+        // (gdb, a Cortex-M fault handler, objdump) writes hex, and
+        // reading `1024` as decimal would resolve the wrong function
+        // silently.
+        None => (text, 16),
+    };
+    match u64::from_str_radix(digits, radix) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("addr2sce: '{raw}' is not a hexadecimal program-counter address");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Resolve one PC and print its record. Returns false when the address
+/// belongs to no function or the function is absent from the sourcemap.
+///
+/// Containment is `[addr, addr + size)` on the greatest symbol at or
+/// below the PC. A symbol with no size (hand-written assembly labels,
+/// linker-script anchors) cannot bound anything, so an address past a
+/// sized function's end is reported as a miss rather than attributed to
+/// whatever came before it — a crash triage that names the wrong state
+/// is worse than one that says it cannot tell.
+fn addr2sce_resolve_pc(
+    map: &sce_build::forge::sourcemap::Sourcemap,
+    symbols: &[FunctionSymbol],
+    pc: u64,
+    map_path: &Path,
+) -> bool {
+    // No normalisation here. The symbol side already dropped the Thumb
+    // bit, so a function begins at its even address and an odd PC
+    // inside it lands in the same range; masking the query as well
+    // changed no outcome, which a mutation confirmed before the branch
+    // was removed.
+    let addr = pc;
+    let hit = symbols
+        .partition_point(|s| s.addr <= addr)
+        .checked_sub(1)
+        .map(|i| &symbols[i])
+        .filter(|s| s.size > 0 && addr - s.addr < s.size);
+    let Some(symbol) = hit else {
+        eprintln!("addr2sce: pc {pc:#x} is inside no function symbol");
+        return false;
+    };
+    let Some(entry) = map.symbols.get(&symbol.name) else {
+        eprintln!(
+            "addr2sce: pc {pc:#x} resolved to symbol '{}' which is absent from {}",
+            symbol.name,
+            map_path.display()
+        );
+        return false;
+    };
+    print_lookup_record(
+        sce_build::forge::sourcemap::LookupKind::Addr2Sce,
+        map_path,
+        &symbol.name,
+        entry,
+    );
+    true
 }
 
 /// Read and parse the `sce_sourcemap.json` under `dir`.
