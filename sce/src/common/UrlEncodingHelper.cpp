@@ -30,4 +30,28 @@ std::string UrlEncodingHelper::urlEncode(const std::string &str) {
     return escaped.str();
 }
 
+std::string UrlEncodingHelper::urlDecode(const std::string &str) {
+    std::string decoded;
+    decoded.reserve(str.size());
+
+    for (size_t i = 0; i < str.size(); ++i) {
+        if (str[i] != '%') {
+            decoded += str[i];
+            continue;
+        }
+        // A `%` needs two hex digits behind it to be an escape. Anything else
+        // is a literal `%` in the input, kept as-is.
+        if (i + 2 >= str.size() || !std::isxdigit(static_cast<unsigned char>(str[i + 1])) ||
+            !std::isxdigit(static_cast<unsigned char>(str[i + 2]))) {
+            decoded += str[i];
+            continue;
+        }
+        const int value = std::stoi(str.substr(i + 1, 2), nullptr, 16);
+        decoded += static_cast<char>(value);
+        i += 2;
+    }
+
+    return decoded;
+}
+
 }  // namespace SCE

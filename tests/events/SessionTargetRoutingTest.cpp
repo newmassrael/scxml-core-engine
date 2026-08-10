@@ -16,14 +16,18 @@
 // `EventRaiserService`. What this fixture pins is that the id resolved is
 // the one the URI NAMES rather than the one doing the sending.
 
+#include "common/IOProcessorHelper.h"
 #include "events/EventDescriptor.h"
 #include "events/EventRaiserService.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "mocks/MockEventRaiser.h"
+#include "runtime/EventRaiserImpl.h"
+#include "runtime/StateSnapshot.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -138,6 +142,92 @@ TEST_F(SessionTargetRouting, AnEventAddressedToAnUnknownSessionIsNotDeliveredToT
         << "an event for an unknown session must not be delivered to the sender instead";
     EXPECT_TRUE(peerRaiser_->getRaisedEvents().empty());
     EXPECT_TRUE(fallback_->getRaisedEvents().empty()) << "nor to the factory's default raiser";
+}
+
+/// W3C SCXML C.1: "The 'origin' field of the event raised in the receiving
+/// session MUST match the value of the 'location' field inside the entry for
+/// the SCXML Event I/O Processor in the `_ioprocessors` system variable in
+/// the sending session."
+///
+/// That location is `sce://scxml/<sessionid>` (`IOProcessorHelper::
+/// scxmlLocation`). A bare session id satisfies no reader: it is not what the
+/// sender publishes, and §C.1's point is that the receiver can send BACK to
+/// it — which the next test exercises.
+///
+/// ⚠ The receiving raiser here is a real `EventRaiserImpl`, not the mock the
+/// routing tests use. `InternalEventTarget::send` dynamic-casts to that
+/// concrete type and only the matching branch carries origin and origintype
+/// at all; a mock therefore observes an empty origin no matter what the
+/// production path does. Measuring the contract requires being on it.
+TEST_F(SessionTargetRouting, TheOriginTheReceiverSeesIsTheSendersPublishedLocation) {
+    auto realPeer = std::make_shared<SCE::EventRaiserImpl>();
+    realPeer->setImmediateMode(false);  // keep the raise queued so it can be read back
+    auto &service = EventRaiserService::getInstance();
+    service.unregisterEventRaiser(kPeer);
+    ASSERT_TRUE(service.registerEventRaiser(kPeer, realPeer));
+
+    auto target = factory_->createTarget(std::string("#_scxml_") + kPeer, kSender);
+    ASSERT_NE(target, nullptr);
+    auto result = target->send(eventNamed("toPeer", std::string("#_scxml_") + kPeer));
+    result.wait();
+
+    std::vector<SCE::EventSnapshot> internalQueue;
+    std::vector<SCE::EventSnapshot> externalQueue;
+    realPeer->getEventQueues(internalQueue, externalQueue);
+    ASSERT_EQ(externalQueue.size(), 1u) << "the addressed session queued the event";
+    EXPECT_EQ(externalQueue[0].origin, SCE::IOProcessorHelper::scxmlLocation(kSender))
+        << "the receiver must read the sender's published _ioprocessors location";
+}
+
+/// The half of §C.1 that makes the origin field worth having: what the
+/// receiver reads must work as a `<send>` target.
+///
+/// Test 336 is supposed to prove this and cannot — it sends to its OWN
+/// origin, so any value that routes back to the sender passes, the empty
+/// string included.
+TEST_F(SessionTargetRouting, ThePublishedLocationWorksAsASendTarget) {
+    auto target = factory_->createTarget(SCE::IOProcessorHelper::scxmlLocation(kPeer), kSender);
+    ASSERT_NE(target, nullptr) << "the location a session publishes must be addressable";
+
+    auto result = target->send(eventNamed("backToPeer", SCE::IOProcessorHelper::scxmlLocation(kPeer)));
+    result.wait();
+
+    EXPECT_EQ(peerRaiser_->getRaisedEvents().size(), 1u)
+        << "an event addressed to a published location reaches that session";
+    EXPECT_TRUE(senderRaiser_->getRaisedEvents().empty());
+    EXPECT_TRUE(fallback_->getRaisedEvents().empty());
+}
+
+/// §scxml-6.4.3: destroying a session cancels the events it queued — and
+/// only those.
+///
+/// This lives beside the origin tests because it reads the same field.
+/// `QueuedEvent::origin` holds the sender's published location, so a
+/// comparison written against the raw session id callers pass would match
+/// nothing and cancel nothing, silently: the count comes back zero, which is
+/// also what "that session had queued nothing" looks like. Nothing exercised
+/// this path before, so the two spellings could disagree undetected.
+TEST_F(SessionTargetRouting, CancellingASessionRemovesOnlyThatSessionsQueuedEvents) {
+    auto raiser = std::make_shared<SCE::EventRaiserImpl>();
+    raiser->setImmediateMode(false);
+
+    ASSERT_TRUE(raiser->raiseEvent("fromSender", "", kSender));
+    ASSERT_TRUE(raiser->raiseEvent("fromPeer", "", kPeer));
+
+    EXPECT_EQ(raiser->cancelEventsForSession(kSender), 1u) << "the sending session had exactly one event queued";
+
+    std::vector<SCE::EventSnapshot> internalQueue;
+    std::vector<SCE::EventSnapshot> externalQueue;
+    raiser->getEventQueues(internalQueue, externalQueue);
+    std::vector<std::string> survivors;
+    for (const auto &snapshot : internalQueue) {
+        survivors.push_back(snapshot.name);
+    }
+    for (const auto &snapshot : externalQueue) {
+        survivors.push_back(snapshot.name);
+    }
+    ASSERT_EQ(survivors.size(), 1u) << "the other session's event must survive";
+    EXPECT_EQ(survivors[0], "fromPeer");
 }
 
 }  // namespace

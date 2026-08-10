@@ -79,6 +79,28 @@ public:
     }
 
     /**
+     * @brief Session id an SCXML Event I/O Processor location names, if any
+     *
+     * The inverse of scxmlLocation, kept beside it so the two spellings of
+     * one address cannot drift apart. §scxml-C-1 requires the location a
+     * session publishes to be usable as a <send> target ("the 'origin' field
+     * ... MUST match the 'location' field"), which only holds if something
+     * can read a session back out of it.
+     *
+     * @param uri Candidate location
+     * @return Decoded session id, or empty when `uri` is not an SCXML
+     *         processor location or names no session
+     */
+    static std::string sessionIdFromScxmlLocation(const std::string &uri) {
+        static constexpr const char *kPrefix = "sce://scxml/";
+        const size_t prefixLen = std::char_traits<char>::length(kPrefix);
+        if (uri.size() <= prefixLen || uri.compare(0, prefixLen, kPrefix) != 0) {
+            return "";
+        }
+        return UrlEncodingHelper::urlDecode(uri.substr(prefixLen));
+    }
+
+    /**
      * @brief Entry set for a session
      *
      * §scxml-C-1-1: the SCXML Event I/O Processor entry and its 'location'

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/EventTargetFactoryImpl.h"
+#include "common/IOProcessorHelper.h"
 #include "common/SendHelper.h"
 #include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
@@ -91,6 +92,17 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
         SCE_LOG_DEBUG("EventTargetFactoryImpl::createTarget() - session target '{}' → session '{}'", targetUri,
                       targetSessionId.empty() ? "<own external queue>" : targetSessionId);
         return createSessionTarget(targetSessionId, sessionId);
+    }
+
+    // §scxml-C-1: the location a session publishes in `_ioprocessors` — and
+    // therefore the value `_event.origin` carries — must work as a target,
+    // or the receiver cannot answer the sender. `#_scxml_<id>` above is the
+    // authored spelling of the same address; this is the published one.
+    if (const std::string locatedSession = IOProcessorHelper::sessionIdFromScxmlLocation(targetUri);
+        !locatedSession.empty()) {
+        SCE_LOG_DEBUG("EventTargetFactoryImpl::createTarget() - processor location '{}' → session '{}'", targetUri,
+                      locatedSession);
+        return createSessionTarget(locatedSession, sessionId);
     }
 
     // §scxml-6.4 (test192): Handle child invoke target (#_<invokeid>)
