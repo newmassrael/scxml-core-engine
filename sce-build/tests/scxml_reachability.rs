@@ -160,6 +160,72 @@ fn orphan_state_with_transition_emits_dead_transition() {
 }
 
 #[test]
+fn compound_ancestor_transition_reaches_its_target() {
+    // W3C SCXML §3.13 — an entered compound state's own transitions
+    // belong to the active configuration's transition set (the
+    // selection walk climbs the ancestor chain). The BFS seeds at the
+    // deep-resolved leaf, so it reaches `s0` only as an ancestor of
+    // `s01`; if ancestors are marked reached without being walked,
+    // `s0`'s catch-all edge to `fail` is never followed and `fail`
+    // reports as an orphan.
+    //
+    // This is the dominant shape in the W3C IRP suite: a compound
+    // state carrying `<transition event="timeout" target="fail"/>`
+    // beside its child states.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "ancestor_edge.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="ancestor_edge" initial="s0">
+  <state id="s0" initial="s01">
+    <transition event="timeout" target="fail"/>
+    <state id="s01">
+      <transition event="go" target="pass"/>
+    </state>
+  </state>
+  <final id="pass"/>
+  <final id="fail"/>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "ancestor_edge.scxml");
+}
+
+#[test]
+fn parallel_sibling_region_reached_through_an_entered_region() {
+    // W3C SCXML §3.4 — entering any region of a `<parallel>` enters
+    // the parallel, and entering the parallel enters every region.
+    // Here only `region_a` is named as a transition target; `region_b`
+    // is reachable solely through that implication. A walker that
+    // marks the `<parallel>` ancestor reached without walking it never
+    // runs the all-regions cascade and reports `region_b` as dead.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "parallel_via_region.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="parallel_via_region" initial="idle">
+  <state id="idle">
+    <transition event="go" target="region_a"/>
+  </state>
+  <parallel id="par">
+    <state id="region_a">
+      <transition event="back" target="idle"/>
+    </state>
+    <state id="region_b">
+      <transition event="back" target="idle"/>
+    </state>
+  </parallel>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "parallel_via_region.scxml");
+}
+
+#[test]
 fn parallel_all_children_stay_reachable() {
     // W3C SCXML §3.4 — entering `<parallel>` enters every direct
     // non-history child. Region B has no incoming transition and is
