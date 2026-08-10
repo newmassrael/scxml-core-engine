@@ -25,6 +25,11 @@ on:
       - 'scripts/verify_embed_payload.sh'
       - 'scripts/embed_CMakeLists.txt'
       - 'embed/MANIFEST.json'
+      - 'scripts/emit_embed_manifest.sh'
+      - 'scripts/test_emit_manifest_fail_fast.sh'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/embed-manifest-failfast.sh'
       - '.github/workflows/embed-vendor-smoke.yml'
   pull_request:
     branches: [ main ]
@@ -38,6 +43,11 @@ on:
       - 'scripts/verify_embed_payload.sh'
       - 'scripts/embed_CMakeLists.txt'
       - 'embed/MANIFEST.json'
+      - 'scripts/emit_embed_manifest.sh'
+      - 'scripts/test_emit_manifest_fail_fast.sh'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/embed-manifest-failfast.sh'
       - '.github/workflows/embed-vendor-smoke.yml'
   workflow_dispatch:
 
@@ -124,3 +134,38 @@ jobs:
       # end-to-end. Catches drift between sce_codegen_assets.cmake and
       # scripts/package_embed.sh that unit tests wouldn't see.
       run: ./scripts/smoke_embed_consumer.sh
+
+  # The emitter's fail-fast behaviour, on a synthetic header rather than
+  # the real tree. The smoke job above runs the emitter for real, so it
+  # only exercises the degraded-AST path when the runner's clang happens
+  # to be unable to resolve an include — which is how the May 2026 failure
+  # reached CI in the first place. This job plants that condition instead
+  # of waiting for it.
+  #
+  # Its own lane, not a step in the smoke job: it needs clang and nothing
+  # else, finishes in under a second, and would otherwise sit behind a
+  # seven-minute build to report a one-second answer.
+  #
+  # `emit_embed_manifest.sh` was outside this workflow's trigger set until
+  # the gate registry's self-test compared each gate's sweep and trigger —
+  # editing the emitter started no CI job at all, and the push-time gate
+  # that did cover it is skipped by `--no-verify`.
+  emit-fail-fast:
+    name: emit_embed_manifest fail-fast case
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    # clang-19 specifically: the case under test asserts a parse failure
+    # is reported rather than silently degraded, and the script SKIPs
+    # itself when clang is absent — an uninstalled toolchain would turn
+    # this job green without running the assertion it exists for.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-19
+
+    - name: Run embed-manifest-failfast gate
+      run: scripts/gate embed-manifest-failfast
