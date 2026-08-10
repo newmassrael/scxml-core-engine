@@ -7748,6 +7748,32 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 target.clone(),
             ],
         },
+        ScxmlSemanticError::HistoryDefaultTransitionMissing {
+            history_id,
+            parent_id,
+            available: _,
+        } => DiagnosticPayload {
+            // REUSE — same wire code as forge
+            // `ValidationError::MissingElement`. Concept identity: "a
+            // required child element is absent".
+            code: DiagnosticCode::ValidationMissingElement,
+            stage: Stage::Validation,
+            expected: None,
+            // `actual` names the offending element so repair tooling
+            // locates it; the missing child has no value to substitute,
+            // which is why `validation/missing-element` carries no
+            // `fix` (SCE_ERROR_CONTRACT §3.1 has no add-child-element
+            // variant — the legal default targets travel in `message`).
+            actual: Some(history_id.clone()),
+            fix: None,
+            // Parent + history id keep two defaulted-less histories in
+            // one document distinguishable in the content-hash id.
+            key_fragments: vec![
+                format!("scxml-state:{parent_id}"),
+                "history-default-transition".to_string(),
+                history_id.clone(),
+            ],
+        },
         ScxmlSemanticError::NoStates => DiagnosticPayload {
             // REUSE — same wire code as forge `ValidationError::EmptyCollection`.
             // Concept identity: "kind requires at least one X".

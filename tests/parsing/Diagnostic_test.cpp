@@ -1163,6 +1163,27 @@ TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassTransitionTargetUn
     EXPECT_TRUE(dispatch(err));
 }
 
+TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassHistoryDefaultMissing) {
+    const SemanticHistoryDefaultMissing err("History state 'h' in state 'p' declares no default <transition>", "h", "p",
+                                            {"a", "b"});
+    auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/missing-element"}; };
+    EXPECT_TRUE(dispatch(err));
+
+    // §scxml-3.10.2 restricts the default configuration to the
+    // containing state's descendants, so the payload carries that set
+    // rather than every declared id.
+    EXPECT_EQ(err.available(), (std::vector<std::string>{"a", "b"}));
+    EXPECT_EQ(err.parent_id(), "p");
+
+    // `validation/missing-element` carries `actual` and no `fix` —
+    // SCE_ERROR_CONTRACT §3.1 has no add-child-element variant, and the
+    // Rust producer makes the same choice. A `fix` on one side only
+    // would make the two producers disagree on a shared wire code.
+    const auto json = err.to_json();
+    EXPECT_EQ(json.at("actual"), "h");
+    EXPECT_FALSE(json.contains("fix"));
+}
+
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassNoStates) {
     const SemanticNoStates err("No state nodes found in SCXML document");
     auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/empty-collection"}; };

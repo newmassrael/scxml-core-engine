@@ -37,10 +37,23 @@
 //      with a non-empty target.
 //
 // This pass runs after `analyzer::analyze` (the analyzer pipeline is
-// infallible and only enriches derived fields) and before
-// `guard_static_generatable` — orphan-state detection is a structural
-// rule that should fire before the static-generation guard's
-// dynamic-feature analysis. See `sce-build/src/lib.rs::compile_model`.
+// infallible and only enriches derived fields) and after
+// `guard_static_generatable`, so the more fundamental diagnostics —
+// unresolved references, a missing/unknown document `initial`, a
+// rejected top-level `<script>` — fire ahead of the orphan walk. An
+// orphan is a consequence of a broken topology; reporting it in place
+// of the reference that broke it points the author at the wrong
+// element. See `sce-build/src/lib.rs::compile_model`.
+//
+// ⚠ Unlike `scxml_references`, this pass is reached only through
+// `compile_model` — the `sce-codegen` CLI re-implements parse →
+// analyze → generate and does not call it. That asymmetry is
+// deliberate for now and load-bearing: 34 W3C IRP documents in
+// `resources/` declare `fail` / `pass` states that the design-time BFS
+// cannot reach (they are entered through error events and invoke
+// completions the walk does not model), so routing the CLI through
+// this pass would reject the conformance corpus. Any change here must
+// re-measure that set first.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -155,10 +168,14 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
             continue;
         }
 
-        // Unknown id (parser rejects most cross-state typos via
-        // `ScxmlSemanticError::TransitionTargetUnknown`, but a stale
-        // reference can still reach us through history default
-        // resolution etc.) — skip silently so we do not double-emit.
+        // Unknown id. `scxml_references::validate` — reached through
+        // `analyzer::can_generate_static`, which runs ahead of this
+        // pass — rejects every unresolved `<transition target>`,
+        // `<state initial>` and `<history>` default, so an id that is
+        // neither a state nor a history pseudostate cannot arrive from
+        // the document text. What can still arrive is a synthesised id
+        // (the analyzer's derived entry chains), so the arm skips
+        // silently rather than asserting.
         let state = match model.states.get(&id) {
             Some(s) => s,
             None => continue,
