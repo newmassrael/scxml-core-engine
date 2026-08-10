@@ -359,6 +359,11 @@
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::addChild",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -414,6 +419,21 @@
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseHistoryType",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_states",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::validateModel",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -1289,6 +1309,11 @@
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "hasQueuedInternalEvents",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1708,6 +1733,11 @@
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseStateNode",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2053,6 +2083,11 @@
         {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2159,6 +2194,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
