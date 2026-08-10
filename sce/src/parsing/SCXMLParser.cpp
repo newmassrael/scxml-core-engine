@@ -338,6 +338,30 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         size_t parsedCount = 0;
 
         for (size_t i = 0; i < scriptElements.size(); ++i) {
+            // §scxml-5.8: "A conformant SCXML document MUST specify
+            // either the `src` attribute or child content, but not
+            // both." Checked before parsing the element, because both
+            // rejected shapes parse perfectly well: an empty
+            // `<script/>` yields an action with no body, and a `src`
+            // with a body beside it yields one where the body silently
+            // wins or loses depending on the reader. `SemanticError.h`
+            // has declared case (a) — "empty content AND empty src" —
+            // since the leaf landed; nothing implemented it, so the
+            // Rust producer rejected those documents and this one
+            // accepted them.
+            const bool hasSrc =
+                scriptElements[i]->hasAttribute("src") && !scriptElements[i]->getAttribute("src").empty();
+            const std::string body = scriptElements[i]->getTextContent();
+            const bool hasBody = body.find_first_not_of(" \t\r\n") != std::string::npos;
+            if (hasSrc == hasBody) {
+                std::optional<std::string> srcOpt;
+                if (hasSrc) {
+                    srcOpt = scriptElements[i]->getAttribute("src");
+                }
+                throw SCE::parsing::SemanticTopLevelScriptUnloaded(
+                    /*index=*/std::optional<std::size_t>{i + 1}, /*src=*/std::move(srcOpt));
+            }
+
             auto scriptAction = actionParser_->parseActionNode(scriptElements[i]);
             if (scriptAction) {
                 model->addTopLevelScript(scriptAction);
