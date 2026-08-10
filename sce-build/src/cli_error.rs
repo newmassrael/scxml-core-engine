@@ -28,7 +28,7 @@ use crate::forge::diagnostic::{
 /// a contract if half the failure modes still emit prose.
 ///
 /// Exit codes share a single value (20) so build systems that branch
-/// on 0 / non-zero keep working while agents use the structured
+/// on 0 / non-zero keep working while consumers use the structured
 /// `code` field for finer routing. Dedicated codes would be
 /// over-fitting — the user-visible distinctions (unknown language
 /// vs missing file) aren't pipeline stages in the forge/mesh sense.
@@ -140,7 +140,7 @@ pub enum CliError {
     /// above exists to prevent.
     ///
     /// Distinct from `ReadInput` on purpose. Both used to surface as
-    /// `cli/read-input`, which routes a repair agent at file permissions;
+    /// `cli/read-input`, which routes a repair consumer at file permissions;
     /// the repair here is the input layout — re-point `--input-root` below
     /// the link farm, or remove the aliasing.
     ///
@@ -289,7 +289,7 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::ForgeSourceHashInputUncovered,
                 vec![input.clone(), root.clone()],
                 // `actual` carries the root that came up short plus the
-                // collected count, which is what an agent needs to decide
+                // collected count, which is what a consumer needs to decide
                 // between "root resolved to nothing" and "input lives
                 // elsewhere" without re-walking the tree itself.
                 Some(format!("root={root} hashed={hashed}")),

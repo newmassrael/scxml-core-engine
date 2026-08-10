@@ -292,7 +292,7 @@ SubstitutionResult applySubstitutionWithTracking(std::string_view body, std::siz
 ParamDecl parseParamDecl(pugi::xml_node node, std::string_view templateHref) {
     // Mirrors `sce-build/src/template.rs::parse_param_decl`. Every
     // malformed shape surfaces as `TemplateMalformed` with a
-    // message naming the offending template so agent-side repair
+    // message naming the offending template so consumer-side repair
     // heuristics can dispatch without re-reading the body.
     const auto nameAttr = node.attribute("name");
     if (!nameAttr) {

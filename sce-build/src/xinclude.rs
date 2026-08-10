@@ -72,7 +72,7 @@ pub const XINCLUDE_NS: &str = "http://www.w3.org/2001/XInclude";
 /// Errors raised by the XInclude preprocessor.
 ///
 /// Every variant carries enough context for an operator (or a
-/// downstream agent consuming the NDJSON diagnostic stream) to
+/// downstream consumer consuming the NDJSON diagnostic stream) to
 /// either fix the source document or fix the file layout without
 /// reading the crate source. The offending `<xi:include>` node's
 /// row and column are attached by [`expand`] via [`Located`], so

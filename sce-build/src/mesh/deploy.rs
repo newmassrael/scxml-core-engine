@@ -3484,7 +3484,7 @@ fn check_extra_keys<'a>(
     // The legal set an author may write here is both halves: typed
     // schema fields and the transport's native keys. Ordered by
     // closeness to what they actually wrote, so `candidates[0]` is the
-    // repair an agent should try first.
+    // repair a consumer should try first.
     let mut ranked: Vec<(usize, &str)> = typed
         .iter()
         .copied()

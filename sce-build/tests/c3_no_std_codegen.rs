@@ -98,7 +98,7 @@ fn fsm_with_inline_script_fires_no_std_script_diagnostic() {
                 assert_eq!(document, "script_fsm");
                 assert!(
                     !locations.is_empty(),
-                    "locations summary must be non-empty for downstream agent dispatch"
+                    "locations summary must be non-empty for downstream consumer dispatch"
                 );
             }
             other => panic!("expected CodegenNoStdScriptNotSupported, got: {other:?}"),
@@ -219,7 +219,7 @@ fn fsm_with_multiple_data_src_reports_all_sites() {
     // human-readable `locations` summary must enumerate every offending
     // site so the author repairs all of them before re-running codegen
     // (otherwise the next pass fires the same diagnostic on the next
-    // site, multiplying agent round-trips). Both top-level and
+    // site, multiplying consumer round-trips). Both top-level and
     // state-nested `<data src>` must surface in one summary.
     let model = parse(FSM_WITH_MULTIPLE_DATA_SRC, "multi_fs");
     let err = validate_no_std_compatibility(&model, Path::new("multi_fs.scxml"))
@@ -322,7 +322,7 @@ fn axis_ordering_is_fs_then_invoke_then_script_then_http() {
 fn document_basename_is_extracted_from_path() {
     let model = parse(FSM_WITH_INLINE_SCRIPT, "script_fsm");
     // Path basename without extension should populate `document` field
-    // so downstream agents dispatching on `key_fragments` can match
+    // so downstream consumers dispatching on `key_fragments` can match
     // the SCXML file independent of the calling CWD.
     let err = validate_no_std_compatibility(&model, Path::new("/abs/some/path/widget_fsm.scxml"))
         .expect_err("script-bearing SCXML must reject");

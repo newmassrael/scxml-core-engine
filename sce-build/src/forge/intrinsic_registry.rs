@@ -19,7 +19,7 @@
 // Naming + signatures are spec-verbatim; if a future spec edit renames a
 // symbol or shifts a signature, the change lands here as a single
 // edit and downstream `<sce:extern>` rejection messages update with no
-// agent-paraphrase drift.
+// paraphrase drift.
 
 /// Foreign function ABI a `<sce:extern>` declaration commits to.
 /// The registry admits only the two ABIs the spec example calls out

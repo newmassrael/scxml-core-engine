@@ -1,6 +1,6 @@
 # SCE Wire Contracts — Stability & Deprecation Policy
 
-This document is the single registry for SCE's **agent-facing wire
+This document is the single registry for SCE's **wire
 surfaces**: the checked-in schemas and emitted artifacts that an
 external consumer builds tooling against (a code generator that reads
 SCE's output, a validator that lints Extended SCXML before codegen, a
@@ -74,11 +74,6 @@ checked-in schema without linking the `sce-build` crate.
    identified nothing, while the status, instance and negative checks
    all stayed green because none of them looks at attribution.
 
-   The sourcemap sidecar's exemption is registered in the same test
-   (`ATTRIBUTION_EXEMPT`, with its reason), and checked in both
-   directions: it must not carry the field, and this registry must
-   state why.
-
    The sourcemap sidecar deliberately does **not** carry it. The sidecar
    is a committed artifact, so a commit stamp would be invalidated by
    the very commit that wrote it, and every commit touching any tree
@@ -86,7 +81,10 @@ checked-in schema without linking the `sce-build` crate.
    `template_hash` identify the inputs instead, per `build.rs` on why a
    stamp that goes stale is worse than no stamp. A consumer needing the
    emitting commit for a sidecar reads it from the manifest of the run
-   that produced it, or from a lookup record naming that sidecar.
+   that produced it, or from a lookup record naming that sidecar. That
+   exemption is registered in the same test (`ATTRIBUTION_EXEMPT`, with
+   its reason) and checked both ways: the sidecar must not carry the
+   field, and this registry must state why.
 3. **Additive growth is compatible.** Adding a new optional field is
    compatible within the current version and does NOT bump it.
    Consumers MUST ignore unknown fields.

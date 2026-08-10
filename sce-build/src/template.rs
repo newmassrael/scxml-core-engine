@@ -100,14 +100,14 @@ pub enum TemplateError {
     /// itself; errors at the call site (e.g. `<sce:use>` missing
     /// the required `template` attribute) ride
     /// [`TemplateError::MissingTemplateAttribute`] instead so
-    /// repair agents can dispatch call-site vs file-side fixes
+    /// repair consumers can dispatch call-site vs file-side fixes
     /// without text parsing.
     #[error("<sce:use template=\"{template}\">: template is malformed: {detail}")]
     Malformed { template: String, detail: String },
 
     /// `<sce:use>` element is missing the required `template`
     /// attribute (or the attribute is present but empty). Carries
-    /// a deterministic `add_attribute` fix so repair agents can
+    /// a deterministic `add_attribute` fix so repair consumers can
     /// insert the attribute without reading the call-site context.
     /// Mirrors the [`crate::xinclude::XIncludeError::MissingHref`]
     /// pattern: the required-attribute case gets its own code so
@@ -116,7 +116,7 @@ pub enum TemplateError {
     MissingTemplateAttribute,
 
     /// `<sce:use>` omitted a `<sce:param required="true">`. Carries
-    /// a deterministic `add_attribute` fix so repair agents can
+    /// a deterministic `add_attribute` fix so repair consumers can
     /// insert the missing attribute without re-parsing the
     /// template file.
     #[error("<sce:use template=\"{template}\">: missing required parameter '{param}'")]

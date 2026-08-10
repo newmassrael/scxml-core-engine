@@ -24,7 +24,7 @@ use crate::DocumentLabel;
 /// Uses `roxmltree::Document::text_pos_at` on the node's byte range
 /// start to recover the (line, col) from libxml2's point of view.
 /// Every raise-site in this module that has a node in scope runs
-/// through here so location data on diagnostics is uniform: an agent
+/// through here so location data on diagnostics is uniform: a consumer
 /// reading `xml/schema-validation` and `validation/missing-attribute`
 /// records gets the same shape of location hint for both.
 fn located<E: Into<ForgeError>>(node: &roxmltree::Node, name: &str, err: E) -> Located<ForgeError> {
@@ -506,7 +506,7 @@ fn parse_forge_from_node(
 // anchoring the diagnostic at the most specific DOM node the error
 // refers to (a particular `<data>`, a `<state>`, the `<datamodel>`
 // container, or the `<scxml>` root when nothing more precise is in
-// scope). Upstream agents branch on `stage + location` — so keeping
+// scope). Upstream consumers branch on `stage + location` — so keeping
 // the line data tight to the offending element is the contract this
 // layer exists to serve.
 //
@@ -708,7 +708,7 @@ fn parse_lookup(
         Some(oms) if oms.value == "error" => {
             if let Some(def) = explicit_default {
                 // Anchor at the `<data>` that declared `sce:default` —
-                // it's the element the agent must edit to resolve the
+                // it's the element the consumer must edit to resolve the
                 // conflict (deleting the default, or relaxing the
                 // policy on the on-miss element).
                 return Err(located(
@@ -5420,7 +5420,7 @@ fn parse_filter(
 
     // Validate required parameters per filter type. The `sce:filter`
     // attribute that determined which param is required lives on the
-    // output `<data>`; anchor the diagnostic there so an agent can
+    // output `<data>`; anchor the diagnostic there so a consumer can
     // jump to the offending element instead of the surrounding
     // `<datamodel>`. The `unwrap_or` is defensive — `filter_type`
     // requires a present output, so output_node is always populated
@@ -8608,7 +8608,7 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
 ///
 /// Takes `doc_name` so each raise can anchor at the offending
 /// `<sce:entry>` child rather than at the calling `<data>` parent —
-/// the difference an agent sees as "row 12 of the lookup table" vs.
+/// the difference a consumer sees as "row 12 of the lookup table" vs.
 /// "somewhere in the datamodel".
 ///
 /// Duplicate-key detection runs here (with the entry node still in

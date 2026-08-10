@@ -33,6 +33,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # other targets do not need it and are unaffected by its presence.
 cargo test -p sce-build --features cli \
     --test roadmap_marker_gate \
+    --test scope_terminology \
     --test workflow_trigger_coverage \
     --test hook_ci_parity \
     --test codegen_binary_resolution \

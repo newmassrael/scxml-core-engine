@@ -140,7 +140,7 @@ fn unknown_binding_key_is_rejected() {
         other => panic!("expected UnknownBindingField, got {other:?}"),
     }
 
-    // The diagnostic must name the key and offer the legal set — an agent
+    // The diagnostic must name the key and offer the legal set — a consumer
     // repairing the file needs the candidates, not just a refusal.
     let text = err.to_string();
     assert!(
