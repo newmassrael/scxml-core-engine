@@ -122,11 +122,13 @@ GATES: dict[str, dict] = {
     # trigger is rather than hand-set to "always".
     "tree-hygiene": {
         "workflows": ["tree-hygiene.yml"],
+        "runner_workflow": True,
         "cost_s": 2,
         "summary": "tree-wide marker + trigger + parity gates",
     },
     "clippy": {
         "workflows": ["clippy-check.yml"],
+        "runner_workflow": True,
         "cost_s": 0,
         "summary": "cargo clippy --workspace --all-targets",
     },
@@ -143,6 +145,7 @@ GATES: dict[str, dict] = {
     # doc-check.yml itself.
     "rustdoc-links": {
         "workflows": ["doc-check.yml"],
+        "runner_workflow": True,
         "cost_s": 4,
         "summary": "cargo doc broken intra-doc links, both profiles",
     },
@@ -172,6 +175,7 @@ GATES: dict[str, dict] = {
     },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
+        "runner_workflow": True,
         "cost_s": 1,
         "summary": "committed-tree drift + sourcemap, serial",
     },
@@ -632,6 +636,41 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             "delegation: no gate declares runner_workflow — the flag that "
             "tracks CI-calls-the-runner progress reads nothing")
+
+    # ...and must not keep a second copy of what it delegates.
+    #
+    # Calling the runner while the old block sits beside it is the worst
+    # of both: the commands still live in two files, and the flag now
+    # says they do not. The check is on command lines rather than on
+    # prose, so a workflow may still explain what the gate does.
+    cases += 1
+    verbs = ("cargo ", "ctest", "go test", "./gradlew", "python3 ", "bash scripts/")
+    for slug, spec in sorted(GATES.items()):
+        if not spec.get("runner_workflow"):
+            continue
+        script = gate_script(repo_root, slug)
+        if not script.is_file():
+            continue
+        gate_cmds = {
+            line.strip()
+            for line in script.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith(verbs)
+        }
+        for name in spec.get("workflows", []):
+            wf = repo_root / ".github" / "workflows" / name
+            if not wf.is_file():
+                continue
+            body = wf.read_text(encoding="utf-8")
+            wf_cmds = {
+                line.strip()
+                for line in body.splitlines()
+                if line.strip().startswith(verbs)
+            }
+            for dup in sorted(gate_cmds & wf_cmds):
+                failures.append(
+                    f"delegation: {name} calls `scripts/gate {slug}` and "
+                    f"still restates its command `{dup}` — one of the two "
+                    f"spellings is the one that will be edited")
 
     # Every gate in the table has a script, and every script is in the table.
     cases += 1

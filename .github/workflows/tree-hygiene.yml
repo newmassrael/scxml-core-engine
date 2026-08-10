@@ -84,17 +84,10 @@ jobs:
 
     # `git ls-files` is the gate's enumeration source, so it needs a real
     # repository rather than an exported tree. actions/checkout gives one.
+    #
+    # Delegates to the gate runner rather than restating the target
+    # list. The list lived in two files and had to be edited in both;
+    # `hook_ci_parity` compared them, which caught a divergence but only
+    # after one had already been written. One spelling cannot diverge.
     - name: Tree-wide hygiene gates
-      run: |
-        cargo test -p sce-build --features cli \
-          --test roadmap_marker_gate \
-          --test scope_terminology \
-          --test workflow_trigger_coverage \
-          --test hook_ci_parity \
-          --test codegen_binary_resolution \
-          --test cmake_option_guard_scope \
-          --test gate_registry_contract \
-          --test committed_sourcemap_drift \
-          --test diagnostic_corpus_schema \
-          --test sourced_scripts_are_tracked \
-          --test sourcemap_symbol_markers
+      run: scripts/gate tree-hygiene

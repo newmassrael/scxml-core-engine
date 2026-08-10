@@ -115,11 +115,9 @@ jobs:
     # apply_drift_headers_to_output, compute_source_hash, or the
     # per-backend codegen path fails this step before any unit-level
     # masking can hide it.
-    - name: Verify B9 drift detection integration suite
-      run: cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1
-
-    # §5.O Atomic 1 sidecar — sourcemap JSON emission + addr2sce
-    # subcommand round-trip. Catches drift in the sourcemap surface
-    # alongside the header hashes (same SCE traceability boundary).
-    - name: Verify §5.O sourcemap integration suite
-      run: cargo test -p sce-build --features cli --test sourcemap_addr2sce
+    # Both suites, in the serial order the paragraph above requires,
+    # delegated to the gate runner: the ordering constraint is a
+    # property of the check and belongs with it, not restated in a
+    # second file that can be reordered independently.
+    - name: Verify drift suites (B9 + §5.O sourcemap)
+      run: scripts/gate drift-suites
