@@ -52,8 +52,9 @@ jobs:
     - name: Cache cargo registry + target
       uses: Swatinem/rust-cache@v2
 
-    - name: cargo doc -p sce-rust-runtime --no-deps
-      run: cargo doc -p sce-rust-runtime --no-deps
-
-    - name: cargo doc -p sce-rust-runtime --no-deps (no_std profile)
-      run: cargo doc -p sce-rust-runtime --no-deps --no-default-features --features no_std
+    # Both profiles, delegated to the gate runner. The gate sets
+    # `RUSTDOCFLAGS=-D warnings` per command; this workflow set it as a
+    # job-level `env:` instead, so the two spellings agreed only as long
+    # as nobody moved the `env:` block.
+    - name: Broken intra-doc links (std + no_std profiles)
+      run: scripts/gate rustdoc-links

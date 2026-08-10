@@ -141,9 +141,36 @@ fn runs_target_by_name(text: &str, target: &str) -> bool {
     // continuation does not hide the flag from a line-wise scan.
     let joined = text.replace("\\\n", " ");
     let flag = format!("--test {target}");
-    joined
+    if joined
         .lines()
         .any(|l| l.contains("cargo test") && l.contains(&flag))
+    {
+        return true;
+    }
+
+    // A workflow may delegate to the gate runner instead of restating
+    // the target list, in which case the names live one file away. Not
+    // following the delegation would read "no workflow runs this gate"
+    // off a workflow that runs exactly it — the reading that made this
+    // test red the first time a lane was converted.
+    for line in joined.lines() {
+        let Some(rest) = line.split("scripts/gate ").nth(1) else {
+            continue;
+        };
+        for slug in rest.split_whitespace() {
+            let script = repo_root().join(format!("scripts/gates/{slug}.sh"));
+            if let Ok(body) = fs::read_to_string(&script) {
+                let joined = body.replace("\\\n", " ");
+                if joined
+                    .lines()
+                    .any(|l| l.contains("cargo test") && l.contains(&flag))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Test sources whose inputs reach past any glob list.

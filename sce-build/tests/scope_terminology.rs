@@ -33,24 +33,24 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Every tracked file is scanned. There is no extension list.
-///
-/// There used to be one, and it was wrong twice for the same reason. It
-/// began as four extensions and missed twelve occurrences in the C++
-/// headers and test suite — the files where the diagnostic families are
-/// actually declared. Widening it to fifteen still missed `.c` (360
-/// tracked files: the C11 backend, a producer of its own), `.scxml` and
-/// `.txml` (the documents this project ships), and the web tree.
-///
-/// A curated list of what to read cannot be checked against the thing
-/// it is meant to cover, so each omission is invisible until someone
-/// counts by hand. Reading the whole tree removes the question: a file
-/// git tracks is a file this gate reads, and anything genuinely outside
-/// SCE's own voice is registered below with its reason.
-///
-/// Non-UTF8 blobs are skipped where they are read — there is no prose
-/// to scan in them, and that is a property of the bytes rather than of
-/// a list someone maintains.
+// Every tracked file is scanned. There is no extension list.
+//
+// There used to be one, and it was wrong twice for the same reason. It
+// began as four extensions and missed twelve occurrences in the C++
+// headers and test suite — the files where the diagnostic families are
+// actually declared. Widening it to fifteen still missed `.c` (360
+// tracked files: the C11 backend, a producer of its own), `.scxml` and
+// `.txml` (the documents this project ships), and the web tree.
+//
+// A curated list of what to read cannot be checked against the thing
+// it is meant to cover, so each omission is invisible until someone
+// counts by hand. Reading the whole tree removes the question: a file
+// git tracks is a file this gate reads, and anything genuinely outside
+// SCE's own voice is registered below with its reason.
+//
+// Non-UTF8 blobs are skipped where they are read — there is no prose
+// to scan in them, and that is a property of the bytes rather than of
+// a list someone maintains.
 
 /// Preceding words that make `agent` a different noun — a field name
 /// or a protocol role — rather than SCE naming who reads its output.
