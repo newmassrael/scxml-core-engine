@@ -13,8 +13,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <regex>
@@ -96,19 +99,6 @@ TEST(DiagnosticBase, PolymorphicErasureViaBaseReference) {
 // ── v1 schema conformance for TemplateError subtypes ───────────────
 
 namespace conformance {
-
-// Curated mirror of the `xml/template-*` entries in
-// `schemas/sce-diagnostic.v1.schema.json` (also pinned by the Rust
-// drift test `cpp_template_subtypes_match_rust_diagnostic_codes`).
-// Hand-edited list rather than runtime introspection so a typo or a
-// silent rename on either side reds this fixture with a pointed
-// string-equality diff against the constant on this side.
-const std::array<std::string_view, 8> kExpectedCodes = {
-    "xml/template-not-found",     "xml/template-read-error",
-    "xml/template-malformed",     "xml/template-missing-attribute",
-    "xml/template-missing-param", "xml/template-unknown-param",
-    "xml/template-cycle",         "xml/template-too-deep",
-};
 
 bool matchesIdRegex(const std::string &id) {
     static const std::regex kPattern{R"(^fnv1a:[0-9a-f]{16}$)"};
@@ -275,14 +265,6 @@ TEST(TemplateErrorWire, TemplateTooDeepConformsToV1Schema) {
     conformance::assertNoUnexpectedKeys(j);
 }
 
-TEST(TemplateErrorWire, EveryCuratedCodeIsExercised) {
-    // Sanity-check the curated list mirrors the 8 subtypes above.
-    // Adding a 9th wire code without a corresponding test reds here.
-    EXPECT_EQ(conformance::kExpectedCodes.size(), 8u);
-    std::set<std::string_view> uniq(conformance::kExpectedCodes.begin(), conformance::kExpectedCodes.end());
-    EXPECT_EQ(uniq.size(), conformance::kExpectedCodes.size()) << "duplicate entry in kExpectedCodes";
-}
-
 TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
     TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected");
     err.setLocation(SourcePos{std::filesystem::path{"/project/main.scxml"}, 12u, 5u});
@@ -371,21 +353,6 @@ TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
 // passes the shared `assertSchemaConformantBase` + `assertNoUnexpectedKeys`
 // curated checks against `schemas/sce-diagnostic.v1.schema.json`.
 
-namespace conformance {
-
-// Curated mirror of the `xml/xinclude-*` entries in
-// `schemas/sce-diagnostic.v1.schema.json` (lines 27-33). Hand-edited
-// list rather than runtime introspection so a typo or silent rename
-// on either side reds this fixture with a pointed string-equality
-// diff. Pinned cross-side by the W3-3 Rust drift tests in
-// `sce-build/src/xinclude.rs::tests`.
-const std::array<std::string_view, 7> kExpectedXIncludeCodes = {
-    "xml/xinclude-missing-href", "xml/xinclude-not-found", "xml/xinclude-read-error",  "xml/xinclude-cycle",
-    "xml/xinclude-too-deep",     "xml/xinclude-malformed", "xml/xinclude-unsupported",
-};
-
-}  // namespace conformance
-
 TEST(XIncludeErrorWire, MissingHrefConformsToV1Schema) {
     const XIncludeMissingHref err("<xi:include> missing or empty `href` attribute");
     const auto j = err.to_json();
@@ -439,15 +406,6 @@ TEST(XIncludeErrorWire, UnsupportedConformsToV1Schema) {
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-unsupported");
     conformance::assertNoUnexpectedKeys(j);
-}
-
-TEST(XIncludeErrorWire, EveryCuratedXIncludeCodeIsExercised) {
-    // Sanity-check the curated list mirrors the 7 subtypes above.
-    // Adding an 8th wire code without a corresponding test reds here.
-    EXPECT_EQ(conformance::kExpectedXIncludeCodes.size(), 7u);
-    std::set<std::string_view> uniq(conformance::kExpectedXIncludeCodes.begin(),
-                                    conformance::kExpectedXIncludeCodes.end());
-    EXPECT_EQ(uniq.size(), conformance::kExpectedXIncludeCodes.size()) << "duplicate entry in kExpectedXIncludeCodes";
 }
 
 TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
@@ -803,25 +761,6 @@ TEST(TemplateErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
 // Schema conformance still applies per-leaf (each `to_json()` must
 // pass) even when the wire code is shared.
 
-namespace conformance {
-
-// Curated mirror of the **NEW** `xml/*` entries added in W4 to
-// `schemas/sce-diagnostic.v1.schema.json`. The 3 reused-code leaves
-// (ParseXmlFailed, ParseException, ParseNoRootElement) all return
-// `xml/parse`, which is already on `kExpectedCodes` for the
-// TemplateError/XmlError families. Listing them here would
-// double-count and obscure the W4-specific surface — only the new
-// codes belong in this curated set. Pinned cross-side by the W4
-// Rust drift test
-// `cpp_parse_subtypes_match_rust_diagnostic_codes` in
-// `sce-build/src/parser.rs::tests` (§wire-W4 Stage D).
-const std::array<std::string_view, 2> kExpectedNewParseCodes = {
-    "xml/file-not-found",
-    "xml/wrong-root-element",
-};
-
-}  // namespace conformance
-
 TEST(ParseErrorWire, FileNotFoundConformsToV1Schema) {
     const ParseFileNotFound err("File not found: /nonexistent/path.scxml");
     const auto j = err.to_json();
@@ -861,16 +800,6 @@ TEST(ParseErrorWire, WrongRootElementConformsToV1Schema) {
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/wrong-root-element");
     conformance::assertNoUnexpectedKeys(j);
-}
-
-TEST(ParseErrorWire, EveryNewCuratedParseCodeIsExercised) {
-    // Sanity-check the curated list mirrors the 2 NEW W4 wire codes.
-    // Adding a 3rd new wire code without a corresponding curated
-    // entry reds here.
-    EXPECT_EQ(conformance::kExpectedNewParseCodes.size(), 2u);
-    std::set<std::string_view> uniq(conformance::kExpectedNewParseCodes.begin(),
-                                    conformance::kExpectedNewParseCodes.end());
-    EXPECT_EQ(uniq.size(), conformance::kExpectedNewParseCodes.size()) << "duplicate entry in kExpectedNewParseCodes";
 }
 
 TEST(ParseErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
@@ -1118,6 +1047,28 @@ TEST(SemanticErrorWire, TransitionTargetUnknownConformsToV1Schema) {
     EXPECT_EQ(j.at("actual").get<std::string>(), "ghost");
     ASSERT_TRUE(j.contains("fix"));
     EXPECT_EQ(j.at("fix").at("candidates").size(), 2u);
+}
+
+TEST(SemanticErrorWire, HistoryDefaultMissingConformsToV1Schema) {
+    // The one leaf no conformance test reached. Nothing pointed at the
+    // hole: the curated code lists in this file asserted their own
+    // length and nothing else, so a wire code with no test looked
+    // exactly like a wire code with one. `EveryDeclaredWireCodeIsExercised`
+    // is what makes that answerable now.
+    //
+    // `validation/missing-element` carries `actual` and deliberately no
+    // `fix` — SCE_ERROR_CONTRACT §3.1 has no add-child-element variant,
+    // so the legal defaults travel in `message`. A `fix` appearing here
+    // would put the two producers at odds on one wire code.
+    const SemanticHistoryDefaultMissing err("<history id='h'>: no default transition and no stored configuration",
+                                            /*history_id=*/"h",
+                                            /*parent_id=*/"s1",
+                                            /*available=*/{"s1", "s2"});
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/missing-element");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("actual").get<std::string>(), "h");
+    EXPECT_FALSE(j.contains("fix")) << "the Rust producer emits no fix for this code: " << j.dump();
 }
 
 TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
@@ -1488,6 +1439,132 @@ TEST(DiagnosticWire, GeneratorStampNamesThisCheckout) {
                                        "compiles src/parsing/Diagnostic.cpp — see sce/CMakeLists.txt";
     EXPECT_TRUE(std::regex_match(generator, std::regex{R"(^[0-9a-f]{7,40}$)"}))
         << "generator '" << generator << "' is neither a hex commit nor `unknown`";
+}
+
+// ── Declared-vs-exercised wire code coverage ───────────────────────
+//
+// Which wire codes exist is a fact about `sce/include/parsing/*Error.h`.
+// Which ones this suite exercises is a fact about this file. Both were
+// restated here as curated `std::array` lists, and the tests over them
+// asserted only their own length and their own uniqueness — so a leaf
+// that gained a wire code without gaining a test was indistinguishable
+// from one that had both. `validation/missing-element` sat untested that
+// way, behind a test named `EveryCuratedCodeIsExercised`.
+//
+// Deriving both sides makes the claim answerable by the files it is
+// about, and reverses the actor the way the schema derivation one level
+// up did: a new `code()` override is now red until a test reaches it,
+// which is the order the contract wants.
+
+namespace coverage {
+
+// Comments are stripped before either scan. A code named in prose is not
+// a code under test, and — the direction that actually bit — the comment
+// explaining a curated list would otherwise "exercise" every code it
+// mentions, so the list could rot while its own explanation covered for
+// it.
+std::string stripComments(const std::string &src) {
+    std::string out;
+    out.reserve(src.size());
+    for (std::size_t i = 0; i < src.size();) {
+        if (src.compare(i, 2, "//") == 0) {
+            const auto eol = src.find('\n', i);
+            if (eol == std::string::npos) {
+                break;
+            }
+            i = eol;  // keep the newline so line-oriented shapes survive
+        } else if (src.compare(i, 2, "/*") == 0) {
+            const auto end = src.find("*/", i + 2);
+            i = (end == std::string::npos) ? src.size() : end + 2;
+        } else {
+            out.push_back(src[i]);
+            ++i;
+        }
+    }
+    return out;
+}
+
+std::set<std::string> matchAll(const std::string &text, const std::regex &pattern) {
+    std::set<std::string> out;
+    for (auto it = std::sregex_iterator{text.begin(), text.end(), pattern}; it != std::sregex_iterator{}; ++it) {
+        out.insert((*it)[1].str());
+    }
+    return out;
+}
+
+std::string readFile(const std::string &path) {
+    std::ifstream in{path};
+    EXPECT_TRUE(in.is_open()) << "cannot open " << path;
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    return buf.str();
+}
+
+// Every wire code a `Diagnostic` leaf returns from `code()`.
+//
+// `minCodes` is the measured floor, for the reason the schema reader
+// states one: a scanner that stopped matching would return the empty set
+// and make the comparison below vacuously true.
+std::set<std::string> declaredWireCodes(std::size_t minCodes) {
+    // Custom delimiter: the pattern contains `)"`, which would close a
+    // bare raw string early.
+    static const std::regex kCodeReturn{R"rx(return\s*"([a-z0-9]+/[a-z0-9-]+)"\s*;)rx"};
+    std::set<std::string> codes;
+    std::size_t headers = 0;
+    for (const auto &entry : std::filesystem::directory_iterator{SCE_PARSING_HEADER_DIR}) {
+        const auto name = entry.path().filename().string();
+        if (name.size() < 7 || name.compare(name.size() - 7, 7, "Error.h") != 0) {
+            continue;
+        }
+        ++headers;
+        const auto body = stripComments(readFile(entry.path().string()));
+        const auto found = matchAll(body, kCodeReturn);
+        codes.insert(found.begin(), found.end());
+    }
+    EXPECT_GE(headers, 3u) << "found only " << headers << " *Error.h header(s) under " << SCE_PARSING_HEADER_DIR
+                           << " — the directory scan is broken, not the headers";
+    EXPECT_GE(codes.size(), minCodes) << "derived only " << codes.size() << " wire code(s) from the headers";
+    return codes;
+}
+
+// Every wire code this suite puts through a conformance assertion.
+//
+// Keyed on the assertion rather than on the literal: a code appearing in
+// a string somewhere is not a code whose emitted record was checked.
+std::set<std::string> exercisedWireCodes(std::size_t minCodes) {
+    static const std::regex kAssertion{R"rx(assert\w*Base\(\s*\w+\s*,\s*"([a-z0-9]+/[a-z0-9-]+)")rx"};
+    const auto body = stripComments(readFile(SCE_DIAGNOSTIC_TEST_SOURCE));
+    const auto codes = matchAll(body, kAssertion);
+    EXPECT_GE(codes.size(), minCodes) << "found only " << codes.size() << " conformance assertion(s) in "
+                                      << SCE_DIAGNOSTIC_TEST_SOURCE;
+    return codes;
+}
+
+}  // namespace coverage
+
+TEST(DiagnosticWire, EveryDeclaredWireCodeIsExercised) {
+    // Floors are the counts measured when this landed: 22 declared, 22
+    // exercised. They move up with the surface, never down — a drop
+    // means a scanner stopped seeing the tree.
+    const auto declared = coverage::declaredWireCodes(22);
+    const auto exercised = coverage::exercisedWireCodes(22);
+
+    std::vector<std::string> untested;
+    std::set_difference(declared.begin(), declared.end(), exercised.begin(), exercised.end(),
+                        std::back_inserter(untested));
+    EXPECT_TRUE(untested.empty()) << "wire code(s) a `code()` override returns but no conformance assertion in "
+                                     "this suite reaches: "
+                                  << ::testing::PrintToString(untested)
+                                  << "\nAdd a TEST that builds the leaf, calls to_json(), and passes the code to "
+                                     "assertSchemaConformantBase / assertSemanticBase.";
+
+    std::vector<std::string> phantom;
+    std::set_difference(exercised.begin(), exercised.end(), declared.begin(), declared.end(),
+                        std::back_inserter(phantom));
+    EXPECT_TRUE(phantom.empty()) << "this suite asserts conformance for code(s) no leaf declares: "
+                                 << ::testing::PrintToString(phantom)
+                                 << "\nEither the code was renamed in the header and not here, or the test "
+                                    "outlived its leaf.";
 }
 
 }  // namespace
