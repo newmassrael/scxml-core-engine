@@ -831,6 +831,18 @@ struct GenerateArgs {
     /// gates cannot merge IR with open decisions.
     #[arg(long)]
     strict_unresolved: bool,
+    /// Run the design-time statechart lints (`sce_build::lint_statechart`):
+    /// graph reachability, event-set exhaustiveness, and guard
+    /// analysis. Off by default because these reject **legal** SCXML —
+    /// they assert design intent, not validity, and the W3C IRP corpus
+    /// contains documents that deliberately declare unreachable states
+    /// (`resources/278` hosts a datamodel read from outside its
+    /// lexical scope; `resources/576` proves `initial` is honoured by
+    /// leaving its first state unentered). Turn it on for authored
+    /// documents, where an orphan region or a sibling missing an event
+    /// handler is nearly always a mistake.
+    #[arg(long)]
+    lint: bool,
     /// Additional directories searched (in declaration order) to
     /// resolve `<xi:include href="...">` and
     /// `<sce:use template="...">` fragments by name. Tried after
@@ -966,6 +978,12 @@ struct CheckArgs {
     /// document sets that build.
     #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
     strict_unresolved: bool,
+    /// Run the design-time statechart lints. Mirrors
+    /// `generate --lint` — same `sce_build::lint_statechart` call, so
+    /// `check --lint` and `generate --lint` cannot disagree about a
+    /// document.
+    #[arg(long, conflicts_with_all = ["scxml_set", "forge", "deploy"])]
+    lint: bool,
     /// Go module path hosting the generated forge packages. Required to
     /// check any Go crossfile document; ignored for other backends.
     #[arg(long)]
@@ -1986,6 +2004,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         language,
         include_dir: _,
         strict_unresolved: _,
+        lint: _,
         go_module_prefix,
         const_fold_budget,
         no_std: _,
@@ -2113,6 +2132,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         language,
         include_dir,
         strict_unresolved,
+        lint,
         go_module_prefix,
         const_fold_budget,
         no_std,
@@ -2250,6 +2270,26 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 error_format.emit_forge_and_exit(&located);
             }
 
+            // Document axis, opt-in: the design-time lints reject legal
+            // SCXML, so the operator asks for them. Same call the
+            // library entry points make, so a document cannot pass here
+            // and fail there.
+            if lint {
+                if let Err(e) = sce_build::lint_statechart(&model, scxml_path) {
+                    error_format.emit_forge_and_exit(&e);
+                }
+            }
+
+            // SCE Protocol-Synthesis RFC §synth-5-O — not a lint: an IR
+            // node reaching codegen without a source coordinate emits a
+            // silent SCE-MAP marker, and `check` is contracted to reach
+            // the same verdict `generate` does. Always on, both paths.
+            if let Err(e) =
+                sce_build::forge::provenance::validate_emission_provenance(&model, scxml_path)
+            {
+                error_format.emit_forge_and_exit(&e);
+            }
+
             if no_std && langs.contains(&Language::Rust) {
                 if let Err(err) =
                     sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path))
@@ -2351,6 +2391,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         cpp_namespace_prefix,
         c_symbol_prefix,
         strict_unresolved,
+        lint,
         include_dir,
     } = args;
     let scxml_path: &str = &scxml;
@@ -2838,6 +2879,22 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
             error_format.emit_and_exit(&located, "");
         }
+    }
+
+    // Document axis, opt-in — see `CheckArgs::lint`. Placed on the same
+    // side of `can_generate_static` as the `check` call site so the two
+    // subcommands report the same diagnostic for the same document.
+    if lint {
+        if let Err(e) = sce_build::lint_statechart(&model, scxml_path) {
+            error_format.emit_forge_and_exit(&e);
+        }
+    }
+
+    // SCE Protocol-Synthesis RFC §synth-5-O — see the `check` call site.
+    // Runs before `resolve_source_path` so a `None` cannot leak into the
+    // marker-emitting templates, matching `lib.rs::compile_model`.
+    if let Err(e) = sce_build::forge::provenance::validate_emission_provenance(&model, scxml_path) {
+        error_format.emit_forge_and_exit(&e);
     }
 
     resolve_source_path(&mut model, Path::new(scxml_path));

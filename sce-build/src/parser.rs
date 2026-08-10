@@ -875,7 +875,7 @@ impl SCXMLParser {
         self.parse_datamodel(&root, &mut model, diag_label)?;
 
         // Parse global scripts
-        self.parse_global_scripts(&root, &mut model, base_dir);
+        self.parse_global_scripts(&root, &mut model, base_dir, diag_label);
 
         // Parse Named Context declarations (must be before states for transforms)
         self.parse_sce_contexts(&root, &mut model, diag_label)?;
@@ -1373,6 +1373,7 @@ impl SCXMLParser {
         root: &roxmltree::Node,
         model: &mut SCXMLModel,
         base_dir: Option<&Path>,
+        source_name: &str,
     ) {
         for child in root.children() {
             if !child.is_element() || local_name(&child) != "script" {
@@ -1414,6 +1415,14 @@ impl SCXMLParser {
             model.global_scripts.push(Action {
                 action_type: "script".to_string(),
                 content: content.trim().to_string(),
+                // §synth-5-O: this `Action` is emission-eligible, so
+                // `forge::provenance` requires the coordinate. The
+                // top-level `<script>` does not travel through
+                // `parse_executable_content_single` — the site that
+                // stamps every other action — so the stamp has to
+                // happen here or the node reaches codegen with a
+                // silent `None`.
+                source_location: source_location_of(&child, source_name),
                 ..Default::default()
             });
             // [`NeedsScriptEngineCause::GlobalScript`] —
