@@ -122,6 +122,30 @@ pub mod w3c_registry;
 /// AOT hard-errors).
 pub mod xinclude;
 
+/// Commit this generator was built from, or `"unknown"` on a build with
+/// no git checkout to read (vendored crate, release tarball).
+///
+/// The crate version is frozen at `0.1.0` under the pre-1.0 no-versioning
+/// rule, so it identifies nothing; `build.rs` resolves the commit and
+/// embeds it. Every wire surface that stamps its producer names *this*
+/// constant, so two surfaces reporting the generator cannot report
+/// different answers. (The CLI's human `--version` string still spells
+/// `env!` directly because `concat!` takes literals, not constants; it
+/// reads the same build-script variable in the same compilation, and
+/// `manifest_generator_matches_version_output` pins the two together.)
+///
+/// Why the surfaces need it: while a surface is `pre-release`,
+/// `SCE_WIRE_CONTRACTS.md` policy 1 requires consumers to pin a specific
+/// SCE commit rather than rely on the schema version, because a
+/// non-additive shape change may land without a version bump. A consumer
+/// can only honour that if the payload names the commit it came from.
+///
+/// Scope is the committed state the build started from, deliberately —
+/// see `build.rs` for why a dirty-worktree flag cannot be kept honest
+/// here, and why uncommitted edits are the job of the §synth-6.2.6
+/// source/template hashes instead.
+pub const GENERATOR_COMMIT: &str = env!("SCE_GIT_COMMIT");
+
 use model::SCXMLModel;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

@@ -5,7 +5,7 @@
   "title": "SCE symbol lookup record (wire schema v1)",
   "description": "One resolved symbol emitted by a sourcemap lookup. Both directions share this shape and are distinguished by `kind`: `addr2sce` resolves a mangled symbol to the SCXML coordinates it came from, `sce2sym` resolves SCXML coordinates to the symbols they lowered to. Emitted as NDJSON — one record per line, one line per hit — because a single SCXML coordinate legitimately lowers to several symbols, and a lookup may span several backends' sidecars in one invocation. Authoritative producer is sce-build/src/forge/sourcemap.rs; the symbol table itself is schemas/sce-sourcemap.v1.schema.json. Consumers MUST ignore unknown fields. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
-  "required": ["v", "kind", "sourcemap", "symbol", "entry"],
+  "required": ["v", "kind", "generator", "sourcemap", "symbol", "entry"],
   "additionalProperties": false,
   "properties": {
     "v": {
@@ -17,6 +17,11 @@
       "description": "Which direction produced this record. Kept in lockstep with the Rust LookupKind enum.",
       "type": "string",
       "enum": ["addr2sce", "sce2sym"]
+    },
+    "generator": {
+      "description": "Commit of the generator that answered this lookup — the same value the stdout manifest carries as `generator` and `--version` reports in parentheses. `unknown` on a build with no git checkout to read. Required because a lookup record is consumed on its own, with no manifest alongside it, and SCE_WIRE_CONTRACTS.md policy 1 makes pinning a specific commit the consumer's obligation while this surface is pre-release. The referenced sourcemap cannot stand in for it: source_hash / template_hash identify the inputs, not the emit code.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{7,40}|unknown)$"
     },
     "sourcemap": {
       "description": "Path of the sce_sourcemap.json this hit came from. Named per record so a lookup spanning several backends stays attributable without correlating by position.",

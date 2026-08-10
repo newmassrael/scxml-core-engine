@@ -99,6 +99,7 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                 Diagnostic {
                     schema_version: SCHEMA_VERSION,
                     id,
+                    generator: crate::GENERATOR_COMMIT,
                     code,
                     stage,
                     spec: code.spec_anchor(),

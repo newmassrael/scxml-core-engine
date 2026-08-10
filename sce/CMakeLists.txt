@@ -206,6 +206,66 @@ endif()
 # part of the installed tree.
 target_compile_definitions(sce_base PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 
+# Commit this build was made from, embedded so the C++ diagnostic
+# producer can stamp `generator` on every record it emits.
+#
+# `schemas/sce-diagnostic.v1.schema.json` requires that field, and
+# `include/parsing/Diagnostic.h` declares this side conforms to that
+# schema field-for-field, so a C++ producer without the value would emit
+# records the shared schema rejects. `unknown` is the honest answer for a
+# build with no git checkout to read (release tarball, vendored tree) and
+# is what the schema's pattern allows alongside a hex commit.
+#
+# Applied to `sce_runtime`, which is the target that compiles
+# `src/parsing/Diagnostic.cpp` — the definition is attached below, after
+# that target exists. PRIVATE: the envelope helper in that one file is
+# the only reader, and a consumer compiling against the installed
+# headers never needs the macro.
+#
+# The ref files are configure-dependencies for the same reason
+# `sce-build/build.rs` watches them on the Rust side: resolved once and
+# never re-resolved, the value would go on describing whichever commit
+# happened to be checked out when the build tree was first configured —
+# a stamp that silently names the wrong commit is worse than none.
+set(SCE_GIT_COMMIT "unknown")
+find_package(Git QUIET)
+if(Git_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --git-dir
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _sce_git_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _sce_git_dir_rc)
+    if(_sce_git_dir_rc EQUAL 0 AND _sce_git_dir)
+        if(NOT IS_ABSOLUTE "${_sce_git_dir}")
+            set(_sce_git_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_sce_git_dir}")
+        endif()
+        # HEAD moves on checkout; the branch ref moves on commit; a ref
+        # living in packed-refs has no file of its own.
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sce_git_dir}/HEAD")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sce_git_dir}/packed-refs")
+        if(EXISTS "${_sce_git_dir}/HEAD")
+            file(READ "${_sce_git_dir}/HEAD" _sce_head_contents)
+            string(STRIP "${_sce_head_contents}" _sce_head_contents)
+            if(_sce_head_contents MATCHES "^ref: (.+)$")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                    "${_sce_git_dir}/${CMAKE_MATCH_1}")
+            endif()
+        endif()
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE _sce_git_commit
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE _sce_git_commit_rc)
+        if(_sce_git_commit_rc EQUAL 0 AND _sce_git_commit)
+            set(SCE_GIT_COMMIT "${_sce_git_commit}")
+        endif()
+    endif()
+endif()
+
 # Force include DisableStdOut.h for sce_base source files only.
 # ExternTemplates.h suppresses implicit std::basic_string<char>
 # instantiation so consumers don't drag sce_base archive members via
@@ -516,6 +576,15 @@ target_compile_options(sce_runtime
     PRIVATE
         -include common/DisableStdOut.h
 )
+
+# Commit stamp for the C++ diagnostic producer. Resolved further up (see
+# the SCE_GIT_COMMIT block); attached here because `src/parsing/Diagnostic.cpp`
+# is compiled into this target, not `sce_base`. Attaching it to the wrong
+# target is not a build error — `beginDiagnosticRecord` falls through to
+# its `unknown` branch and every record still validates, because `unknown`
+# is a legal value for a checkout-less build. `DiagnosticWire.GeneratorStampNamesThisCheckout`
+# is what distinguishes "no checkout to read" from "read the wrong target".
+target_compile_definitions(sce_runtime PRIVATE SCE_GIT_COMMIT="${SCE_GIT_COMMIT}")
 
 # sce_runtime links sce_scripting (which transitively provides sce_base → sce_core)
 # This makes sce_runtime an umbrella target: linking sce_runtime gives you everything.
