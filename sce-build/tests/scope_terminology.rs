@@ -52,21 +52,30 @@ fn repo_root() -> PathBuf {
 /// to scan in them, and that is a property of the bytes rather than of
 /// a list someone maintains.
 
-/// HTTP's own header name, which is not SCE's vocabulary.
+/// Preceding words that make `agent` a different noun — a field name
+/// or a protocol role — rather than SCE naming who reads its output.
 ///
-/// A path exemption would be wrong here — these sit in the middle of
-/// `sce/src/events/`, beside code this gate should keep reading — so the
-/// exemption is on the token instead. `User-Agent` is a field name from
-/// RFC 9110; renaming it would break the wire it names.
+/// A path exemption would be wrong for these. `User-Agent` sits in the
+/// middle of `sce/src/events/`, beside code this gate should keep
+/// reading, and `on-target agent` sits in one line of a spec whose
+/// other 3000 lines this gate should keep reading too. Exempting the
+/// directory would hand out permission far past the sentence that
+/// needs it.
 ///
-/// `userAgent` needs no entry: the matcher is whole-word, so a camelCase
-/// identifier never matches. `User-Agent` and `user_agent` do, because
-/// `-` and `_` are boundaries — deliberately, since a snake_case symbol
-/// naming a reader is the same claim as the prose. The spaced form is
-/// here for the prose that describes the field (`// User agent string`),
-/// which is the header by another spelling; W3C's own `a user agent that
-/// can parse` is covered by the `docs/spec/` path exemption instead.
-const HTTP_HEADER_PREFIXES: &[&str] = &["user-", "user_", "user "];
+/// `User-Agent` is a field name from RFC 9110; renaming it would break
+/// the wire it names. `on-target agent` is the synthesis protocol's
+/// device-side role — the stub SCE codegen emits to run ON the target
+/// and speak to the host fuzz driver over RTT/UART (RFC §synth-F4) —
+/// so it names a thing SCE generates, not a thing that reads SCE.
+///
+/// `userAgent` needs no entry: the matcher is whole-word, so a
+/// camelCase identifier never matches. `User-Agent` and `user_agent`
+/// do, because `-` and `_` are boundaries — deliberately, since a
+/// snake_case symbol naming a reader is the same claim as the prose.
+/// The spaced form is here for the prose that describes the field
+/// (`// User agent string`), which is the header by another spelling,
+/// and for W3C's own `a user agent that can parse`.
+const NON_READER_PREFIXES: &[&str] = &["user-", "user_", "user ", "on-target "];
 
 /// Path prefixes where the term is not SCE describing itself, each with
 /// the reason.
@@ -76,14 +85,6 @@ const HTTP_HEADER_PREFIXES: &[&str] = &["user-", "user_", "user "];
 /// contains the term is dropped from this list, so the list cannot decay
 /// into permission for files that have since been cleaned.
 const EXEMPT_PREFIXES: &[(&str, &str)] = &[
-    (
-        "docs/spec/",
-        "W3C SCXML text quoted verbatim — `a user agent that can parse` \
-         is the standard's own wording, and the spec store is pinned \
-         byte-for-byte. The synthesis RFC's `on-target agent stub` is a \
-         protocol role (the thing running on the device), not a reader \
-         of SCE's output.",
-    ),
     (
         "docs/sce-ledger/",
         "ledger RFCs record decisions as they were written. Editing the \
@@ -146,10 +147,10 @@ fn term_lines(body: &str) -> Vec<usize> {
                     .unwrap_or(true),
                 Some(c) => !c.is_ascii_alphanumeric(),
             };
-            let http_header = HTTP_HEADER_PREFIXES
+            let other_noun = NON_READER_PREFIXES
                 .iter()
                 .any(|p| start >= p.len() && &lower[start - p.len()..start] == *p);
-            if before_ok && after_ok && !http_header {
+            if before_ok && after_ok && !other_noun {
                 hits.push(i + 1);
                 break;
             }
