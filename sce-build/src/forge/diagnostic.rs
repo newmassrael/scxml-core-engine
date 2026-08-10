@@ -4425,13 +4425,22 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
     use crate::template::TemplateError;
     use crate::xinclude::XIncludeError;
     match e {
-        XmlError::Parse(detail) => DiagnosticPayload {
+        XmlError::Parse(_) => DiagnosticPayload {
             code: DiagnosticCode::XmlParse,
             stage: Stage::Xml,
             expected: None,
             actual: None,
             fix: None,
-            key_fragments: vec![detail.clone()],
+            // No fragments. The only value this variant carries is the
+            // XML engine's own parse text, and a key fragment has to be
+            // a value SCE determined: engine text differs between
+            // roxmltree here and pugixml in the C++ runtime parser, and
+            // shifts when either is upgraded, so hashing it makes `id`
+            // unreproducible for the same document across producers and
+            // across dependency bumps. `code|stage|file` identifies the
+            // failure on its own — parsing stops at the first error, so
+            // a document has one of these.
+            key_fragments: Vec::new(),
         },
         XmlError::SchemaValidation(_) => DiagnosticPayload {
             code: DiagnosticCode::XmlSchemaValidation,
@@ -4511,21 +4520,25 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![limit.to_string()],
         },
-        XmlError::XInclude(XIncludeError::Malformed { href, detail }) => DiagnosticPayload {
+        XmlError::XInclude(XIncludeError::Malformed { href, .. }) => DiagnosticPayload {
             code: DiagnosticCode::XmlXIncludeMalformed,
             stage: Stage::Xml,
             expected: None,
             actual: Some(href.clone()),
             fix: None,
-            key_fragments: vec![href.clone(), detail.clone()],
+            // `detail` is the XML engine's parse text and stays out of
+            // the key for the reason `XmlError::Parse` carries none —
+            // the href identifies which include failed, which is what a
+            // consumer dedups on.
+            key_fragments: vec![href.clone()],
         },
         XmlError::XInclude(XIncludeError::Unsupported { href, feature }) => DiagnosticPayload {
             code: DiagnosticCode::XmlXIncludeUnsupported,
             stage: Stage::Xml,
             expected: None,
-            actual: Some((*feature).to_string()),
+            actual: Some(feature.clone()),
             fix: None,
-            key_fragments: vec![href.clone(), feature.to_string()],
+            key_fragments: vec![href.clone(), feature.clone()],
         },
         // `sce:template` failure modes. Parallel to XInclude: the
         // leaf variant drives the code so consumers can dispatch
@@ -4549,13 +4562,18 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![template.clone()],
         },
-        XmlError::Template(TemplateError::Malformed { template, detail }) => DiagnosticPayload {
+        XmlError::Template(TemplateError::Malformed { template, .. }) => DiagnosticPayload {
             code: DiagnosticCode::XmlTemplateMalformed,
             stage: Stage::Xml,
             expected: None,
             actual: Some(template.clone()),
             fix: None,
-            key_fragments: vec![template.clone(), detail.clone()],
+            // `detail` is SCE-authored for most of this variant's
+            // branches but is the XML engine's parse text for two of
+            // them, and a variant's key shape has to hold for every
+            // instance of it — so the template name is the key, and the
+            // reason travels in `message`.
+            key_fragments: vec![template.clone()],
         },
         XmlError::Template(TemplateError::MissingTemplateAttribute) => DiagnosticPayload {
             code: DiagnosticCode::XmlTemplateMissingAttribute,
@@ -8283,7 +8301,7 @@ mod tests {
             (
                 "forge/xml-parse",
                 ForgeError::Xml(XmlError::Parse("unexpected end tag </scxml>".into())),
-                r#"{"v":1,"id":"fnv1a:16e2e2901e2b9b96","code":"xml/parse","stage":"xml","message":"XML parse error: unexpected end tag </scxml>"}"#,
+                r#"{"v":1,"id":"fnv1a:414d301b635e7145","code":"xml/parse","stage":"xml","message":"XML parse error: unexpected end tag </scxml>"}"#,
             ),
             (
                 "forge/xml-file-not-found",
@@ -9625,13 +9643,13 @@ mod tests {
                     detail: "unexpected end tag".into(),
                 })
                 .into(),
-                r#"{"v":1,"id":"fnv1a:2ed3aed0e1159c97","code":"xml/xinclude-malformed","stage":"xml","message":"<xi:include href=\"frag.xml\">: included file is malformed: unexpected end tag","actual":"frag.xml"}"#,
+                r#"{"v":1,"id":"fnv1a:668662191385c78c","code":"xml/xinclude-malformed","stage":"xml","message":"<xi:include href=\"frag.xml\">: included file is malformed: unexpected end tag","actual":"frag.xml"}"#,
             ),
             (
                 "forge/xinclude-unsupported",
                 XmlError::XInclude(crate::xinclude::XIncludeError::Unsupported {
                     href: "frag.xml".into(),
-                    feature: "parse=\"text\" (only parse=\"xml\" is supported)",
+                    feature: "parse=\"text\" (only parse=\"xml\" is supported)".to_string(),
                 })
                 .into(),
                 r#"{"v":1,"id":"fnv1a:76b67406e28c984e","code":"xml/xinclude-unsupported","stage":"xml","message":"<xi:include href=\"frag.xml\">: unsupported feature: parse=\"text\" (only parse=\"xml\" is supported)","actual":"parse=\"text\" (only parse=\"xml\" is supported)"}"#,
@@ -9667,7 +9685,7 @@ mod tests {
                     detail: "root element must be <sce:template>, got <not-a-template>".into(),
                 })
                 .into(),
-                r#"{"v":1,"id":"fnv1a:94db895eb4789a8d","code":"xml/template-malformed","stage":"xml","message":"<sce:use template=\"bad.sce-template.xml\">: template is malformed: root element must be <sce:template>, got <not-a-template>","actual":"bad.sce-template.xml"}"#,
+                r#"{"v":1,"id":"fnv1a:85213b68a3102bc7","code":"xml/template-malformed","stage":"xml","message":"<sce:use template=\"bad.sce-template.xml\">: template is malformed: root element must be <sce:template>, got <not-a-template>","actual":"bad.sce-template.xml"}"#,
             ),
             (
                 "forge/template-missing-attribute",
