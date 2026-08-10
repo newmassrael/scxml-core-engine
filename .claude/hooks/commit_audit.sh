@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Commit self-audit hook for Claude Code.
+# Commit gate library — the checks both git hooks share.
 #
-# Fires as a PreToolUse hook on every Bash call. For `git commit`
-# invocations, blocks the first attempt against the current HEAD,
-# prints three audit questions (textbook / hack / YAGNI) to stderr
-# so Claude sees them, and records the HEAD sha in a marker file.
-# Claude answers the questions in-conversation, re-runs the same
-# commit command; the second attempt finds the marker matches and
-# passes through silently.
+# Reads a JSON payload on stdin carrying a `git commit` command and the
+# repository path, and blocks (exit 2) on a violation. Two callers, each
+# feeding it the half it can see:
 #
-# Marker is per-HEAD: once a new commit lands (HEAD moves), the next
-# `git commit` is audited again. This gives one audit per commit, no
-# infinite-loop risk.
+#   tools/git-hooks/commit-msg  — the final message, so COMMIT_FORMAT.md
+#                                 and forward-reference checks run.
+#   tools/git-hooks/pre-commit  — a message-less payload, so the
+#                                 staged-diff gates (architecture
+#                                 violation, unconsumed template filter,
+#                                 memory lifecycle) run.
+#
+# History: this began as a Claude Code PreToolUse hook, which inspected
+# the `git commit` command string before the harness ran it. That layer
+# was removed on 2026-08-10 — it could not see a commit made outside the
+# harness, and its self-audit answer file lived under `.git/`, a
+# protected path no `permissions.allow` rule can pre-approve, so it
+# prompted on every commit. git runs both callers above unconditionally.
 #
 # Non-commit bash calls and internal git invocations (rev-parse,
 # status, diff) exit 0 immediately.
@@ -864,122 +870,7 @@ if [ -n "$MEMO_ERRORS" ]; then
   exit 2
 fi
 
-# ── Self-audit gate: pre-written answer file (1-pass) ────────────
-#
-# Previously this hook blocked the FIRST attempt of every commit
-# (exit 2), printed the questions, wrote a HEAD+command marker, and
-# let the RETRY pass. Two costs: (1) the first-attempt exit 2, when
-# the commit shared a tool batch with sibling calls, made the harness
-# cancel every sibling — a transcript flood on every commit; (2) the
-# retry passed with NO check that the questions were actually answered
-# (the marker was content-blind, honor-system only).
-#
-# 1-pass design: the answers must be WRITTEN TO A FILE before the
-# commit. The key binds HEAD + the staged diff, so it survives commit-
-# message rewrites and invalidates only when the staged content
-# changes. A present, non-trivial answer file lets the commit pass on
-# the FIRST attempt — no block, no batch cancellation — and leaves a
-# durable audit trail. Absence blocks with the exact path to write,
-# which happens only when the audit was genuinely skipped, not on every
-# commit. Strictly stronger than the old marker: that verified nothing;
-# this requires real written content keyed to this diff.
-AUDIT_DIR="$GIT_DIR/.claude-commit-audit"
-mkdir -p "$AUDIT_DIR" 2>/dev/null || true
-STAGED_DIFF="$(git -C "${CWD:-.}" diff --cached --no-color 2>/dev/null || true)"
-AUDIT_KEY="$(printf '%s\n%s' "$HEAD_SHA" "$STAGED_DIFF" | sha1sum | awk '{print $1}')"
-AUDIT_FILE="$AUDIT_DIR/$AUDIT_KEY.md"
-
-# Accept when a freshly-keyed answer file clears a length floor. The
-# key (HEAD + staged diff) guarantees freshness, so a file copied from
-# another commit cannot satisfy this one. A length floor is the forcing
-# function — deliberately not a brittle content regex, so a real answer
-# never loops.
-if [ -f "$AUDIT_FILE" ]; then
-  CHARS="$(wc -m < "$AUDIT_FILE" 2>/dev/null | tr -d ' ')"
-  if [ "${CHARS:-0}" -ge 400 ]; then
-    exit 0
-  fi
-fi
-
-{
-  echo "=== COMMIT SELF-AUDIT (write the answer file, then commit) ==="
-  echo ""
-  echo "This staged diff has no audit answer yet. Write your answers to"
-  echo "the five questions below to EXACTLY this path, then run the"
-  echo "commit — it passes on the first attempt, no retry, no batch"
-  echo "cancellation:"
-  echo ""
-  echo "    $AUDIT_FILE"
-  echo ""
-  echo "The path is keyed to HEAD + the staged diff: re-staging new"
-  echo "content needs a fresh answer, but rewording the commit message"
-  echo "does not. Minimum 400 characters (a real consideration, not a"
-  echo "stamp). The file lives under .git/ so it is never committed."
-  echo ""
-  echo "1. Textbook quality: does this diff contain format coupling,"
-  echo "   hardcoded magic numbers, invariants without drift guards,"
-  echo "   or hallucinated cross-references? If any remain, justify"
-  echo "   keeping them in your reply or the commit body."
-  echo ""
-  echo "2. Hacks: are there workarounds, band-aids, empty stubs, or"
-  echo "   TODO comments hiding unfinished implementation? Did you"
-  echo "   treat symptoms instead of the root cause? If so, list them"
-  echo "   and explain why they stay as they are."
-  echo ""
-  echo "3. YAGNI / plan alignment: if any plan memo listed below"
-  echo "   overlaps this diff's scope and this commit does not handle"
-  echo "   it, that is incompleteness, not YAGNI — decide whether to"
-  echo "   bundle it into the same commit. If the diff landed in a"
-  echo "   different file path / directory / module boundary than the"
-  echo "   plan memo specified (new file location, different tier,"
-  echo "   split or merged files), state the reason in the commit body"
-  echo "   or reply — noting 'we went with A instead of B' is not"
-  echo "   enough; the reason WHY B was unsuitable must be included."
-  echo ""
-  echo "4. Architectural consistency (ARCHITECTURE.md + CLAUDE.md"
-  echo "   'Guiding Rules'). Answer only the bullets that apply:"
-  echo "   (a) Engine sharing: if only one of Interpreter / AOT was"
-  echo "       modified, show why the other is unaffected, or that"
-  echo "       the change was routed through a shared helper"
-  echo "       (sce/include/core, sce/include/common)."
-  echo "       — 'Zero Duplication: Shared Helper functions between engines'"
-  echo "   (b) Backend parity: if only one of C++/Kotlin/Rust/Go/Python"
-  echo "       changed, explain why the others already have the same"
-  echo "       capability or are intentionally skipped."
-  echo "   (c) 4-tier boundary: does sce_core (header-only) gain a"
-  echo "       .cpp file or an external dependency? If so, justify"
-  echo "       the tier reclassification."
-  echo "   (d) Template-first: if build/*/generated/* or any produced"
-  echo "       artifact was edited directly, explain why it cannot"
-  echo "       be expressed as a tools/codegen/templates/ change."
-  echo ""
-  echo "5. Scope probe: does this commit belong directly to the user's"
-  echo "   MOST RECENT EXPLICIT instruction? Check for side-quest"
-  echo "   patterns:"
-  echo "   (a) Infrastructure (hook, CI, tooling) piggy-backing on a"
-  echo "       feature commit: state a structural reason they must"
-  echo "       ride together (e.g. validated through the same path)"
-  echo "       or split them into separate commits."
-  echo "   (b) Environment cleanup (unused-import removal, build"
-  echo "       flags, small cleanups) mixed with a feature: if the"
-  echo "       cleanup is independent, do not bundle — land it as a"
-  echo "       preceding chore."
-  echo "   (c) A symbol now misnamed (e.g. a struct whose name no"
-  echo "       longer matches its data): state whether the rename is"
-  echo "       included in this commit or recorded in a follow-up"
-  echo "       memo — silent deferral is not acceptable."
-  echo ""
-  if [ -n "$NEXT_MEMOS" ]; then
-    echo "     Related plan memos:"
-    echo "$NEXT_MEMOS"
-  else
-    echo "     (plan memo directory is empty or absent: $MEMORY_DIR)"
-  fi
-  echo ""
-  echo "Write the five answers to the audit file path above (>= 400"
-  echo "chars), then run the commit. No reply-then-retry — the file IS"
-  echo "the audit record."
-} >&2
-
-# Exit 2 = block tool call, pass stderr to Claude as reason
-exit 2
+# All gates passed. The message-based checks above run from the
+# `commit-msg` git hook and the diff-based ones from `pre-commit`,
+# so every check is git-guaranteed rather than harness-dependent.
+exit 0
