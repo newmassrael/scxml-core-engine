@@ -19,18 +19,23 @@
 #                                              commit_audit.sh at the git
 #                                              layer (see below)
 #
-# Why the commit-audit backstop exists (2026-06-03):
-# commit_audit.sh is a Claude Code *PreToolUse* hook — the harness runs
-# it before a Bash tool call. That layer is not git-guaranteed: a piped
-# or compound `git commit ... | grep ...` was observed to slip past the
-# PreToolUse hook entirely, landing a commit with no audit-answer file.
-# git ALWAYS runs this pre-commit hook on every commit regardless of how
-# it was invoked, so re-invoking the audit logic here closes that gap
-# (defense in depth). We feed commit_audit.sh a synthesized `git commit`
-# payload: the diff-based gates (arch violation, unconsumed filter,
-# memory-lifecycle, and the audit-answer-file key) all run identically;
-# the message-based format/forward-ref checks self-skip (no -m in the
-# synthesized command — those still run in the PreToolUse layer).
+# Why this stage exists (2026-06-03, rescoped 2026-08-10):
+# commit_audit.sh started as a Claude Code *PreToolUse* hook, which the
+# harness runs before a Bash tool call. That layer is not
+# git-guaranteed: a piped or compound `git commit ... | grep ...` was
+# observed to slip past it entirely, and it is absent for a commit made
+# from a terminal or an editor. git ALWAYS runs this hook, so the
+# diff-based gates (arch violation, unconsumed filter, memory-lifecycle)
+# run here. We feed commit_audit.sh a synthesized `git commit` payload
+# with no -m, so the message-based format/forward-ref checks self-skip —
+# those belong to `commit-msg`, which git hands the final message.
+#
+# The PreToolUse registration was removed on 2026-08-10 along with the
+# self-audit answer-file gate: the audit lived under `.git/`, a Claude
+# Code protected path that `permissions.allow` rules cannot pre-approve,
+# so it prompted on every commit while its own effect stayed unmeasured
+# (583 answer files, 69 of them byte-identical copies). Every check that
+# had measured effect now runs from a git hook instead.
 #
 # Bypass (for genuine emergencies): `SKIP_PRECOMMIT=1 git commit ...`.
 # Do not skip hooks by habit — the rustfmt gate runs in <1s and prevents
@@ -85,17 +90,17 @@ fi
 # ── Stage 2: commit-audit backstop ────────────────────────────────
 # Re-run the Claude Code commit-audit hook at the git layer so a commit
 # can never land without its audit-answer file even when the PreToolUse
-# layer is skipped (piped/compound `git commit`). Reuses the exact same
-# script — no logic duplication. The synthesized payload carries a bare
-# `git commit` command (no -m), so message-based checks self-skip while
-# the diff/state/audit-file gates run against the real staged index.
-log_step "Stage 2/2 — commit-audit backstop (.claude/hooks/commit_audit.sh)"
+# layer is gone entirely. Reuses the exact same script — no logic
+# duplication. The synthesized payload carries a bare `git commit`
+# command (no -m), so message-based checks self-skip while the
+# diff/state gates run against the real staged index.
+log_step "Stage 2/2 — staged-diff gates (.claude/hooks/commit_audit.sh)"
 AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"
 if [[ -x "$AUDIT_HOOK" ]]; then
     AUDIT_PAYLOAD="$(REPO_ROOT="$REPO_ROOT" python3 -c \
         'import json, os; print(json.dumps({"tool_input": {"command": "git commit"}, "cwd": os.environ["REPO_ROOT"]}))')"
     if ! printf '%s' "$AUDIT_PAYLOAD" | "$AUDIT_HOOK"; then
-        printf '\nERROR pre-commit: commit-audit backstop blocked this commit.\n  The Claude Code PreToolUse audit hook did not enforce this\n  commit (e.g. a piped/compound `git commit`). Resolve the banner\n  printed above, then re-run the commit.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
+        printf '\nERROR pre-commit: a staged-diff gate blocked this commit.\n  Resolve the banner printed above, then re-run the commit.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
         exit 1
     fi
 else

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# commit-msg hook — validate the commit message against COMMIT_FORMAT.md.
+#
+# Why this hook exists (2026-08-10):
+# The message checks in `.claude/hooks/commit_audit.sh` used to run only
+# from the Claude Code PreToolUse layer, which inspects the `git commit`
+# command string. That layer is not git-guaranteed — this repo's own
+# `pre-commit` header records that a piped or compound
+# `git commit ... | grep ...` was observed slipping past it — and it is
+# absent entirely for a commit made from a terminal, an editor, or any
+# other client. git ALWAYS runs commit-msg with the final message, so
+# moving the checks here makes them unconditional.
+#
+# The message is handed to the same script the other layers use, wrapped
+# in a synthesised `git commit -m <msg>` payload. `shlex.quote` on the
+# way in and the script's `shlex.split` on the way out are exact
+# inverses, so a message carrying quotes, newlines or backslashes
+# arrives byte-identical.
+#
+# Bypass (for genuine emergencies): `SKIP_COMMIT_MSG=1 git commit ...`.
+
+set -euo pipefail
+
+if [[ "${SKIP_COMMIT_MSG:-0}" == "1" ]]; then
+    printf 'commit-msg: SKIP_COMMIT_MSG=1 — message format check skipped.\n' >&2
+    exit 0
+fi
+
+MSG_FILE="${1:?commit-msg hook requires the message file path}"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"
+
+if [[ ! -x "$AUDIT_HOOK" ]]; then
+    printf 'commit-msg: %s missing or not executable — message format is UNCHECKED.\n' "$AUDIT_HOOK" >&2
+    exit 1
+fi
+
+# Comment lines are git's own scaffolding, never part of the message.
+# A `git commit` with only comments left is an abort, which git handles
+# before this hook's verdict matters, so an empty result just passes.
+PAYLOAD="$(MSG_FILE="$MSG_FILE" REPO_ROOT="$REPO_ROOT" python3 -c '
+import json, os, shlex, sys
+
+raw = open(os.environ["MSG_FILE"], encoding="utf-8").read()
+body = "\n".join(l for l in raw.splitlines() if not l.startswith("#")).strip()
+if not body:
+    sys.exit(9)
+cmd = "git commit -m " + shlex.quote(body)
+print(json.dumps({"tool_input": {"command": cmd}, "cwd": os.environ["REPO_ROOT"]}))
+')" || {
+    status=$?
+    # 9 = message is empty after stripping comments; git aborts on its own.
+    [[ $status -eq 9 ]] && exit 0
+    printf 'commit-msg: could not read %s\n' "$MSG_FILE" >&2
+    exit 1
+}
+
+if ! printf '%s' "$PAYLOAD" | "$AUDIT_HOOK"; then
+    printf '\nERROR commit-msg: the message above violates COMMIT_FORMAT.md.\n  Rewrite it and commit again.\n  Bypass with SKIP_COMMIT_MSG=1 for genuine emergencies.\n' >&2
+    exit 1
+fi
