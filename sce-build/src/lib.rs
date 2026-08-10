@@ -213,27 +213,7 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
     guard_static_generatable(&model, scxml_path)?;
-    // Statechart graph
-    // reachability. Runs after the analyzer finalises the state graph
-    // (parallel-region computation, initial-cascade resolution) and
-    // after `guard_static_generatable` so the more-fundamental
-    // diagnostics — `ScxmlSemanticError::InitialStateUnknown`,
-    // `TopLevelScriptUnloaded`, the missing-initial `DynamicFeatures`
-    // gate — fire ahead of the per-state orphan walk. Reachability
-    // is the structural-quality check that runs only once the basic
-    // entry contract is sound; running it earlier would shadow the
-    // root-cause diagnostic with a downstream consequence.
-    scxml_reachability::validate(&model, scxml_path)?;
-    // Event-set
-    // exhaustiveness. Runs after the reachability walk so an unreachable state is
-    // reported via the structural code first; the exhaustiveness
-    // walker presumes the graph topology is sound and surfaces only
-    // the design-time intent-gap pattern.
-    scxml_exhaustiveness::validate(&model, scxml_path)?;
-    // Guard analysis. Runs after
-    // the exhaustiveness walk so structural intent-gap diagnostics fire ahead
-    // of the per-transition guard heuristic.
-    scxml_guard_analysis::validate(&model, scxml_path)?;
+    lint_statechart(&model, scxml_path)?;
     // SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
     // are visible) and *before* `resolve_source_path` populates the
@@ -268,18 +248,7 @@ fn compile_model_from_string(
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
     guard_static_generatable(&model, scxml_name)?;
-    // Statechart graph reachability — see `compile_model`
-    // for the placement rationale (after the basic static-generation guard
-    // so root-cause `ScxmlSemanticError` diagnostics fire ahead of the
-    // orphan walk).
-    scxml_reachability::validate(&model, scxml_name)?;
-    // Event-set exhaustiveness — see
-    // `compile_model` for the placement rationale (after the
-    // reachability walk so the structural
-    // root-cause fires ahead of the heuristic).
-    scxml_exhaustiveness::validate(&model, scxml_name)?;
-    // Guard analysis.
-    scxml_guard_analysis::validate(&model, scxml_name)?;
+    lint_statechart(&model, scxml_name)?;
     // SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
     // as the file-based entry point above; both routes converge on
@@ -290,6 +259,36 @@ fn compile_model_from_string(
 
 /// Typed error channel for the two `compile_model*` helpers.
 pub type CompileError = forge::error::Located<forge::error::ForgeError>;
+
+/// Design-time statechart lints, in the order their diagnostics
+/// outrank each other. Single ordered list so the library entry
+/// points and `sce-codegen --lint` cannot drift apart — the CLI
+/// re-implements parse → analyze → generate and would otherwise have
+/// to duplicate this sequence to offer the same checks.
+///
+/// **These reject legal SCXML.** Every rule here flags a document that
+/// the W3C algorithms accept and an Interpreter would run; what it
+/// asserts is design-time intent, not validity. The W3C IRP corpus is
+/// the proof: `resources/278` declares a state whose only purpose is
+/// to host a datamodel read from outside its lexical scope,
+/// `resources/576` declares a state that must stay unentered for the
+/// test to mean anything, and `resources/355` distinguishes
+/// document-order default entry by leaving its second state dead.
+/// That is why the lints are opt-in on the CLI (`--lint`) rather than
+/// part of `analyzer::can_generate_static`, which carries only the
+/// rules a document must satisfy to be lowered at all.
+///
+/// Ordering rationale: reachability first, because an orphan region is
+/// the structural root cause that the two behavioural walkers would
+/// otherwise report as a consequence; exhaustiveness before guard
+/// analysis, because a missing sibling handler explains a guard that
+/// looks dead.
+pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), CompileError> {
+    scxml_reachability::validate(model, source)?;
+    scxml_exhaustiveness::validate(model, source)?;
+    scxml_guard_analysis::validate(model, source)?;
+    Ok(())
+}
 
 /// Promote the `analyzer::can_generate_static` precondition into a
 /// `Located<ForgeError>` for the wire layer. §wire-W5 D3 refit:
