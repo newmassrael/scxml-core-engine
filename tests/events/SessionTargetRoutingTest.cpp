@@ -230,4 +230,46 @@ TEST_F(SessionTargetRouting, CancellingASessionRemovesOnlyThatSessionsQueuedEven
     EXPECT_EQ(survivors[0], "fromPeer");
 }
 
+/// §scxml-C-1, the other end of the mapping: what a session PUBLISHES as its
+/// SCXML Event I/O Processor location is what a receiver reads as
+/// `_event.origin`.
+///
+/// The two halves are only a mapping if both are pinned. The receiver's half
+/// is asserted above; this asserts the publisher's — that the value reaching
+/// the datamodel is `IOProcessorHelper`'s verbatim, not a re-spelling the
+/// script engine invented on the way in. W3C test 569 is the only coverage
+/// the corpus offers and it asks `cond="_ioprocessors['scxml'].location"`,
+/// which any non-empty string satisfies.
+TEST_F(SessionTargetRouting, ThePublishedLocationIsWhatTheDatamodelReads) {
+    auto &engine = SCE::ScriptEngineProvider::getScriptEngine();
+    // The same pair StateMachine performs when it sets a session up, so this
+    // measures the engine's publishing rather than a private arrangement.
+    auto setup = engine.setupSystemVariables(kSender, "routingProbe", SCE::IOProcessorHelper::build(kSender)).get();
+    ASSERT_TRUE(setup.isSuccess()) << setup.getErrorMessage();
+
+    auto published = engine.evaluateExpression(kSender, "_ioprocessors['scxml'].location").get();
+    ASSERT_TRUE(published.isSuccess()) << published.getErrorMessage();
+    EXPECT_EQ(published.getValue<std::string>(), SCE::IOProcessorHelper::scxmlLocation(kSender))
+        << "the datamodel must publish the location the engine routes on";
+
+    // And that published string is exactly what a receiver is told, which is
+    // what makes the two halves one mapping rather than two conventions.
+    auto realPeer = std::make_shared<SCE::EventRaiserImpl>();
+    realPeer->setImmediateMode(false);
+    auto &service = EventRaiserService::getInstance();
+    service.unregisterEventRaiser(kPeer);
+    ASSERT_TRUE(service.registerEventRaiser(kPeer, realPeer));
+
+    auto target = factory_->createTarget(std::string("#_scxml_") + kPeer, kSender);
+    ASSERT_NE(target, nullptr);
+    target->send(eventNamed("mapped", std::string("#_scxml_") + kPeer)).wait();
+
+    std::vector<SCE::EventSnapshot> internalQueue;
+    std::vector<SCE::EventSnapshot> externalQueue;
+    realPeer->getEventQueues(internalQueue, externalQueue);
+    ASSERT_EQ(externalQueue.size(), 1u);
+    EXPECT_EQ(externalQueue[0].origin, published.getValue<std::string>())
+        << "origin and the sender's published location are the same value, per C.1";
+}
+
 }  // namespace
