@@ -12,6 +12,12 @@ MockEventRaiser::MockEventRaiser(std::function<bool(const std::string &, const s
 bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData) {
     // Always record the event for testing
     raisedEvents_.emplace_back(eventName, eventData);
+    // Keep the two logs index-aligned: an overload carrying an origin sets
+    // `pendingOrigin_` just before delegating here, and every other path
+    // records the empty string rather than skipping, so index i always
+    // describes the same raise in both vectors.
+    raisedOrigins_.push_back(pendingOrigin_);
+    pendingOrigin_.clear();
 
     // If callback is set, delegate to it
     if (callback_) {
@@ -23,8 +29,9 @@ bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string
 }
 
 bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string & /*originSessionId*/) {
-    // W3C SCXML 6.4: Delegate to 2-parameter version (mock doesn't care about origin)
+                                 const std::string &originSessionId) {
+    // W3C SCXML 6.4: Delegate to the 2-parameter version, carrying the origin
+    pendingOrigin_ = originSessionId;
     return raiseEvent(eventName, eventData);
 }
 
@@ -35,15 +42,17 @@ bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string
 }
 
 bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string & /*originSessionId*/, const std::string & /*invokeId*/) {
-    // W3C SCXML 5.10 test 338: Delegate to 2-parameter version (mock doesn't care about invokeId)
+                                 const std::string &originSessionId, const std::string & /*invokeId*/) {
+    // W3C SCXML 5.10 test 338: Delegate to the 2-parameter version, carrying the origin
+    pendingOrigin_ = originSessionId;
     return raiseEvent(eventName, eventData);
 }
 
 bool MockEventRaiser::raiseEvent(const std::string &eventName, const std::string &eventData,
-                                 const std::string & /*originSessionId*/, const std::string & /*invokeId*/,
+                                 const std::string &originSessionId, const std::string & /*invokeId*/,
                                  const std::string & /*originType*/) {
-    // W3C SCXML 5.10: Delegate to 2-parameter version (mock doesn't care about originType)
+    // W3C SCXML 5.10: Delegate to the 2-parameter version, carrying the origin
+    pendingOrigin_ = originSessionId;
     return raiseEvent(eventName, eventData);
 }
 
@@ -61,12 +70,20 @@ bool MockEventRaiser::isReady() const {
     return ready_;
 }
 
+const std::vector<std::string> &MockEventRaiser::getRaisedOrigins() const {
+    return raisedOrigins_;
+}
+
 const std::vector<std::pair<std::string, std::string>> &MockEventRaiser::getRaisedEvents() const {
     return raisedEvents_;
 }
 
 void MockEventRaiser::clearEvents() {
     raisedEvents_.clear();
+    // Both logs, or the index alignment getRaisedOrigins() promises is a
+    // promise only until the first clear.
+    raisedOrigins_.clear();
+    pendingOrigin_.clear();
 }
 
 int MockEventRaiser::getEventCount() const {

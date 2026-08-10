@@ -61,6 +61,14 @@ public:
 
     // Test inspection methods
     const std::vector<std::pair<std::string, std::string>> &getRaisedEvents() const;
+
+    /// Origin recorded for each raised event, index-aligned with
+    /// getRaisedEvents(). Empty string for the overloads that carry no
+    /// origin. Recorded because `_event.origin` is a W3C-specified VALUE
+    /// (§scxml-C-1 fixes it to the sender's `_ioprocessors` location), not
+    /// merely routing bookkeeping — a mock that discards it can only assert
+    /// which queue an event reached, never what the receiver would read.
+    const std::vector<std::string> &getRaisedOrigins() const;
     void clearEvents();
     int getEventCount() const;
 
@@ -73,6 +81,11 @@ public:
 
 private:
     std::vector<std::pair<std::string, std::string>> raisedEvents_;
+    std::vector<std::string> raisedOrigins_;
+    /// Origin handed to the overload currently delegating into the 2-arg
+    /// recorder. Cleared on every record so a later origin-less raise cannot
+    /// inherit an earlier one.
+    std::string pendingOrigin_;
     std::function<bool(const std::string &, const std::string &)> callback_;
     bool ready_ = true;
 };
