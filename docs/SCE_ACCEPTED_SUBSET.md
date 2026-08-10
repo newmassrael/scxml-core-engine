@@ -837,6 +837,36 @@ document would otherwise pass `check` with `status: ok`, pass
 
 ---
 
+### Design-time lints are opt-in (`--lint`)
+
+Three validators below — graph reachability, event-set exhaustiveness,
+and guard analysis — **reject legal SCXML**. Each flags a document the
+W3C algorithms accept and an Interpreter runs; what they assert is
+design intent, not validity. They are therefore off by default and
+enabled with `sce-codegen check --lint` / `generate --lint`, which call
+the same `sce_build::lint_statechart` the library entry points run
+(`sce-build/tests/cli_lint_parity.rs` pins the two verdicts equal).
+
+The W3C IRP corpus is why the default is off — these are conformance
+documents that build and pass:
+
+| Document | Shape the lint flags | Why the document is correct |
+|---|---|---|
+| `resources/278` | `s1` unreachable | `s1` exists only to host a `<datamodel>`; the test checks that `s0` can read a variable from outside its lexical scope |
+| `resources/576` | `s0` unreachable | The test proves `<scxml initial>` is honoured, which requires the document-order-first state to stay unentered |
+| `resources/355` | `s1` unreachable | The test distinguishes default entry by document order; entering `s1` would be the failure |
+
+Turn the lints on for authored documents, where an orphan region or a
+sibling missing an event handler is nearly always a mistake.
+
+The rules a document must satisfy to be lowered **at all** — reference
+resolution, a resolvable `initial`, at least one state, a loadable
+top-level `<script>` — are not lints and always run, on every entry
+point (see [state-reference
+resolution](#statechart-state-reference-resolution)).
+
+---
+
 ### Statechart graph reachability (NL→IR Mapping Roadmap Item 3 Phase A)
 
 Every `<state>`, `<parallel>`, and `<final>` declared in an SCXML
@@ -851,6 +881,13 @@ through the W3C SCXML §3 entry semantics:
   non-history child region
 - transition `target` edges
 - history pseudostate default-target redirection (W3C SCXML §3.10)
+- ancestor entry — entering a state enters every compound ancestor
+  (§3.6), and an entered ancestor is a full member of the
+  configuration: its own transitions are live (§3.13 selection climbs
+  the ancestor chain) and, when it is a `<parallel>`, its every region
+  is entered (§3.4). A walk that marked ancestors reached without
+  following their edges reported `fail` states as orphans across the
+  W3C IRP suite
 
 After the parse completes, a BFS over those edges computes the
 design-time reach set. A state outside the closure is dead code —

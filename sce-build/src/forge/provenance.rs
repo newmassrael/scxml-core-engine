@@ -368,6 +368,42 @@ mod tests {
             .expect("real parser output must satisfy the sourcemap provenance contract");
     }
 
+    /// A top-level `<script>` (§scxml-5.8) is an emission-eligible
+    /// `Action` that does **not** travel through
+    /// `parse_executable_content_single`, the site this module's
+    /// eligibility note credits with stamping every action. It is
+    /// built in `parse_global_scripts` instead, and the stamp has to
+    /// be repeated there.
+    ///
+    /// The gap was invisible because
+    /// `parser_output_is_provenance_complete` above carries no
+    /// top-level `<script>`: the walker was green on a corpus that
+    /// never reached the offending site. W3C `resources/302`, `304`
+    /// and `452` did reach it.
+    #[test]
+    fn top_level_script_carries_provenance() {
+        let scxml = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="s1" datamodel="ecmascript">
+  <script>var boot = 1;</script>
+  <state id="s1">
+    <transition event="go" target="s2"/>
+  </state>
+  <final id="s2"/>
+</scxml>"#;
+        let mut parser = crate::parser::SCXMLParser::new();
+        let model = parser
+            .parse_string(scxml, "global_script.scxml")
+            .expect("fixture parses cleanly");
+        assert_eq!(
+            model.global_scripts.len(),
+            1,
+            "the fixture must reach the global-script parse site"
+        );
+        validate_emission_provenance(&model, "global_script.scxml")
+            .expect("a top-level <script> must carry its source coordinate");
+    }
+
     /// Synthesised None on the root surfaces the diagnostic with
     /// `node_kind = "<scxml>"`. Mirrors what would happen if a
     /// future `parse_impl` edit forgot to populate the root field.
