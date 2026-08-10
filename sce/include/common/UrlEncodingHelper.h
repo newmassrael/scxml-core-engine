@@ -63,10 +63,11 @@ public:
      * @brief Inverse of urlEncode
      *
      * An encoder without a decoder means whatever it produced can be written
-     * but never read back. `_ioprocessors` publishes a percent-encoded
-     * session id inside the SCXML processor location, and §scxml-C-1 requires
-     * that location to work as a <send> target — which needs the id read out
-     * of it again.
+     * but never read back. The SCXML Event I/O Processor location published
+     * in `_ioprocessors` carries a percent-encoded session id, and that
+     * location has to work as a <send> target — which needs the id read out
+     * of it again. The clause requiring that lives on the routing code; this
+     * is the string operation it needs, not an implementation of it.
      *
      * A malformed escape (`%` with fewer than two hex digits after it, or
      * non-hex digits) is passed through literally rather than dropped: the
