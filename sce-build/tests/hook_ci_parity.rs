@@ -789,3 +789,175 @@ fn every_apt_sourced_tool_is_installed_by_the_requiring_lane() {
         missing.join("\n  "),
     );
 }
+
+/// A lane that runs a gate whose script can skip on a missing tool must
+/// say so, and must supply the tool.
+///
+/// The shell half of the harness had no equivalent of the Rust
+/// `SCE_REQUIRE_TOOLS` pairing above, and the gap was not theoretical:
+/// `scripts/test_emit_manifest_fail_fast.sh` answered `exit 0` when
+/// clang was absent, so `embed-manifest-failfast` reported green while
+/// verifying nothing. The workflow already carried a comment saying an
+/// uninstalled toolchain "would turn this job green without running the
+/// assertion it exists for" — a correct sentence with nothing acting on
+/// it, which is the shape this repository keeps finding.
+///
+/// Derived in both directions, so a future skip-capable gate is covered
+/// without a second edit: the call sites are found by scanning the
+/// scripts for the helper, the lanes by asking the gate registry which
+/// workflows run that slug.
+/// The YAML block of the job that contains `needle`.
+///
+/// Jobs sit at one indent level under `jobs:`, so a block runs from its
+/// own `  <name>:` line to the next one. Enough structure to keep a
+/// per-job claim per-job, without pulling in a YAML parser for two
+/// string checks.
+fn job_block_running<'a>(workflow: &'a str, needle: &str) -> String {
+    let mut blocks: Vec<Vec<&'a str>> = Vec::new();
+    for line in workflow.lines() {
+        let is_job_header = line.starts_with("  ")
+            && !line.starts_with("   ")
+            && line.trim_end().ends_with(':')
+            && !line.trim_start().starts_with('#');
+        if is_job_header {
+            blocks.push(Vec::new());
+        }
+        if let Some(current) = blocks.last_mut() {
+            current.push(line);
+        }
+    }
+    blocks
+        .into_iter()
+        .find(|b| b.iter().any(|l| l.contains(needle)))
+        .map(|b| b.join("\n"))
+        .unwrap_or_default()
+}
+
+#[test]
+fn lane_running_a_skip_capable_gate_requires_its_tools() {
+    // Every script that can skip on a missing tool, with what it needs.
+    let mut skip_capable: Vec<(PathBuf, String, String)> = Vec::new();
+    for dir in ["scripts", "scripts/gates"] {
+        for entry in std::fs::read_dir(repo_root().join(dir)).expect("script dir is readable") {
+            let path = entry.expect("dir entry").path();
+            let Ok(body) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            for line in body.lines() {
+                let line = line.trim();
+                if !line.starts_with("sce_gate_requires_tool ") {
+                    continue;
+                }
+                let mut parts = line.split_whitespace().skip(1);
+                let (Some(bin), Some(pkg)) = (parts.next(), parts.next()) else {
+                    panic!("`sce_gate_requires_tool` in {path:?} takes a binary and a package");
+                };
+                skip_capable.push((path.clone(), bin.to_string(), pkg.to_string()));
+            }
+        }
+    }
+    assert!(
+        !skip_capable.is_empty(),
+        "no `sce_gate_requires_tool` call site found — either the helper \
+         was renamed or a skip went back to a bare `exit 0`, which is the \
+         state this check exists to keep the tree out of",
+    );
+
+    // Gate slug that reaches each script: the script itself when it is a
+    // gate, otherwise the gate whose body invokes it.
+    let gates_dir = repo_root().join("scripts/gates");
+    let mut violations: Vec<String> = Vec::new();
+    for (script, _bin, package) in &skip_capable {
+        let rel = script
+            .strip_prefix(repo_root())
+            .expect("script sits under the repo root")
+            .display()
+            .to_string();
+        let mut slugs: Vec<String> = Vec::new();
+        for entry in std::fs::read_dir(&gates_dir).expect("gates dir is readable") {
+            let gate = entry.expect("dir entry").path();
+            let Ok(body) = std::fs::read_to_string(&gate) else {
+                continue;
+            };
+            if gate == *script || body.contains(&rel) {
+                slugs.push(
+                    gate.file_stem()
+                        .expect("gate file has a stem")
+                        .to_string_lossy()
+                        .to_string(),
+                );
+            }
+        }
+        if slugs.is_empty() {
+            violations.push(format!("{rel}: no gate under scripts/gates/ runs it"));
+            continue;
+        }
+
+        for slug in &slugs {
+            let mut lanes = 0usize;
+            for entry in
+                std::fs::read_dir(repo_root().join(".github/workflows")).expect("workflows dir")
+            {
+                let wf = entry.expect("dir entry").path();
+                let Ok(body) = std::fs::read_to_string(&wf) else {
+                    continue;
+                };
+                if !body.contains(&format!("scripts/gate {slug}")) {
+                    continue;
+                }
+                lanes += 1;
+                let name = wf.file_name().expect("workflow file").to_string_lossy();
+
+                // Scoped to the job that runs the gate. A file-wide
+                // search passed a mutation that deleted this job's
+                // `apt-get install`, because a sibling job in the same
+                // workflow installs the same package — and a toolchain
+                // installed in another job is not on this job's runner.
+                let job = job_block_running(&body, &format!("scripts/gate {slug}"));
+
+                // Both checks read the YAML, not the prose. An earlier
+                // draft matched the strings anywhere and passed on a
+                // mutation that deleted the `env:` entry outright: the
+                // surrounding comment still named it. A comment
+                // standing in for the thing it describes is the failure
+                // this test exists to catch, so it must not be the way
+                // this test passes.
+                let sets_var = job
+                    .lines()
+                    .map(str::trim)
+                    .any(|l| l.starts_with("SCE_REQUIRE_TOOLS:"));
+                if !sets_var {
+                    violations.push(format!(
+                        "{name} runs `{slug}` but that job sets no SCE_REQUIRE_TOOLS key — \
+                         a runner without the tool would skip the check and still report green"
+                    ));
+                }
+                let installs = job
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.starts_with('#'))
+                    .any(|l| {
+                        l.split_whitespace()
+                            .any(|w| w.trim_end_matches('\\') == package)
+                    });
+                if !installs {
+                    violations.push(format!(
+                        "{name} runs `{slug}` under SCE_REQUIRE_TOOLS but that job installs \
+                         no `{package}`, so the lane fails on its own requirement"
+                    ));
+                }
+            }
+
+            assert!(
+                lanes > 0,
+                "no workflow runs `scripts/gate {slug}`, so the skip-capable gate has \
+                 no lane claiming it ran — the local-only state T1 recorded"
+            );
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "skip-capable gate(s) whose lane does not claim the check ran:\n  {}",
+        violations.join("\n  "),
+    );
+}
