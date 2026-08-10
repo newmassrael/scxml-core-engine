@@ -46,6 +46,7 @@
         "xml/template-unknown-param",
         "xml/template-cycle",
         "xml/template-too-deep",
+        "xml/preprocessor-not-run",
         "validation/missing-element",
         "validation/missing-attribute",
         "validation/invalid-attribute",

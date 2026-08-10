@@ -162,6 +162,13 @@ pub fn parse_forge_with_imports_and_plugin(
         ));
     }
 
+    // Every forge parse entry funnels through here, so this is the one
+    // place that can hold the "document has been expanded" precondition
+    // for all of them. Placed after kind detection on purpose: a
+    // statechart returns `Ok(None)` above and keeps routing to the SCXML
+    // pipeline, whose `parse_file` runs the expander itself.
+    crate::parser::reject_unexpanded_directives(&root, diag)?;
+
     let imports = parse_imports(&root, diag)?;
     let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;

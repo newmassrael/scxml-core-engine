@@ -22,7 +22,7 @@ use sce_build::{
     compile_forge_with_imports,
     conformance::{self, Manifest},
     generator::Language,
-    DocumentLabel, ForgeCompileOptions,
+    load_forge_source, DocumentLabel, ForgeCompileOptions,
 };
 use std::path::Path;
 
@@ -60,11 +60,28 @@ fn main() {
     let options = ForgeCompileOptions::default();
     for fixture in &manifest.fixtures {
         let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
-        let content = std::fs::read_to_string(&scxml_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", scxml_path.display()));
+
+        // Read + expand. This script used to hand the raw bytes straight
+        // to the compiler, so a fixture using `<sce:use>` would have been
+        // generated with the templated nodes missing.
+        //
+        // The label stays `symmetric(fixture.name)` rather than being
+        // derived from the path: `conformance.rs` compiles these same
+        // fixtures under that label, and the label reaches the SCE-MAP
+        // markers in the emitted code. Two producers of one fixture must
+        // not disagree about what to call it.
+        let loaded = load_forge_source(&scxml_path, &[])
+            .unwrap_or_else(|e| panic!("expand {}: {e}", scxml_path.display()));
+
+        // Template and XInclude targets are inputs to this build; without
+        // them a fixture's template can be edited and the generated code
+        // stays stale with nothing reporting it.
+        for dep in &loaded.deps {
+            println!("cargo:rerun-if-changed={}", dep.display());
+        }
 
         let output = compile_forge_with_imports(
-            &content,
+            &loaded.text,
             DocumentLabel::symmetric(&fixture.name),
             Language::Rust,
             &resource_dir,
@@ -148,10 +165,13 @@ fn generate_stripped_fixtures(
 ) {
     for name in names {
         let scxml_path = resource_dir.join(format!("{name}.scxml"));
-        let content = std::fs::read_to_string(&scxml_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", scxml_path.display()));
+        let loaded = load_forge_source(&scxml_path, &[])
+            .unwrap_or_else(|e| panic!("expand {}: {e}", scxml_path.display()));
+        for dep in &loaded.deps {
+            println!("cargo:rerun-if-changed={}", dep.display());
+        }
         let output = compile_forge_with_imports(
-            &content,
+            &loaded.text,
             DocumentLabel::symmetric(name),
             Language::Rust,
             resource_dir,
