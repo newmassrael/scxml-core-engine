@@ -185,20 +185,30 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
             continue;
         }
         // §scxml-3.6 — entering a state implicitly enters every
-        // compound ancestor up to the document root. Walk the parent
-        // chain so the validator sees those ancestors as reached
-        // even when the BFS seed (`model.initial`) is the deep-
-        // resolved leaf and never goes through the compound parent
-        // directly. Without this, a top-level
-        // `<state id="P" initial="C"><state id="C"/></state>` shape
-        // surfaces `P` as orphan after the parser's
-        // `resolve_deep_initial` collapses `model.initial` to `C`.
-        let mut anc = state.parent.clone();
-        while let Some(parent_id) = anc {
-            if !reach.insert(parent_id.clone()) {
-                break;
-            }
-            anc = model.states.get(&parent_id).and_then(|s| s.parent.clone());
+        // compound ancestor up to the document root. The parent is
+        // *enqueued*, not merely marked: an entered ancestor is a full
+        // member of the active configuration, so its own edges are
+        // live. Two consequences the validator would otherwise miss,
+        // both of them the dominant shapes in the W3C IRP suite:
+        //
+        //   * §scxml-3.13 — transition selection climbs the ancestor
+        //     chain, so a compound state's `<transition
+        //     event="timeout" target="fail"/>` can fire while a child
+        //     is active. Marking `s0` reached without walking it left
+        //     `fail` reported as an orphan.
+        //   * §scxml-3.4 — entering one region of a `<parallel>`
+        //     enters the parallel, which enters every sibling region.
+        //     Marking the parallel reached without walking it skipped
+        //     the all-regions cascade and left the siblings dead.
+        //
+        // The dequeue path's own `reach.insert` guard terminates the
+        // climb: an ancestor already in the set is popped and skipped.
+        // This matters because the BFS seed (`model.initial`) is the
+        // deep-resolved leaf and never goes through the compound
+        // parent directly — the parser's `resolve_deep_initial`
+        // collapses `<state id="P" initial="C">` to `C`.
+        if let Some(parent_id) = state.parent.clone() {
+            queue.push_back(parent_id);
         }
 
         // Entry cascade.
