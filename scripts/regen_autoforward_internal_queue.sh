@@ -63,6 +63,7 @@ MODRS="$GENERATED_DIR/mod.rs"
     )
 } > "$MODRS"
 
-cargo fmt -p sce-rust-tests
+source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
+sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"
