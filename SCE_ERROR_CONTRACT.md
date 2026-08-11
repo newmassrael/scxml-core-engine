@@ -91,7 +91,11 @@ dependency bump within one producer. `xml/parse` therefore carries **no**
 fragments (a document has one parse failure; `code|stage|file` names
 it), and `xml/xinclude-malformed` / `xml/template-malformed` key on the
 href or template name alone, with the engine's reason travelling in
-`message`.
+`message`. The same rule empties `generate/template-load` and
+`generate/template-render`, whose only payload is the template
+renderer's own text — an audit of all 212 fragment-bearing arms found
+those two, and every other `detail` in the set is a sentence SCE
+writes itself.
 
 `tests/parsing/CrossProducerDiagnosticId_test.cpp` is what enforces
 this: it runs both producers over one fixture document and compares the
