@@ -31,6 +31,24 @@
 
 use thiserror::Error;
 
+/// The trailing clause that names the other gaps under the same parent.
+///
+/// Empty when there are none, so the single-gap message reads exactly as
+/// it did before and the common case gains no noise.
+fn also_clause(also: &[String]) -> String {
+    if also.is_empty() {
+        return String::new();
+    }
+    format!(
+        " — note that the same annotation would also silence {}, \
+         which this compound leaves inconsistent too",
+        also.iter()
+            .map(|e| format!("'{e}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
 /// Disambiguates the document scope for an unresolved `initial`
 /// attribute. The wire code is the same
 /// (`validation/invalid-reference`) for both, but consumers
@@ -228,13 +246,20 @@ pub enum ScxmlSemanticError {
     ///
     /// Author escape hatch when the intent gap is genuine:
     /// `sce:exhaustive="false"` on the compound parent silences this
-    /// diagnostic for that parent only.
+    /// diagnostic for that parent only — which is why `also` exists.
+    /// The escape hatch is all-or-nothing, so an author reaching for
+    /// it is deciding about every gap under that parent, and a
+    /// message naming one of them invites that decision to be made
+    /// on a third of the facts. It happened: of the three opt-outs in
+    /// this tree, one sits on a compound with three gaps and its
+    /// comment reasons about a single event.
     #[error(
         "Compound state '{parent}' has children handling event \
          '{event}' inconsistently — handlers: {handlers:?}, \
          non-handlers: {non_handlers:?}. Add the missing transition, \
          add a parent-level fallthrough, or annotate the parent with \
-         sce:exhaustive=\"false\" if the gap is intentional."
+         sce:exhaustive=\"false\" if the gap is intentional{}.",
+        also_clause(.also)
     )]
     NonExhaustiveEventHandling {
         /// Compound state id whose children disagree on event
@@ -251,6 +276,12 @@ pub enum ScxmlSemanticError {
         /// of these (add the missing transition, or annotate the
         /// parent as deliberately non-exhaustive).
         non_handlers: Vec<String>,
+        /// The other events under the same parent that are also
+        /// inconsistently handled, in the same order the validator
+        /// found them. Empty when `event` is the only gap. Reported
+        /// rather than hidden because the escape hatch covers the
+        /// parent, not the event — see the type doc above.
+        also: Vec<String>,
     },
 
     /// A `<transition cond="...">` carries a guard expression whose
@@ -495,6 +526,7 @@ mod tests {
                 event: "cmd.stop".into(),
                 handlers: vec!["idle".into(), "stopped".into()],
                 non_handlers: vec!["active".into()],
+                also: Vec::new(),
             },
             ScxmlSemanticError::AlwaysFalseGuard {
                 state: "armed".into(),

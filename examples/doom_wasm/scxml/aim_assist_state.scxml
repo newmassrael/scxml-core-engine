@@ -45,12 +45,18 @@
     </state>
 
     <!-- Aim assist enabled - compound state with sub-states -->
-    <!-- sce:exhaustive="false": `no_target` means "the search finished with
-         nothing found", so only `searching` can receive it. `idle` and
-         `locked` are not searching, and a fallthrough here would swallow a
-         `no_target` that arrived out of order instead of leaving it
-         unhandled, which is the honest outcome for an event this compound
-         never expects outside a search. -->
+    <!-- sce:exhaustive="false" silences the whole compound, so the whole
+         set it covers is named here rather than the one event that
+         prompted it. Every entry is the same shape: a phase-specific
+         event that only the phase which can produce it listens for, and
+         a fallthrough would swallow an out-of-order arrival instead of
+         leaving it unhandled, which is the honest outcome.
+           * `no_target` — the search finished with nothing found, so only
+             `searching` can receive it.
+           * `target_acquired` — the search succeeded; same reason.
+           * `target_lost` — only `locked` holds a target to lose.
+           * `shot_fired` / `shot_complete` — the shot cycle belongs to
+             `locked`; `idle` and `searching` have nothing aimed. -->
     <state id="enabled" initial="idle" sce:exhaustive="false">
         <onentry>
             <script><cpp>aim.onEnabled()</cpp></script>

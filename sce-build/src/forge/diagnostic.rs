@@ -7988,6 +7988,11 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             event,
             handlers: _,
             non_handlers,
+            // Not a key fragment: the other gaps are context for the
+            // author, not part of what makes THIS record distinct, and
+            // folding them in would move the id whenever an unrelated
+            // sibling gap appeared or was repaired.
+            also: _,
         } => DiagnosticPayload {
             // NEW — NL→IR Mapping Roadmap Item 3 event-set exhaustiveness. The
             // `actual` slot carries the unhandled event so consumers
@@ -8709,6 +8714,7 @@ mod tests {
                     event: "cmd.start".into(),
                     handlers: vec!["idle".into(), "stopped".into()],
                     non_handlers: vec!["active".into()],
+                    also: Vec::new(),
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:7072cc6c1038cfb6","code":"scxml/non-exhaustive-event-handling","stage":"validation","message":"Compound state 'dispatch' has children handling event 'cmd.start' inconsistently — handlers: [\"idle\", \"stopped\"], non-handlers: [\"active\"]. Add the missing transition, add a parent-level fallthrough, or annotate the parent with sce:exhaustive=\"false\" if the gap is intentional.","actual":"cmd.start"}"#,

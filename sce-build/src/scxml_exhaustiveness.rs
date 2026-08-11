@@ -126,6 +126,17 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
         // absorbs via its own transitions (§scxml-3.13 bubble
         // semantics — a parent handler turns the gap into a
         // deliberate fallthrough).
+        //
+        // Every gap under this parent is collected, not just the
+        // first. The rejection still carries one record — the wire
+        // layer models one — but the author about to reach for
+        // `sce:exhaustive="false"` needs to know what that blanket
+        // would cover, because it silences the parent entirely.
+        // Measured on this tree's own documents: `combo_state`'s
+        // `active` has three gaps, the author's comment reasons about
+        // one, and the other two were never surfaced by a diagnostic
+        // that stopped at the first.
+        let mut gaps: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
         for event in &universe {
             if transitions_match_event(&parent.transitions, event) {
                 continue;
@@ -140,19 +151,24 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
                 }
             }
             if !handlers.is_empty() && !non_handlers.is_empty() {
-                return Err(Located::new(
-                    ScxmlSemanticError::NonExhaustiveEventHandling {
-                        parent: parent.id.clone(),
-                        event: event.clone(),
-                        handlers,
-                        non_handlers,
-                    }
-                    .into(),
-                    source,
-                    None,
-                    None,
-                ));
+                gaps.push((event.clone(), handlers, non_handlers));
             }
+        }
+        if let Some((event, handlers, non_handlers)) = gaps.first().cloned() {
+            let also: Vec<String> = gaps.iter().skip(1).map(|(e, _, _)| e.clone()).collect();
+            return Err(Located::new(
+                ScxmlSemanticError::NonExhaustiveEventHandling {
+                    parent: parent.id.clone(),
+                    event,
+                    handlers,
+                    non_handlers,
+                    also,
+                }
+                .into(),
+                source,
+                None,
+                None,
+            ));
         }
     }
 
