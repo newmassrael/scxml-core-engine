@@ -421,7 +421,6 @@ add_library(sce_runtime
     src/runtime/StateMachineBuilder.cpp
     src/runtime/StateMachineFactory.cpp
     src/runtime/ActionExecutorImpl.cpp
-    src/runtime/StateMachineEventRaiser.cpp
     src/runtime/ExecutionContextImpl.cpp
     src/runtime/StateHierarchyManager.cpp
     src/runtime/EventRaiserImpl.cpp
