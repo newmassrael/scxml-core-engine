@@ -202,18 +202,13 @@ const std::map<std::string, std::string> &exemptLeaves() {
          "leaf would agree if it could be reached."},
         {"TemplateReadError",
          "Same as `XIncludeReadError`: no committed fixture can make a resolvable file unreadable."},
-        {"SemanticNoStates",
-         "The two producers reach a different check first on the same document (measured). A `<scxml "
-         "initial=\"s1\">` with no states answers `validation/invalid-reference` on the Rust side — it "
-         "resolves `initial` before counting states — and with no `initial` at all it answers "
-         "`validation/dynamic-features` from the analyzer. The C++ parser counts root states first. "
-         "Which order is right is a separate question from `id`, and is registered rather than decided "
-         "here."},
         {"SemanticTopLevelScriptUnloaded",
-         "The two producers disagree on acceptance, not on the id: `sce-codegen check` on a document "
-         "whose top-level `<script/>` is empty, and on one whose `src` names a missing file, emits no "
-         "diagnostic at all (measured), while the C++ parser rejects both per §scxml-5.8. A fixture here "
-         "would pin the acceptance gap, not the key shape; the gap is registered instead."},
+         "Both producers reject the documents §scxml-5.8 forbids, but through different surfaces: "
+         "the C++ parser raises this leaf, while the Rust pipeline records the rejection in its "
+         "stdout manifest (`rejected`) and generates the stub the AOT harness expects for W3C test "
+         "301. This harness compares diagnostics, so it cannot see a manifest field. The agreement "
+         "itself is pinned by `SCXMLParserBoundary.TopLevelScriptMustSpecifyExactlyOneOfSrcOrBody` "
+         "and the Rust parser's own cases."},
     };
     return kExempt;
 }
@@ -252,7 +247,7 @@ TEST(CrossProducerDiagnosticId, EveryFixtureAgreesOnCodeAndId) {
     const auto fixtures = fixtureNames(root);
     // Floor: an empty fixture directory would satisfy every
     // comparison below without proving anything.
-    ASSERT_GE(fixtures.size(), 19u) << "found only " << fixtures.size() << " fixture(s) under " << root;
+    ASSERT_GE(fixtures.size(), 20u) << "found only " << fixtures.size() << " fixture(s) under " << root;
 
     std::vector<std::string> violations;
     std::set<std::string> coveredLeaves;

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: a document with no <state>, <parallel> or
+  <final> child. §scxml-3.2 requires one, and both producers must say
+  so rather than reporting a consequence — an `initial` that cannot
+  resolve, or a missing `initial`. key_fragments are ("scxml",
+  "state"): the kind and the collection it requires.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
+</scxml>
