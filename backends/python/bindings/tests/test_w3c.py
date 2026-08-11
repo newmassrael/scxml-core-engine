@@ -23,7 +23,14 @@ from urllib.parse import parse_qs
 
 # Allow running from build directory
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", ".."))
+# Four levels, not two: this file lives at
+# backends/python/bindings/tests/, so the repository root is four parents up.
+# The `..`/`..` form was correct while the suite sat at python/bindings/tests/
+# and survived the move to backends/ untouched, which put the fixture root at
+# backends/python/resources — a directory that does not exist. Nothing
+# reported it because the lane piped the runner into `tee` without
+# `pipefail`, so the job took tee's exit status and stayed green.
+_PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", "..", ".."))
 
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "..", "python"))
 
@@ -252,7 +259,12 @@ def run_test(test_id: str, http_server: W3CHttpTestServer | None = None) -> tupl
         # W3C SCXML 5.8: Document rejection for unfetchable scripts is PASS.
         # The parser error "document rejected per W3C SCXML 5.8" propagates
         # through the factory error chain into the ValueError message.
-        if "document rejected" in error_msg:
+        # W3C SCXML 5.8 rejection is the expected outcome, whichever clause
+        # phrases it. The single-phrase match read only the parser's wording
+        # and missed the factory's ("Top-level <script> rejected per W3C SCXML
+        # 5.8"), so test301 — whose whole point is that the document must be
+        # refused — was scored ERROR.
+        if "document rejected" in error_msg or "rejected per W3C SCXML" in error_msg:
             return "PASS", elapsed, "document rejected (W3C SCXML 5.8)"
         return "ERROR", elapsed, error_msg
 
@@ -261,6 +273,12 @@ def run_test(test_id: str, http_server: W3CHttpTestServer | None = None) -> tupl
     # queue, ensuring internal events (from <raise>) are processed first (test 510).
     if http_server is not None:
         http_server.set_engine(engine)
+        # W3C SCXML C.2.3: the entry is published only for a deployment that
+        # declares an inbound endpoint, so without this the fixtures that send
+        # to `_ioprocessors['basichttp'].location` resolve an empty target and
+        # sit in s0 until the timeout. The C++ W3C runner declares the same URI
+        # through StateMachineBuilder::withBasicHttpAccessUri.
+        engine.set_basic_http_access_uri(f"http://localhost:{http_server.port}{http_server.path}")
 
     try:
         if not engine.start():

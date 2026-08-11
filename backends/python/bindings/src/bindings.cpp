@@ -34,6 +34,10 @@ public:
     PyEngine &operator=(PyEngine &&) = default;
 
     // Factory methods - raise on failure instead of returning None
+    void setBasicHttpAccessUri(const std::string &accessUri) {
+        engine_->setBasicHttpAccessUri(accessUri);
+    }
+
     static PyEngine fromFile(const std::string &path) {
         auto engine = SCE::ReadySCXMLEngine::fromFile(path);
         if (!engine) {
@@ -210,6 +214,10 @@ PYBIND11_MODULE(_sce, m) {
         // Core operations
         .def("start", &PyEngine::start, "Start the state machine. Returns True if started successfully.")
         .def("stop", &PyEngine::stop, "Stop the state machine.")
+        .def("set_basic_http_access_uri", &PyEngine::setBasicHttpAccessUri, py::arg("access_uri"),
+             "Declare the inbound Basic HTTP endpoint (W3C SCXML C.2.3). Call before start(); "
+             "without it no _ioprocessors['basichttp'] entry is published and a document that "
+             "sends to that location reaches nobody.")
         .def("send_event", &PyEngine::sendEvent, py::arg("name"), py::arg("data") = "",
              "Send an event to the state machine.\n\n"
              "Args:\n"
