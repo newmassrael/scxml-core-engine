@@ -965,6 +965,121 @@ class ExistenceScopeIsNotRewriteScope(unittest.TestCase):
             )
 
 
+class ExistenceRegionIsNotRewriteRegion(unittest.TestCase):
+    """The same split as the class above, one layer down: which REGIONS of an
+    opened file the existence gate may judge.
+
+    Splitting the file predicate left the mask unsplit, so the sweep still
+    inherited the rewriter's answer about where a citation can live. That
+    answer is right for an edit and wrong for a read in exactly one family:
+    Python documents in strings, so `hash_comment_mask` — correctly, for a
+    rewriter — masks out the docstring along with every other string literal.
+
+    Measured 2026-08-12 by planting a fabricated id in eighteen lexical
+    contexts and running one sweep: fifteen were seen (Go, Kotlin, C, C++,
+    Rust and JS comments in every form they have; Markdown, YAML and XML
+    whole-text), and the three that were blind were all Python strings. It was
+    hiding a real one — `IScriptEngine`'s class docstring named `W3C SCXML B.3`
+    for the ECMAScript data model, which is B.2, and the ledger has no B.3 at
+    all. (That id is backticked here for the same reason the `§synth-F4`
+    record is: naming a fabricated citation in order to explain it is a
+    mention, and the one-backtick code span is the channel for one. This gate
+    caught this very sentence the first time it ran with docstrings in scope.)
+    """
+
+    def _check(self, body, argv=("--check-ledger",)):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "m.py"
+            f.write_text(body, encoding="utf-8")
+            store = Path(d) / "store.json"
+            store.write_text(
+                json.dumps({"sections": {"scxml-6.2": {}}}), encoding="utf-8"
+            )
+            proc = subprocess.run(
+                [sys.executable, str(MIGRATE), *argv, "--ledger", str(store), str(f)],
+                capture_output=True, text=True,
+            )
+            return proc, f.read_text(encoding="utf-8")
+
+    def test_module_docstring_is_read(self):
+        r, _ = self._check('"""Entry set (§scxml-99.99)."""\n')
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("§scxml-99.99", r.stderr)
+
+    def test_class_docstring_is_read(self):
+        r, _ = self._check('class E:\n    """Engine (§scxml-99.99)."""\n')
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_function_docstring_is_read(self):
+        r, _ = self._check('def f():\n    """Address (§scxml-99.99)."""\n')
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_prose_citation_in_a_docstring_is_read(self):
+        # The shape the blind spot actually hid: not a token but prose, in the
+        # docstring of the Python runtime's central interface.
+        r, _ = self._check('"""ECMAScript for the W3C SCXML 9.99 datamodel."""\n')
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("scxml-9.99", r.stderr)
+
+    def test_a_real_section_in_a_docstring_passes(self):
+        r, _ = self._check('"""Sending is W3C SCXML 6.2 (§scxml-6.2)."""\n')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_hash_comment_is_still_read(self):
+        r, _ = self._check("# see §scxml-99.99\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_a_value_string_is_not_a_docstring(self):
+        # A string that is not a docstring is a VALUE, not documentation, and
+        # the widening stops there on purpose. Measured: reading every string
+        # literal instead reports 40+ hits in this file and its siblings, whose
+        # fixtures carry fabricated ids to prove the checker rejects them — a
+        # gate that fails on the evidence of its own correctness.
+        r, _ = self._check('EXPECTED = "§scxml-99.99"\n')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_a_docstring_span_is_measured_in_characters_not_bytes(self):
+        # `ast` reports col_offset in UTF-8 BYTES. Treating it as a character
+        # index stretches the span to the right by one per multi-byte char, so
+        # a one-line docstring full of sigils would drag the code AFTER it into
+        # the mask — and the value on that line would be read as a citation.
+        # Twenty sigils overshoot the closing quotes by twenty characters; the
+        # value below starts twelve past them, so the miscount reaches it.
+        body = '"""' + "§" * 20 + '"""\nEXPECTED = "§scxml-99.99"\n'
+        r, _ = self._check(body)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_rewriting_never_edits_inside_a_docstring(self):
+        # The other half of the split. A migratable prose cite in a docstring
+        # must survive `--apply` byte-identical: the validator this mirrors is
+        # comment_only, so lowering it to §-form would produce a token nothing
+        # binds — judged-looking and unjudged.
+        original = '"""Sending is W3C SCXML 6.2."""\n'
+        r, after = self._check(original, argv=("--apply",))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(after, original)
+
+    def test_rewriting_still_edits_a_hash_comment_in_the_same_file(self):
+        original = "# Sending is W3C SCXML 6.2.\n"
+        r, after = self._check(original, argv=("--apply",))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(after, "# Sending is §scxml-6.2.\n")
+
+    def test_apply_and_check_ledger_are_refused_together(self):
+        r, _ = self._check(
+            '"""W3C SCXML 6.2."""\n', argv=("--apply", "--check-ledger")
+        )
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--apply cannot be combined with --check-ledger", r.stderr)
+
+    def test_an_unparseable_python_file_is_read_whole(self):
+        # The language cannot name a docstring in a file it cannot parse.
+        # Reporting a clean verdict over text nobody looked at is the failure
+        # mode this whole class exists to close, so the fallback sees MORE.
+        r, _ = self._check('def f(:\n    """§scxml-99.99"""\n')
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+
 class CodeSpanMention(unittest.TestCase):
     """A comment that DISCUSSES a citation is not making one.
 

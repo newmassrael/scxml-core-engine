@@ -9,7 +9,7 @@ design-ledger namespace).
   * UnitTests       — wave extraction, legacy-duplicate dedup, the W4.5 dotted
                       label, fence skipping, and a real-doc invariant pass.
   * ClosedLoopTest  — imports the real manifest into a section_namespace="wire"
-                      workspace and proves §wire-W<n> cites resolve whole while a
+                      workspace and proves `§wire-W<n>` cites resolve whole while a
                       foreign §scxml cite is skipped by namespace scope.
 
 Run:  python3 -m unittest discover -s tools/mnemosyne-adoption/tests
