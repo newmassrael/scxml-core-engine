@@ -8,7 +8,7 @@ package com.sce.runtime
 /**
  * Marker interface for generated state sealed hierarchies.
  *
- * W3C SCXML 3.2: Each state machine defines a sealed interface
+ * §scxml-3.2: Each state machine defines a sealed interface
  * extending this marker. Concrete states are `data object` singletons
  * (zero allocation) or `data class` for parallel region composites.
  *

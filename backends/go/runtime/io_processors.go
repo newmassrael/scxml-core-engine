@@ -26,7 +26,7 @@ const (
 // ScxmlProcessorLocation is the address that reaches this session over the
 // SCXML Event I/O Processor.
 //
-// W3C SCXML C.1 leaves the transport platform-specific, so the address is an
+// §scxml-C-1 leaves the transport platform-specific, so the address is an
 // SCE-scheme URI naming the session. The session id is percent-encoded because
 // it is not constrained to URI-safe characters.
 func ScxmlProcessorLocation(sessionID string) string {
@@ -37,7 +37,7 @@ func ScxmlProcessorLocation(sessionID string) string {
 // Processor location names, or "" when the argument is not such a location.
 //
 // The inverse of ScxmlProcessorLocation, kept beside it so the two spellings of
-// one address cannot drift apart. W3C SCXML C.1 requires the location a session
+// one address cannot drift apart. §scxml-C-1 requires the location a session
 // publishes to be usable as a <send> target, which only holds if something can
 // read a session back out of it.
 func SessionIDFromScxmlLocation(uri string) string {
@@ -51,7 +51,7 @@ func SessionIDFromScxmlLocation(uri string) string {
 // PublishedOrigin is the _event.origin a receiver should see for an event sent
 // by originSessionID.
 //
-// W3C SCXML C.1 requires the origin of a delivered event to match the 'location'
+// §scxml-C-1 requires the origin of a delivered event to match the 'location'
 // the sending session published, which is what makes it an address the receiver
 // can answer. The engine carries the sender's BARE session id internally —
 // EventMetadata.Origin — because its session-keyed lookups (<finalize> dispatch,

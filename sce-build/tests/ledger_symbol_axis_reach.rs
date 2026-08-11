@@ -5,24 +5,32 @@
 //
 // `validate-code-refs` enforces two different things about a `§scxml-` cite.
 // EXISTENCE — the id names a real ledger section — is checked over the whole
-// tree. BINDING — the cite sits on the symbol the ledger says implements that
+// tree. BINDING — the cite is tied to what the ledger says implements that
 // section — is checked only inside `[code_refs] paths` in
-// `docs/spec/scxml/mnemosyne.toml`, and only where a symbol resolver exists for
-// the file's language.
+// `docs/spec/scxml/mnemosyne.toml`. Inside that scan, a SYMBOL-level binding
+// needs a resolver for the file's language; without one the binding is
+// file-level.
 //
-// Five backend runtimes implement the same clauses. Two of them are inside that
-// scan; three are not, so their cites are spell-checked and nothing more. That
-// asymmetry was recorded as prose in the ledger config — which claimed, in the
-// present tense, that "no hand-authored §scxml- citation lives in an excluded
-// tree" while 62 of them did. Prose cannot hold a claim like that; this can.
+// Five backend runtimes implement the same clauses. Two of them were inside
+// that scan and three were not, so their cites were spell-checked and nothing
+// more. Enrolling the three earlier would have been a false claim rather than
+// a fix: a language with no resolver used to publish a symbol_mismatch count
+// of zero, which reads as "checked and clean". Mnemosyne R1142 made the axis
+// say it had no instrument instead, and R1144 refuses a run whose recorded
+// symbol no resolver covers — so at that pin all five are enrolled, all cites
+// carry bindings, and what is missing is named out loud by the tool.
 //
-// The gap is upstream, not local: Mnemosyne ships `tree-sitter-cpp` and
+// That asymmetry was recorded as prose in the ledger config — which claimed,
+// in the present tense, that "no hand-authored §scxml- citation lives in an
+// excluded tree" while 62 of them did. Prose cannot hold a claim like that;
+// this can.
+//
+// What is left is upstream, not local: Mnemosyne ships `tree-sitter-cpp` and
 // `tree-sitter-rust` plugin crates and no others, its symbol-axis extension
 // table maps `.go` and `.py` to languages that have no backend, and `.kt` is
 // not in that table at all. So the list below shrinks when Mnemosyne gains a
 // resolver, never because a tree quietly stopped citing the spec.
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -45,8 +53,9 @@ const RUNTIMES: &[&str] = &[
     "backends/rust/runtime/src",
 ];
 
-/// Runtimes whose cites the symbol axis cannot reach, with the upstream reason.
-/// An entry here is a claim that gets checked below, not an exemption.
+/// Runtimes the scan reaches but the SYMBOL axis cannot, with the upstream
+/// reason. An entry here is a claim that gets checked below, not an exemption:
+/// the tree must still be inside the scan set, and it must still cite.
 const UNREACHED: &[(&str, &str)] = &[
     (
         "backends/go/runtime",
@@ -122,13 +131,19 @@ fn citing_files(root: &Path, dir: &str) -> Vec<String> {
         .collect()
 }
 
+/// Every backend runtime that cites the spec is inside the ledger's scan.
+///
+/// Before the R1142 pin this could only ask for "reached OR named", because
+/// enrolling a resolver-less language published a zero that read as a clean
+/// check. It can ask for the stronger thing now, and the stronger thing is
+/// what closes the gap: a cite inside the scan must be BOUND to something the
+/// ledger records, whether or not a resolver can pin it to a symbol.
 #[test]
-fn every_backend_runtime_citing_the_spec_is_reached_or_named() {
+fn every_backend_runtime_citing_the_spec_is_inside_the_scan() {
     let root = repo_root();
     let paths = scanned_paths(&root);
-    let named: BTreeSet<&str> = UNREACHED.iter().map(|(dir, _)| *dir).collect();
 
-    let mut unnamed: Vec<String> = Vec::new();
+    let mut outside: Vec<String> = Vec::new();
     let mut examined = 0usize;
 
     for runtime in RUNTIMES {
@@ -137,17 +152,18 @@ fn every_backend_runtime_citing_the_spec_is_reached_or_named() {
             continue;
         }
         examined += 1;
+        // A runtime counts as reached when the scan covers it, whether the
+        // configured path is the tree root or a source directory inside it.
         let reached = paths
             .iter()
             .any(|p| is_under(runtime, p) || is_under(p, runtime));
-        if reached || named.contains(runtime) {
-            continue;
+        if !reached {
+            outside.push(format!(
+                "{runtime} ({} file(s) cite the spec), e.g. {}",
+                cites.len(),
+                cites.first().expect("non-empty")
+            ));
         }
-        unnamed.push(format!(
-            "{runtime} ({} file(s) cite the spec), e.g. {}",
-            cites.len(),
-            cites.first().expect("non-empty")
-        ));
     }
 
     assert!(
@@ -158,27 +174,35 @@ fn every_backend_runtime_citing_the_spec_is_reached_or_named() {
     );
 
     assert!(
-        unnamed.is_empty(),
-        "backend runtime(s) cite `§scxml-` from outside the ledger's symbol \
-         scan without being named as such:\n  {}\n\
-         Their cites are checked for existence only — nothing verifies the \
-         cite sits on the symbol the ledger says implements the clause. Add \
-         the tree to `[code_refs] paths` once a resolver for its language \
-         exists, or record it in UNREACHED with the reason it cannot be.",
-        unnamed.join("\n  "),
+        outside.is_empty(),
+        "backend runtime(s) cite `§scxml-` from outside the ledger's scan:\n  {}\n\
+         Their cites are checked for existence only — nothing ties them to the \
+         clause the ledger says they implement. Add the tree's SOURCE directory \
+         to `[code_refs] paths`; a language with no symbol resolver is reported \
+         as unreached rather than silently counted clean since Mnemosyne R1142.",
+        outside.join("\n  "),
     );
 }
 
+/// A named symbol-axis gap still describes the tree.
+///
+/// Two ways it can stop doing so, and both must fail: the tree leaves the scan
+/// (then it is not a symbol-axis gap, it is a coverage hole), or it stops
+/// citing the spec (then the entry outlives its subject). The third — a
+/// resolver landing upstream — is the one that should retire the entry, and it
+/// is retired by hand in the commit that lands the resolver.
 #[test]
-fn a_named_gap_disappears_when_it_is_closed_rather_than_lingering() {
+fn a_named_gap_still_describes_the_tree() {
     let root = repo_root();
     let paths = scanned_paths(&root);
 
     let mut stale: Vec<String> = Vec::new();
     for (dir, reason) in UNREACHED {
-        if paths.iter().any(|p| is_under(dir, p) || is_under(p, dir)) {
+        let reached = paths.iter().any(|p| is_under(dir, p) || is_under(p, dir));
+        if !reached {
             stale.push(format!(
-                "{dir}: now inside the scan set, but still listed — {reason}"
+                "{dir}: outside the scan set entirely, so this is not a \
+                 symbol-axis gap — {reason}"
             ));
             continue;
         }

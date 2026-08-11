@@ -13,7 +13,7 @@ import "fmt"
 // (typical: 1-5, complex: up to 10).
 const MaxHierarchyDepth = 16
 
-// FindLCA finds the Least Common Ancestor of two states (W3C SCXML 3.12).
+// FindLCA finds the Least Common Ancestor of two states (§scxml-3.12).
 //
 // Returns (lca, true) if the states share a common ancestor (or are equal),
 // or (zero, false) if they belong to disjoint hierarchies.
@@ -104,7 +104,7 @@ func IsDescendantOfByWalk[S comparable, E comparable](policy StatePolicy[S, E], 
 }
 
 // BuildExitChain builds an exit chain from fromState up to (but excluding)
-// stopBeforeState (W3C SCXML 3.12).
+// stopBeforeState (§scxml-3.12).
 //
 // Returns states in leaf-to-ancestor order, suitable for calling
 // ExecuteExitActions in sequence. The stop state is the LCA -- it is not exited
@@ -135,7 +135,7 @@ func BuildExitChain[S comparable, E comparable](policy StatePolicy[S, E], fromSt
 }
 
 // BuildEntryChainFromAncestor builds an entry chain from ancestor down to
-// target (exclusive of ancestor) (W3C SCXML 3.12).
+// target (exclusive of ancestor) (§scxml-3.12).
 //
 // Returns states in ancestor-to-descendant order, suitable for calling
 // ExecuteEntryActions in sequence. The ancestor itself is not included because
@@ -171,7 +171,7 @@ func BuildEntryChainFromAncestor[S comparable, E comparable](policy StatePolicy[
 }
 
 // BuildEntryChain builds the complete entry chain from root down to leafState
-// (W3C SCXML 3.3).
+// (§scxml-3.3).
 //
 // Returns states in root-to-leaf order. Parallel region children are NOT added
 // here -- that responsibility belongs to ExecuteEntryActions.

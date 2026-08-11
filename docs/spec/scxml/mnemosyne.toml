@@ -125,23 +125,38 @@ paths = [
     # claimed symbol-level enforcement it could not deliver. `backends/c/tests`
     # stays out, matching how `backends/rust/runtime/tests` is declared out.
     "backends/c/runtime",
+    # Go, Kotlin and Python runtimes. Enrolled at the R1142 pin for the reason
+    # spelled out below `scan_exclusions`: the axis now reports that it had no
+    # instrument for these languages instead of publishing a zero, so listing
+    # them buys file-level binding enforcement without claiming symbol-level
+    # coverage nobody can deliver. Each path names the SOURCE directory — the
+    # tree roots carry build output (`build/` classes and jars, `__pycache__`)
+    # that has no citations and does not belong in a read set.
+    "backends/go/runtime",
+    "backends/kotlin/runtime/src",
+    "backends/python/runtime/sce_runtime",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously.
 #
-# The trees below are other backends' runtimes, generated output, and test
-# trees. They DO carry hand-authored §scxml- cites — 62 of them across 36 files
-# when this was last measured — and an earlier version of this comment claimed
-# the opposite. What excluding them costs is precise: the existence axis still
-# reads every one of those cites (it scans the whole tree), so a §id naming no
-# section still fails; what is given up is the BINDING axis, which would check
-# that each cite sits on the symbol the ledger says implements the clause.
+# The trees below are generated output and test trees. They DO carry
+# hand-authored §scxml- cites — 62 of them across 36 files when this was last
+# measured — and an earlier version of this comment claimed the opposite. What
+# excluding them costs is precise: the existence axis still reads every one of
+# those cites (it scans the whole tree), so a §id naming no section still
+# fails; what is given up is the BINDING axis, which would check that each cite
+# sits on the symbol the ledger says implements the clause.
 #
-# The same trade is forced on three backend runtimes that are not even listed
-# here, because the R783 coverage axiom is Rust-only and cannot ask about them:
-# Go, Kotlin and Python have no symbol resolver upstream. That set is pinned by
-# `sce-build/tests/ledger_symbol_axis_reach.rs` so it shrinks deliberately.
+# The Go, Kotlin and Python runtimes were also outside `paths` until Mnemosyne
+# R1142. Enrolling them before that would have been a false claim: a language
+# with no resolver published a symbol_mismatch count of zero, which reads as
+# "checked and clean". R1142 makes the axis say it had no instrument, and R1144
+# refuses a run whose recorded symbol no resolver covers, so enrolment now buys
+# real file-level binding enforcement while naming the symbol-level gap out
+# loud — `no resolver configured [go, python]`, `extension maps to no language
+# [kt]`. What remains is upstream: tree-sitter plugins for those languages, and
+# `.kt` reaching the extension table at all.
 #
 # `paths` also drives the citation-FORM gate, so a tree enters this ledger
 # only once its prose cites are migrated — which is why the no_std runtime moved
@@ -276,4 +291,4 @@ sha256 = "fd88796df0afd01c9febb650e8dd1a9ee62479ae797c7adc24ffc4f1d68c66c1"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "c9b276bf"
+pin = "89432e86"

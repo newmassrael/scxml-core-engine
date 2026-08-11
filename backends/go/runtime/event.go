@@ -3,14 +3,14 @@
 
 package sce
 
-// EventType classification (W3C SCXML 5.10.1).
+// EventType classification (§scxml-5.10.1).
 //
 // Ports the Rust EventType enum from backends/rust/runtime/src/event.rs.
 type EventType int
 
 const (
 	// EventTypeInternal represents events raised internally via <raise> or
-	// a targetless <send> (W3C SCXML 5.10.1).
+	// a targetless <send> (§scxml-5.10.1).
 	EventTypeInternal EventType = iota
 
 	// EventTypeExternal represents events from an external source (W3C SCXML
@@ -36,7 +36,7 @@ func (t EventType) String() string {
 	}
 }
 
-// EventMetadata carries W3C SCXML 5.10 metadata fields attached to events.
+// EventMetadata carries §scxml-5.10 metadata fields attached to events.
 //
 // Ports Rust EventMetadata from backends/rust/runtime/src/event.rs. Every event
 // flowing through the engine carries an EventMetadata, which is copied into
@@ -95,7 +95,7 @@ func ExternalMetadata(sendID, origin string) EventMetadata {
 	}
 }
 
-// EventWithMetadata wraps a typed event value with its full W3C SCXML 5.10 metadata.
+// EventWithMetadata wraps a typed event value with its full §scxml-5.10 metadata.
 //
 // Ports the Rust EventWithMetadata<E> from backends/rust/runtime/src/event.rs. The
 // type parameter E is the generated Policy's event enum type.
@@ -106,7 +106,7 @@ type EventWithMetadata[E any] struct {
 	// Metadata contains event data, type, sendid, origin, origintype, invokeid.
 	Metadata EventMetadata
 
-	// Target is the W3C SCXML C.2 HTTP POST target URL (empty if not an HTTP send).
+	// Target is the §scxml-C-2 HTTP POST target URL (empty if not an HTTP send).
 	Target string
 }
 
@@ -119,7 +119,7 @@ func NewEventWithMetadata[E any](event E) EventWithMetadata[E] {
 }
 
 // NewPlatformEvent constructs a platform event (for error.execution, done.state, etc.)
-// with EventType set to Platform (W3C SCXML 5.10.1).
+// with EventType set to Platform (§scxml-5.10.1).
 func NewPlatformEvent[E any](event E) EventWithMetadata[E] {
 	return EventWithMetadata[E]{
 		Event:    event,

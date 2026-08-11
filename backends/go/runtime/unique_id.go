@@ -54,7 +54,7 @@ func GenerateSendID() string {
 
 // GenerateInvokeID generates a unique invoke ID for SCXML invoke operations.
 //
-// W3C SCXML 6.4 (test 224): When stateID is provided, the format is
+// §scxml-6.4 (test 224): When stateID is provided, the format is
 // "{stateID}.platform_{counter}" for compliance.
 //
 // Ports Rust unique_id_generator::generate_invoke_id.

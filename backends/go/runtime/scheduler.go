@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// PullScheduler manages delayed event scheduling (W3C SCXML 6.2).
+// PullScheduler manages delayed event scheduling (§scxml-6.2).
 //
 // 1:1 port of Rust PullScheduler<E> from backends/rust/runtime/src/engine.rs.
 // Stores delayed events with their ready-at time. The engine polls via
@@ -33,7 +33,7 @@ func NewPullScheduler[E any]() *PullScheduler[E] {
 	}
 }
 
-// ScheduleEvent schedules an event for delayed delivery (W3C SCXML 6.2).
+// ScheduleEvent schedules an event for delayed delivery (§scxml-6.2).
 //
 // If sendID is empty, an automatic ID is generated. Returns the ID used
 // (caller can use it to cancel). Matches Rust PullScheduler::schedule_event.
@@ -52,7 +52,7 @@ func (s *PullScheduler[E]) ScheduleEvent(event E, delay time.Duration, sendID, e
 	return effectiveSendID
 }
 
-// CancelEvent cancels a scheduled event by send ID (W3C SCXML 6.2.5).
+// CancelEvent cancels a scheduled event by send ID (§scxml-6.2.5).
 // Returns true if the event was found and removed.
 //
 // Matches Rust PullScheduler::cancel_event.

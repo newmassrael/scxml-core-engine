@@ -3,7 +3,7 @@
 
 package sce
 
-// EmitContentLiteral emits an inline <content> body as _event.data (W3C SCXML 5.5).
+// EmitContentLiteral emits an inline <content> body as _event.data (§scxml-5.5).
 //
 // 1:1 port of C++ SCE::DoneDataHelper::emitContentLiteral
 // (sce/include/common/DoneDataHelper.h). When <content> has no expr attribute

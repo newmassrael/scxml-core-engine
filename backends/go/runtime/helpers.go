@@ -54,7 +54,7 @@ func ParseDelay(s string) time.Duration {
 // ── Script engine helpers ──────────────────────────────────────────
 
 // ScriptToBool converts a script engine result to a boolean, following SCXML
-// truthiness rules (W3C SCXML B.2.3).
+// truthiness rules (§scxml-B-2-3).
 func ScriptToBool(value interface{}) bool {
 	if value == nil {
 		return false
@@ -87,7 +87,7 @@ func ToSlice(value interface{}) ([]interface{}, bool) {
 }
 
 // ToLuaLiteral converts a script value to its Lua literal representation.
-// W3C SCXML 5.5: Used by donedata/send to produce event data strings.
+// §scxml-5.5: Used by donedata/send to produce event data strings.
 func ToLuaLiteral(value interface{}) string {
 	if value == nil {
 		return "nil"

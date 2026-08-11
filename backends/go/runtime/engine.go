@@ -27,26 +27,26 @@ type Engine[S comparable, E comparable] struct {
 	// currentState is the currently active state (or deepest active state for parallel machines).
 	currentState S
 
-	// internalQueue is the W3C SCXML C.1 internal event queue (high priority).
+	// internalQueue is the §scxml-C-1 internal event queue (high priority).
 	internalQueue *EventQueueManager[EventWithMetadata[E]]
 
-	// externalQueue is the W3C SCXML C.1 external event queue (low priority).
+	// externalQueue is the §scxml-C-1 external event queue (low priority).
 	externalQueue *EventQueueManager[EventWithMetadata[E]]
 
 	// isRunning tracks whether the engine is currently running.
 	isRunning bool
 
-	// completionCallback is the W3C SCXML 6.4 callback invoked when reaching a final state.
+	// completionCallback is the §scxml-6.4 callback invoked when reaching a final state.
 	completionCallback func()
 
-	// onHTTPSend is the W3C SCXML C.2 HTTP send dispatch callback.
+	// onHTTPSend is the §scxml-C-2 HTTP send dispatch callback.
 	// Returns *HttpSendResponse when real HTTP is used; nil for fire-and-forget.
 	onHTTPSend func(HttpSendRequest) *HttpSendResponse
 
-	// scheduler is the W3C SCXML 6.2 delayed event scheduler.
+	// scheduler is the §scxml-6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
 
-	// donedataAtFinal is the W3C SCXML 5.5 + 6.3.1 stashed donedata payload
+	// donedataAtFinal is the §scxml-5.5 + 6.3.1 stashed donedata payload
 	// for a top-level <final>. Entry actions stash it here; an invoking
 	// parent reads it back via DonedataAtFinal() to lift onto
 	// done.invoke.<id>._event.data. Mirrors the C++ AOT
@@ -81,23 +81,23 @@ func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, 
 // Initialize enters the initial configuration and runs the macrostep loop until
 // stable.
 //
-// Matches Rust Engine::initialize. W3C SCXML 5.3 guarantees datamodel
+// Matches Rust Engine::initialize. §scxml-5.3 guarantees datamodel
 // initialization happens before any state entry.
 func (e *Engine[S, E]) Initialize() {
 	e.isRunning = true
 
-	// W3C SCXML 5.3: Initialize datamodel before any state entry
+	// §scxml-5.3: Initialize datamodel before any state entry
 	if e.policy.NeedsDataModelInit() {
 		e.policy.InitializeDataModel(e)
 	}
 
-	// W3C SCXML 3.3: Entry chain from root to initial leaf
+	// §scxml-3.3: Entry chain from root to initial leaf
 	entryChain := BuildEntryChain[S, E](e.policy, e.currentState)
 	for _, state := range entryChain {
 		e.policy.ExecuteEntryActions(state, e)
 	}
 
-	// W3C SCXML 3.3: Resolve currentState to the deepest initial leaf
+	// §scxml-3.3: Resolve currentState to the deepest initial leaf
 	e.resolveCurrentStateToLeaf()
 
 	// W3C SCXML Appendix D: hand over to the outer loop. The macrostep
@@ -109,7 +109,7 @@ func (e *Engine[S, E]) Initialize() {
 	e.runMainEventLoop()
 	log.Printf("[sce] Engine::Initialize: main event loop settled")
 
-	// W3C SCXML 6.4: Fire completion callback if we reached a final state during init
+	// §scxml-6.4: Fire completion callback if we reached a final state during init
 	if e.isInFinalState() && e.completionCallback != nil {
 		log.Printf("[sce] Engine::Initialize: reached final state during init, invoking completion callback")
 		active := e.GetActiveStates()
@@ -122,7 +122,7 @@ func (e *Engine[S, E]) Initialize() {
 // Step processes one macrostep: drain queues and run eventless transitions.
 //
 // Matches Rust Engine::step. Used by parent SMs to explicitly drive children
-// after sending them events (W3C SCXML 6.4).
+// after sending them events (§scxml-6.4).
 func (e *Engine[S, E]) Step() {
 	e.runMainEventLoop()
 
@@ -148,7 +148,7 @@ func (e *Engine[S, E]) Tick() {
 		return
 	}
 
-	// W3C SCXML 6.2: Pop all ready scheduled events into the external queue
+	// §scxml-6.2: Pop all ready scheduled events into the external queue
 	for {
 		event, data, ok := e.scheduler.PopReadyEvent()
 		if !ok {
@@ -157,13 +157,13 @@ func (e *Engine[S, E]) Tick() {
 		e.RaiseExternal(event, data, "")
 	}
 
-	// W3C SCXML 6.4: Tick child state machines
+	// §scxml-6.4: Tick child state machines
 	if e.policy.HasChildTick() {
 		e.policy.TickChildren(e)
 	}
 
 	// Delegate to Step() for the main event loop + completion callback.
-	// W3C SCXML 6.4's invokes are part of that loop and run there, ahead of
+	// §scxml-6.4's invokes are part of that loop and run there, ahead of
 	// the external dequeue rather than after it.
 	e.Step()
 }
@@ -183,7 +183,7 @@ func (e *Engine[S, E]) GetCurrentState() S {
 	return e.currentState
 }
 
-// GetActiveStates returns the full list of active states (W3C SCXML 3.11).
+// GetActiveStates returns the full list of active states (§scxml-3.11).
 //
 // Non-parallel machines: returns the hierarchy [leaf, parent, grandparent, ..., root].
 // Parallel machines: returns the union of all active regions via
@@ -208,7 +208,7 @@ func (e *Engine[S, E]) GetActiveStates() []S {
 
 // isInFinalState reports whether this session has ended — that is, whether the
 // current state is a <final> whose parent is the <scxml> element
-// (W3C SCXML 3.7).
+// (§scxml-3.7).
 //
 // Appendix D enterStates sets running = false for a <final> only when
 // isSCXMLElement(s.parent); a nested one queues done.state.<parent> and the
@@ -240,7 +240,7 @@ func (e *Engine[S, E]) Policy() StatePolicy[S, E] {
 // ================================================================
 
 // Raise enqueues an internal event with full metadata (high priority)
-// (W3C SCXML C.1).
+// (§scxml-C-1).
 //
 // Matches Rust Engine::raise.
 func (e *Engine[S, E]) Raise(event EventWithMetadata[E]) {
@@ -248,7 +248,7 @@ func (e *Engine[S, E]) Raise(event EventWithMetadata[E]) {
 }
 
 // RaiseExternal enqueues an external event with optional data and origin
-// (W3C SCXML C.1 / 6.2).
+// (§scxml-C-1 / 6.2).
 //
 // Matches Rust Engine::raise_external.
 func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
@@ -264,13 +264,13 @@ func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
 	)
 	e.externalQueue.Raise(meta)
 
-	// W3C SCXML 5.10.1: Mark next event as external for _event.type
+	// §scxml-5.10.1: Mark next event as external for _event.type
 	if e.policy.HasExternalEventFlag() {
 		e.policy.SetNextEventIsExternal(true)
 	}
 }
 
-// RaiseExternalByName raises an external event by name (W3C SCXML 6.4.1, for
+// RaiseExternalByName raises an external event by name (§scxml-6.4.1, for
 // child autoforward).
 //
 // If the name does not match any known event, the call is silently ignored.
@@ -285,7 +285,7 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 }
 
 // RaiseExternalByNameWithMeta raises an autoforwarded external event that is
-// name-addressed but carries the source event's _event fields (W3C SCXML 6.4).
+// name-addressed but carries the source event's _event fields (§scxml-6.4).
 //
 // Autoforward is the one path where an event leaves the machine owning its enum,
 // so it crosses by name while the metadata travels with it. Unknown names
@@ -317,7 +317,7 @@ func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 }
 
 // ProcessEvent processes an external event (convenience API, runs one macrostep)
-// (W3C SCXML 3.12).
+// (§scxml-3.12).
 //
 // Matches Rust Engine::process_event.
 func (e *Engine[S, E]) ProcessEvent(event E) {
@@ -328,7 +328,7 @@ func (e *Engine[S, E]) ProcessEvent(event E) {
 	e.Step()
 }
 
-// ProcessEventWithMeta processes an external event with metadata (W3C SCXML 5.10).
+// ProcessEventWithMeta processes an external event with metadata (§scxml-5.10).
 //
 // Matches Rust Engine::process_event_with_meta.
 func (e *Engine[S, E]) ProcessEventWithMeta(event E, metadata EventMetadata) {
@@ -344,7 +344,7 @@ func (e *Engine[S, E]) ProcessEventWithMeta(event E, metadata EventMetadata) {
 }
 
 // ================================================================
-// Donedata stash (W3C SCXML 5.5 + 6.3.1)
+// Donedata stash (§scxml-5.5 + 6.3.1)
 // ================================================================
 
 // StashDonedataAtFinal records the donedata payload evaluated on a
@@ -390,12 +390,12 @@ func (e *Engine[S, E]) HasReadyEvents() bool {
 // ================================================================
 
 // SetCompletionCallback registers a callback invoked when the engine reaches a
-// final state (W3C SCXML 6.4).
+// final state (§scxml-6.4).
 func (e *Engine[S, E]) SetCompletionCallback(callback func()) {
 	e.completionCallback = callback
 }
 
-// SetHTTPSendCallback registers an HTTP send dispatcher callback (W3C SCXML C.2).
+// SetHTTPSendCallback registers an HTTP send dispatcher callback (§scxml-C-2).
 //
 // The callback returns *HttpSendResponse when real HTTP is used. The engine
 // injects the response event into the external queue. Return nil for
@@ -405,7 +405,7 @@ func (e *Engine[S, E]) SetHTTPSendCallback(callback func(HttpSendRequest) *HttpS
 }
 
 // PerformHTTPSend dispatches a BasicHTTP send through the registered callback
-// (W3C SCXML C.2).
+// (§scxml-C-2).
 //
 // The callback is the sole dispatch mechanism. If it returns non-nil
 // HttpSendResponse, the engine injects the response event into the external
@@ -433,7 +433,7 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 }
 
 // RunUntilCompletion runs the state machine to completion or timeout
-// (W3C SCXML 6.2).
+// (§scxml-6.2).
 //
 // Polls the scheduler and calls Tick() in a loop until either the final state
 // is reached or timeout elapses. Returns true on completion, false on timeout.
@@ -501,7 +501,7 @@ func (e *Engine[S, E]) runMainEventLoop() {
 			break
 		}
 
-		// W3C SCXML 6.4: invokes for states entered during this macrostep.
+		// §scxml-6.4: invokes for states entered during this macrostep.
 		if e.policy.HasInvokeSupport() {
 			e.policy.ExecutePendingInvokes(e)
 		}
@@ -519,7 +519,7 @@ func (e *Engine[S, E]) runMainEventLoop() {
 	}
 }
 
-// processInternalQueue drains the internal queue (W3C SCXML C.1, high priority).
+// processInternalQueue drains the internal queue (§scxml-C-1, high priority).
 //
 // Matches Rust Engine::process_internal_queue.
 func (e *Engine[S, E]) processInternalQueue() {
@@ -530,7 +530,7 @@ func (e *Engine[S, E]) processInternalQueue() {
 		if !ok {
 			break
 		}
-		// W3C SCXML 5.4.1: Stop if top-level final state reached. Same
+		// §scxml-5.4.1: Stop if top-level final state reached. Same
 		// predicate as everything else that means "the machine is done" —
 		// spelling the parent check out a second time here is what let the
 		// exported one drift away from it.
@@ -538,7 +538,7 @@ func (e *Engine[S, E]) processInternalQueue() {
 			log.Printf("[sce] Engine::processInternalQueue: top-level final state reached, stopping")
 			return
 		}
-		// W3C SCXML 5.10: Populate policy metadata from event
+		// §scxml-5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
 		e.executeTransition(eventWithMeta.Event)
 		e.policy.ClearEventMetadata()
@@ -560,14 +560,14 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		return false
 	}
 	{
-		// W3C SCXML 6.5: Execute finalize before parent's own transition matching
+		// §scxml-6.5: Execute finalize before parent's own transition matching
 		if e.policy.HasFinalize() {
 			e.policy.ExecuteFinalizeForChildEvent(&eventWithMeta, e)
 		}
 		// W3C SCXML Appendix D mainEventLoop: autoforward belongs to the same
 		// preliminary step as <finalize> above — both run against the event
 		// this drain has just popped off the external queue, and both run
-		// before transition selection. W3C SCXML 6.4.2 fixes the position in
+		// before transition selection. §scxml-6.4.2 fixes the position in
 		// prose as well: the parent forwards "at the point at which it removes
 		// it from the external event queue".
 		//
@@ -580,7 +580,7 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		// Run-to-completion is a property of this loop's shape, so the forward
 		// has to live in the loop.
 		//
-		// W3C SCXML 6.4 mandates an exact copy, so the source event's metadata
+		// §scxml-6.4 mandates an exact copy, so the source event's metadata
 		// rides along with the name. Target is not forwarded: it is a routing
 		// decision owned by the originating <send>, and inheriting it would
 		// re-route the child's copy.
@@ -588,7 +588,7 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 			name := e.policy.GetEventName(eventWithMeta.Event)
 			e.policy.ForwardToAutoforwardChildren(name, eventWithMeta.Metadata, e)
 		}
-		// W3C SCXML 5.10: Populate policy metadata from event
+		// §scxml-5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
 		e.executeTransition(eventWithMeta.Event)
 		e.policy.ClearEventMetadata()
@@ -597,7 +597,7 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 }
 
 // checkEventlessTransitions checks and executes eventless transitions until
-// stable (W3C SCXML 3.13).
+// stable (§scxml-3.13).
 //
 // Uses bounded iteration to prevent infinite loops from cyclic eventless chains.
 // Ported from Rust Engine::check_eventless_transitions.
@@ -645,7 +645,7 @@ func (e *Engine[S, E]) checkEventlessTransitions() {
 	}
 }
 
-// executeTransition dispatches a single transition (W3C SCXML 3.12/3.13).
+// executeTransition dispatches a single transition (§scxml-3.12 / §scxml-3.13).
 //
 // Calls ProcessTransition on the policy; if it returns true, performs the
 // hierarchical exit/entry dance via handleHierarchicalTransition.
@@ -666,12 +666,12 @@ func (e *Engine[S, E]) executeTransition(event E) bool {
 		(isSelfTransition && !e.policy.LastTransitionIsTargetless())
 
 	if !needsHierarchical {
-		// W3C SCXML 3.4: targetless transition -- execute actions only
+		// §scxml-3.4: targetless transition -- execute actions only
 		e.policy.ExecuteTransitionActions(e)
 		return false
 	}
 
-	// W3C SCXML 3.12: Hierarchical exit/entry
+	// §scxml-3.12: Hierarchical exit/entry
 	//
 	// For parallel state machines the generated process_transition already called
 	// execute_microstep internally. Calling handleHierarchicalTransition again
@@ -679,7 +679,7 @@ func (e *Engine[S, E]) executeTransition(event E) bool {
 	if !e.policy.HasParallelStates() {
 		e.handleHierarchicalTransition(oldState, newState, preTransitionStates)
 	} else {
-		// W3C SCXML 3.3: Still resolve the currentState leaf
+		// §scxml-3.3: Still resolve the currentState leaf
 		e.resolveCurrentStateToLeaf()
 	}
 	e.checkEventlessTransitions()
@@ -687,7 +687,7 @@ func (e *Engine[S, E]) executeTransition(event E) bool {
 }
 
 // handleHierarchicalTransition executes hierarchical exit/entry between two
-// states (W3C SCXML 3.12/3.13).
+// states (§scxml-3.12 / §scxml-3.13).
 //
 // 1:1 port of Rust Engine::handle_hierarchical_transition. Handles:
 //   - Internal vs external transition LCA calculation (W3C 5.9.2)
@@ -700,7 +700,7 @@ func (e *Engine[S, E]) executeTransition(event E) bool {
 func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTransitionStates []S) {
 	log.Printf("[sce] Engine::handleHierarchicalTransition: %v -> %v", oldState, newState)
 
-	// W3C SCXML 5.9.2: Determine LCA based on transition type
+	// §scxml-5.9.2: Determine LCA based on transition type
 	var lca S
 	var hasLCA bool
 
@@ -710,7 +710,7 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 		isSourceCompound := e.policy.IsCompoundState(oldState)
 
 		if isProperDescendant && isSourceCompound {
-			// W3C SCXML 3.13: Internal to proper descendant in compound -- source is LCA
+			// §scxml-3.13: Internal to proper descendant in compound -- source is LCA
 			lca = oldState
 			hasLCA = true
 		} else {
@@ -724,7 +724,7 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 	if hasLCA {
 		lcaState := lca
 
-		// W3C SCXML 3.13: Exit active descendants of oldState deepest first
+		// §scxml-3.13: Exit active descendants of oldState deepest first
 		descendantsToExit := make([]S, 0, 4)
 		for _, s := range preTransitionStates {
 			if s != oldState && e.policy.IsDescendantOf(s, oldState) {
@@ -741,14 +741,14 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 			e.policy.ExecuteExitActions(descendant, e, preTransitionStates)
 		}
 
-		// W3C SCXML 3.13: Exit from oldState up to (not including) LCA
+		// §scxml-3.13: Exit from oldState up to (not including) LCA
 		exitChain := BuildExitChain[S, E](e.policy, oldState, lcaState)
 		for _, state := range exitChain {
 			log.Printf("[sce] handleHierarchicalTransition: exit %v", state)
 			e.policy.ExecuteExitActions(state, e, preTransitionStates)
 		}
 
-		// W3C SCXML 3.10 (test 579): Ancestor/self transition -- exit and re-enter target
+		// §scxml-3.10 (test 579): Ancestor/self transition -- exit and re-enter target
 		isTargetActive := false
 		for _, s := range preTransitionStates {
 			if s == newState {
@@ -761,10 +761,10 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 			e.policy.ExecuteExitActions(newState, e, preTransitionStates)
 		}
 
-		// W3C SCXML 3.13: Execute transition actions between exit and entry
+		// §scxml-3.13: Execute transition actions between exit and entry
 		e.policy.ExecuteTransitionActions(e)
 
-		// W3C SCXML 3.13: Enter from LCA down to newState
+		// §scxml-3.13: Enter from LCA down to newState
 		var entryChain []S
 		if newState == lcaState {
 			// Ancestor/self case -- enter full subtree from target
@@ -788,7 +788,7 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 			e.currentState = entryChain[len(entryChain)-1]
 		}
 
-		// W3C SCXML 3.3: Resolve currentState to the deepest initial leaf.
+		// §scxml-3.3: Resolve currentState to the deepest initial leaf.
 		e.resolveCurrentStateToLeaf()
 	} else {
 		// No LCA -- top-level transition, exit all ancestors of oldState
@@ -824,7 +824,7 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 }
 
 // resolveCurrentStateToLeaf walks currentState down through initial children
-// to the leaf (W3C SCXML 3.3).
+// to the leaf (§scxml-3.3).
 //
 // For non-parallel SMs: descends into the compound's initial child, calling
 // ExecuteEntryActions for each level, until it reaches an atomic leaf.
