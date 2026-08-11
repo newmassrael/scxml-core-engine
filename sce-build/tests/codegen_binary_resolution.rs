@@ -236,6 +236,92 @@ fn every_conformance_run_can_actually_fail() {
     );
 }
 
+/// A cached generator path that no longer exists must not survive.
+///
+/// `find_program` writes `SCE_CODEGEN` into `CMakeCache.txt`; CI restores
+/// that cache between runs; and the build step that precedes configure
+/// deletes the release binary a debug-only build will not produce. The
+/// three together left the cache naming a file that was gone, and because
+/// `if(NOT SCE_CODEGEN)` was false nothing re-resolved — every generator
+/// call then failed with an EMPTY message, surfacing as
+/// `sce-codegen list-fixtures --harness simple failed for <path>:` and
+/// taking the C++ W3C lane red on 2026-08-11.
+///
+/// Driven through real `cmake` runs rather than by reading the module: the
+/// property is what the cache does on the second configure, which no amount
+/// of reading the first one shows. A tiny project including only the
+/// locator keeps it to about a second.
+#[test]
+fn the_cmake_locator_drops_a_cached_path_that_no_longer_exists() {
+    if std::process::Command::new("cmake")
+        .arg("--version")
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(true)
+    {
+        eprintln!("SKIP: cmake not on PATH");
+        return;
+    }
+    let root = repo_root();
+    let sandbox = std::env::temp_dir().join(format!("sce-codegen-cache-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&sandbox);
+    std::fs::create_dir_all(&sandbox).expect("create sandbox");
+
+    // `project(... NONE)`: no compiler probe, so this stays fast and does
+    // not depend on a toolchain being installed.
+    std::fs::write(
+        sandbox.join("CMakeLists.txt"),
+        format!(
+            "cmake_minimum_required(VERSION 3.16)\n\
+             project(sce_codegen_cache_probe NONE)\n\
+             include({}/cmake/SCEFindCodegen.cmake)\n\
+             message(STATUS \"RESOLVED=${{SCE_CODEGEN}}\")\n",
+            root.display()
+        ),
+    )
+    .expect("write probe CMakeLists");
+
+    let stub = sandbox.join("stub-codegen");
+    std::fs::write(&stub, "#!/bin/sh\nexit 0\n").expect("write stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+
+    let build = sandbox.join("build");
+    let configure = |extra: Option<&str>| -> String {
+        let mut cmd = std::process::Command::new("cmake");
+        cmd.arg("-S").arg(&sandbox).arg("-B").arg(&build);
+        if let Some(arg) = extra {
+            cmd.arg(arg);
+        }
+        let out = cmd.output().expect("cmake runs");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+
+    let first = configure(Some(&format!("-DSCE_CODEGEN={}", stub.display())));
+    assert!(
+        first.contains(&format!("RESOLVED={}", stub.display())),
+        "the probe did not take the pinned path, so the second configure \
+         would prove nothing:\n{first}"
+    );
+
+    std::fs::remove_file(&stub).expect("remove the binary the cache names");
+    let second = configure(None);
+    let _ = std::fs::remove_dir_all(&sandbox);
+
+    assert!(
+        !second.contains(&format!("RESOLVED={}", stub.display())),
+        "the cache kept a generator path that no longer exists; every call \
+         through it fails with an empty error:\n{second}"
+    );
+}
+
 /// The release fallback must actually resolve, in both directions.
 ///
 /// A search order is the kind of thing that reads correct and is
