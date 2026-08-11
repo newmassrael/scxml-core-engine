@@ -30,12 +30,32 @@ BUILD_DIR="${SCE_W3C_BUILD_DIR:-build}"
 # `forge-cpp` carried until its build type was pinned. An existing tree is
 # reused rather than reconfigured, because a developer's build directory is
 # theirs; the mismatch is reported with the command that fixes it.
+# A cache file is not a usable build directory. CI restores `build/` from an
+# actions cache that carries `CMakeCache.txt` without the generator's own
+# files, so keying the decision on the cache alone sent this gate straight to
+# `cmake --build`, and ninja died on a missing `build.ninja` — measured on
+# main 2026-08-11. What the build needs is the generator output, so that is
+# what the second question asks; the cache is still read, but only for the
+# build type it records, which is a claim about the tree being RIGHT rather
+# than about it being READY.
 if [[ -f "$BUILD_DIR/CMakeCache.txt" ]]; then
     configured="$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' "$BUILD_DIR/CMakeCache.txt")"
     if [[ "$configured" != "RelWithDebInfo" ]]; then
         sce_gate_fail "$BUILD_DIR is configured CMAKE_BUILD_TYPE=${configured:-<unset>}; the lane builds RelWithDebInfo, so this tree would judge a different binary. Reconfigure with: cmake -B $BUILD_DIR -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja"
     fi
-else
+fi
+
+# The file the cache's OWN generator produces, not "any build file". This
+# tree carried a stale `Makefile` from an earlier Make-generator configure
+# next to a cache that names Ninja, so "either one is present" answered yes
+# for a directory ninja could not build in.
+generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$BUILD_DIR/CMakeCache.txt" 2>/dev/null)"
+case "$generator" in
+    Ninja*) generated="$BUILD_DIR/build.ninja" ;;
+    "")     generated="" ;;
+    *)      generated="$BUILD_DIR/Makefile" ;;
+esac
+if [[ -z "$generated" || ! -f "$generated" ]]; then
     sce_gate_step "configuring $BUILD_DIR (RelWithDebInfo, mirroring the lane)"
     GENERATOR=()
     command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
