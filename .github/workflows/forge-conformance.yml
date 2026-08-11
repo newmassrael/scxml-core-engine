@@ -152,7 +152,7 @@ jobs:
         # / the owned projection), so without the flag cargo skips or errors on
         # the target and the harness never executes. With it the harness runs
         # the full cross-language oracle (145 Rust cases).
-        cargo test --release -p sce-forge-runtime --features alloc --test numerical_conformance 2>&1 | tee rust_conformance.log
+        scripts/gate forge-rust 2>&1 | tee rust_conformance.log
 
     - name: Summarize
       if: always()
@@ -207,11 +207,7 @@ jobs:
 
     - name: Run Python Conformance Harness
       run: |
-        cd backends/python/forge-runtime
-        PYTHONPATH=tests python3 -m unittest \
-          tests.test_numerical_conformance \
-          tests.test_default_round_trip \
-          2>&1 | tee ../../python_conformance.log
+        scripts/gate forge-python 2>&1 | tee python_conformance.log
 
     - name: Summarize
       if: always()
@@ -275,25 +271,20 @@ jobs:
         git check-ignore -q generated/any.go \
           || { echo "Drift: generated/ directory is no longer gitignored"; exit 1; }
 
-    - name: Run Go Conformance Harness
-      run: |
-        cd backends/go/forge-runtime
-        go generate ./conformance/...
-        go test ./conformance/ -count=1 -v 2>&1 | tee ../../go_conformance.log
-
-    - name: Run Go Forge Round-Trip Test (committed tree)
-      # Unlike ./conformance/ (gitignored, regenerated each CI run), the
-      # ./round_trip/generated/ tree is committed and guarded by §6.2.6
-      # drift detection (`b9_drift_detection::
-      # verify_passes_on_real_committed_forge_default_round_trip_go_tree`
-      # at sce-build/tests/b9_drift_detection.rs:664). The drift gate
-      # checks header-hash parity; this step checks functional pass —
-      # the two are orthogonal per `[[committed-generated-tree-sweep-
-      # landed]]`. Refresh of the committed tree is `52e6d6f5` + the
-      # test API migration is `cb53dd3c`.
-      run: |
-        cd backends/go/forge-runtime
-        go test ./round_trip/ -count=1 -v 2>&1 | tee -a ../../go_conformance.log
+    # Both Go suites in one call. `go generate ./conformance/...` runs
+    # `./generate.sh` (the `//go:generate` directive in
+    # conformance/doc.go), which is what the gate invokes directly, so
+    # the delegation regenerates the same artifacts before the same two
+    # `go test` runs.
+    #
+    # The round-trip half covers a different tree from the conformance
+    # half: `./round_trip/generated/` is committed and guarded by §6.2.6
+    # drift detection (`b9_drift_detection::verify_passes_on_real_
+    # committed_forge_default_round_trip_go_tree`), which checks
+    # header-hash parity while this checks functional pass — orthogonal,
+    # per `[[committed-generated-tree-sweep-landed]]`.
+    - name: Run Go Conformance + Round-Trip
+      run: scripts/gate forge-go 2>&1 | tee go_conformance.log
 
     - name: Summarize
       if: always()
