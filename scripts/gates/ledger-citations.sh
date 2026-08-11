@@ -39,8 +39,34 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 #
 # Scope is now every tracked file, decided by `git ls-files` rather than by a
 # suffix or a directory anyone has to remember to extend. Measured at 4.4s over
-# 6341 files, against 108.9s for the binding axes this gate also runs, so the
-# widening is free.
+# 6357 files. It used to be the cheap half — the binding axes were 108.9s —
+# and since the mnemosyne pin moved to c9b276bf (one symbol resolution per
+# file rather than per citation) they are 2.6s, so this sweep is now the
+# larger half of the gate.
+
+# The rev-pinned binary, resolved once for both stages. Two stages reading
+# the pin would be two readers of one fact, and the commit stage is the one
+# that would drift silently — it runs on every commit and nobody watches its
+# version line. The resolution is the pin's whole point: `~/.cargo/bin` is a
+# shared slot any `cargo install` overwrites, so a PATH-resolved binary makes
+# this gate "whatever is installed" rather than the revision CI runs.
+sce_citation_binary() {
+    local rev short root bin have hint
+    rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
+        "$SCE_REPO_ROOT/.github/workflows/spec-citations.yml")"
+    [[ -n "$rev" ]] \
+        || sce_gate_fail "no MNEMOSYNE_REV pin found in .github/workflows/spec-citations.yml"
+    short="${rev:0:8}"
+    root="${HOME}/.local/share/mnemosyne-rev/${short}"
+    bin="${MNEMOSYNE_BIN:-${root}/bin/mnemosyne-cli}"
+    hint="cargo install --git https://github.com/newmassrael/mnemosyne --rev ${rev} --locked --root ${root} mnemosyne-cli"
+    [[ -x "$bin" ]] \
+        || sce_gate_fail "no rev-pinned mnemosyne-cli at ${bin} — install it with: ${hint}"
+    have="$("$bin" --version 2>&1 || true)"
+    [[ "$have" == *"$short"* ]] \
+        || sce_gate_fail "${bin} reports '${have}', expected revision ${short} — reinstall with: ${hint}"
+    printf '%s' "$bin"
+}
 
 # ── Staged-scope mode (tools/git-hooks/pre-commit) ────────────────
 #
@@ -53,11 +79,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # rejected at push after the round that wrote it had already been committed
 # (2026-08-11). Both would have been one line at one commit.
 #
-# What it does NOT do, deliberately: the binding axes (citation_unbound,
-# symbol_mismatch, binding_unbacked) need the validator's whole-tree symbol
-# resolution — 108.9 of the gate's 110 seconds, measured — and cannot be scoped
-# to a diff. Those stay at push. Existence is the axis that IS decidable from
-# the staged content alone, and it is the hallucination class.
+# It runs the binding axes too, since the mnemosyne pin moved to c9b276bf:
+# `validate-code-refs --paths` scopes them to a file list and states that a
+# scoped answer equals the full answer restricted to those files. Before that
+# surface existed they were push-only, and this comment said so — the reason
+# was true and stopped being true, which is why it is written here as a
+# measurement rather than as a property of the axes.
+#
+# What stays at push are the SPEC-side axes (binding_unbacked, impl_missing,
+# verification_missing, misclassified_coverage, blanket_verifies): they ask
+# whether a claim in the store has a witness ANYWHERE, which no file list can
+# answer. The tool names them as not judged on every scoped run rather than
+# reporting them as zero, so that boundary is its statement, not ours.
 #
 # Staged CONTENT, not the working tree: `git checkout-index` materialises the
 # index, so a citation fixed-but-not-staged cannot pass the gate that is about
@@ -92,24 +125,61 @@ if [[ "${1:-}" == "--staged" ]]; then
         1) sce_gate_fail "staged citation names a section absent from the ledger" ;;
         *) sce_gate_fail "the staged citation check could not run (exit ${status})" ;;
     esac
+
+    # ── Binding axes, scoped to the staged files ──────────────────
+    #
+    # This half used to be push-only, and the reason was written down: the
+    # binding axes need the validator's whole-tree symbol resolution, and the
+    # tool had no way to ask about a file list. `validate-code-refs --paths`
+    # (mnemosyne 4-B) is that way, and its contract is the one this needs — a
+    # scoped run's answer equals the full run's answer restricted to those
+    # files, and every axis it did NOT judge is named rather than reported as
+    # zero. So the axes that stay at push stay there by the tool's own
+    # statement, not by ours.
+    #
+    # Why a second scope split. `--paths` reads the WORKING TREE; the existence
+    # half above reads the staged content. For a file whose worktree copy
+    # differs from what is staged, a green answer here would be an answer about
+    # text that is not being committed — the exact hole `git checkout-index`
+    # closes above. Those files are therefore not asked about, and are NAMED,
+    # which is the same rule the tool applies to its own unjudged axes: a count
+    # of zero has to mean measured-and-clean.
+    mapfile -t dirty < <(git diff --name-only --diff-filter=ACMR)
+    decidable=()
+    undecidable=()
+    for path in "${scoped[@]}"; do
+        if printf '%s\n' "${dirty[@]}" | grep -qxF -- "$path"; then
+            undecidable+=("$path")
+        else
+            decidable+=("$path")
+        fi
+    done
+    if (( ${#undecidable[@]} > 0 )); then
+        printf 'staged citation check: binding axes not judged for %d file(s) — their worktree copy differs from what is staged, so an answer here would not be about the commit (the push gate judges them):\n' \
+            "${#undecidable[@]}" >&2
+        printf '  %s\n' "${undecidable[@]}" >&2
+    fi
+    # A zero-length `--paths` is rejected by the tool, and rightly: an empty
+    # scope reads as "everything" to one reader and "nothing" to the next.
+    if (( ${#decidable[@]} > 0 )); then
+        abs=("${decidable[@]/#/$SCE_REPO_ROOT/}")
+        for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire \
+                  docs/spec/synth docs/sce-ledger/bytesguard; do
+            # Absolute paths, because the tool resolves `--paths` against its
+            # own working directory and this loop moves between five of them.
+            # A staged file outside a workspace's configured `paths` comes back
+            # classified as out-of-read-set, not as a violation, so every
+            # workspace can be handed the whole list.
+            ( cd "$SCE_REPO_ROOT/$ws" && "$(sce_citation_binary)" \
+                validate-code-refs --paths "${abs[@]}" >/dev/null ) \
+                || sce_gate_fail "${ws}: a staged file carries a citation whose binding does not hold"
+        done
+    fi
     exit 0
 fi
 
-rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
-    "$SCE_REPO_ROOT/.github/workflows/spec-citations.yml")"
-[[ -n "$rev" ]] \
-    || sce_gate_fail "no MNEMOSYNE_REV pin found in .github/workflows/spec-citations.yml"
-short="${rev:0:8}"
-root="${HOME}/.local/share/mnemosyne-rev/${short}"
-BIN="${MNEMOSYNE_BIN:-${root}/bin/mnemosyne-cli}"
-hint="cargo install --git https://github.com/newmassrael/mnemosyne --rev ${rev} --locked --root ${root} mnemosyne-cli"
-
-[[ -x "$BIN" ]] \
-    || sce_gate_fail "no rev-pinned mnemosyne-cli at ${BIN} — install it with: ${hint}"
-have="$("$BIN" --version 2>&1 || true)"
-[[ "$have" == *"$short"* ]] \
-    || sce_gate_fail "${BIN} reports '${have}', expected revision ${short} — reinstall with: ${hint}"
-sce_gate_step "pinned to ${have}"
+BIN="$(sce_citation_binary)"
+sce_gate_step "pinned to $("$BIN" --version 2>&1)"
 
 for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
     ( cd "$ws" \
