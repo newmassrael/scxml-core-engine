@@ -7,20 +7,30 @@ each fixture is regenerated to `test<N>.scxml` and consumed by the
 per-backend W3C harnesses) remains the spec-conformance baseline; the
 integration layer described here is strictly additive.
 
-The stems under `integration_resources/` today are
-`autoforward_dequeue_point`, `autoforward_done_invoke`,
-`autoforward_event_fields`, `autoforward_internal_queue`,
-`donedata_late_completion`, `donedata_local_invoke`,
-`invoke_precedes_dequeue_midrun`, `invoke_precedes_external_dequeue`,
-`invoke_unsupported_type`, `nested_final_not_terminal` and
-`send_param_payload`.
+The stems are the directories under `integration_resources/`; this document
+does not restate them. An earlier revision did, and the list was wrong within
+one round of a stem being added — `event_origin_is_a_location` landed and the
+sentence still named eleven.
 
-A fixture placed under `integration_resources/` is a **five-backend
-commitment**, not merely a shared file: `sce-codegen generate-integration`
-enumerates every directory there and requires
-`scripts/regen_<stem>{,_kotlin,_go,_python}.sh` per stem, so
-`scripts/regen_all_committed_trees.sh` fails on a stem that has none. A
-fixture whose semantics only some backends implement does not belong here —
+A fixture placed there is a **seven-channel commitment** — C++ Interpreter,
+C++ AOT, Rust, Go, Kotlin, Python, C11 — and the commitment splits in two.
+
+The sites that GENERATE each channel are loud when they are missing:
+`scripts/regen_<stem>{,_go,_kotlin,_python}.sh` (without them
+`regen_all_committed_trees.sh` exits non-zero), the `pub mod <stem>;` in the
+Rust integration tree (`rust-modrs-drift` blocks the push), and the two CMake
+registrations (the build fails).
+
+The sites that ASSERT are silent. Generated code that nobody runs still
+compiles, so a stem can land with a machine in all seven channels and a test
+driver in two while every gate stays green. That is not hypothetical:
+measured 2026-08-11, `event_origin_is_a_location` had exactly that shape, and
+when the five silent channels were finally asked, all five were violating the
+clause the fixture exists to prove. `sce-build/tests/integration_stem_registration.rs`
+now requires both halves — including this document's own entry, because a
+fixture with no recorded axis is an axis nobody chose.
+
+A fixture whose semantics only some backends implement does not belong here —
 its committed trees would advertise coverage that does not exist. Close the
 parity gap first, then add the fixture.
 
@@ -64,6 +74,68 @@ formatted through the runtime Lua formatter, which does not compile in a
 machine with no `lua_State`; and `<send target="#_internal">` with `<param>`
 children fell through to the unenumerated-shape fallback and raised
 `error.execution`.
+
+The autoforward family is three fixtures on three questions, and each was
+built blind to the other two. `autoforward_done_invoke` pins *which* events
+are forwarded: Appendix D's `mainEventLoop` forwards whatever comes off the
+external queue without consulting its name, so `done.invoke.<id>` is inside
+the set and the only exclusion — the cancel event — is expressed as control
+flow rather than as a name test. `autoforward_internal_queue` pins the
+negative half, which the same loop expresses purely by position: the internal
+drain has no forwarding step at all, so an `error.execution` raised there must
+never reach a child, and must be excluded by *where it was raised* rather than
+by a filter that recognised its name. `autoforward_dequeue_point` pins *when*:
+the forward sits one statement after the dequeue and before transition
+selection, which neither sibling can see, because both were deliberately built
+to be blind to it.
+
+`invoke_precedes_external_dequeue` and `invoke_precedes_dequeue_midrun` split
+Appendix D's invoke-before-dequeue ordering the same way. The first pins the
+start-up case: the external queue is named exactly once in `mainEventLoop` and
+it is after `invoke(inv)`, so an engine that folds the external drain into the
+macrostep loop consumes what `<onentry>` queued while the children do not yet
+exist — a lost event, not a reordered one. The second pins that the ordering
+is not a property of start-up: `statesToInvoke` is filled by `enterStates`, so
+a state entered by an *external* event's transition arms an invoke that must
+start before the next event comes off the queue. An engine that drains to
+exhaustion inside one step passes the first and fails the second.
+
+`nested_final_not_terminal` covers W3C SCXML 3.7: only a `<final>` whose parent
+is the `<scxml>` element ends the session. Appendix D's `enterStates` splits
+the two cases in one branch, so `isFinalState(s)` is a structural question and
+not by itself the completion criterion. An engine that answers "has this
+session ended?" with the bare structural predicate reports completion the
+moment a compound state finishes, while the machine is still live. The trap is
+the naming: Appendix D's separate `isInFinalState(s)` is a third thing again,
+asking whether a compound or parallel state has completed for the done.state
+computation.
+
+`event_origin_is_a_location` covers W3C SCXML Appendix C.1: the origin of a
+delivered event is the `location` the sending session published for the SCXML
+Event I/O Processor, and that location is a usable `<send>` target. The public
+IRP suite cannot separate the two halves — test336 and test350 both check
+`_event.origin` by sending to it with the sender and the receiver being the
+same session, so any value at all round-trips. This fixture puts a peer session
+on the other end, which is the only arrangement where a bare session id and a
+published location differ. A mismatch lands in `fail`; a routing violation
+leaves the parent parked in `await_reply` and the harness times out, which is a
+weaker signal on purpose, because a target that resolves nowhere produces no
+event to transition on.
+
+The fixture is single-axis to the point of comparing the two strings for
+equality rather than testing a prefix: the guard is evaluated by whichever
+engine the backend embeds, and a failed evaluation raises `error.execution` and
+reads as a false condition — so a probe written with a method one engine lacks
+reports a violation that is not there.
+
+Every channel asserts it, and the reason is the history: the C++ pair landed
+first and its own comment claimed the other five answered the same question.
+They had no driver at all. All five were violating the clause, in five
+different ways — two names for one child session (Rust, Go), no conversion at
+the `_event` boundary (all five), a `#_<invokeid>` origin that is §6.4's
+addressing form rather than C.1's published location (C11), and two buffers
+sized for an id rather than an address (C11), where a truncated address is
+indistinguishable from a spec violation.
 
 `invoke_unsupported_type` covers W3C §6.4.1: an `<invoke>` whose `type` names
 no processor the platform implements is valid SCXML that must raise
