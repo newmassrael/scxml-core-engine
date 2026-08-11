@@ -347,7 +347,7 @@ Generated error handler (transport-native):
     |
     v
 Generated code creates SCXML event:
-    name:   "error.communication"        (W3C SCXML 4.9.1)
+    name:   "error.communication"        (W3C SCXML 3.12.2)
     data:   { transport: "dds",
               target: "#motor",
               reason: "PEER_LOST",
@@ -1573,7 +1573,7 @@ Wire values 10-13 remain reserved for Stream patterns (§13 Phase 4); 14-20 are 
 
 **Codegen-shape exclusivity.** A machine registered in `deploy.yaml` as a remote invoke peer (i.e. at least one sibling machine's SCXML contains `<invoke type="scxml" src="#<this>">`) MUST NOT simultaneously appear as a local-path `<invoke type="scxml" src="<this>.scxml">` target elsewhere in the same deployment. The mesh peer shape is default-constructible so `ChildSessionAdapter<Engine>` can own the child engine, while the local-path shape carries a `ParentStateMachine` template parameter and a `parent_` pointer threaded through the ctor for direct enum-based parent notification; the two shapes are structurally incompatible on a single generated SM class. Violations are rejected at build time with `mesh/deploy-scxml-invoke-target-conflict` (`DeployError::ScxmlInvokeTargetConflict`). Fix by flipping the local-path invoker to the `#<peer>` mesh shape, or by removing the machine from the deploy topology so it ceases to be a mesh peer.
 
-#### 9.6.3 `_event` field wiring (W3C §5.10.2 compliance)
+#### 9.6.3 `_event` field wiring (W3C §5.10.1 compliance)
 
 When a child event arrives at the parent as `ChildEvent`:
 
@@ -1600,7 +1600,7 @@ Per W3C §6.4.4, `<finalize>` executes **in the context of the invoking state**,
 5. If the parent is still in the invoking state and `<invoke>` has a `<finalize>` child, the runtime executes `<finalize>` **before** evaluating transition selection for this event. The `<finalize>` body may read `_event.data` and write to the parent datamodel.
 6. Transition selection proceeds normally; any transition whose `event` matches may fire.
 
-If the parent has already exited the invoking state when the event arrives (step 4 fails), the event is **discarded silently** per W3C §6.4.5 (finalize not executed, transition not considered). Late events for terminated sessions do not re-activate the invoking state.
+If the parent has already exited the invoking state when the event arrives (step 4 fails), the event is **discarded silently** per W3C §6.4.3 (finalize not executed, transition not considered). Late events for terminated sessions do not re-activate the invoking state.
 
 #### 9.6.5 `autoforward="true"` semantics
 
@@ -1987,7 +1987,7 @@ Per-source state (`state_` map inside `OrderingBuffer`) is bounded by the `deplo
 
 ### 10.7 `_event` Field Wiring for Distributed Events
 
-W3C §5.10.2 defines the standard `_event` fields. SCE Mesh populates them deterministically from envelope fields:
+W3C §5.10.1 defines the standard `_event` fields. SCE Mesh populates them deterministically from envelope fields:
 
 | `_event` field | Single-process single instance | Distributed (from inbound envelope) |
 |---|---|---|

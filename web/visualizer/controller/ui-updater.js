@@ -468,7 +468,7 @@ class UIUpdater {
 
             logger.debug(`[updateStateDiagram] getActiveStates() returned: [${activeStates.join(', ')}]`);
 
-            // W3C SCXML Appendix D.2: Get conflict resolution data for visualization
+            // §scxml-D-removeConflictingTransitions: Get conflict resolution data for visualization
             try {
                 const enabledTransitionsData = this.controller.runner.getEnabledTransitions();
                 const optimalTransitionsData = this.controller.runner.getOptimalTransitions();
