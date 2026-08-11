@@ -17,10 +17,12 @@
 // the one the URI NAMES rather than the one doing the sending.
 
 #include "common/IOProcessorHelper.h"
+#include "core/EventMetadata.h"
 #include "events/EventDescriptor.h"
 #include "events/EventRaiserService.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "mocks/MockEventRaiser.h"
+#include "runtime/ActionExecutorImpl.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/StateSnapshot.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -159,7 +161,17 @@ TEST_F(SessionTargetRouting, AnEventAddressedToAnUnknownSessionIsNotDeliveredToT
 /// concrete type and only the matching branch carries origin and origintype
 /// at all; a mock therefore observes an empty origin no matter what the
 /// production path does. Measuring the contract requires being on it.
-TEST_F(SessionTargetRouting, TheOriginTheReceiverSeesIsTheSendersPublishedLocation) {
+///
+/// ⚠⚠ And the queue is not that contract. `_event.origin` is what a document
+/// reads, and it is produced by `ActionExecutorImpl::setCurrentEvent`; the
+/// queue carries the SESSION ID the routing layer keys its lookups on. An
+/// earlier arrangement converted at the raiser's entrance, which made the two
+/// coincide and let this assertion stand in for the datamodel's — until the
+/// same value had to serve `<finalize>` lookups too, which key on the id, and
+/// W3C 233/234 failed while this test still passed. So the queue's spelling
+/// is asserted here as an id, and the published-location half is asserted
+/// where it is actually published, below.
+TEST_F(SessionTargetRouting, TheQueueCarriesTheSendersSessionId) {
     auto realPeer = std::make_shared<SCE::EventRaiserImpl>();
     realPeer->setImmediateMode(false);  // keep the raise queued so it can be read back
     auto &service = EventRaiserService::getInstance();
@@ -175,8 +187,12 @@ TEST_F(SessionTargetRouting, TheOriginTheReceiverSeesIsTheSendersPublishedLocati
     std::vector<SCE::EventSnapshot> externalQueue;
     realPeer->getEventQueues(internalQueue, externalQueue);
     ASSERT_EQ(externalQueue.size(), 1u) << "the addressed session queued the event";
-    EXPECT_EQ(externalQueue[0].origin, SCE::IOProcessorHelper::scxmlLocation(kSender))
-        << "the receiver must read the sender's published _ioprocessors location";
+    EXPECT_EQ(externalQueue[0].origin, kSender) << "the queue keys on the session id, which is what session lookups "
+                                                   "(<finalize>, cancelled-invoke filtering) resolve against";
+    EXPECT_EQ(SCE::IOProcessorHelper::scxmlLocation(externalQueue[0].origin),
+              SCE::IOProcessorHelper::scxmlLocation(kSender))
+        << "and it maps to the sender's published location, so the two "
+           "spellings name one address";
 }
 
 /// The half of §C.1 that makes the origin field worth having: what the
@@ -252,23 +268,24 @@ TEST_F(SessionTargetRouting, ThePublishedLocationIsWhatTheDatamodelReads) {
     EXPECT_EQ(published.getValue<std::string>(), SCE::IOProcessorHelper::scxmlLocation(kSender))
         << "the datamodel must publish the location the engine routes on";
 
-    // And that published string is exactly what a receiver is told, which is
-    // what makes the two halves one mapping rather than two conventions.
-    auto realPeer = std::make_shared<SCE::EventRaiserImpl>();
-    realPeer->setImmediateMode(false);
-    auto &service = EventRaiserService::getInstance();
-    service.unregisterEventRaiser(kPeer);
-    ASSERT_TRUE(service.registerEventRaiser(kPeer, realPeer));
+    // And that published string is exactly what a receiver READS as
+    // `_event.origin`, which is what makes the two halves one mapping rather
+    // than two conventions.
+    //
+    // Read from the datamodel, not from the queue. The queue carries the
+    // session id; the location is derived where `_event` is published, so
+    // asserting against the queue would measure the routing layer's currency
+    // and call it the document's. `setCurrentEvent` is that publishing step,
+    // the same one `StateMachine::processEvent` performs.
+    auto dispatcher = std::shared_ptr<SCE::IEventDispatcher>();
+    SCE::ActionExecutorImpl executor(kPeer, engine, dispatcher);
+    SCE::Core::EventMetadata metadata("mapped", "", "external", "", "",
+                                      "http://www.w3.org/TR/scxml/#SCXMLEventProcessor", kSender);
+    executor.setCurrentEvent(metadata);
 
-    auto target = factory_->createTarget(std::string("#_scxml_") + kPeer, kSender);
-    ASSERT_NE(target, nullptr);
-    target->send(eventNamed("mapped", std::string("#_scxml_") + kPeer)).wait();
-
-    std::vector<SCE::EventSnapshot> internalQueue;
-    std::vector<SCE::EventSnapshot> externalQueue;
-    realPeer->getEventQueues(internalQueue, externalQueue);
-    ASSERT_EQ(externalQueue.size(), 1u);
-    EXPECT_EQ(externalQueue[0].origin, published.getValue<std::string>())
+    auto seen = engine.evaluateExpression(kPeer, "_event.origin").get();
+    ASSERT_TRUE(seen.isSuccess()) << seen.getErrorMessage();
+    EXPECT_EQ(seen.getValue<std::string>(), published.getValue<std::string>())
         << "origin and the sender's published location are the same value, per C.1";
 }
 
