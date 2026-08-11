@@ -39,6 +39,18 @@ cmake -B "$BUILD_DIR" \
     || sce_gate_fail "python bindings configure"
 cmake --build "$BUILD_DIR" --target _sce --parallel "$(nproc)" >/dev/null \
     || sce_gate_fail "python bindings build"
+# The build's postcondition, asserted rather than assumed. `--target _sce`
+# exits 0 while producing nothing findable if the module lands somewhere the
+# runner does not look, and the only symptom is then a ModuleNotFoundError
+# from the suite — which reads as a broken test rather than as a gate that
+# pointed at the wrong directory. Measured 2026-08-11: it pointed at
+# `$BUILD_DIR/sce-python`, a path nothing in this repository creates, and the
+# lane this gate replaced carried the same wrong path.
+MODULE="$(find "$BUILD_DIR" -name '_sce*.so' -o -name '_sce*.pyd' 2>/dev/null | head -1)"
+[[ -n "$MODULE" ]] \
+    || sce_gate_fail "the _sce extension was not produced anywhere under ${BUILD_DIR}"
+[[ "$(dirname "$MODULE")" == "$BUILD_DIR/backends/python/bindings" ]] \
+    || sce_gate_fail "the _sce extension landed in $(dirname "$MODULE"), not the directory this gate puts on PYTHONPATH"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
@@ -46,7 +58,7 @@ sce_gate_on_exit "rm -rf '$LOG'"
 sce_gate_step "running the W3C fixtures through the bindings"
 status=0
 SPDLOG_LEVEL=off \
-PYTHONPATH="$BUILD_DIR/sce-python:backends/python/bindings/python" \
+PYTHONPATH="$BUILD_DIR/backends/python/bindings:backends/python/bindings/python" \
     python3 backends/python/bindings/tests/test_w3c.py >"$LOG/bindings.log" 2>&1 || status=$?
 cat "$LOG/bindings.log"
 
@@ -57,7 +69,11 @@ fi
 
 # The harness prints `PASS: <n>/<total>`. A run that collected nothing prints
 # no such line, which the status alone would read as success.
-passed="$(grep -oE 'PASS: [0-9]+' "$LOG/bindings.log" | tail -1 | grep -oE '[0-9]+' || true)"
+# The runner prints `  PASS:    202/202`, column-aligned. The single-space
+# pattern this replaces matched nothing, so the floor read 0 and would have
+# rejected every run — including a green one. It never fired because the two
+# checks above it failed first for as long as this gate has existed.
+passed="$(sed -n 's/^[[:space:]]*PASS:[[:space:]]\+\([0-9]\+\).*/\1/p' "$LOG/bindings.log" | tail -1)"
 passed="${passed:-0}"
 if (( passed < 200 )); then
     tail -n 10 "$LOG/bindings.log" >&2
