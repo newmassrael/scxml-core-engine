@@ -1060,8 +1060,9 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // Return appropriate exit code
-        int exitCode = (summary.errorTests == 0 && summary.passRate > 0) ? 0 : 1;
+        // The rule lives in TestSummaryHelper so it is testable without a
+        // suite run; see `exitStatus` for what it was and why it changed.
+        int exitCode = SCE::Common::TestSummaryHelper::exitStatus(summary);
 
 #ifdef __EMSCRIPTEN__
 // W3C SCXML: WASM EXIT_RUNTIME=0 requires explicit exit
