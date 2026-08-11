@@ -104,7 +104,7 @@ public:
      * @brief The `_event.origin` a receiver should see for an event sent by
      *        `originSessionId`
      *
-     * §scxml-C-1 requires the origin of a delivered event to match the
+     * W3C SCXML C.1 requires the origin of a delivered event to match the
      * 'location' the sending session published, which is what makes it an
      * address the receiver can answer. Both engines carry the sender's BARE
      * session id internally — the interpreter in `currentOriginSessionId_`,
