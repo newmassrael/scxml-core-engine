@@ -151,7 +151,16 @@ jobs:
         ldd build/tests/w3c_test_cli || echo "ldd failed or static binary"
         echo ""
         echo "=== Resources ==="
-        ls -la resources | head -n 10 || echo "ERROR: resources directory not found"
+        # Not `ls ... | head ... || echo`: `||` tests the pipeline, whose
+        # status is head's, so the missing-directory message could never be
+        # printed. Nor is pipefail the fix here — head exits at ten lines and
+        # SIGPIPEs ls, which pipefail would then read as a failure. The
+        # directory check is what this line actually wanted.
+        if [ -d resources ]; then
+          head -n 10 <(ls -la resources)
+        else
+          echo "ERROR: resources directory not found"
+        fi
 
     - name: Analyze Crash (if occurred)
       if: always()
@@ -315,9 +324,9 @@ jobs:
 
     - name: Run W3C Tests
       run: |
+        set -o pipefail
         echo "=== Rust W3C SCXML Conformance Tests ==="
         cargo test --release --no-fail-fast -p sce-rust-tests 2>&1 | tee rust_test_output.log
-        echo "Exit code: $?"
 
     - name: Stop W3C HTTP Test Server
       if: always()
@@ -430,6 +439,7 @@ jobs:
 
     - name: Run W3C Tests (Rhino Engine)
       run: |
+        set -o pipefail
         echo "=== Kotlin W3C SCXML Conformance Tests (Rhino) ==="
         ./gradlew :sce-kotlin-tests:test 2>&1 | tee kotlin_test_output.log
 

@@ -45,7 +45,8 @@ concurrency:
 # the pipeline report the test's status instead; the shell string carries
 # `-e` because naming `defaults.run.shell` replaces the runner's default
 # rather than adding to it. Pinned by
-# `codegen_binary_resolution::every_conformance_run_can_actually_fail`.
+# `test_result_gating::every_pipeline_in_a_run_script_reports_its_own_failure`,
+# which counts the shape across every workflow rather than this file alone.
 defaults:
   run:
     shell: bash -eo pipefail {0}
