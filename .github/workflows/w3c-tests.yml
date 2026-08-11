@@ -19,10 +19,6 @@ on:
           - warn
           - error
           - off
-      specific-tests:
-        description: 'Specific test numbers (comma-separated, e.g., 531,518,519) or empty for all'
-        required: false
-        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -128,106 +124,34 @@ jobs:
         which ld.lld || echo "Warning: ld.lld not found in PATH"
         ld.lld --version || echo "Warning: ld.lld version check failed"
 
-    - name: Configure CMake
+    # Configure, build and run are one gate, so the check has one spelling for
+    # this lane and for the pre-push hook. The gate writes the JUnit report and
+    # the run log where the publish and upload steps below expect them.
+    #
+    # The `specific-tests` dispatch input was dropped when this moved: running
+    # a subset produces a green check for a suite that did not run, which is
+    # the failure this lane already shipped — 233 of 234 cases failing under a
+    # green check for three weeks. A subset is a debugging move and belongs at
+    # a developer's own `./w3c_test_cli 531`, not in the channel that reports
+    # conformance.
+    - name: Run W3C SCXML Test Suite
       run: |
-        cmake -B build \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          -DCMAKE_CXX_COMPILER=g++ \
-          -G Ninja
-
-    - name: Build
-      run: |
-        echo "=== Starting build with timing ==="
-        time cmake --build build --target w3c_test_cli --parallel $(nproc)
-
-    - name: Verify Resources
-      run: |
-        if [ ! -d "resources" ]; then
-          echo "Error: resources directory not found"
-          exit 1
-        fi
-        txml_count=$(find resources -name '*.txml' | wc -l)
-        test_dirs=$(find resources -mindepth 1 -maxdepth 1 -type d | wc -l)
-        echo "Resources directory found:"
-        echo "  - Test directories: $test_dirs"
-        echo "  - TXML files: $txml_count"
+        ulimit -c unlimited
+        SPDLOG_LEVEL="${{ inputs.log-level || 'debug' }}" \
+        SCE_W3C_REPORT_DIR=build/tests \
+          scripts/gate w3c-cpp
 
     - name: Debug Environment
+      if: failure()
       run: |
-        echo "=== Current Directory ==="
-        pwd
-        echo ""
-        echo "=== Resources Directory Check ==="
-        if [ -d "resources" ]; then
-          echo "Resources found at: $(pwd)/resources"
-          ls -la resources | head -n 10
-        else
-          echo "ERROR: resources directory not found!"
-          echo "Directory contents:"
-          ls -la
-        fi
-        echo ""
         echo "=== Build Directory ==="
-        ls -lh build/tests/w3c_test_cli
-        echo ""
-        echo "=== Executable Check ==="
-        file build/tests/w3c_test_cli
+        ls -lh build/tests/w3c_test_cli || echo "no test binary — the build failed"
         echo ""
         echo "=== Library Dependencies ==="
         ldd build/tests/w3c_test_cli || echo "ldd failed or static binary"
         echo ""
-        echo "=== Test Executable Help ==="
-        build/tests/w3c_test_cli --help || echo "Failed to run --help"
-
-    - name: Run W3C SCXML Test Suite
-      run: |
-        cd build/tests
-        ulimit -c unlimited
-
-        echo "=== Pre-execution Environment ==="
-        echo "Current directory: $(pwd)"
-        echo "Resources search from: $(pwd)"
-        echo "Project root should be: $(pwd)/../.."
-        ls -la ../../resources | head -n 5 || echo "../../resources not found"
-        echo ""
-
-        # Determine log level (workflow_dispatch input or default 'debug')
-        LOG_LEVEL="${{ inputs.log-level || 'debug' }}"
-
-        # Determine test arguments
-        if [ -n "${{ inputs.specific-tests }}" ]; then
-          # Convert comma-separated list to space-separated
-          TEST_ARGS=$(echo "${{ inputs.specific-tests }}" | tr ',' ' ')
-          echo "Running specific tests: $TEST_ARGS"
-          echo "Command: env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli $TEST_ARGS --output w3c_test_results.xml"
-          echo ""
-          env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli $TEST_ARGS --output w3c_test_results.xml 2>&1 | tee w3c_test_output.log
-          EXIT_CODE=${PIPESTATUS[0]}
-        else
-          echo "Running all tests"
-          echo "Command: env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli --output w3c_test_results.xml"
-          echo ""
-          env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli --output w3c_test_results.xml 2>&1 | tee w3c_test_output.log
-          EXIT_CODE=${PIPESTATUS[0]}
-        fi
-
-        echo ""
-        echo "=== Test Execution Result ==="
-        echo "Exit code: $EXIT_CODE"
-        echo "Output log size: $(wc -l < w3c_test_output.log) lines"
-
-        # The CLI writes artifacts to its invocation directory (build/tests)
-        if [ -f w3c_test_results.xml ]; then
-          echo "SUCCESS: w3c_test_results.xml created in current directory"
-          ls -lh w3c_test_results.xml
-        else
-          echo "ERROR: w3c_test_results.xml was not created!"
-          echo ""
-          echo "=== Last 50 lines of output ==="
-          tail -n 50 w3c_test_output.log
-        fi
-
-        exit $EXIT_CODE
+        echo "=== Resources ==="
+        ls -la resources | head -n 10 || echo "ERROR: resources directory not found"
 
     - name: Analyze Crash (if occurred)
       if: always()
@@ -626,22 +550,16 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cmake-python-
 
-    - name: Build Python Bindings
-      run: |
-        cmake -B build_python \
-          -DBUILD_PYTHON_BINDINGS=ON \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_TESTS=OFF \
-          -DBUILD_EXAMPLES=OFF \
-          -G Ninja
-        cmake --build build_python --target _sce --parallel $(nproc)
-
+    # Build and suite are one gate — the same one the pre-push hook runs.
+    # SCE_REQUIRE_TOOLS turns the gate's "python3-dev missing, skipping" into
+    # a failure here: this job installs the package, so a skip would mean the
+    # install stopped working and the lane reported green anyway.
     - name: Run W3C Tests
+      env:
+        SCE_REQUIRE_TOOLS: 1
       run: |
-        echo "=== Python Bindings W3C SCXML Conformance Tests ==="
-        SPDLOG_LEVEL=off \
-        PYTHONPATH=build_python/sce-python:backends/python/bindings/python \
-          python3 backends/python/bindings/tests/test_w3c.py 2>&1 | tee python_bindings_test_output.log
+        set -o pipefail
+        scripts/gate w3c-python-bindings 2>&1 | tee python_bindings_test_output.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v7
@@ -726,14 +644,6 @@ jobs:
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
-    - name: Generate Python W3C Tests
-      run: ./target/debug/sce-codegen generate-w3c -l python
-
-    - name: Generate Python Integration Tests
-      # Python AOT integration fixtures share the W3C IRP regen
-      # pattern (gitignored output, CI-regenerated before pytest).
-      run: ./target/debug/sce-codegen generate-integration -l python
-
     - name: Setup Python
       uses: actions/setup-python@v7
       with:
@@ -743,18 +653,15 @@ jobs:
       run: |
         python3 -m pip install --upgrade pip
         python3 -m pip install lupa pytest
-        # sce-python-runtime ships its own lupa dep; install it editable so
-        # the harness imports the engine module directly from the working
-        # tree (matches how backends/python/tests/conftest.py shims sys.path).
-        python3 -m pip install -e backends/python/runtime/
 
+    # Generation and the suite are one gate — the same one the pre-push hook
+    # runs. The runtime is reached through PYTHONPATH there rather than
+    # `pip install -e`, because a gate must not mutate the environment it runs
+    # in; the import resolves to the same working-tree package either way.
     - name: Run W3C Tests
       run: |
-        echo "=== Python W3C SCXML Conformance Tests ==="
-        # conftest.py spawns its own HTTP echo server on port 8080 for
-        # BasicHTTP fixtures — no Node.js standalone_http_server.js needed.
-        python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ --no-header -v 2>&1 | tee python_test_output.log
-        echo "Exit code: $?"
+        set -o pipefail
+        scripts/gate w3c-python 2>&1 | tee python_test_output.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v7
@@ -834,9 +741,6 @@ jobs:
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
-    - name: Generate Go W3C Tests
-      run: ./target/debug/sce-codegen generate-w3c -l go
-
     - name: Setup Go
       uses: actions/setup-go@v7
       with:
@@ -846,27 +750,14 @@ jobs:
           backends/go/lua/go.sum
           backends/go/tests/go.sum
 
-    - name: Start W3C HTTP Test Server
-      run: |
-        node tests/w3c/standalone_http_server.js 8080 /test &
-        echo $! > /tmp/http_server.pid
-        sleep 1
-        echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
-
+    # Generation, the fixture server and the suite are one gate — the same
+    # one the pre-push hook runs. The server used to be started and stopped
+    # by two steps of this job; the gate owns its lifetime now, which is what
+    # lets it be run by hand without remembering either half.
     - name: Run W3C Tests
       run: |
-        echo "=== Go W3C SCXML Conformance Tests ==="
-        cd backends/go/tests
-        go test ./... -v -count=1 2>&1 | tee ../go_test_output.log
-        echo "Exit code: $?"
-
-    - name: Stop W3C HTTP Test Server
-      if: always()
-      run: |
-        if [ -f /tmp/http_server.pid ]; then
-          kill $(cat /tmp/http_server.pid) 2>/dev/null || true
-          rm -f /tmp/http_server.pid
-        fi
+        set -o pipefail
+        scripts/gate w3c-go 2>&1 | tee backends/go/go_test_output.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v7
@@ -988,52 +879,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-ccache-c11-
 
-    - name: Configure CMake
-      run: |
-        cmake -B build \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          -G Ninja
-
-    # `sce_c11_tests` aggregates every target this directory defines, so a
-    # fixture added later is built without anyone updating a list. Building
-    # it instead of the default target skips the C++ engine, mesh, forge
-    # and the examples, none of which the C backend links.
-    - name: Build C11 Test Surface
-      run: |
-        time cmake --build build --target sce_c11_tests --parallel "$(nproc)"
-
+    # Configure, build and run are one gate — the same one the pre-push hook
+    # runs. The floor on registered tests and the executed-vs-registered
+    # comparison live there now, so this lane and a developer's machine judge
+    # the C11 surface by the same rules.
     - name: Run C11 ctest Suite
       run: |
         set -o pipefail
-
-        # A lane named for the C11 surface must not quietly report on a
-        # subset of it. These tests are registered by CMake loops over
-        # fixture lists, so a configure that drops them — a renamed
-        # variable, a guard that stops matching — leaves ctest with
-        # nothing to run and every assertion below trivially satisfied.
-        # The floor is 200 against a current 218; the 204 W3C cases are
-        # the core, so anything under 200 is a regression rather than
-        # routine churn.
-        registered=$(ctest --test-dir build -N -L c11 | grep -cE '^ *Test +#')
-        echo "Registered c11 tests: $registered"
-        if [ "$registered" -lt 200 ]; then
-          echo "::error::only $registered c11 tests registered (expected at least 200) — the lane would report on a smaller set than its name claims"
-          exit 1
-        fi
-
-        # `--no-tests=error` covers the zero case even if the floor above
-        # is ever loosened; the count comparison covers a partial run.
-        ctest --test-dir build -L c11 \
-          --output-on-failure \
-          --no-tests=error \
-          -j "$(nproc)" | tee c11_ctest.log
-
-        executed=$(grep -oE 'out of [0-9]+' c11_ctest.log | tail -1 | grep -oE '[0-9]+')
-        if [ "$executed" != "$registered" ]; then
-          echo "::error::ran $executed of $registered registered c11 tests"
-          exit 1
-        fi
-        echo "Ran all $executed registered c11 tests"
+        scripts/gate w3c-c11 2>&1 | tee c11_ctest.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v7

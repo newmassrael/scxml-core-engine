@@ -51,4 +51,4 @@ jobs:
       # 4 invariants: SSOT-stale, LICENSE-orphan, notice-drift,
       # dep-uncovered. See scripts/verify_licenses.sh header for
       # the contract each invariant pins.
-      run: ./scripts/verify_licenses.sh
+      run: scripts/gate license-ssot
