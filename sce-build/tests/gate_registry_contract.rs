@@ -191,3 +191,220 @@ fn the_push_hook_delegates_rather_than_carrying_gates() {
         "the push hook no longer delegates to the gate runner"
     );
 }
+
+/// Build a throwaway git repository with `body` staged at `tests/cite.rs`.
+///
+/// The gate library resolves the repo root with `git rev-parse`, so the
+/// scripts are copied in; `tools/` and `docs/` are symlinked because the
+/// migrator derives its own repo root from its path and reads the ledger
+/// stores from there.
+///
+/// The fixture is also shaped so the whole pre-commit hook can run against it:
+/// a minimal cargo package satisfies Stage 0, a `.rs` fixture file leaves
+/// Stage 1 (staged C/C++) with nothing to do, and Stage 2's audit hook is
+/// absent, which that stage already treats as "skipped".
+fn staged_citation_fixture(dir: &Path, body: &str) {
+    let root = repo_root();
+    let run = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    run(&["init", "-q"]);
+    std::fs::create_dir_all(dir.join("scripts/gates")).expect("mkdir scripts/gates");
+    for f in ["lib.sh", "ledger-citations.sh"] {
+        std::fs::copy(
+            root.join("scripts/gates").join(f),
+            dir.join("scripts/gates").join(f),
+        )
+        .unwrap_or_else(|e| panic!("copy {f}: {e}"));
+    }
+    std::fs::create_dir_all(dir.join("tools/git-hooks")).expect("mkdir tools/git-hooks");
+    std::fs::copy(
+        root.join("tools/git-hooks/pre-commit"),
+        dir.join("tools/git-hooks/pre-commit"),
+    )
+    .expect("copy pre-commit");
+    #[cfg(unix)]
+    for d in ["tools/mnemosyne-adoption", "docs"] {
+        std::fs::create_dir_all(dir.join(d).parent().expect("has a parent")).ok();
+        std::os::unix::fs::symlink(root.join(d), dir.join(d))
+            .unwrap_or_else(|e| panic!("symlink {d}: {e}"));
+    }
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"cite-fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::create_dir_all(dir.join("src")).expect("mkdir src");
+    // Not empty: rustfmt reports a diff on a zero-byte file, which would fail
+    // Stage 0 and stop the hook before it reaches the stage under test.
+    std::fs::write(dir.join("src/lib.rs"), "// fixture crate\n").expect("write lib.rs");
+    std::fs::create_dir_all(dir.join("tests")).expect("mkdir tests");
+    std::fs::write(dir.join("tests/cite.rs"), body).expect("write fixture");
+    run(&["add", "tests/cite.rs"]);
+}
+
+fn run_staged_gate(dir: &Path) -> std::process::Output {
+    Command::new("bash")
+        .arg(dir.join("scripts/gates/ledger-citations.sh"))
+        .arg("--staged")
+        .current_dir(dir)
+        .output()
+        .expect("run the staged citation gate")
+}
+
+#[test]
+fn the_commit_stage_rejects_a_fabricated_citation_in_staged_content() {
+    // The property Q6 is about: a citation naming a section that does not
+    // exist must fail at the commit that writes it. Before this stage the only
+    // reader ran at push, so a fabricated `§synth-F4` was reported once for a
+    // batch of sixteen commits with nothing saying which one carried it.
+    //
+    // Both halves are asserted from behaviour rather than from the hook's
+    // text: a text scan would accept a stage that runs and checks nothing,
+    // which is how the previous parity gate let two mutations through.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture(dir.path(), "// probe: §synth-F4 is not a section\n");
+    let bad = run_staged_gate(dir.path());
+    assert!(
+        !bad.status.success(),
+        "the staged gate accepted a fabricated citation: {bad:?}"
+    );
+    let err = String::from_utf8_lossy(&bad.stderr);
+    // Anchored: a report naming the materialised copy still *contains*
+    // "tests/cite.rs" as a tail, so a substring test passes on the very output
+    // this assertion exists to reject.
+    assert!(
+        err.lines()
+            .any(|l| l.trim_start().starts_with("tests/cite.rs:")),
+        "the report must name the path the author has to open, not the \
+         materialised index: {err}"
+    );
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture(dir.path(), "// probe: §synth-5-B is a section\n");
+    let good = run_staged_gate(dir.path());
+    assert!(
+        good.status.success(),
+        "the staged gate rejected a real citation: {good:?}"
+    );
+}
+
+#[test]
+fn the_commit_hook_fails_the_commit_when_the_citation_stage_fails() {
+    // End to end, because the text arm cannot see the failure that matters
+    // most here: a stage that runs the gate and then discards its status. The
+    // hook is executed against a fixture repository whose staged content
+    // carries a fabricated citation, and the commit has to be refused.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture(dir.path(), "// probe: §synth-F4 is not a section\n");
+    let out = Command::new("bash")
+        .arg(dir.path().join("tools/git-hooks/pre-commit"))
+        .current_dir(dir.path())
+        .output()
+        .expect("run the pre-commit hook");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("Stage 3/3"),
+        "the hook did not reach the citation stage — the fixture no longer \
+         satisfies an earlier stage, so this test would pass without \
+         exercising anything: {err}"
+    );
+    assert!(
+        !out.status.success(),
+        "the hook allowed a commit whose staged content carries a fabricated \
+         citation: {err}"
+    );
+}
+
+#[test]
+fn the_commit_stage_judges_staged_content_not_the_working_tree() {
+    // A citation corrected in the working tree but not re-staged must not
+    // clear the commit that still carries the bad one. The stage materialises
+    // the index for exactly this reason.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture(dir.path(), "// probe: §synth-F4 is not a section\n");
+    let out = run_staged_gate(dir.path());
+    assert!(!out.status.success(), "fixture precondition: {out:?}");
+
+    std::fs::write(
+        dir.path().join("tests/cite.rs"),
+        "// probe: §synth-5-B is a section\n",
+    )
+    .expect("fix in the working tree only");
+    let out = Command::new("bash")
+        .arg(dir.path().join("scripts/gates/ledger-citations.sh"))
+        .arg("--staged")
+        .current_dir(dir.path())
+        .output()
+        .expect("re-run the staged citation gate");
+    assert!(
+        !out.status.success(),
+        "an unstaged fix cleared a commit that would carry the fabricated \
+         citation: {out:?}"
+    );
+}
+
+#[test]
+fn the_commit_hook_runs_the_staged_citation_stage() {
+    // The behavioural tests above prove the gate arm works; this one proves it
+    // is reachable from a commit at all, and that the hook does not restate
+    // the covered trees — one list, so commit time and push time cannot come
+    // to disagree about coverage.
+    let root = repo_root();
+    let hook = std::fs::read_to_string(root.join("tools/git-hooks/pre-commit"))
+        .expect("read tools/git-hooks/pre-commit");
+    // An INVOCATION, not a mention. The first draft of this assertion searched
+    // the whole file for the two strings and stayed green after the call was
+    // replaced with `true`, because the stage's own comment and progress
+    // message still named it — the same "a comment is not a contract" defect
+    // this repo's CI parity gate had. Comment lines and the lines that only
+    // *print* a command are excluded.
+    let invocations: Vec<&str> = hook
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.starts_with('#'))
+        .filter(|l| l.contains("--staged"))
+        .filter(|l| {
+            !(l.starts_with("log_step") || l.starts_with("printf") || l.starts_with("echo"))
+        })
+        .collect();
+    assert!(
+        !invocations.is_empty(),
+        "the commit hook no longer runs the staged citation stage — no line \
+         invokes it (mentions in comments and progress messages do not count)"
+    );
+    assert!(
+        hook.contains("ledger-citations.sh"),
+        "the commit hook no longer names the citation gate script"
+    );
+
+    let gate = std::fs::read_to_string(root.join("scripts/gates/ledger-citations.sh"))
+        .expect("read scripts/gates/ledger-citations.sh");
+    let trees: Vec<&str> = gate
+        .lines()
+        .find(|l| l.trim_start().starts_with("PROSE_TREES=("))
+        .map(|l| {
+            l.trim()
+                .trim_start_matches("PROSE_TREES=(")
+                .trim_end_matches(')')
+                .split_whitespace()
+                .collect()
+        })
+        .expect("the gate declares PROSE_TREES");
+    assert!(
+        !trees.is_empty(),
+        "PROSE_TREES is empty — the gate would read nothing"
+    );
+    let restated: Vec<&&str> = trees.iter().filter(|t| hook.contains(**t)).collect();
+    assert!(
+        restated.is_empty(),
+        "the commit hook names covered tree(s) itself: {restated:?}\n\
+         The gate script owns the scope; a second copy is how the two ends \
+         drift apart."
+    );
+}

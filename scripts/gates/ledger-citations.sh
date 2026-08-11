@@ -27,6 +27,72 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# Trees deliberately kept in PROSE, checked for citation EXISTENCE only. The
+# array is declared before the `--staged` arm so both entry points read one
+# list: the full gate below sweeps the trees, the pre-commit stage sweeps the
+# staged files inside them. Two lists would let commit-time and push-time
+# disagree about what is covered, which is the shape of the problem the staged
+# mode exists to fix.
+PROSE_TREES=(tools/codegen/templates tests backends examples web)
+
+# ── Staged-scope mode (tools/git-hooks/pre-commit) ────────────────
+#
+# The existence half of this gate, over the staged content only.
+#
+# Why it exists: the full gate costs ~124s and runs at push, so a fabricated
+# citation is reported once for a whole batch of commits and nothing says which
+# commit introduced it. Measured on this repo twice — thirteen cites across
+# four commits rejected in one push (2026-08-10), and a fabricated `§synth-F4`
+# rejected at push after the round that wrote it had already been committed
+# (2026-08-11). Both would have been one line at one commit.
+#
+# What it does NOT do, deliberately: the binding axes (citation_unbound,
+# symbol_mismatch, binding_unbacked) need the validator's whole-tree symbol
+# resolution — 107 of the gate's 124 seconds, measured — and cannot be scoped
+# to a diff. Those stay at push. Existence is the axis that IS decidable from
+# the staged content alone, and it is the hallucination class.
+#
+# Staged CONTENT, not the working tree: `git checkout-index` materialises the
+# index, so a citation fixed-but-not-staged cannot pass the gate that is about
+# to commit the unfixed version.
+if [[ "${1:-}" == "--staged" ]]; then
+    mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
+    scoped=()
+    for f in ${staged+"${staged[@]}"}; do
+        for tree in "${PROSE_TREES[@]}"; do
+            if [[ "$f" == "$tree"/* ]]; then
+                scoped+=("$f")
+                break
+            fi
+        done
+    done
+    if [[ ${#scoped[@]} -eq 0 ]]; then
+        exit 0
+    fi
+    work="$(mktemp -d)"
+    sce_gate_on_exit "rm -rf '$work'"
+    git checkout-index --prefix="$work/" -- "${scoped[@]}"
+    # The tool resolves its ledgers through its own installed location, so it
+    # reads the repo's stores while scanning the materialised index, and
+    # `--report-root` makes it name the file the author has to open.
+    #
+    # Exit status is read, not just tested: 3 means the checker could not run
+    # (an unreadable store), and reporting that as a bad citation would blame
+    # the author's text for a fault in the gate's own inputs.
+    set +e
+    python3 "$SCE_REPO_ROOT/tools/mnemosyne-adoption/migrate_citations.py" \
+        --check-ledger --report-root "$work" \
+        "${scoped[@]/#/$work/}"
+    status=$?
+    set -e
+    case "$status" in
+        0) ;;
+        1) sce_gate_fail "staged citation names a section absent from the ledger" ;;
+        *) sce_gate_fail "the staged citation check could not run (exit ${status})" ;;
+    esac
+    exit 0
+fi
+
 rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
     "$SCE_REPO_ROOT/.github/workflows/spec-citations.yml")"
 [[ -n "$rev" ]] \
@@ -69,8 +135,12 @@ python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesg
 # source: one fabricated number reached 168 sites through generated copies
 # before this gate existed. Token form is NOT demanded here (template
 # comments ship verbatim inside generated code and stay readable to
-# consumers); only the claim that the cited section exists is enforced.
-for tree in tools/codegen/templates tests backends examples web; do
+# consumers); only the claim that the cited section exists is enforced —
+# for a prose cite and, since the token pass landed, for one already written
+# as `§<ns>-<id>`. The gate promised the second in its own error text long
+# before it checked it, so a fabricated id typed straight in §-form passed
+# every reader in these trees.
+for tree in "${PROSE_TREES[@]}"; do
     python3 tools/mnemosyne-adoption/migrate_citations.py "$tree" --check-ledger >/dev/null \
         || sce_gate_fail "ledger-existence gate: ${tree}"
 done

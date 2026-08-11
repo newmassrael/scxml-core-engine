@@ -481,7 +481,7 @@ class MeshNamespace(unittest.TestCase):
         self.assertIn("W3C §5.5", new)  # the W3C cite stays bare for the scxml path
 
     def test_hyphen_glued_suffix_refused(self):
-        # "§16.7-L3500" must not migrate: "§mesh-16.7-L3500" would read as one
+        # "§16.7-L3500" must not migrate: `§mesh-16.7-L3500` would read as one
         # bad id. The source has to space-separate the line back-reference.
         new, migs, skips = mesh_plan("// the pre-§16.7-L3500 primitive\n")
         self.assertEqual(migs, [])
@@ -540,7 +540,7 @@ class WireNamespace(unittest.TestCase):
         self.assertEqual(new, "// §wire-W5 D5 typed-throw\n")
 
     def test_hyphen_range_refused(self):
-        # "§W3-5" (waves W3 through W5) would corrupt to §wire-W3-5; refuse it.
+        # "§W3-5" (waves W3 through W5) would corrupt to `§wire-W3-5`; refuse it.
         new, migs, skips = wire_plan("// RFC §W3-5: re-thrown downstream\n")
         self.assertEqual(migs, [])
         self.assertIn("§W3-5", new)
@@ -670,6 +670,203 @@ class LedgerExistenceGate(unittest.TestCase):
     def test_string_literal_not_flagged(self):
         r = self._run('let s = "W3C SCXML 6.4.6";\n')
         self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class MigratedTokenExistence(unittest.TestCase):
+    """The half the existence gate promised but did not implement.
+
+    Its error text has always claimed a bad section number fails "whether or
+    not the cite is in §-form", while the scan only ever looked at forms the
+    migrator can rewrite. A fabricated id typed straight in §-form therefore
+    passed here; inside a tree the Mnemosyne validator enrolls it was caught by
+    the validator, and in the trees deliberately kept in prose — the ones this
+    gate exists for — by nobody. Measured on the pinned revision: a `§synth-F4`
+    written into an enrolled test file was rejected as hallucination-class,
+    the same token in `tests/` or `examples/` was not seen at all.
+    """
+
+    def _ledger(self, d):
+        store = Path(d) / "store.json"
+        store.write_text(
+            json.dumps({"sections": {"scxml-5.10": {}, "scxml-6.2": {}}}),
+            encoding="utf-8",
+        )
+        return store
+
+    def _run(self, body, name="a.rs"):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / name).write_text(body, encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, str(MIGRATE), "--check-ledger",
+                 "--ledger", str(self._ledger(d)), str(src)],
+                capture_output=True, text=True,
+            )
+
+    def test_fabricated_token_rejected(self):
+        r = self._run("// see §scxml-99.99 for the rule\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("§scxml-99.99", r.stderr)
+
+    def test_real_token_passes(self):
+        r = self._run("// see §scxml-6.2 for the rule\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_backticked_token_is_a_mention_not_a_citation(self):
+        # Mirrors the validator: exactly one backtick before the sigil marks a
+        # comment that DISCUSSES a token. Without this the gate would reject
+        # text the real gate accepts, and the two readers of one rule would
+        # disagree — including on this repo's own record of the `§synth-F4`
+        # incident, which names the fabricated id in order to explain it.
+        r = self._run("// the gate rejected `§scxml-99.99` as fabricated\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_two_backticks_do_not_exempt(self):
+        # Measured against mnemosyne-cli 3e2cb146: a double-backtick run is not
+        # the code-span form the validator exempts.
+        r = self._run("// ``§scxml-99.99`` still cites it\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_trailing_backtick_alone_does_not_exempt(self):
+        r = self._run("// §scxml-99.99` still cites it\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_token_in_a_string_literal_is_out_of_scope(self):
+        # comment_only, the same rule the validator runs under.
+        r = self._run('let s = "§scxml-99.99";\n')
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_sentence_punctuation_is_not_part_of_the_id(self):
+        # "§scxml-6.2." at the end of a sentence must resolve to scxml-6.2,
+        # not to a fabricated "scxml-6.2." — otherwise correct prose fails.
+        r = self._run("// the rule lives in §scxml-6.2.\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_sibling_namespace_resolves_against_its_own_ledger(self):
+        # The token names its namespace, so a §synth- cite in a file checked
+        # with the scxml ledger is judged by the synth ledger. §synth-5-B is
+        # real; a made-up one in the same file must still fail.
+        r = self._run("// §synth-5-B is real\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self._run("// §synth-5-ZZ is not\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_form_gate_does_not_inherit_token_findings(self):
+        # --check reads `skipped` to decide what must be REWRITTEN, and a token
+        # needs no rewriting. Passing token findings into that channel would
+        # make the form gate demand a migration of an already-migrated cite.
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "a.rs").write_text("// §scxml-99.99\n", encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--check",
+                 "--ledger", str(self._ledger(d)), str(src)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class CannotRunIsNotAVerdict(unittest.TestCase):
+    """An input the checker cannot read is not a finding about the author.
+
+    The staged-scope gate surfaced this: with the ledger store missing, the
+    tool died with a traceback and exit 1, and the calling gate reported
+    "staged citation names a section absent from the ledger" — a verdict about
+    someone's comment for a fault in the gate's own inputs.
+    """
+
+    def _run(self, ledger):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "a.rs").write_text("// §scxml-6.2\n", encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, str(MIGRATE), "--check-ledger",
+                 "--ledger", str(ledger), str(src)],
+                capture_output=True, text=True,
+            )
+
+    def test_missing_store_exits_cannot_run(self):
+        r = self._run("/nonexistent/workspace.atomic.json")
+        self.assertEqual(r.returncode, mc.EXIT_CANNOT_RUN, r.stderr)
+        self.assertIn("cannot read the ledger store", r.stderr)
+
+    def test_malformed_store_exits_cannot_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Path(d) / "store.json"
+            store.write_text("{not json", encoding="utf-8")
+            r = self._run(store)
+        self.assertEqual(r.returncode, mc.EXIT_CANNOT_RUN, r.stderr)
+        self.assertIn("not valid JSON", r.stderr)
+
+    def test_store_without_sections_exits_cannot_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Path(d) / "store.json"
+            store.write_text(json.dumps({"doc": {}}), encoding="utf-8")
+            r = self._run(store)
+        self.assertEqual(r.returncode, mc.EXIT_CANNOT_RUN, r.stderr)
+        self.assertIn("no `sections` map", r.stderr)
+
+
+class ExplicitFileScope(unittest.TestCase):
+    """A named file gets the same coverage rule as a walked one.
+
+    `mask_for` has a comment rule for a fixed set of extensions and falls
+    through to the C tokenizer otherwise, so scanning `notes.md` by name ran a
+    tokenizer for a language that file is not — a wrong answer rather than a
+    conservative one, and under `--apply` a rewriting one. The directory arm
+    always applied the predicate; the file arm did not, and the pre-commit
+    stage hands over a file list.
+    """
+
+    def test_named_file_outside_the_rule_is_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "notes.md"
+            f.write_text("// W3C SCXML 9.99\n", encoding="utf-8")
+            self.assertEqual(list(mc.iter_source_files([str(f)])), [])
+
+    def test_named_file_inside_the_rule_is_scanned(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.rs"
+            f.write_text("// W3C SCXML 6.2\n", encoding="utf-8")
+            self.assertEqual(list(mc.iter_source_files([str(f)])), [str(f)])
+
+
+class ReportRoot(unittest.TestCase):
+    # A materialised copy stands in for the tracked path it was checked out
+    # from, so the fixture uses a real one: `--report-root` declares "these
+    # files sit at these repo-relative paths", which is also what makes the
+    # tracked-file scope test meaningful for the staged gate.
+    STANDS_IN_FOR = "sce-build/src/lib.rs"
+
+    def test_paths_are_reported_relative_to_the_given_root(self):
+        # The pre-commit stage scans a materialised copy of the index; a report
+        # naming the temp directory names a file nobody can open.
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "work"
+            target = work / self.STANDS_IN_FOR
+            target.parent.mkdir(parents=True)
+            target.write_text("// §scxml-99.99\n", encoding="utf-8")
+            store = Path(d) / "store.json"
+            store.write_text(
+                json.dumps({"sections": {"scxml-6.2": {}}}), encoding="utf-8"
+            )
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--check-ledger",
+                 "--ledger", str(store), "--report-root", str(work),
+                 str(target)],
+                capture_output=True, text=True,
+            )
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertTrue(
+            any(
+                l.strip().startswith(f"{self.STANDS_IN_FOR}:")
+                for l in r.stderr.splitlines()
+            ),
+            r.stderr,
+        )
 
 
 class PathsFromToml(unittest.TestCase):
