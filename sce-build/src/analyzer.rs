@@ -727,6 +727,25 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
             },
         )));
     }
+    if model.states.is_empty() {
+        // §scxml-3.2 requires at least one `<state>`, `<parallel>` or
+        // `<final>` child. Checked before the `initial` questions
+        // because both of those are consequences: a document with no
+        // states either has no `initial` (reported as a codegen
+        // limitation) or an `initial` naming a state that cannot exist
+        // (reported as an unresolved reference), and neither tells the
+        // author the thing that is actually wrong.
+        //
+        // `scxml_references`, `scxml_reachability` and
+        // `scxml_exhaustiveness` each document this variant as "the
+        // earlier-firing diagnostic that owns the empty-document
+        // rejection" and short-circuit on the assumption it fires.
+        // Nothing raised it — the C++ parser did, so the two producers
+        // classified a stateless document differently, and the three
+        // short-circuits were guarding against a case they were told
+        // could not reach them.
+        return Err(ForgeError::Scxml(Box::new(ScxmlSemanticError::NoStates)));
+    }
     if model.initial.is_empty() {
         // Genuine dynamic-feature: runtime default resolution per
         // §scxml-3.3 picks the first child; static generator
