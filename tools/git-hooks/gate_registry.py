@@ -278,14 +278,18 @@ GATES: dict[str, dict] = {
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
         "runner_workflow": True,
-        # Where the time goes, measured 2026-08-11 rather than assumed — the
-        # earlier note here had it backwards. Running this gate alone takes
-        # 110s, of which `validate-code-refs` is 108.9s (synth 82.1 + mesh 12.5
-        # + scxml 11.5 + wire 1.5 + bytesguard 1.2). The other three validators
-        # are 4.2s across all five workspaces and the whole-tree existence sweep
-        # is 4.4s over 6341 files. `cost_s` stays at the `--measure --all`
-        # figure, which is what the runner compares against.
-        "cost_s": 157,
+        # Where the time goes, re-measured 2026-08-11 evening after the
+        # mnemosyne pin moved to c9b276bf. `validate-code-refs` used to be
+        # 108.9s of the 110s this gate took alone, because the symbol resolver
+        # re-read, re-parsed and re-compiled its tree-sitter query once per
+        # CITATION. Upstream now resolves once per FILE, and this tree is where
+        # that ratio is visible: 4487 citations over 290 files across the five
+        # workspaces, so the call count fell 15.5x and the wall clock fell
+        # further still (synth 82.1 -> 0.90, scxml 11.5 -> 0.54, mesh 12.5 ->
+        # 0.29, wire 0.40, bytesguard 0.45 — 2.6s in total). The whole-tree
+        # existence sweep, 4.4s over 6357 files, is now the larger half.
+        # `cost_s` stays at the `--measure` figure the runner compares against.
+        "cost_s": 17,
         "summary": "spec-citation ledgers, 5 workspaces",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
