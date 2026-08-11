@@ -3805,6 +3805,33 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
 }
 
 fn find_project_root() -> PathBuf {
+    // `SCE_WORKSPACE_ROOT` first, for the same reason
+    // [`locate_workspace_root`] honours it: `CARGO_MANIFEST_DIR` is baked in
+    // at compile time, so a binary built in one checkout and run in another
+    // resolves to the one that BUILT it. That is right for a vendored
+    // consumer and wrong for every other reader, and this resolver decides
+    // where the W3C trees are WRITTEN — so the failure is not a bad lookup
+    // but an escape. Measured: running the regeneration procedure inside a
+    // linked git worktree (whose `.git` is a file, so no other layer
+    // corrects the root) rewrote nine files in the original checkout while
+    // reporting success in the worktree, and the paths it embedded in the
+    // generated Kotlin were absolute into that other tree.
+    //
+    // The variable was already the documented escape hatch; it simply did
+    // not reach this resolver, which is why pinning it did not help.
+    let marker = Path::new(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH);
+    let pinned = std::env::var("SCE_WORKSPACE_ROOT").ok().and_then(|p| {
+        let candidate = PathBuf::from(&p);
+        if candidate.join(marker).exists() {
+            return Some(fs::canonicalize(&candidate).unwrap_or(candidate));
+        }
+        eprintln!(
+            "sce-codegen: SCE_WORKSPACE_ROOT '{p}' does not contain {} — ignoring it",
+            marker.display(),
+        );
+        None
+    });
+
     // Try CARGO_MANIFEST_DIR ancestor, then CWD
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let candidate = crate_dir.join("..");
@@ -3812,8 +3839,9 @@ fn find_project_root() -> PathBuf {
     // probing for the build script made a CMake-less checkout unable to
     // resolve a root at all, which is the same coupling the registry
     // format itself carried.
-    let marker = Path::new(sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH);
-    let root = if candidate.join(marker).exists() {
+    let root = if let Some(pinned) = pinned {
+        pinned
+    } else if candidate.join(marker).exists() {
         fs::canonicalize(&candidate).unwrap_or_else(|_| candidate.to_path_buf())
     } else {
         let cwd = std::env::current_dir().expect("Cannot get CWD");
