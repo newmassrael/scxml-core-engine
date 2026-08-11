@@ -734,6 +734,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )
+
+    # W3C SCXML C.1: the origin of a delivered event is the location the
+    # sending session published for the SCXML Event I/O Processor, and that
+    # location is a usable <send> target. The IRP suite checks neither half
+    # across sessions — test336 and test350 both send to the session they
+    # already are — so this fixture puts a peer session on the other end.
+    sce_generate_static_integration_c_test(event_origin_is_a_location "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_peer
+    )
+
+    add_executable(sce_c_integration_event_origin_is_a_location
+        integration/test_event_origin_is_a_location.c
+        ${INTEGRATION_C_TEST_event_origin_is_a_location_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_event_origin_is_a_location PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_event_origin_is_a_location PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_event_origin_is_a_location PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_event_origin_is_a_location
+        COMMAND sce_c_integration_event_origin_is_a_location
+    )
+    set_tests_properties(c11_integration_event_origin_is_a_location PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 else()
     message(STATUS
         "skipping the c11 integration fixtures — they link "
