@@ -122,7 +122,7 @@ TOKEN_ABSENT_REASON = "§-form id absent from the ledger"
 LABEL_RE = r"(?:[0-9]+(?:\.[0-9]+)*|[A-Z](?:\.[0-9]+)+)"
 
 # Words that may sit between the marker and the label and still mean "this is a
-# section citation": "W3C SCXML Appendix D.2", "W3C SCXML Section 3.6". Without
+# section citation": `W3C SCXML Appendix D.2`, `W3C SCXML Section 3.6`. Without
 # them the word occupies the label position and the whole citation matches
 # NOTHING — neither migrated nor reported — so a wrong section number passes
 # every gate. Measured across three separate words before this became a set:
@@ -395,16 +395,31 @@ def hash_comment_mask(text):
 def mask_for(path, text):
     """Comment mask dispatch, in lockstep with mnemosyne's comment_syntax_for:
     slash-family files get the C tokenizer, hash-family the `#` tokenizer
-    (CMakeLists.txt included), and whole-text extensions (templates, XML —
-    unknown to the validator, which whole-text-scans them) an all-True mask."""
+    (CMakeLists.txt included), and everything else — the whole-text extensions
+    (templates, XML) and any extension not named at all — an all-True mask.
+
+    The unknown-extension case falls to whole-text, not to the C tokenizer,
+    for two reasons that point the same way. It is what the validator does
+    with an extension it does not know, so the two stay in lockstep. And a
+    mask is a *filter*: an all-True mask reads the citation wherever it sits,
+    while a wrong comment grammar (`//` rules applied to markdown or TOML)
+    silently hides the ones it mis-tokenizes. For a read-only existence check
+    the conservative direction is to see more, so the extension list stops
+    being the thing that decides whether a false citation is visible.
+
+    Adding a real grammar for a family (`.js`, `.css`) would narrow the scan
+    to comments there. It is deliberately NOT done ahead of evidence: measured
+    over all 6333 tracked files, whole-text costs zero false positives that the
+    code-span mention channel does not already answer.
+    """
     if os.path.basename(path) == "CMakeLists.txt":
         return hash_comment_mask(text)
     ext = os.path.splitext(path)[1]
-    if ext in WHOLE_TEXT_EXTS:
-        return [True] * len(text)
     if ext in HASH_EXTS:
         return hash_comment_mask(text)
-    return comment_mask(text, nested=(ext in NESTED_BLOCK))
+    if ext in SLASH_EXTS:
+        return comment_mask(text, nested=(ext in NESTED_BLOCK))
+    return [True] * len(text)
 
 
 def _leaf(label, namespace):
@@ -423,6 +438,21 @@ def label_to_id(label, namespace="scxml"):
     """'6.2' -> 'scxml-6.2' ; 'C.2' -> 'scxml-C-2' (A1 policy) ; 'W4.5' ->
     'wire-W4.5'. The namespace segment defaults to scxml."""
     return f"{namespace}-" + _leaf(label, namespace)
+
+
+def _read_text(path):
+    """The file's decoded text, or None when its bytes are not UTF-8 text.
+
+    A citation is a sequence of characters, so "can this be decoded" is the
+    honest test for whether a file can carry one — and it is decided by
+    reading, not by trusting a suffix. An unreadable file is None for the same
+    reason: it makes no claim this gate can judge.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except (UnicodeDecodeError, OSError):
+        return None
 
 
 def _line_offsets(text):
@@ -461,9 +491,15 @@ def plan_file(
     existence gate wants them: the form gates read `skipped` to decide what
     must be rewritten, and a token needs no rewriting — it needs a correct
     number.
+
+    Returns (None, [], []) when the file's bytes are not UTF-8 text. That
+    verdict belongs at the read: the alternative is an extension list of
+    "binary" suffixes, which is the same list-shaped defect one layer down,
+    and lifting the scan set without it is a traceback on the first PNG.
     """
-    with open(path, "r", encoding="utf-8") as fh:
-        text = fh.read()
+    text = _read_text(path)
+    if text is None:
+        return None, [], []
     mask = mask_for(path, text)
     line_starts, lineno = _line_offsets(text)
 
@@ -476,6 +512,25 @@ def plan_file(
     if token_ledgers:
         skipped = skipped + _plan_tokens(text, mask, token_ledgers, lineno)
     return new_text, migrations, skipped
+
+
+def _is_code_span_mention(text, i):
+    """Whether the citation starting at text[i] is a *mention* rather than a
+    claim, by the one-backtick code-span rule.
+
+    EXACTLY one backtick immediately before the citation marks it as text the
+    comment is talking ABOUT (`` `W3C SCXML Appendix D.2` `` in the sentence
+    that explains why that label is not a ledger id); two backticks, or a
+    trailing backtick alone, do not exempt. The rule is the pinned validator's,
+    measured against mnemosyne-cli 3e2cb146 with five probe shapes for the
+    token axis — and it is shared with the prose axis here rather than restated,
+    because a document that discusses a citation has the same need whichever
+    form the citation takes. Without one channel, a checker that widens its file
+    set eventually reaches the prose of the tools that describe it, and the only
+    remaining answer is a path exemption — which is what the token axis already
+    refused.
+    """
+    return i >= 1 and text[i - 1] == "`" and (i < 2 or text[i - 2] != "`")
 
 
 def _plan_marked(text, mask, ledger_ids, prefix, lineno):
@@ -523,6 +578,8 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
     for m in pattern.finditer(text):
         if not mask[m.start()]:
             continue  # outside a comment -> never touch
+        if _is_code_span_mention(text, m.start()):
+            continue  # the comment is discussing the citation, not making one
         is_sig = m.group("sigchain") is not None
         chain_text = m.group("sigchain") if is_sig else m.group("prosechain")
         ln = lineno(m.start())
@@ -581,6 +638,8 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
     )
     for m in hidden_re.finditer(text):
         if not mask[m.start()]:
+            continue
+        if _is_code_span_mention(text, m.start()):
             continue
         lbl = m.group("hidden")
         # A BARE integer after a word is a W3C IRP *test* number, not a section
@@ -724,17 +783,15 @@ def _plan_tokens(text, mask, token_ledgers, lineno):
 
     The code-span rule is mirrored from the pinned validator rather than
     invented here, because a checker that disagrees with the thing it mirrors
-    reports violations the real gate does not have: a token preceded by EXACTLY
-    ONE backtick is a mention of the token (how a comment discusses a citation
-    without making one), while two backticks, or a trailing backtick alone, do
-    not exempt. Measured against mnemosyne-cli 3e2cb146 with five probe shapes.
+    reports violations the real gate does not have. `_is_code_span_mention`
+    holds it, shared with the prose axis.
     """
     skipped = []
     for m in MIGRATED_TOKEN_RE.finditer(text):
         i = m.start()
         if not mask[i]:
             continue  # outside a comment -> never a citation
-        if i >= 1 and text[i - 1] == "`" and (i < 2 or text[i - 2] != "`"):
+        if _is_code_span_mention(text, i):
             continue
         ns = m.group("ns")
         ids = token_ledgers.get(ns)
@@ -830,8 +887,9 @@ def paths_from_toml(toml_path):
     return [os.path.join(REPO_ROOT, p) for p in re.findall(r'"([^"]+)"', entries)]
 
 
-def scannable(path):
-    """Whether `mask_for` has a comment rule for this file.
+def rewritable(path):
+    """Whether the migrator may REWRITE this file: `mask_for` has a real
+    comment grammar for it, so an edit lands inside a comment and nowhere else.
 
     The predicate is shared by both arms of `iter_source_files` on purpose. A
     directory walk always applied it; an explicitly named file did not, so
@@ -840,6 +898,15 @@ def scannable(path):
     rewriting one. Callers that hand over a file list (the pre-commit stage
     passes the staged set) get the same coverage as the sweep instead of a
     second, accidental rule.
+
+    This is NOT the predicate for reading. One predicate used to answer both
+    questions, and that made "may I edit this file" decide "may I read this
+    file for a false citation" — so the existence gate, whose whole job is
+    reading, inherited a rewrite-safety list. Measured on this repo: the gate
+    named `web/` among the trees it sweeps and scanned 0 of its 46 tracked
+    files, because `.js`/`.css`/`.html` are not rewrite targets. Seven
+    fabricated section numbers lived there, in a tree the gate reported as
+    clean.
     """
     return (
         os.path.splitext(path)[1] in KNOWN_EXTS
@@ -847,22 +914,41 @@ def scannable(path):
     )
 
 
-def iter_source_files(paths):
+def iter_source_files(paths, predicate=rewritable):
+    """Files under `paths` that `predicate` accepts.
+
+    `predicate=None` means every file is a candidate — the reading side, where
+    an extension list has no business deciding what a citation gate may see.
+    Whether the bytes are text is then settled at the read (`_read_text`), the
+    only place that actually knows.
+
+    The predicate is given the FULL path in both arms. The walk arm used to
+    pass a bare basename, which happens to work for an extension test and
+    silently mis-answers any predicate that looks at the path or the content —
+    a probe written against it read 0 violations from a tree that had 7.
+    """
     for p in paths:
         if os.path.isfile(p):
-            if scannable(p):
+            if predicate is None or predicate(p):
                 yield p
         elif os.path.isdir(p):
             for root, dirs, files in os.walk(p):
+                # `.git` is the object database, not content anyone authored.
+                # Every other dotted directory IS authored content: skipping
+                # them by the leading dot hid 33 tracked files from the
+                # existence check, 21 of them CI workflows — the files that
+                # describe the gates. Build outputs stay out for speed; nothing
+                # tracked lives under them, and the tracking filter would
+                # discard their verdicts anyway.
                 dirs[:] = [
                     d
                     for d in dirs
-                    if not d.startswith(".")
-                    and d not in ("target", "node_modules", "build")
+                    if d != ".git" and d not in ("target", "node_modules", "build")
                 ]
                 for f in sorted(files):
-                    if scannable(f):
-                        yield os.path.join(root, f)
+                    full = os.path.join(root, f)
+                    if predicate is None or predicate(full):
+                        yield full
 
 
 def main(argv=None):
@@ -963,11 +1049,48 @@ def main(argv=None):
             token_ledgers[ns] = load_ledger_ids(path)
 
     report_root = os.path.abspath(args.report_root) if args.report_root else REPO_ROOT
-    report = {"migrations": [], "skipped": [], "files_changed": 0}
-    for path in iter_source_files(args.paths):
+    report = {
+        "migrations": [],
+        "skipped": [],
+        "files_changed": 0,
+        "files_scanned": 0,
+        "files_not_text": 0,
+    }
+    # Tracked content only, and decided at the file list rather than at the
+    # verdict. A citation is a claim the REPOSITORY makes, and untracked files
+    # make none: the hits there are gitignored generated artifacts left over
+    # from a build that predates a template fix. Scanning them turns a citation
+    # gate into a build-freshness gate. It also inflates the scanned count this
+    # run reports — 9034 read against 6333 that could be judged, measured — and
+    # a coverage number that counts files whose verdict is discarded is not a
+    # coverage number.
+    #
+    # `tracked is None` (outside a git checkout: a vendored copy, a release
+    # tarball) means do not filter, so the honest default there is to read
+    # everything present rather than nothing.
+    tracked = _tracked_files() if args.check_ledger else None
+
+    def in_scope(path):
+        if tracked is None:
+            return True
+        rel = os.path.relpath(os.path.abspath(path), REPO_ROOT)
+        # Anything outside this repo (a caller-supplied directory, a test's
+        # temp dir) is the content under review wherever it came from.
+        return rel.startswith("..") or rel in tracked
+
+    # Reading and rewriting are scoped by different questions. The form gates
+    # rewrite, so they are confined to files with a comment grammar; the
+    # existence check only reads, and nothing about a file's suffix makes a
+    # fabricated section number in it true.
+    predicate = in_scope if args.check_ledger else rewritable
+    for path in iter_source_files(args.paths, predicate):
         new_text, migs, skips = plan_file(
             path, ledger_ids, args.prefix, args.namespace, exclude_ids, token_ledgers
         )
+        if new_text is None:
+            report["files_not_text"] += 1
+            continue
+        report["files_scanned"] += 1
         rel = os.path.relpath(os.path.abspath(path), report_root)
         for d in migs:
             report["migrations"].append({"file": rel, **d})
@@ -999,29 +1122,31 @@ def main(argv=None):
         # survive. `label_to_id` already normalises lettered forms, and the same
         # allowlist logic as `--check` exempts the spec version and bare W3C
         # test numbers.
-        version_allowlist = {"1.0"}
-        # Tracked content only. A citation is a claim the REPOSITORY makes, and
-        # untracked files make none: the hits there are gitignored generated
-        # artifacts left over from a build that predates a template fix. Scanning
-        # them turns a citation gate into a build-freshness gate, failing on
-        # whatever a developer happens to have on disk for a reason unrelated to
-        # the commit. A fabricated number in a generated file always also exists
-        # in its authoring template, which IS tracked and IS scanned — so
-        # restricting scope loses no detection.
-        tracked = _tracked_files()
+        #
+        # A tree that yields no readable file is a gate reporting a verdict it
+        # never reached. `web/` sat in the sweep list for as long as the list
+        # existed and contributed 0 scanned files, so its seven fabricated
+        # citations were "checked" at every push. The count is asserted here, at
+        # the only place that knows it, rather than as a per-tree floor some gate
+        # script would have to keep current. EXIT_CANNOT_RUN, not 1: nothing is
+        # wrong with the author's text — the check did not run.
+        if report["files_scanned"] == 0:
+            print(
+                "ERROR: no readable file under "
+                + ", ".join(args.paths)
+                + " — the existence check swept a path that yields nothing, so "
+                "its verdict would cover no content.",
+                file=sys.stderr,
+            )
+            return EXIT_CANNOT_RUN
 
-        def in_scope(rel):
-            # Only a path INSIDE this repo is subject to its tracking. `relpath`
-            # yields a "../"-prefixed value for anything outside (a vendored
-            # checkout, a caller-supplied directory, the tests' temp dirs), and
-            # those are the content under review wherever they came from.
-            if tracked is None or rel.startswith(".."):
-                return True
-            return rel in tracked
+        version_allowlist = {"1.0"}
 
         def is_violation(d):
-            if not in_scope(d["file"]):
-                return False
+            # Tracking scope is settled by `in_scope` when the file list is
+            # built, so every record here is already about content the
+            # repository claims. Filtering twice would let the two rules drift.
+            #
             # A hidden citation is a violation whatever its label resolves to:
             # the number may be perfectly valid and still be invisible to every
             # gate, which is the defect. Ledger membership is irrelevant here.
@@ -1066,9 +1191,13 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
+        # The file count is part of the verdict, not decoration: "OK" over a
+        # scan set that quietly shrank reads exactly like "OK" over the whole
+        # tree. Printing what was read lets the number be compared across runs.
         print(
             "ledger-existence check: OK — every section-shaped citation "
-            "resolves to a ledger section."
+            f"resolves to a ledger section ({report['files_scanned']} files "
+            f"read, {report['files_not_text']} not text)."
         )
         return 0
 
