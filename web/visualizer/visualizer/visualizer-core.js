@@ -108,7 +108,7 @@ class SCXMLVisualizer {
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
 
-        // W3C SCXML Appendix D.2: Conflict resolution visualization data
+        // §scxml-D-removeConflictingTransitions: Conflict resolution visualization data
         this.enabledTransitions = [];   // All transitions enabled before conflict resolution
         this.optimalTransitions = [];   // Transitions selected after conflict resolution
 
@@ -427,7 +427,7 @@ class SCXMLVisualizer {
     /**
      * @brief Update conflict resolution visualization data
      *
-     * W3C SCXML Appendix D.2: Stores enabled and optimal transitions for badge display
+     * §scxml-D-removeConflictingTransitions: Stores enabled and optimal transitions for badge display
      *
      * @param enabled Array of enabled transitions before conflict resolution
      * @param optimal Array of optimal transitions after conflict resolution

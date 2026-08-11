@@ -1597,7 +1597,7 @@ body {
 }
 
 /* ============================================
- * W3C SCXML Appendix D.2: Conflict Resolution Badges
+ * §scxml-D-removeConflictingTransitions: Conflict Resolution Badges
  * ============================================ */
 
 .badge {

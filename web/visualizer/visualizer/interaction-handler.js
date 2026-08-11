@@ -229,7 +229,7 @@ class InteractionHandler {
 
         let html = '';
 
-        // W3C SCXML Appendix D.2: Get conflict resolution data for badge display
+        // §scxml-D-removeConflictingTransitions: Get conflict resolution data for badge display
         const enabledTransitions = this.visualizer.enabledTransitions || [];
         const optimalTransitions = this.visualizer.optimalTransitions || [];
 
@@ -238,7 +238,7 @@ class InteractionHandler {
             const transitionId = getTransitionId(transition);
             const eventText = transition.event || '(eventless)';
 
-            // W3C SCXML Appendix D.2: Check if this transition is in enabled/optimal sets
+            // §scxml-D-removeConflictingTransitions: Check if this transition is in enabled/optimal sets
             const isEnabled = enabledTransitions.some(et =>
                 et.source === transition.source && et.target === transition.target);
             const isOptimal = optimalTransitions.some(ot =>
