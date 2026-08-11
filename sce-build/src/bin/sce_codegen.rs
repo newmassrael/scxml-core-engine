@@ -2229,6 +2229,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
                             sce_build::forge::error::ValidationError::WrongPipeline {
                                 kind: sce_build::forge::model::ForgeKind::Statechart,
+                                pipeline: sce_build::Pipeline::Forge,
                             }
                             .into(),
                             doc_label.diagnostic_label,
@@ -2572,6 +2573,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                         error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
                             sce_build::forge::error::ValidationError::WrongPipeline {
                                 kind: sce_build::forge::model::ForgeKind::Statechart,
+                                pipeline: sce_build::Pipeline::Forge,
                             }
                             .into(),
                             doc_label.diagnostic_label,

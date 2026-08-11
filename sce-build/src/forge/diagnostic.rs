@@ -4981,7 +4981,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 k
             },
         },
-        ValidationError::WrongPipeline { kind } => DiagnosticPayload {
+        ValidationError::WrongPipeline { kind, .. } => DiagnosticPayload {
             code: DiagnosticCode::ValidationWrongPipeline,
             stage: Stage::Validation,
             expected: None,
@@ -8567,9 +8567,23 @@ mod tests {
                 "forge/wrong-pipeline",
                 ValidationError::WrongPipeline {
                     kind: ForgeKind::Statechart,
+                    pipeline: crate::Pipeline::Forge,
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:71f73dde2407223e","code":"validation/wrong-pipeline","stage":"validation","spec":"SCE Forge §4","message":"statechart kind cannot be processed by the forge pipeline","actual":"statechart"}"#,
+            ),
+            // The mirror direction, which had no producer until the
+            // statechart entries started asking the router: same code and
+            // same `actual`, different message, so a consumer keyed on the
+            // code still routes and an author reads the right pipeline.
+            (
+                "forge/wrong-pipeline-into-scxml",
+                ValidationError::WrongPipeline {
+                    kind: ForgeKind::Algorithm,
+                    pipeline: crate::Pipeline::Scxml,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cbb2daf4e235a91e","code":"validation/wrong-pipeline","stage":"validation","spec":"SCE Forge §4","message":"algorithm kind cannot be processed by the SCXML pipeline","actual":"algorithm"}"#,
             ),
             (
                 "forge/dynamic-features",
