@@ -36,7 +36,7 @@
       "additionalProperties": false,
       "properties": {
         "scxml_file": {
-          "description": "Author-facing path to the SCXML file the symbol traces back to.",
+          "description": "Author-facing path to the SCXML file the symbol traces back to. A name carrying the `__sce_synth_invoke__` infix denotes a document SCE synthesises in memory from an <invoke> element's inline <content>: it is not on disk, and line_range is relative to that synthesised document, not to the parent file that contains the inline element. A consumer resolving this path must handle that case instead of assuming every name opens.",
           "type": "string"
         },
         "scxml_state_path": {
