@@ -145,56 +145,13 @@ jobs:
           cargo install --git https://github.com/newmassrael/mnemosyne \
             --rev "${MNEMOSYNE_REV}" --locked mnemosyne-cli
 
-      - name: Validate citations + excerpt content drift (per workspace)
-        run: |
-          set -euo pipefail
-          for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
-            echo "::group::${ws}"
-            ( cd "${ws}" \
-                && mnemosyne-cli validate-workspace \
-                && mnemosyne-cli validate-code-refs \
-                && mnemosyne-cli validate-verifies-linkage \
-                && mnemosyne-cli validate-content-drift )
-            echo "::endgroup::"
-          done
-
-      # validate-code-refs only gates §scxml- cites; a free-text
-      # "W3C SCXML <n>" section reference would bypass it entirely. This
-      # gate forbids that prose form in the enrolled comment dirs (read
-      # from the toml so it tracks coverage automatically), forcing every
-      # section cite through the §scxml- channel the validator inspects.
-      - name: Forbid free-text W3C SCXML section cites (force §scxml- form)
-        run: |
-          python3 tools/mnemosyne-adoption/migrate_citations.py --check \
-            --from-toml docs/spec/scxml/mnemosyne.toml
-
-      # Same form gate for the protocol-synthesis RFC: a claimable free-text
-      # cite ("RFC §5.B" with a lettered label, or a numeric one under the
-      # protocol-synthesis document marker) must be in §synth- form so
-      # validate-code-refs gates it; skipped sightings (sibling-namespace
-      # numbers, other documents' ids) legitimately stay prose.
-      - name: Forbid claimable free-text synth RFC cites (force §synth- form)
-        run: |
-          python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth \
-            --from-toml docs/spec/synth/mnemosyne.toml
-
-      - name: Forbid claimable free-text bytes-guard RFC cites
-        run: |
-          python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesguard \
-            --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml
-
-      # Ledger-existence gate for the trees deliberately kept in prose. The form
-      # gates above only cover dirs enrolled in a ledger's `paths`, so the
-      # codegen templates and the backend/test trees could cite a section number
-      # that does not exist. Templates are the propagation source — one
-      # fabricated number reached 168 sites through generated copies — so this
-      # checks that every section-shaped citation resolves, without demanding
-      # §-form in text that ships verbatim inside generated code.
-      - name: Forbid citations naming sections absent from the ledger
-        run: |
-          set -euo pipefail
-          for tree in tools/codegen/templates tests backends examples web; do
-            echo "::group::${tree}"
-            python3 tools/mnemosyne-adoption/migrate_citations.py "${tree}" --check-ledger
-            echo "::endgroup::"
-          done
+      # Every validator, form gate and ledger-existence sweep in one
+      # call. The lane used to restate all nine commands; the gate
+      # already spelled them out for the push hook, and the two lists
+      # had to be edited together. `MNEMOSYNE_BIN` points the gate at
+      # the binary this lane installed — the gate otherwise looks under
+      # `~/.local/share/mnemosyne-rev/<rev>/bin`, which is where a
+      # developer installs it and not where `cargo install` without
+      # `--root` puts it.
+      - name: Validate citations, content drift and ledger existence
+        run: MNEMOSYNE_BIN="$(command -v mnemosyne-cli)" scripts/gate ledger-citations
