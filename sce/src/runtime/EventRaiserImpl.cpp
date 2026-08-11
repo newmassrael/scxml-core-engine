@@ -75,11 +75,11 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
         QueuedEvent event = synchronousQueue_.top();
         synchronousQueue_.pop();
 
-        // Check if this event originated from the cancelled session.
-        // `QueuedEvent::origin` holds the sender's published location
-        // (§scxml-C-1), so the raw session id callers pass is converted the
-        // same way rather than compared against a different spelling.
-        if (event.origin == IOProcessorHelper::scxmlLocation(originSessionId)) {
+        // Check if this event originated from the cancelled session. Both
+        // sides are session ids: the queue carries what callers hand in, and
+        // the §scxml-C-1 location is derived only where `_event.origin` is
+        // published, so there is one spelling to compare here.
+        if (event.origin == originSessionId) {
             cancelledCount++;
             SCE_LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
                           originSessionId);
@@ -245,16 +245,20 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
         typedData = EventDataHelper::jsonStringToScriptValue(eventData);
     }
 
-    // §scxml-C-1: `_event.origin` MUST be the SENDER's published
-    // `_ioprocessors` location, not its bare session id. Callers deal in
-    // session ids — that is their currency and every target hands one in —
-    // so the id becomes a wire value exactly here, once, rather than at each
-    // of the three event targets that would otherwise each need to remember.
-    // The empty case stays empty: an event with no originating session has no
-    // location to publish, and inventing one would make `_event.origin`
-    // non-empty for internally raised events.
-    const std::string originLocation =
-        originSessionId.empty() ? std::string() : IOProcessorHelper::scxmlLocation(originSessionId);
+    // §scxml-C-1 requires `_event.origin` to be the SENDER's published
+    // `_ioprocessors` location rather than its bare session id, and this used
+    // to convert here, on the way in. It cannot: the value this carries has
+    // two consumers that need different spellings. `_event.origin` wants the
+    // location; `getFinalizeScriptForChildSession` and
+    // `shouldFilterCancelledInvokeEvent` look sessions up by the id they were
+    // registered under. Converting at the entrance served the first and broke
+    // the second silently — a `<finalize>` handler stopped running because
+    // `sce://scxml/<id>` is not a key any registry holds (W3C 233/234).
+    //
+    // So the pipeline carries the SESSION ID, which is what callers hand in
+    // and what every lookup keys on, and the location is derived at the one
+    // place it is published (`ActionExecutorImpl::setCurrentEvent`). One
+    // spelling per consumer, each produced where it is used.
 
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
                  "immediateMode={}, EventRaiser instance={}",
@@ -322,7 +326,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                 try {
                     // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
                     EventContext ctx;
-                    ctx.originSessionId = originLocation;
+                    ctx.originSessionId = originSessionId;
                     ctx.sendId = sendId;
                     ctx.invokeId = invokeId;
                     ctx.originType = originType;
@@ -361,7 +365,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
             timestamp = std::chrono::steady_clock::time_point();  // Will be set to now() in constructor
         }
 
-        synchronousQueue_.emplace(eventName, eventData, priority, originLocation, sendId, invokeId, originType,
+        synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType,
                                   timestamp, std::move(typedData));
 
         // Enhanced logging: explain why event was queued instead of processed immediately
