@@ -381,6 +381,18 @@ GATES: dict[str, dict] = {
         "cost_s": 8,
         "summary": "W3C conformance, Go AOT",
     },
+    "w3c-kotlin": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
+                   "the Kotlin backend, the Kotlin templates and the "
+                   "generator.",
+        "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
+                  "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 40,
+        "summary": "W3C conformance, Kotlin/JVM AOT (Rhino)",
+    },
     "w3c-python": {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,

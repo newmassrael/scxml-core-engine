@@ -437,11 +437,16 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
+    # Generation and the suite are one gate — the same one the pre-push hook
+    # runs. The floor on cases, the failures/errors read from the JUnit XML
+    # rather than from Gradle's exit status, and the check that the run left
+    # the committed tree unchanged all live there, so this lane and a
+    # developer's machine judge the Kotlin surface by the same rules.
     - name: Run W3C Tests (Rhino Engine)
       run: |
         set -o pipefail
         echo "=== Kotlin W3C SCXML Conformance Tests (Rhino) ==="
-        ./gradlew :sce-kotlin-tests:test 2>&1 | tee kotlin_test_output.log
+        scripts/gate w3c-kotlin 2>&1 | tee kotlin_test_output.log
 
     - name: Upload Test Results
       uses: actions/upload-artifact@v7
