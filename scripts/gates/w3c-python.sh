@@ -42,6 +42,16 @@ sce_gate_step "generating the Python W3C and integration suites"
     || sce_gate_fail "Python W3C generation"
 "$CODEGEN" generate-integration -l python >/dev/null \
     || sce_gate_fail "Python integration generation"
+# `generate-integration` enumerates `integration_resources/`, and one committed
+# Python suite is not from there: `event_schema_native` compiles the
+# EventSchema fixtures under `sce-build/tests/fixtures/event_schema/`, so its
+# modules come from a per-stem script instead. Its TEST file is tracked while
+# its modules are gitignored, so a checkout that runs only the two commands
+# above has a test importing a module nothing produced. That is what CI hit —
+# `ModuleNotFoundError: statechart_bytes_sm` — while this gate passed on any
+# tree where the script had been run by hand at some point.
+"$SCE_REPO_ROOT/scripts/regen_event_schema_native_python.sh" >/dev/null \
+    || sce_gate_fail "Python event_schema_native generation"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
