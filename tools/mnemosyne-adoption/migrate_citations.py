@@ -57,6 +57,7 @@ Usage::
 """
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -228,6 +229,11 @@ HASH_EXTS = {".py", ".sh"}
 WHOLE_TEXT_EXTS = {".jinja2", ".scxml", ".xsd"}
 KNOWN_EXTS = SLASH_EXTS | HASH_EXTS | WHOLE_TEXT_EXTS
 
+# The node kinds Python attaches a docstring to. Named rather than inlined so
+# `docstring_spans` states the language rule it implements instead of a tuple
+# a reader has to recognise.
+DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
 
 def comment_mask(text, nested):
     """Return a bytearray-like list of booleans, True where text[i] is inside a
@@ -392,11 +398,12 @@ def hash_comment_mask(text):
     return mask
 
 
-def mask_for(path, text):
-    """Comment mask dispatch, in lockstep with mnemosyne's comment_syntax_for:
-    slash-family files get the C tokenizer, hash-family the `#` tokenizer
-    (CMakeLists.txt included), and everything else — the whole-text extensions
-    (templates, XML) and any extension not named at all — an all-True mask.
+def rewrite_mask_for(path, text):
+    """Where an EDIT may land: comment mask dispatch, in lockstep with
+    mnemosyne's comment_syntax_for. Slash-family files get the C tokenizer,
+    hash-family the `#` tokenizer (CMakeLists.txt included), and everything
+    else — the whole-text extensions (templates, XML) and any extension not
+    named at all — an all-True mask.
 
     The unknown-extension case falls to whole-text, not to the C tokenizer,
     for two reasons that point the same way. It is what the validator does
@@ -411,6 +418,10 @@ def mask_for(path, text):
     to comments there. It is deliberately NOT done ahead of evidence: measured
     over all 6333 tracked files, whole-text costs zero false positives that the
     code-span mention channel does not already answer.
+
+    This is the mask for the paths that rewrite or report what a rewrite would
+    fix (`--apply`, `--check`). What a read-only existence check may JUDGE is a
+    different question and has its own mask — see `read_mask_for`.
     """
     if os.path.basename(path) == "CMakeLists.txt":
         return hash_comment_mask(text)
@@ -420,6 +431,100 @@ def mask_for(path, text):
     if ext in SLASH_EXTS:
         return comment_mask(text, nested=(ext in NESTED_BLOCK))
     return [True] * len(text)
+
+
+def docstring_spans(text):
+    """(start, end) character offsets of every Python docstring, or None when
+    the source does not parse.
+
+    Python documents in STRINGS, not in comments. A module, class or function
+    docstring is the language's own documentation form, and `hash_comment_mask`
+    masks it out as a string literal — correctly, for a rewriter. Measured over
+    the eighteen lexical contexts this repository cites from, that was the only
+    place a fabricated section number was invisible: fifteen contexts were seen
+    (Go, Kotlin, C, C++, Rust, JS comments in every form; Markdown, YAML and XML
+    whole-text) and the three that were blind were all Python strings.
+
+    It was hiding a real one. `IScriptEngine`'s class docstring named "W3C SCXML
+    B.3" as the ECMAScript data model; the ledger's Appendix B has B.1 and B.2
+    and no B.3, and ECMAScript is B.2. A false claim about the spec sat in the
+    Python runtime's central interface, and the gate whose whole purpose is to
+    reject exactly that claim reported OK over it.
+
+    Docstrings only — not every string literal. A string that is not a
+    docstring is a VALUE (test input, an expected message, a fragment being
+    generated), which is the same line the tool already draws for a quoted
+    spec-string shown inside a comment. Measured: widening to every string
+    literal instead surfaces 40+ hits in this checker's OWN test suite, whose
+    fixtures carry fabricated ids deliberately to prove the checker rejects
+    them. A gate that fails on the evidence of its own correctness is reporting
+    the wrong thing.
+
+    `ast.AST.col_offset` is a UTF-8 BYTE offset, not a character index, so a
+    line containing `§` (two bytes) would shift every span after it. The
+    conversion goes through the line's encoded bytes rather than assuming they
+    are the same number.
+    """
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    line_starts = [0]
+    for line in text.splitlines(keepends=True):
+        line_starts.append(line_starts[-1] + len(line))
+
+    def offset(lineno, byte_col):
+        start = line_starts[lineno - 1]
+        line = text[start:line_starts[lineno]]
+        return start + len(line.encode("utf-8")[:byte_col].decode("utf-8", "ignore"))
+
+    spans = []
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(node, DOCSTRING_OWNERS) or not body:
+            continue
+        first = body[0]
+        if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Constant):
+            continue
+        if not isinstance(first.value.value, str):
+            continue
+        const = first.value
+        spans.append(
+            (
+                offset(const.lineno, const.col_offset),
+                offset(const.end_lineno, const.end_col_offset),
+            )
+        )
+    return spans
+
+
+def read_mask_for(path, text):
+    """Where a read-only existence check may JUDGE a citation.
+
+    Reading and rewriting are scoped by different questions, and the file-list
+    predicate already says so (`in_scope` vs `rewritable`). The mask is that
+    same question one layer down, and it was answered only once: the existence
+    sweep inherited the rewriter's mask, so a suffix the rewriter had a grammar
+    for decided what the gate could see. `.py` is where the two answers differ,
+    because it is the one family whose documentation lives in a string.
+
+    So this is the rewrite mask WIDENED by the documentation forms an edit may
+    not touch but a reader must not miss. A `.py` that does not parse falls to
+    whole-text: the language cannot name its docstrings, and for a read-only
+    check the honest direction is to see more rather than to report a clean
+    verdict over text nobody looked at. Measured: 0 of 217 tracked `.py` files
+    fail to parse, so this is the boundary's statement, not a routine path.
+    """
+    mask = rewrite_mask_for(path, text)
+    if os.path.splitext(path)[1] != ".py":
+        return mask
+    spans = docstring_spans(text)
+    if spans is None:
+        return [True] * len(text)
+    for start, end in spans:
+        for i in range(start, end):
+            mask[i] = True
+    return mask
 
 
 def _leaf(label, namespace):
@@ -475,6 +580,7 @@ def plan_file(
     namespace="scxml",
     exclude_ledger_ids=None,
     token_ledgers=None,
+    mask_fn=rewrite_mask_for,
 ):
     """Return (new_text, migrations, skipped) for one file without writing.
 
@@ -492,6 +598,12 @@ def plan_file(
     must be rewritten, and a token needs no rewriting — it needs a correct
     number.
 
+    mask_fn decides WHERE in the file a citation counts, and the default is
+    the rewriting answer because every caller that can write must get that one.
+    The existence gate passes `read_mask_for`: its verdict is about whether a
+    section number is true, which no comment grammar makes more or less so, and
+    `new_text` is not written on that path.
+
     Returns (None, [], []) when the file's bytes are not UTF-8 text. That
     verdict belongs at the read: the alternative is an extension list of
     "binary" suffixes, which is the same list-shaped defect one layer down,
@@ -500,7 +612,7 @@ def plan_file(
     text = _read_text(path)
     if text is None:
         return None, [], []
-    mask = mask_for(path, text)
+    mask = mask_fn(path, text)
     line_starts, lineno = _line_offsets(text)
 
     if namespace == "scxml":
@@ -1015,6 +1127,20 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
+    # The existence gate reads a wider region than a rewrite may touch — a
+    # Python docstring is documentation the language keeps in a string, so it
+    # is judged but not editable. Combining the two flags would carry that
+    # wider region into the writer and rewrite inside string literals. The
+    # combination has no use anyway (`--check-ledger` demands no §-form, so
+    # there is nothing for `--apply` to do about what it reports), so it is
+    # refused here rather than left to behave.
+    if args.apply and args.check_ledger:
+        ap.error(
+            "--apply cannot be combined with --check-ledger: the existence "
+            "check judges regions (Python docstrings) that a rewrite must not "
+            "edit, and its findings are corrected by hand, not migrated"
+        )
+
     if args.from_toml:
         args.paths = list(args.paths) + paths_from_toml(args.from_toml)
     if not args.paths:
@@ -1082,10 +1208,25 @@ def main(argv=None):
     # rewrite, so they are confined to files with a comment grammar; the
     # existence check only reads, and nothing about a file's suffix makes a
     # fabricated section number in it true.
+    #
+    # The same split has to be made twice, because the scan is filtered twice:
+    # once by which FILES are opened, and once by which REGIONS of an opened
+    # file count. Only the first was split. The second kept the rewriter's
+    # answer, so `.py` — the one family whose documentation is a string rather
+    # than a comment — was read for its `#` lines and nothing else, and a
+    # fabricated section number in a docstring passed every gate. Measured: 15
+    # of 18 lexical contexts seen, the 3 blind ones all Python strings.
     predicate = in_scope if args.check_ledger else rewritable
+    mask_fn = read_mask_for if args.check_ledger else rewrite_mask_for
     for path in iter_source_files(args.paths, predicate):
         new_text, migs, skips = plan_file(
-            path, ledger_ids, args.prefix, args.namespace, exclude_ids, token_ledgers
+            path,
+            ledger_ids,
+            args.prefix,
+            args.namespace,
+            exclude_ids,
+            token_ledgers,
+            mask_fn,
         )
         if new_text is None:
             report["files_not_text"] += 1

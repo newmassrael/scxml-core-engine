@@ -35,7 +35,7 @@ Section-id policy is the §-citation extractor's token rule: a dot survives
 only between two digits, every other dot becomes a hyphen (5.B -> 5-B,
 5.J.2 -> 5-J-2, 6.2.6 stays). This mirrors the scxml ledger's lettered-label
 hyphenation (G.7 -> scxml-G-7) for the same reason: the extractor reads
-"§synth-5.B" as id "synth-5" + prose ".B", so a dotted lettered id could
+`§synth-5.B` as id "synth-5" + prose ".B", so a dotted lettered id could
 never be cited whole.
 
 This is *adoption tooling*, not part of the SCE engine. It is deterministic
