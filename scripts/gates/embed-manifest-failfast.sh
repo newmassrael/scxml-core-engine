@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: embed-vendor-smoke.yml
+#
 # emit_embed_manifest.sh fail-fast regression case.
 #
 # Reproduces the May 2026 embed-vendor-smoke CI failure where

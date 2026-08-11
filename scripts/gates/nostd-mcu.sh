@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: sce-rust-runtime-no-std.yml
+#
 # no_std MCU-target mirror (sce-rust-runtime-no-std.yml).
 #
 # `clippy` only lints the host target with default features, so it never

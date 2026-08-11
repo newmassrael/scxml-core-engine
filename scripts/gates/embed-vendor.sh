@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: embed-vendor-smoke.yml
+#
 # embed/ vendor channel (mirror of embed-vendor-smoke.yml, in full).
 #
 # embed/MANIFEST.json is the tracked snapshot of the embeddable public API

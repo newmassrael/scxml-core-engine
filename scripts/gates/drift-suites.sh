@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: drift-verify.yml
+#
 # Committed-tree drift + sourcemap suites, run serially (mirror of
 # drift-verify.yml).
 #

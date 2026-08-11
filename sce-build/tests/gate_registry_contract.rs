@@ -141,6 +141,98 @@ fn every_workflow_the_registry_maps_exists() {
 }
 
 #[test]
+fn every_gate_script_declares_the_workflow_it_mirrors() {
+    // The class this closes: a gate script's prose claimed to mirror one
+    // workflow while the registry mapped it to another. `rustdoc-links` was
+    // exactly that — its comment named doc-check.yml, the registry named the
+    // no-std workflow, and the two share a trigger, so the mismatch never
+    // showed as a missed run. Nothing read the claim, so nothing could
+    // disagree with it.
+    //
+    // A rule that simply forbade naming another workflow would be wrong, and
+    // measurably so: two scripts name one legitimately — a note recording the
+    // mapping that was fixed, and a statement that another workflow starts the
+    // same fixture server. So the CLAIM is what became structured, and the
+    // prose stays free.
+    let root = repo_root();
+    // Ask the registry, do not scrape it: the source also carries the
+    // self-test's synthetic tables, and a scraper reads those as gates.
+    let out = Command::new("python3")
+        .arg(root.join("tools/git-hooks/gate_registry.py"))
+        .arg("--mapping")
+        .arg("--repo-root")
+        .arg(&root)
+        .output()
+        .expect("run gate_registry.py --mapping");
+    assert!(
+        out.status.success(),
+        "gate_registry.py --mapping failed: {out:?}"
+    );
+    let table = String::from_utf8_lossy(&out.stdout);
+
+    // One entry per top-level key; `"workflows": [...]` inside it.
+    let mut mapped: Vec<(String, Vec<String>)> = Vec::new();
+    for line in table.lines() {
+        let indent = line.len() - line.trim_start().len();
+        let t = line.trim();
+        if indent == 1 && t.ends_with("{") {
+            mapped.push((
+                t.trim_matches(|c| c == '"' || c == ':' || c == ' ' || c == '{')
+                    .trim_matches('"')
+                    .to_string(),
+                Vec::new(),
+            ));
+        }
+        if t.ends_with(".yml\",") || t.ends_with(".yml\"") {
+            if let Some(last) = mapped.last_mut() {
+                last.1
+                    .push(t.trim_matches(|c| c == '"' || c == ',').to_string());
+            }
+        }
+    }
+    assert!(
+        mapped.len() > 10,
+        "parsed only {} gate(s) out of the registry — the parse is broken",
+        mapped.len()
+    );
+
+    let mut offenders: Vec<String> = Vec::new();
+    for (slug, workflows) in &mapped {
+        let path = root.join(format!("scripts/gates/{slug}.sh"));
+        let Ok(script) = std::fs::read_to_string(&path) else {
+            offenders.push(format!("{slug}: no script at {}", path.display()));
+            continue;
+        };
+        let Some(claim) = script
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("# Mirrors:"))
+            .map(|c| c.trim().to_string())
+        else {
+            offenders.push(format!("{slug}: no `# Mirrors:` line"));
+            continue;
+        };
+        let mut declared: Vec<&str> = claim.split_whitespace().collect();
+        declared.sort_unstable();
+        let mut want: Vec<&str> = workflows.iter().map(String::as_str).collect();
+        want.sort_unstable();
+        let want_text = if want.is_empty() { vec!["none"] } else { want };
+        if declared != want_text {
+            offenders.push(format!(
+                "{slug}: script says `{}`, registry maps {want_text:?}",
+                claim
+            ));
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "gate script(s) disagree with the registry about the workflow they \
+         mirror:\n  {}\n A gate that mirrors no workflow says `# Mirrors: none` \
+         and carries its reason in the registry's no_ci_reason.",
+        offenders.join("\n  ")
+    );
+}
+
+#[test]
 fn every_gate_script_is_executable() {
     // The runner refuses a non-executable gate, which turns a forgotten
     // `chmod +x` into a failed push rather than a skipped gate. Catching it

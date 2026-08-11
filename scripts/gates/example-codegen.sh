@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: example-codegen.yml
+#
 # Example SCXML codegen smoke + authored-document lint.
 #
 # The emscripten-backed doom_wasm / visualizer builds are too heavy for a
