@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -315,6 +315,17 @@ impl SendParamPayloadPolicy {
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
+    //
+    // W3C SCXML C.1: `_event.origin` is the sender's published
+    // `_ioprocessors` location, not its bare session id — and this is the one
+    // place that publishes `_event` to the document, so this is where the id
+    // becomes a location. The engine keeps the bare id in
+    // `EventMetadata::origin` because its session-keyed lookups match on it;
+    // converting at the raise would make one value serve two consumers that
+    // need different spellings. The conversion itself lives in
+    // `helpers::io_processors::published_origin`, the port of the
+    // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+    // spelling of the rule is how the backends would stop agreeing.
     fn set_current_event_in_script_engine(
         &self,
         event_name: &str,
@@ -328,6 +339,7 @@ impl SendParamPayloadPolicy {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            let published = sce_rust_runtime::helpers::io_processors::published_origin(origin);
             let _ = se.set_current_event(
                 sid,
                 sce_rust_runtime::SetCurrentEventArgs {
@@ -335,7 +347,7 @@ impl SendParamPayloadPolicy {
                     event_data,
                     event_type,
                     send_id,
-                    origin,
+                    origin: &published,
                     origin_type,
                     invoke_id,
                 },
@@ -393,13 +405,16 @@ impl SendParamPayloadPolicy {
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
 
-                // W3C SCXML 6.4: Ensure child session ID for invoke tracking
+                // W3C SCXML C.1: the child adopts the id its parent recorded
+                // for it. The parent mints `parentSession.invokeId` and keys
+                // `active_invokes` on it, so an event from this child reaches
+                // the parent carrying that id as its origin; if the child also
+                // minted an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them.
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                        core::sync::atomic::AtomicU64::new(0);
-                    let cid =
-                        CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    child_policy.session_id = Some(format!("child_session_{}", cid));
+                    child_policy.session_id = Some(child_session_id.clone());
                 }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
@@ -503,6 +518,40 @@ impl SendParamPayloadPolicy {
                 self.child_inv_emitter = Some(child);
             }
         }
+    }
+
+    // W3C SCXML C.1: deliver an event addressed to a child's published
+    // location.
+    //
+    // The parent mints `parentSession.invokeId` for each child and that id is
+    // what the child's `_ioprocessors` entry names, so a `<send>` whose target
+    // decodes to one of them is addressed to that child rather than to this
+    // machine. A false return means the address names no live child of ours
+    // and the event takes the normal external path — the routing half of C.1
+    // is what makes the published location a usable target rather than a
+    // string that merely compares equal.
+    fn deliver_to_child_session(
+        &mut self,
+        child_session_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if child_session_id.is_empty() {
+            return false;
+        }
+        {
+            let addressed = self
+                .active_invokes
+                .get("inv_emitter")
+                .map_or(false, |cs| cs.session_id == child_session_id);
+            if addressed {
+                if let Some(ref mut child) = self.child_inv_emitter {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

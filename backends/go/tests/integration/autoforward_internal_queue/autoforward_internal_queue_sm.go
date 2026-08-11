@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 
@@ -176,7 +176,15 @@ func (p *AutoforwardInternalQueuePolicy) ExecutePendingInvokes(engine *sce.Engin
 			childPolicy.ParentExternalQueue = parentQueue
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
-			childPolicy.SessionID = sce.GenerateSessionID()
+			// W3C SCXML C.1: the child adopts the id its parent recorded for
+			// it. The parent mints `parentSession.invokeId` and keys
+			// `activeInvokes` on it, so an event from this child reaches the
+			// parent carrying that id as its origin; if the child also minted
+			// an id of its own, the location it publishes in `_ioprocessors`
+			// and the origin the parent sees would be two names for one
+			// session that can never be compared — which is exactly what C.1
+			// requires of them.
+			childPolicy.SessionID = childSessionID
 
 
 
@@ -249,6 +257,28 @@ func (p *AutoforwardInternalQueuePolicy) ForwardToAutoforwardChildren(eventName 
 			p.childInvWatch.RaiseExternalByNameWithMeta(eventName, metadata)
 		}
 	}
+}
+
+// DeliverToChildSession delivers an event addressed to a child's published
+// location (W3C SCXML C.1).
+//
+// The parent mints `parentSession.invokeId` for each child and that id is what
+// the child's `_ioprocessors` entry names, so a <send> whose target decodes to
+// one of them is addressed to that child rather than to this machine. A false
+// return means the address names no live child of ours and the event takes the
+// normal external path — the routing half of C.1 is what makes the published
+// location a usable target rather than a string that merely compares equal.
+func (p *AutoforwardInternalQueuePolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv_watch"]; ok && cs.SessionID == childSessionID {
+		if p.childInvWatch != nil {
+			p.childInvWatch.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+	}
+	return false
 }
 
 

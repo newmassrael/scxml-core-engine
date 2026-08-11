@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 
@@ -248,7 +248,17 @@ func (p *SendParamPayloadPolicy) setCurrentEvent(name string) {
 	data := p.pendingEventData
 	eventType := p.pendingEventType
 	sendID := p.pendingEventSendid
-	origin := p.pendingEventOrigin
+	// W3C SCXML C.1: `_event.origin` is the sender's published
+	// `_ioprocessors` location, not its bare session id — and this is the one
+	// place that publishes `_event` to the document, so this is where the id
+	// becomes a location. The engine keeps the bare id in
+	// `EventMetadata.Origin` because its session-keyed lookups (<finalize>
+	// dispatch, cancelled-invoke filtering) match on it; converting at the
+	// raise would make one value serve two consumers that need different
+	// spellings. The conversion itself lives in `sce.PublishedOrigin`, the
+	// port of the `IOProcessorHelper::publishedOrigin` the C++ engines share:
+	// a second spelling of the rule is how the backends would stop agreeing.
+	origin := sce.PublishedOrigin(p.pendingEventOrigin)
 	originType := p.pendingEventOrigintype
 	invokeID := p.pendingEventInvokeid
 	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{
@@ -315,7 +325,15 @@ func (p *SendParamPayloadPolicy) ExecutePendingInvokes(engine *sce.Engine[SendPa
 			childPolicy.ParentExternalQueue = parentQueue
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
-			childPolicy.SessionID = sce.GenerateSessionID()
+			// W3C SCXML C.1: the child adopts the id its parent recorded for
+			// it. The parent mints `parentSession.invokeId` and keys
+			// `activeInvokes` on it, so an event from this child reaches the
+			// parent carrying that id as its origin; if the child also minted
+			// an id of its own, the location it publishes in `_ioprocessors`
+			// and the origin the parent sees would be two names for one
+			// session that can never be compared — which is exactly what C.1
+			// requires of them.
+			childPolicy.SessionID = childSessionID
 
 
 
@@ -369,6 +387,28 @@ func (p *SendParamPayloadPolicy) TickChildren(engine *sce.Engine[SendParamPayloa
 	}
 }
 
+
+// DeliverToChildSession delivers an event addressed to a child's published
+// location (W3C SCXML C.1).
+//
+// The parent mints `parentSession.invokeId` for each child and that id is what
+// the child's `_ioprocessors` entry names, so a <send> whose target decodes to
+// one of them is addressed to that child rather than to this machine. A false
+// return means the address names no live child of ours and the event takes the
+// normal external path — the routing half of C.1 is what makes the published
+// location a usable target rather than a string that merely compares equal.
+func (p *SendParamPayloadPolicy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
+	if childSessionID == "" {
+		return false
+	}
+	if cs, ok := p.activeInvokes["inv_emitter"]; ok && cs.SessionID == childSessionID {
+		if p.childInvEmitter != nil {
+			p.childInvEmitter.RaiseExternalByName(eventName, eventData)
+			return true
+		}
+	}
+	return false
+}
 
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──

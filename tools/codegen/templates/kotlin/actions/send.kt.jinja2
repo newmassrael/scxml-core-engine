@@ -265,6 +265,15 @@
                     raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata(type = "internal", data = eventDataT))
                 } else if (_rt == "#_parent") {
                     onSendToParent?.invoke("{{ action.event }}", eventDataT)
+                } else if (deliverToChildSession(
+                        com.sce.runtime.IoProcessors.sessionIdFromScxmlLocation(_rt),
+                        "{{ action.event }}",
+                        eventDataT)) {
+                    // W3C SCXML C.1: the target decoded to one of our children's
+                    // published locations, so it is addressed to that child.
+                    // Without this arm the address a peer was told to answer at
+                    // routes back into the sender's own queue, so the location
+                    // compares equal and still reaches nobody.
                 } else {
                     send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = eventDataT))
                 }
@@ -298,6 +307,12 @@
                 raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }})
             } else if (_rt == "#_parent") {
                 onSendToParent?.invoke("{{ action.event }}", "")
+            } else if (deliverToChildSession(
+                    com.sce.runtime.IoProcessors.sessionIdFromScxmlLocation(_rt),
+                    "{{ action.event }}")) {
+                // W3C SCXML C.1: see the payload-carrying arm above — a target
+                // that decodes to a child's published location is addressed to
+                // that child, not to this machine's own external queue.
             } else {
                 send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: ""))
             }

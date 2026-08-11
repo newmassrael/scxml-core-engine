@@ -223,6 +223,19 @@
 {{ indent }}        _dyn_evt = self.get_event_from_name(_dyn_evt_name)
 {{ indent }}        if _dyn_evt is not None:
 {{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
+{{ indent }}elif _session_id_from_scxml_location(_target_str):
+{# W3C SCXML C.1 — the target is an SCXML Event I/O Processor location. When
+   it decodes to one of our own children it is addressed to that child;
+   otherwise it names this session (the AOT engine's single-session execution
+   model) and rides the local external queue. Without this arm the address a
+   peer was told to answer at falls through to `error.communication`, so the
+   location compares equal and still reaches nobody. #}
+{{ indent }}    if not engine.deliver_to_child_session(
+{{ indent }}        _session_id_from_scxml_location(_target_str), _dyn_evt_name, _data
+{{ indent }}    ):
+{{ indent }}        _dyn_evt = self.get_event_from_name(_dyn_evt_name)
+{{ indent }}        if _dyn_evt is not None:
+{{ indent }}            engine.send_external(_dyn_evt, _sid, _data)
 {{ indent }}else:
 {% if 'error.communication' in model.events %}
 {{ indent }}    engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))

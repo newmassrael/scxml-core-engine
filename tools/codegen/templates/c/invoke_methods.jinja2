@@ -45,18 +45,24 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     sce_copy_bounded_id(evt.invoke_id, invoke_id);
-    /* W3C SCXML 5.10.1 `_event.origin`: an invoked session is an external
-       entity from the parent's point of view, so its parent-bound events
-       carry an origin the parent can address a reply to. The spec's own
-       child-addressing form is `#_<invokeid>` (§6.4), which is what the
-       parent's `<send target="#_<invokeid>">` resolves against — so that
-       is the URI recorded here rather than an invented identifier. */
+    /* W3C SCXML C.1 `_event.origin`: an invoked session is an external entity
+       from the parent's point of view, and the clause names exactly which
+       address its parent-bound events carry — the 'location' the SENDING
+       session published in its own `_ioprocessors`. `#_<invokeid>` is the
+       parent's way to address the child (§6.4), not the child's published
+       location, so an origin spelled that way matches nothing the child
+       published and a peer comparing the two never agrees.
+
+       The child's location is the deterministic `sce://scxml/<name>_session`
+       its own `_ioprocessors` chunk emits (see `scriptengine.jinja2`), and the
+       invoke id -> child name mapping is known at codegen time, so the address
+       is resolved here without a runtime session registry. */
     if (invoke_id != NULL && invoke_id[0] != '\0') {
-        char _origin_uri[SCE_MAX_ID_LEN];
-        _origin_uri[0] = '#';
-        _origin_uri[1] = '_';
-        sce_copy_bounded_n(&_origin_uri[2], invoke_id, (size_t)SCE_MAX_ID_LEN - 2u);
-        sce_copy_bounded_id(evt.origin, _origin_uri);
+{% for invoke_info in model.invokes | scxml %}
+        if (strcmp(invoke_id, "{{ invoke_info.invoke_id }}") == 0) {
+            sce_copy_bounded_origin(evt.origin, "sce://scxml/{{ invoke_info.child_name | escape_c }}_session");
+        }
+{% endfor %}
     }
     /* W3C SCXML 6.4 (test233): copy child-supplied `<send><param>` Lua-
        source string into `event_with_meta_t.data`. The dequeue path
