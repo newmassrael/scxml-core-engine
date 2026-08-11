@@ -379,6 +379,16 @@ void SCXMLEngineImpl::stopStateMachine(const std::string &sessionId) {
     }
 }
 
+void SCXMLEngineImpl::setBasicHttpAccessUri(const std::string &accessUri, const std::string &sessionId) {
+    if (!stateMachine_) {
+        SCE_LOG_WARN("SCXMLEngine: setBasicHttpAccessUri before a machine exists — the entry cannot be published");
+        return;
+    }
+    stateMachine_->setBasicHttpAccessUri(accessUri);
+    std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
+    SCE_LOG_INFO("SCXMLEngine: BasicHTTP access URI declared for session {}: '{}'", actualSessionId, accessUri);
+}
+
 bool SCXMLEngineImpl::sendEventSync(const std::string &eventName, const std::string &sessionId,
                                     const std::string &eventData) {
     std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
