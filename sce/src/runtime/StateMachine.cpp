@@ -371,35 +371,32 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
     // eliminating the need for external callers to explicitly call processQueuedEvents()
     // Interactive mode: Skip auto-processing to allow manual step-by-step execution
     if (autoProcessQueuedEvents && eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            int iterations = 0;
-            const int MAX_START_ITERATIONS = 1000;
+        int iterations = 0;
+        const int MAX_START_ITERATIONS = 1000;
 
-            // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-            SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
-            while (adapter.hasEvents()) {
-                if (++iterations > MAX_START_ITERATIONS) {
-                    SCE_LOG_ERROR("StateMachine: start() exceeded max iterations ({}) - possible infinite event loop",
-                                  MAX_START_ITERATIONS);
-                    break;
-                }
-
-                SCE_LOG_DEBUG("StateMachine: Processing queued events after start (iteration {})", iterations);
-
-                // §scxml-3.13: RAII guard to prevent recursive auto-processing during batch event processing
-                {
-                    BatchProcessingGuard batchGuard(isBatchProcessing_);
-                    adapter.popNext();
-                }
-
-                // Check for eventless transitions after processing events
-                checkEventlessTransitions();
+        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
+        SCE::Core::InterpreterEventQueue adapter(eventRaiser_);
+        while (adapter.hasEvents()) {
+            if (++iterations > MAX_START_ITERATIONS) {
+                SCE_LOG_ERROR("StateMachine: start() exceeded max iterations ({}) - possible infinite event loop",
+                              MAX_START_ITERATIONS);
+                break;
             }
 
-            if (iterations > 0) {
-                SCE_LOG_DEBUG("StateMachine: All queued events processed after start ({} iterations)", iterations);
+            SCE_LOG_DEBUG("StateMachine: Processing queued events after start (iteration {})", iterations);
+
+            // §scxml-3.13: RAII guard to prevent recursive auto-processing during batch event processing
+            {
+                BatchProcessingGuard batchGuard(isBatchProcessing_);
+                adapter.popNext();
             }
+
+            // Check for eventless transitions after processing events
+            checkEventlessTransitions();
+        }
+
+        if (iterations > 0) {
+            SCE_LOG_DEBUG("StateMachine: All queued events processed after start ({} iterations)", iterations);
         }
     } else if (!autoProcessQueuedEvents) {
         SCE_LOG_DEBUG("StateMachine: Interactive mode - skipping auto-processing of queued events");
@@ -770,16 +767,13 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Only process if this is the top-level event (not nested/recursive call)
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-                    auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-                    if (eventRaiserImpl) {
-                        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
-                        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                            SCE_LOG_DEBUG(
-                                "W3C SCXML 3.3: Processing queued internal event after parallel external transition");
-                            return true;
-                        });
-                    }
+                    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
+                    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
+                    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+                        SCE_LOG_DEBUG(
+                            "W3C SCXML 3.3: Processing queued internal event after parallel external transition");
+                        return true;
+                    });
                 }
 
                 // §scxml-6.4: Execute pending invokes after macrostep completes
@@ -1132,15 +1126,12 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Only process if this is the top-level event (not nested/recursive call)
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-                    auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-                    if (eventRaiserImpl) {
-                        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
-                        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                            SCE_LOG_DEBUG("W3C SCXML 3.4: Processing done.state event after parallel completion");
-                            return true;
-                        });
-                    }
+                    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
+                    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
+                    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+                        SCE_LOG_DEBUG("W3C SCXML 3.4: Processing done.state event after parallel completion");
+                        return true;
+                    });
                 }
             }
 
@@ -1234,16 +1225,12 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Only process if this is the top-level event (not nested/recursive call)
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-                    auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-                    if (eventRaiserImpl) {
-                        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
-                        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                            SCE_LOG_DEBUG(
-                                "W3C SCXML 3.3: Processing queued internal event after successful transition");
-                            return true;
-                        });
-                    }
+                    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
+                    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
+                    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+                        SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event after successful transition");
+                        return true;
+                    });
                 }
 
                 // §scxml-6.4: Execute pending invokes after macrostep completes
@@ -1275,15 +1262,12 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // Only process if this is the top-level event (not nested/recursive call)
     // Interactive mode: Skip auto-processing to allow manual step-by-step execution
     if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-            SCE::Core::InterpreterInternalEventQueue adapter(eventRaiserImpl);
-            SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event");
-                return true;
-            });
-        }
+        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
+        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
+        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+            SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event");
+            return true;
+        });
     }
 
     // §scxml-6.4: Execute pending invokes after macrostep completes
@@ -1715,40 +1699,37 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             // eventless transitions are found. Queued events are processed by
             // processQueuedEvents() in FIFO order to maintain event ordering guarantees.
             if (eventRaiser_) {
-                auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-                if (eventRaiserImpl) {
-                    SCE_LOG_DEBUG("W3C SCXML: Starting macrostep loop after transition");
+                SCE_LOG_DEBUG("W3C SCXML: Starting macrostep loop after transition");
 
-                    // W3C SCXML: Safety guard against infinite loops in malformed SCXML
-                    // Typical SCXML should complete in far fewer iterations
-                    const int MAX_MACROSTEP_ITERATIONS = 1000;
-                    int iterations = 0;
+                // W3C SCXML: Safety guard against infinite loops in malformed SCXML
+                // Typical SCXML should complete in far fewer iterations
+                const int MAX_MACROSTEP_ITERATIONS = 1000;
+                int iterations = 0;
 
-                    while (true) {
-                        if (++iterations > MAX_MACROSTEP_ITERATIONS) {
-                            SCE_LOG_ERROR(
-                                "W3C SCXML: Macrostep limit exceeded ({} iterations) - possible infinite loop in SCXML",
-                                MAX_MACROSTEP_ITERATIONS);
-                            SCE_LOG_ERROR("W3C SCXML: Check for circular eventless transitions in your SCXML document");
-                            break;  // Safety exit
-                        }
-
-                        // W3C SCXML: Check for eventless transitions on all active states
-                        bool eventlessTransitionExecuted = checkEventlessTransitions();
-
-                        if (eventlessTransitionExecuted) {
-                            SCE_LOG_DEBUG("W3C SCXML: Eventless transition executed, continuing macrostep");
-                            continue;  // Loop back to check for more eventless transitions
-                        }
-
-                        // W3C SCXML: No eventless transitions found, exit macrostep
-                        // Queued events will be processed by processQueuedEvents() in FIFO order
-                        SCE_LOG_DEBUG("W3C SCXML: No eventless transitions, macrostep complete");
-                        break;
+                while (true) {
+                    if (++iterations > MAX_MACROSTEP_ITERATIONS) {
+                        SCE_LOG_ERROR(
+                            "W3C SCXML: Macrostep limit exceeded ({} iterations) - possible infinite loop in SCXML",
+                            MAX_MACROSTEP_ITERATIONS);
+                        SCE_LOG_ERROR("W3C SCXML: Check for circular eventless transitions in your SCXML document");
+                        break;  // Safety exit
                     }
 
-                    SCE_LOG_DEBUG("W3C SCXML: Macrostep loop complete");
+                    // W3C SCXML: Check for eventless transitions on all active states
+                    bool eventlessTransitionExecuted = checkEventlessTransitions();
+
+                    if (eventlessTransitionExecuted) {
+                        SCE_LOG_DEBUG("W3C SCXML: Eventless transition executed, continuing macrostep");
+                        continue;  // Loop back to check for more eventless transitions
+                    }
+
+                    // W3C SCXML: No eventless transitions found, exit macrostep
+                    // Queued events will be processed by processQueuedEvents() in FIFO order
+                    SCE_LOG_DEBUG("W3C SCXML: No eventless transitions, macrostep complete");
+                    break;
                 }
+
+                SCE_LOG_DEBUG("W3C SCXML: Macrostep loop complete");
             }
 
             // TransitionGuard will automatically clear inTransition_ flag on return
@@ -3333,11 +3314,8 @@ bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IAc
     // W3C SCXML compliance: Set immediate mode to false during executable content execution
     // This ensures events raised during execution are queued and processed after completion
     if (eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            eventRaiserImpl->setImmediateMode(false);
-            SCE_LOG_DEBUG("SCXML compliance: Set immediate mode to false for executable content execution");
-        }
+        eventRaiser_->setImmediateMode(false);
+        SCE_LOG_DEBUG("SCXML compliance: Set immediate mode to false for executable content execution");
     }
 
     // §scxml-4.9: the elements of a block run in document order, and once one of them
@@ -3372,16 +3350,13 @@ bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IAc
 
     // W3C SCXML compliance: Restore immediate mode and optionally process queued events
     if (eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            eventRaiserImpl->setImmediateMode(true);
-            // Process events only if requested (e.g., for entry actions, not exit/transition actions)
-            if (processEventsAfter) {
-                eventRaiserImpl->processQueuedEvents();
-                SCE_LOG_DEBUG("SCXML compliance: Restored immediate mode and processed queued events");
-            } else {
-                SCE_LOG_DEBUG("SCXML compliance: Restored immediate mode (events will be processed later)");
-            }
+        eventRaiser_->setImmediateMode(true);
+        // Process events only if requested (e.g., for entry actions, not exit/transition actions)
+        if (processEventsAfter) {
+            eventRaiser_->processQueuedEvents();
+            SCE_LOG_DEBUG("SCXML compliance: Restored immediate mode and processed queued events");
+        } else {
+            SCE_LOG_DEBUG("SCXML compliance: Restored immediate mode (events will be processed later)");
         }
     }
 
@@ -3862,11 +3837,8 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
     // W3C SCXML compliance: Set immediate mode to false during executable content execution
     // This ensures events raised during execution are queued and processed after completion
     if (eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            eventRaiserImpl->setImmediateMode(false);
-            SCE_LOG_DEBUG("SCXML compliance: Set immediate mode to false for onentry actions execution");
-        }
+        eventRaiser_->setImmediateMode(false);
+        SCE_LOG_DEBUG("SCXML compliance: Set immediate mode to false for onentry actions execution");
     }
 
     // §scxml-3.8: Build lambda blocks for EntryExitHelper
@@ -3919,17 +3891,14 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
     // Events must be processed AFTER the entire state tree entry completes, not during onentry
     // This ensures parent and child states are both active before processing raised events
     if (eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            if (autoProcessQueuedEvents_) {
-                // Normal mode: Restore immediate mode for auto-processing
-                eventRaiserImpl->setImmediateMode(true);
-                SCE_LOG_DEBUG(
-                    "SCXML compliance: Restored immediate mode (events will be processed after state entry completes)");
-            } else {
-                // Interactive mode: Keep immediate mode false to prevent auto-processing
-                SCE_LOG_DEBUG("Interactive mode: Keeping immediate mode false (manual step-by-step execution)");
-            }
+        if (autoProcessQueuedEvents_) {
+            // Normal mode: Restore immediate mode for auto-processing
+            eventRaiser_->setImmediateMode(true);
+            SCE_LOG_DEBUG(
+                "SCXML compliance: Restored immediate mode (events will be processed after state entry completes)");
+        } else {
+            // Interactive mode: Keep immediate mode false to prevent auto-processing
+            SCE_LOG_DEBUG("Interactive mode: Keeping immediate mode false (manual step-by-step execution)");
         }
     }
 
