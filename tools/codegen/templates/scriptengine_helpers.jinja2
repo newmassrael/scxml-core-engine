@@ -2,9 +2,23 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
     // Helper: Ensure session ID is initialized
+    //
+    // W3C SCXML C.1: an invoked child adopts the id its parent recorded for
+    // it. The parent mints `parentSession.invokeId` and keys `activeInvokes_`
+    // on it, so an event from this child arrives at the parent carrying that
+    // id as its origin; if the child also minted an address-of-this id for
+    // its own script session, the location it publishes in `_ioprocessors`
+    // and the origin the parent sees would be two names for one session that
+    // can never be compared — which is exactly what C.1 requires of them.
     void ensureSessionId() const {
         if (!sessionId_.has_value()) {
+{% if model.needs_parent_template %}
+            sessionId_ = childSessionId_.empty()
+                             ? "session_" + std::to_string(reinterpret_cast<uintptr_t>(this))
+                             : childSessionId_;
+{% else %}
             sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+{% endif %}
         }
     }
 

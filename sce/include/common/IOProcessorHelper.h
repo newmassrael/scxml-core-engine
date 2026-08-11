@@ -101,6 +101,42 @@ public:
     }
 
     /**
+     * @brief The `_event.origin` a receiver should see for an event sent by
+     *        `originSessionId`
+     *
+     * §scxml-C-1 requires the origin of a delivered event to match the
+     * 'location' the sending session published, which is what makes it an
+     * address the receiver can answer. Both engines carry the sender's BARE
+     * session id internally — the interpreter in `currentOriginSessionId_`,
+     * the AOT engine in `EventWithMetadata::origin` — because their
+     * session-keyed lookups (`<finalize>` dispatch, cancelled-invoke
+     * filtering) match on the id. Converting earlier, where the event is
+     * raised, makes one value serve two consumers that need different
+     * spellings, and it silently broke those lookups once already (W3C
+     * 233/234). So the conversion belongs at the boundary where the value
+     * becomes visible to the document, and this is that conversion.
+     *
+     * A remote invoke is the case that makes this more than a rename: its
+     * child session is stamped with a URI rather than an id, and wrapping a
+     * URI in `scxmlLocation` would produce an address naming nothing. An
+     * argument that already carries a scheme is therefore passed through —
+     * it is already an address.
+     *
+     * @param originSessionId Sender's session id, or an address for a remote
+     *                        session; empty when the event has no origin
+     * @return Address to publish as `_event.origin`, empty for empty input
+     */
+    static std::string publishedOrigin(const std::string &originSessionId) {
+        if (originSessionId.empty()) {
+            return "";
+        }
+        if (originSessionId.find("://") != std::string::npos) {
+            return originSessionId;
+        }
+        return scxmlLocation(originSessionId);
+    }
+
+    /**
      * @brief Entry set for a session
      *
      * §scxml-C-1-1: the SCXML Event I/O Processor entry and its 'location'

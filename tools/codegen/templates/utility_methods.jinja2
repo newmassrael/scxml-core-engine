@@ -125,6 +125,14 @@ public:
         if (eventName.empty()) return;
         ensureScriptEngine();
         std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
+        // W3C SCXML C.1: `_event.origin` is the address the sending session
+        // published, not its bare session id. The queue carries the id
+        // because `executeFinalizeForChildEvent` keys on it
+        // (`childSession.sessionId == eventWithMeta.origin`), so this
+        // boundary — where the value becomes visible to the document — is
+        // where it becomes an address. Same helper the Interpreter's
+        // boundary calls, so the two engines cannot answer differently.
+        const std::string publishedOrigin = ::SCE::IOProcessorHelper::publishedOrigin(origin);
         AOT_DEBUG("AOT setCurrentEventInScriptEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
                   eventName, eventData, actualType, sendId, origin, originType, invokeId);
         // W3C SCXML 5.5: Use Event object when typed data available (engine-agnostic ScriptValue pipeline)
@@ -132,7 +140,7 @@ public:
             auto event = std::make_shared<::SCE::Event>(eventName, actualType);
             event->setData(eventData);
             event->setSendId(sendId);
-            event->setOrigin(origin);
+            event->setOrigin(publishedOrigin);
             event->setOriginType(originType);
             event->setInvokeId(invokeId);
             event->setTypedData(typedData.value());
@@ -141,7 +149,7 @@ public:
             // W3C SCXML 5.10: String-based path (standard)
             getScriptEngine()
                 .setCurrentEvent(sessionId_.value(),
-                                 ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, origin,
+                                 ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, publishedOrigin,
                                                             originType, invokeId})
                 .get();
         }

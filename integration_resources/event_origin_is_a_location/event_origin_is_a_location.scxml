@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML C.1: `_event.origin` is an address, not a session name.
+
+     Appendix C.1 states the contract in two halves. The origin of an event
+     "MUST match the 'location' field of the entry for the SCXML Event I/O
+     Processor in the _ioprocessors of the sending session", and that
+     location is what a peer sends back to. A machine that puts a bare
+     session id there satisfies neither half: the value does not match what
+     the sender published, and it does not name a target.
+
+     The public IRP suite cannot see this. Test 336 checks `_event.origin`
+     by sending to it — and says in its own comment that the sender and the
+     receiver are the same session, so any value at all round-trips back to
+     where it started. Test 350 has the same shape. Nothing in the corpus
+     sends ACROSS sessions, which is the only arrangement where the two
+     spellings differ.
+
+     So this fixture puts a second session on the other end. The child
+     sends `fromChild` carrying the location it publishes for the SCXML
+     Event I/O Processor, and the parent asks the two questions C.1 asks:
+
+       match    `_event.origin` equals the location the sender published,
+                which is the clause verbatim
+       routing  sending to that address reaches the session that raised the
+                event — the half a self-addressed test cannot exercise
+
+     The comparison is a string equality against the sender's own
+     `_ioprocessors` entry rather than a prefix test on the value. That is
+     both the clause as written and the only form portable across the
+     datamodel engines: the condition is evaluated by whichever engine the
+     backend embeds, and a failed evaluation raises `error.execution` and
+     reads as a false condition — so a probe written with a method one
+     engine lacks reports a violation that is not there.
+
+     A mismatch lands in `fail` immediately. A routing violation leaves the
+     parent waiting in `await_reply` and the harness times out; that is a
+     weaker signal on purpose, because a target that resolves nowhere
+     produces no event to transition on.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="event_origin_is_a_location">
+    <!-- `waiting` and `await_reply` are children of `phase` because §6.4
+         cancels an invoke when the state carrying it is exited. A flat
+         arrangement — `phase` transitioning to a sibling `await_reply` —
+         destroys the child session on the way out, so the reply has nowhere
+         to arrive and the fixture times out for a reason that has nothing to
+         do with the clause under test. -->
+    <state id="phase" initial="waiting">
+        <invoke type="scxml" id="inv_peer">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="emit">
+                    <state id="emit">
+                        <onentry>
+                            <send target="#_parent" event="fromChild">
+                                <param name="myLocation"
+                                       expr="_ioprocessors['scxml'].location"/>
+                            </send>
+                        </onentry>
+                        <transition event="reply" target="acked">
+                            <send target="#_parent" event="replyArrived"/>
+                        </transition>
+                    </state>
+                    <final id="acked"/>
+                </scxml>
+            </content>
+        </invoke>
+
+        <!-- C.1 verbatim: the origin of the delivered event equals the
+             location the sending session published. The child carries its
+             own entry across so the parent can compare the two spellings of
+             one address without reading another session's system variables. -->
+        <state id="waiting">
+            <transition event="fromChild"
+                        cond="_event.origin == _event.data.myLocation"
+                        target="await_reply">
+                <send targetexpr="_event.origin" event="reply"/>
+            </transition>
+            <transition event="fromChild" target="fail"/>
+        </state>
+
+        <state id="await_reply">
+            <transition event="replyArrived" target="pass"/>
+        </state>
+    </state>
+
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>
