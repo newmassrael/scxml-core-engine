@@ -109,7 +109,7 @@ const ActionFormatter = (function() {
             details.push(`${DETAIL_PREFIX}type: ${displayType}${suffix}`);
         }
 
-        // W3C SCXML 6.2.7: sendid attribute for unique event identification and cancellation
+        // W3C SCXML 6.2.2: the send 'id' / 'idlocation' attributes, which <cancel> names to stop a delayed send
         if (!isEmpty(action.sendid)) {
             details.push(`${DETAIL_PREFIX}id: ${action.sendid}`);
         } else if (!isEmpty(action.idlocation)) {
