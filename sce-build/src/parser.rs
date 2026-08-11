@@ -853,6 +853,29 @@ impl SCXMLParser {
             ));
         }
 
+        // A forge document wears the same `<scxml>` root, so the guard
+        // above cannot see it. Left alone it parses to a stateless model
+        // and the author is told "No state nodes found in SCXML document"
+        // — a repair instruction pointing at the one thing that is not
+        // wrong. SCE_ERROR_CONTRACT.md §4.1 makes `sce:kind` the routing
+        // key, and `classify_document` is the primitive; the CLI asks it
+        // and the library entries did not, so only build.rs consumers
+        // got the misleading answer.
+        if let Ok(Some(kind)) = crate::forge::parser::detect_kind_from_node(&root) {
+            if kind != crate::forge::model::ForgeKind::Statechart {
+                return Err(Located::new(
+                    crate::forge::error::ValidationError::WrongPipeline {
+                        kind,
+                        pipeline: crate::Pipeline::Scxml,
+                    }
+                    .into(),
+                    diag_label,
+                    None,
+                    None,
+                ));
+            }
+        }
+
         // The same precondition the forge parse entry holds: a document
         // reaching model construction has been through expansion.
         // `parse_file` runs the expander itself, so only the in-memory

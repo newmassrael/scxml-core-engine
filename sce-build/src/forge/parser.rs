@@ -431,9 +431,12 @@ fn parse_externs(
     Ok(declarations)
 }
 
-// ── Internal: kind detection from parsed node ──────────────────
+// ── Kind detection from parsed node ────────────────────────────
 
-fn detect_kind_from_node(
+/// Visible to the statechart parser, which holds the same already-parsed
+/// root and must not re-parse the document to ask the routing question
+/// SCE_ERROR_CONTRACT.md §4.1 makes it answer.
+pub(crate) fn detect_kind_from_node(
     root: &roxmltree::Node,
 ) -> Result<Option<ForgeKind>, Box<ValidationError>> {
     let kind_val = match sce_attr(root, "kind") {
@@ -494,6 +497,7 @@ fn parse_forge_from_node(
             label.diagnostic_label,
             ValidationError::WrongPipeline {
                 kind: ForgeKind::Statechart,
+                pipeline: crate::Pipeline::Forge,
             },
         )),
     }
@@ -8452,6 +8456,7 @@ pub fn parse_imports(
                 doc_name,
                 ValidationError::WrongPipeline {
                     kind: ForgeKind::Statechart,
+                    pipeline: crate::Pipeline::Forge,
                 },
             ));
         }

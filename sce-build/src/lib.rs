@@ -1041,6 +1041,7 @@ pub fn compile_forge_from_string(
         Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
+                pipeline: crate::Pipeline::Forge,
             }
             .into(),
             label.diagnostic_label,
@@ -1138,6 +1139,7 @@ pub fn compile_forge_with_deploy(
                 Located::new(
                     ValidationError::WrongPipeline {
                         kind: forge::model::ForgeKind::Statechart,
+                        pipeline: crate::Pipeline::Forge,
                     }
                     .into(),
                     label.diagnostic_label,
@@ -2055,6 +2057,7 @@ pub fn compile_forge_with_imports(
         Located::new(
             ValidationError::WrongPipeline {
                 kind: forge::model::ForgeKind::Statechart,
+                pipeline: crate::Pipeline::Forge,
             }
             .into(),
             label.diagnostic_label,
@@ -2383,6 +2386,7 @@ pub fn compile_scxml_with_imports(
                 Located::new(
                     ValidationError::WrongPipeline {
                         kind: forge::model::ForgeKind::Statechart,
+                        pipeline: crate::Pipeline::Forge,
                     }
                     .into(),
                     basename,
@@ -6771,6 +6775,18 @@ pub enum Pipeline {
     Scxml,
     /// Route through the Forge pipeline (XSD + kind-specific validator).
     Forge,
+}
+
+impl std::fmt::Display for Pipeline {
+    /// How a rejection names the pipeline to the author. `forge` matches
+    /// the wording the message carried before the pipeline became a
+    /// field, so that direction's diagnostic is byte-stable.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Pipeline::Scxml => "SCXML",
+            Pipeline::Forge => "forge",
+        })
+    }
 }
 
 /// Decide which pipeline should process `content`.
