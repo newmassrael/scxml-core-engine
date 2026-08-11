@@ -2632,7 +2632,7 @@
       "verification_expectation": "by_construction"
     },
     "mesh-8.3": {
-      "title": "Realization Status (2026-04-13)",
+      "title": "Realization Status",
       "parent_doc": "mesh",
       "parent_section": "mesh-8",
       "decision_status": "active",
@@ -3244,7 +3244,7 @@
       ]
     },
     "mesh-9.6.3": {
-      "title": "`_event` field wiring (W3C §5.10.2 compliance)",
+      "title": "`_event` field wiring (W3C §5.10.1 compliance)",
       "parent_doc": "mesh",
       "parent_section": "mesh-9.6",
       "decision_status": "active",

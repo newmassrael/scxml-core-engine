@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 authors = [
     {name = "newmassrael", email = "newmassrael@gmail.com"},
 ]
-# lupa is a hard dependency — the W3C SCXML B.3 ECMAScript datamodel
+# lupa is a hard dependency — the W3C SCXML B.2 ECMAScript datamodel
 # evaluates author expressions through the same ECMAScript→Lua
 # transformer that the C++ / Rust / Go / Kotlin / C11 backends use.
 # Cross-backend semantic parity (Lua 5.4) is the architectural
