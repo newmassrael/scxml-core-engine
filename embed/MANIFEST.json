@@ -1,6 +1,6 @@
 {
-  "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "101c2803b",
+  "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
+  "embed_version": "27bf5e3671",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 243,
@@ -603,6 +603,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasAutoforwardTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasChildSessionDeliveryTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
@@ -1257,12 +1263,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::StateMachineContext"
-    },
-    {
-      "header": "runtime/StateMachineEventRaiser.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::StateMachineEventRaiser"
     },
     {
       "header": "runtime/StateMachineFactory.h",
