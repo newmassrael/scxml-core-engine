@@ -165,6 +165,7 @@ add_executable(sce_scxml_tests
     core/InvokeHelperTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
+    common/TestSummaryExitStatusTest.cpp
     common/UuidTest.cpp
 )
 
@@ -173,6 +174,7 @@ target_include_directories(sce_scxml_tests
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
         ${CMAKE_SOURCE_DIR}/tests
+        ${CMAKE_SOURCE_DIR}/tests/w3c  # TestSummaryHelper.h reaches interfaces/
 )
 
 target_link_libraries(sce_scxml_tests
