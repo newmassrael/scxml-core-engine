@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Mirrors: none
+# Mirrors: regen-reproduces.yml
 #
 # The regeneration procedure reproduces the committed trees.
 #
@@ -51,10 +51,60 @@ sce_gate_step "regenerating every committed tree in a worktree of HEAD"
 mkdir -p "$WT/target/debug"
 cp "$CODEGEN" "$WT/target/debug/sce-codegen"
 
+# Remove a sample of generated files first, so the run has to PRODUCE them
+# rather than agree with what is already there.
+#
+# `write_if_changed` skips a file whose bytes already match, so a run over an
+# intact tree rewrites nothing at all — measured, zero files — and the first
+# version of this gate reported the strongest possible verdict for the
+# weakest possible reason. Deleting first is what separates "reproduced" from
+# "left alone", and it is the only shape that catches a file the procedure
+# has stopped producing: the tree carried three `__sce_synth_invoke__`
+# documents in exactly that state.
+#
+# A SAMPLE of the W3C trees rather than every generated file, and the reason
+# is a measured limit of the procedure rather than a convenience. Removing a
+# file from an integration tree does not come back: the arm resolves sibling
+# modules before it writes, so a missing
+# `..._sce_synth_invoke__inv_watch_sm.rs` aborts the run instead of being
+# regenerated. Deleting the Rust aggregator (`generated/mod.rs`) fails the
+# same way. So this gate asserts what the procedure can do — restore a W3C
+# artifact and reproduce every tree byte for byte — and the integration arm's
+# inability to rebuild a missing sibling stays an open item rather than a
+# silent exclusion.
+#
+# The candidate set is derived, not listed: every tracked file carrying the
+# §synth-6.2.6 drift header is generator output by construction, which is
+# what keeps a new backend inside the gate without an edit here.
+mapfile -t GENERATED < <(cd "$WT" && git grep -l "template-hash:" -- backends \
+    | grep '/generated/' | grep -v '/mod\.rs$' || true)
+# Floor on the CANDIDATE set, so a scan that stops matching fails loudly
+# instead of sampling nothing. 499 W3C artifacts carried the header when this
+# was set; the floor is below that because adding a fixture raises the count
+# and removing the scan's target is what it exists to catch.
+MINIMUM=400
+if (( ${#GENERATED[@]} < MINIMUM )); then
+    sce_gate_fail "only ${#GENERATED[@]} generated file(s) found, under the ${MINIMUM} floor — the scan is broken, not the tree"
+fi
+SAMPLE=()
+for (( i = 0; i < ${#GENERATED[@]}; i += 47 )); do
+    SAMPLE+=("${GENERATED[i]}")
+done
+sce_gate_step "removing ${#SAMPLE[@]} of ${#GENERATED[@]} generated file(s) so the run has to restore them"
+( cd "$WT" && rm -f "${SAMPLE[@]}" )
+
 REGEN_LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$REGEN_LOG'"
-if ! ( cd "$WT" && SOURCE_DATE_EPOCH=0 ./scripts/regen_all_committed_trees.sh ) \
-        >"$REGEN_LOG" 2>&1; then
+# `SCE_WORKSPACE_ROOT` is not decoration. `locate_workspace_root` prefers the
+# compile-time `CARGO_MANIFEST_DIR` parent over a walk up from the current
+# directory — deliberately, so a vendored binary finds the SCE tree it
+# shipped with — and a linked worktree's `.git` is a file, so nothing else
+# corrects it. Measured without this line: the run wrote nine files into the
+# ORIGINAL checkout while reporting success in the worktree, which is also
+# the likeliest explanation for the four files an earlier attempt at this
+# gate could not account for from inside a Rust test.
+if ! ( cd "$WT" && SOURCE_DATE_EPOCH=0 SCE_WORKSPACE_ROOT="$WT" \
+        ./scripts/regen_all_committed_trees.sh ) >"$REGEN_LOG" 2>&1; then
     tail -40 "$REGEN_LOG" >&2
     sce_gate_fail "the regeneration procedure did not complete"
 fi

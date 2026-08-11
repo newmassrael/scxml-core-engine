@@ -1,0 +1,91 @@
+name: Regen Reproduces Committed Trees
+
+# The regeneration procedure reproduces what is committed.
+#
+# `scripts/regen_all_committed_trees.sh` has always stated this in its own
+# header — that is why it pins SOURCE_DATE_EPOCH — and nothing checked it.
+# Measured before this lane existed: the Rust W3C tree carried three
+# `__sce_synth_invoke__*.scxml` documents that no run produces, left behind
+# when the parser moved to synthesising an invoke child in memory.
+#
+# It also closes what the drift hashes cannot see. `source-hash` and
+# `template-hash` both cover INPUTS — the documents and the templates — so a
+# change to the emit code under `sce-build/src` that alters the output moves
+# neither hash, and the committed trees drift with every gate green.
+# Regenerating and comparing is the only reader of that axis, which is why
+# `sce-build/**` is in the trigger below.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'scripts/regen_all_committed_trees.sh'
+      - 'scripts/regen_event_schema_native*.sh'
+      - 'scripts/regen_native_action.sh'
+      - 'scripts/gates/regen-reproduces.sh'
+      - 'backends/rust/tests/src/generated/**'
+      - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'
+      - 'backends/go/tests/**'
+      - 'tests/w3c/conformance/fixtures.json'
+      - '.github/workflows/regen-reproduces.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'scripts/regen_all_committed_trees.sh'
+      - 'scripts/regen_event_schema_native*.sh'
+      - 'scripts/regen_native_action.sh'
+      - 'scripts/gates/regen-reproduces.sh'
+      - 'backends/rust/tests/src/generated/**'
+      - 'backends/kotlin/tests/src/main/kotlin/com/sce/generated/**'
+      - 'backends/go/tests/**'
+      - 'tests/w3c/conformance/fixtures.json'
+      - '.github/workflows/regen-reproduces.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regen:
+    name: regeneration reproduces the committed trees
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      # Full history: the gate checks out a worktree of HEAD, which a
+      # depth-1 clone cannot provide.
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        submodules: recursive
+
+    # libxml2 backs the default `xsd` feature the generator builds with.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libxml2-dev
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-regen-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-regen-
+
+    # Delegates to the gate runner, which also builds the generator through
+    # the `codegen-build` dependency the registry records.
+    - name: scripts/gate regen-reproduces
+      run: scripts/gate regen-reproduces
