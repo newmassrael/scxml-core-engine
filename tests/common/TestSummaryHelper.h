@@ -104,6 +104,32 @@ public:
 
         return summary;
     }
+
+    /**
+     * @brief Process exit status a run with this summary must report
+     *
+     * A conformance run's exit status is what CI acts on, so the rule lives
+     * here as a pure function rather than inline at the one caller that
+     * happens to exit: it is then testable without running a suite, which is
+     * what its last regression needed. The CLI computed
+     * `errorTests == 0 && passRate > 0` and so ignored `failedTests`
+     * entirely — W3C 233 and 234 sat in their fail state while the process
+     * exited 0, because four hundred other tests passed and nothing errored,
+     * and the CI lane had no signal to turn red on.
+     *
+     * A run that executed nothing is also a failure, which is what the old
+     * `passRate > 0` term was reaching for. Skipped tests are not failures:
+     * they are counted in `totalTests` but in none of the three outcome
+     * buckets, so a fully-skipped run still reports success here — the
+     * decision to skip is the suite's, made before this is consulted.
+     *
+     * @return 0 when every executed test passed and at least one ran; 1 otherwise
+     */
+    static int exitStatus(const W3C::TestRunSummary &summary) {
+        const bool ranSomething = summary.totalTests > 0;
+        const bool allClean = summary.failedTests == 0 && summary.errorTests == 0;
+        return (ranSomething && allClean) ? 0 : 1;
+    }
 };
 
 }  // namespace SCE::Common
