@@ -5,7 +5,7 @@ name: Spec Citations (Mnemosyne adoption)
 #
 #   docs/spec/scxml     §scxml-<n>   W3C SCXML Recommendation mirror
 #   docs/sce-ledger/mesh §mesh-<n>   SCE_MESH.md design ledger
-#   docs/sce-ledger/wire §wire-W<n>  Wire RFC design ledger
+#   docs/sce-ledger/wire `§wire-W<n>`  Wire RFC design ledger
 #   docs/spec/synth     §synth-<id>  SCE Protocol-Synthesis RFC (SCE-owned,
 #                                    tracked in-tree; no external upstream)
 #   docs/sce-ledger/bytesguard §bytesguard-<n>  EventSchema bytes-guard RFC
