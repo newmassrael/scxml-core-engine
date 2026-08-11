@@ -81,7 +81,7 @@ struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextE
 
 /// Policy can hand an event to a live `<invoke>` child named by session id.
 ///
-/// §scxml-C-1 makes a session's published location a usable `<send>` target,
+/// W3C SCXML C.1 makes a session's published location a usable `<send>` target,
 /// so an event addressed to a child has to reach that child rather than the
 /// sender's own queue. Only a policy with local scxml invokes owns child
 /// instances to route to, which is why this is detected rather than required.
@@ -243,7 +243,7 @@ concept HasActiveStates = HasActiveStatesTrait<P>::value;
 template <typename P>
 concept HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 
-/// Policy can deliver an event to a live invoke child by session id (§scxml-C-1)
+/// Policy can deliver an event to a live invoke child by session id (W3C SCXML C.1)
 template <typename P>
 concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 
