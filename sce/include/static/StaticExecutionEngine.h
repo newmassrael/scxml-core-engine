@@ -668,10 +668,10 @@ public:
             }
         }
 
-        // A session's published location is a usable `<send>`
-        // target, so an event addressed to a live invoke child belongs in
-        // that child's queue. Without this the address resolved to nothing
-        // and the event landed back in the SENDER's external queue — a
+        // §scxml-C-1: an event whose target names an accessible session —
+        // spelled here as that session's published location — must go to
+        // that session's external queue. Without this the address resolved
+        // to nothing and the event landed back in the SENDER's queue — a
         // parent answering `_event.origin` sent to itself, which no
         // assertion in the corpus notices because test336 and test350 both
         // send to the session they already are.
