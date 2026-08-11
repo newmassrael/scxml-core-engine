@@ -442,8 +442,15 @@ fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
         dir.join("tools/git-hooks/pre-commit"),
     )
     .expect("copy pre-commit");
+    // `.github` joins `docs` and the adoption tools because the stage has two
+    // halves now: the existence sweep these fixtures exercise, and the binding
+    // axes, which resolve the rev-pinned mnemosyne binary out of
+    // `.github/workflows/spec-citations.yml`. A fixture without the pin would
+    // make the stage report "no MNEMOSYNE_REV pin found" — and the tempting fix
+    // (skip the binding half when the pin is absent) is a silent bypass: every
+    // checkout that lost the workflow file would commit unjudged.
     #[cfg(unix)]
-    for d in ["tools/mnemosyne-adoption", "docs"] {
+    for d in ["tools/mnemosyne-adoption", "docs", ".github"] {
         std::fs::create_dir_all(dir.join(d).parent().expect("has a parent")).ok();
         std::os::unix::fs::symlink(root.join(d), dir.join(d))
             .unwrap_or_else(|e| panic!("symlink {d}: {e}"));
