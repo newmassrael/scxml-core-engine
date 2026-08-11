@@ -10,9 +10,9 @@
 #
 # The ledger exists so code comments citing the diagnostic-wire waves ("RFC §W4",
 # "§W5 D5") resolve to a real section, letting the set_equality_validator gate
-# the parsing/runtime modules that carry them. Citations take the form §wire-W<n>;
+# the parsing/runtime modules that carry them. Citations take the form `§wire-W<n>`;
 # the `wire` namespace segment (before the first hyphen) is what section_namespace
-# scoping keys on, so a parsing file may carry §scxml-<n> (W3C), §wire-W<n>, and
+# scoping keys on, so a parsing file may carry §scxml-<n> (W3C), `§wire-W<n>`, and
 # §mesh-<n> cites at once without collision.
 #
 # Rooted at the SCE repo root so cited/implemented code paths are
@@ -41,15 +41,15 @@ severity = "warn"
 
 # Code-citation defense (validate-code-refs). Paths are workspace-root relative;
 # this workspace lives three levels down (docs/sce-ledger/wire). The §W<n>
-# citations were migrated to the §wire-W<n> form by
+# citations were migrated to the `§wire-W<n>` form by
 # tools/mnemosyne-adoption/migrate_citations.py --namespace wire.
 #
-#   section_namespace = "wire"   only §wire-W<n> tokens are checked; §scxml-<n>
+#   section_namespace = "wire"   only `§wire-W<n>` tokens are checked; §scxml-<n>
 #                                (W3C) and §mesh-<n> in the same files are skipped
 #                                by the token itself, so these MIXED parsing /
 #                                runtime modules can be gated here for their wire
 #                                cites while scxml gates their W3C cites.
-#   severity_missing = "reject"  hallucination gate: a §wire-W<n> with no ledger
+#   severity_missing = "reject"  hallucination gate: a `§wire-W<n>` with no ledger
 #                                section fails the run (the migrator only emits
 #                                ledger-present ids).
 #   severity_binding = "warn"    Path B (Section.implementations) is a later
@@ -59,7 +59,7 @@ paths = [
     "sce/include/parsing",
     "sce/src/parsing",
     "sce/src/runtime",
-    # Rust code generator: its §wire-W<n> cites were outside every ledger's
+    # Rust code generator: its `§wire-W<n>` cites were outside every ledger's
     # scan set until R783 coverage surfaced them. Gated here, bound below.
     "sce-build/src",
     "sce-build/tests",
@@ -90,7 +90,7 @@ scan_exclusions = [
     "tests/",
 ]
 severity_missing = "reject"
-# Path B curated: every §wire-W<n> cite is bound to a Section.implementations
+# Path B curated: every `§wire-W<n>` cite is bound to a Section.implementations
 # (file, symbol) the maintainer ratified, so binding-class drift (a cite in an
 # unregistered file or a non-registered symbol) now fails the build.
 severity_binding = "reject"

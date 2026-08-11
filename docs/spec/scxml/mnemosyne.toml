@@ -82,7 +82,7 @@ severity = "warn"
 #   comment_only     = true      only citations inside comments are scanned;
 #                                string-literal text is ignored.
 # `section_namespace = "scxml"` (below) makes this gate check only §scxml-<id>
-# tokens and skip every foreign one (§mesh-<n>, §wire-W<n>, still-bare §<n>) by
+# tokens and skip every foreign one (§mesh-<n>, `§wire-W<n>`, still-bare §<n>) by
 # the token itself, so a module that mixes W3C and SCE-internal cites can be
 # gated here for its W3C cites while its mesh/wire cites are gated by the
 # docs/sce-ledger/{mesh,wire} workspaces. That is why the mixed modules (common,

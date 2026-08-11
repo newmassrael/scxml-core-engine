@@ -213,7 +213,7 @@ class SlashChain(unittest.TestCase):
             self.assertIn("§scxml-5.10", new, word)
 
     def test_unknown_word_before_label_is_reported_not_guessed(self):
-        # "W3C SCXML Algorithm C.1" — a real cite the main pattern cannot see.
+        # `W3C SCXML Algorithm C.1` — a real cite the main pattern cannot see.
         # Reported rather than migrated: the word may mean the author aimed at a
         # different section entirely (this exact shape was aimed at Appendix D).
         new, migs, skipped = plan("// W3C SCXML Algorithm C.2 conflict\n")
@@ -891,6 +891,199 @@ class PathsFromToml(unittest.TestCase):
                 for p in mc.paths_from_toml(str(toml))
             ]
             self.assertEqual(got, ["sce/include/core", "sce-build/src"])
+
+
+class ExistenceScopeIsNotRewriteScope(unittest.TestCase):
+    """Reading for a false citation is not bounded by rewrite safety.
+
+    One predicate used to answer both questions, so the existence gate
+    inherited the migrator's set of rewritable extensions. Measured on this
+    repo 2026-08-11: the gate named `web/` among the trees it swept and read 0
+    of its 46 tracked files — `.js`, `.css` and `.html` are not rewrite
+    targets — while seven fabricated section numbers lived in exactly those
+    files. The four extensions below are the ones that carried real violations
+    the gate reported as clean.
+    """
+
+    def _check(self, name, body):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / name
+            f.write_text(body, encoding="utf-8")
+            store = Path(d) / "store.json"
+            store.write_text(
+                json.dumps({"sections": {"scxml-6.2": {}}}), encoding="utf-8"
+            )
+            return subprocess.run(
+                [sys.executable, str(MIGRATE), "--check-ledger",
+                 "--ledger", str(store), str(f)],
+                capture_output=True, text=True,
+            )
+
+    def test_javascript_comment_is_read(self):
+        r = self._check("ui.js", "// W3C SCXML 9.99: nothing defines this\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("scxml-9.99", r.stderr)
+
+    def test_css_comment_is_read(self):
+        r = self._check("s.css", "/* W3C SCXML 9.99: badges */\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_markdown_is_read(self):
+        r = self._check("d.md", "Per W3C SCXML 9.99 the event is dropped.\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_toml_comment_is_read(self):
+        r = self._check("p.toml", "# the W3C SCXML 9.99 datamodel\n")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_a_real_section_still_passes_in_the_same_file_types(self):
+        for name, body in (
+            ("ui.js", "// W3C SCXML 6.2: send\n"),
+            ("s.css", "/* W3C SCXML 6.2: send */\n"),
+            ("d.md", "Per W3C SCXML 6.2 the event is sent.\n"),
+            ("p.toml", "# the W3C SCXML 6.2 element\n"),
+        ):
+            with self.subTest(name=name):
+                r = self._check(name, body)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_rewriting_still_refuses_a_file_it_cannot_tokenize(self):
+        # The other half of the split: widening what may be READ must not
+        # widen what may be EDITED. `.md` has no comment grammar here, so a
+        # `--apply` run must not treat its prose as a comment.
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "notes.md"
+            f.write_text("Per W3C SCXML 6.2 the event is sent.\n", encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--apply", str(f)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(
+                f.read_text(encoding="utf-8"),
+                "Per W3C SCXML 6.2 the event is sent.\n",
+            )
+
+
+class CodeSpanMention(unittest.TestCase):
+    """A comment that DISCUSSES a citation is not making one.
+
+    The token axis mirrored this rule from the pinned validator; the prose axis
+    had no channel at all, so the only way to write about a wrong section
+    number — which the tools that detect them must do — was to exempt their
+    path. Both axes now read `_is_code_span_mention`, so the rule cannot drift
+    between them.
+    """
+
+    def test_one_backtick_exempts_prose(self):
+        _, migs, skipped = plan("// `W3C SCXML 9.99` is not a ledger id\n")
+        self.assertEqual((migs, skipped), ([], []))
+
+    def test_one_backtick_exempts_a_hidden_citation(self):
+        # The hidden-citation detector is a separate scan over the same text;
+        # a mention must be a mention to both or the channel is only half real.
+        _, _, skipped = plan("// `W3C SCXML Algorithm C.2` is the shape\n")
+        self.assertEqual(skipped, [])
+
+    def test_two_backticks_do_not_exempt(self):
+        _, _, skipped = plan("// ``W3C SCXML 9.99`` still claims\n")
+        self.assertEqual([d["id"] for d in skipped], ["scxml-9.99"])
+
+    def test_trailing_backtick_alone_does_not_exempt(self):
+        _, _, skipped = plan("// W3C SCXML 9.99` still claims\n")
+        self.assertEqual([d["id"] for d in skipped], ["scxml-9.99"])
+
+    def test_a_real_citation_in_a_code_span_is_not_migrated(self):
+        # The exemption is about the citation being MENTIONED, not about
+        # whether its number happens to resolve: rewriting inside a code span
+        # would edit the very text a sentence is quoting.
+        new, migs, _ = plan("// `W3C SCXML 6.2` is the send element\n")
+        self.assertEqual(migs, [])
+        self.assertEqual(new, "// `W3C SCXML 6.2` is the send element\n")
+
+
+class NonTextFiles(unittest.TestCase):
+    """Bytes that are not UTF-8 are settled at the read, not by a suffix list.
+
+    Lifting the extension filter without this is a traceback on the first PNG,
+    and answering it with a list of "binary" extensions would reintroduce the
+    same list-shaped defect one layer down.
+    """
+
+    def test_undecodable_bytes_are_skipped_not_raised(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "logo.png"
+            f.write_bytes(b"\x89PNG\r\n\x1a\n\xf5\xf5\xf5")
+            new, migs, skipped = mc.plan_file(str(f), LEDGER, "W3C SCXML")
+        self.assertEqual((new, migs, skipped), (None, [], []))
+
+    def test_a_binary_file_does_not_fail_the_existence_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            png = Path(d) / "logo.png"
+            png.write_bytes(b"\x89PNG\xf5\xf5")
+            txt = Path(d) / "ok.md"
+            txt.write_text("W3C SCXML 6.2\n", encoding="utf-8")
+            store = Path(d) / "store.json"
+            store.write_text(
+                json.dumps({"sections": {"scxml-6.2": {}}}), encoding="utf-8"
+            )
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--check-ledger",
+                 "--ledger", str(store), str(png), str(txt)],
+                capture_output=True, text=True,
+            )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("1 not text", r.stdout)
+
+
+class EmptySweepIsNotAPass(unittest.TestCase):
+    """A path that yields no readable file is a verdict over nothing.
+
+    This is the shape the whole round is about: `web/` was swept for as long as
+    the sweep list existed and contributed zero files, and the gate printed OK
+    every time. EXIT_CANNOT_RUN keeps it distinct from 1 — the author's text is
+    not what is wrong.
+    """
+
+    def test_directory_with_no_readable_file_cannot_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            empty = Path(d) / "tree"
+            empty.mkdir()
+            store = Path(d) / "store.json"
+            store.write_text(
+                json.dumps({"sections": {"scxml-6.2": {}}}), encoding="utf-8"
+            )
+            r = subprocess.run(
+                [sys.executable, str(MIGRATE), "--check-ledger",
+                 "--ledger", str(store), str(empty)],
+                capture_output=True, text=True,
+            )
+        self.assertEqual(r.returncode, mc.EXIT_CANNOT_RUN, r.stdout + r.stderr)
+        self.assertIn("no readable file", r.stderr)
+
+
+class DottedDirectories(unittest.TestCase):
+    """Only `.git` is excluded by name; other dotted dirs are authored content.
+
+    Skipping every leading dot hid 33 tracked files from the existence check,
+    21 of them the CI workflows — the files that describe the gates themselves.
+    """
+
+    def test_dotted_directory_is_walked(self):
+        with tempfile.TemporaryDirectory() as d:
+            gh = Path(d) / ".github" / "workflows"
+            gh.mkdir(parents=True)
+            f = gh / "ci.yml"
+            f.write_text("# W3C SCXML 9.99\n", encoding="utf-8")
+            found = list(mc.iter_source_files([str(d)], None))
+        self.assertEqual(found, [str(f)])
+
+    def test_git_directory_is_not_walked(self):
+        with tempfile.TemporaryDirectory() as d:
+            git = Path(d) / ".git" / "hooks"
+            git.mkdir(parents=True)
+            (git / "pre-commit").write_text("# W3C SCXML 9.99\n", encoding="utf-8")
+            self.assertEqual(list(mc.iter_source_files([str(d)], None)), [])
 
 
 if __name__ == "__main__":
