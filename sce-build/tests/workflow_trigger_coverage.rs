@@ -53,6 +53,12 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "forge_document_name_is_the_stem",
     "gate_registry_contract",
     "hook_ci_parity",
+    // Asks `git ls-files` which trees cite the spec, so a citation added
+    // to any file anywhere changes its verdict. A `paths:` filter over
+    // the backend runtimes would cover today's answer and miss the one
+    // case the test exists for: a NEW tree drifting outside the ledger's
+    // symbol scan.
+    "ledger_symbol_axis_reach",
     "roadmap_marker_gate",
     "scope_terminology",
     "sourced_scripts_are_tracked",
