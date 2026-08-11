@@ -61,9 +61,34 @@ fn the_gate_registry_passes_its_own_cases() {
         .find_map(|t| t.parse::<usize>().ok())
         .unwrap_or(0);
     assert!(
-        ran >= 15,
-        "gate registry self-test reported {ran} case(s); it had 15 when this \
-         floor was set, so the cases are not running:\n{stderr}"
+        ran >= 26,
+        "gate registry self-test reported {ran} case(s); it had 26 when this \
+         floor was last raised, so the cases are not running:\n{stderr}"
+    );
+}
+
+#[test]
+fn the_runner_reports_its_measurements_back_to_the_registry() {
+    // `cost_s` decides the run order and is updated by hand, so a stale value
+    // steers every run while every gate still passes. The runner already times
+    // each gate; feeding those timings back is what turns a run into a witness
+    // against the declarations. Without this line the drift report exists and
+    // nothing ever calls it.
+    let runner =
+        std::fs::read_to_string(repo_root().join("scripts/gate")).expect("read scripts/gate");
+    let invocations: Vec<&str> = runner
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.starts_with('#'))
+        .filter(|l| l.contains("--order-drift"))
+        .filter(|l| {
+            !(l.starts_with("printf") || l.starts_with("echo") || l.starts_with("log_step"))
+        })
+        .collect();
+    assert!(
+        !invocations.is_empty(),
+        "the gate runner no longer reports its measurements to the registry, \
+         so a stale cost_s is unobservable again"
     );
 }
 

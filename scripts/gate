@@ -155,4 +155,21 @@ if (( MEASURE )); then
     done
 fi
 
+# Every run is a measurement, so every run can say whether the declared costs
+# still order the gates the way the truth would. `cost_s` is updated by hand
+# and nothing noticed when a value went stale: the gates all passed, and the
+# only thing the number decides — what runs first — was quietly wrong. The
+# registry's own order case cannot catch it (it derives the order from the
+# costs and checks it against the costs); this compares the declarations
+# against what actually happened.
+DRIFT_ARGS=()
+for slug in "${ORDER[@]}"; do
+    [[ -n "$slug" ]] || continue
+    DRIFT_ARGS+=("${slug}=${ELAPSED[$slug]}")
+done
+if (( ${#DRIFT_ARGS[@]} > 1 )); then
+    python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
+        --order-drift "${DRIFT_ARGS[@]}" || true
+fi
+
 printf '\ngate: %d gate(s) passed.\n' "${#ORDER[@]}" >&2
