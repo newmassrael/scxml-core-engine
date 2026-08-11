@@ -175,9 +175,12 @@ GATES: dict[str, dict] = {
     # doc, the wire schemas, and the forge-AST export schema.
     "workspace-tests": {
         "workflows": ["rust-workspace-tests.yml"],
-        # Not delegated: the lane adds `--no-fail-fast` so one CI run
-        # reports every failure, while the hook stops at the first —
-        # a reporting choice, not a different verification.
+        # The lane's one difference — `--no-fail-fast`, so a run nobody can
+        # iterate on reports every failure — was a reporting choice by its own
+        # description, which made it a switch rather than a reason to keep two
+        # spellings. The gate reads `SCE_GATE_NO_FAIL_FAST` and the lane sets
+        # it.
+        "runner_workflow": True,
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
         "cost_s": 138,
         "summary": "cargo test --workspace --features cli",
