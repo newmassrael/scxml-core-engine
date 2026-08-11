@@ -62,6 +62,7 @@ public:
     bool loadSCXMLFromFile(const std::string &scxmlFile, const std::string &sessionId = "") override;
     bool startStateMachine(const std::string &sessionId = "") override;
     void stopStateMachine(const std::string &sessionId = "") override;
+    void setBasicHttpAccessUri(const std::string &accessUri, const std::string &sessionId = "") override;
     bool sendEventSync(const std::string &eventName, const std::string &sessionId = "",
                        const std::string &eventData = "") override;
     bool raiseExternalEvent(const std::string &eventName, const std::string &sessionId = "",

@@ -160,6 +160,15 @@ public:
         }
     }
 
+    void setBasicHttpAccessUri(const std::string &accessUri) override {
+        if (!initialized_ || !scxmlEngine_) {
+            lastError_ = "Engine not initialized";
+            SCE_LOG_WARN("ReadySCXMLEngine: setBasicHttpAccessUri before initialization is ignored");
+            return;
+        }
+        scxmlEngine_->setBasicHttpAccessUri(accessUri, sessionId_);
+    }
+
     bool sendEvent(const std::string &eventName, const std::string &eventData) override {
         if (!initialized_) {
             lastError_ = "Engine not initialized";
