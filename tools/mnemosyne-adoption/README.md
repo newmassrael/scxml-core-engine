@@ -29,6 +29,7 @@ network-touching step isolated to a dedicated CI job.
 | `migrate_citations.py` | **R3**: rewrite prose `W3C SCXML <n>.<m>` citations in source comments to the `§scxml-<id>` form |
 | `sce_mesh_md_to_manifest.py` | **C**: SCE_MESH.md markdown headings -> Mnemosyne manifest for the `mesh` design-ledger namespace |
 | `sce_wire_rfc_to_manifest.py` | **C**: Wire RFC milestone waves (W0..W5) -> Mnemosyne manifest for the `wire` design-ledger namespace |
+| `apply_source_headings.py` | **C (edit path)**: carry a changed source heading into the store — the half `import-sections` does not do |
 
 ## A1 — TOC to manifest
 
@@ -164,6 +165,37 @@ This is **not** a `sed`. Three rules keep it safe:
   Rust nested block comments) means string- and char-literal text is never
   touched, so no runtime string can change.
 
+### Writing *about* a citation: the code-span channel
+
+A citation wrapped in exactly one backtick — `` `W3C SCXML Appendix D.2` ``,
+`` `§wire-W<n>` `` — is a **mention**, not a claim, and no gate judges it. Two
+backticks, or a trailing backtick alone, do not exempt.
+
+This exists because prose that explains a citation rule has to spell the shape
+it is explaining. Without a channel the only remaining answer is to exempt the
+explaining file by path, and a path exemption hides every real citation in it
+too. The rule is the pinned validator's own code-span rule, applied to both the
+prose and the `§`-token forms so they cannot drift apart.
+
+Use it for placeholders (`` `§scxml-<n>` ``), for documentation of the citation
+forms themselves, and for a sentence that names a wrong number in order to
+correct it. Do **not** use it to silence a citation you actually mean — that is
+the fabricated-number case the gates exist to catch.
+
+### Scope of the existence check
+
+`--check-ledger` reads **every tracked file**, whatever its extension: a
+fabricated section number is a false claim about the spec wherever it is
+written, and a `.js` comment or a `.toml` header is no exception. Files whose
+bytes are not UTF-8 are skipped at the read, and the run reports how many of
+each it saw, so a scan set that shrinks cannot come back as a silent "OK".
+
+This is deliberately wider than what `--apply` may rewrite, which stays
+confined to extensions with a comment grammar the migrator can tokenize.
+Reading and rewriting are different questions; answering both with one list is
+what let seven fabricated citations live in `web/` while the gate that named
+that tree reported it clean.
+
 A slash chain (`W3C SCXML 3.8/3.9`, meaning sections 3.8 and 3.9) becomes
 `§scxml-3.8 / §scxml-3.9` — each member rewritten and rejoined with `" / "` so
 the extractor sees two distinct ids. The whole chain stays prose if any member
@@ -198,6 +230,32 @@ those cites their own ledger under `docs/sce-ledger/mesh`.
 python3 tools/mnemosyne-adoption/sce_mesh_md_to_manifest.py --manifest out/mesh-manifest.json
 cd docs/sce-ledger/mesh && mnemosyne-cli import-sections --manifest out/mesh-manifest.json
 ```
+
+### Editing a heading afterwards
+
+`import-sections` only **creates**. It refuses an existing section with
+`already exists with DIVERGENT content` — deliberately, so nothing silently
+overwrites a curated store — which means a re-run carries no edit. Changing a
+heading's text is the other half:
+
+```bash
+python3 tools/mnemosyne-adoption/apply_source_headings.py            # report
+python3 tools/mnemosyne-adoption/apply_source_headings.py --apply    # carry
+```
+
+It converts each markdown-carrier source, compares the fields the converter
+derives (`title`, `parent_doc`, `parent_section`), and applies each difference
+with the matching `set-section-<field>` command. `--cli` points it at the
+revision-pinned binary so an edit cannot be applied by a different revision
+than the one that validates it.
+
+Without this the two drift silently: `mesh-8.3` sat in the store as
+`Realization Status (2026-04-13)` while `SCE_MESH.md` had read `Realization
+Status` for long enough that no round remembered dropping the date, and every
+validator stayed green — the store is the SSOT they check, and it was
+internally consistent. `test_store_source_lockstep.py` now compares those
+fields and names this tool in its failure message; the table of what is carried
+lives in the tool, so the check and the repair cannot disagree about it.
 
 The converter is the markdown sibling of A1. Differences that follow from the
 source being an internal markdown doc rather than a vendored HTML standard:
