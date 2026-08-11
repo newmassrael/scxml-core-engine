@@ -516,8 +516,8 @@ class Engine(Generic[S, E]):
     # ── Microstep / macrostep core ────────────────────────────────
 
     def _run_main_event_loop(self) -> None:
-        """§scxml-D-mainEventLoop — the outer loop, and the only place the
-        public entry points express macrostep semantics.
+        """The outer loop, and the only place the public entry points express
+        macrostep semantics.
 
         Appendix D names the external queue exactly once per iteration and
         it is *after* ``invoke(inv)``::
@@ -560,8 +560,11 @@ class Engine(Generic[S, E]):
             self._process_next_external_event()
 
     def _process_internal_queue(self) -> None:
-        """§scxml-D-selectEventlessTransitions — eventless transitions first,
-        then one internal event, until neither is available."""
+        """Eventless transitions first, then one internal event, until neither
+        is available."""
+        # §scxml-D-selectEventlessTransitions: eventless transitions are
+        # exhausted before an internal event is taken, and the pair repeats
+        # until neither is available.
         while self._is_running and not self._reached_final:
             self._drain_eventless()
             if self._reached_final or not self._is_running:
@@ -571,15 +574,16 @@ class Engine(Generic[S, E]):
             self._dispatch(self._internal_queue.popleft())
 
     def _process_next_external_event(self) -> None:
-        """§scxml-D-mainEventLoop — take exactly one event off the external
-        queue, run the preliminary ``<finalize>`` / autoforward step against
-        it, then select transitions.
+        """Take exactly one event off the external queue, run the preliminary
+        ``<finalize>`` / autoforward step against it, then select transitions.
 
         Both preliminary steps key off *which queue the event came from*, not
         off the event's name or its ``_event.type`` classification: Appendix D
         applies them to `externalQueue.dequeue()`'s result and to nothing
         else, so expressing that as the caller is what makes it exact.
         """
+        # §scxml-D-mainEventLoop — one external event per iteration of the
+        # outer loop, taken after the macrostep has completed.
         evt = self._external_queue.popleft()
         # §scxml-6.5 — `<finalize>` runs before transition selection for
         # events originating from invoked children, so the finalize body can
@@ -649,9 +653,11 @@ class Engine(Generic[S, E]):
     def _select_from_chain(
         self, leaf: S, event: E
     ) -> Optional[TransitionResult[S]]:
-        """§scxml-D-getProperAncestors — walk from `leaf` upward, return the first
-        enabled transition. Stamps the result's `source` if the policy did
-        not."""
+        """Walk from `leaf` upward, return the first enabled transition.
+        Stamps the result's `source` if the policy did not."""
+        # §scxml-D-getProperAncestors: the chain walked here is the proper
+        # ancestors of `leaf`, innermost first, which is the order the
+        # algorithm requires for selecting the transition that wins.
         state: Optional[S] = leaf
         while state is not None:
             result = self._policy.select_transition(state, event, self)
@@ -665,12 +671,14 @@ class Engine(Generic[S, E]):
     def _remove_conflicting_transitions(
         self, candidates: List[TransitionResult[S]]
     ) -> List[TransitionResult[S]]:
-        """§scxml-D-removeConflictingTransitions — `removeConflictingTransitions`.
+        """`removeConflictingTransitions`.
 
         Two transitions conflict if their exit sets intersect. The one
         with the deeper source (or earlier document order on a tie) wins;
         the other is dropped.
         """
+        # §scxml-D-removeConflictingTransitions: intersecting exit sets are
+        # the conflict test, and the deeper source wins.
         # Stable sort: deeper-source-first, then document order, so a
         # later iteration consistently sees the winners first.
         candidates = sorted(
@@ -836,7 +844,7 @@ class Engine(Generic[S, E]):
         then descend into `target` via `_enter_state`. Shared by the
         normal-target and history-restore paths so they cannot drift.
 
-        §scxml-D-addDescendantStatesToEnter `addDescendantStatesToEnter` — when any
+        `addDescendantStatesToEnter` — when any
         ancestor on the entry path is a `<parallel>`, every sibling
         region (not the one on the target's path) must also be entered
         via its default initial chain. This covers both:
@@ -849,6 +857,9 @@ class Engine(Generic[S, E]):
         Mirrors the Rust template's `is_parallel_state(*state)`
         re-entry fan-out at
         `tools/codegen/templates/rust/conflict_resolution.rs.jinja2`."""
+        # §scxml-D-addDescendantStatesToEnter: a `<parallel>` anywhere on the
+        # entry path pulls in every sibling region through its default initial
+        # chain, which the fan-out below performs.
         upward: List[S] = []
         state: Optional[S] = target
         while state is not None and state != boundary:
@@ -891,9 +902,10 @@ class Engine(Generic[S, E]):
     def _fanout_parallel_siblings(
         self, parallel_state: S, path_child: Dict[S, S], already_active: Set[S]
     ) -> None:
-        """§scxml-D-addDescendantStatesToEnter — for each region of `parallel_state`
-        not already active and not on the target's path, enter via the
-        region's default initial chain."""
+        """For each region of `parallel_state` not already active and not on
+        the target's path, enter via the region's default initial chain."""
+        # §scxml-D-addDescendantStatesToEnter: the sibling regions of an
+        # entered `<parallel>` are added through their default initial chain.
         on_path = path_child.get(parallel_state)
         regions = sorted(
             self._policy.get_parallel_regions(parallel_state),
@@ -1104,12 +1116,13 @@ class Engine(Generic[S, E]):
         marks that region done — termination is governed by
         `_check_done_state_events`.
 
-        §scxml-D-exitInterpreter `exitInterpreter` — the final state's
-        own `<onexit>` actions still execute as the engine winds down
-        (test236: a child invoke's `<final><onexit><send target=
-        "#_parent">` must reach the parent). The final state stays in
-        `_active_leaves` so `current_state` post-termination still
-        reports the reached final."""
+        `exitInterpreter` — the final state's own `<onexit>` actions still
+        execute as the engine winds down (test236: a child invoke's
+        `<final><onexit><send target="#_parent">` must reach the parent).
+        The final state stays in `_active_leaves` so `current_state`
+        post-termination still reports the reached final."""
+        # §scxml-D-exitInterpreter: the exit actions of the state that
+        # terminated the interpreter still run before the engine stops.
         parent = self._policy.get_parent(final_state)
         if parent is None:
             self._policy.execute_exit_actions(final_state, self)
@@ -1245,8 +1258,7 @@ class Engine(Generic[S, E]):
     # ── Hierarchy helpers ─────────────────────────────────────────
 
     def _compute_exit_set(self, transition: TransitionResult[S]) -> Set[S]:
-        """§scxml-D-GlobalVariables — set of currently-active states the
-        transition exits.
+        """Set of currently-active states the transition exits.
 
         For an external transition: the boundary is LCCA(source, target);
         every active state that is a proper descendant of the boundary
@@ -1258,6 +1270,8 @@ class Engine(Generic[S, E]):
 
         For a targetless transition: empty set (no states change).
         """
+        # §scxml-D-GlobalVariables: the exit set is computed against the
+        # interpreter's current configuration, the global the algorithm names.
         if transition.targetless or transition.target is None:
             return set()
         source: S = (

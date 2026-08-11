@@ -30,7 +30,7 @@ class TransitionResult(Generic[S]):
     with no `target` attribute (action-only transitions that do not change
     the configuration). `source` is the state the transition was matched on
     — required for compound bubbling because the source may be an ancestor
-    of `Engine.current_state` (§scxml-D-GlobalVariables).
+    of `Engine.current_state`.
 
     `history_id` is the string id of a `<history>` element when the
     original `<transition>` targeted history (W3C SCXML 3.11). The parser
