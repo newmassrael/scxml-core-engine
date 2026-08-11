@@ -194,14 +194,6 @@ const std::map<std::string, std::string> &exemptLeaves() {
         {"ParseException",
          "Wrapper for a non-typed `std::exception` escaping the parser (bad_alloc, third-party throw). "
          "No document input raises it deterministically, so no fixture can pin it."},
-        {"XIncludeReadError",
-         "Needs a fragment that resolves but cannot be read. Git records only the executable bit, so no "
-         "committed fixture can carry a mode that makes a file unreadable, and a fixture that chmod-ed "
-         "at run time would pass vacuously for anyone running as root. The id shape is still pinned: the "
-         "leaf declares `{href}` and the platform's errno text stays out of the key precisely so this "
-         "leaf would agree if it could be reached."},
-        {"TemplateReadError",
-         "Same as `XIncludeReadError`: no committed fixture can make a resolvable file unreadable."},
         {"SemanticTopLevelScriptUnloaded",
          "Both producers reject the documents §scxml-5.8 forbids, but through different surfaces: "
          "the C++ parser raises this leaf, while the Rust pipeline records the rejection in its "
@@ -247,7 +239,7 @@ TEST(CrossProducerDiagnosticId, EveryFixtureAgreesOnCodeAndId) {
     const auto fixtures = fixtureNames(root);
     // Floor: an empty fixture directory would satisfy every
     // comparison below without proving anything.
-    ASSERT_GE(fixtures.size(), 20u) << "found only " << fixtures.size() << " fixture(s) under " << root;
+    ASSERT_GE(fixtures.size(), 22u) << "found only " << fixtures.size() << " fixture(s) under " << root;
 
     std::vector<std::string> violations;
     std::set<std::string> coveredLeaves;

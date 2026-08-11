@@ -240,6 +240,16 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href
 // Read the full text of `path`. Throws `XIncludeReadError` with
 // the offending href baked into the message on read failure.
 std::string readFragmentText(const std::filesystem::path &path, std::string_view href) {
+    // A path that resolved is not necessarily a file. `std::ifstream`
+    // opens a directory without complaint on libstdc++ and then
+    // extracts nothing, so the empty result went on to the XML parser
+    // and the failure surfaced as `xml/xinclude-malformed` — a wrong
+    // classification for an unreadable path, and one Rust does not
+    // make: `fs::read_to_string` reports the directory as an I/O error.
+    std::error_code regularEc;
+    if (!std::filesystem::is_regular_file(path, regularEc)) {
+        throw XIncludeReadError(std::string(href), "not a regular file");
+    }
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
         // The failure cause, not the resolved path: Rust renders the
