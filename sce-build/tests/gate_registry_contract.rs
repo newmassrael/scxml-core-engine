@@ -308,6 +308,61 @@ fn every_gate_script_is_executable() {
 }
 
 #[test]
+fn a_gate_that_regenerates_a_tree_pins_the_timestamp() {
+    // A gate must not break the gate after it.
+    //
+    // `sce-codegen generate-*` stamps `generated-at` into every file it
+    // writes, from the wall clock unless SOURCE_DATE_EPOCH says otherwise.
+    // Two of these trees are also read by `committed_trees_carry_a_pinned_
+    // generated_at` in the workspace suite, which runs later in the same
+    // push: the first gate regenerated, the fourth reported 451 unpinned
+    // files, and the push failed on a defect the developer did not write.
+    // `scripts/regen_all_committed_trees.sh` has exported the variable for
+    // this reason all along — nothing required a gate to.
+    let dir = repo_root().join("scripts/gates");
+    let mut generating = 0usize;
+    let mut offenders: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&dir)
+        .expect("gates dir is readable")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("sh") {
+            continue;
+        }
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let regenerates = body.lines().any(|l| {
+            let l = l.trim();
+            !l.starts_with('#')
+                && (l.contains("generate-w3c") || l.contains("generate-integration"))
+        });
+        if !regenerates {
+            continue;
+        }
+        generating += 1;
+        if !body.contains("SOURCE_DATE_EPOCH") {
+            offenders.push(
+                path.file_name()
+                    .expect("gate file name")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
+    }
+    assert!(
+        generating > 0,
+        "no gate was seen regenerating a tree — the scan is broken, not the gates"
+    );
+    assert!(
+        offenders.is_empty(),
+        "gate(s) regenerate a tree without pinning SOURCE_DATE_EPOCH, so a later \
+         gate in the same push sees wall-clock `generated-at` churn: {offenders:?}"
+    );
+}
+
+#[test]
 fn the_push_hook_delegates_rather_than_carrying_gates() {
     // The property the split exists to hold: verification commands live in
     // `scripts/gates/`, and the hook works out what a push changes. A gate

@@ -65,6 +65,50 @@ sce_gate_codegen() {
     sce_codegen_require "$SCE_REPO_ROOT"
 }
 
+# Start the W3C BasicHTTP fixture server on localhost:8080 for the caller,
+# and stop it when the gate exits.
+#
+# Several conformance arms need it — the Rust workspace suite, the Go suite,
+# and any other backend running the W3C SCXML C.2 fixtures (test_201, _509,
+# _513, _518-520, _532, _534, _567), which issue real HTTP POSTs and fail on
+# connection-refused. Each CI job starts its own copy; a gate that mirrors one
+# of those jobs has to do the same, and doing it here rather than in each gate
+# is what keeps the settle window, the failure message and the cleanup from
+# being written three times and drifting.
+#
+# The C++ suite is the opposite case and must NOT have this: a live 8080 makes
+# its ctest run report 13 tests Not Run. That asymmetry is the reason this is a
+# call a gate makes rather than something the runner does for everyone.
+sce_gate_http_fixture_server() {
+    command -v node >/dev/null 2>&1 \
+        || sce_gate_fail "node.js required for the W3C HTTP fixture server (apt install nodejs)"
+
+    local log
+    log="$(mktemp)"
+    sce_gate_on_exit "rm -f '$log'"
+    node "$SCE_REPO_ROOT/tests/w3c/standalone_http_server.js" 8080 /test >"$log" 2>&1 &
+    local pid=$!
+    sce_gate_on_exit "kill $pid 2>/dev/null"
+    # Match the CI workflows' settle window before issuing requests.
+    sleep 1
+    if ! kill -0 "$pid" 2>/dev/null; then
+        cat "$log" >&2
+        sce_gate_fail "W3C HTTP fixture server failed to start (port 8080 already in use?)"
+    fi
+    sce_gate_step "W3C HTTP fixture server up on localhost:8080"
+}
+
+# Refuse to run when something already holds 8080.
+#
+# The C++ conformance suite reports 13 of its cases Not Run when the fixture
+# server is live, which is a smaller suite reported as a passing one. The case
+# floor would catch the count, but not name the cause; this does.
+sce_gate_requires_free_http_port() {
+    if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ':8080 '; then
+        sce_gate_fail "something is listening on localhost:8080. The W3C HTTP fixture server makes this suite report 13 cases Not Run, so the run would be a smaller suite reported as a passing one. Stop it and retry."
+    fi
+}
+
 # Resolve a tool the gate needs, or decide honestly what its absence
 # means.
 #

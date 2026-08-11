@@ -33,21 +33,7 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-command -v node >/dev/null 2>&1 \
-    || sce_gate_fail "node.js required for the W3C HTTP fixture server (apt install nodejs)"
-
-HTTP_LOG="$(mktemp)"
-sce_gate_on_exit "rm -f '$HTTP_LOG'"
-node tests/w3c/standalone_http_server.js 8080 /test >"$HTTP_LOG" 2>&1 &
-HTTP_PID=$!
-sce_gate_on_exit "kill $HTTP_PID 2>/dev/null"
-# Match the CI workflow's settle window before issuing requests.
-sleep 1
-if ! kill -0 "$HTTP_PID" 2>/dev/null; then
-    cat "$HTTP_LOG" >&2
-    sce_gate_fail "W3C HTTP fixture server failed to start (port 8080 already in use?)"
-fi
-sce_gate_step "W3C HTTP fixture server up on localhost:8080"
+sce_gate_http_fixture_server
 
 # `SCE_GATE_NO_FAIL_FAST` is the one thing the CI lane wanted that this gate
 # did not offer, and it kept the lane restating the command instead of calling
