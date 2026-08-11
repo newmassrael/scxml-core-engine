@@ -9176,6 +9176,11 @@
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::cancelEventsForSession",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::ensureCurrentEventSet",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
