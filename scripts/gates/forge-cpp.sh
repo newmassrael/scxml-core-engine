@@ -22,8 +22,23 @@ CODEGEN="$(sce_gate_codegen)"
 BUILD_DIR="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$BUILD_DIR'"
 
+# Build configuration mirrors the lane, because a gate that builds a different
+# binary is not checking the one CI ships a verdict on: RelWithDebInfo turns on
+# optimisation and keeps assertions, and an unset CMAKE_BUILD_TYPE does
+# neither. The generator is a speed choice rather than a semantic one, so Ninja
+# is used when it is installed and the platform default otherwise — a developer
+# without ninja still runs the gate, on the same build type.
+GENERATOR=()
+if command -v ninja >/dev/null 2>&1; then
+    GENERATOR=(-G Ninja)
+else
+    sce_gate_step "ninja not installed; using the default generator (same build type)"
+fi
+
 cmake -S backends/cpp/forge-runtime/tests/conformance \
       -B "$BUILD_DIR" \
+      ${GENERATOR+"${GENERATOR[@]}"} \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DSCE_CODEGEN="$CODEGEN" \
       -Wno-dev >/dev/null \
     || sce_gate_fail "C++ forge conformance configure"
