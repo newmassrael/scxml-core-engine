@@ -7582,21 +7582,35 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![detail.clone()],
         },
-        GenerateError::TemplateLoad(detail) => DiagnosticPayload {
+        GenerateError::TemplateLoad(_) => DiagnosticPayload {
             code: DiagnosticCode::GenerateTemplateLoad,
             stage: Stage::Generate,
             expected: None,
             actual: None,
             fix: None,
-            key_fragments: vec![detail.clone()],
+            // No fragments. The only value this variant carries is
+            // minijinja's own error text with a template name glued to
+            // the front, and a key fragment must be a value SCE itself
+            // determined (SCE_ERROR_CONTRACT.md §2.1.1): a renderer
+            // upgrade would reword it and move every id. Generation
+            // aborts at the first template failure, so `code|stage|file`
+            // identifies the one a run can produce.
+            key_fragments: Vec::new(),
         },
-        GenerateError::TemplateRender(detail) => DiagnosticPayload {
+        GenerateError::TemplateRender(_) => DiagnosticPayload {
             code: DiagnosticCode::GenerateTemplateRender,
             stage: Stage::Generate,
             expected: None,
             actual: None,
             fix: None,
-            key_fragments: vec![detail.clone()],
+            // No fragments. The only value this variant carries is
+            // minijinja's own error text with a template name glued to
+            // the front, and a key fragment must be a value SCE itself
+            // determined (SCE_ERROR_CONTRACT.md §2.1.1): a renderer
+            // upgrade would reword it and move every id. Generation
+            // aborts at the first template failure, so `code|stage|file`
+            // identifies the one a run can produce.
+            key_fragments: Vec::new(),
         },
         GenerateError::UnsupportedFeature(detail) => DiagnosticPayload {
             code: DiagnosticCode::GenerateUnsupportedFeature,
@@ -9567,13 +9581,13 @@ mod tests {
                 "forge/generate-template-load",
                 GenerateError::TemplateLoad("codec.cpp.jinja2 not found in template dir".into())
                     .into(),
-                r#"{"v":1,"id":"fnv1a:71b634149cbd2384","code":"generate/template-load","stage":"generate","message":"template load error: codec.cpp.jinja2 not found in template dir"}"#,
+                r#"{"v":1,"id":"fnv1a:900f455ab62d2801","code":"generate/template-load","stage":"generate","message":"template load error: codec.cpp.jinja2 not found in template dir"}"#,
             ),
             (
                 "forge/generate-template-render",
                 GenerateError::TemplateRender("undefined variable `fields` at line 12".into())
                     .into(),
-                r#"{"v":1,"id":"fnv1a:98d75683f2764cff","code":"generate/template-render","stage":"generate","message":"template render error: undefined variable `fields` at line 12"}"#,
+                r#"{"v":1,"id":"fnv1a:6fd2874e8cc9c725","code":"generate/template-render","stage":"generate","message":"template render error: undefined variable `fields` at line 12"}"#,
             ),
             (
                 "forge/generate-unsupported-feature",
