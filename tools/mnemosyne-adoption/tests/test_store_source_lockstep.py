@@ -39,20 +39,31 @@ TOOL_DIR = HERE.parent
 REPO_ROOT = TOOL_DIR.parent.parent
 sys.path.insert(0, str(TOOL_DIR))
 
-import bytesguard_rfc_to_manifest  # noqa: E402
-import sce_mesh_md_to_manifest  # noqa: E402
-import sce_wire_rfc_to_manifest  # noqa: E402
-import synth_rfc_to_manifest  # noqa: E402
+# The table lives in the tool that CARRIES these fields, not here. A checker
+# and a rewriter that keep separate rules drift into the gap between them: this
+# test would start watching a field `apply_source_headings.py` will not carry
+# (an author told to run a tool that cannot fix the failure), or the tool would
+# carry one nothing checks. One table, both directions.
+#
+# Every field the converter derives from the source document is in it, because
+# a field the converter emits is a field the source OWNS. Measured: with only
+# `section_id` compared, `mesh-8.3` sat in the store as "Realization Status
+# (2026-04-13)" while the heading had read "Realization Status" for long enough
+# that no round remembered dropping the date — the ledger and the document told
+# different stories and every check was green.
+import apply_source_headings  # noqa: E402
+
+CARRIED_FIELDS = tuple(apply_source_headings.CARRIED_FIELDS)
 
 
-def store_section_ids(store_path):
+def store_sections(store_path):
     with open(store_path, encoding="utf-8") as fh:
-        return set(json.load(fh)["sections"].keys())
+        return json.load(fh)["sections"]
 
 
-def converter_section_ids(convert, md_path, parent_doc):
+def converter_sections(convert, md_path, parent_doc):
     manifest = convert(md_path.read_text(encoding="utf-8"), parent_doc)
-    return {e["section_id"] for e in manifest}
+    return {e["section_id"]: e for e in manifest}
 
 
 class SectionSetLockstep(unittest.TestCase):
@@ -63,10 +74,10 @@ class SectionSetLockstep(unittest.TestCase):
         md_path = REPO_ROOT / md
         self.assertTrue(store.exists(), f"missing store {store}")
         self.assertTrue(md_path.exists(), f"missing source doc {md_path}")
-        from_doc = converter_section_ids(convert, md_path, parent_doc)
-        from_store = store_section_ids(store)
-        only_doc = sorted(from_doc - from_store)
-        only_store = sorted(from_store - from_doc)
+        from_doc = converter_sections(convert, md_path, parent_doc)
+        from_store = store_sections(store)
+        only_doc = sorted(set(from_doc) - set(from_store))
+        only_store = sorted(set(from_store) - set(from_doc))
         self.assertEqual(
             (only_doc, only_store),
             ([], []),
@@ -74,35 +85,41 @@ class SectionSetLockstep(unittest.TestCase):
             f"  in doc, not in store (regenerate via import-sections): {only_doc}\n"
             f"  in store, not in doc (heading removed/renumbered?):    {only_store}",
         )
-
-    def test_mesh(self):
-        self.assert_lockstep(
-            "docs/sce-ledger/mesh", "SCE_MESH.md", sce_mesh_md_to_manifest.convert, "mesh"
+        # The id set agreeing only says the same headings exist. What each
+        # heading SAYS is carried too, and `import-sections` refuses to
+        # overwrite an existing section, so a source edit that changes a
+        # carried field is applied with the matching `set-section-<field>`
+        # command — which nothing demanded until this compared them.
+        drift = [
+            f"{sid}.{field}: doc={from_doc[sid].get(field)!r} "
+            f"store={from_store[sid].get(field)!r}"
+            for sid in sorted(set(from_doc) & set(from_store))
+            for field in CARRIED_FIELDS
+            if from_doc[sid].get(field) != from_store[sid].get(field)
+        ]
+        self.assertEqual(
+            drift,
+            [],
+            f"{ws}: the store carries a value the source document no longer "
+            f"says. Carry them over with:\n"
+            f"  python3 tools/mnemosyne-adoption/apply_source_headings.py "
+            f"--apply --cli <pinned mnemosyne-cli>\n  " + "\n  ".join(drift),
         )
 
-    def test_wire(self):
-        self.assert_lockstep(
-            "docs/sce-ledger/wire",
-            "docs/sce-ledger/wire/rfc-sce-diagnostic-wire-unification.md",
-            sce_wire_rfc_to_manifest.convert,
-            "wire",
+    def test_every_markdown_carrier_workspace(self):
+        # Enumerated from the tool's table, not restated here. A fifth
+        # markdown-carrier workspace is then in lockstep the moment it is
+        # carryable, instead of the moment someone remembers to add a fifth
+        # test method — which is the failure mode this whole round is about.
+        # `subTest` so one drifting workspace does not hide the others.
+        self.assertGreaterEqual(
+            len(apply_source_headings.WORKSPACES),
+            4,
+            "the workspace table shrank; a lockstep check over nothing passes",
         )
-
-    def test_synth(self):
-        self.assert_lockstep(
-            "docs/spec/synth",
-            "docs/spec/synth/rfc-sce-protocol-synthesis.md",
-            synth_rfc_to_manifest.convert,
-            "synth",
-        )
-
-    def test_bytesguard(self):
-        self.assert_lockstep(
-            "docs/sce-ledger/bytesguard",
-            "docs/sce-ledger/bytesguard/rfc-eventschema-bytes-guard.md",
-            bytesguard_rfc_to_manifest.convert,
-            "bytesguard",
-        )
+        for ws, md, convert, parent_doc in apply_source_headings.WORKSPACES:
+            with self.subTest(workspace=ws):
+                self.assert_lockstep(ws, md, convert, parent_doc)
 
 
 if __name__ == "__main__":
