@@ -343,7 +343,7 @@ fn the_push_hook_delegates_rather_than_carrying_gates() {
     );
 }
 
-/// Build a throwaway git repository with `body` staged at `tests/cite.rs`.
+/// Build a throwaway git repository with `body` staged at `rel`.
 ///
 /// The gate library resolves the repo root with `git rev-parse`, so the
 /// scripts are copied in; `tools/` and `docs/` are symlinked because the
@@ -354,7 +354,15 @@ fn the_push_hook_delegates_rather_than_carrying_gates() {
 /// a minimal cargo package satisfies Stage 0, a `.rs` fixture file leaves
 /// Stage 1 (staged C/C++) with nothing to do, and Stage 2's audit hook is
 /// absent, which that stage already treats as "skipped".
-fn staged_citation_fixture(dir: &Path, body: &str) {
+///
+/// The staged paths are a parameter because the stage's coverage used to depend
+/// on two lists at once — a tree list in the gate and an extension list in the
+/// checker — and a fixture pinned to one `.rs` path under `tests/` sits inside
+/// both, so it could not see either boundary move. Several files stage into one
+/// fixture because the stage reads the whole staged set: one gate run covers
+/// every boundary, so a path per fixture would spawn the gate once per path for
+/// no added coverage.
+fn staged_citation_fixture_files(dir: &Path, files: &[(&str, &str)]) {
     let root = repo_root();
     let run = |args: &[&str]| {
         let out = Command::new("git")
@@ -394,9 +402,34 @@ fn staged_citation_fixture(dir: &Path, body: &str) {
     // Not empty: rustfmt reports a diff on a zero-byte file, which would fail
     // Stage 0 and stop the hook before it reaches the stage under test.
     std::fs::write(dir.join("src/lib.rs"), "// fixture crate\n").expect("write lib.rs");
-    std::fs::create_dir_all(dir.join("tests")).expect("mkdir tests");
-    std::fs::write(dir.join("tests/cite.rs"), body).expect("write fixture");
-    run(&["add", "tests/cite.rs"]);
+    for (rel, body) in files {
+        let target = dir.join(rel);
+        // The fixture symlinks `tools/` and `docs/` at the real checkout, so a
+        // fixture path under either one writes THROUGH the link into the
+        // working tree this test is supposed to leave alone. Observed: a
+        // `docs/probe.md` fixture landed in the repository, and `git add`
+        // refusing it ("pathspec is beyond a symbolic link") came after the
+        // file already existed. Refuse before writing rather than after.
+        let mut walk = dir.to_path_buf();
+        for part in Path::new(rel).components() {
+            walk.push(part);
+            assert!(
+                !walk.is_symlink(),
+                "fixture path {rel} traverses the symlink {}, so writing it \
+                 would modify the real checkout",
+                walk.display()
+            );
+        }
+        std::fs::create_dir_all(target.parent().expect("fixture path has a parent"))
+            .expect("mkdir fixture parent");
+        std::fs::write(&target, body).expect("write fixture");
+        run(&["add", rel]);
+    }
+}
+
+/// The historical fixture path: a `.rs` file under `tests/`.
+fn staged_citation_fixture(dir: &Path, body: &str) {
+    staged_citation_fixture_files(dir, &[("tests/cite.rs", body)]);
 }
 
 fn run_staged_gate(dir: &Path) -> std::process::Output {
@@ -534,28 +567,56 @@ fn the_commit_hook_runs_the_staged_citation_stage() {
         "the commit hook no longer names the citation gate script"
     );
 
-    let gate = std::fs::read_to_string(root.join("scripts/gates/ledger-citations.sh"))
-        .expect("read scripts/gates/ledger-citations.sh");
-    let trees: Vec<&str> = gate
-        .lines()
-        .find(|l| l.trim_start().starts_with("PROSE_TREES=("))
-        .map(|l| {
-            l.trim()
-                .trim_start_matches("PROSE_TREES=(")
-                .trim_end_matches(')')
-                .split_whitespace()
-                .collect()
-        })
-        .expect("the gate declares PROSE_TREES");
+    // The gate script owns the citation scope; a second copy in the hook is how
+    // the two ends drift apart. That used to be checked by reading the gate's
+    // tree list and asserting the hook restated none of it — which stopped
+    // meaning anything the moment the scope became "every tracked file", and
+    // which never covered the OTHER list that decided coverage: the checker's
+    // set of readable extensions. A text scan cannot tell this stage's file
+    // list from the C/C++ stage's legitimate one either, so the property is
+    // asserted from behaviour in
+    // `the_staged_stage_scope_is_not_bounded_by_path_or_extension` and in the
+    // end-to-end hook test, both of which stage a file no list ever named.
+}
+
+#[test]
+fn the_staged_stage_scope_is_not_bounded_by_path_or_extension() {
+    // Measured 2026-08-11: the gate named `web/` among the trees it swept and
+    // read 0 of its 46 tracked files, because the checker only read extensions
+    // it could REWRITE — so seven fabricated section numbers were "checked" at
+    // every push and every commit. Both boundaries are asserted here from
+    // behaviour: a fixture at a path no tree list mentioned, in a file type no
+    // rewrite rule covers, has to be rejected all the same. One staged set per
+    // direction, since the stage reads all of it in one run.
+    const PATHS: [&str; 3] = ["web/probe.js", "notes.md", "probe.toml"];
+    let fabricated = "probe: §synth-F4 is not a section\n";
+    let real = "probe: §synth-5-B is a section\n";
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bad_files: Vec<(&str, &str)> = PATHS.iter().map(|p| (*p, fabricated)).collect();
+    staged_citation_fixture_files(dir.path(), &bad_files);
+    let bad = run_staged_gate(dir.path());
     assert!(
-        !trees.is_empty(),
-        "PROSE_TREES is empty — the gate would read nothing"
+        !bad.status.success(),
+        "the staged gate accepted a fabricated citation: {bad:?}"
     );
-    let restated: Vec<&&str> = trees.iter().filter(|t| hook.contains(**t)).collect();
+    let err = String::from_utf8_lossy(&bad.stderr);
+    for rel in PATHS {
+        assert!(
+            err.lines()
+                .any(|l| l.trim_start().starts_with(&format!("{rel}:"))),
+            "the report must name {rel}, the path the author has to open: {err}"
+        );
+    }
+
+    // The paired direction: a real citation in those same file types passes, so
+    // the assertions above are not satisfied by a stage that fails everything.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let good_files: Vec<(&str, &str)> = PATHS.iter().map(|p| (*p, real)).collect();
+    staged_citation_fixture_files(dir.path(), &good_files);
+    let good = run_staged_gate(dir.path());
     assert!(
-        restated.is_empty(),
-        "the commit hook names covered tree(s) itself: {restated:?}\n\
-         The gate script owns the scope; a second copy is how the two ends \
-         drift apart."
+        good.status.success(),
+        "the staged gate rejected a real citation: {good:?}"
     );
 }
