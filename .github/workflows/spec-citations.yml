@@ -120,7 +120,7 @@ env:
   # so. Still advisory and still 0 swallowed. Bumped after re-running
   # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
   # enrolled workspace with the pin enforced.
-  MNEMOSYNE_REV: 3e2cb1460883d8fd0b9bbb908b60c7491418e11d
+  MNEMOSYNE_REV: c9b276bfb7dba30b67a3c0da92da63d3d2c114e8
 
 jobs:
   citations:
