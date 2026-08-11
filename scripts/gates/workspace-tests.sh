@@ -49,5 +49,16 @@ if ! kill -0 "$HTTP_PID" 2>/dev/null; then
 fi
 sce_gate_step "W3C HTTP fixture server up on localhost:8080"
 
-cargo test --workspace --features cli \
+# `SCE_GATE_NO_FAIL_FAST` is the one thing the CI lane wanted that this gate
+# did not offer, and it kept the lane restating the command instead of calling
+# it. It is a reporting choice, not a different verification: a remote run
+# nobody can iterate on wants every failure in one go, a developer wants the
+# first one now. Making it a switch is what let the lane delegate.
+FAIL_FAST=()
+case "${SCE_GATE_NO_FAIL_FAST:-}" in
+    "" | 0 | false) ;;
+    *) FAIL_FAST=(--no-fail-fast); sce_gate_step "reporting every failure (--no-fail-fast)" ;;
+esac
+
+cargo test --workspace --features cli ${FAIL_FAST+"${FAIL_FAST[@]}"} \
     || sce_gate_fail "cargo test --workspace --features cli"
