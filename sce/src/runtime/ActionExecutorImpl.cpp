@@ -481,18 +481,17 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         //
         // §scxml-C-1: `_event.origin` is the sender's published `_ioprocessors`
         // location, not its bare session id — and this is the one place that
-        // publishes it, so this is where the id becomes a location. Converting
-        // earlier, in the raiser, made the same value serve two consumers that
-        // need different spellings and silently broke the session-keyed
-        // lookups (`<finalize>`, cancelled-invoke filtering; W3C 233/234).
+        // publishes it, so this is where the id becomes a location. The
+        // conversion itself lives in `IOProcessorHelper::publishedOrigin`,
+        // which the AOT engine's own boundary calls too: both engines had to
+        // answer this, and a second spelling of the rule is how they would
+        // stop agreeing.
         SCE::Common::EventMetadataHelper::setEventMetadata(
             *event,
-            currentOriginSessionId_.empty()
-                ? std::string()
-                : IOProcessorHelper::scxmlLocation(currentOriginSessionId_),  // origin (test336)
-            currentOriginType_,                                               // originType (test253, 331, 352, 372)
-            currentSendId_,                                                   // sendId (test332)
-            currentInvokeId_                                                  // invokeId (test338)
+            IOProcessorHelper::publishedOrigin(currentOriginSessionId_),  // origin (test336)
+            currentOriginType_,                                           // originType (test253, 331, 352, 372)
+            currentSendId_,                                               // sendId (test332)
+            currentInvokeId_                                              // invokeId (test338)
         );
 
         auto result = scriptEngine_.setCurrentEvent(sessionId_, event).get();

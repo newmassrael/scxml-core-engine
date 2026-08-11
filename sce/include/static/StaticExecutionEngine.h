@@ -20,6 +20,7 @@
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
 #include "common/ForwardedEvent.h"
+#include "common/IOProcessorHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
@@ -664,6 +665,30 @@ public:
             if (performMeshSend(eventWithMetadata.target, policy_.getEventName(eventWithMetadata.event),
                                 eventWithMetadata.data, eventWithMetadata.sendId, invokeId)) {
                 return;  // handled by mesh transport — do not enqueue locally
+            }
+        }
+
+        // §scxml-C-1: a session's published location is a usable `<send>`
+        // target, so an event addressed to a live invoke child belongs in
+        // that child's queue. Without this the address resolved to nothing
+        // and the event landed back in the SENDER's external queue — a
+        // parent answering `_event.origin` sent to itself, which no
+        // assertion in the corpus notices because test336 and test350 both
+        // send to the session they already are.
+        if constexpr (SCE::Core::HasChildSessionDelivery<StatePolicy>) {
+            const std::string childSession =
+                SCE::IOProcessorHelper::sessionIdFromScxmlLocation(eventWithMetadata.target);
+            if (!childSession.empty()) {
+                SCE::Common::ForwardedEvent addressed{policy_.getEventName(eventWithMetadata.event),
+                                                      eventWithMetadata.data,
+                                                      eventWithMetadata.origin,
+                                                      eventWithMetadata.sendId,
+                                                      eventWithMetadata.type,
+                                                      eventWithMetadata.originType,
+                                                      eventWithMetadata.invokeId};
+                if (policy_.deliverToChildSession(childSession, addressed)) {
+                    return;  // delivered to the addressed session
+                }
             }
         }
 
