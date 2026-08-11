@@ -47,6 +47,10 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "codegen_binary_resolution",
     "committed_sourcemap_drift",
     "diagnostic_corpus_schema",
+    // Derives the kinds it checks from every committed *.scxml, so no
+    // `paths:` filter enumerates its inputs — a document added anywhere
+    // changes what it reads.
+    "forge_document_name_is_the_stem",
     "gate_registry_contract",
     "hook_ci_parity",
     "roadmap_marker_gate",

@@ -187,6 +187,20 @@ GATES: dict[str, dict] = {
         "cost_s": 138,
         "summary": "cargo test --workspace --features cli",
     },
+    # The one reader of the axis both drift hashes miss. `source-hash` and
+    # `template-hash` cover the INPUTS — documents and templates — so an edit
+    # to the emit code under `sce-build/src` that changes what comes out moves
+    # neither, and the committed trees drift with every gate green. This
+    # regenerates them and compares, which is also what makes the procedure's
+    # own documented claim ("regenerate and expect no diff") checked rather
+    # than asserted.
+    "regen-reproduces": {
+        "workflows": ["regen-reproduces.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        "cost_s": 45,
+        "summary": "regeneration reproduces every committed tree",
+    },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
         "runner_workflow": True,
