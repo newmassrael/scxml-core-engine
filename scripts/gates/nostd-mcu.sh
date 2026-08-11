@@ -42,6 +42,27 @@ cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
 # std runtime (host, AP profile) and the no_std runtime (thumb, MCU
 # profile). Regression gate for the bytes-field `E0433: cannot find
 # heapless in sce_rust_runtime` against the std runtime.
+# The native-action probe: a machine whose `<sce:action>` lowers to a
+# host call has to compile under no_std on the MCU target too. CI ran
+# this and the gate did not, so the push-time check was the weaker of
+# the two — the asymmetry `hook_ci_parity` exists to catch, and the one
+# it could not see: both sides spell the step `cargo build
+# --manifest-path ...`, and which source was generated into that crate
+# is not a token the extractor compares.
+sce_gate_step "native-action probe (no_std thumb)"
+NATIVE_ACTION_OUT="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$NATIVE_ACTION_OUT'"
+"$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
+    -l rust --no-std --output-dir "$NATIVE_ACTION_OUT" \
+    sce-build/tests/fixtures/event_schema/statechart_native_action.scxml >/dev/null 2>&1 \
+    || sce_gate_fail "native-action probe generation"
+cp "$NATIVE_ACTION_OUT/statechart_native_action_sm.rs" \
+    backends/rust/probes/nostd-build/src/parallel_history_probe_sm.rs \
+    || sce_gate_fail "native-action probe staging"
+cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
+    --target=thumbv7em-none-eabihf \
+    || sce_gate_fail "native-action probe compile"
+
 sce_gate_step "single-emit portability probe (std host + no_std thumb)"
 "$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
     -l rust --no-std --output-dir backends/rust/probes/portable-emit/src \
