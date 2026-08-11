@@ -11,20 +11,24 @@
 // SCE-MAP: inline_mixed.scxml:3 :: _machine
 
 #pragma once
+#include "static/StaticExecutionEngine.h"
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+// W3C SCXML C.1: `publishedOrigin` turns the sender's session id into the
+// address it published, at the boundary where `_event.origin` becomes
+// visible to the document.
 #include "common/EventDataHelper.h"
 #include "common/FinalizeHelper.h"
+#include "common/IOProcessorHelper.h"
 #include "common/InPredicateHelper.h"
 #include "core/EntryExitHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/StateEntryHelper.h"
 #include "core/TransitionHelper.h"
-#include "static/StaticExecutionEngine.h"
-#include <cstdint>
 #include <cstring>
-#include <memory>
 #include <optional>
-#include <string>
-#include <string_view>
 #include <vector>
 // W3C SCXML B.1: every generated SM exposes setScriptEngine(IScriptEngine&)
 // (no-op when NEEDS_SCRIPT_ENGINE=false) so generic callers — mesh worker
