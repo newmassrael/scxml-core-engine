@@ -163,8 +163,21 @@ if [[ "${1:-}" == "--staged" ]]; then
     # scope reads as "everything" to one reader and "nothing" to the next.
     if (( ${#decidable[@]} > 0 )); then
         abs=("${decidable[@]/#/$SCE_REPO_ROOT/}")
+        repo_real="$(readlink -f "$SCE_REPO_ROOT")"
         for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire \
                   docs/spec/synth docs/sce-ledger/bytesguard; do
+            # A ledger reached through a symlink belongs to whatever repository
+            # holds it, and the tool says so rather than guessing: it rejects a
+            # `--paths` value outside its own workspace. That is the right
+            # answer — a store in another checkout cannot judge this one's
+            # staged files — so the pairing is checked here instead of being
+            # discovered as an error. The self-test fixtures are exactly this
+            # shape, a synthetic repo with `docs` symlinked in.
+            if [[ "$(readlink -f "$SCE_REPO_ROOT/$ws")" != "$repo_real"/* ]]; then
+                printf 'staged citation check: %s resolves outside this repository, so it judges none of its staged files\n' \
+                    "$ws" >&2
+                continue
+            fi
             # Absolute paths, because the tool resolves `--paths` against its
             # own working directory and this loop moves between five of them.
             # A staged file outside a workspace's configured `paths` comes back
