@@ -115,7 +115,7 @@ fi
 # The hallucination half of the `ledger-citations` gate, run over the
 # staged content instead of the whole tree.
 #
-# The full gate lives at push and costs ~124s, of which ~107s is the
+# The full gate lives at push and costs ~110s alone, of which 108.9s is the
 # validator's whole-tree symbol resolution — which cannot be scoped to
 # a diff, so the binding axes stay there. Existence can: whether a cited
 # section exists is decidable from the staged file alone, and it is the
