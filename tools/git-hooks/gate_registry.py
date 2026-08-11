@@ -46,6 +46,7 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
 import re
 import subprocess
 import sys
@@ -134,6 +135,10 @@ GATES: dict[str, dict] = {
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
+        # Not delegated: the lane interleaves codegen invocations between
+        # the probe builds. The gate mirrors that sequence, but the two
+        # have not been compared line by line, and a delegation that
+        # silently drops a probe would weaken the lane.
         "deps": ["codegen-build"],
         "cost_s": 1,
         "summary": "no_std MCU build + clippy + probes",
@@ -151,6 +156,9 @@ GATES: dict[str, dict] = {
     },
     "embed-vendor": {
         "workflows": ["embed-vendor-smoke.yml"],
+        # Not delegated: the lane builds sce-codegen first and calls a
+        # sibling gate in the same workflow, so its steps are a
+        # superset of this gate rather than a copy of it.
         "extra": ["sce/include/**", "embed/MANIFEST.json"],
         # The most expensive gate in the set: three scratch-directory builds,
         # one of which packages embed/ from scratch and builds a consumer
@@ -169,6 +177,9 @@ GATES: dict[str, dict] = {
     # doc, the wire schemas, and the forge-AST export schema.
     "workspace-tests": {
         "workflows": ["rust-workspace-tests.yml"],
+        # Not delegated: the lane adds `--no-fail-fast` so one CI run
+        # reports every failure, while the hook stops at the first —
+        # a reporting choice, not a different verification.
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
         "cost_s": 138,
         "summary": "cargo test --workspace --features cli",
@@ -188,6 +199,9 @@ GATES: dict[str, dict] = {
     # change outside forge-runtime still reaches the arm it could break.
     "forge-go": {
         "workflows": ["forge-conformance.yml"],
+        # Not delegated: the lane tees each arm's output to a log file
+        # it uploads as a build artifact; the gate builds in a temp dir
+        # and keeps nothing. Delegating would drop the artifact.
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
         "cost_s": 11,
@@ -195,6 +209,9 @@ GATES: dict[str, dict] = {
     },
     "forge-rust": {
         "workflows": ["forge-conformance.yml"],
+        # Not delegated: the lane tees each arm's output to a log file
+        # it uploads as a build artifact; the gate builds in a temp dir
+        # and keeps nothing. Delegating would drop the artifact.
         "extra": ["backends/rust/**"],
         # Warm reads as 0; the release profile it needs is a separate build
         # tree from every other gate, so a cold run pays that once.
@@ -203,12 +220,18 @@ GATES: dict[str, dict] = {
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],
+        # Not delegated: the lane tees each arm's output to a log file
+        # it uploads as a build artifact; the gate builds in a temp dir
+        # and keeps nothing. Delegating would drop the artifact.
         "extra": ["backends/python/**"],
         "cost_s": 11,
         "summary": "Python forge conformance (numerical)",
     },
     "forge-cpp": {
         "workflows": ["forge-conformance.yml"],
+        # Not delegated: the lane tees each arm's output to a log file
+        # it uploads as a build artifact; the gate builds in a temp dir
+        # and keeps nothing. Delegating would drop the artifact.
         "extra": ["backends/cpp/**", "sce/**"],
         "deps": ["codegen-build"],
         "cost_s": 6,
@@ -237,6 +260,9 @@ GATES: dict[str, dict] = {
     },
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
+        # Not delegated: the lane installs mnemosyne-cli from git before
+        # validating, where the gate requires it already present at the
+        # pinned path. The install is setup, not verification.
         # The mnemosyne validators are the sub-second part the hook's prose
         # described; the ledger-existence sweep over five source trees that
         # follows them is the rest of the 145s.
@@ -248,6 +274,7 @@ GATES: dict[str, dict] = {
     # python generator, and the hook mirrored only the first.
     "spec-snapshot": {
         "workflows": ["spec-snapshot-drift.yml"],
+        "runner_workflow": True,
         "cost_s": 1,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
@@ -651,10 +678,21 @@ def self_test(repo_root: Path) -> int:
         script = gate_script(repo_root, slug)
         if not script.is_file():
             continue
+        # Continuation backslashes and run-step indentation are
+        # spelling, not command: a gate that wraps its arguments and a
+        # workflow that does not were the same command, and comparing
+        # the raw lines matched neither. Normalising is what lets the
+        # duplicate be seen.
+        def normalise(line: str) -> str:
+            line = line.strip()
+            if line.startswith("run:"):
+                line = line[4:].strip()
+            return " ".join(line.rstrip("\\").split())
+
         gate_cmds = {
-            line.strip()
+            normalise(line)
             for line in script.read_text(encoding="utf-8").splitlines()
-            if line.strip().startswith(verbs)
+            if normalise(line).startswith(verbs)
         }
         for name in spec.get("workflows", []):
             wf = repo_root / ".github" / "workflows" / name
@@ -662,15 +700,44 @@ def self_test(repo_root: Path) -> int:
                 continue
             body = wf.read_text(encoding="utf-8")
             wf_cmds = {
-                line.strip()
+                normalise(line)
                 for line in body.splitlines()
-                if line.strip().startswith(verbs)
+                if normalise(line).startswith(verbs)
             }
             for dup in sorted(gate_cmds & wf_cmds):
                 failures.append(
                     f"delegation: {name} calls `scripts/gate {slug}` and "
                     f"still restates its command `{dup}` — one of the two "
                     f"spellings is the one that will be edited")
+
+    # A gate whose workflow does not delegate says why, next to itself.
+    #
+    # The count of delegating gates is a progress measure, and a
+    # progress measure with no reason attached to the remainder reads
+    # as "not done yet" forever. Each non-delegating entry carries a
+    # `# Not delegated:` note stating the measured difference — the
+    # lane adds a reporting flag, uploads an artifact, installs a tool.
+    # Reading the registry's own source for the note is what keeps the
+    # note from being optional; the same shape the `local`-only gates'
+    # reasons take.
+    cases += 1
+    registry_src = pathlib.Path(__file__).read_text(encoding="utf-8").splitlines()
+    for slug, spec in sorted(GATES.items()):
+        if not spec.get("workflows") or spec.get("runner_workflow"):
+            continue
+        entry = next(
+            (i for i, line in enumerate(registry_src) if line.strip().startswith(f'"{slug}": {{')),
+            None,
+        )
+        if entry is None:
+            failures.append(f"delegation: {slug} is not declared in this file's source")
+            continue
+        window = "\n".join(registry_src[entry : entry + 12])
+        if "Not delegated:" not in window:
+            failures.append(
+                f"delegation: {slug} still restates its gate's commands in CI and "
+                f"says nothing about why — add a `# Not delegated:` note with the "
+                f"measured difference, or convert the workflow to `scripts/gate {slug}`")
 
     # Every gate in the table has a script, and every script is in the table.
     cases += 1

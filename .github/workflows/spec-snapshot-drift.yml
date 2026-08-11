@@ -70,14 +70,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
-      - name: Snapshot integrity (offline)
-        run: python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity
-      - name: Verifies-catalog up to date (generated artifact drift guard)
-        run: python3 tools/mnemosyne-adoption/gen_verifies_catalog.py --check
-      - name: Mesh verifies-catalog up to date (same guard, marker SSOT)
-        run: python3 tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py --check
-      - name: Tooling regression tests
-        run: python3 -m unittest discover -s tools/mnemosyne-adoption/tests
+      # The four offline checks, delegated to the gate runner so the
+      # list has one spelling. The scheduled `upstream-drift` job below
+      # stays outside it: it reaches the network, which is why the
+      # push-time gate does not run it.
+      - name: Snapshot integrity + catalog drift + tooling tests
+        run: scripts/gate spec-snapshot
 
   upstream-drift:
     name: Upstream spec drift (scheduled)
