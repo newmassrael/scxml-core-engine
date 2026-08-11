@@ -55,7 +55,7 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
 # the split-out synth-invoke children (Mesh §9.6.6 rule 1) into $TMP
 # next to the staged parent.
 #
-# `--input-root` overrides the default §synth-6.2.6 source-hash root (the
+# `--input-root` overrides the default synth RFC 6.2.6 source-hash root (the
 # SCXML file's parent) so the embedded hash reflects the tracked
 # fixture location instead of the transient $TMP path.
 # `--kotlin-package-prefix` flips the emitted `package` header from
