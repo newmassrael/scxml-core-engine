@@ -29,19 +29,24 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# Trees deliberately kept in PROSE, checked for citation EXISTENCE only. The
-# array is declared before the `--staged` arm so both entry points read one
-# list: the full gate below sweeps the trees, the pre-commit stage sweeps the
-# staged files inside them. Two lists would let commit-time and push-time
-# disagree about what is covered, which is the shape of the problem the staged
-# mode exists to fix.
-PROSE_TREES=(tools/codegen/templates tests backends examples web)
+# The existence axis has no tree list any more, and that is the point. It used
+# to name five trees, and a citation's visibility then depended on two lists at
+# once: this one, and the scanner's set of file extensions. Measured 2026-08-11:
+# `web/` was named here and contributed 0 of its 46 tracked files, because the
+# scanner only read extensions it could REWRITE — so seven fabricated section
+# numbers were "checked" at every push. Nine more sat outside the five trees
+# entirely, in `SCE_MESH.md`, a `pyproject.toml`, and the CI workflows.
+#
+# Scope is now every tracked file, decided by `git ls-files` rather than by a
+# suffix or a directory anyone has to remember to extend. Measured at 4.4s over
+# 6341 files, against 108.9s for the binding axes this gate also runs, so the
+# widening is free.
 
 # ── Staged-scope mode (tools/git-hooks/pre-commit) ────────────────
 #
 # The existence half of this gate, over the staged content only.
 #
-# Why it exists: the full gate costs ~124s and runs at push, so a fabricated
+# Why it exists: the full gate costs ~110s and runs at push, so a fabricated
 # citation is reported once for a whole batch of commits and nothing says which
 # commit introduced it. Measured on this repo twice — thirteen cites across
 # four commits rejected in one push (2026-08-10), and a fabricated `§synth-F4`
@@ -50,7 +55,7 @@ PROSE_TREES=(tools/codegen/templates tests backends examples web)
 #
 # What it does NOT do, deliberately: the binding axes (citation_unbound,
 # symbol_mismatch, binding_unbacked) need the validator's whole-tree symbol
-# resolution — 107 of the gate's 124 seconds, measured — and cannot be scoped
+# resolution — 108.9 of the gate's 110 seconds, measured — and cannot be scoped
 # to a diff. Those stay at push. Existence is the axis that IS decidable from
 # the staged content alone, and it is the hallucination class.
 #
@@ -58,16 +63,11 @@ PROSE_TREES=(tools/codegen/templates tests backends examples web)
 # index, so a citation fixed-but-not-staged cannot pass the gate that is about
 # to commit the unfixed version.
 if [[ "${1:-}" == "--staged" ]]; then
-    mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR)
-    scoped=()
-    for f in ${staged+"${staged[@]}"}; do
-        for tree in "${PROSE_TREES[@]}"; do
-            if [[ "$f" == "$tree"/* ]]; then
-                scoped+=("$f")
-                break
-            fi
-        done
-    done
+    # Every staged path, matching the full gate's scope exactly. The two used to
+    # share a tree list so they could not disagree about coverage; now they
+    # share the absence of one, which is the same guarantee without a list to
+    # keep current. Non-text files cost nothing: the checker decides at the read.
+    mapfile -t scoped < <(git diff --cached --name-only --diff-filter=ACMR)
     if [[ ${#scoped[@]} -eq 0 ]]; then
         exit 0
     fi
@@ -130,19 +130,22 @@ python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesg
     --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml >/dev/null \
     || sce_gate_fail "bytesguard citation-form gate"
 
-# Ledger-existence gate over the trees deliberately kept in PROSE. The form
-# gates above cover only the dirs enrolled in a ledger's `paths`, which
-# leaves the codegen templates and every backend/test tree free to cite a
-# section number that does not exist — and templates are the propagation
-# source: one fabricated number reached 168 sites through generated copies
-# before this gate existed. Token form is NOT demanded here (template
+# Ledger-existence gate over every tracked file. The form gates above cover
+# only the dirs enrolled in a ledger's `paths`, which leaves the codegen
+# templates, every backend/test tree, the design docs and the CI workflows free
+# to cite a section number that does not exist — and templates are the
+# propagation source: one fabricated number reached 168 sites through generated
+# copies before this gate existed. Token form is NOT demanded here (template
 # comments ship verbatim inside generated code and stay readable to
 # consumers); only the claim that the cited section exists is enforced —
 # for a prose cite and, since the token pass landed, for one already written
 # as `§<ns>-<id>`. The gate promised the second in its own error text long
 # before it checked it, so a fabricated id typed straight in §-form passed
-# every reader in these trees.
-for tree in "${PROSE_TREES[@]}"; do
-    python3 tools/mnemosyne-adoption/migrate_citations.py "$tree" --check-ledger >/dev/null \
-        || sce_gate_fail "ledger-existence gate: ${tree}"
-done
+# every reader.
+#
+# One sweep from the repo root, not a loop over trees: the checker reports how
+# many files it read, and a per-tree loop turns that one number into a set of
+# numbers nobody compares. A path that yields nothing is an error there, so a
+# scan set that silently shrinks cannot come back as "OK".
+python3 tools/mnemosyne-adoption/migrate_citations.py . --check-ledger \
+    || sce_gate_fail "ledger-existence gate"
