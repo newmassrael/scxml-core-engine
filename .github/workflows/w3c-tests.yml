@@ -228,7 +228,6 @@ jobs:
         fi
 
         exit $EXIT_CODE
-      continue-on-error: true
 
     - name: Analyze Crash (if occurred)
       if: always()
@@ -450,6 +449,13 @@ jobs:
   test-kotlin:
     name: Kotlin W3C Tests
     runs-on: ubuntu-latest
+    # The junit reporter below creates a check run, which needs `checks: write`.
+    # Without it the step fails with "Resource not accessible by integration"
+    # and the Kotlin results have no check of their own — the sibling C++ job
+    # declared this and this one did not, so only one of the two reporters
+    # could publish.
+    permissions:
+      checks: write
 
     steps:
     - name: Checkout Repository
