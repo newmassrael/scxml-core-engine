@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: spec-snapshot-drift.yml
+#
 # Spec snapshot integrity + verifies-catalog drift (mirror of
 # spec-snapshot-drift.yml).
 #

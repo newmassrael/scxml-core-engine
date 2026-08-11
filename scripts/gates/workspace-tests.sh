@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: rust-workspace-tests.yml
+#
 # Rust workspace suite (mirror of rust-workspace-tests.yml).
 #
 # Default test profile, matching CI. This ran `--release` until 2026-08-04,

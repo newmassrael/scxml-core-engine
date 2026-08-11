@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: forge-conformance.yml
+#
 # Go arm of the forge conformance suite (forge-conformance.yml).
 #
 # generate.sh already runs `go build ./conformance/...` as a smoke check, so

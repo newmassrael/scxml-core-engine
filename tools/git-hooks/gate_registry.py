@@ -46,6 +46,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import re
 import subprocess
@@ -904,6 +905,9 @@ def main() -> int:
                     help="print every gate in run order")
     ap.add_argument("--explain", action="store_true",
                     help="also print the selection reason to stderr")
+    ap.add_argument("--mapping", action="store_true",
+                    help="print the table as JSON, so a consumer reads the "
+                         "registry instead of parsing this file's source")
     ap.add_argument("--order-drift", nargs="*", metavar="SLUG=SECONDS",
                     help="compare a run's timings against the declared costs "
                          "and report when they would have ordered the gates "
@@ -914,6 +918,14 @@ def main() -> int:
 
     if args.self_test:
         return self_test(repo_root)
+
+    if args.mapping:
+        # A reader that scrapes this file's source picks up the self-test's
+        # synthetic tables along with the real one — measured, three fixture
+        # gates and four more. Emitting the table is the answer.
+        json.dump(GATES, sys.stdout, indent=1, sort_keys=True, default=str)
+        sys.stdout.write("\n")
+        return 0
 
     if args.order_drift is not None:
         measured = {}
