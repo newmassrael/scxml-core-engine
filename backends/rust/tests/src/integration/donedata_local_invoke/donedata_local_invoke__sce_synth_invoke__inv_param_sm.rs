@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -300,6 +300,17 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
     }
 
     // W3C SCXML 5.10: Set _event system variable for current event
+    //
+    // W3C SCXML C.1: `_event.origin` is the sender's published
+    // `_ioprocessors` location, not its bare session id — and this is the one
+    // place that publishes `_event` to the document, so this is where the id
+    // becomes a location. The engine keeps the bare id in
+    // `EventMetadata::origin` because its session-keyed lookups match on it;
+    // converting at the raise would make one value serve two consumers that
+    // need different spellings. The conversion itself lives in
+    // `helpers::io_processors::published_origin`, the port of the
+    // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+    // spelling of the rule is how the backends would stop agreeing.
     fn set_current_event_in_script_engine(
         &self,
         event_name: &str,
@@ -313,6 +324,7 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
         if let Some(ref sid) = self.session_id {
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            let published = sce_rust_runtime::helpers::io_processors::published_origin(origin);
             let _ = se.set_current_event(
                 sid,
                 sce_rust_runtime::SetCurrentEventArgs {
@@ -320,7 +332,7 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
                     event_data,
                     event_type,
                     send_id,
-                    origin,
+                    origin: &published,
                     origin_type,
                     invoke_id,
                 },

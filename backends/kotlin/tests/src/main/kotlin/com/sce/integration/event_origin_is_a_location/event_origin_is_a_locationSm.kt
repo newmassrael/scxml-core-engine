@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -214,7 +214,20 @@ class EventOriginIsALocationStateMachine(
         }
         // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
         // Internal events (<raise>) have empty origin; external events (<send>) have session ID
-        val effectiveOrigin = if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        // W3C SCXML C.1: `_event.origin` is the sender's published
+        // `_ioprocessors` location, not its bare session id — and this is the
+        // one place that publishes `_event` to the document, so this is where
+        // the id becomes a location. The engine keeps the bare id in
+        // `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
+        // dispatch, cancelled-invoke filtering) match on it; converting at the
+        // raise would make one value serve two consumers that need different
+        // spellings. The conversion itself lives in
+        // `com.sce.runtime.IoProcessors.publishedOrigin`, the port of the
+        // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+        // spelling of the rule is how the backends would stop agreeing.
+        val effectiveOrigin = com.sce.runtime.IoProcessors.publishedOrigin(
+            if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        )
         val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
         engine.setCurrentEvent(
             sid,
@@ -388,6 +401,12 @@ class EventOriginIsALocationStateMachine(
                 raiseInternal(EventOriginIsALocationEvent.Reply)
             } else if (_rt == "#_parent") {
                 onSendToParent?.invoke("reply", "")
+            } else if (deliverToChildSession(
+                    com.sce.runtime.IoProcessors.sessionIdFromScxmlLocation(_rt),
+                    "reply")) {
+                // W3C SCXML C.1: see the payload-carrying arm above — a target
+                // that decodes to a child's published location is addressed to
+                // that child, not to this machine's own external queue.
             } else {
                 send(EventOriginIsALocationEvent.Reply, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }

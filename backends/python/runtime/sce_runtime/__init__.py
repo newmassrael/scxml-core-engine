@@ -13,6 +13,7 @@ from . import scripting
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .http import HttpSendRequest, HttpSendResponse
+from .io_processors import published_origin, session_id_from_scxml_location
 from .invoke import (
     ChildSession,
     Invoke,
@@ -51,6 +52,8 @@ __all__ = [
     "StatePolicy",
     "TransitionResult",
     "create_done_invoke_event_name",
+    "published_origin",
+    "session_id_from_scxml_location",
     "scripting",
 ]
 

@@ -1256,6 +1256,43 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
+     * W3C SCXML C.1: deliver an event addressed to a child's published location.
+     *
+     * Each invoked child owns a script session id, and that id is what the
+     * child's `_ioprocessors` entry names, so a `<send>` whose target decodes to
+     * one of them is addressed to that child rather than to this machine. A
+     * `false` return means the address names no live child of ours and the event
+     * takes the normal external path — the routing half of C.1 is what makes the
+     * published location a usable target rather than a string that merely
+     * compares equal.
+     */
+    protected fun deliverToChildSession(
+        childSessionId: String,
+        eventName: String,
+        eventData: String = ""
+    ): Boolean {
+        if (childSessionId.isEmpty()) return false
+        for ((_, entry) in activeInvokes) {
+            if (entry.child.scriptSessionId == childSessionId) {
+                entry.child.sendByNameWithData(eventName, eventData)
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * W3C SCXML 6.4 / C.1: type-erased injection carrying the send's payload.
+     * [sendByName] drops event data because its callers have none; an addressed
+     * `<send>` does, and losing it would make the delivery arrive stripped.
+     */
+    internal fun sendByNameWithData(name: String, data: String) {
+        resolveEventByName(name)?.let {
+            send(it, EventMetadata(type = "external", data = data))
+        }
+    }
+
+    /**
      * W3C SCXML C.2: Send event by name with metadata (public, for HTTP callbacks).
      *
      * Used by test harness (W3CHttpTestBase) to inject HTTP response events

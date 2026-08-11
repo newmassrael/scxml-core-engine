@@ -238,7 +238,17 @@ func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
 	sendID := ""
 {% endif %}
 {% if model.needs_event_origin %}
-	origin := p.pendingEventOrigin
+	// W3C SCXML C.1: `_event.origin` is the sender's published
+	// `_ioprocessors` location, not its bare session id — and this is the one
+	// place that publishes `_event` to the document, so this is where the id
+	// becomes a location. The engine keeps the bare id in
+	// `EventMetadata.Origin` because its session-keyed lookups (<finalize>
+	// dispatch, cancelled-invoke filtering) match on it; converting at the
+	// raise would make one value serve two consumers that need different
+	// spellings. The conversion itself lives in `sce.PublishedOrigin`, the
+	// port of the `IOProcessorHelper::publishedOrigin` the C++ engines share:
+	// a second spelling of the rule is how the backends would stop agreeing.
+	origin := sce.PublishedOrigin(p.pendingEventOrigin)
 {% else %}
 	origin := ""
 {% endif %}

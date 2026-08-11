@@ -877,9 +877,15 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                (W3C 5.10). The `not in_foreach` carve-out is left implicit
                here; the first force fixture inside a `<foreach>` body
                revisits it, mirroring the existing invalid-`!` arm. */
-            char _send_target_buf[64];
+            /* W3C SCXML C.1: a resolved target can be an `_ioprocessors`
+               location, so the buffer is sized as a URI. At 64 bytes a
+               session address was truncated mid-string and then matched
+               nothing — the send fell through to this machine's own
+               external queue and the addressed peer simply never heard,
+               which is the failure C.1's routing half describes. */
+            char _send_target_buf[SCE_MAX_URI_LEN];
             bool _send_target_ok;
-{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
+{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
             if (!_send_target_ok) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
@@ -924,6 +930,20 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
                 return;
+{% for invoke_info in model.invokes | scxml %}
+            } else if (strcmp(_send_target_buf, "sce://scxml/{{ invoke_info.child_name | escape_c }}_session") == 0) {
+                /* W3C SCXML C.1: the target is the location our child
+                   `{{ invoke_info.invoke_id }}` publishes in its own
+                   `_ioprocessors`, so it is addressed to that child. This is
+                   the routing half of the clause: the location a session
+                   publishes has to be a usable `<send>` target, and without
+                   this arm the address a peer was told to answer at falls
+                   through to the sender's own external queue — the string
+                   compares equal and still reaches nobody. The literal is
+                   the same deterministic address `invoke_methods.jinja2`
+                   stamps on `_event.origin`, so the two cannot disagree. */
+                {{ invoke_info.child_name }}_raise_external_by_name(&sm->child_{{ invoke_info.field_suffix }}, "{{ action.event }}");
+{% endfor %}
             } else {
                 /* W3C SCXML 6.2 + C.1 (test190/test336): every other
                    dynamic target is treated as a session URI and
@@ -933,12 +953,12 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                    `isInvalidTarget`/`isUnreachableTarget`/`isInternalTarget`
                    checks. cpp's `raiseExternal` collapses any unrecognised
                    single-session URI (the deterministic
-                   `<model.name>_session` literal exposed on
-                   `_event.origin`, the `#_scxml_<sessionid>` form per
-                   W3C C.1.5, or any other future cross-session URI) into
-                   the same external pop, so the C11 mirror does the same.
-                   Per-target session lookup lands when the multi-session
-                   AOT profile is wired (no current consumer). */
+                   `<model.name>_session` literal this machine publishes for
+                   itself, the `#_scxml_<sessionid>` form per W3C C.1.5, or
+                   any other future cross-session URI) into the same external
+                   pop, so the C11 mirror does the same. The arms above take
+                   the addresses this machine's own children publish, which is
+                   the only cross-session case the AOT profile can resolve. */
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                 memset(&_send_evt, 0, sizeof(_send_evt));
                 _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
@@ -1020,9 +1040,15 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
                 return;
             }
-            char _send_target_buf[64];
+            /* W3C SCXML C.1: a resolved target can be an `_ioprocessors`
+               location, so the buffer is sized as a URI. At 64 bytes a
+               session address was truncated mid-string and then matched
+               nothing — the send fell through to this machine's own
+               external queue and the addressed peer simply never heard,
+               which is the failure C.1's routing half describes. */
+            char _send_target_buf[SCE_MAX_URI_LEN];
             bool _send_target_ok;
-{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', '64', '_send_target_ok') }}
+{{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
             if (!_send_target_ok) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
@@ -1058,6 +1084,18 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
                 return;
+{% for invoke_info in model.invokes | scxml %}
+            } else if (strcmp(_send_target_buf, "sce://scxml/{{ invoke_info.child_name | escape_c }}_session") == 0) {
+                /* W3C SCXML C.1: our child `{{ invoke_info.invoke_id }}`'s
+                   published location, addressed. Present here because the
+                   targetexpr-only arm has it and the two are kept
+                   synchronised — a `typeexpr` names the PROCESSOR, and the
+                   processor named here is the SCXML one either way, so it
+                   cannot change where the target resolves. Leaving it out
+                   would make the same address reach a child in one send
+                   shape and the sender's own queue in the other. */
+                {{ invoke_info.child_name }}_raise_external_by_name(&sm->child_{{ invoke_info.field_suffix }}, "{{ action.event }}");
+{% endfor %}
             } else {
                 /* W3C SCXML 6.2 + C.1 (test190/test336 mirror): any other
                    dynamic target falls through to the external queue —
@@ -3198,7 +3236,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     sce_copy_bounded_data(evt.data, fwd->data);
-    sce_copy_bounded_id(evt.origin, fwd->origin);
+    sce_copy_bounded_origin(evt.origin, fwd->origin);
     sce_copy_bounded_id(evt.send_id, fwd->send_id);
     sce_copy_bounded_event_type(evt.type, fwd->type);
     sce_copy_bounded_id(evt.origin_type, fwd->origin_type);
@@ -3635,7 +3673,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     sce_forwarded_event_t fwd;
     memset(&fwd, 0, sizeof(fwd));
     sce_copy_bounded_data(fwd.data, evt->data);
-    sce_copy_bounded_id(fwd.origin, evt->origin);
+    sce_copy_bounded_origin(fwd.origin, evt->origin);
     sce_copy_bounded_id(fwd.send_id, evt->send_id);
     sce_copy_bounded_event_type(fwd.type, evt->type);
     sce_copy_bounded_id(fwd.origin_type, evt->origin_type);
@@ -3733,16 +3771,34 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            `_event.origin` / `_event.origintype` carry — external
            queue pop is the spec's 'external' category (bare <send>,
            scheduled <send>, ECMAScript host events all enqueue
-           here); origin is the deterministic AOT-binding session
-           URI (lua-side `_sessionid` from lua_init_engine, mirrors
-           cpp StaticExecutionEngine raiseExternal default of
-           sessionId), origintype is the SCXMLEventProcessor URI
-           literal so a receiver's `<send target=_event.origin
+           here); origintype is the SCXMLEventProcessor URI literal so a
+           receiver's `<send target=_event.origin
            typeexpr=_event.origintype/>` round-trips into the same
-           external queue (test336). */
+           external queue (test336).
+
+           W3C SCXML C.1: origin is the location the SENDING session
+           published. An event that arrived from another session carries
+           that address in `evt.origin` — overwriting it with this
+           machine's own would make every event look self-sent, which is
+           indistinguishable from correct only while the sender and the
+           receiver are the same session (test336 and test350 are both
+           that shape, which is why this held for so long). A bare
+           `<send>` with no target IS self-addressed and carries no
+           origin, so the fallback is this session's own published
+           location — the same `_scxml_location` its `_ioprocessors`
+           entry advertises, not the bare `_sessionid`, because C.1
+           requires the two to be the same string. */
+        if (evt.origin[0] != '\0') {
+            lua_pushstring(sm->L, evt.origin);
+        } else {
+            lua_pushnil(sm->L);
+        }
+        lua_setglobal(sm->L, "_pending_event_origin_carry");
         (void)luaL_dostring(sm->L,
                             "_pending_event_type = 'external'; "
-                            "_pending_event_origin = _sessionid; "
+                            "_pending_event_origin = "
+                              "_pending_event_origin_carry or _scxml_location; "
+                            "_pending_event_origin_carry = nil; "
                             "_pending_event_origintype = "
                               "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'");
         /* `_event.data` hydration from `evt.data` now happens inside

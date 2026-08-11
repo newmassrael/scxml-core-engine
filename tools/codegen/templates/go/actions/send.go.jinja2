@@ -292,12 +292,24 @@
 {% else %}
 			sendEvtName := ""
 {% endif %}
+{% if model.invokes | scxml %}
+			// W3C SCXML C.1: a target that decodes to one of our children's
+			// published locations is addressed to that child. Without this the
+			// address a peer was told to answer at routes back into the
+			// sender's own queue, so the location compares equal and still
+			// reaches nobody.
+			addressedChild := sce.SessionIDFromScxmlLocation(fmt.Sprintf("%v", sendTargetVal))
+			if !p.DeliverToChildSession(addressedChild, sendEvtName, eventDataStr) {
+{% endif %}
 			if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
 				meta := sce.NewEventWithMetadata(sendEvt)
 				meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
 				meta.Metadata.Data = eventDataStr
 				engine.RaiseExternalWithMeta(meta)
 			}
+{% if model.invokes | scxml %}
+			}
+{% endif %}
 		}
 	}
 {% elif action.eventexpr and model.needs_script_engine %}

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 SCXML_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
 BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
@@ -46,6 +46,48 @@ def scxml_location(session_id: str) -> str:
     because it is not constrained to URI-safe characters.
     """
     return "sce://scxml/" + quote(session_id, safe="-_.~")
+
+
+def session_id_from_scxml_location(uri: str) -> str:
+    """Session id an SCXML Event I/O Processor location names, or ``""``.
+
+    The inverse of :func:`scxml_location`, kept beside it so the two spellings
+    of one address cannot drift apart. §scxml-C-1 requires the location a
+    session publishes to be usable as a ``<send>`` target, which only holds if
+    something can read a session back out of it.
+    """
+    prefix = "sce://scxml/"
+    if not uri.startswith(prefix) or len(uri) <= len(prefix):
+        return ""
+    return unquote(uri[len(prefix):])
+
+
+def published_origin(origin_session_id: str) -> str:
+    """The ``_event.origin`` a receiver should see for an event sent by
+    ``origin_session_id``.
+
+    §scxml-C-1 requires the origin of a delivered event to match the 'location'
+    the sending session published, which is what makes it an address the
+    receiver can answer. The engine carries the sender's BARE session id
+    internally — ``EventMetadata.origin`` — because its session-keyed lookups
+    (``<finalize>`` dispatch, cancelled-invoke filtering) match on the id.
+    Converting where the event is raised would make one value serve two
+    consumers that need different spellings. So the conversion belongs at the
+    boundary where the value becomes visible to the document, and this is that
+    conversion — the same rule, and the same shape, as the C++
+    ``IOProcessorHelper::publishedOrigin`` both engines already share.
+
+    A remote invoke is the case that makes this more than a rename: its child
+    session is stamped with a URI rather than an id, and wrapping a URI in
+    :func:`scxml_location` would produce an address naming nothing. An argument
+    that already carries a scheme is therefore passed through — it is already
+    an address.
+    """
+    if not origin_session_id:
+        return ""
+    if "://" in origin_session_id:
+        return origin_session_id
+    return scxml_location(origin_session_id)
 
 
 def build(session_id: str, basic_http_access_uri: str = "") -> List[IoProcessorDescriptor]:

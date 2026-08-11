@@ -38,6 +38,8 @@ from sce_runtime import (
     StatePolicy,
     TransitionResult,
     create_done_invoke_event_name,
+    published_origin as _published_origin,
+    session_id_from_scxml_location as _session_id_from_scxml_location,
 )
 from sce_runtime.scripting import (
     LuaScriptEngine as _LuaScriptEngine,

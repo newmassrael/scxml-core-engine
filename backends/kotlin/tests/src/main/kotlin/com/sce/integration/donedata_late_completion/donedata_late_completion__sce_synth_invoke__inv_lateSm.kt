@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -174,7 +174,20 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         }
         // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
         // Internal events (<raise>) have empty origin; external events (<send>) have session ID
-        val effectiveOrigin = if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        // W3C SCXML C.1: `_event.origin` is the sender's published
+        // `_ioprocessors` location, not its bare session id — and this is the
+        // one place that publishes `_event` to the document, so this is where
+        // the id becomes a location. The engine keeps the bare id in
+        // `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
+        // dispatch, cancelled-invoke filtering) match on it; converting at the
+        // raise would make one value serve two consumers that need different
+        // spellings. The conversion itself lives in
+        // `com.sce.runtime.IoProcessors.publishedOrigin`, the port of the
+        // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+        // spelling of the rule is how the backends would stop agreeing.
+        val effectiveOrigin = com.sce.runtime.IoProcessors.publishedOrigin(
+            if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        )
         val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
         engine.setCurrentEvent(
             sid,

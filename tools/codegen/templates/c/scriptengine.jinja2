@@ -178,7 +178,12 @@
            no percent-encoding here (cpp encodes because its session ids are
            runtime-supplied). */
         (void)luaL_dostring(sm->L,
-            "local _scxml_loc = 'sce://scxml/{{ model.name | escape_c }}_session'\n"
+            /* W3C SCXML C.1: the location is also what this session's own
+               `<send>`s must publish as `_event.origin`, so it is a global
+               rather than a chunk-local — the dequeue path reads the same
+               string instead of spelling the address a second time. */
+            "_scxml_location = 'sce://scxml/{{ model.name | escape_c }}_session'\n"
+            "local _scxml_loc = _scxml_location\n"
             "_ioprocessors = {\n"
             "  ['http://www.w3.org/TR/scxml/#SCXMLEventProcessor'] = {location = _scxml_loc},\n"
             "  scxml = {location = _scxml_loc},\n"

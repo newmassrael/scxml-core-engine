@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -213,13 +213,16 @@ impl Test220Policy {
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
 
-                // W3C SCXML 6.4: Ensure child session ID for invoke tracking
+                // W3C SCXML C.1: the child adopts the id its parent recorded
+                // for it. The parent mints `parentSession.invokeId` and keys
+                // `active_invokes` on it, so an event from this child reaches
+                // the parent carrying that id as its origin; if the child also
+                // minted an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them.
                 if child_policy.session_id.is_none() {
-                    static CHILD_SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                        core::sync::atomic::AtomicU64::new(0);
-                    let cid =
-                        CHILD_SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    child_policy.session_id = Some(format!("child_session_{}", cid));
+                    child_policy.session_id = Some(child_session_id.clone());
                 }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
@@ -323,6 +326,40 @@ impl Test220Policy {
                 self.child_invoke_0 = Some(child);
             }
         }
+    }
+
+    // W3C SCXML C.1: deliver an event addressed to a child's published
+    // location.
+    //
+    // The parent mints `parentSession.invokeId` for each child and that id is
+    // what the child's `_ioprocessors` entry names, so a `<send>` whose target
+    // decodes to one of them is addressed to that child rather than to this
+    // machine. A false return means the address names no live child of ours
+    // and the event takes the normal external path — the routing half of C.1
+    // is what makes the published location a usable target rather than a
+    // string that merely compares equal.
+    fn deliver_to_child_session(
+        &mut self,
+        child_session_id: &str,
+        event_name: &str,
+        event_data: &str,
+    ) -> bool {
+        if child_session_id.is_empty() {
+            return false;
+        }
+        {
+            let addressed = self
+                .active_invokes
+                .get("_invoke_0")
+                .map_or(false, |cs| cs.session_id == child_session_id);
+            if addressed {
+                if let Some(ref mut child) = self.child_invoke_0 {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

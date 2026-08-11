@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 04d657968488f1f11c5b6c78a58b4eab6b99c6cb465480de6bf6cf01d0d597d4
+// template-hash: 56bec87d0124f368b72ecb45f170dc38a324027a2fa3663195c8aeaa13f5d24d
 // generated-at: 0
 
 
@@ -233,7 +233,17 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) setCurrentEvent(name
 	data := p.pendingEventData
 	eventType := p.pendingEventType
 	sendID := p.pendingEventSendid
-	origin := p.pendingEventOrigin
+	// W3C SCXML C.1: `_event.origin` is the sender's published
+	// `_ioprocessors` location, not its bare session id — and this is the one
+	// place that publishes `_event` to the document, so this is where the id
+	// becomes a location. The engine keeps the bare id in
+	// `EventMetadata.Origin` because its session-keyed lookups (<finalize>
+	// dispatch, cancelled-invoke filtering) match on it; converting at the
+	// raise would make one value serve two consumers that need different
+	// spellings. The conversion itself lives in `sce.PublishedOrigin`, the
+	// port of the `IOProcessorHelper::publishedOrigin` the C++ engines share:
+	// a second spelling of the rule is how the backends would stop agreeing.
+	origin := sce.PublishedOrigin(p.pendingEventOrigin)
 	originType := p.pendingEventOrigintype
 	invokeID := p.pendingEventInvokeid
 	_ = engine.SetCurrentEvent(p.SessionID, sce.SetCurrentEventArgs{

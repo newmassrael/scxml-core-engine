@@ -33,6 +33,49 @@ func ScxmlProcessorLocation(sessionID string) string {
 	return "sce://scxml/" + percentEncode(sessionID)
 }
 
+// SessionIDFromScxmlLocation returns the session id an SCXML Event I/O
+// Processor location names, or "" when the argument is not such a location.
+//
+// The inverse of ScxmlProcessorLocation, kept beside it so the two spellings of
+// one address cannot drift apart. W3C SCXML C.1 requires the location a session
+// publishes to be usable as a <send> target, which only holds if something can
+// read a session back out of it.
+func SessionIDFromScxmlLocation(uri string) string {
+	const prefix = "sce://scxml/"
+	if len(uri) <= len(prefix) || !strings.HasPrefix(uri, prefix) {
+		return ""
+	}
+	return percentDecode(uri[len(prefix):])
+}
+
+// PublishedOrigin is the _event.origin a receiver should see for an event sent
+// by originSessionID.
+//
+// W3C SCXML C.1 requires the origin of a delivered event to match the 'location'
+// the sending session published, which is what makes it an address the receiver
+// can answer. The engine carries the sender's BARE session id internally —
+// EventMetadata.Origin — because its session-keyed lookups (<finalize> dispatch,
+// cancelled-invoke filtering) match on the id. Converting where the event is
+// raised would make one value serve two consumers that need different spellings.
+// So the conversion belongs at the boundary where the value becomes visible to
+// the document, and this is that conversion — the same rule, and the same shape,
+// as the C++ IOProcessorHelper::publishedOrigin both engines already share.
+//
+// A remote invoke is the case that makes this more than a rename: its child
+// session is stamped with a URI rather than an id, and wrapping a URI in
+// ScxmlProcessorLocation would produce an address naming nothing. An argument
+// that already carries a scheme is therefore passed through — it is already an
+// address.
+func PublishedOrigin(originSessionID string) string {
+	if originSessionID == "" {
+		return ""
+	}
+	if strings.Contains(originSessionID, "://") {
+		return originSessionID
+	}
+	return ScxmlProcessorLocation(originSessionID)
+}
+
 // BuildIoProcessors returns the _ioprocessors entry set for a session.
 //
 // Port of the C++ IOProcessorHelper (sce/include/common/IOProcessorHelper.h).
@@ -83,4 +126,37 @@ func percentEncode(value string) string {
 		encoded.WriteByte(hex[c&0xF])
 	}
 	return encoded.String()
+}
+
+// percentDecode reverses percentEncode. A malformed escape is left verbatim
+// rather than dropped: the input is an address a document supplied, and
+// silently rewriting it would turn a bad target into a different valid one.
+func percentDecode(value string) string {
+	var decoded strings.Builder
+	decoded.Grow(len(value))
+	for i := 0; i < len(value); i++ {
+		if value[i] == '%' && i+2 < len(value) {
+			hi, hiOK := hexNibble(value[i+1])
+			lo, loOK := hexNibble(value[i+2])
+			if hiOK && loOK {
+				decoded.WriteByte(hi<<4 | lo)
+				i += 2
+				continue
+			}
+		}
+		decoded.WriteByte(value[i])
+	}
+	return decoded.String()
+}
+
+func hexNibble(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
 }
