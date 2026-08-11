@@ -106,4 +106,21 @@ scripts/regen_native_action.sh
 echo "==> Formatting the committed Rust trees (rustfmt is part of their committed form)"
 cargo fmt -p sce-rust-tests
 
+# The forge conformance goldens are generated from the same templates as
+# everything above, and this script did not know about them.
+#
+# Measured: an `#include` added to `state_machine.jinja2` left
+# `tests/forge/expected/inline_mixed_sm.{h,inl}` stale. The full regeneration
+# above rewrote 1593 files and not those two; `regen-reproduces` passed them
+# as well, because neither reads that tree. The drift surfaced four gates
+# later in `workspace-tests` — twenty minutes into a push, on a template edit
+# made hours earlier.
+#
+# Regenerating them here is what makes this script's stated aim true for the
+# whole tree rather than for the parts it happened to enumerate. The
+# conformance test is the generator: with UPDATE_GOLDEN set it writes the
+# expectation instead of asserting against it.
+echo "==> Regenerating the forge conformance goldens"
+UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
+
 echo "All committed §6.2.6 trees regenerated."
