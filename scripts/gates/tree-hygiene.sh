@@ -47,4 +47,5 @@ cargo test -p sce-build --features cli \
     --test sourcemap_symbol_markers \
     --test forge_document_name_is_the_stem \
     --test test_result_gating \
+    --test integration_stem_registration \
     || sce_gate_fail "tree-wide hygiene gates"
