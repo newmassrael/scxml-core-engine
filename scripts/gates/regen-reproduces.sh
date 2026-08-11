@@ -73,8 +73,10 @@ cp "$CODEGEN" "$WT/target/debug/sce-codegen"
 # trees are inside this gate rather than excluded from it.
 #
 # The candidate set is derived, not listed: every tracked file carrying the
-# §synth-6.2.6 drift header is generator output by construction, which is
-# what keeps a new backend inside the gate without an edit here.
+# generated-source drift header is generator output by construction, which is
+# what keeps a new backend inside the gate without an edit here. (Prose, not a
+# §-token: this comment describes the header, it does not implement the clause
+# that defines it, and a citation here would be a claim of the second kind.)
 mapfile -t GENERATED < <(cd "$WT" && git grep -l "template-hash:" -- backends \
     | grep -v '/mod\.rs$' || true)
 # Floor on the CANDIDATE set, so a scan that stops matching fails loudly
