@@ -67,6 +67,19 @@ public:
     virtual void stop() = 0;
 
     /**
+     * @brief Declare the inbound Basic HTTP endpoint this deployment listens on
+     *
+     * W3C SCXML C.2.3 publishes the Basic HTTP processor's `_ioprocessors`
+     * entry only when the deployment has an inbound endpoint, so a document
+     * that sends to `_ioprocessors['basichttp'].location` reaches nobody
+     * until an embedder declares one. Call before start(); an empty argument
+     * means no endpoint is deployed, which is the default.
+     *
+     * @param accessUri Inbound access URI
+     */
+    virtual void setBasicHttpAccessUri(const std::string &accessUri) = 0;
+
+    /**
      * @brief Send an event to the state machine
      * @param eventName Name of the event
      * @param eventData Optional event data (JSON string)

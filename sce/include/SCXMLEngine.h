@@ -162,6 +162,23 @@ public:
     virtual void stopStateMachine(const std::string &sessionId = "") = 0;
 
     /**
+     * @brief Declare the inbound Basic HTTP endpoint this deployment listens on
+     *
+     * W3C SCXML C.2.3 makes the Basic HTTP Event I/O Processor's entry
+     * conditional on the deployment having one: a session with no inbound
+     * endpoint publishes no `_ioprocessors['basichttp']` rather than an
+     * address nothing answers on. A document that sends to
+     * `_ioprocessors['basichttp'].location` therefore reaches nobody until an
+     * embedder says where it listens, and this is how it says so. Must be
+     * called before `startStateMachine`, since the entry set is published as
+     * the session's data model is initialised.
+     *
+     * @param accessUri Inbound access URI, empty when none is deployed
+     * @param sessionId Target session (uses default if empty)
+     */
+    virtual void setBasicHttpAccessUri(const std::string &accessUri, const std::string &sessionId = "") = 0;
+
+    /**
      * @brief Send event to state machine (synchronous)
      * @param eventName Name of the event
      * @param sessionId Target session (uses default if empty)
