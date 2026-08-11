@@ -65,8 +65,14 @@ fn repo_root() -> PathBuf {
 /// `User-Agent` is a field name from RFC 9110; renaming it would break
 /// the wire it names. `on-target agent` is the synthesis protocol's
 /// device-side role — the stub SCE codegen emits to run ON the target
-/// and speak to the host fuzz driver over RTT/UART (RFC §synth-F4) —
-/// so it names a thing SCE generates, not a thing that reads SCE.
+/// and speak to the host fuzz driver over RTT/UART, in the synthesis
+/// RFC's fuzz-coverage-transport section — so it names a thing SCE
+/// generates, not a thing that reads SCE.
+///
+/// Written without a `§` token deliberately: the first draft cited
+/// `§synth-F4`, which is an ARCHITECTURE tier label and not a section
+/// of that ledger. The citation gate rejected it as
+/// hallucination-class, which is what it is for.
 ///
 /// `userAgent` needs no entry: the matcher is whole-word, so a
 /// camelCase identifier never matches. `User-Agent` and `user_agent`

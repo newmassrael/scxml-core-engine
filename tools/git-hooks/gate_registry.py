@@ -196,9 +196,7 @@ GATES: dict[str, dict] = {
     # change outside forge-runtime still reaches the arm it could break.
     "forge-go": {
         "workflows": ["forge-conformance.yml"],
-        # Not delegated: the lane tees each arm's output to a log file
-        # it uploads as a build artifact; the gate builds in a temp dir
-        # and keeps nothing. Delegating would drop the artifact.
+        "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
         "cost_s": 11,
@@ -206,9 +204,7 @@ GATES: dict[str, dict] = {
     },
     "forge-rust": {
         "workflows": ["forge-conformance.yml"],
-        # Not delegated: the lane tees each arm's output to a log file
-        # it uploads as a build artifact; the gate builds in a temp dir
-        # and keeps nothing. Delegating would drop the artifact.
+        "runner_workflow": True,
         "extra": ["backends/rust/**"],
         # Warm reads as 0; the release profile it needs is a separate build
         # tree from every other gate, so a cold run pays that once.
@@ -217,9 +213,7 @@ GATES: dict[str, dict] = {
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],
-        # Not delegated: the lane tees each arm's output to a log file
-        # it uploads as a build artifact; the gate builds in a temp dir
-        # and keeps nothing. Delegating would drop the artifact.
+        "runner_workflow": True,
         "extra": ["backends/python/**"],
         "cost_s": 11,
         "summary": "Python forge conformance (numerical)",
@@ -257,9 +251,7 @@ GATES: dict[str, dict] = {
     },
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
-        # Not delegated: the lane installs mnemosyne-cli from git before
-        # validating, where the gate requires it already present at the
-        # pinned path. The install is setup, not verification.
+        "runner_workflow": True,
         # The mnemosyne validators are the sub-second part the hook's prose
         # described; the ledger-existence sweep over five source trees that
         # follows them is the rest of the 145s.
