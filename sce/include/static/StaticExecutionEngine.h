@@ -668,7 +668,7 @@ public:
             }
         }
 
-        // W3C SCXML C.1: a session's published location is a usable `<send>`
+        // A session's published location is a usable `<send>`
         // target, so an event addressed to a live invoke child belongs in
         // that child's queue. Without this the address resolved to nothing
         // and the event landed back in the SENDER's external queue — a
