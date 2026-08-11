@@ -135,10 +135,7 @@ GATES: dict[str, dict] = {
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
-        # Not delegated: the lane interleaves codegen invocations between
-        # the probe builds. The gate mirrors that sequence, but the two
-        # have not been compared line by line, and a delegation that
-        # silently drops a probe would weaken the lane.
+        "runner_workflow": True,
         "deps": ["codegen-build"],
         "cost_s": 1,
         "summary": "no_std MCU build + clippy + probes",

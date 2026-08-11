@@ -49,6 +49,16 @@ sce_codegen_require() {
         printf '%s\n' "$path"
         return 0
     fi
+    # The build below produces the debug binary only, and `sce_codegen_path`
+    # searches debug first and release second — so a release binary left by
+    # an older tree would be found *after* this build and never used. It
+    # would be used, though, if this build failed to produce anything, and
+    # on a CI runner with a restored cache it is the stale one. Dropping it
+    # first is what the workflows that spell this build out do; a caller
+    # that reaches the binary through this helper gets the same guarantee
+    # rather than inheriting the risk the workflow step was written to
+    # avoid.
+    sce_codegen_drop_stale_release "$root"
     (cd "$root" && cargo build --bin sce-codegen --features cli -p sce-build) >&2
     if path="$(sce_codegen_path "$root")"; then
         printf '%s\n' "$path"

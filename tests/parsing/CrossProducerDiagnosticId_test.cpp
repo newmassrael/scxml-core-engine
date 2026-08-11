@@ -177,30 +177,29 @@ std::set<std::string> declaredLeaves(std::size_t minLeaves) {
 // excuses.
 const std::map<std::string, std::string> &exemptLeaves() {
     static const std::map<std::string, std::string> kExempt = {
-        {"ParseFileNotFound",
-         "No document can reach it on the Rust side: `sce-codegen check` on a missing path answers "
-         "`cli/read-input` from the CLI boundary before a parser runs (measured), so the two producers "
-         "never classify the same input."},
+        {"ParseFileNotFound", "Measured, not inferred: `check` and `expand` on a missing path both answer "
+                              "`cli/read-input` from the CLI boundary, and the one library entry that raises "
+                              "`XmlError::FileNotFound` (`load_forge_source`) is called only by fixture generation. "
+                              "No CLI invocation puts the two producers on the same input."},
         {"ParseWrongRootElement",
-         "Stage composition differs by design: the Rust pipeline validates against the XSD first and "
-         "answers `xml/schema-validation` for a non-`<scxml>` root, while the C++ runtime parser has no "
-         "schema stage and classifies the root itself. Both are honest about what caught the document "
-         "first — `sce-build/src/parser.rs` calls its own root check defence-in-depth for exactly this "
-         "reason."},
-        {"ParseNoRootElement",
-         "Same stage-composition difference, measured on a comment-only document: Rust answers "
-         "`xml/schema-validation` (\"The document has no document element.\") from the XSD stage, C++ "
-         "reaches its own root check."},
-        {"ParseException",
-         "Wrapper for a non-typed `std::exception` escaping the parser (bad_alloc, third-party throw). "
-         "No document input raises it deterministically, so no fixture can pin it."},
+         "Stage composition, measured: the Rust pipeline validates against the XSD first and "
+         "answers `xml/schema-validation` for a non-`<scxml>` root. Its own root check is "
+         "defence-in-depth for a build with no schema to validate against, and this build always "
+         "has one — `find_schema_path` falls back to the compiled-in repository path, so even "
+         "`SCE_SCHEMAS_DIR` pointed at an empty directory still validates (probed). The C++ "
+         "runtime parser has no schema stage at all, which is why it reaches its root check."},
+        {"ParseNoRootElement", "Same measured stage difference, on a comment-only document: Rust answers "
+                               "`xml/schema-validation` (\"The document has no document element.\") before its own "
+                               "root check runs."},
+        {"ParseException", "Wrapper for a non-typed `std::exception` escaping the parser (bad_alloc, third-party "
+                           "throw). No document input raises it deterministically, so no fixture can pin it."},
         {"SemanticTopLevelScriptUnloaded",
-         "Both producers reject the documents §scxml-5.8 forbids, but through different surfaces: "
-         "the C++ parser raises this leaf, while the Rust pipeline records the rejection in its "
-         "stdout manifest (`rejected`) and generates the stub the AOT harness expects for W3C test "
-         "301. This harness compares diagnostics, so it cannot see a manifest field. The agreement "
-         "itself is pinned by `SCXMLParserBoundary.TopLevelScriptMustSpecifyExactlyOneOfSrcOrBody` "
-         "and the Rust parser's own cases."},
+         "Both producers reject what §scxml-5.8 forbids — measured on all three shapes — but "
+         "through different surfaces: the C++ parser raises this leaf, while the Rust pipeline "
+         "records the rejection in its stdout manifest (`rejected`) and emits the stub W3C test "
+         "301 expects. This harness reads diagnostics, so it cannot compare a manifest field. The "
+         "agreement is pinned instead by "
+         "`SCXMLParserBoundary.TopLevelScriptMustSpecifyExactlyOneOfSrcOrBody`."},
     };
     return kExempt;
 }
