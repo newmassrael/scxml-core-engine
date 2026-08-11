@@ -389,6 +389,14 @@ std::string renderChain(const std::vector<std::filesystem::path> &stack, const s
 // so the expander's call site can surface the correct typed
 // subtype without re-classifying.
 std::string readTemplateText(const std::filesystem::path &path, std::string_view templateHref) {
+    // See `readFragmentText` in XIncludeExpander.cpp: a resolved path
+    // that is a directory opens cleanly and reads empty, so without
+    // this the failure reached the parser and was reported as a
+    // malformed template.
+    std::error_code regularEc;
+    if (!std::filesystem::is_regular_file(path, regularEc)) {
+        throw TemplateReadError(std::string(templateHref), "not a regular file");
+    }
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         throw TemplateReadError(std::string(templateHref), std::strerror(errno));

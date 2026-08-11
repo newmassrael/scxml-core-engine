@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the href resolves to a path that exists but
+  cannot be read as a file — here a directory carrying the name a
+  fragment would have. The read-error leaf was registered as
+  unreachable by any committed fixture, on the grounds that git records
+  no mode that makes a file unreadable. It records a directory, and a
+  directory is a path that resolves and fails to open.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="fragment.scxml"/>
+  <state id="s1"/>
+</scxml>
