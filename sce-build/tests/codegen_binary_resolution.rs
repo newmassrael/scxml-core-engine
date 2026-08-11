@@ -187,54 +187,11 @@ fn the_conformance_workflow_downloads_the_generator_where_it_chmods_it() {
     );
 }
 
-/// A conformance run that cannot fail is not a gate.
-///
-/// Every language's harness pipes its test command into `tee` so the
-/// summary step has a log to grep. The runner's default shell is
-/// `bash -e {0}`, which does not set `pipefail`, so each of those
-/// steps exited with tee's status: all six languages could fail every
-/// assertion and the job would still report green. The workflow only
-/// went red today because `chmod` — the one unpiped step — could not
-/// find its file.
-///
-/// Scoped to this workflow on purpose. `w3c-tests.yml` carries the
-/// same shape at seven more sites and setting `pipefail` there would
-/// surface whatever those pipelines have been absorbing, which is a
-/// separate change with its own verification; it is recorded rather
-/// than folded in here. Re-measure with:
-///   grep -cE "\| *tee" .github/workflows/w3c-tests.yml
-#[test]
-fn every_conformance_run_can_actually_fail() {
-    let root = repo_root();
-    let rel = ".github/workflows/forge-conformance.yml";
-    let workflow = std::fs::read_to_string(root.join(rel)).expect("read forge-conformance.yml");
-
-    let piped: Vec<&str> = workflow
-        .lines()
-        .filter(|l| l.contains("| tee"))
-        .map(str::trim)
-        .collect();
-    assert!(
-        !piped.is_empty(),
-        "no step in {rel} pipes into tee any more; this test guards that \
-         shape, so its disappearance needs re-aiming rather than a silent \
-         pass",
-    );
-
-    let declares_pipefail = workflow
-        .lines()
-        .map(str::trim)
-        .any(|l| l.starts_with("shell:") && l.contains("pipefail"));
-    assert!(
-        declares_pipefail,
-        "{} step(s) in {rel} pipe a command into tee, but the workflow never \
-         sets pipefail — under the runner's `bash -e {{0}}` default each of \
-         those steps reports tee's exit status, so a failing conformance run \
-         is green:\n{}",
-        piped.len(),
-        piped.join("\n"),
-    );
-}
+// The conformance lanes' `| tee` steps used to be pinned here by a test
+// scoped to `forge-conformance.yml` alone, which recorded in its own doc
+// that `w3c-tests.yml` carried the same shape at sites it did not read.
+// Counting the shape over every workflow subsumes it:
+// `test_result_gating::every_pipeline_in_a_run_script_reports_its_own_failure`.
 
 /// A cached generator path that no longer exists must not survive.
 ///
