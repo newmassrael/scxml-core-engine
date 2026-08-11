@@ -16,7 +16,6 @@
 #include "runtime/IExecutionContext.h"
 #include "runtime/InvokeExecutor.h"
 #include "runtime/StateHierarchyManager.h"
-#include "runtime/StateMachineEventRaiser.h"
 #include "runtime/TransitionDomainCalculator.h"
 #include "scripting/IScriptEngine.h"
 #include "states/ConcurrentStateTypes.h"  // §scxml-D-Datatypes: TransitionDescriptorString
