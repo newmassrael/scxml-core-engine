@@ -452,6 +452,23 @@ const CI_ONLY: &[(&str, &str)] = &[
          tree being pushed. Startup cost is the secondary objection; the \
          side effect is the disqualifying one.",
     ),
+    (
+        "gradlew :sce-kotlin-tests:test",
+        "same side effect as the forge-runtime Gradle task above, on the \
+         same trees: the run rewrites their `generated-at` pins, so a hook \
+         that invoked it would dirty the tree being pushed and the next \
+         gate would judge a tree the developer did not write. The Kotlin \
+         W3C arm therefore stays a lane, and the regeneration that repairs \
+         the pins is a documented follow-up rather than something a push \
+         does silently.",
+    ),
+    (
+        "xml_to_html.py",
+        "publication, not verification. The report job turns the C++ JUnit \
+         XML into the HTML deployed to Pages; it reaches no verdict of its \
+         own and runs `if: always()` after the suites that do. A hook that \
+         ran it would render a page nobody reads.",
+    ),
 ];
 
 /// Workflows the hook declares it mirrors, read from the stage table so
@@ -869,13 +886,37 @@ fn lane_running_a_skip_capable_gate_requires_its_tools() {
             };
             for line in body.lines() {
                 let line = line.trim();
-                if !line.starts_with("sce_gate_requires_tool ") {
+                if line.starts_with('#') {
                     continue;
                 }
-                let mut parts = line.split_whitespace().skip(1);
+                // Found anywhere on the line, not only at its start. The
+                // call is a command whose status decides what follows, so
+                // `if sce_gate_requires_tool ...` and
+                // `sce_gate_requires_tool ... || exit 0` are the same
+                // statement in two shapes — and matching only the second
+                // dropped a gate's two tool requirements out of this test
+                // without failing anything. A collector that silently sees
+                // less than it claims is the defect this file exists to
+                // catch, so it must not be one.
+                let Some(rest) = line
+                    .split_once("sce_gate_requires_tool ")
+                    .map(|(_, rest)| rest)
+                else {
+                    continue;
+                };
+                let mut parts = rest.split_whitespace();
                 let (Some(bin), Some(pkg)) = (parts.next(), parts.next()) else {
                     panic!("`sce_gate_requires_tool` in {path:?} takes a binary and a package");
                 };
+                // `; then` is shell punctuation, not part of the package.
+                let pkg = pkg.trim_end_matches(';');
+                assert!(
+                    !pkg.starts_with('"') && !pkg.starts_with('\''),
+                    "{path:?} quotes the package argument of `sce_gate_requires_tool` \
+                     ({pkg}). The package is compared against the words of the lane's \
+                     install step, so a quoted or multi-word value can never match one \
+                     and the pairing this test enforces would pass vacuously."
+                );
                 skip_capable.push((path.clone(), bin.to_string(), pkg.to_string()));
             }
         }

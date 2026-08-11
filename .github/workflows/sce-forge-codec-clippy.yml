@@ -72,4 +72,4 @@ jobs:
         key: ${{ runner.os }}-codec-clippy-${{ hashFiles('Cargo.lock') }}
 
     - name: Clippy generated codecs with -D warnings
-      run: scripts/check_clippy_codec.sh
+      run: scripts/gate codec-clippy

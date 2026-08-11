@@ -71,4 +71,4 @@ jobs:
         key: ${{ runner.os }}-codec-no-alloc-${{ hashFiles('Cargo.lock') }}
 
     - name: Compile generated scalar + list codecs no_std without alloc
-      run: scripts/check_noalloc_codec.sh
+      run: scripts/gate codec-no-alloc

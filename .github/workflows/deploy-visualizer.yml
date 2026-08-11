@@ -91,13 +91,6 @@ jobs:
       with:
         version: 'latest'
 
-    - name: Build Codegen WASM
-      run: |
-        wasm-pack build sce-build-wasm \
-          --target web \
-          --out-dir ../web/visualizer/wasm \
-          --out-name sce_build
-
     - name: Setup Emscripten (emsdk)
       run: |
         git clone https://github.com/emscripten-core/emsdk.git
@@ -105,19 +98,17 @@ jobs:
         ./emsdk install latest
         ./emsdk activate latest
 
-    - name: Build WASM Visualizer
+    # All three WASM builds are one gate — the same one the pre-push hook
+    # runs. SCE_REQUIRE_TOOLS turns the gate's "emscripten not installed,
+    # skipping" into a failure here: a lane that claims to build the
+    # visualizer must not report green because emsdk went missing.
+    - name: Build WASM Artifacts
+      env:
+        SCE_REQUIRE_TOOLS: 1
       run: |
         source emsdk/emsdk_env.sh
-        mkdir -p build_wasm && cd build_wasm
-        emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
-        cmake --build . --target visualizer -j$(nproc)
-
-    - name: Build DOOM WASM Example
-      run: |
-        source emsdk/emsdk_env.sh
-        cd examples/doom_wasm
-        chmod +x build.sh
-        ./build.sh
+        chmod +x examples/doom_wasm/build.sh
+        scripts/gate visualizer-wasm
 
     - name: Prepare Deployment Directory
       run: |

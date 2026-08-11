@@ -297,7 +297,165 @@ GATES: dict[str, dict] = {
         "cost_s": 3,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
+    # A compliance verdict — an LGPL section 1 / MIT section 1 violation in a
+    # release tarball — that was reachable only after a push, on a check that
+    # needs nothing but bash and takes three hundredths of a second.
+    "license-ssot": {
+        "workflows": ["license-verify.yml"],
+        "runner_workflow": True,
+        "cost_s": 0,
+        "summary": "license SSOT vs the tree it describes",
+    },
+    # The generated codecs are committed goldens, not workspace members:
+    # `cargo metadata` lists eight packages and none of them is a codec, so
+    # `clippy --workspace` lints the generator and never its output. Both arms
+    # were CI-only until the registry started asking which workflows lack a
+    # gate.
+    "codec-clippy": {
+        "workflows": ["sce-forge-codec-clippy.yml"],
+        "runner_workflow": True,
+        "cost_s": 11,
+        "summary": "clippy generated codecs, alloc on",
+    },
+    "codec-no-alloc": {
+        "workflows": ["sce-forge-codec-no-alloc.yml"],
+        "runner_workflow": True,
+        "cost_s": 10,
+        "summary": "generated codecs compile without alloc",
+    },
+    # The two conformance surfaces nothing local ran. Both narrow their
+    # workflow's catch-all (see `narrows` in `gate_triggers`) and state their
+    # real inputs here: the engine, the generator, the templates that emit the
+    # AOT runners, and the fixtures the runners are registered from.
+    #
+    # The Rust arm of the same workflow is deliberately absent: `sce-rust-tests`
+    # is a workspace member, so `workspace-tests` already runs its 202 cases and
+    # a second gate would be a second spelling of the same run.
+    "w3c-cpp": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "the lane declares no `paths:` filter, which is a statement "
+                   "about a runner paid by the minute, not about what the "
+                   "suite reads. Inheriting it would run the longest gate in "
+                   "the set for a README edit.",
+        "extra": ["sce/**", "tests/w3c/**", "tests/CMakeLists.txt",
+                  "resources/**", "tools/codegen/templates/**",
+                  "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 58,
+        "summary": "W3C conformance, C++ Interpreter + AOT",
+    },
+    # A deploy workflow whose three build steps are verdicts. Its trigger
+    # already includes `sce-build/**`, so a Rust change every other gate passes
+    # could still turn it red — after the push.
+    "visualizer-wasm": {
+        "workflows": ["deploy-visualizer.yml"],
+        "runner_workflow": True,
+        "cost_s": 55,
+        "summary": "codegen + visualizer + DOOM WASM builds",
+    },
+    "w3c-c11": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm's real "
+                   "inputs are the C backend, the C templates and the "
+                   "generator.",
+        "extra": ["backends/c/**", "tools/codegen/templates/**",
+                  "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 9,
+        "summary": "W3C conformance, C11 MCU backend",
+    },
+    "w3c-go": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
+                   "the Go backend, the Go templates and the generator.",
+        "extra": ["backends/go/**", "tools/codegen/templates/**",
+                  "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 8,
+        "summary": "W3C conformance, Go AOT",
+    },
+    "w3c-python": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
+                   "the Python backend, the Python templates and the "
+                   "generator.",
+        "extra": ["backends/python/**", "tools/codegen/templates/**",
+                  "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 4,
+        "summary": "W3C conformance, Python AOT",
+    },
+    # The wrapper layer, not the engine under it: the trigger is the binding
+    # sources, because `w3c-cpp` already judges the same interpreter 404 cases
+    # at a time. No `cost_s` — it has not been measured on a machine with the
+    # Python development headers, and `run_order` puts an unmeasured gate last
+    # rather than letting it claim a cheap slot it has not earned.
+    "w3c-python-bindings": {
+        "workflows": ["w3c-tests.yml"],
+        "runner_workflow": True,
+        "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
+                   "the pybind11 wrapper sources.",
+        "extra": ["backends/python/bindings/**"],
+        "summary": "W3C conformance, pybind11 -> C++ Interpreter",
+    },
 }
+
+# ── Workflows with no gate ────────────────────────────────────────
+#
+# The other direction of the mirror. Every case in the self-test below asks
+# whether a GATE has a workflow — it maps one that exists, it delegates or
+# says why, it declares `no_ci_reason` when CI has no counterpart. Nothing
+# asked whether a WORKFLOW has a gate, and a registry that only checks its
+# own entries can only find the gaps it already knows about.
+#
+# What that blindness cost is measured. On 2026-08-11 seven of nineteen
+# workflows had no local mirror and nothing recorded that they did not — the
+# largest being `w3c-tests.yml`, whose seven jobs run the C++, Rust, Kotlin,
+# Python, Go and C11 conformance suites. Its C++ suite had been failing 233
+# of 234 cases for three weeks while every gate in this file passed, because
+# no gate ran it and the lane itself could not turn red.
+#
+# An entry here is the same kind of claim `no_ci_reason` is, pointed the
+# other way: a statement that this workflow's verdict is reproduced
+# somewhere a developer reaches before pushing, or that it has no verdict to
+# reproduce. A `commit-hook:<command>` reason is checked rather than
+# believed — the named command must appear in the commit hook.
+UNMIRRORED_WORKFLOWS: dict[str, str] = {
+    # Both run at commit time instead of push time, which is earlier than a
+    # gate would catch them: a formatting fix-up never becomes its own
+    # commit. The hook's stage comments named `rust-ci.yml` for years — a
+    # workflow this repository does not have — which is exactly the drift
+    # `rustdoc-links` had and the reason these claims are now checked.
+    "fmt-check.yml": "commit-hook: cargo fmt --all -- --check",
+    "clang-format-check.yml": "commit-hook: scripts/check_clang_format.sh",
+}
+
+
+# Lines that report rather than run. A hook's `log_step "Stage 0/3 — cargo fmt
+# --all -- --check"` names the command it is about to run, and searching the
+# file as text cannot tell that line from the invocation on the next one — so
+# deleting the invocation left the claim satisfied by its own announcement.
+# Measured, not supposed: that mutation passed before this existed. It is the
+# defect T1 found in its own parity gate, which is that a comment stood in for
+# the thing it describes.
+_REPORTING_PREFIXES = ("log_step", "echo", "printf", "cat", ":")
+
+
+def hook_runs(hook_src: str, command: str) -> bool:
+    """Whether `command` appears on a line of `hook_src` that executes it."""
+    for line in hook_src.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if stripped.split(" ", 1)[0] in _REPORTING_PREFIXES:
+            continue
+        if command in stripped:
+            return True
+    return False
 
 # Paths that drive no path-scoped gate. Anything here is classified — and
 # therefore may skip the full run — so an entry is a claim that no such gate
@@ -428,11 +586,34 @@ def tracked_matching(repo_root: Path, glob: str) -> list[str]:
 
 
 def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
+    """Each gate's trigger globs, derived from its workflow and its own lists.
+
+    `narrows` is the one case where a gate does not inherit its workflow's
+    trigger. A workflow with no `paths:` filter is telling CI "run this on
+    every push", which is a statement about a runner that is paid for by the
+    minute and not about what the check reads. Inheriting it locally makes
+    the catch-all the trigger for the gate, so the whole conformance suite
+    would run for a README edit. A narrowing gate states its real inputs in
+    `local`/`extra` instead, and the self-test holds the two properties that
+    keep the narrowing from becoming a coverage hole: the workflow it
+    narrows must actually be unfiltered (or there is nothing to narrow), and
+    the gate must be left with triggers of its own (or it never runs).
+    """
     triggers: dict[str, list[str]] = {}
     for slug, spec in GATES.items():
         globs: list[str] = list(spec.get("local", []))
         for wf in spec.get("workflows", []):
-            globs.extend(workflow_paths(repo_root, wf))
+            wf_globs = workflow_paths(repo_root, wf)
+            if spec.get("narrows") and wf_globs == ["**"]:
+                # The catch-all is dropped; the workflow FILE is not. Editing
+                # a lane is a reason to run what that lane runs, and every
+                # filtered workflow classifies its own edits by naming itself
+                # in `paths:`. Without this line an unfiltered lane's file is
+                # unclassified, so touching it buys the full suite — measured
+                # at 27 gates including the 408s vendor smoke.
+                globs.append(f".github/workflows/{wf}")
+                continue
+            globs.extend(wf_globs)
         globs.extend(spec.get("extra", []))
         triggers[slug] = list(dict.fromkeys(globs))
     return triggers
@@ -712,6 +893,91 @@ def self_test(repo_root: Path) -> int:
                 f"A gate that runs only at push time is skipped by "
                 f"`--no-verify`; say why that is acceptable here, or give "
                 f"it a workflow")
+
+    # The same rule pointed the other way: a workflow with no gate.
+    #
+    # Read from the directory rather than from a list, so a workflow added
+    # tomorrow is judged by this case on the commit that adds it. The
+    # asymmetry this closes is not hypothetical — see UNMIRRORED_WORKFLOWS.
+    cases += 1
+    wf_dir = repo_root / ".github" / "workflows"
+    mirrored = {w for spec in GATES.values() for w in spec.get("workflows", [])}
+    workflows_seen = 0
+    for wf in sorted(wf_dir.glob("*.yml")) + sorted(wf_dir.glob("*.yaml")):
+        workflows_seen += 1
+        name = wf.name
+        if name in mirrored:
+            if name in UNMIRRORED_WORKFLOWS:
+                failures.append(
+                    f"unmirrored: {name} is now mirrored by a gate and still "
+                    f"carries an UNMIRRORED_WORKFLOWS reason — drop the reason")
+            continue
+        if name not in UNMIRRORED_WORKFLOWS:
+            failures.append(
+                f"unmirrored: {name} has no gate and no reason. CI runs a "
+                f"check nothing local reproduces, so it can only be seen "
+                f"after a push; add a gate that mirrors it, or record in "
+                f"UNMIRRORED_WORKFLOWS where its verdict is reached instead")
+    # Lower bound: a glob that stopped matching would leave this case
+    # reading nothing and still passing — the failure mode it exists for.
+    if workflows_seen < 10:
+        failures.append(
+            f"unmirrored: only {workflows_seen} workflow file(s) enumerated — "
+            f"the sweep is broken, not the coverage")
+
+    # A narrowing gate must be narrowing something, and must be left with a
+    # trigger. Both halves have a failure mode worth naming: a `narrows` on a
+    # gate whose workflow is filtered is dead config that reads as a decision,
+    # and a `narrows` that removes the only trigger a gate had turns it off
+    # while every other case here still passes.
+    cases += 1
+    narrowing = 0
+    for slug, spec in sorted(GATES.items()):
+        if not spec.get("narrows"):
+            continue
+        narrowing += 1
+        unfiltered = [w for w in spec.get("workflows", [])
+                      if workflow_paths(repo_root, w) == ["**"]]
+        if not unfiltered:
+            failures.append(
+                f"narrows: {slug} declares a narrowing and none of "
+                f"{spec.get('workflows')} is unfiltered — there is nothing "
+                f"to narrow, so the field is dead config")
+        if not (spec.get("local") or spec.get("extra")):
+            failures.append(
+                f"narrows: {slug} narrows its workflow's catch-all away and "
+                f"declares no local/extra trigger — the gate can never be "
+                f"selected")
+        if not str(spec["narrows"]).strip():
+            failures.append(
+                f"narrows: {slug} declares an empty narrowing reason — the "
+                f"field is where the reader learns what CI runs that the "
+                f"hook does not")
+
+    # A recorded reason is checked, not believed. `commit-hook:<command>`
+    # claims the commit hook reaches the same verdict, so the command has to
+    # be in it; a reason naming a workflow that no longer exists is stale.
+    cases += 1
+    hook_src = ""
+    hook_path = repo_root / "tools" / "git-hooks" / "pre-commit"
+    if hook_path.is_file():
+        hook_src = hook_path.read_text(encoding="utf-8")
+    for name, reason in sorted(UNMIRRORED_WORKFLOWS.items()):
+        if not (wf_dir / name).is_file():
+            failures.append(
+                f"unmirrored: {name} is recorded here but no longer exists — "
+                f"drop the entry")
+            continue
+        kind, _, arg = reason.partition(":")
+        if kind != "commit-hook":
+            continue
+        if not arg.strip():
+            failures.append(f"unmirrored: {name} declares commit-hook with no command")
+        elif not hook_runs(hook_src, arg.strip()):
+            failures.append(
+                f"unmirrored: {name} claims the commit hook runs "
+                f"`{arg.strip()}` and no executed line of the hook does — the "
+                f"claim is the only thing standing in for a gate here")
 
     # A gate whose workflow delegates to the runner must actually call it.
     #
