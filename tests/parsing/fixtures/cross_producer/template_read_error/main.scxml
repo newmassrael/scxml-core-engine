@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: same shape on the template axis — the
+  `template` attribute resolves to a directory, so the load fails
+  after resolution rather than during it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <sce:use template="t.scxml"/>
+  </state>
+</scxml>
