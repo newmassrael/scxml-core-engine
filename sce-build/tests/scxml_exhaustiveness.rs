@@ -100,11 +100,15 @@ fn compound_gap_rejected() {
                 event,
                 handlers,
                 non_handlers,
+                also,
             } => {
                 assert_eq!(parent, "dispatch");
                 assert_eq!(event, "cmd.start");
                 assert_eq!(handlers, &vec!["idle".to_string(), "stopped".to_string()]);
                 assert_eq!(non_handlers, &vec!["active".to_string()]);
+                // One gap in this fixture, so the escape hatch would
+                // cover exactly what the message names.
+                assert!(also.is_empty(), "unexpected sibling gaps: {also:?}");
             }
             other => panic!("expected NonExhaustiveEventHandling variant, got {other:?}"),
         },
@@ -245,4 +249,65 @@ fn invalid_optout_value_rejected() {
     let code_str = serde_json::to_string(&diags[0].code).unwrap();
     assert_eq!(code_str, "\"validation/invalid-attribute\"");
     assert_eq!(diags[0].actual.as_deref(), Some("no"));
+}
+
+/// A compound with more than one gap says so.
+///
+/// `sce:exhaustive="false"` is the only escape hatch and it covers the
+/// PARENT, so an author reaching for it is deciding about every gap
+/// underneath. The validator stops at the first violation — the wire
+/// layer carries one record — and that used to mean the message named
+/// one event while the annotation would silence three. This tree's own
+/// `examples/doom_wasm/scxml/combo_state.scxml` is that case: its
+/// comment reasons about `berserk_activate` while `combo_timeout` and
+/// `berserk_timeout` are gaps too, and nothing ever showed them.
+#[test]
+fn a_compound_with_several_gaps_names_the_ones_the_optout_would_also_cover() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "many_gaps.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="many_gaps" initial="dispatch">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="shared" target="active"/>
+      <transition event="only_idle" target="active"/>
+    </state>
+    <state id="active">
+      <transition event="shared" target="idle"/>
+      <transition event="only_active" target="idle"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "many_gaps.scxml");
+    match &err.error {
+        ForgeError::Scxml(boxed) => match boxed.as_ref() {
+            ScxmlSemanticError::NonExhaustiveEventHandling { event, also, .. } => {
+                // Two gaps: whichever is reported, the other must be named.
+                let other = if event == "only_idle" {
+                    "only_active"
+                } else {
+                    "only_idle"
+                };
+                assert_eq!(
+                    also,
+                    &vec![other.to_string()],
+                    "the sibling gap the opt-out would also silence is missing",
+                );
+            }
+            other => panic!("expected NonExhaustiveEventHandling, got {other:?}"),
+        },
+        other => panic!("expected an SCXML semantic error, got {other:?}"),
+    }
+
+    let text = err.error.to_string();
+    assert!(
+        text.contains("would also silence"),
+        "message does not warn what the annotation covers: {text}",
+    );
 }
