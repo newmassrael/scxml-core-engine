@@ -43,6 +43,48 @@ object IoProcessors {
     fun scxmlLocation(sessionId: String): String = "sce://scxml/" + percentEncode(sessionId)
 
     /**
+     * Session id an SCXML Event I/O Processor location names, or `""`.
+     *
+     * The inverse of [scxmlLocation], kept beside it so the two spellings of
+     * one address cannot drift apart. §scxml-C-1 requires the location a
+     * session publishes to be usable as a `<send>` target, which only holds if
+     * something can read a session back out of it.
+     */
+    fun sessionIdFromScxmlLocation(uri: String): String {
+        val prefix = "sce://scxml/"
+        if (uri.length <= prefix.length || !uri.startsWith(prefix)) return ""
+        return percentDecode(uri.substring(prefix.length))
+    }
+
+    /**
+     * The `_event.origin` a receiver should see for an event sent by
+     * [originSessionId].
+     *
+     * §scxml-C-1 requires the origin of a delivered event to match the
+     * 'location' the sending session published, which is what makes it an
+     * address the receiver can answer. The engine carries the sender's BARE
+     * session id internally — [EventMetadata.origin] — because its
+     * session-keyed lookups (`<finalize>` dispatch, cancelled-invoke
+     * filtering) match on the id. Converting where the event is raised would
+     * make one value serve two consumers that need different spellings. So the
+     * conversion belongs at the boundary where the value becomes visible to the
+     * document, and this is that conversion — the same rule, and the same
+     * shape, as the C++ `IOProcessorHelper::publishedOrigin` both engines
+     * already share.
+     *
+     * A remote invoke is the case that makes this more than a rename: its child
+     * session is stamped with a URI rather than an id, and wrapping a URI in
+     * [scxmlLocation] would produce an address naming nothing. An argument that
+     * already carries a scheme is therefore passed through — it is already an
+     * address.
+     */
+    fun publishedOrigin(originSessionId: String): String = when {
+        originSessionId.isEmpty() -> ""
+        originSessionId.contains("://") -> originSessionId
+        else -> scxmlLocation(originSessionId)
+    }
+
+    /**
      * Entry set for a session.
      *
      * Every processor is filed twice: under the specification's entry name and
@@ -81,5 +123,34 @@ object IoProcessors {
             }
         }
         return encoded.toString()
+    }
+
+    /**
+     * Reverses [percentEncode]. A malformed escape is left verbatim rather than
+     * dropped: the input is an address a document supplied, and silently
+     * rewriting it would turn a bad target into a different valid one.
+     */
+    private fun percentDecode(value: String): String {
+        val bytes = ArrayList<Byte>(value.length)
+        var i = 0
+        while (i < value.length) {
+            val hi = if (value[i] == '%' && i + 2 < value.length) hexNibble(value[i + 1]) else -1
+            val lo = if (hi >= 0) hexNibble(value[i + 2]) else -1
+            if (hi >= 0 && lo >= 0) {
+                bytes += ((hi shl 4) or lo).toByte()
+                i += 3
+            } else {
+                for (b in value[i].toString().encodeToByteArray()) bytes += b
+                i += 1
+            }
+        }
+        return bytes.toByteArray().decodeToString()
+    }
+
+    private fun hexNibble(c: Char): Int = when (c) {
+        in '0'..'9' -> c - '0'
+        in 'a'..'f' -> c - 'a' + 10
+        in 'A'..'F' -> c - 'A' + 10
+        else -> -1
     }
 }

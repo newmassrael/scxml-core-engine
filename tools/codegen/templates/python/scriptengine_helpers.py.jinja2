@@ -442,6 +442,17 @@
         engine_ref = getattr(self, "_engine_ref", None)
         if engine_ref is None or not self._session_id:
             return
+        # W3C SCXML C.1: `_event.origin` is the sender's published
+        # `_ioprocessors` location, not its bare session id — and this is the
+        # one place that publishes `_event` to the document, so this is where
+        # the id becomes a location. The engine keeps the bare id in
+        # `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
+        # dispatch, cancelled-invoke filtering) match on it; converting at the
+        # raise would make one value serve two consumers that need different
+        # spellings. The conversion itself lives in
+        # `sce_runtime.io_processors.published_origin`, the port of the
+        # `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+        # spelling of the rule is how the backends would stop agreeing.
         engine_ref._script_engine.set_current_event(
             self._session_id,
             _SetCurrentEventArgs(
@@ -449,7 +460,7 @@
                 event_data=_coerce_event_data_str(metadata.data),
                 event_type=metadata.event_type,
                 send_id=metadata.send_id,
-                origin=metadata.origin,
+                origin=_published_origin(metadata.origin),
                 origin_type=metadata.origin_type,
                 invoke_id=metadata.invoke_id,
             ),

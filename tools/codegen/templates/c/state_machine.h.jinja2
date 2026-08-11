@@ -138,7 +138,10 @@ typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model
 typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
     {{ csym_prefix }}{{ model.name }}_event_t event;
     char data[SCE_MAX_DATA_LEN];
-    char origin[SCE_MAX_ID_LEN];
+    /* §scxml-C-1: `_event.origin` is the location the sending session
+       published, so it is sized as a URI rather than as an id — see
+       `sce_copy_bounded_origin` in `sce/types.h`. */
+    char origin[SCE_MAX_URI_LEN];
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
     char origin_type[SCE_MAX_ID_LEN];

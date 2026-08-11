@@ -404,10 +404,23 @@
     } else {
 {% if action.event %}
         {
+{% if model.invokes | scxml %}
+            // W3C SCXML C.1: a target that decodes to one of our children's
+            // published locations is addressed to that child. Without this the
+            // address a peer was told to answer at routes back into the
+            // sender's own queue, so the location compares equal and still
+            // reaches nobody.
+            let __sce_addressed_child =
+                sce_rust_runtime::helpers::io_processors::session_id_from_scxml_location(&_rt);
+            if !self.deliver_to_child_session(&__sce_addressed_child, "{{ action.event }}", &event_data) {
+{% endif %}
             let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
             meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
             meta.set_event_data(event_data);
             engine.raise_external_with_meta(meta);
+{% if model.invokes | scxml %}
+            }
+{% endif %}
         }
 {% elif action.eventexpr %}
         {

@@ -422,6 +422,30 @@ class Engine(Generic[S, E]):
         )
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
+    def deliver_to_child_session(
+        self, child_session_id: str, event_name: str, data: Any = ""
+    ) -> bool:
+        """W3C SCXML C.1 — deliver an event addressed to a child's published
+        location.
+
+        Each invoked child owns a session id, and that id is what the child's
+        `_ioprocessors` entry names, so a `<send>` whose target decodes to one
+        of them is addressed to that child rather than to this machine. A
+        `False` return means the address names no live child of ours and the
+        event takes the normal external path — the routing half of C.1 is what
+        makes the published location a usable target rather than a string that
+        merely compares equal.
+        """
+        if not child_session_id:
+            return False
+        for invoke in self._active_invokes.values():
+            if invoke.origin() == child_session_id and not invoke.is_done():
+                invoke.forward_event(
+                    event_name, EventMetadata(event_type="external", data=data)
+                )
+                return True
+        return False
+
     def schedule_send(
         self, event: E, delay_ms: int, sendid: str = "", data: Any = ""
     ) -> None:

@@ -138,6 +138,18 @@ SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const cha
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_EVENT_TYPE_LEN);
 }
 
+/* Bounded copy of an `_event.origin`. Sized as a URI, not as an id,
+   because of what the field holds: the 'location' the sending session
+   published in its `_ioprocessors` — the same kind of value
+   `basic_http_access_uri` carries, and for the same reason. Copying an
+   address through the id-sized helper truncates it, and a truncated
+   address compares unequal to the location it was cut from while still
+   looking like one, so the failure reads as a spec violation rather than
+   as a buffer that was too small. */
+SCE_C_UNUSED static inline void sce_copy_bounded_origin(char *dst, const char *src) {
+    sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_URI_LEN);
+}
+
 /* ── §scxml-6.4: Autoforward carrier ───────────────────────────── */
 /* §scxml-6.4 requires the parent to forward an *exact copy* of every
    external event to an `<invoke autoforward="true">` child. The child is a
@@ -157,7 +169,8 @@ SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const cha
 typedef struct sce_forwarded_event_s {
     char name[SCE_MAX_ID_LEN];
     char data[SCE_MAX_DATA_LEN];
-    char origin[SCE_MAX_ID_LEN];
+    /* An address, not an id — see `sce_copy_bounded_origin`. */
+    char origin[SCE_MAX_URI_LEN];
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
     char origin_type[SCE_MAX_ID_LEN];
