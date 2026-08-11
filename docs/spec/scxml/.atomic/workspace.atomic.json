@@ -9672,6 +9672,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -9732,6 +9736,10 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/io_processors.py",
           "kind": "implements"
         }
       ],
@@ -10237,6 +10245,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10344,6 +10356,10 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::deferInvokeExecution",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
           "kind": "references"
         }
       ],
@@ -10510,6 +10526,10 @@
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "buildEntryChain",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
           "kind": "implements"
         }
       ],
@@ -10683,6 +10703,10 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::stop",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10831,6 +10855,10 @@
         },
         {
           "file": "backends/go/runtime/hierarchy.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
           "kind": "implements"
         }
       ],
@@ -11182,6 +11210,10 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11209,6 +11241,10 @@
         {
           "file": "sce/include/core/EventProcessingAlgorithms.h",
           "symbol": "checkEventlessTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
           "kind": "implements"
         }
       ],
