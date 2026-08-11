@@ -16,29 +16,29 @@ name: Rust Workspace Tests
 # `template_registry::tests` now does, and this workflow is what makes
 # those tests binding.
 #
-# Scope is the default feature set, matching pre-push Stage 4, with one
-# prerequisite the hook gets from its own Stage 1: `sce-codegen` must
-# already be built. Four test targets shell out to that binary through
-# `CARGO_BIN_EXE_sce-codegen` without declaring `required-features =
-# ["cli"]` — codegen_invocation_determinism,
-# event_schema_cross_state_guard, rust_derive_ssot and
-# sourcemap_ownership_walker — so a bare `cargo test --workspace` runs
-# them and they die on `NotFound`. The first revision of this file did
-# exactly that, and passed locally only because a stale
-# `target/debug/sce-codegen` happened to be on disk.
+# Scope is `--features cli`, matching the `workspace-tests` gate. The
+# paragraph that used to sit here said the opposite — "the default
+# feature set", with the cli-gated targets deliberately left to
+# drift-verify.yml — and stayed after the flag was added, so the file
+# described a smaller run than it performed. What the flag fixes is a
+# silent omission: cargo excludes a target whose `required-features` are
+# unmet without building it and without reporting a skip, so sce-build's
+# 15 cli-gated targets were absent from a job calling itself
+# "--workspace".
 #
-# The genuinely cli-gated targets (b9_drift_detection,
-# error_format_json) declare the feature and stay skipped here; they are
-# drift-verify.yml's lane, which runs them with `--test-threads=1`
-# because the real-tree verify steps invoke the binary directly.
-# Enabling `sce-build/cli` here instead would pull them into a parallel
-# sweep and change how an existing gate runs, so this job mirrors the
-# hook rather than widening it. Measured, for whoever revisits this:
-# `--features sce-build/cli` runs 3383 tests to this configuration's
-# 3240 and passed once with default parallelism. One green run is not
-# evidence that the serialisation those lanes ask for is unnecessary,
-# and an intermittent red here would cost more than the 143 tests
-# drift-verify.yml already runs on every relevant push.
+# One prerequisite the hook gets from its own build stage: `sce-codegen`
+# must exist. Four targets shell out to it through
+# `CARGO_BIN_EXE_sce-codegen` without declaring the feature themselves —
+# codegen_invocation_determinism, event_schema_cross_state_guard,
+# rust_derive_ssot and sourcemap_ownership_walker — so a bare
+# `cargo test --workspace` runs them and they die on `NotFound`. The
+# first revision of this file did exactly that, and passed locally only
+# because a stale `target/debug/sce-codegen` happened to be on disk.
+#
+# b9_drift_detection and error_format_json now run in both lanes.
+# drift-verify.yml still runs them with `--test-threads=1` because its
+# real-tree verify steps invoke the binary directly; here they run in the
+# parallel sweep.
 #
 # Both sides run the default test profile. The hook used `--release`
 # until 2026-08-04, so the debug assertions this suite relies on for
@@ -122,22 +122,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-workspace-tests-
 
-    # The W3C BasicHTTP suites (test_201, 5xx series) send to
-    # http://localhost:8080/test and fail as a block without it. Same
-    # server w3c-tests.yml and pre-push Stage 4 start; failing here
-    # rather than proceeding keeps a dozen red tests from reading as a
-    # code regression.
-    - name: Start W3C HTTP Test Server
-      run: |
-        node tests/w3c/standalone_http_server.js 8080 /test &
-        echo $! > /tmp/http_server.pid
-        sleep 1
-        kill -0 "$(cat /tmp/http_server.pid)" \
-          || { echo "W3C HTTP test server failed to start"; exit 1; }
-        echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
-
-    # Mirrors pre-push Stage 1. Debug profile so the binary lands where
-    # `CARGO_BIN_EXE_sce-codegen` resolves for the test step below.
+    # Mirrors the hook's build stage. Debug profile so the binary lands
+    # where `CARGO_BIN_EXE_sce-codegen` resolves for the test step below.
     - name: Build sce-codegen
       run: |
         # The Cargo cache restores all of `target`, but this step only
@@ -149,20 +135,23 @@ jobs:
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
+    # Delegates to the gate runner rather than restating the command, so
+    # the suite has one spelling for both callers. The gate also starts the
+    # W3C BasicHTTP fixture server on :8080 that test_201 and the 5xx series
+    # post to — which is why this job no longer starts one of its own; two
+    # would collide on the port.
+    #
     # `SCE_REQUIRE_TOOLS` promotes "tool not found, skipping" into a hard
     # failure. Without it a runner image that loses a toolchain keeps
     # reporting green while the checks that need it quietly stop running —
     # a skip is an unrun check, not a passing one, and this lane is where
     # that difference is invisible from the outside.
     #
-    # `--features cli` is what makes the step's name true. Targets declaring
-    # `required-features = ["cli"]` in sce-build/Cargo.toml are silently
-    # omitted without it: cargo does not report them as skipped, it never
-    # builds them, so the lane was running a strictly smaller set than the
-    # one a developer runs locally while calling itself "--workspace".
-    # That is the same failure mode SCE_REQUIRE_TOOLS exists to prevent,
-    # one level up.
+    # `SCE_GATE_NO_FAIL_FAST` is the reporting choice this lane wants and a
+    # developer does not: every failure in one run, because nobody iterates
+    # on a runner.
     - name: cargo test --workspace --features cli
       env:
         SCE_REQUIRE_TOOLS: "1"
-      run: cargo test --workspace --features cli --no-fail-fast
+        SCE_GATE_NO_FAIL_FAST: "1"
+      run: scripts/gate workspace-tests

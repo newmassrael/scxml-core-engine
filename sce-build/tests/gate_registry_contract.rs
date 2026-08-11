@@ -233,6 +233,40 @@ fn every_gate_script_declares_the_workflow_it_mirrors() {
 }
 
 #[test]
+fn the_reporting_switch_the_workspace_lane_sets_is_the_one_the_gate_reads() {
+    // The lane kept its own copy of `cargo test` for one flag —
+    // `--no-fail-fast`, which its own registry note called "a reporting
+    // choice, not a different verification". A choice is a switch, so the gate
+    // took the switch and the lane delegated. Both halves are asserted because
+    // either one alone is silent: a lane that stops setting it loses the
+    // reporting it wanted, and a gate that stops reading it ignores the lane.
+    let root = repo_root();
+    let gate = std::fs::read_to_string(root.join("scripts/gates/workspace-tests.sh"))
+        .expect("read scripts/gates/workspace-tests.sh");
+    let lane = std::fs::read_to_string(root.join(".github/workflows/rust-workspace-tests.yml"))
+        .expect("read .github/workflows/rust-workspace-tests.yml");
+
+    assert!(
+        gate.lines().any(|l| {
+            let t = l.trim();
+            !t.starts_with('#') && t.contains("SCE_GATE_NO_FAIL_FAST")
+        }),
+        "the workspace gate no longer reads SCE_GATE_NO_FAIL_FAST, so the \
+         lane's reporting choice reaches nothing"
+    );
+    assert!(
+        gate.contains("--no-fail-fast"),
+        "the workspace gate no longer passes --no-fail-fast under any setting"
+    );
+    assert!(
+        lane.lines()
+            .any(|l| l.trim().starts_with("SCE_GATE_NO_FAIL_FAST:")),
+        "the workspace lane no longer sets SCE_GATE_NO_FAIL_FAST, so CI \
+         reports only the first failure of a run nobody can iterate on"
+    );
+}
+
+#[test]
 fn every_gate_script_is_executable() {
     // The runner refuses a non-executable gate, which turns a forgotten
     // `chmod +x` into a failed push rather than a skipped gate. Catching it
