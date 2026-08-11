@@ -95,6 +95,26 @@ _NS_DEFAULT_LEDGER = {
     "synth": DEFAULT_SYNTH_LEDGER,
     "bytesguard": DEFAULT_BYTESGUARD_LEDGER,
 }
+_ALL_NS_LEDGER = dict(_NS_DEFAULT_LEDGER, scxml=DEFAULT_LEDGER)
+
+# A citation ALREADY in §<ns>-<id> form. This module's own output looks like
+# this, so nothing here ever re-read it — the migrator only ever inspected the
+# forms it can rewrite (prose and bare sigil). The consequence, measured: a
+# fabricated id typed straight in §-form was invisible to `--check-ledger`,
+# whose error text nevertheless promises to reject a bad section number
+# "whether or not the cite is in §-form". Inside a tree the Mnemosyne
+# set_equality_validator enrolls, that promise was kept by the validator; in
+# the trees deliberately kept in PROSE (tools/codegen/templates, tests,
+# backends, examples, web) it was kept by nobody, and those are exactly the
+# trees this gate exists to cover.
+#
+# The leaf must start and end alphanumeric so sentence punctuation ("§scxml-6.2.")
+# and a trailing paren do not fuse into the id.
+MIGRATED_TOKEN_RE = re.compile(
+    r"§(?P<ns>scxml|mesh|wire|synth|bytesguard)-"
+    r"(?P<leaf>[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?)"
+)
+TOKEN_ABSENT_REASON = "§-form id absent from the ledger"
 
 # A citation label: a numeric path (digits + dotted digits) or a lettered
 # appendix path (single uppercase letter + at least one dotted-digit group).
@@ -418,7 +438,14 @@ def _line_offsets(text):
     return line_starts, lineno
 
 
-def plan_file(path, ledger_ids, prefix="W3C SCXML", namespace="scxml", exclude_ledger_ids=None):
+def plan_file(
+    path,
+    ledger_ids,
+    prefix="W3C SCXML",
+    namespace="scxml",
+    exclude_ledger_ids=None,
+    token_ledgers=None,
+):
     """Return (new_text, migrations, skipped) for one file without writing.
 
     migrations: list of dicts {line, label, id}
@@ -428,6 +455,12 @@ def plan_file(path, ledger_ids, prefix="W3C SCXML", namespace="scxml", exclude_l
     "W3C §<n>"), unchanged. namespace="mesh" runs the *bare-sigil* path, where
     exclude_ledger_ids is the sibling (scxml) ledger used by the cross-namespace
     ambiguity guard in _plan_bare.
+
+    token_ledgers ({namespace: id set}) additionally reports already-§-form
+    citations naming an absent section. It is opt-in because only the
+    existence gate wants them: the form gates read `skipped` to decide what
+    must be rewritten, and a token needs no rewriting — it needs a correct
+    number.
     """
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
@@ -435,8 +468,14 @@ def plan_file(path, ledger_ids, prefix="W3C SCXML", namespace="scxml", exclude_l
     line_starts, lineno = _line_offsets(text)
 
     if namespace == "scxml":
-        return _plan_marked(text, mask, ledger_ids, prefix, lineno)
-    return _plan_bare(text, mask, ledger_ids, exclude_ledger_ids or set(), namespace, lineno, line_starts)
+        new_text, migrations, skipped = _plan_marked(text, mask, ledger_ids, prefix, lineno)
+    else:
+        new_text, migrations, skipped = _plan_bare(
+            text, mask, ledger_ids, exclude_ledger_ids or set(), namespace, lineno, line_starts
+        )
+    if token_ledgers:
+        skipped = skipped + _plan_tokens(text, mask, token_ledgers, lineno)
+    return new_text, migrations, skipped
 
 
 def _plan_marked(text, mask, ledger_ids, prefix, lineno):
@@ -506,7 +545,7 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
         ids = [label_to_id(lbl) for lbl in labels]
         if all(s in ledger_ids for s in ids):
             out.append(text[last : m.start()])
-            out.append(" / ".join("§" + s for s in ids))  # §scxml-a / §scxml-b
+            out.append(" / ".join("§" + s for s in ids))  # `§scxml-a` / `§scxml-b`
             last = m.end()
             for lbl, s in zip(labels, ids):
                 migrations.append({"line": ln, "label": lbl, "id": s})
@@ -606,7 +645,7 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
                 )
             continue
         # A hyphen-glued suffix ("§16.5-L3500", a line back-reference) would fuse
-        # into the §id on render ("§mesh-16.5-L3500" reads as one bad id, since
+        # into the §id on render (`§mesh-16.5-L3500` reads as one bad id, since
         # '-' is a section-id char). Refuse it; the source must space-separate the
         # suffix ("§16.5 L3500") first.
         tail = text[m.end() : m.end() + 2]
@@ -674,6 +713,47 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
     return "".join(out), migrations, skipped
 
 
+def _plan_tokens(text, mask, token_ledgers, lineno):
+    """Report §<ns>-<id> citations already in migrated form whose id is absent
+    from that namespace's ledger.
+
+    Reports only — a token is never rewritten. The namespace comes from the
+    token itself, so one pass covers every ledger and a §scxml- cite inside a
+    synth-enrolled file is checked against the scxml ledger, matching how the
+    validator scopes by token rather than by file.
+
+    The code-span rule is mirrored from the pinned validator rather than
+    invented here, because a checker that disagrees with the thing it mirrors
+    reports violations the real gate does not have: a token preceded by EXACTLY
+    ONE backtick is a mention of the token (how a comment discusses a citation
+    without making one), while two backticks, or a trailing backtick alone, do
+    not exempt. Measured against mnemosyne-cli 3e2cb146 with five probe shapes.
+    """
+    skipped = []
+    for m in MIGRATED_TOKEN_RE.finditer(text):
+        i = m.start()
+        if not mask[i]:
+            continue  # outside a comment -> never a citation
+        if i >= 1 and text[i - 1] == "`" and (i < 2 or text[i - 2] != "`"):
+            continue
+        ns = m.group("ns")
+        ids = token_ledgers.get(ns)
+        if ids is None:
+            continue  # no ledger loaded for that namespace -> nothing to claim
+        sid = f"{ns}-{m.group('leaf')}"
+        if sid in ids:
+            continue
+        skipped.append(
+            {
+                "line": lineno(i),
+                "label": f"§{sid}",
+                "id": sid,
+                "reason": TOKEN_ABSENT_REASON,
+            }
+        )
+    return skipped
+
+
 def _tracked_files():
     """Repo-relative paths git tracks, or None when that cannot be determined.
 
@@ -696,9 +776,30 @@ def _tracked_files():
     return {line for line in out.stdout.splitlines() if line}
 
 
+# Exit status for "this check could not run", kept distinct from 1 ("the
+# content is wrong") and from argparse's 2 ("the invocation is wrong"). An
+# unreadable ledger used to surface as a plain traceback, and the calling gate
+# reported it as `staged citation names a section absent from the ledger` — a
+# verdict about the author's text for a fault in the checker's own inputs.
+EXIT_CANNOT_RUN = 3
+
+
 def load_ledger_ids(ledger_path):
-    with open(ledger_path, "r", encoding="utf-8") as fh:
-        store = json.load(fh)
+    try:
+        with open(ledger_path, "r", encoding="utf-8") as fh:
+            store = json.load(fh)
+    except OSError as e:
+        print(f"ERROR: cannot read the ledger store {ledger_path}: {e}", file=sys.stderr)
+        raise SystemExit(EXIT_CANNOT_RUN)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: ledger store {ledger_path} is not valid JSON: {e}", file=sys.stderr)
+        raise SystemExit(EXIT_CANNOT_RUN)
+    if "sections" not in store:
+        print(
+            f"ERROR: ledger store {ledger_path} carries no `sections` map",
+            file=sys.stderr,
+        )
+        raise SystemExit(EXIT_CANNOT_RUN)
     return set(store["sections"].keys())
 
 
@@ -729,10 +830,28 @@ def paths_from_toml(toml_path):
     return [os.path.join(REPO_ROOT, p) for p in re.findall(r'"([^"]+)"', entries)]
 
 
+def scannable(path):
+    """Whether `mask_for` has a comment rule for this file.
+
+    The predicate is shared by both arms of `iter_source_files` on purpose. A
+    directory walk always applied it; an explicitly named file did not, so
+    `migrate_citations.py notes.md` ran the C tokenizer over markdown — a
+    wrong answer rather than a conservative one, and under `--apply` a
+    rewriting one. Callers that hand over a file list (the pre-commit stage
+    passes the staged set) get the same coverage as the sweep instead of a
+    second, accidental rule.
+    """
+    return (
+        os.path.splitext(path)[1] in KNOWN_EXTS
+        or os.path.basename(path) == "CMakeLists.txt"
+    )
+
+
 def iter_source_files(paths):
     for p in paths:
         if os.path.isfile(p):
-            yield p
+            if scannable(p):
+                yield p
         elif os.path.isdir(p):
             for root, dirs, files in os.walk(p):
                 dirs[:] = [
@@ -742,7 +861,7 @@ def iter_source_files(paths):
                     and d not in ("target", "node_modules", "build")
                 ]
                 for f in sorted(files):
-                    if os.path.splitext(f)[1] in KNOWN_EXTS or f == "CMakeLists.txt":
+                    if scannable(f):
                         yield os.path.join(root, f)
 
 
@@ -792,6 +911,16 @@ def main(argv=None):
         "into generated code and must stay readable to consumers.",
     )
     ap.add_argument(
+        "--report-root",
+        default=None,
+        help="report paths relative to this directory instead of the repo "
+        "root. For scanning a materialised copy of content that lives "
+        "elsewhere (the pre-commit stage checks `git checkout-index` output): "
+        "a report naming the temp directory names a file the author cannot "
+        "open, and the tracked-file scope test would see a path outside the "
+        "repo and stop filtering.",
+    )
+    ap.add_argument(
         "--from-toml",
         default=None,
         help="check exactly the set_equality_validator paths enrolled in "
@@ -822,12 +951,24 @@ def main(argv=None):
                 DEFAULT_MESH_LEDGER
             )
 
+    # The existence gate resolves an already-§-form token through the namespace
+    # the token itself names, so every ledger is loaded; `--ledger` still
+    # overrides the one for the selected namespace, which is what lets a test
+    # point the gate at a fixture store.
+    token_ledgers = None
+    if args.check_ledger:
+        token_ledgers = {}
+        for ns, default_path in _ALL_NS_LEDGER.items():
+            path = args.ledger if (args.ledger and ns == args.namespace) else default_path
+            token_ledgers[ns] = load_ledger_ids(path)
+
+    report_root = os.path.abspath(args.report_root) if args.report_root else REPO_ROOT
     report = {"migrations": [], "skipped": [], "files_changed": 0}
     for path in iter_source_files(args.paths):
         new_text, migs, skips = plan_file(
-            path, ledger_ids, args.prefix, args.namespace, exclude_ids
+            path, ledger_ids, args.prefix, args.namespace, exclude_ids, token_ledgers
         )
-        rel = os.path.relpath(path, REPO_ROOT)
+        rel = os.path.relpath(os.path.abspath(path), report_root)
         for d in migs:
             report["migrations"].append({"file": rel, **d})
         for d in skips:
@@ -886,6 +1027,12 @@ def main(argv=None):
             # gate, which is the defect. Ledger membership is irrelevant here.
             if d["reason"].startswith("citation hidden behind"):
                 return True
+            # An already-§-form token carries its own verdict: _plan_tokens
+            # reports it only when the id is absent from the ledger it names.
+            # The section-shaped-label test below cannot judge it — a lettered
+            # id ("synth-5-B") has no dot.
+            if d["reason"] == TOKEN_ABSENT_REASON:
+                return True
             if d["reason"].startswith("quoted spec-string"):
                 return False
             return d["label"] not in version_allowlist and "." in d["label"]
@@ -899,6 +1046,15 @@ def main(argv=None):
                 file=sys.stderr,
             )
             for d in sorted(bad, key=lambda d: (d["file"], d["line"])):
+                # A token names its own section; rendering it as a migration
+                # ("W3C SCXML `§synth-F4` -> `§synth-F4`") would misreport what
+                # the file actually says.
+                if d["reason"] == TOKEN_ABSENT_REASON:
+                    print(
+                        f"  {d['file']}:{d['line']}  §{d['id']}: {d['reason']}",
+                        file=sys.stderr,
+                    )
+                    continue
                 print(
                     f"  {d['file']}:{d['line']}  {args.prefix} {d['label']} "
                     f"-> §{d['id']}: {d['reason']}",
