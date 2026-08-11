@@ -5,12 +5,21 @@
 // must not claim otherwise.
 //
 // The root `<scxml>` element accepts a `name` attribute — the grammar
-// makes it optional, and 159 committed forge documents carry one, 51 of
-// them declaring a value that differs from their own file stem. None of
-// those values reaches the model: `label.identifier` is the stem, by
-// design, and the compiled name follows it. Rejecting the attribute was
-// considered and is the wrong fix; it would redefine the language
-// against its own corpus rather than repair anything.
+// makes it optional, and 164 committed forge documents carry one, 53 of
+// them declaring a value that differs from their own file stem. For
+// every kind but one those values do not reach the model:
+// `label.identifier` is the stem, by design, and the compiled name
+// follows it. Rejecting the attribute was considered and is the wrong
+// fix; it would redefine the language against its own corpus rather than
+// repair anything.
+//
+// The exception is `sce:kind="algorithm"`, whose artifact is a function
+// rather than a type: it takes its emitted symbol from the root `name`,
+// and the file stem does not appear in the output. This file used to
+// claim the rule held everywhere, because the probe below reads a
+// hand-written list of two fixtures and neither is an algorithm.
+// `the_identity_rule_holds_for_every_kind_the_corpus_declares` replaces
+// the list with the corpus, so a kind joins the test by existing.
 //
 // What was actually broken is narrower and had two halves.
 //
@@ -184,6 +193,134 @@ fn the_root_name_attribute_does_not_name_the_compiled_model() {
             );
         }
     }
+}
+
+/// Every committed forge document whose root `name` disagrees with its file
+/// stem, and the kind it declares.
+fn documents_whose_declared_name_differs() -> Vec<(PathBuf, String, String, String)> {
+    let root = repo_root();
+    let listing = Command::new("git")
+        .args(["ls-files", "*.scxml"])
+        .current_dir(&root)
+        .output()
+        .expect("git ls-files");
+    assert!(listing.status.success(), "git ls-files failed: {listing:?}");
+
+    let mut out = Vec::new();
+    for rel in String::from_utf8_lossy(&listing.stdout).split_whitespace() {
+        let path = root.join(rel);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(header) = text.split_once("<scxml").map(|(_, rest)| {
+            rest.split_once('>')
+                .map(|(h, _)| h)
+                .unwrap_or(rest)
+                .to_string()
+        }) else {
+            continue;
+        };
+        let attr = |name: &str| -> Option<String> {
+            let pat = format!("{name}=\"");
+            header
+                .find(&pat)
+                .map(|i| &header[i + pat.len()..])
+                .and_then(|r| r.split_once('"'))
+                .map(|(v, _)| v.to_string())
+        };
+        let (Some(kind), Some(declared)) = (attr("sce:kind"), attr(" name")) else {
+            continue;
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a file stem")
+            .to_string();
+        if declared != stem {
+            out.push((path, kind, stem, declared));
+        }
+    }
+    out
+}
+
+#[test]
+fn the_identity_rule_holds_for_every_kind_the_corpus_declares() {
+    // The rule is about every forge kind, and the probe above reads two
+    // fixtures — a hand-written list, which is how the one kind that breaks
+    // the rule stayed outside it. `algorithm` names its emitted function from
+    // the root `name` attribute: `algorithm_bytes_equal.scxml` declaring
+    // `name="bytes_equal"` emits `bytes_equal.rs` with `pub fn bytes_equal`,
+    // and the cross-document callers in c7_keyexpr_field_match resolve against
+    // that name in all three backends. The acceptance doc said "accepted and
+    // ignored" without qualification, and nothing measured it.
+    //
+    // So the corpus decides which kinds are covered. A kind that gains a
+    // document with a disagreeing name joins this test by existing.
+    let mut kinds_seen: std::collections::BTreeSet<String> = Default::default();
+    let mut checked = 0;
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (path, kind, stem, declared) in documents_whose_declared_name_differs() {
+        let out = ScratchDir::new("corpus-identity");
+        let result = Command::new(sce_codegen_bin())
+            .arg("generate")
+            .arg(&path)
+            .arg("-o")
+            .arg(out.path())
+            .args(["-l", "rust"])
+            .current_dir(repo_root())
+            .output()
+            .expect("sce-codegen runs");
+        if !result.status.success() {
+            continue; // a negative fixture: it is here to be rejected
+        }
+        let artifacts: Vec<String> = std::fs::read_dir(out.path())
+            .expect("read output dir")
+            .flatten()
+            .filter_map(|e| {
+                e.path()
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_string)
+            })
+            .collect();
+        if artifacts.is_empty() {
+            continue;
+        }
+        kinds_seen.insert(kind.clone());
+        checked += 1;
+
+        // `algorithm` is the exception; every other kind takes the stem. An
+        // inline-eligible document is emitted inside its host statechart, so
+        // its artifact carries the stem as a prefix rather than whole.
+        let follows_name = artifacts.iter().any(|a| *a == declared);
+        let follows_stem = artifacts.iter().any(|a| a.starts_with(&stem));
+        let ok = if kind == "algorithm" {
+            follows_name
+        } else {
+            follows_stem && !follows_name
+        };
+        if !ok {
+            offenders.push(format!(
+                "{}: kind={kind} stem={stem} declared={declared} artifacts={artifacts:?}",
+                path.display()
+            ));
+        }
+    }
+
+    assert!(
+        checked >= 20 && kinds_seen.len() >= 6,
+        "only {checked} document(s) across {} kind(s) reached the assertion — \
+         this test passes by reading nothing",
+        kinds_seen.len()
+    );
+    assert!(
+        offenders.is_empty(),
+        "forge document(s) take an identity the naming rule does not predict:\
+         \n  {}\n Either the behaviour moved or SCE_ACCEPTED_SUBSET.md §2.1 \
+         describes it wrongly.",
+        offenders.join("\n  ")
+    );
 }
 
 #[test]

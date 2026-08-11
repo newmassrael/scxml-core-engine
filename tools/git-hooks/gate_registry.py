@@ -154,9 +154,11 @@ GATES: dict[str, dict] = {
     },
     "embed-vendor": {
         "workflows": ["embed-vendor-smoke.yml"],
-        # Not delegated: the lane builds sce-codegen first and calls a
-        # sibling gate in the same workflow, so its steps are a
-        # superset of this gate rather than a copy of it.
+        # The reason this lane kept its own copy — "it also calls a sibling
+        # gate, so its steps are a superset" — did not hold: the sibling
+        # (`embed-manifest-failfast`) runs in a SEPARATE job of the same
+        # workflow, and this job restated the three scripts verbatim.
+        "runner_workflow": True,
         "extra": ["sce/include/**", "embed/MANIFEST.json"],
         # The most expensive gate in the set: three scratch-directory builds,
         # one of which packages embed/ from scratch and builds a consumer
@@ -224,12 +226,18 @@ GATES: dict[str, dict] = {
     },
     "forge-cpp": {
         "workflows": ["forge-conformance.yml"],
-        # Not delegated: the lane tees each arm's output to a log file
-        # it uploads as a build artifact; the gate builds in a temp dir
-        # and keeps nothing. Delegating would drop the artifact.
+        # Two reasons were recorded here for keeping a second spelling and
+        # neither survived. The log artifact does not need the lane's own
+        # commands — `scripts/gate forge-cpp | tee` keeps it. The build
+        # configuration was real: the lane built RelWithDebInfo under Ninja
+        # while the gate left CMAKE_BUILD_TYPE unset, so a local pass said
+        # nothing about the binary CI judged. The gate now carries the build
+        # type (and Ninja where installed), which cost 6s -> 22s and is what
+        # the mirror is for.
+        "runner_workflow": True,
         "extra": ["backends/cpp/**", "sce/**"],
         "deps": ["codegen-build"],
-        "cost_s": 6,
+        "cost_s": 22,
         "summary": "C++ forge conformance build + test",
     },
     # Catches codegen breakage in the example documents (the namespace
