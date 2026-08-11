@@ -79,6 +79,20 @@ template <typename P, typename = void> struct HasExternalEventFlagTrait : std::f
 template <typename P>
 struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextEventIsExternal_)>> : std::true_type {};
 
+/// Policy can hand an event to a live `<invoke>` child named by session id.
+///
+/// §scxml-C-1 makes a session's published location a usable `<send>` target,
+/// so an event addressed to a child has to reach that child rather than the
+/// sender's own queue. Only a policy with local scxml invokes owns child
+/// instances to route to, which is why this is detected rather than required.
+template <typename P, typename = void> struct HasChildSessionDeliveryTrait : std::false_type {};
+
+template <typename P>
+struct HasChildSessionDeliveryTrait<
+    P, std::void_t<decltype(std::declval<P &>().deliverToChildSession(
+           std::declval<const std::string &>(), std::declval<const SCE::Common::ForwardedEvent &>()))>>
+    : std::true_type {};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // C++20 concepts + C++17 constexpr bool aliases
 //
@@ -229,6 +243,10 @@ concept HasActiveStates = HasActiveStatesTrait<P>::value;
 template <typename P>
 concept HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 
+/// Policy can deliver an event to a live invoke child by session id (§scxml-C-1)
+template <typename P>
+concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
+
 #else  // C++17 fallback
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -252,6 +270,8 @@ inline constexpr bool HasFinalize = HasFinalizeTrait<P, M, Engine>::value;
 template <typename P> inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
 
 template <typename P> inline constexpr bool HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
+
+template <typename P> inline constexpr bool HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 
 #endif  // __cpp_concepts >= 202002L
 

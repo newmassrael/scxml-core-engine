@@ -63,6 +63,12 @@
 // `CommunicationError::toJsonBytes()`.
 #include "mesh/CommunicationError.h"
 {% endif %}
+{% if model.needs_script_engine or model.needs_event_origin %}
+// W3C SCXML C.1: `publishedOrigin` turns the sender's session id into the
+// address it published, at the boundary where `_event.origin` becomes
+// visible to the document.
+#include "common/IOProcessorHelper.h"
+{% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
 #include "common/NamelistHelper.h"

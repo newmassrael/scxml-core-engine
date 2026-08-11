@@ -359,6 +359,52 @@
         {% endfor %}
     }
 
+{% if model.invokes | scxml %}
+    // W3C SCXML C.1: deliver an event addressed to a child's published
+    // location.
+    //
+    // The parent mints `parentSession.invokeId` for each child and that id is
+    // what a child's `_ioprocessors` entry names, so a `<send>` whose target
+    // decodes to one of them is addressed to that child rather than to this
+    // machine. `StaticExecutionEngine::raiseExternal` calls this before
+    // enqueueing; a false return means the address names no live child of
+    // ours and the event takes the normal external path.
+    //
+    // Detected by `HasChildSessionDelivery` rather than required, because a
+    // machine with no local scxml invoke owns no child to route to.
+    bool deliverToChildSession(const std::string& childSessionId,
+                               const ::SCE::Common::ForwardedEvent& addressed) {
+        if (childSessionId.empty()) {
+            return false;
+        }
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.invokes | scxml %}
+        {% for invoke_info in state.invokes | scxml %}
+        {
+            // Snapshot the session id under the mutex and release it before
+            // reaching into the child's queue — the same discipline
+            // `forwardToAutoforwardChildren` follows, and for the same
+            // reason: the peer-down handler also touches activeInvokes_.
+            bool __sce_addressed = false;
+            {
+                std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+                __sce_addressed = (it != activeInvokes_.end() && it->second.sessionId == childSessionId);
+            }
+            if (__sce_addressed && child_{{ invoke_info.field_suffix }}_) {
+                AOT_DEBUG("AOT C.1 addressed send: delivering '{}' to child session '{}'",
+                          addressed.name, childSessionId);
+                child_{{ invoke_info.field_suffix }}_->raiseExternal(addressed);
+                return true;
+            }
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+        return false;
+    }
+{% endif %}
+
     // W3C SCXML 6.4.1: Forward external events to children with autoforward=true
     // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent.
     // Local invokes forward via `child_<suffix>_->raiseExternal`; remote
@@ -531,6 +577,7 @@
         }
         return false;
     }
+
 
     // SCE_MESH.md §9.6.2 wire-15 consumer — parent stashes the child's
     // session URI (§9.6.3 L1463 `_event.origin` source). Matched by

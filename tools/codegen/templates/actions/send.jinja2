@@ -8,10 +8,12 @@ std::string sendId = "{{ action.id }}";
 std::string sendId = ::SCE::SendHelper::generateSendId();
 {% endif %}
 {% if model.needs_script_engine or model.needs_event_origin %}
-// W3C SCXML 5.10.1: Ensure sessionId for origin tracking
-if (!sessionId_.has_value()) {
-    sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
-}
+// W3C SCXML 5.10.1: Ensure sessionId for origin tracking. Delegated rather
+// than restated: `ensureSessionId` is where an invoked child adopts the id
+// its parent recorded, and a second spelling here minted an address-of-this
+// id instead — so which name a child's session had depended on whether a
+// `<send>` or the script engine reached it first.
+ensureSessionId();
 {% endif %}
 {% if action.send_type and not action.typeexpr %}
 // W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
@@ -80,7 +82,13 @@ if (!::SCE::ScriptResultUtils::isSuccess(targetResult)) {
 dynamicTarget = ::SCE::ScriptResultUtils::resultToString(targetResult, &scriptEngine, sessionId_.value(), "{{ action.targetexpr | escape_cpp }}");
 {% else %}
 {% if action.targetexpr == '_event.origin' %}
-dynamicTarget = pendingEventOrigin_;
+// W3C SCXML C.1: without a script engine this reads the pending field
+// directly, so it has to apply the same boundary conversion
+// `setCurrentEventInScriptEngine` applies — otherwise the same document
+// resolves `_event.origin` to an address on one machine and to a bare
+// session id on another, depending only on whether some other part of it
+// needed a datamodel.
+dynamicTarget = ::SCE::IOProcessorHelper::publishedOrigin(pendingEventOrigin_);
 {% else %}
 #error "SCE codegen drift: `<send targetexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
