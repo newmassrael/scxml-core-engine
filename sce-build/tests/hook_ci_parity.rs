@@ -452,16 +452,14 @@ const CI_ONLY: &[(&str, &str)] = &[
          tree being pushed. Startup cost is the secondary objection; the \
          side effect is the disqualifying one.",
     ),
-    (
-        "gradlew :sce-kotlin-tests:test",
-        "same side effect as the forge-runtime Gradle task above, on the \
-         same trees: the run rewrites their `generated-at` pins, so a hook \
-         that invoked it would dirty the tree being pushed and the next \
-         gate would judge a tree the developer did not write. The Kotlin \
-         W3C arm therefore stays a lane, and the regeneration that repairs \
-         the pins is a documented follow-up rather than something a push \
-         does silently.",
-    ),
+    // `gradlew :sce-kotlin-tests:test` used to sit here for the same
+    // reason as the forge-runtime task above. The reason was mechanical,
+    // not structural: the task invoked the generator without
+    // SOURCE_DATE_EPOCH, so it stamped the wall clock into 449 committed
+    // headers. `backends/kotlin/tests/build.gradle.kts` pins it now, the
+    // `w3c-kotlin` gate re-checks that the run left the tree clean, and
+    // the lane delegates to that gate — so the Kotlin W3C arm is no
+    // longer CI-only and an entry here would describe nothing.
     (
         "xml_to_html.py",
         "publication, not verification. The report job turns the C++ JUnit \
