@@ -62,27 +62,26 @@ cp "$CODEGEN" "$WT/target/debug/sce-codegen"
 # has stopped producing: the tree carried three `__sce_synth_invoke__`
 # documents in exactly that state.
 #
-# A SAMPLE of the W3C trees rather than every generated file, and the reason
-# is a measured limit of the procedure rather than a convenience. Removing a
-# file from an integration tree does not come back: the arm resolves sibling
-# modules before it writes, so a missing
-# `..._sce_synth_invoke__inv_watch_sm.rs` aborts the run instead of being
-# regenerated. Deleting the Rust aggregator (`generated/mod.rs`) fails the
-# same way. So this gate asserts what the procedure can do — restore a W3C
-# artifact and reproduce every tree byte for byte — and the integration arm's
-# inability to rebuild a missing sibling stays an open item rather than a
-# silent exclusion.
+# A SAMPLE rather than every generated file, because one file the procedure
+# cannot rebuild is enough to stop it: `mod.rs` is an aggregator the arms
+# read before they write, so emptying a tree fails for a reason that is not
+# the property under test. The sample covers the W3C and integration trees
+# alike — it did not always: while each regen script ended in a
+# WHOLE-PACKAGE `cargo fmt`, a file missing in one tree aborted the format
+# step of a script owning another, so the script that would have restored it
+# never ran. Each script now formats only what it wrote, and the integration
+# trees are inside this gate rather than excluded from it.
 #
 # The candidate set is derived, not listed: every tracked file carrying the
 # §synth-6.2.6 drift header is generator output by construction, which is
 # what keeps a new backend inside the gate without an edit here.
 mapfile -t GENERATED < <(cd "$WT" && git grep -l "template-hash:" -- backends \
-    | grep '/generated/' | grep -v '/mod\.rs$' || true)
+    | grep -v '/mod\.rs$' || true)
 # Floor on the CANDIDATE set, so a scan that stops matching fails loudly
-# instead of sampling nothing. 499 W3C artifacts carried the header when this
-# was set; the floor is below that because adding a fixture raises the count
-# and removing the scan's target is what it exists to catch.
-MINIMUM=400
+# instead of sampling nothing. 976 artifacts carried the header when this was
+# set; the floor is below that because adding a fixture raises the count and
+# removing the scan's target is what it exists to catch.
+MINIMUM=800
 if (( ${#GENERATED[@]} < MINIMUM )); then
     sce_gate_fail "only ${#GENERATED[@]} generated file(s) found, under the ${MINIMUM} floor — the scan is broken, not the tree"
 fi
