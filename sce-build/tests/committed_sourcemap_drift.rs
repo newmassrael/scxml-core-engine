@@ -163,6 +163,112 @@ fn scxml_index_is_unambiguous() {
     );
 }
 
+/// Every `scxml_file` a committed sidecar names must resolve — or be a
+/// document SCE is known to synthesise.
+///
+/// Nothing checked this, and the tree showed why it needed to be: 38 of the
+/// 41 `__sce_synth_invoke__` names in the Rust trees pointed at files that do
+/// not exist, and three did only because an older generator had written them
+/// to disk and they were never removed. A consumer resolving one of those
+/// paths — `addr2sce` is the one in this repository — gets nothing back, and
+/// no gate said so.
+///
+/// The synthesised class is legitimate and stays: the parser builds an
+/// invoke's inline `<content>` into a document in memory, and the symbols
+/// carry line numbers relative to THAT document (measured on test233: the
+/// child's machine sits at line 3 of a synthesised text whose `<scxml>`
+/// element lives at line 18 of the parent). Renaming those symbols to the
+/// parent file would therefore point a reader at the wrong lines — which is
+/// why this gate records the class rather than rewriting it, and why
+/// `schemas/sce-sourcemap.v1.schema.json` now states it for consumers.
+///
+/// What changes is that only the DECLARED class may be unresolvable. A typo,
+/// a renamed fixture, or a document that moves out from under a sidecar now
+/// fails here instead of passing as one more name nobody tried to open.
+#[test]
+fn every_sourcemap_path_resolves_or_is_a_declared_synthesised_document() {
+    const SYNTH_INFIX: &str = "__sce_synth_invoke__";
+    let idx = scxml_index();
+    let sidecars = committed_sidecars();
+    assert!(
+        sidecars.len() >= 100,
+        "only {} committed sidecar(s) reached this gate",
+        sidecars.len()
+    );
+
+    let mut unresolved: Vec<String> = Vec::new();
+    let mut synthesised = 0usize;
+    let mut resolved = 0usize;
+    for sidecar in &sidecars {
+        let text = std::fs::read_to_string(sidecar).expect("read sidecar");
+        let doc: serde_json::Value = serde_json::from_str(&text).expect("sidecar is JSON");
+        let symbols = doc
+            .get("symbols")
+            .and_then(|s| s.as_object())
+            .expect("sidecar carries a symbols table");
+        for (symbol, entry) in symbols {
+            let named = entry
+                .get("scxml_file")
+                .and_then(|f| f.as_str())
+                .expect("every symbol names a scxml_file");
+            let base = Path::new(named)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(named);
+            if let Some((parent, _)) = base.split_once(SYNTH_INFIX) {
+                // The infix alone is not the licence — a misspelled or
+                // orphaned name would inherit it. The PARENT has to be a real
+                // document that genuinely carries an inline `<content>`
+                // machine, which is the only thing SCE synthesises a child
+                // from.
+                let parent_doc = format!("{parent}.scxml");
+                let carries_inline = idx
+                    .get(&parent_doc)
+                    .and_then(|paths| paths.first())
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .map(|t| t.contains("<content>") && t.matches("<scxml").count() > 1)
+                    .unwrap_or(false);
+                if carries_inline {
+                    synthesised += 1;
+                } else {
+                    unresolved.push(format!(
+                        "{}: {symbol} -> {named} (no inline <content> machine in {parent_doc})",
+                        sidecar
+                            .strip_prefix(repo_root())
+                            .unwrap_or(sidecar)
+                            .display()
+                    ));
+                }
+            } else if idx.contains_key(base) || sidecar.with_file_name(base).exists() {
+                resolved += 1;
+            } else {
+                unresolved.push(format!(
+                    "{}: {symbol} -> {named}",
+                    sidecar
+                        .strip_prefix(repo_root())
+                        .unwrap_or(sidecar)
+                        .display()
+                ));
+            }
+        }
+    }
+    assert!(
+        resolved > 0 && synthesised > 0,
+        "the scan classified {resolved} resolved and {synthesised} synthesised \
+         name(s) — one of the two arms is not being exercised, so a clean \
+         result would mean nothing"
+    );
+    unresolved.sort();
+    unresolved.dedup();
+    assert!(
+        unresolved.is_empty(),
+        "sourcemap symbol(s) name a document that is neither on disk nor a \
+         declared synthesised child:\n  {}\n A consumer resolving one of these \
+         gets nothing back. Either the document moved, or the name is wrong.",
+        unresolved.join("\n  ")
+    );
+}
+
 /// `scxml_file` values differ by the path the generator was invoked
 /// with, which is not what this gate is about. Compare on basenames.
 fn normalise(symbols: &serde_json::Value) -> BTreeMap<String, serde_json::Value> {
