@@ -446,6 +446,64 @@ def run_order(slugs, table=None) -> list[str]:
     return ordered
 
 
+# Measurement noise floor for the drift report below. `scripts/gate` times
+# with bash's `SECONDS`, whose resolution is one second, and a gate's reading
+# moves by a second or two between runs for reasons that say nothing about the
+# declaration — a warm cache, a busy machine. A declared cost is treated as
+# still true unless the run disagrees by more than this.
+COST_NOISE_S = 2.0
+COST_NOISE_FRACTION = 0.25
+
+
+def cost_is_stale(declared, measured) -> bool:
+    """Whether a run's timing genuinely disagrees with the declared cost."""
+    if declared is None:
+        return True  # an unmeasured gate has just been measured
+    return abs(measured - declared) > max(COST_NOISE_S, declared * COST_NOISE_FRACTION)
+
+
+def order_drift(measured: dict, table=None):
+    """Report whether this run's timings would have ordered the gates differently.
+
+    `cost_s` is hand-updated from `scripts/gate --measure --all`, and nothing
+    noticed when a value went stale: every gate still passed, and the run order
+    — the only thing the number decides — was quietly wrong. The registry's own
+    order case cannot see it either, and says so: it derives the expected order
+    from `cost_s` and then checks the order against `cost_s`, so editing a cost
+    moves the gate and the property still holds.
+
+    The question that is not a tautology is whether the TRUTH would have
+    ordered them differently. This substitutes the run's own measurements for
+    the declarations that have genuinely moved and re-derives the order; a
+    difference means the declared costs are steering the run wrongly, and the
+    caller says so. It is a report, not a verdict: a slow machine is not a
+    reason to refuse a push.
+
+    Returns None when the order stands, otherwise the two orders and the
+    entries whose cost moved.
+    """
+    table = GATES if table is None else table
+    slugs = [s for s in measured if s in table]
+    if len(slugs) < 2:
+        return None  # one gate cannot be out of order with itself
+    declared_order = run_order(slugs, table)
+
+    moved, fresh = [], {}
+    for s in slugs:
+        declared = table[s].get("cost_s")
+        if cost_is_stale(declared, measured[s]):
+            moved.append((s, declared, measured[s]))
+            fresh[s] = dict(table[s], cost_s=measured[s])
+        else:
+            fresh[s] = table[s]
+    if not moved:
+        return None
+    measured_order = run_order(slugs, fresh)
+    if measured_order == declared_order:
+        return None
+    return {"declared": declared_order, "measured": measured_order, "moved": moved}
+
+
 def transitive_deps(slug: str, table=None) -> set[str]:
     """Every gate `slug` needs, directly or through another gate."""
     table = GATES if table is None else table
@@ -784,6 +842,49 @@ def self_test(repo_root: Path) -> int:
     if got != want:
         failures.append(f"order: level-at-a-time regression — got {got}, want {want}")
 
+    # Drift report — the answer to what the order case above is blind to. Each
+    # case runs against a synthetic table, because the point is the rule and
+    # not this week's numbers.
+    drift_table = {
+        "prereq": {"cost_s": 1},
+        "cheap": {"cost_s": 2},
+        "dear": {"cost_s": 100},
+        "dependent": {"deps": ["prereq"], "cost_s": 3},
+    }
+    cases += 1
+    if order_drift({s: drift_table[s]["cost_s"] for s in drift_table},
+                   table=drift_table) is not None:
+        failures.append("drift: a run that matches the declarations reported drift")
+
+    cases += 1
+    swap = order_drift({"prereq": 1, "cheap": 200, "dear": 100, "dependent": 3},
+                       table=drift_table)
+    if swap is None:
+        failures.append("drift: a gate measured 100x its declared cost went unreported")
+    elif swap["measured"].index("dear") > swap["measured"].index("cheap"):
+        failures.append(f"drift: measured order did not reseat the pair: {swap}")
+
+    cases += 1
+    # Within the noise floor: `SECONDS` granularity must not nag.
+    if order_drift({"prereq": 2, "cheap": 3, "dear": 101, "dependent": 4},
+                   table=drift_table) is not None:
+        failures.append("drift: reported a difference inside the measurement noise floor")
+
+    cases += 1
+    # A dependency still binds: measuring the dependent as free cannot lift it
+    # above the gate whose output it consumes.
+    dep = order_drift({"prereq": 50, "cheap": 2, "dear": 100, "dependent": 0},
+                      table=drift_table)
+    if dep is not None and dep["measured"].index("prereq") > dep["measured"].index("dependent"):
+        failures.append(f"drift: measured order broke a dependency: {dep}")
+
+    cases += 1
+    # A gate with no declared cost is reported the first time it is timed —
+    # `run_order` sorts it last, which is a guess the measurement can correct.
+    if order_drift({"prereq": 1, "cheap": 2, "unmeasured": 0},
+                   table=dict(drift_table, unmeasured={})) is None:
+        failures.append("drift: an unmeasured gate's first timing went unreported")
+
     if failures:
         for f in failures:
             print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
@@ -803,12 +904,36 @@ def main() -> int:
                     help="print every gate in run order")
     ap.add_argument("--explain", action="store_true",
                     help="also print the selection reason to stderr")
+    ap.add_argument("--order-drift", nargs="*", metavar="SLUG=SECONDS",
+                    help="compare a run's timings against the declared costs "
+                         "and report when they would have ordered the gates "
+                         "differently")
     args = ap.parse_args()
 
     repo_root = args.repo_root.resolve()
 
     if args.self_test:
         return self_test(repo_root)
+
+    if args.order_drift is not None:
+        measured = {}
+        for pair in args.order_drift:
+            slug, _, secs = pair.partition("=")
+            if slug in GATES:
+                measured[slug] = float(secs)
+        drift = order_drift(measured)
+        if drift is None:
+            return 0
+        print("\ngate: the declared costs no longer order this run correctly.",
+              file=sys.stderr)
+        for slug, declared, actual in drift["moved"]:
+            was = "unmeasured" if declared is None else f"{declared}s"
+            print(f"    {slug:<26} declared {was:>12}  ran {actual:g}s", file=sys.stderr)
+        print(f"  ran in:   {' '.join(drift['declared'])}", file=sys.stderr)
+        print(f"  would be: {' '.join(drift['measured'])}", file=sys.stderr)
+        print("  Re-measure with `scripts/gate --measure --all` and update "
+              "cost_s.\n", file=sys.stderr)
+        return 0
 
     if args.list:
         for slug in run_order(GATES.keys()):
