@@ -7,12 +7,12 @@ import (
 	"fmt"
 )
 
-// PendingInvoke represents a W3C SCXML 6.4 pending invoke structure for the
+// PendingInvoke represents a §scxml-6.4 pending invoke structure for the
 // defer/cancel/execute pattern.
 //
 // Ports Rust PendingInvoke from backends/rust/runtime/src/invoke.rs.
 type PendingInvoke[S comparable] struct {
-	// InvokeID is the W3C SCXML 6.4.1 runtime-generated invoke identifier.
+	// InvokeID is the §scxml-6.4.1 runtime-generated invoke identifier.
 	// Format: "stateid.platformid.index" (e.g., "s01.140234567890._invoke_0")
 	InvokeID string
 
@@ -20,7 +20,7 @@ type PendingInvoke[S comparable] struct {
 	State S
 }
 
-// ChildSession represents a W3C SCXML 6.4 active child session.
+// ChildSession represents a §scxml-6.4 active child session.
 //
 // Ports Rust ChildSession from backends/rust/runtime/src/invoke.rs.
 type ChildSession struct {
@@ -33,15 +33,15 @@ type ChildSession struct {
 	// ParentSessionID is the parent's session ID.
 	ParentSessionID string
 
-	// Autoforward indicates whether to autoforward events to child (W3C SCXML 6.4.1).
+	// Autoforward indicates whether to autoforward events to child (§scxml-6.4.1).
 	Autoforward bool
 
-	// FinalizeScript is the <finalize> handler script content (W3C SCXML 6.5).
+	// FinalizeScript is the <finalize> handler script content (§scxml-6.5).
 	FinalizeScript string
 }
 
 // DeferInvoke adds a pending invoke for deferred execution at macrostep end
-// (W3C SCXML 6.4).
+// (§scxml-6.4).
 //
 // Ports Rust defer_invoke from backends/rust/runtime/src/invoke.rs.
 func DeferInvoke[S comparable](pending *[]PendingInvoke[S], invoke PendingInvoke[S]) {
@@ -49,7 +49,7 @@ func DeferInvoke[S comparable](pending *[]PendingInvoke[S], invoke PendingInvoke
 }
 
 // CancelInvokesForState removes pending invokes for an exited state
-// (W3C SCXML 6.4).
+// (§scxml-6.4).
 //
 // Ports Rust cancel_invokes_for_state from backends/rust/runtime/src/invoke.rs.
 func CancelInvokesForState[S comparable](pending *[]PendingInvoke[S], state S) {
@@ -64,7 +64,7 @@ func CancelInvokesForState[S comparable](pending *[]PendingInvoke[S], state S) {
 }
 
 // ExecutePendingInvokes executes all pending invokes at macrostep end
-// (W3C SCXML 6.4). Uses copy-and-clear pattern to prevent iterator
+// (§scxml-6.4). Uses copy-and-clear pattern to prevent iterator
 // invalidation during execution.
 //
 // Ports Rust execute_pending_invokes from backends/rust/runtime/src/invoke.rs.
@@ -73,7 +73,7 @@ func ExecutePendingInvokes[S comparable](pending *[]PendingInvoke[S], executor f
 		return
 	}
 
-	// W3C SCXML 6.4: Copy pending list to prevent iterator invalidation
+	// §scxml-6.4: Copy pending list to prevent iterator invalidation
 	invokesToExecute := make([]PendingInvoke[S], len(*pending))
 	copy(invokesToExecute, *pending)
 	*pending = (*pending)[:0]
@@ -83,26 +83,26 @@ func ExecutePendingInvokes[S comparable](pending *[]PendingInvoke[S], executor f
 	}
 }
 
-// CreateDoneInvokeEventName creates a done.invoke event name (W3C SCXML 6.3.1).
+// CreateDoneInvokeEventName creates a done.invoke event name (§scxml-6.3.1).
 //
 // Ports Rust create_done_invoke_event_name from backends/rust/runtime/src/invoke.rs.
 func CreateDoneInvokeEventName(invokeID string) string {
 	return fmt.Sprintf("done.invoke.%s", invokeID)
 }
 
-// IsValidInvokeID validates invoke ID format (W3C SCXML 3.12.1).
+// IsValidInvokeID validates invoke ID format (§scxml-3.12.1).
 //
 // Ports Rust is_valid_invoke_id from backends/rust/runtime/src/invoke.rs.
 func IsValidInvokeID(invokeID string) bool {
 	return invokeID != ""
 }
 
-// GetPendingCount returns the count of pending invokes (W3C SCXML 6.4).
+// GetPendingCount returns the count of pending invokes (§scxml-6.4).
 func GetPendingCount[S comparable](pending []PendingInvoke[S]) int {
 	return len(pending)
 }
 
-// IsInvokePending checks if a specific invoke is pending (W3C SCXML 6.4).
+// IsInvokePending checks if a specific invoke is pending (§scxml-6.4).
 func IsInvokePending[S comparable](pending []PendingInvoke[S], invokeID string) bool {
 	for _, p := range pending {
 		if p.InvokeID == invokeID {
@@ -113,7 +113,7 @@ func IsInvokePending[S comparable](pending []PendingInvoke[S], invokeID string) 
 }
 
 // ChildEngine is the interface that parent state machines use to interact with
-// child invoke sessions (W3C SCXML 6.4). Generated code implements this for
+// child invoke sessions (§scxml-6.4). Generated code implements this for
 // each concrete child state machine type.
 type ChildEngine interface {
 	Initialize()
@@ -122,7 +122,7 @@ type ChildEngine interface {
 	RaiseExternalByName(eventName, eventData string)
 
 	// RaiseExternalByNameWithMeta delivers an autoforwarded event whose
-	// _event fields are the parent's (W3C SCXML 6.4 exact-copy contract).
+	// _event fields are the parent's (§scxml-6.4 exact-copy contract).
 	// Name-addressed because the child's Event enum is an unrelated type.
 	RaiseExternalByNameWithMeta(eventName string, metadata EventMetadata)
 
@@ -131,12 +131,12 @@ type ChildEngine interface {
 
 	// DonedataAtFinal returns the donedata payload stashed by the child's
 	// top-level <final> onentry, for the parent's RaiseDoneInvoke to lift
-	// onto done.invoke.<id>._event.data (W3C SCXML 5.5 + 6.3.1).
+	// onto done.invoke.<id>._event.data (§scxml-5.5 + 6.3.1).
 	DonedataAtFinal() string
 }
 
 // DrainAndRaiseChildEvents drains events from a child's ParentExternalQueue
-// and raises them in the parent engine with proper metadata (W3C SCXML 6.4).
+// and raises them in the parent engine with proper metadata (§scxml-6.4).
 // Port of Rust drain_and_raise_child_events().
 func DrainAndRaiseChildEvents[S comparable, E comparable](
 	childEngine ChildEngine,
@@ -172,11 +172,11 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 	}
 }
 
-// RaiseDoneInvoke raises a done.invoke event in the parent engine (W3C SCXML 6.3.1).
+// RaiseDoneInvoke raises a done.invoke event in the parent engine (§scxml-6.3.1).
 // Port of Rust raise_done_invoke().
 //
 // donedata is the child's stashed top-level <final> donedata payload
-// (W3C SCXML 5.5 + 6.3.1); it is threaded onto EventMetadata.Data so
+// (§scxml-5.5 + 6.3.1); it is threaded onto EventMetadata.Data so
 // the parent's transition cond can read _event.data. Pass "" when the
 // child's <final> carries no donedata.
 func RaiseDoneInvoke[S comparable, E comparable](

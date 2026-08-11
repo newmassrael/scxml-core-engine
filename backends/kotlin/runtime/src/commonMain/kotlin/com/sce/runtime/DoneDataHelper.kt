@@ -4,7 +4,7 @@
 package com.sce.runtime
 
 /**
- * W3C SCXML 5.5: Emit an inline `<content>` literal as `_event.data`.
+ * §scxml-5.5: Emit an inline `<content>` literal as `_event.data`.
  *
  * 1:1 port of C++ `SCE::DoneDataHelper::emitContentLiteral`
  * ([`sce/include/common/DoneDataHelper.h`]). When `<content>` has no `expr`

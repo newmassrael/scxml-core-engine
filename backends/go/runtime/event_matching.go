@@ -6,12 +6,12 @@ package sce
 import "strings"
 
 // MatchesEventDescriptor checks if an event name matches a descriptor
-// (W3C SCXML 5.9.3).
+// (§scxml-5.9.3).
 //
 // 1:1 port of Rust event_matching::matches_event_descriptor from
 // backends/rust/runtime/src/helpers/event_matching.rs.
 //
-// Event matching rules (W3C SCXML 5.9.3):
+// Event matching rules (§scxml-5.9.3):
 //  1. Event descriptor may contain multiple tokens separated by spaces
 //  2. Each token is matched against the event name using prefix matching
 //  3. Prefix matching uses dot (.) as token separator
@@ -20,7 +20,7 @@ import "strings"
 //     - "foo.*" matches any event starting with "foo."
 //  5. Token boundaries are enforced: "foo" matches "foo.bar" but NOT "foobar"
 func MatchesEventDescriptor(eventName, descriptor string) bool {
-	// W3C SCXML 5.9.3: Split descriptor into space-separated tokens
+	// §scxml-5.9.3: Split descriptor into space-separated tokens
 	tokens := strings.Fields(descriptor)
 
 	// Empty descriptor: no match
@@ -28,14 +28,14 @@ func MatchesEventDescriptor(eventName, descriptor string) bool {
 		return false
 	}
 
-	// W3C SCXML 5.9.3: Event matches if it matches ANY token
+	// §scxml-5.9.3: Event matches if it matches ANY token
 	for _, token := range tokens {
-		// W3C SCXML 5.9.3: Universal wildcard "*" matches any event
+		// §scxml-5.9.3: Universal wildcard "*" matches any event
 		if token == "*" {
 			return true
 		}
 
-		// W3C SCXML 5.9.3: Wildcard suffix "foo.*" matches "foo.xxx"
+		// §scxml-5.9.3: Wildcard suffix "foo.*" matches "foo.xxx"
 		if len(token) >= 2 && strings.HasSuffix(token, ".*") {
 			prefix := token[:len(token)-1] // "foo."
 			if strings.HasPrefix(eventName, prefix) {
@@ -43,12 +43,12 @@ func MatchesEventDescriptor(eventName, descriptor string) bool {
 			}
 		}
 
-		// W3C SCXML 5.9.3: Exact match
+		// §scxml-5.9.3: Exact match
 		if eventName == token {
 			return true
 		}
 
-		// W3C SCXML 5.9.3: Prefix match with dot separator
+		// §scxml-5.9.3: Prefix match with dot separator
 		// "foo" matches "foo.bar" but NOT "foobar"
 		if len(eventName) > len(token) &&
 			eventName[len(token)] == '.' &&

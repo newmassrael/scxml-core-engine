@@ -55,7 +55,7 @@ class StatePolicy(ABC, Generic[S, E]):
     enum types. The Engine drives all algorithm logic against these hooks.
     """
 
-    # W3C SCXML 5.10 — script-engine session id, populated by `Engine`
+    # §scxml-5.10 — script-engine session id, populated by `Engine`
     # at construction. Concrete policies thread it through helper
     # methods (`_assign`, `_guard`, `_exec`, …) so each one can call
     # `IScriptEngine.evaluate_expression(self._session_id, …)`. Empty
@@ -68,7 +68,7 @@ class StatePolicy(ABC, Generic[S, E]):
     # still reach the script engine session.
     _engine_ref: Optional[Any] = None
 
-    # W3C SCXML 6.4.1 — staging dict for `<invoke>` param/namelist
+    # §scxml-6.4.1 — staging dict for `<invoke>` param/namelist
     # values that must seed the child's datamodel before its first
     # macrostep. The parent's `execute_pending_invokes` template
     # assigns a fresh dict on the child policy (so the class-level
@@ -254,7 +254,7 @@ class StatePolicy(ABC, Generic[S, E]):
         no-op so generated policies opt in; concrete `*_sm.py`
         emits a binding into `self._ns["_event"]`."""
 
-    # ── Invoke hooks (W3C SCXML 6.4) ─────────────────────────────
+    # ── Invoke hooks (§scxml-6.4) ─────────────────────────────
 
     def get_event_from_name(self, event_name: str) -> Optional[E]:
         """W3C SCXML 5.10 — resolve a wire-format event name (`done.foo`,

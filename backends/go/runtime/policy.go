@@ -28,29 +28,29 @@ type StatePolicy[S comparable, E comparable] interface {
 	// constant data from these methods.
 	// ================================================================
 
-	// InitialState returns the initial state of the root <scxml> element (W3C SCXML 3.3).
+	// InitialState returns the initial state of the root <scxml> element (§scxml-3.3).
 	InitialState() S
 
-	// IsFinalState returns whether state is a <final> state (W3C SCXML 3.7).
+	// IsFinalState returns whether state is a <final> state (§scxml-3.7).
 	IsFinalState(state S) bool
 
 	// GetParent returns the parent of state in the document hierarchy. The bool
 	// return indicates whether a parent exists (false for root children).
 	GetParent(state S) (S, bool)
 
-	// IsCompoundState returns whether state is a compound state (has children, W3C SCXML 3.3).
+	// IsCompoundState returns whether state is a compound state (has children, §scxml-3.3).
 	IsCompoundState(state S) bool
 
-	// IsParallelState returns whether state is a <parallel> state (W3C SCXML 3.4).
+	// IsParallelState returns whether state is a <parallel> state (§scxml-3.4).
 	// Only meaningful when HasParallelStates() returns true.
 	IsParallelState(state S) bool
 
-	// GetParallelRegions returns the child regions of a parallel state (W3C SCXML 3.4).
+	// GetParallelRegions returns the child regions of a parallel state (§scxml-3.4).
 	// Only meaningful when HasParallelStates() returns true.
 	GetParallelRegions(state S) []S
 
 	// IsDescendantOf returns whether desc is a (proper or improper) descendant
-	// of anc in the hierarchy. Used by W3C SCXML 3.12 LCA calculation.
+	// of anc in the hierarchy. Used by §scxml-3.12 LCA calculation.
 	IsDescendantOf(desc, anc S) bool
 
 	// GetDocumentOrder returns the document order index of state (W3C SCXML Appendix D).
@@ -71,15 +71,15 @@ type StatePolicy[S comparable, E comparable] interface {
 	GetStateName(state S) string
 
 	// NullEvent returns the sentinel event value for eventless transition dispatch
-	// (W3C SCXML 3.13). Generated code produces a Null variant.
+	// (§scxml-3.13). Generated code produces a Null variant.
 	NullEvent() E
 
-	// GetInitialChildren returns the initial children of a compound state (W3C SCXML 3.6).
+	// GetInitialChildren returns the initial children of a compound state (§scxml-3.6).
 	// Returns the resolved initial child state(s) for deep initial targets.
 	GetInitialChildren(state S) []S
 
 	// GetInitialOrHistoryChild returns the initial child considering history
-	// (W3C SCXML 3.11). Non-static: checks history before returning initial child.
+	// (§scxml-3.11). Non-static: checks history before returning initial child.
 	GetInitialOrHistoryChild(state S) S
 
 	// ================================================================
@@ -91,7 +91,7 @@ type StatePolicy[S comparable, E comparable] interface {
 	// ================================================================
 
 	// LastTransitionIsInternal returns whether the most recently taken transition
-	// was of type internal (W3C SCXML 3.13).
+	// was of type internal (§scxml-3.13).
 	LastTransitionIsInternal() bool
 
 	// SetLastTransitionIsInternal sets the "last transition is internal" flag.
@@ -118,23 +118,23 @@ type StatePolicy[S comparable, E comparable] interface {
 	// through the engine parameter.
 	// ================================================================
 
-	// ExecuteEntryActions executes <onentry> actions for state (W3C SCXML 3.7).
+	// ExecuteEntryActions executes <onentry> actions for state (§scxml-3.7).
 	// May raise internal events via engine.Raise(), schedule delayed sends, etc.
 	ExecuteEntryActions(state S, engine *Engine[S, E])
 
-	// ExecuteExitActions executes <onexit> actions for state (W3C SCXML 3.8).
+	// ExecuteExitActions executes <onexit> actions for state (§scxml-3.8).
 	// The preTransitionActive slice captures the active configuration before the
-	// transition began, for history state recording (W3C SCXML 3.11).
+	// transition began, for history state recording (§scxml-3.11).
 	ExecuteExitActions(state S, engine *Engine[S, E], preTransitionActive []S)
 
-	// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
+	// ProcessTransition evaluates guards and takes a matching transition (§scxml-3.13).
 	// The currentState parameter is an in/out pointer: the engine passes its current
 	// state; generated code updates it to the transition's target if a transition is taken.
 	// Returns true if a transition was taken.
 	ProcessTransition(currentState *S, event E, engine *Engine[S, E]) bool
 
 	// ExecuteTransitionActions executes transition action blocks for the
-	// currently-matched transition (W3C SCXML 3.13 -- between exit and entry).
+	// currently-matched transition (§scxml-3.13 -- between exit and entry).
 	ExecuteTransitionActions(engine *Engine[S, E])
 
 	// ================================================================
@@ -156,15 +156,15 @@ type StatePolicy[S comparable, E comparable] interface {
 	NeedsDataModelInit() bool
 
 	// HasInvokeSupport returns whether the document has any static <invoke> children
-	// (W3C SCXML 6.4).
+	// (§scxml-6.4).
 	HasInvokeSupport() bool
 
 	// HasFinalize returns whether the document's children receive parent events
-	// via <finalize> (W3C SCXML 6.5).
+	// via <finalize> (§scxml-6.5).
 	HasFinalize() bool
 
 	// HasAutoforward returns whether the document autoforwards child events to
-	// any invokes (W3C SCXML 6.4.1).
+	// any invokes (§scxml-6.4.1).
 	HasAutoforward() bool
 
 	// HasActiveStates returns whether the policy exposes activeStates_ tracking.
@@ -184,32 +184,32 @@ type StatePolicy[S comparable, E comparable] interface {
 	// implementations, then overrides only what it needs.
 	// ================================================================
 
-	// InitializeDataModel initializes the datamodel via the script engine (W3C SCXML 5.3).
+	// InitializeDataModel initializes the datamodel via the script engine (§scxml-5.3).
 	InitializeDataModel(engine *Engine[S, E])
 
 	// ExecutePendingInvokes executes any pending <invoke> elements deferred during
-	// entry (W3C SCXML 6.4).
+	// entry (§scxml-6.4).
 	ExecutePendingInvokes(engine *Engine[S, E])
 
 	// ExecuteFinalizeForChildEvent executes <finalize> handlers for child events
-	// (W3C SCXML 6.5).
+	// (§scxml-6.5).
 	ExecuteFinalizeForChildEvent(event *EventWithMetadata[E], engine *Engine[S, E])
 
-	// GetActiveStates returns the active states for parallel state machines (W3C SCXML 3.4).
+	// GetActiveStates returns the active states for parallel state machines (§scxml-3.4).
 	GetActiveStates() []S
 
 	// ForwardToAutoforwardChildren forwards external events to autoforward children
-	// (W3C SCXML 6.4.1).
+	// (§scxml-6.4.1).
 	ForwardToAutoforwardChildren(eventName string, metadata EventMetadata, engine *Engine[S, E])
 
-	// TickChildren ticks child state machines (W3C SCXML 6.4).
+	// TickChildren ticks child state machines (§scxml-6.4).
 	TickChildren(engine *Engine[S, E])
 
-	// SetNextEventIsExternal sets the nextEventIsExternal_ flag (W3C SCXML 5.10.1).
+	// SetNextEventIsExternal sets the nextEventIsExternal_ flag (§scxml-5.10.1).
 	SetNextEventIsExternal(value bool)
 
 	// PopulateEventMetadata populates pending event metadata fields from an event's
-	// metadata (W3C SCXML 5.10).
+	// metadata (§scxml-5.10).
 	PopulateEventMetadata(meta *EventMetadata)
 
 	// ClearEventMetadata clears pending event metadata after transition processing.

@@ -42,7 +42,7 @@ from .scheduler import Scheduler
 S = TypeVar("S")
 E = TypeVar("E")
 
-# W3C SCXML C.1 / C.2 — canonical Event I/O Processor URIs surfaced on
+# §scxml-C-1 / C.2 — canonical Event I/O Processor URIs surfaced on
 # `_event.origintype` for events delivered via the corresponding processor.
 # Re-exported from `io_processors`, which needs the same two spellings for the
 # `_ioprocessors` entry names; two copies of a URI is one rename away from two
@@ -59,7 +59,7 @@ class Engine(Generic[S, E]):
 
     def __init__(self, policy: StatePolicy[S, E], script_engine: "IScriptEngine") -> None:
         self._policy = policy
-        # W3C SCXML 5.10 — each engine owns one script-engine session.
+        # §scxml-5.10 — each engine owns one script-engine session.
         # The id is allocated up front so the policy can reference it
         # immediately (helpers like `_assign` / `_guard` thread it back
         # into the IScriptEngine without an Optional check). The
@@ -90,7 +90,7 @@ class Engine(Generic[S, E]):
         # destruction.
         policy._session_id = self._session_id
         policy._engine_ref = self
-        # W3C SCXML 3.3: active configuration tracked as the ordered list
+        # §scxml-3.3: active configuration tracked as the ordered list
         # of currently-active leaf states. For non-parallel machines this
         # list has at most one entry. For machines containing
         # `<parallel>`, every region contributes its own leaf so the list
@@ -102,43 +102,43 @@ class Engine(Generic[S, E]):
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         self._is_running: bool = False
         self._reached_final: bool = False
-        # W3C SCXML 3.7 — set of `<parallel>` states for which a
+        # §scxml-3.7 — set of `<parallel>` states for which a
         # `done.state.<id>` event has already been raised this run, so a
         # second region reaching `<final>` does not re-fire it.
         self._fired_done_state: Set[S] = set()
-        # W3C SCXML 3.11 — per-history-id snapshot of the active
+        # §scxml-3.11 — per-history-id snapshot of the active
         # configuration taken when the owning compound exits. Keyed by
         # the history element's string id so the engine can replay it on
         # the next entry through that history state without needing a
         # State enum member for the history element itself.
         self._history: Dict[str, List[S]] = {}
-        # W3C SCXML 6.2 — delayed-event scheduler + virtual clock.
+        # §scxml-6.2 — delayed-event scheduler + virtual clock.
         # Callers advance time via `advance_time(ms)`; the scheduler is
         # pull-based so the engine remains single-threaded.
         self._scheduler: Scheduler[E] = Scheduler()
         self._now_ms: int = 0
         # Auto-generated sendid counter for `<send>` actions without an
-        # explicit `id` attribute (W3C SCXML 6.2 — implementations may
+        # explicit `id` attribute (§scxml-6.2 — implementations may
         # generate any unique id; we use a deterministic counter so
         # traces remain reproducible).
         self._auto_send_seq: int = 0
-        # W3C SCXML 5.3 — states whose local `<datamodel>` has already
+        # §scxml-5.3 — states whose local `<datamodel>` has already
         # been initialised. Only consulted under `binding="late"`; under
         # the default early binding the policy initialises every state's
         # data up front and this set stays empty.
         self._initialized_states_data: Set[S] = set()
-        # W3C SCXML 6.4 — pending `<invoke>` queue: filled at onentry by
+        # §scxml-6.4 — pending `<invoke>` queue: filled at onentry by
         # `_policy.defer_invokes_on_entry`, drained after the current
         # macrostep settles by `_start_pending_invokes`. Defer-execute
         # is the spec-mandated ordering (entry actions of a compound
         # observe a stable configuration BEFORE any child runs).
         self._pending_invokes: List[PendingInvoke] = []
-        # W3C SCXML 6.4 — active invoke instances keyed on `invoke_id`.
+        # §scxml-6.4 — active invoke instances keyed on `invoke_id`.
         # Populated by `_policy.execute_pending_invokes`; the engine
         # drives lifecycle (tick + drain + cancel) but never instantiates
         # the concrete `Invoke` itself.
         self._active_invokes: Dict[str, Invoke[E]] = {}
-        # W3C SCXML 6.4 — per-invoke "done.invoke.<id> already raised"
+        # §scxml-6.4 — per-invoke "done.invoke.<id> already raised"
         # flag. Persistent across `_drive_active_children` calls so the
         # event is raised exactly once even when the child becomes done
         # synchronously during a `forward_event` (parent send to
@@ -148,7 +148,7 @@ class Engine(Generic[S, E]):
         # codegen's `pending_done_invoke_<id>` per-field bool in
         # `tools/codegen/templates/rust/invoke_methods.rs.jinja2`.
         self._done_invoke_emitted: Dict[str, bool] = {}
-        # W3C SCXML C.2 — BasicHTTP Event I/O Processor dispatcher. The
+        # §scxml-C-2 — BasicHTTP Event I/O Processor dispatcher. The
         # engine never links against an HTTP library; callers register a
         # callback via `set_http_send_callback` that receives an
         # `HttpSendRequest` and returns an optional `HttpSendResponse`.
@@ -157,7 +157,7 @@ class Engine(Generic[S, E]):
         self._http_send_callback: Optional[
             Callable[[HttpSendRequest], Optional[HttpSendResponse]]
         ] = None
-        # W3C SCXML 5.5 + 6.3.1 — donedata stashed when a top-level
+        # §scxml-5.5 + 6.3.1 — donedata stashed when a top-level
         # `<final>` is entered. The invoking parent's `ScxmlInvoke`
         # reads this via `getattr(child, "done_data", None)` so it can
         # lift the value onto `done.invoke.<id>._event.data`. None when
@@ -184,17 +184,17 @@ class Engine(Generic[S, E]):
             self._policy.machine_name(),
             io_processors.build(self._session_id, self.basic_http_access_uri),
         )
-        # W3C SCXML 5.9.2 — register the `In(state)` predicate against
+        # §scxml-5.9.2 — register the `In(state)` predicate against
         # this engine's active configuration. The Lua engine surfaces
         # `In` as a global function in the session scope.
         self._script_engine.set_state_query_callback(
             self._session_id,
             lambda state_id: self._policy.is_state_active(state_id, self),
         )
-        # W3C SCXML 5.3 early binding: datamodel initialisation runs before
+        # §scxml-5.3 early binding: datamodel initialisation runs before
         # any onentry action fires.
         self._policy.initialize_datamodel(self)
-        # W3C SCXML 3.3: enter the parser-resolved initial leaf by
+        # §scxml-3.3: enter the parser-resolved initial leaf by
         # walking its ancestor chain root-first. At each compound on
         # the path the child on the way to the leaf wins over the
         # compound's default initial child (test388 — root
@@ -217,7 +217,7 @@ class Engine(Generic[S, E]):
 
     def stop(self) -> None:
         self._is_running = False
-        # W3C SCXML 6.4 — engine shutdown cancels every active invoke
+        # §scxml-6.4 — engine shutdown cancels every active invoke
         # so child schedulers stop driving and external resources are
         # released. Mirrors Go's `Engine.Stop` cancelling all children.
         for invoke in list(self._active_invokes.values()):
@@ -306,7 +306,7 @@ class Engine(Generic[S, E]):
             )
         )
 
-    # ── BasicHTTP Event I/O Processor (W3C SCXML C.2) ─────────────
+    # ── BasicHTTP Event I/O Processor (§scxml-C-2) ─────────────
 
     def set_http_send_callback(
         self,
@@ -358,7 +358,7 @@ class Engine(Generic[S, E]):
             sendid=send_id,
         )
 
-    # ── <send> / <cancel> / scheduler API (W3C SCXML 6.2) ─────────
+    # ── <send> / <cancel> / scheduler API (§scxml-6.2) ─────────
 
     def send_external_by_name(
         self,
@@ -483,7 +483,7 @@ class Engine(Generic[S, E]):
         # its own schedules.
         self._drive_active_children(ms)
         for entry in self._scheduler.drain_due(self._now_ms):
-            # W3C SCXML C.1: scheduler drain is the SCXML processor's
+            # §scxml-C-1: scheduler drain is the SCXML processor's
             # delayed-delivery path — origintype mirrors send_external.
             metadata = EventMetadata(
                 send_id=entry.sendid,
@@ -494,7 +494,7 @@ class Engine(Generic[S, E]):
             self._external_queue.append(
                 EventWithMetadata(event=entry.event, metadata=metadata)
             )
-        # W3C SCXML 6.2 — `_drive_active_children` and the scheduler
+        # §scxml-6.2 — `_drive_active_children` and the scheduler
         # drain both append onto `_external_queue`; the parent's
         # macrostep must run whenever either produced an event so the
         # parent observes `done.invoke.<id>` and any child-raised
@@ -547,7 +547,7 @@ class Engine(Generic[S, E]):
             self._process_internal_queue()
             if not self._is_running or self._reached_final:
                 return
-            # W3C SCXML 6.4: invokes for states entered during this macrostep.
+            # §scxml-6.4: invokes for states entered during this macrostep.
             self._start_pending_invokes()
             # §scxml-D-mainEventLoop: invoking may have raised internal error
             # events (and a child that completed during its own initialise may
@@ -581,14 +581,14 @@ class Engine(Generic[S, E]):
         else, so expressing that as the caller is what makes it exact.
         """
         evt = self._external_queue.popleft()
-        # W3C SCXML 6.5 — `<finalize>` runs before transition selection for
+        # §scxml-6.5 — `<finalize>` runs before transition selection for
         # events originating from invoked children, so the finalize body can
         # write child-derived values back into the parent datamodel that
         # subsequent guards then read.
         if evt.metadata.invoke_id:
             self._policy.set_current_event(evt.event, evt.metadata)
             self._policy.execute_finalize_for_child_event(evt, self)
-        # W3C SCXML 6.4.1 — autoforward into every active child marked
+        # §scxml-6.4.1 — autoforward into every active child marked
         # `autoforward="true"`, before transition selection, so the child
         # observes the event in the same iteration the parent does.
         self._route_to_child(evt)
@@ -604,7 +604,7 @@ class Engine(Generic[S, E]):
             self._take_transitions(transitions)
 
     def _dispatch(self, evt: EventWithMetadata[E]) -> None:
-        # W3C SCXML 5.10 — bind `_event` into the datamodel before the
+        # §scxml-5.10 — bind `_event` into the datamodel before the
         # microstep so transition guards and action expressions can
         # read `_event.name`, `_event.data`, etc. Eventless transitions
         # do not update `_event` (handled separately in
@@ -612,7 +612,7 @@ class Engine(Generic[S, E]):
         # `_event` when the processor "selects an event for
         # processing".
         self._policy.set_current_event(evt.event, evt.metadata)
-        # W3C SCXML 6.5 / 6.4.1 — the `<finalize>` and autoforward
+        # §scxml-6.5 / 6.4.1 — the `<finalize>` and autoforward
         # preliminary steps belong to the external dequeue and run in
         # `_process_next_external_event`, which is the only caller that
         # can know the event came off that queue.
@@ -720,7 +720,7 @@ class Engine(Generic[S, E]):
         for t in transitions:
             combined_exit |= self._compute_exit_set(t)
 
-        # W3C SCXML 3.11 — snapshot history for every exiting compound
+        # §scxml-3.11 — snapshot history for every exiting compound
         # BEFORE running onexit actions. The active configuration at this
         # point is still the pre-exit one, which is exactly what shallow /
         # deep history records.
@@ -735,12 +735,12 @@ class Engine(Generic[S, E]):
         )
         for s in exit_list:
             self._policy.execute_exit_actions(s, self)
-            # W3C SCXML 6.4 — cancel any active invokes owned by the
+            # §scxml-6.4 — cancel any active invokes owned by the
             # exiting state (and drop any still-pending ones queued by
             # an earlier macrostep iteration that hadn't started yet).
             # The policy delegate knows which state owns which invoke.
             self._policy.cancel_invokes_for_state(s, self)
-            # W3C SCXML 3.9 (test409): the just-exited state must drop
+            # §scxml-3.9 (test409): the just-exited state must drop
             # out of the active configuration BEFORE the next state's
             # onexit runs, so an outer `<onexit>` reading `In(child)`
             # observes the child as already inactive. Mirrors the per-
@@ -775,7 +775,7 @@ class Engine(Generic[S, E]):
         # iteration in later microsteps.
         self._active_leaves.sort(key=self._policy.get_document_order)
 
-        # W3C SCXML 3.7 — raise `done.state.<parent>` for every parallel
+        # §scxml-3.7 — raise `done.state.<parent>` for every parallel
         # whose regions have all reached `<final>`.
         self._check_done_state_events()
 
@@ -795,7 +795,7 @@ class Engine(Generic[S, E]):
             transition.source if transition.source is not None else target
         )
 
-        # W3C SCXML 3.11 — replay history if available; otherwise the
+        # §scxml-3.11 — replay history if available; otherwise the
         # parser-resolved default target stands. Default-transition
         # actions only run when falling back to the default.
         history_entries: Optional[List[S]] = None
@@ -920,7 +920,7 @@ class Engine(Generic[S, E]):
             self._policy.init_state_datamodel(state, self)
             self._initialized_states_data.add(state)
         self._policy.execute_entry_actions(state, self)
-        # W3C SCXML 6.4 — every `<invoke>` on the entered state defers
+        # §scxml-6.4 — every `<invoke>` on the entered state defers
         # to the engine's pending list. Actual child instantiation
         # happens after the macrostep settles via
         # `_start_pending_invokes` so onentry observes a stable config
@@ -985,7 +985,7 @@ class Engine(Generic[S, E]):
             if not children:
                 self._active_leaves.append(state)
                 return
-            # W3C SCXML 3.3: `initial="s1 s2"` (multi-target initial) pre-
+            # §scxml-3.3: `initial="s1 s2"` (multi-target initial) pre-
             # resolves to a leaf list that may descend through several
             # ancestors. `_enter_target_step` walks the full ancestor
             # chain from the leaf back up to `state`; the parallel
@@ -1017,7 +1017,7 @@ class Engine(Generic[S, E]):
             self._mark_root_final_if_top_level(state)
             return
         if is_parallel:
-            # W3C SCXML 3.4 — enter every region in document order. The
+            # §scxml-3.4 — enter every region in document order. The
             # policy provides regions in declaration-time order (which may
             # be alphabetical for some codegen paths); sort here so the
             # entry trace is deterministic against the source document.
@@ -1038,7 +1038,7 @@ class Engine(Generic[S, E]):
                 # Defensive: well-formed compound has at least one child.
                 self._active_leaves.append(state)
                 return
-            # W3C SCXML 3.3: multi-target initial — walk through ancestors
+            # §scxml-3.3: multi-target initial — walk through ancestors
             # via `_enter_target_step` so the parallel fan-out hits each
             # region's parser-rewritten default (test364). Single-target
             # case naturally degenerates to a one-leg `_enter_state` call.
@@ -1237,7 +1237,7 @@ class Engine(Generic[S, E]):
         name = self._policy.get_event_name(evt.event)
         if not name:
             return
-        # W3C SCXML 6.4 requires an exact copy, so the whole metadata goes
+        # §scxml-6.4 requires an exact copy, so the whole metadata goes
         # with the name — the child must see the same `_event.data`,
         # `_event.origin`, `_event.sendid` and `_event.invokeid` the parent saw.
         self._policy.forward_to_autoforward_children(name, evt.metadata, self)

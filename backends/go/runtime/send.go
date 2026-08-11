@@ -10,19 +10,19 @@ import (
 	"strings"
 )
 
-// W3C SCXML 6.2: Send action helpers (target validation, routing classification,
+// §scxml-6.2: Send action helpers (target validation, routing classification,
 // delay parsing).
 //
 // Ports Rust send helpers from backends/rust/runtime/src/helpers/send.rs.
 
-// IsInvalidTarget checks if target is invalid (starts with '!') (W3C SCXML 6.2).
+// IsInvalidTarget checks if target is invalid (starts with '!') (§scxml-6.2).
 //
 // Ports Rust send::is_invalid_target.
 func IsInvalidTarget(target string) bool {
 	return target != "" && strings.HasPrefix(target, "!")
 }
 
-// IsInternalTarget checks if target uses the internal event queue (W3C SCXML C.1).
+// IsInternalTarget checks if target uses the internal event queue (§scxml-C-1).
 // Target #_internal routes events to the internal queue (high priority).
 //
 // Ports Rust send::is_internal_target.
@@ -30,7 +30,7 @@ func IsInternalTarget(target string) bool {
 	return target == InternalTarget
 }
 
-// IsChildInvokeTarget checks if target is a child invoke session (W3C SCXML 6.4).
+// IsChildInvokeTarget checks if target is a child invoke session (§scxml-6.4).
 // Targets matching #_{invokeid} (but not #_parent, #_internal, or #_scxml_*)
 // are child invoke targets.
 //
@@ -50,7 +50,7 @@ func IsChildInvokeTarget(target string) bool {
 	return true
 }
 
-// ExtractInvokeID extracts invoke ID from a child target (W3C SCXML 6.4).
+// ExtractInvokeID extracts invoke ID from a child target (§scxml-6.4).
 // Given "#_{invokeid}", returns "{invokeid}".
 //
 // Ports Rust send::extract_invoke_id.
@@ -61,14 +61,14 @@ func ExtractInvokeID(target string) string {
 	return target
 }
 
-// IsHTTPTarget checks if target is an HTTP URL (W3C SCXML C.2).
+// IsHTTPTarget checks if target is an HTTP URL (§scxml-C-2).
 //
 // Ports Rust send::is_http_target.
 func IsHTTPTarget(target string) bool {
 	return strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")
 }
 
-// ValidateTarget validates a send target (W3C SCXML 6.2).
+// ValidateTarget validates a send target (§scxml-6.2).
 // Returns nil if valid, or an error if invalid (error.execution should be raised).
 //
 // Ports Rust send::validate_target.
@@ -79,7 +79,7 @@ func ValidateTarget(target string) error {
 	return nil
 }
 
-// IsUnreachableTarget checks if target is unreachable (W3C SCXML C.1).
+// IsUnreachableTarget checks if target is unreachable (§scxml-C-1).
 // Empty or "undefined" targets indicate unreachable sessions, requiring
 // error.communication.
 //
@@ -89,14 +89,14 @@ func IsUnreachableTarget(target string) bool {
 }
 
 // RequiresTargetAttribute checks if send type requires a target attribute
-// (W3C SCXML C.2). BasicHTTP Event I/O Processor requires a target URL.
+// (§scxml-C-2). BasicHTTP Event I/O Processor requires a target URL.
 //
 // Ports Rust send::requires_target_attribute.
 func RequiresTargetAttribute(sendType string) bool {
 	return sendType == BasicHTTPEventProcessorType
 }
 
-// IsSupportedSendType checks if send type is supported (W3C SCXML 6.2).
+// IsSupportedSendType checks if send type is supported (§scxml-6.2).
 // Supported types: SCXML Event Processor (default), BasicHTTP Event Processor.
 //
 // Ports Rust send::is_supported_send_type.
@@ -106,7 +106,7 @@ func IsSupportedSendType(sendType string) bool {
 		sendType == BasicHTTPEventProcessorType
 }
 
-// ValidateBasicHTTPSend validates BasicHTTP send parameters (W3C SCXML C.2).
+// ValidateBasicHTTPSend validates BasicHTTP send parameters (§scxml-C-2).
 // Returns nil if valid, or an error if target is required but missing.
 //
 // Ports Rust send::validate_basic_http_send.
@@ -118,7 +118,7 @@ func ValidateBasicHTTPSend(sendType, target, targetExpr string) error {
 }
 
 // ParseDelayToMs parses a CSS2-style time duration into milliseconds
-// (W3C SCXML 6.2).
+// (§scxml-6.2).
 //
 // Accepts the same surface syntax as the Rust parse_delay_to_ms:
 //   - "1s", "1.5s" -> seconds (converted to ms)

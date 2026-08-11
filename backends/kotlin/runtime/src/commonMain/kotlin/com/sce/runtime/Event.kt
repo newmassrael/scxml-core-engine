@@ -8,7 +8,7 @@ package com.sce.runtime
 /**
  * Marker interface for generated event sealed hierarchies.
  *
- * W3C SCXML 3.12.1: Events use sealed interface hierarchy to represent
+ * §scxml-3.12.1: Events use sealed interface hierarchy to represent
  * dot-separated event names. Prefix matching becomes Kotlin `is` type checks.
  *
  * Usage in generated code:

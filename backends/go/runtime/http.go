@@ -3,7 +3,7 @@
 
 package sce
 
-// HttpSendRequest is the W3C SCXML C.2 HTTP send request payload passed to the
+// HttpSendRequest is the §scxml-C-2 HTTP send request payload passed to the
 // on_http_send callback.
 //
 // Ports Rust HttpSendRequest from backends/rust/runtime/src/http.rs. Matches C++
@@ -15,18 +15,18 @@ type HttpSendRequest struct {
 	// EventName is the event name to encode in the HTTP POST payload.
 	EventName string
 
-	// Content is the raw content body (W3C SCXML C.2: sent as multipart form data).
+	// Content is the raw content body (§scxml-C-2: sent as multipart form data).
 	Content string
 
-	// Params are form parameters (W3C SCXML 6.2 <param> elements).
+	// Params are form parameters (§scxml-6.2 <param> elements).
 	// Multiple values per key are allowed.
 	Params map[string][]string
 
-	// SendID is the send ID for correlation and cancellation (W3C SCXML 6.2.5).
+	// SendID is the send ID for correlation and cancellation (§scxml-6.2.5).
 	SendID string
 }
 
-// HttpSendResponse is the W3C SCXML C.2 HTTP send response returned by the
+// HttpSendResponse is the §scxml-C-2 HTTP send response returned by the
 // on_http_send callback. When non-nil, the engine injects the response event
 // into the external queue, enabling real HTTP round-trips against the shared
 // W3C HTTP test server (standalone_http_server.js).
@@ -34,6 +34,6 @@ type HttpSendResponse struct {
 	// EventName extracted from the HTTP response (e.g., "event1", "HTTP.POST").
 	EventName string
 
-	// EventData from the response (W3C SCXML 5.10.1: _event.data).
+	// EventData from the response (§scxml-5.10.1: _event.data).
 	EventData string
 }

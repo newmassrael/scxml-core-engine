@@ -110,7 +110,7 @@ def _is_undeclared_simple_variable(expr: str, session: "_LuaSession") -> bool:
     return session.runtime.globals()[base] is None
 
 
-# ── ECMAScript builtins (W3C SCXML B.2 semantics over Lua 5.4) ─────
+# ── ECMAScript builtins (§scxml-B-2 semantics over Lua 5.4) ─────
 
 
 def _install_ecmascript_builtins(runtime: Any) -> None:
@@ -452,7 +452,7 @@ class LuaScriptEngine(IScriptEngine):
     def set_variable_as_dom(
         self, session_id: str, name: str, xml_content: str
     ) -> None:
-        # W3C SCXML B.2 — parse `xml_content` and bind the resulting DOM
+        # §scxml-B-2 — parse `xml_content` and bind the resulting DOM
         # root at `name`. The DOM is reachable from Lua expressions via
         # `:getElementsByTagName(tag)` / `:getAttribute(name)` /
         # `:getTagName()` per the ECMAScript data-model contract
@@ -530,7 +530,7 @@ class LuaScriptEngine(IScriptEngine):
             event_table["type"] = args.event_type
         if args.send_id:
             event_table["sendid"] = args.send_id
-        # W3C SCXML 5.10.1 — always set origin/origintype so
+        # §scxml-5.10.1 — always set origin/origintype so
         # `targetexpr="_event.origin"` evaluates to "" (not nil) when
         # origin is unset (test 336).
         event_table["origin"] = args.origin
@@ -629,7 +629,7 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
             return runtime.eval(converted)
         except Exception:
             pass
-    # Path 3 — XML payload (W3C SCXML B.2 ECMAScript data model).
+    # Path 3 — XML payload (§scxml-B-2 ECMAScript data model).
     # `<send><content>XML</content></send>` lands `_event.data` as a
     # DOM-style object exposing `getElementsByTagName` / `getAttribute`
     # (test561). Mirrors the Rust `set_current_event` DOM path —
@@ -643,7 +643,7 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
     return " ".join(event_data.split())
 
 
-# ── XML DOM (W3C SCXML B.2 ECMAScript data model) ─────────────────
+# ── XML DOM (§scxml-B-2 ECMAScript data model) ─────────────────
 
 
 class _DomElement:
