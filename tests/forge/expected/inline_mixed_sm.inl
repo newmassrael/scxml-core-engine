@@ -141,6 +141,14 @@ void executeTransitionActions([[maybe_unused]] Engine& engine) {
 public:
 
 // Helper: Ensure session ID is initialized
+//
+// W3C SCXML C.1: an invoked child adopts the id its parent recorded for
+// it. The parent mints `parentSession.invokeId` and keys `activeInvokes_`
+// on it, so an event from this child arrives at the parent carrying that
+// id as its origin; if the child also minted an address-of-this id for
+// its own script session, the location it publishes in `_ioprocessors`
+// and the origin the parent sees would be two names for one session that
+// can never be compared — which is exactly what C.1 requires of them.
 void ensureSessionId() const {
     if (!sessionId_.has_value()) {
         sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
@@ -331,6 +339,14 @@ void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName
     if (eventName.empty()) return;
     ensureScriptEngine();
     std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
+    // W3C SCXML C.1: `_event.origin` is the address the sending session
+    // published, not its bare session id. The queue carries the id
+    // because `executeFinalizeForChildEvent` keys on it
+    // (`childSession.sessionId == eventWithMeta.origin`), so this
+    // boundary — where the value becomes visible to the document — is
+    // where it becomes an address. Same helper the Interpreter's
+    // boundary calls, so the two engines cannot answer differently.
+    const std::string publishedOrigin = ::SCE::IOProcessorHelper::publishedOrigin(origin);
     AOT_DEBUG("AOT setCurrentEventInScriptEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
               eventName, eventData, actualType, sendId, origin, originType, invokeId);
     // W3C SCXML 5.5: Use Event object when typed data available (engine-agnostic ScriptValue pipeline)
@@ -338,7 +354,7 @@ void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName
         auto event = std::make_shared<::SCE::Event>(eventName, actualType);
         event->setData(eventData);
         event->setSendId(sendId);
-        event->setOrigin(origin);
+        event->setOrigin(publishedOrigin);
         event->setOriginType(originType);
         event->setInvokeId(invokeId);
         event->setTypedData(typedData.value());
@@ -347,7 +363,7 @@ void setCurrentEventInScriptEngine([[maybe_unused]] const std::string& eventName
         // W3C SCXML 5.10: String-based path (standard)
         getScriptEngine()
             .setCurrentEvent(sessionId_.value(),
-                             ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, origin,
+                             ::SCE::SetCurrentEventArgs{eventName, eventData, actualType, sendId, publishedOrigin,
                                                         originType, invokeId})
             .get();
     }
