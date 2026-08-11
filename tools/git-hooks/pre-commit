@@ -18,6 +18,10 @@
 #   2. commit-audit backstop                 — re-runs .claude/hooks/
 #                                              commit_audit.sh at the git
 #                                              layer (see below)
+#   3. staged citation existence             — the hallucination half of the
+#                                              `ledger-citations` gate, scoped
+#                                              to the staged content (see
+#                                              below)
 #
 # Why this stage exists (2026-06-03, rescoped 2026-08-10):
 # commit_audit.sh started as a Claude Code *PreToolUse* hook, which the
@@ -61,7 +65,7 @@ fail_step() { printf '\nERROR pre-commit: %s FAILED — commit aborted.\n  Run `
 # past the hook because no previous stage exercised rustfmt; running
 # at commit time means fmt-only fix-up commits never land in local
 # history.
-log_step "Stage 0/2 — cargo fmt --all -- --check (mirrors CI fmt gate)"
+log_step "Stage 0/3 — cargo fmt --all -- --check (mirrors CI fmt gate)"
 cargo fmt --all -- --check \
     || fail_step "Stage 0 (cargo fmt --all --check)"
 
@@ -73,7 +77,7 @@ cargo fmt --all -- --check \
 # single source of truth). Skipped with a diagnostic when clang-format
 # is not installed; the CI gate stays the authoritative enforcement
 # point, matching the rustfmt doctrine above.
-log_step "Stage 1/2 — clang-format --dry-run on staged C/C++ files"
+log_step "Stage 1/3 — clang-format --dry-run on staged C/C++ files"
 mapfile -t staged_cxx < <(git diff --cached --name-only --diff-filter=ACMR \
     -- '*.c' '*.cc' '*.cpp' '*.h' '*.hpp')
 if [[ ${#staged_cxx[@]} -eq 0 ]]; then
@@ -94,7 +98,7 @@ fi
 # duplication. The synthesized payload carries a bare `git commit`
 # command (no -m), so message-based checks self-skip while the
 # diff/state gates run against the real staged index.
-log_step "Stage 2/2 — staged-diff gates (.claude/hooks/commit_audit.sh)"
+log_step "Stage 2/3 — staged-diff gates (.claude/hooks/commit_audit.sh)"
 AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"
 if [[ -x "$AUDIT_HOOK" ]]; then
     AUDIT_PAYLOAD="$(REPO_ROOT="$REPO_ROOT" python3 -c \
@@ -105,6 +109,32 @@ if [[ -x "$AUDIT_HOOK" ]]; then
     fi
 else
     printf 'pre-commit: commit-audit hook not found at %s — backstop skipped.\n' "$AUDIT_HOOK" >&2
+fi
+
+# ── Stage 3: staged citation existence ────────────────────────────
+# The hallucination half of the `ledger-citations` gate, run over the
+# staged content instead of the whole tree.
+#
+# The full gate lives at push and costs ~124s, of which ~107s is the
+# validator's whole-tree symbol resolution — which cannot be scoped to
+# a diff, so the binding axes stay there. Existence can: whether a cited
+# section exists is decidable from the staged file alone, and it is the
+# class this repo has produced twice. Both times the report arrived at
+# push, naming a batch rather than a commit: thirteen cites over four
+# commits (2026-08-10) and a fabricated `§synth-F4` a whole round after
+# the commit that wrote it (2026-08-11).
+#
+# The gate script owns the scope, so commit time and push time cannot
+# come to disagree about which trees are covered.
+log_step "Stage 3/3 — staged citation existence (scripts/gates/ledger-citations.sh --staged)"
+CITE_GATE="$REPO_ROOT/scripts/gates/ledger-citations.sh"
+if [[ -x "$CITE_GATE" ]]; then
+    if ! "$CITE_GATE" --staged; then
+        printf '\nERROR pre-commit: Stage 3 (staged citation existence) FAILED — commit aborted.\n  Resolve each citation against the ledger, then correct the number.\n  Do NOT migrate a bad number to §-form to silence it.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
+        exit 1
+    fi
+else
+    printf 'pre-commit: citation gate not found at %s — stage skipped.\n' "$CITE_GATE" >&2
 fi
 
 printf '\npre-commit: all gates passed — commit allowed.\n' >&2
