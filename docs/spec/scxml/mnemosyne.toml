@@ -130,9 +130,20 @@ paths = [
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously.
 #
-# Measured, not assumed: no hand-authored §scxml- citation lives in an excluded
-# tree. The trees below are other backends' runtimes, generated output, and test
-# trees. `paths` also drives the citation-FORM gate, so a tree enters this ledger
+# The trees below are other backends' runtimes, generated output, and test
+# trees. They DO carry hand-authored §scxml- cites — 62 of them across 36 files
+# when this was last measured — and an earlier version of this comment claimed
+# the opposite. What excluding them costs is precise: the existence axis still
+# reads every one of those cites (it scans the whole tree), so a §id naming no
+# section still fails; what is given up is the BINDING axis, which would check
+# that each cite sits on the symbol the ledger says implements the clause.
+#
+# The same trade is forced on three backend runtimes that are not even listed
+# here, because the R783 coverage axiom is Rust-only and cannot ask about them:
+# Go, Kotlin and Python have no symbol resolver upstream. That set is pinned by
+# `sce-build/tests/ledger_symbol_axis_reach.rs` so it shrinks deliberately.
+#
+# `paths` also drives the citation-FORM gate, so a tree enters this ledger
 # only once its prose cites are migrated — which is why the no_std runtime moved
 # from this list into `paths` above rather than staying declared out.
 scan_exclusions = [

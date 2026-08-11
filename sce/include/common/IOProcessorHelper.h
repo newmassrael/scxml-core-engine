@@ -127,6 +127,10 @@ public:
      * @return Address to publish as `_event.origin`, empty for empty input
      */
     static std::string publishedOrigin(const std::string &originSessionId) {
+        // §scxml-C-1: the 'origin' of the event raised in the receiving
+        // session must match the 'location' the sending session published
+        // in its `_ioprocessors` entry. This is where the id both engines
+        // carry internally becomes that location.
         if (originSessionId.empty()) {
             return "";
         }
