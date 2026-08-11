@@ -74,7 +74,7 @@ from pathlib import Path
 # wrong order, not a wrong comment. The value that motivated all of this
 # was `ledger-citations`: the hook's prose called it "sub-second per
 # workspace" and it sat last of seventeen, while a measurement puts the
-# whole gate at 145s — still nowhere near last, and the prose was
+# whole gate at 157s — still nowhere near last, and the prose was
 # describing one step of it.
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
@@ -86,7 +86,7 @@ GATES: dict[str, dict] = {
                         "(`debug_only_codegen_builds_drop_the_stale_release_binary` "
                         "counts those steps), so there is no verdict here "
                         "for a workflow to mirror.",
-        "cost_s": 1,
+        "cost_s": 0,
         "summary": "build target/debug/sce-codegen",
     },
     # Structural check over the Rust module tree — only a .rs add/remove can
@@ -125,20 +125,20 @@ GATES: dict[str, dict] = {
     "tree-hygiene": {
         "workflows": ["tree-hygiene.yml"],
         "runner_workflow": True,
-        "cost_s": 2,
+        "cost_s": 14,
         "summary": "tree-wide marker + trigger + parity gates",
     },
     "clippy": {
         "workflows": ["clippy-check.yml"],
         "runner_workflow": True,
-        "cost_s": 0,
+        "cost_s": 1,
         "summary": "cargo clippy --workspace --all-targets",
     },
     "nostd-mcu": {
         "workflows": ["sce-rust-runtime-no-std.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 1,
+        "cost_s": 5,
         "summary": "no_std MCU build + clippy + probes",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
@@ -149,7 +149,7 @@ GATES: dict[str, dict] = {
     "rustdoc-links": {
         "workflows": ["doc-check.yml"],
         "runner_workflow": True,
-        "cost_s": 4,
+        "cost_s": 2,
         "summary": "cargo doc broken intra-doc links, both profiles",
     },
     "embed-vendor": {
@@ -163,7 +163,7 @@ GATES: dict[str, dict] = {
         # The most expensive gate in the set: three scratch-directory builds,
         # one of which packages embed/ from scratch and builds a consumer
         # against it.
-        "cost_s": 399,
+        "cost_s": 408,
         "summary": "embed manifest drift + payload lag + consumer smoke",
     },
     # Mirrors the Rust workspace suite only. `w3c-tests.yml` is deliberately
@@ -184,7 +184,7 @@ GATES: dict[str, dict] = {
         # it.
         "runner_workflow": True,
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
-        "cost_s": 138,
+        "cost_s": 196,
         "summary": "cargo test --workspace --features cli",
     },
     # The one reader of the axis both drift hashes miss. `source-hash` and
@@ -198,7 +198,7 @@ GATES: dict[str, dict] = {
         "workflows": ["regen-reproduces.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 45,
+        "cost_s": 60,
         "summary": "regeneration reproduces every committed tree",
     },
     "drift-suites": {
@@ -219,7 +219,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        "cost_s": 11,
+        "cost_s": 13,
         "summary": "Go forge conformance regenerate + test",
     },
     "forge-rust": {
@@ -235,7 +235,7 @@ GATES: dict[str, dict] = {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/python/**"],
-        "cost_s": 11,
+        "cost_s": 12,
         "summary": "Python forge conformance (numerical)",
     },
     "forge-cpp": {
@@ -251,7 +251,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/cpp/**", "sce/**"],
         "deps": ["codegen-build"],
-        "cost_s": 22,
+        "cost_s": 17,
         "summary": "C++ forge conformance build + test",
     },
     # Catches codegen breakage in the example documents (the namespace
@@ -278,10 +278,14 @@ GATES: dict[str, dict] = {
     "ledger-citations": {
         "workflows": ["spec-citations.yml"],
         "runner_workflow": True,
-        # The mnemosyne validators are the sub-second part the hook's prose
-        # described; the ledger-existence sweep over five source trees that
-        # follows them is the rest of the 145s.
-        "cost_s": 145,
+        # Where the time goes, measured 2026-08-11 rather than assumed — the
+        # earlier note here had it backwards. Running this gate alone takes
+        # 110s, of which `validate-code-refs` is 108.9s (synth 82.1 + mesh 12.5
+        # + scxml 11.5 + wire 1.5 + bytesguard 1.2). The other three validators
+        # are 4.2s across all five workspaces and the whole-tree existence sweep
+        # is 4.4s over 6341 files. `cost_s` stays at the `--measure --all`
+        # figure, which is what the runner compares against.
+        "cost_s": 157,
         "summary": "spec-citation ledgers, 5 workspaces",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
@@ -290,7 +294,7 @@ GATES: dict[str, dict] = {
     "spec-snapshot": {
         "workflows": ["spec-snapshot-drift.yml"],
         "runner_workflow": True,
-        "cost_s": 1,
+        "cost_s": 3,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
 }
