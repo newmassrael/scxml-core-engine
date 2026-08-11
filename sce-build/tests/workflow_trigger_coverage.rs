@@ -355,7 +355,14 @@ fn the_registry_lists_every_gate_whose_inputs_outgrow_a_filter() {
 }
 
 /// Lower bound on the debug-only build steps this gate must observe.
-const MIN_CODEGEN_BUILD_STEPS: usize = 12;
+///
+/// Moves down when a lane stops spelling the build out — the no_std lane
+/// now calls `scripts/gate nostd-mcu`, which reaches the binary through
+/// `sce_codegen_require`. That helper drops the stale release binary
+/// itself, so the property this test protects survives the delegation
+/// rather than leaking out of view with the step. The floor guards the
+/// scan, not the count: it fails when the walk stops finding workflows.
+const MIN_CODEGEN_BUILD_STEPS: usize = 11;
 
 /// A step that builds only the debug binary must first delete the
 /// release one the cache may have restored.
@@ -378,6 +385,32 @@ const MIN_CODEGEN_BUILD_STEPS: usize = 12;
 /// `codegen_binary_resolution.rs` keeps out of every file but the four
 /// locators, so a workflow spelling it out would satisfy this gate by
 /// breaking that one.
+/// The helper every delegating caller reaches the binary through drops
+/// the stale release too.
+///
+/// Without this the workflow-side check above could be satisfied by
+/// deleting the build step rather than by making it safe: a lane that
+/// delegates has no `cargo build --bin sce-codegen` line for the scan to
+/// find, and the risk moves into `sce_codegen_require` unobserved. That
+/// is what happened when the no_std lane converted.
+#[test]
+fn the_codegen_helper_drops_the_stale_release_before_building() {
+    let helper = fs::read_to_string(repo_root().join("scripts/lib/sce_codegen.sh"))
+        .expect("scripts/lib/sce_codegen.sh is readable");
+    let build = helper
+        .find("cargo build --bin sce-codegen")
+        .expect("the helper builds the binary when no profile holds one");
+    let drop = helper
+        .find("sce_codegen_drop_stale_release \"$root\"")
+        .expect("the helper drops the stale release binary");
+    assert!(
+        drop < build,
+        "`sce_codegen_require` must drop the stale release binary BEFORE it \
+         builds the debug one, or a restored cache decides which binary a \
+         delegating caller runs"
+    );
+}
+
 #[test]
 fn debug_only_codegen_builds_drop_the_stale_release_binary() {
     const BUILD: &str = "cargo build --bin sce-codegen";
