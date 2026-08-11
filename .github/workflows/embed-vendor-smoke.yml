@@ -110,30 +110,26 @@ jobs:
       run: |
         echo "${{ github.workspace }}/target/release" >> "$GITHUB_PATH"
 
-    - name: Verify embed manifest (public-header drift guard)
-      # Must run before smoke regenerates embed/ — verify_embed_manifest.sh
-      # diffs the checked-in MANIFEST.json against a fresh emit.
-      run: ./scripts/verify_embed_manifest.sh
-
-    - name: Verify embed payload (sce ↔ embed lag guard)
-      # Closes the upstream half: re-runs package_embed.sh end-to-end
-      # against the current sce/ source and compares the freshly
-      # emitted MANIFEST.json (filtering label-only fields
-      # embed_version + clang_version) against the committed copy.
-      # verify_embed_manifest.sh above only catches embed-internal
-      # self-consistency; this step catches drift introduced by a
-      # sce/ change that altered the public-header API surface
-      # without an accompanying chore: Regenerate commit. Cost ~7
-      # min on the runner; absorbs into the already-7-min manifest
-      # emit budget the workflow pays.
-      run: ./scripts/verify_embed_payload.sh
-
-    - name: Run embed consumer smoke build
-      # Regenerates embed/ in a scratch dir, checks SSOT-listed assets
-      # physically landed, then configures + builds a minimal consumer
-      # end-to-end. Catches drift between sce_codegen_assets.cmake and
-      # scripts/package_embed.sh that unit tests wouldn't see.
-      run: ./scripts/smoke_embed_consumer.sh
+    # Delegates to the gate runner rather than restating the three
+    # verification scripts, which the gate already runs in this order:
+    #
+    #   verify_embed_manifest.sh  — diffs the checked-in MANIFEST.json
+    #     against a fresh emit. Runs first because the smoke step below
+    #     regenerates embed/.
+    #   verify_embed_payload.sh   — re-runs package_embed.sh end to end
+    #     against the current sce/ and compares the emitted manifest
+    #     (minus the label-only embed_version + clang_version) to the
+    #     committed copy, catching a sce/ change that moved the public
+    #     header surface without a regeneration commit.
+    #   smoke_embed_consumer.sh   — regenerates embed/ in a scratch dir,
+    #     checks the SSOT-listed assets landed, then configures and
+    #     builds a minimal consumer.
+    #
+    # This job kept its own copy on the grounds that it also called a
+    # sibling gate; it does not — `embed-manifest-failfast` runs in the
+    # separate job below, and this one was a plain restatement.
+    - name: Verify embed manifest, payload and consumer smoke
+      run: scripts/gate embed-vendor
 
   # The emitter's fail-fast behaviour, on a synthetic header rather than
   # the real tree. The smoke job above runs the emitter for real, so it

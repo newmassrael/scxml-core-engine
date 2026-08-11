@@ -109,15 +109,30 @@ are described in `forge_phase3_complete.md`; inline-eligible kinds
 (`is_inline_eligible()` → true) may be embedded in a `<data>` element
 of an outer statechart.
 
-**Document name — the file stem, not the `name` attribute.** The
-compiled model's name, which every backend derives its type and file
-names from, is the document's file stem. A `name` attribute on the
-root `<scxml>` element of a forge document is accepted and ignored:
-`enum_hex_values.scxml` declaring `name="opcode"` compiles to
-`EnumHexValues`, and a document with no `name` attribute at all
-compiles the same way. Only the root element's attribute is inert —
-`name` on a child (`<sce:variant name>`, `<sce:flag name>`,
-`<sce:link name>`) names the thing it sits on and is used normally.
+**Document name — the file stem, not the `name` attribute, except for
+`sce:kind="algorithm"`.** The compiled model's name, which every
+backend derives its type and file names from, is the document's file
+stem. A `name` attribute on the root `<scxml>` element of a forge
+document is accepted and ignored: `enum_hex_values.scxml` declaring
+`name="opcode"` compiles to `EnumHexValues`, and a document with no
+`name` attribute at all compiles the same way. Only the root element's
+attribute is inert — `name` on a child (`<sce:variant name>`,
+`<sce:flag name>`, `<sce:link name>`) names the thing it sits on and is
+used normally.
+
+`sce:kind="algorithm"` is the one exception, because its artifact is a
+function rather than a type: the root `name` names the emitted
+function, and the file stem does not appear in the output at all.
+`algorithm_bytes_equal.scxml` declaring `name="bytes_equal"` emits
+`bytes_equal.rs` with `pub fn bytes_equal`, the C11 symbol
+`bytes_equal`, and the C++ namespace `SCE::Generated::BytesEqual` —
+which is what a cross-document caller resolves against, so the name is
+load-bearing rather than decorative there. The rule as stated above
+carried no exception until the corpus was measured against it:
+`the_identity_rule_holds_for_every_kind_the_corpus_declares` now
+generates every committed document whose root `name` disagrees with its
+stem and checks which one the artifact takes, so a kind cannot leave
+the rule silently.
 
 The grammar admits the attribute (`name` is optional on the root) and
 many in-tree documents carry one, so this is stated rather than

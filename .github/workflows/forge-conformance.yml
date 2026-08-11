@@ -412,17 +412,17 @@ jobs:
     - name: Make sce-codegen Executable
       run: chmod +x target/debug/sce-codegen
 
-    - name: Configure and Build C++ Conformance
-      run: |
-        cmake -S backends/cpp/forge-runtime/tests/conformance \
-              -B build_forge_conformance \
-              -G Ninja \
-              -DCMAKE_BUILD_TYPE=RelWithDebInfo
-        cmake --build build_forge_conformance --parallel $(nproc)
-
+    # Delegates to the gate runner rather than restating configure, build
+    # and ctest. The gate carries this job's build type (RelWithDebInfo)
+    # and uses Ninja when it is installed, which it is here — the reason
+    # this lane kept its own copy was that the gate built something else,
+    # so a local pass said nothing about this job.
+    #
+    # `tee` keeps the log the summary and the artifact upload below read.
     - name: Run C++ Conformance Harness
       run: |
-        ctest --test-dir build_forge_conformance --output-on-failure 2>&1 | tee cpp_conformance.log
+        set -o pipefail
+        scripts/gate forge-cpp 2>&1 | tee cpp_conformance.log
 
     - name: Summarize
       if: always()
