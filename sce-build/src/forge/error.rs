@@ -445,10 +445,21 @@ pub enum ValidationError {
         alternatives: Vec<String>,
     },
 
-    /// A forge document was routed to the wrong pipeline.
-    /// e.g. statechart kind sent to the forge pipeline, or imported as forge
-    #[error("{kind} kind cannot be processed by the forge pipeline")]
-    WrongPipeline { kind: ForgeKind },
+    /// A document reached a pipeline that cannot process its `sce:kind`.
+    ///
+    /// Both directions are real and they are not symmetric in the
+    /// message: a statechart handed to the forge pipeline and a forge
+    /// kind handed to the SCXML pipeline are different repairs. The
+    /// refusing pipeline is therefore carried rather than implied — the
+    /// message named "the forge pipeline" unconditionally while only
+    /// one caller could produce it, so the other direction had no way
+    /// to say what it was.
+    #[error("{kind} kind cannot be processed by the {pipeline} pipeline")]
+    WrongPipeline {
+        kind: ForgeKind,
+        /// The pipeline that refused the document, not the one it belongs to.
+        pipeline: crate::Pipeline,
+    },
 
     /// Statechart uses features the static AOT generator cannot
     /// express (`<invoke srcexpr=...>`, missing initial state,
