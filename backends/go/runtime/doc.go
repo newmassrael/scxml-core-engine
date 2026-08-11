@@ -6,10 +6,10 @@
 //
 //   - StatePolicy: the interface contract that generated state machine code implements
 //   - Engine: the execution engine parameterized on a StatePolicy via Go generics
-//   - EventMetadata, EventWithMetadata: W3C SCXML 5.10 event wrappers
-//   - HttpSendRequest: W3C SCXML C.2 BasicHTTP event processor support
+//   - EventMetadata, EventWithMetadata: §scxml-5.10 event wrappers
+//   - HttpSendRequest: §scxml-C-2 BasicHTTP event processor support
 //   - Hierarchy helpers: LCA, entry/exit chains, event matching
-//   - PullScheduler: delayed event scheduling (W3C SCXML 6.2)
+//   - PullScheduler: delayed event scheduling (§scxml-6.2)
 //
 // This package is a 1:1 port of the Rust runtime at sce-rust-runtime/. Method
 // names, field layouts, and semantics match the Rust (and C++) source. When the

@@ -6,7 +6,7 @@ package sce
 // EventQueueManager is a FIFO queue for SCXML events with metadata.
 //
 // Ports Rust EventQueueManager<T> from backends/rust/runtime/src/helpers/event_queue.rs.
-// W3C SCXML C.1: internal events are processed exhaustively before any external
+// §scxml-C-1: internal events are processed exhaustively before any external
 // event. The engine's macrostep loop drains the internal queue first, then
 // processes one external event, then re-drains the internal queue.
 type EventQueueManager[T any] struct {
@@ -20,7 +20,7 @@ func NewEventQueueManager[T any]() *EventQueueManager[T] {
 	}
 }
 
-// Raise enqueues an event at the back of the FIFO queue (W3C SCXML 3.12.1).
+// Raise enqueues an event at the back of the FIFO queue (§scxml-3.12.1).
 //
 // Matches Rust raise(&mut self, event: T).
 func (q *EventQueueManager[T]) Raise(event T) {
