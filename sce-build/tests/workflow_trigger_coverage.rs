@@ -57,6 +57,10 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "scope_terminology",
     "sourced_scripts_are_tracked",
     "sourcemap_symbol_markers",
+    // Reads every workflow to check that a test-running step can fail its
+    // job. A `paths:` filter on `.github/workflows/**` would cover its
+    // inputs today and stop covering them the moment a workflow moves.
+    "test_result_gating",
     "workflow_trigger_coverage",
 ];
 
