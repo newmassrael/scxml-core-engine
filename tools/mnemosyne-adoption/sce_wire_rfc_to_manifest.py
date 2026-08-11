@@ -10,7 +10,7 @@ manifest for the SCE design ledger's `wire` namespace workspace
 The Wire RFC (docs/sce-ledger/wire/rfc-sce-diagnostic-wire-unification.md) is an SCE design
 document whose §3 "Milestone roadmap" defines a commit-series of waves W0..W5
 (plus the half-wave W4.5). SCE code comments cite those waves as §W<n>
-("RFC §W4", "§W5 D5"); this ledger makes the §wire-W<n> form resolve so the
+("RFC §W4", "§W5 D5"); this ledger makes the `§wire-W<n>` form resolve so the
 set_equality_validator can gate the parsing/runtime modules that carry them.
 
 Unlike the mesh converter (numbered `## N.` headings), the wire waves are

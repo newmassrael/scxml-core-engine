@@ -220,7 +220,7 @@ class IScriptEngine(ABC):
     """Script engine contract — 1:1 port of C++ `IScriptEngine.h` and
     `sce_rust_runtime::IScriptEngine`. Implementations (`LuaScriptEngine`
     in `lua_engine.py`, future QuickJS-backed) provide ECMAScript
-    evaluation for the W3C SCXML B.3 datamodel. Generated `*_sm.py`
+    evaluation for the W3C SCXML B.2 datamodel. Generated `*_sm.py`
     modules invoke this through `ScriptEngineProvider.get()` — there is
     no runtime DI."""
 
