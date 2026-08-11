@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
+# Mirrors: tree-hygiene.yml
+#
 # Tree-wide hygiene gates (mirror of tree-hygiene.yml).
 #
 # Four gates whose inputs are wider than any `paths:` list.
