@@ -82,6 +82,10 @@ pub fn session_id_from_scxml_location(uri: &str) -> String {
 /// already carries a scheme is therefore passed through — it is already an
 /// address.
 pub fn published_origin(origin_session_id: &str) -> String {
+    // §scxml-C-1: the 'origin' of the event raised in the receiving session
+    // must match the 'location' the sending session published in its
+    // `_ioprocessors` entry. This is where the id the engine carries
+    // internally becomes that location.
     if origin_session_id.is_empty() {
         return String::new();
     }
