@@ -60,11 +60,13 @@ sce_citation_binary() {
     root="${HOME}/.local/share/mnemosyne-rev/${short}"
     bin="${MNEMOSYNE_BIN:-${root}/bin/mnemosyne-cli}"
     hint="cargo install --git https://github.com/newmassrael/mnemosyne --rev ${rev} --locked --root ${root} mnemosyne-cli"
+    # Both of these are the gate's own tooling, not the tree it judges, so they
+    # exit 3 rather than 1 — see `sce_gate_cannot_run`.
     [[ -x "$bin" ]] \
-        || sce_gate_fail "no rev-pinned mnemosyne-cli at ${bin} — install it with: ${hint}"
+        || sce_gate_cannot_run "no rev-pinned mnemosyne-cli at ${bin} — install it with: ${hint}"
     have="$("$bin" --version 2>&1 || true)"
     [[ "$have" == *"$short"* ]] \
-        || sce_gate_fail "${bin} reports '${have}', expected revision ${short} — reinstall with: ${hint}"
+        || sce_gate_cannot_run "${bin} reports '${have}', expected revision ${short} — reinstall with: ${hint}"
     printf '%s' "$bin"
 }
 

@@ -679,6 +679,32 @@ fn run_staged_gate_with_binary(dir: &Path, bin: &Path) -> std::process::Output {
         .expect("run the staged citation gate")
 }
 
+/// Exit status 3 is `sce_gate_cannot_run`: the gate's own tooling is missing,
+/// so it measured nothing about the tree.
+///
+/// Every "the gate accepts a real citation" assertion below has to tell that
+/// apart from a rejection, because the two look identical through
+/// `status.success()` and only one of them is about the author. On a machine
+/// without the rev-pinned `mnemosyne-cli` this file used to report "the staged
+/// gate rejected a real citation" — a verdict about the fixture for a fault in
+/// the checker's own inputs.
+fn assert_the_gate_accepted(out: &std::process::Output, what: &str) {
+    if out.status.code() == Some(3) {
+        // `what` describes the rejection this assertion is here to catch, so
+        // it must not be printed on this branch: there was no rejection to
+        // describe. Prefixing it produced "the staged gate rejected a real
+        // citation: the gate could not run", which contradicts itself in one
+        // line and puts the blaming half first.
+        panic!(
+            "the gate could not run — its own tooling is missing, so this \
+             says nothing about the citation or the tree. Install the \
+             rev-pinned binary the message below names, then re-run:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+    assert!(out.status.success(), "{what}: {out:?}");
+}
+
 /// The verdict the gate must not reach when it did not measure it: that the
 /// author's staged text carries a citation nothing binds.
 fn asserts_the_author_is_at_fault(stderr: &str) -> bool {
@@ -716,10 +742,7 @@ fn the_commit_stage_rejects_a_fabricated_citation_in_staged_content() {
     let dir = tempfile::tempdir().expect("tempdir");
     staged_citation_fixture(dir.path(), "// probe: §synth-5-B is a section\n");
     let good = run_staged_gate(dir.path());
-    assert!(
-        good.status.success(),
-        "the staged gate rejected a real citation: {good:?}"
-    );
+    assert_the_gate_accepted(&good, "the staged gate rejected a real citation");
 }
 
 #[test]
@@ -765,6 +788,20 @@ fn the_staged_binding_half_blames_the_tool_when_the_tool_is_what_is_missing() {
         !asserts_the_author_is_at_fault(&err),
         "the gate blamed the author's citations for its own missing \
          validator: {err}"
+    );
+    // Prose is what a human reads; the exit status is what every other caller
+    // reads, and until this was distinct the two disagreed. The gate said "no
+    // rev-pinned mnemosyne-cli at ..." and exited 1, so `assert_the_gate_
+    // accepted` above — and `scripts/gate`, and CI — all saw the same status a
+    // genuinely bad citation produces. Two tests in this very file then
+    // reported the build machine's missing tool as "the staged gate rejected a
+    // real citation".
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a gate whose own tooling is missing must exit 3 (`sce_gate_cannot_run`), \
+         not 1: exit 1 is the status that says the tree is at fault, and a \
+         caller cannot tell the two apart from prose alone: {out:?}"
     );
 }
 
@@ -1028,8 +1065,5 @@ fn the_staged_stage_scope_is_not_bounded_by_path_or_extension() {
     let good_files: Vec<(&str, &str)> = PATHS.iter().map(|p| (*p, real)).collect();
     staged_citation_fixture_files(dir.path(), &good_files);
     let good = run_staged_gate(dir.path());
-    assert!(
-        good.status.success(),
-        "the staged gate rejected a real citation: {good:?}"
-    );
+    assert_the_gate_accepted(&good, "the staged gate rejected a real citation");
 }
