@@ -178,6 +178,49 @@ fn both_ctest_gates_resolve_the_build_directory_through_one_helper() {
     }
 }
 
+/// The shared resolver survives a build tree that does not exist yet.
+///
+/// A fresh checkout has no `build/`, and that is the normal first run of any
+/// lane that does not restore a CMake cache. Measured 2026-08-12 on the first
+/// CI run of the cpp-suite lane: the gate died in 0.04s with no reason given,
+/// because reading the absent `CMakeCache.txt` for its generator returned a
+/// non-zero status through the assignment and `set -e` ended the script before
+/// any `sce_gate_fail` could say so. A gate that fails without a reason is
+/// worse than one that fails loudly, so this exercises the helper rather than
+/// reading it: cmake and the step printer are stubbed, so the configure branch
+/// is reached without a build actually running.
+#[test]
+fn the_build_dir_resolver_survives_a_tree_that_does_not_exist_yet() {
+    let root = repo_root();
+    let probe = format!(
+        "set -euo pipefail\n\
+         SCE_GATE_SLUG=probe\n\
+         source scripts/gates/lib.sh\n\
+         cmake() {{ return 0; }}\n\
+         sce_gate_step() {{ return 0; }}\n\
+         SCE_W3C_BUILD_DIR={}/target/tmp/no-such-build-tree sce_main_build_dir\n\
+         printf 'RESOLVED=%s' \"$SCE_MAIN_BUILD_DIR\"\n",
+        root.display()
+    );
+    let out = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(&probe)
+        .current_dir(&root)
+        .output()
+        .expect("run the resolver probe");
+
+    assert!(
+        out.status.success() && String::from_utf8_lossy(&out.stdout).contains("RESOLVED="),
+        "sce_main_build_dir did not survive a missing build tree — status {:?}\n\
+         stdout: {}\nstderr: {}\n\
+         Every gate that resolves the main tree dies here, and it dies without \
+         printing a reason.",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
 /// Both halves clear the log temporaries their own runs leak.
 ///
 /// ctest renames `Testing/Temporary/LastTest.log.tmpNNNNN` to `LastTest.log`
