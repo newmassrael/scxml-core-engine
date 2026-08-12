@@ -82,6 +82,21 @@ pub enum CliError {
     #[error("No <scxml> tag found in {path}")]
     NoScxmlTag { path: String },
 
+    /// `--suite-package` names what an emitted W3C conformance suite
+    /// calls itself, and there are three ways to name it wrongly: the
+    /// backend emits nothing that spells a suite, the name cannot be
+    /// spelled in the target language, or the run is writing into this
+    /// repository — where the committed build files already fix the
+    /// name, so a rename would leave the emitted sources naming a
+    /// package that does not exist.
+    ///
+    /// One variant rather than three because the repair is the same
+    /// shape in all three — change or drop the flag — and `detail`
+    /// carries which of the three it was. Splitting would put a
+    /// pipeline-stage distinction on what is one option's validation.
+    #[error("--suite-package: {detail}")]
+    InvalidSuitePackage { detail: String },
+
     /// Spec §synth-6.2.6 generated-source drift: the embedded `source-hash`
     /// or `template-hash` in a generated file no longer matches the
     /// recomputed value over the current source + template state.
@@ -260,6 +275,12 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliNoScxmlTag,
                 vec![path.clone()],
                 Some(path.clone()),
+                None,
+            ),
+            CliError::InvalidSuitePackage { detail } => (
+                DiagnosticCode::CliInvalidSuitePackage,
+                vec![detail.clone()],
+                None,
                 None,
             ),
             CliError::VerifySourceHashMismatch {
