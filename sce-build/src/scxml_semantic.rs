@@ -35,14 +35,38 @@ use thiserror::Error;
 ///
 /// Empty when there are none, so the single-gap message reads exactly as
 /// it did before and the common case gains no noise.
+///
+/// The clause reports, it does not warn: a `sce:unhandled` declaration
+/// covers the one child-event pair it names, so repairing this gap
+/// leaves the others standing. Naming them here is what lets an author
+/// repair the compound in one pass instead of one build round per gap.
 fn also_clause(also: &[String]) -> String {
     if also.is_empty() {
         return String::new();
     }
     format!(
-        " — note that the same annotation would also silence {}, \
-         which this compound leaves inconsistent too",
+        " — this compound leaves {} inconsistent too, each needing its \
+         own repair",
         also.iter()
+            .map(|e| format!("'{e}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// The clause that tells an author holding a stale `sce:unhandled`
+/// declaration what the parent's gaps actually are.
+///
+/// Distinguishes "you named the wrong event" from "this state has no
+/// gaps at all", because the repairs differ: the first is a correction,
+/// the second means the declaration itself has outlived its subject.
+fn gaps_clause(gaps: &[String]) -> String {
+    if gaps.is_empty() {
+        return "that state has no inconsistently-handled events at all".to_string();
+    }
+    format!(
+        "the events it does leave inconsistent are {}",
+        gaps.iter()
             .map(|e| format!("'{e}'"))
             .collect::<Vec<_>>()
             .join(", ")
@@ -245,20 +269,27 @@ pub enum ScxmlSemanticError {
     /// that prevails in the W3C IRP suite.
     ///
     /// Author escape hatch when the intent gap is genuine:
-    /// `sce:exhaustive="false"` on the compound parent silences this
-    /// diagnostic for that parent only — which is why `also` exists.
-    /// The escape hatch is all-or-nothing, so an author reaching for
-    /// it is deciding about every gap under that parent, and a
-    /// message naming one of them invites that decision to be made
-    /// on a third of the facts. It happened: of the three opt-outs in
-    /// this tree, one sits on a compound with three gaps and its
-    /// comment reasons about a single event.
+    /// `sce:unhandled="<event>"` on each child the absence is true of.
+    /// The declaration sits on the child rather than the parent
+    /// because that is the grain at which the author's claim is
+    /// actually true — "`berserk` does not handle `combo_timeout`",
+    /// not "this compound is exempt". A parent-level opt-out existed
+    /// once and was withdrawn: it covered every gap under the parent,
+    /// including ones introduced after it was written, so a sibling
+    /// added later inherited an exemption nobody had judged.
+    ///
+    /// `non_handlers` therefore names only the children still lacking
+    /// a declaration, and `also` still reports the parent's other gaps
+    /// — not because one annotation would silence them, but because
+    /// an author repairing this compound wants the whole picture in
+    /// one pass rather than one build round per gap.
     #[error(
         "Compound state '{parent}' has children handling event \
          '{event}' inconsistently — handlers: {handlers:?}, \
          non-handlers: {non_handlers:?}. Add the missing transition, \
-         add a parent-level fallthrough, or annotate the parent with \
-         sce:exhaustive=\"false\" if the gap is intentional{}.",
+         add a parent-level fallthrough, or declare the gap on the \
+         non-handling child with sce:unhandled=\"{event}\" if it is \
+         intentional{}.",
         also_clause(.also)
     )]
     NonExhaustiveEventHandling {
@@ -271,17 +302,77 @@ pub enum ScxmlSemanticError {
         /// Sibling ids that match `event` via direct/prefix/wildcard
         /// matching, in document order.
         handlers: Vec<String>,
-        /// Sibling ids that do not match `event` and lack a
-        /// catch-all, in document order. Author repair lands on one
-        /// of these (add the missing transition, or annotate the
-        /// parent as deliberately non-exhaustive).
+        /// Sibling ids that neither match `event` nor declare it in
+        /// `sce:unhandled`, in document order. Author repair lands on
+        /// one of these — add the missing transition, or declare the
+        /// absence on that child.
         non_handlers: Vec<String>,
         /// The other events under the same parent that are also
         /// inconsistently handled, in the same order the validator
-        /// found them. Empty when `event` is the only gap. Reported
-        /// rather than hidden because the escape hatch covers the
-        /// parent, not the event — see the type doc above.
+        /// found them. Empty when `event` is the only gap. Reported so
+        /// the author repairs the compound in one pass — see the type
+        /// doc above.
         also: Vec<String>,
+    },
+
+    /// A state declares an event in `sce:unhandled` that it does in
+    /// fact handle. The declaration and the transition table
+    /// contradict each other, and the document does not say which one
+    /// the author meant, so neither can be honoured.
+    ///
+    /// Checkable without sibling context, which is why it is separate
+    /// from [`Self::StaleUnhandledDeclaration`]: this one is a local
+    /// contradiction inside a single state, and its repair is to
+    /// delete one of the two halves. Prefix and wildcard matching
+    /// count as handling — a state with `event="foo"` handles
+    /// `foo.bar` under the token-prefix rules, so declaring `foo.bar`
+    /// unhandled there is the same contradiction spelled less
+    /// obviously. The rule itself is implemented and cited in
+    /// `scxml_exhaustiveness::transition_matches_event`; this variant
+    /// only reports what that predicate decided.
+    #[error(
+        "State '{state}' declares sce:unhandled=\"{event}\" but has a \
+         transition that handles '{event}'. Remove the event from \
+         sce:unhandled, or remove the transition — the document \
+         currently asserts both."
+    )]
+    ContradictoryUnhandledDeclaration {
+        /// State id carrying the contradictory declaration.
+        state: String,
+        /// Event named by the declaration that the state handles.
+        event: String,
+    },
+
+    /// A state declares an event in `sce:unhandled` that is not a gap
+    /// under its parent — no sibling handles it, the parent absorbs
+    /// it, the siblings share no common ground, or the state is not a
+    /// child of a compound at all.
+    ///
+    /// Rejected rather than ignored because an exemption that exempts
+    /// nothing is exactly the failure this attribute replaced. Left
+    /// standing it decays into prose: it survives the change that made
+    /// it vacuous, keeps asserting a gap the document no longer has,
+    /// and is read by the next author as a statement of fact. The gap
+    /// set the validator actually computed rides in `gaps` so the
+    /// author can see what the parent does have.
+    #[error(
+        "State '{state}' declares sce:unhandled=\"{event}\" but '{event}' \
+         is not a gap under parent '{parent}' — {}. Remove the event \
+         from sce:unhandled.",
+        gaps_clause(.gaps)
+    )]
+    StaleUnhandledDeclaration {
+        /// State id carrying the stale declaration.
+        state: String,
+        /// Parent compound the declaration was checked against, or
+        /// `(none)` when the state has no compound parent.
+        parent: String,
+        /// Event named by the declaration that is not a gap.
+        event: String,
+        /// The events that *are* gaps naming this state under that
+        /// parent, in the order the validator found them. Empty when
+        /// the state has no gaps at all.
+        gaps: Vec<String>,
     },
 
     /// A `<transition cond="...">` carries a guard expression whose
@@ -528,6 +619,16 @@ mod tests {
                 non_handlers: vec!["active".into()],
                 also: Vec::new(),
             },
+            ScxmlSemanticError::ContradictoryUnhandledDeclaration {
+                state: "active".into(),
+                event: "cmd.stop".into(),
+            },
+            ScxmlSemanticError::StaleUnhandledDeclaration {
+                state: "active".into(),
+                parent: "dispatch".into(),
+                event: "cmd.stop".into(),
+                gaps: Vec::new(),
+            },
             ScxmlSemanticError::AlwaysFalseGuard {
                 state: "armed".into(),
                 cond: "false".into(),
@@ -567,7 +668,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 10;
+    const VARIANT_COUNT: usize = 12;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -583,6 +684,10 @@ mod tests {
             ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",
             ScxmlSemanticError::NonExhaustiveEventHandling { .. } => "NonExhaustiveEventHandling",
+            ScxmlSemanticError::ContradictoryUnhandledDeclaration { .. } => {
+                "ContradictoryUnhandledDeclaration"
+            }
+            ScxmlSemanticError::StaleUnhandledDeclaration { .. } => "StaleUnhandledDeclaration",
             ScxmlSemanticError::AlwaysFalseGuard { .. } => "AlwaysFalseGuard",
             ScxmlSemanticError::ShadowedTransition { .. } => "ShadowedTransition",
         }

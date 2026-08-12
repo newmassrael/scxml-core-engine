@@ -981,12 +981,37 @@ zero across the W3C IRP, conformance, and downstream-consumer corpora:
   does not, and the parent itself has no transition matching `E`,
   the validator emits `scxml/non-exhaustive-event-handling`.
 
-Author escape hatch: `sce:exhaustive="false"` on the compound
-parent silences the check for that parent. Only the literal
-`"false"` value triggers the opt-out; `"true"` and absence both
-leave the validator active, and any other literal rejects the
-document via `validation/invalid-attribute` so the opt-out cannot
-be silently mis-spelled.
+Author escape hatch: `sce:unhandled="E1 E2"` on **the child that
+leaves the events unhandled** — not on the compound parent. The
+declaration exempts exactly the (child, event) pairs it names.
+
+The attribute sits on the child because that is the grain at which
+the author's claim is true: "`berserk` does not handle
+`combo_timeout`", not "this compound is exempt". A parent-level
+opt-out (`sce:exhaustive="false"`) existed in an earlier revision
+and was withdrawn — it silenced every gap under the parent,
+including gaps introduced after it was written, so a sibling added
+later inherited an exemption nobody had judged. A document still
+carrying `sce:exhaustive` rejects via `validation/invalid-attribute`
+rather than being ignored, because an unrecognised `sce:` attribute
+is accepted and ignored and the exemption would otherwise be lost
+silently.
+
+Token rules: whitespace-separated literal event names, at least
+one, each named at most once, no wildcards. Wildcards are rejected
+so the declaration is checked against the literal gap set under one
+matching rule rather than two.
+
+The declaration is checked in both directions, so it cannot decay
+into unverified prose:
+
+- A state declaring an event it actually handles (directly, by
+  token-prefix, or via a wildcard transition) rejects with
+  `scxml/contradictory-unhandled-declaration`.
+- A state declaring an event that is not a gap under its parent —
+  no sibling handles it, the parent absorbs it, the siblings share
+  no common ground, or the state has no compound parent — rejects
+  with `scxml/stale-unhandled-declaration`.
 
 Repair guidance, in author preference order:
 
@@ -995,8 +1020,8 @@ Repair guidance, in author preference order:
 2. Add a parent-level `<transition event="E" ...>` so the event is
    absorbed by the compound state regardless of which child is
    active.
-3. Annotate the parent with `sce:exhaustive="false"` if the gap is
-   genuinely intentional.
+3. Declare `sce:unhandled="E"` on the non-handling child if the gap
+   is genuinely intentional.
 
 ---
 
@@ -1304,7 +1329,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (341 codes)
+## Appendix — `DiagnosticCode` index (343 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1484,6 +1509,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |
+| `scxml/contradictory-unhandled-declaration` | Validation |
+| `scxml/stale-unhandled-declaration` | Validation |
 | `scxml/always-false-guard` | Validation |
 | `scxml/shadowed-transition` | Validation |
 | `scxml/on-sample-invalid-parent` | Validation |

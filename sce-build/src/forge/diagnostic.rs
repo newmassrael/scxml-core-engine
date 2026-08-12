@@ -619,12 +619,21 @@ pub enum DiagnosticCode {
     //    with no parent-level fallthrough. Narrow heuristic (requires
     //    a shared event-vocabulary `common ground` across siblings)
     //    keeps W3C IRP / conformance / downstream-consumer at zero false
-    //    positives; `sce:exhaustive="false"` on the parent escapes
-    //    genuine intent-gap cases. NeutralOrDeterministic: repair is
-    //    author-domain (add the transition, add a fallthrough, or
-    //    annotate the opt-out). ──────────────────────────────────────
+    //    positives; `sce:unhandled` on the child that leaves the event
+    //    unhandled escapes genuine intent-gap cases. The two companion
+    //    codes police that declaration so it cannot decay into prose:
+    //    `contradictory-unhandled-declaration` when the declaring state
+    //    does handle the event, `stale-unhandled-declaration` when the
+    //    declared event is not a gap under its parent. All three
+    //    NeutralOrDeterministic: repair is author-domain (add the
+    //    transition, add a fallthrough, declare the absence, or delete
+    //    the declaration). ───────────────────────────────────────────
     #[serde(rename = "scxml/non-exhaustive-event-handling")]
     ScxmlNonExhaustiveEventHandling,
+    #[serde(rename = "scxml/contradictory-unhandled-declaration")]
+    ScxmlContradictoryUnhandledDeclaration,
+    #[serde(rename = "scxml/stale-unhandled-declaration")]
+    ScxmlStaleUnhandledDeclaration,
     // ── NL→IR Mapping Roadmap Item 3 — guard analysis.
     //    `scxml/always-false-guard` fires when a transition's
     //    `cond` expression is statically determinable as false
@@ -2717,6 +2726,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlDeadTransition,
         // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
+        ScxmlContradictoryUnhandledDeclaration,
+        ScxmlStaleUnhandledDeclaration,
         // NL→IR Mapping Roadmap Item 3 — guard analysis
         ScxmlAlwaysFalseGuard,
         ScxmlShadowedTransition,
@@ -3723,7 +3734,11 @@ impl DiagnosticCode {
             // exhaustiveness. Heuristic over §scxml-5.10 event
             // matching, but no spec section names "non-exhaustive
             // event handling" as a rejection. SCE-internal hygiene.
+            // The two `sce:unhandled` declaration codes police an SCE
+            // extension attribute, so they have no spec anchor either.
             | ScxmlNonExhaustiveEventHandling
+            | ScxmlContradictoryUnhandledDeclaration
+            | ScxmlStaleUnhandledDeclaration
             // NL→IR Mapping Roadmap Item 3 — guard analysis.
             // §scxml-5.10 transition selection implies that an
             // always-false guard makes the transition unreachable
@@ -3844,6 +3859,8 @@ impl DiagnosticCode {
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
+            ScxmlContradictoryUnhandledDeclaration => "scxml/contradictory-unhandled-declaration",
+            ScxmlStaleUnhandledDeclaration => "scxml/stale-unhandled-declaration",
             ScxmlAlwaysFalseGuard => "scxml/always-false-guard",
             ScxmlShadowedTransition => "scxml/shadowed-transition",
             ScxmlOnSampleInvalidParent => "scxml/on-sample-invalid-parent",
@@ -8018,6 +8035,45 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 k
             },
         },
+        ScxmlSemanticError::ContradictoryUnhandledDeclaration { state, event } => {
+            DiagnosticPayload {
+                // The declaring state and the event it contradicts
+                // itself about are the whole identity — there is no
+                // sibling context in this record, by construction.
+                code: DiagnosticCode::ScxmlContradictoryUnhandledDeclaration,
+                stage: Stage::Validation,
+                expected: None,
+                actual: Some(event.clone()),
+                fix: None,
+                key_fragments: vec![
+                    format!("scxml-state:{state}"),
+                    "contradictory-unhandled".to_string(),
+                    event.clone(),
+                ],
+            }
+        }
+        ScxmlSemanticError::StaleUnhandledDeclaration {
+            state,
+            parent,
+            event,
+            // Not a key fragment for the same reason `also` is not one
+            // on the gap record: the parent's other gaps are context
+            // for the author, and folding them in would move the id
+            // whenever an unrelated gap appeared or was repaired.
+            gaps: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlStaleUnhandledDeclaration,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(event.clone()),
+            fix: None,
+            key_fragments: vec![
+                format!("scxml-parent:{parent}"),
+                format!("scxml-state:{state}"),
+                "stale-unhandled".to_string(),
+                event.clone(),
+            ],
+        },
     }
 }
 
@@ -8717,7 +8773,34 @@ mod tests {
                     also: Vec::new(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7072cc6c1038cfb6","code":"scxml/non-exhaustive-event-handling","stage":"validation","message":"Compound state 'dispatch' has children handling event 'cmd.start' inconsistently — handlers: [\"idle\", \"stopped\"], non-handlers: [\"active\"]. Add the missing transition, add a parent-level fallthrough, or annotate the parent with sce:exhaustive=\"false\" if the gap is intentional.","actual":"cmd.start"}"#,
+                r#"{"v":1,"id":"fnv1a:7072cc6c1038cfb6","code":"scxml/non-exhaustive-event-handling","stage":"validation","message":"Compound state 'dispatch' has children handling event 'cmd.start' inconsistently — handlers: [\"idle\", \"stopped\"], non-handlers: [\"active\"]. Add the missing transition, add a parent-level fallthrough, or declare the gap on the non-handling child with sce:unhandled=\"cmd.start\" if it is intentional.","actual":"cmd.start"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 — a state declaring
+                // `sce:unhandled` for an event it in fact handles.
+                // Local contradiction; no sibling context involved.
+                "forge/scxml-contradictory-unhandled-declaration",
+                crate::scxml_semantic::ScxmlSemanticError::ContradictoryUnhandledDeclaration {
+                    state: "active".into(),
+                    event: "cmd.start".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f85013ee355dc5a9","code":"scxml/contradictory-unhandled-declaration","stage":"validation","message":"State 'active' declares sce:unhandled=\"cmd.start\" but has a transition that handles 'cmd.start'. Remove the event from sce:unhandled, or remove the transition — the document currently asserts both.","actual":"cmd.start"}"#,
+            ),
+            (
+                // NL→IR Mapping Roadmap Item 3 — a declaration that
+                // exempts nothing. `gaps` empty is the harder half of
+                // the message: the state has no gaps at all, so the
+                // declaration has outlived its subject.
+                "forge/scxml-stale-unhandled-declaration",
+                crate::scxml_semantic::ScxmlSemanticError::StaleUnhandledDeclaration {
+                    state: "active".into(),
+                    parent: "dispatch".into(),
+                    event: "cmd.start".into(),
+                    gaps: Vec::new(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0f6a02f53c7d0276","code":"scxml/stale-unhandled-declaration","stage":"validation","message":"State 'active' declares sce:unhandled=\"cmd.start\" but 'cmd.start' is not a gap under parent 'dispatch' — that state has no inconsistently-handled events at all. Remove the event from sce:unhandled.","actual":"cmd.start"}"#,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — trivially
@@ -13179,12 +13262,18 @@ mod tests {
             | ScxmlDeadTransition
             // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
-            // transition, add a parent-level fallthrough, or annotate
-            // the parent with `sce:exhaustive="false"`) none of which
-            // pick a fixed candidate set; `ReplaceOneOf` would imply
-            // a rename when the author almost always meant to add a
-            // missing handler or accept the gap deliberately.
+            // transition, add a parent-level fallthrough, or declare
+            // the absence on the non-handling child with
+            // `sce:unhandled`) none of which pick a fixed candidate
+            // set; `ReplaceOneOf` would imply a rename when the author
+            // almost always meant to add a missing handler or accept
+            // the gap deliberately.
             | ScxmlNonExhaustiveEventHandling
+            // The two declaration-hygiene codes: the repair is to
+            // delete one of two things the document says, and which
+            // one is the author's call, not a candidate list.
+            | ScxmlContradictoryUnhandledDeclaration
+            | ScxmlStaleUnhandledDeclaration
             // NL→IR Mapping Roadmap Item 3 — always-false
             // guards and shadowed transitions. Repair is deterministic
             // per use-site (remove the dead transition, rewrite the
@@ -13478,6 +13567,8 @@ mod tests {
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
                 | ScxmlNonExhaustiveEventHandling
+                | ScxmlContradictoryUnhandledDeclaration
+                | ScxmlStaleUnhandledDeclaration
                 | ScxmlAlwaysFalseGuard
                 | ScxmlShadowedTransition
                 | ScxmlOnSampleInvalidParent
@@ -13748,9 +13839,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            341,
+            343,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 341 distinct variants to match the DiagnosticCode \
+             expected 343 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

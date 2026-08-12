@@ -479,44 +479,99 @@ fn collect_sce_req(
     Ok(out)
 }
 
-/// Read the optional `sce:exhaustive` attribute. Only `="false"`
-/// triggers the opt-out; `="true"` and absence both leave the
-/// NonExhaustiveEventHandling validator active (the attribute exists
-/// purely to escape genuine intent-gap cases, not to gate the
-/// validator on/off generally). Any other literal — `"FALSE"`, `"0"`,
-/// `"no"` — rejects the document via `validation/invalid-attribute`
-/// so authors do not silently mis-spell the opt-out and learn from
-/// the build instead of the runtime.
-fn parse_sce_exhaustive_optout(
+/// Read the optional `sce:unhandled` attribute — the events this
+/// state deliberately does not handle.
+///
+/// Also rejects the withdrawn `sce:exhaustive` attribute by name. That
+/// rejection is not tidiness: an unrecognised `sce:` attribute on a
+/// statechart element is accepted and ignored, so a document still
+/// carrying the old parent-level opt-out would lose its exemption
+/// silently and either start failing somewhere else or — on a parent
+/// whose gaps have since been closed — keep building while its
+/// annotation says something the build no longer honours.
+///
+/// Token rules, each of which exists to keep the declaration
+/// checkable against the literal gap set the validator computes:
+///
+///   * Whitespace-separated literal event names, declaration order
+///     preserved.
+///   * Present but empty rejects — an attribute that declares nothing
+///     is a mis-edit, not an exemption.
+///   * Wildcards (`*`, `.*`, `foo.*`) reject. The gap set is always
+///     literal; letting a wildcard in would give this one attribute a
+///     second matching semantics to be read under.
+///   * Duplicates reject. A repeated token cannot mean more than the
+///     single token does, so it is an author error rather than a
+///     shorthand.
+fn parse_sce_unhandled(
     node: &roxmltree::Node,
-    element_label_fn: impl FnOnce() -> String,
+    element_label_fn: impl Fn() -> String,
     source_name: &str,
-) -> Result<bool, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+) -> Result<Vec<String>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::error::{Located, ValidationError};
     use crate::forge::model::SCE_NAMESPACE;
-    let raw = match node.attribute((SCE_NAMESPACE, "exhaustive")) {
-        Some(s) => s,
-        None => return Ok(false),
+
+    let pos_of = || node.document().text_pos_at(node.range().start);
+    let reject = |attr: &str, value: String, expected: String| {
+        let pos = pos_of();
+        Located::new(
+            ValidationError::InvalidAttribute {
+                element: element_label_fn(),
+                attr: attr.to_string(),
+                value,
+                expected,
+            }
+            .into(),
+            source_name,
+            Some(pos.row),
+            Some(pos.col),
+        )
     };
-    match raw {
-        "true" => Ok(false),
-        "false" => Ok(true),
-        other => {
-            let pos = node.document().text_pos_at(node.range().start);
-            Err(Located::new(
-                ValidationError::InvalidAttribute {
-                    element: element_label_fn(),
-                    attr: "sce:exhaustive".to_string(),
-                    value: other.to_string(),
-                    expected: "true | false".to_string(),
-                }
-                .into(),
-                source_name,
-                Some(pos.row),
-                Some(pos.col),
-            ))
-        }
+
+    if let Some(withdrawn) = node.attribute((SCE_NAMESPACE, "exhaustive")) {
+        return Err(reject(
+            "sce:exhaustive",
+            withdrawn.to_string(),
+            "sce:unhandled=\"<event names>\" on each child that deliberately \
+             leaves the event unhandled — the parent-level opt-out was \
+             withdrawn because it silenced gaps its author never saw"
+                .to_string(),
+        ));
     }
+
+    let raw = match node.attribute((SCE_NAMESPACE, "unhandled")) {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
+
+    let mut out: Vec<String> = Vec::new();
+    for tok in raw.split_whitespace() {
+        if tok == "*" || tok == ".*" || tok.ends_with(".*") || tok.contains('*') {
+            return Err(reject(
+                "sce:unhandled",
+                tok.to_string(),
+                "a literal event name — wildcards cannot be checked against \
+                 the literal gap set"
+                    .to_string(),
+            ));
+        }
+        if out.iter().any(|seen| seen == tok) {
+            return Err(reject(
+                "sce:unhandled",
+                tok.to_string(),
+                "each event named at most once".to_string(),
+            ));
+        }
+        out.push(tok.to_string());
+    }
+    if out.is_empty() {
+        return Err(reject(
+            "sce:unhandled",
+            raw.to_string(),
+            "at least one event name".to_string(),
+        ));
+    }
+    Ok(out)
 }
 
 impl Default for SCXMLParser {
@@ -1628,11 +1683,8 @@ impl SCXMLParser {
             state.req =
                 collect_sce_req(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
-            state.exhaustive_optout = parse_sce_exhaustive_optout(
-                &child,
-                || format!("<state id=\"{state_id}\">"),
-                source_name,
-            )?;
+            state.unhandled =
+                parse_sce_unhandled(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
 
             // Parse transitions
             for trans_elem in scxml_children(&child, "transition") {
@@ -1765,6 +1817,14 @@ impl SCXMLParser {
             state.req =
                 collect_sce_req(&child, || format!("<final id=\"{final_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
+            // A `<final>` is excluded from the exhaustiveness comparison
+            // (it has no transition surface), so it can never be a
+            // non-handler and any declaration here is stale. Reading the
+            // attribute is what makes that verdict happen: an element
+            // that skipped this call would swallow both the declaration
+            // and the withdrawn `sce:exhaustive` in silence.
+            state.unhandled =
+                parse_sce_unhandled(&child, || format!("<final id=\"{final_id}\">"), source_name)?;
 
             for entry_elem in scxml_children(&child, "onentry") {
                 let req = collect_sce_req(
@@ -1820,6 +1880,15 @@ impl SCXMLParser {
                 source_name,
             )?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
+            // A `<parallel>` carrying transitions is a sibling in the
+            // exhaustiveness comparison exactly like a `<state>`, so it
+            // can be a non-handler and needs the same way to say the gap
+            // is deliberate.
+            state.unhandled = parse_sce_unhandled(
+                &child,
+                || format!("<parallel id=\"{parallel_id}\">"),
+                source_name,
+            )?;
 
             for trans_elem in scxml_children(&child, "transition") {
                 let transition = self.parse_transition(&trans_elem, model, source_name)?;
