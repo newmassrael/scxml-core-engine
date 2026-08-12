@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Mutation harness — run a test set against deliberately broken source and
+# require it to notice.
+#
+# A test that passes proves nothing about whether it *could* fail. The way
+# to find out is to break the code it guards and watch it turn red. That
+# procedure has two failure modes of its own, and both of them look exactly
+# like a passing mutation round, which is why they are worth a tool rather
+# than a habit:
+#
+#   1. **The mutation never reached the binary that ran.** Restoring a file
+#      with `cp -a` preserves its mtime, so cargo's fingerprint can conclude
+#      nothing changed and re-run the binary it already had. The author
+#      reads "0 failures" as "the mutation survived" when the truth is that
+#      the mutated source was never compiled. This harness does not consult
+#      mtime at all: it hashes every test executable before and after, and a
+#      mutation that leaves every hash unchanged is reported INCONCLUSIVE,
+#      not SURVIVED.
+#
+#   2. **The run selected a different set of tests.** `cargo test --test X
+#      --lib FILTER` applies FILTER to every binary, so the integration
+#      binary can run zero tests while its summary still prints `ok`. This
+#      harness resolves the test executables once with `--no-run` and then
+#      runs each binary directly with no shared filter, and it records how
+#      many tests each one ran in the baseline. A case whose run count
+#      differs from the baseline is INCONCLUSIVE.
+#
+# Both checks answer the same question — *did I actually test what I think I
+# tested* — and both are hard errors, because a mutation round that cannot
+# answer it is worth less than no mutation round at all: it produces a
+# confident claim from no evidence.
+#
+# Usage:
+#
+#     scripts/mutate <casefile>
+#
+# The casefile is sourced by this script. It declares the cargo selector for
+# the tests under study, the files a case may edit, and one `case` block per
+# mutation:
+#
+#     mutation_tests -p sce-build --features cli --test scxml_exhaustiveness
+#     mutation_targets sce-build/src/parser.rs
+#
+#     mutation_case "parser accepts a wildcard token" <<'PY'
+#     edit("sce-build/src/parser.rs",
+#          "if tok == \"*\" ||",
+#          "if false && tok == \"*\" ||")
+#     PY
+#
+# A case body is Python, with one helper in scope:
+#
+#     edit(path, old, new)   # replaces the first occurrence; raises if
+#                            # `old` is absent, so a mutation that no longer
+#                            # matches the source fails loudly instead of
+#                            # applying nothing and reading as SURVIVED.
+#
+# Exit status is 0 only when every case was CAUGHT.
+
+set -euo pipefail
+
+SCE_REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$SCE_REPO_ROOT"
+
+WORK="$(mktemp -d)"
+trap 'mutation_restore_quiet; rm -rf "$WORK"' EXIT
+
+MUTATION_CARGO_ARGS=()
+MUTATION_TARGET_FILES=()
+MUTATION_EXES=()
+MUTATION_CAUGHT=0
+MUTATION_SURVIVED=0
+MUTATION_INCONCLUSIVE=0
+
+red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+
+# ── Casefile vocabulary ────────────────────────────────────────────
+
+# Cargo selector for the tests under study. Passed to `cargo test`
+# verbatim. Give it target selectors (`--test`, `--lib`, `-p`), never a
+# bare filter argument — a filter reaches every binary the selector
+# matched, which is failure mode 2 above.
+mutation_tests() { MUTATION_CARGO_ARGS=("$@"); }
+
+# Files a case is allowed to edit. Snapshotted at init and restored after
+# every case, so a case body never has to clean up after itself and a case
+# that dies mid-edit cannot leave the tree broken for the next one.
+mutation_targets() { MUTATION_TARGET_FILES=("$@"); }
+
+# ── Internals ──────────────────────────────────────────────────────
+
+mutation_snapshot() {
+    mkdir -p "$WORK/snapshot"
+    local f
+    for f in "${MUTATION_TARGET_FILES[@]}"; do
+        mkdir -p "$WORK/snapshot/$(dirname "$f")"
+        # Deliberately not `cp -a`: preserving mtime is what lets a later
+        # rebuild be skipped. The hash check below would catch that, but
+        # there is no reason to create the condition in the first place.
+        cp "$f" "$WORK/snapshot/$f"
+    done
+}
+
+mutation_restore() {
+    local f
+    for f in "${MUTATION_TARGET_FILES[@]}"; do
+        cp "$WORK/snapshot/$f" "$f"
+        touch "$f"
+    done
+}
+
+mutation_restore_quiet() {
+    [[ -d "$WORK/snapshot" ]] || return 0
+    mutation_restore 2>/dev/null || true
+}
+
+# Resolve the test executables the selector names. Doing this once, and
+# then running the binaries directly, is what removes the shared-filter
+# hazard: there is no argument left that could narrow one binary's run.
+mutation_resolve_exes() {
+    local json
+    json="$(cargo test --no-run --message-format=json "${MUTATION_CARGO_ARGS[@]}" 2>/dev/null)" || {
+        red "build failed while resolving test executables"
+        cargo test --no-run "${MUTATION_CARGO_ARGS[@]}" 2>&1 | tail -30
+        exit 2
+    }
+    mapfile -t MUTATION_EXES < <(printf '%s\n' "$json" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        continue
+    if rec.get("reason") == "compiler-artifact" and rec.get("executable") and rec.get("profile", {}).get("test"):
+        print(rec["executable"])
+')
+    if [[ ${#MUTATION_EXES[@]} -eq 0 ]]; then
+        red "the selector matched no test executables: ${MUTATION_CARGO_ARGS[*]}"
+        exit 2
+    fi
+}
+
+# Rebuild, then report "<sha> <path>" per executable. The hash is the whole
+# point: it is evidence about the artifact that will actually run, which
+# mtime, cargo's fingerprint log, and the source on disk are all merely
+# proxies for.
+mutation_build_and_hash() {
+    cargo test --no-run "${MUTATION_CARGO_ARGS[@]}" >/dev/null 2>&1 || return 1
+    local exe
+    for exe in "${MUTATION_EXES[@]}"; do
+        printf '%s %s\n' "$(sha256sum "$exe" | cut -d' ' -f1)" "$exe"
+    done
+}
+
+# Run every executable; print "<tests_run> <failed>" totalled across them.
+mutation_run_exes() {
+    local exe out run failed total_run=0 total_failed=0
+    for exe in "${MUTATION_EXES[@]}"; do
+        out="$("$exe" 2>&1 || true)"
+        run="$(printf '%s\n' "$out" | sed -n 's/^running \([0-9]*\) test.*/\1/p' | awk '{s+=$1} END {print s+0}')"
+        failed="$(printf '%s\n' "$out" | sed -n 's/.*[0-9]* passed; \([0-9]*\) failed.*/\1/p' | awk '{s+=$1} END {print s+0}')"
+        total_run=$((total_run + ${run:-0}))
+        total_failed=$((total_failed + ${failed:-0}))
+    done
+    printf '%s %s\n' "$total_run" "$total_failed"
+}
+
+mutation_init() {
+    if [[ ${#MUTATION_CARGO_ARGS[@]} -eq 0 ]]; then
+        red "the casefile declared no mutation_tests selector"
+        exit 2
+    fi
+    if [[ ${#MUTATION_TARGET_FILES[@]} -eq 0 ]]; then
+        red "the casefile declared no mutation_targets"
+        exit 2
+    fi
+    mutation_snapshot
+    mutation_resolve_exes
+    dim "resolved ${#MUTATION_EXES[@]} test executable(s)"
+
+    BASELINE_HASHES="$(mutation_build_and_hash)" || { red "baseline build failed"; exit 2; }
+    read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_exes)"
+    if [[ "$BASELINE_FAILED" != "0" ]]; then
+        red "baseline is not green ($BASELINE_FAILED failing) — fix that before mutating,"
+        red "or every case below will read as CAUGHT for the wrong reason"
+        exit 2
+    fi
+    if [[ "$BASELINE_RUN" == "0" ]]; then
+        red "baseline ran 0 tests — the selector matches nothing"
+        exit 2
+    fi
+    green "baseline: $BASELINE_RUN tests, 0 failing"
+    echo
+}
+
+# mutation_case <label>  (Python case body on stdin)
+mutation_case() {
+    local label="$1"
+    local body
+    body="$(cat)"
+
+    printf '%s\n' "$body" > "$WORK/case.py"
+    if ! python3 - "$WORK/case.py" <<'PY'
+import sys
+
+def edit(path, old, new):
+    src = open(path).read()
+    if old not in src:
+        raise SystemExit(
+            "anchor not found in %s — the mutation matched nothing, which "
+            "would have read as SURVIVED:\n  %r" % (path, old[:120])
+        )
+    open(path, "w").write(src.replace(old, new, 1))
+
+exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), {"edit": edit})
+PY
+    then
+        red "INCONCLUSIVE  $label"
+        red "              the case body did not apply"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
+    local hashes
+    if ! hashes="$(mutation_build_and_hash)"; then
+        # A mutation that does not compile is a legitimate outcome — the
+        # type system refused it — but it is not evidence about the tests,
+        # so it is never reported as CAUGHT.
+        red "INCONCLUSIVE  $label"
+        red "              mutated tree does not compile; the tests never ran"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
+    if [[ "$hashes" == "$BASELINE_HASHES" ]]; then
+        red "INCONCLUSIVE  $label"
+        red "              every test binary is byte-identical to the baseline —"
+        red "              the mutation never reached the code under test"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
+    local run failed
+    read -r run failed <<<"$(mutation_run_exes)"
+
+    if [[ "$run" != "$BASELINE_RUN" ]]; then
+        red "INCONCLUSIVE  $label"
+        red "              ran $run tests, baseline ran $BASELINE_RUN — the case"
+        red "              changed which tests exist, so the verdict is not comparable"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
+    if [[ "$failed" -gt 0 ]]; then
+        green "CAUGHT        $label  ($failed/$run red)"
+        MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1))
+    else
+        red "SURVIVED      $label  (0/$run red)"
+        MUTATION_SURVIVED=$((MUTATION_SURVIVED + 1))
+    fi
+
+    mutation_restore
+    # Restoring must put the tree back where it started. Checking it here
+    # rather than at the end means a botched restore is attributed to the
+    # case that caused it instead of poisoning every case after it.
+    local restored
+    restored="$(mutation_build_and_hash)" || { red "restore left a tree that does not build"; exit 2; }
+    if [[ "$restored" != "$BASELINE_HASHES" ]]; then
+        red "              restore did not reproduce the baseline binaries"
+        red "              — later cases would be measured against a moved baseline"
+        exit 2
+    fi
+}
+
+mutation_report() {
+    echo
+    local total=$((MUTATION_CAUGHT + MUTATION_SURVIVED + MUTATION_INCONCLUSIVE))
+    if [[ $MUTATION_SURVIVED -eq 0 && $MUTATION_INCONCLUSIVE -eq 0 ]]; then
+        green "$MUTATION_CAUGHT/$total caught"
+        return 0
+    fi
+    red "$MUTATION_CAUGHT/$total caught, $MUTATION_SURVIVED survived, $MUTATION_INCONCLUSIVE inconclusive"
+    return 1
+}
+
+# ── Driver ─────────────────────────────────────────────────────────
+
+if [[ $# -ne 1 ]]; then
+    echo "usage: scripts/mutate <casefile>" >&2
+    exit 2
+fi
+
+CASEFILE="$1"
+[[ -f "$CASEFILE" ]] || { red "no such casefile: $CASEFILE"; exit 2; }
+
+# The casefile declares the selector and targets, then the cases. Sourcing
+# happens in two passes so `mutation_init` can run — and reject a red
+# baseline — before the first case body edits anything.
+# shellcheck disable=SC1090
+source <(grep -E '^\s*mutation_(tests|targets)\b' "$CASEFILE")
+mutation_init
+
+# shellcheck disable=SC1090
+source "$CASEFILE"
+
+mutation_report
