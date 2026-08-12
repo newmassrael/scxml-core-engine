@@ -22,7 +22,9 @@
 #
 # Measured when it was added: three of the doom examples had a compound
 # state whose children disagreed about an event, each an intentional gap now
-# annotated `sce:exhaustive="false"` with the reason beside it.
+# declared on the child that has it with `sce:unhandled` and the reason
+# beside it. Two of the three prose comments were wrong about which child
+# the gap belonged to; declaring it per child is what surfaced that.
 #
 # No CI counterpart, which is why the registry carries an explicit local
 # trigger with the reason next to it rather than leaving the gate silently

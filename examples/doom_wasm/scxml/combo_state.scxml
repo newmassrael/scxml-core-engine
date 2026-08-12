@@ -47,20 +47,19 @@
     </state>
 
     <!-- Compound state: active combo (W3C SCXML 3.4) -->
-    <!-- sce:exhaustive="false" silences the whole compound, so the whole
-         set it covers is named here rather than the one event that
-         prompted it:
-           * `berserk_activate` fires when the combo reaches 5 kills, which
-             can only happen while in `normal`. `berserk` is already
-             berserk, so handling it would assert an entry the game never
-             sends.
+    <!-- Each deliberate gap is declared on the sub-state that has it,
+         with the reason beside it:
+           * `berserk` does not handle `berserk_activate` — it fires when
+             the combo reaches 5 kills, which can only happen while in
+             `normal`. `berserk` is already berserk, so handling it would
+             assert an entry the game never sends.
            * `combo_timeout` / `berserk_timeout` are the two modes' own
              timers. Each state waits on its own and neither can receive
              the other's, because entering one mode starts one timer. -->
-    <state id="active" initial="normal" sce:exhaustive="false">
+    <state id="active" initial="normal">
 
         <!-- Normal combo: kills 1-4 -->
-        <state id="normal">
+        <state id="normal" sce:unhandled="berserk_timeout">
             <onentry>
                 <!-- Game callback starts external 5s timer -->
                 <script><cpp>combo.onActive()</cpp></script>
@@ -74,7 +73,7 @@
         </state>
 
         <!-- Berserk mode: kills 5+ (W3C SCXML 3.4 compound sub-state) -->
-        <state id="berserk">
+        <state id="berserk" sce:unhandled="berserk_activate combo_timeout">
             <onentry>
                 <!-- Game callback starts external 10s timer -->
                 <script><cpp>berserk.onActive()</cpp></script>
