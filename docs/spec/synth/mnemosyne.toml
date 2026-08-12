@@ -180,6 +180,25 @@ backend = "tree-sitter-cpp"
 transport = "in-process"
 backend = "tree-sitter-rust"
 
+# Go, Kotlin and Python resolvers, declared at the `ecee1fe0` pin. That build
+# carries tree-sitter-go, -kotlin and -python in process and routes `.go`,
+# `.kt`/`.kts` and `.py`, so the forge-runtime trees this workspace already
+# scans can be judged at symbol level instead of file level. Until it was
+# declared, their citations sat in `symbol_axis.unresolved_languages` while
+# `symbol_mismatch_count` read 0 — the count that reads as checked-and-clean
+# and means "no instrument".
+[plugins.symbol_resolver.go]
+transport = "in-process"
+backend = "tree-sitter-go"
+
+[plugins.symbol_resolver.kotlin]
+transport = "in-process"
+backend = "tree-sitter-kotlin"
+
+[plugins.symbol_resolver.python]
+transport = "in-process"
+backend = "tree-sitter-python"
+
 # Tool pin (Mnemosyne R826/R832). Cargo pins library dependencies through
 # Cargo.lock and pins nothing about a binary invoked by name, so a gate runs
 # with whatever tool happens to resolve. This declares which Mnemosyne revision
@@ -203,4 +222,4 @@ backend = "tree-sitter-rust"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "183a17a5"
+pin = "ecee1fe0"

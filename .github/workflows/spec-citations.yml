@@ -127,7 +127,7 @@ env:
   # reports those three backends UNREACHED. Bumped after re-running
   # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
   # enrolled workspace with the pin enforced.
-  MNEMOSYNE_REV: 183a17a5254f27a246ef20e858de1523e0088815
+  MNEMOSYNE_REV: ecee1fe071047355b543a5d8c58d5b3fe58ae3c0
 
 jobs:
   citations:
