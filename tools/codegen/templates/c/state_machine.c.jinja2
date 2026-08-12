@@ -931,7 +931,8 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
                 return;
 {% for invoke_info in model.invokes | scxml %}
-            } else if (strcmp(_send_target_buf, "sce://scxml/{{ invoke_info.child_name | escape_c }}_session") == 0) {
+            } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
+                       strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {
                 /* W3C SCXML C.1: the target is the location our child
                    `{{ invoke_info.invoke_id }}` publishes in its own
                    `_ioprocessors`, so it is addressed to that child. This is
@@ -939,9 +940,18 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                    publishes has to be a usable `<send>` target, and without
                    this arm the address a peer was told to answer at falls
                    through to the sender's own external queue — the string
-                   compares equal and still reaches nobody. The literal is
-                   the same deterministic address `invoke_methods.jinja2`
-                   stamps on `_event.origin`, so the two cannot disagree. */
+                   compares equal and still reaches nobody.
+
+                   The address is read from the child instance rather than
+                   spelled here, because a session's address names the
+                   session: it exists once that child is initialised and
+                   names THAT run of it. A codegen-time literal was only
+                   comparable because the address was derived from the
+                   document, which is the same reason two runs of one child
+                   used to be indistinguishable. An uninitialised slot
+                   publishes nothing and matches nothing — a send to a
+                   session that has not started reaches no one, which is
+                   what the empty-address guard says. */
                 {{ invoke_info.child_name }}_raise_external_by_name(&sm->child_{{ invoke_info.field_suffix }}, "{{ action.event }}");
 {% endfor %}
             } else {
@@ -1085,7 +1095,8 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
                 return;
 {% for invoke_info in model.invokes | scxml %}
-            } else if (strcmp(_send_target_buf, "sce://scxml/{{ invoke_info.child_name | escape_c }}_session") == 0) {
+            } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
+                       strcmp(_send_target_buf, sm->child_{{ invoke_info.field_suffix }}.scxml_location) == 0) {
                 /* W3C SCXML C.1: our child `{{ invoke_info.invoke_id }}`'s
                    published location, addressed. Present here because the
                    targetexpr-only arm has it and the two are kept
@@ -3503,8 +3514,8 @@ SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
        SCXML_EVENT_PROCESSOR_TYPE)`); C11 mirrors via the
        `_pending_event_origin` / `_pending_event_origintype` lua
        globals seeded by process_event_queues' external pop, with
-       the deterministic AOT-binding `_sessionid =
-       '<model.name>_session'` (commit ddf5f43f) as the origin
+       this session's own published address (`sm->scxml_location`,
+       issued alongside `_sessionid` in `_init`) as the origin
        value. Internal-queue pops leave both nil — W3C 5.10.1 only
        sets origin for events the SCXML processor accepted from an
        external producer.
@@ -4076,10 +4087,44 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.n
     sm->is_running = false;
 }
 
+{# W3C SCXML 5.10: one place a session's identity is issued. #}
+/* W3C SCXML 5.10 / C.1.1: issue this session's id and the address that
+   reaches it.
+
+   A session begins in two places on this backend — `_init_impl` for a
+   machine a host starts, `_init_with_parent` for one a parent invokes —
+   and both zero the struct and then open the datamodel. Issuing from one
+   function called by both is what keeps a child from being the case that
+   publishes nothing: the first draft of this change wrote the ids inline
+   in `_init_impl` and claimed every variant funnelled through it, which
+   was true of the host-started variants and false of the invoked one, so
+   invoked children carried an empty location and the origin they stamped
+   matched nothing they published.
+
+   The counter is file-scope and per machine type, which is what makes the
+   id unique across the process without a registry to consult: two sessions
+   of this machine differ in the ordinal, and two machines differ in the
+   name the ordinal is appended to. A clock would collide inside its own
+   resolution and would not be reproducible; an address would be unique
+   only by accident. The ordinal keeps the value an NMTOKEN, as
+   §scxml-5.10 requires of `_sessionid`. */
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({{ csym_prefix }}{{ model.name }}_t *sm) {
+    static unsigned long _sce_session_seq;
+    ++_sce_session_seq;
+    (void)snprintf(sm->session_id, sizeof(sm->session_id),
+                   "{{ model.name | escape_c }}_session_%lu", _sce_session_seq);
+    /* W3C SCXML C.1.1: the published address is the id, spelled as the
+       SCXML event processor's URI. Derived here, once, so the address and
+       the id cannot disagree — C.1 requires them to name one session. */
+    (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location),
+                   "sce://scxml/%s", sm->session_id);
+}
+
 {% if not model.has_parent_communication %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}) {
     memset(sm, 0, sizeof(*sm));
+    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
 {% if model.needs_script_engine %}
     /* W3C SCXML C.2.3: stamp the deployment's inbound BasicHTTP endpoint
        before the Lua state opens. `_ioprocessors` is seeded once at that
@@ -4132,6 +4177,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_script_engine %}, NULL{% endif %});
 }
+
+SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? NULL : sm->session_id;
+}
+
+SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? NULL : sm->scxml_location;
+}
 {% if model.needs_script_engine %}
 
 /* W3C SCXML C.2.3: `_init` variant taking the deployment's inbound BasicHTTP
@@ -4150,6 +4203,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
                                        void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
                                        const char *invoke_id) {
     memset(sm, 0, sizeof(*sm));
+    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
     /* W3C SCXML 6.4: Stamp parent-routing BEFORE the entry walk so
        `<onentry><send target="#_parent">` (test191/338) routes through
        the parent's dispatcher rather than dropping under the NULL
