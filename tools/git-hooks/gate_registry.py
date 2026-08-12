@@ -125,7 +125,7 @@ GATES: dict[str, dict] = {
     "tree-hygiene": {
         "workflows": ["tree-hygiene.yml"],
         "runner_workflow": True,
-        "cost_s": 14,
+        "cost_s": 13,
         "summary": "tree-wide marker + trigger + parity gates",
     },
     "clippy": {
@@ -138,7 +138,7 @@ GATES: dict[str, dict] = {
         "workflows": ["sce-rust-runtime-no-std.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 5,
+        "cost_s": 2,
         "summary": "no_std MCU build + clippy + probes",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
@@ -149,7 +149,7 @@ GATES: dict[str, dict] = {
     "rustdoc-links": {
         "workflows": ["doc-check.yml"],
         "runner_workflow": True,
-        "cost_s": 2,
+        "cost_s": 3,
         "summary": "cargo doc broken intra-doc links, both profiles",
     },
     "embed-vendor": {
@@ -163,7 +163,7 @@ GATES: dict[str, dict] = {
         # The most expensive gate in the set: three scratch-directory builds,
         # one of which packages embed/ from scratch and builds a consumer
         # against it.
-        "cost_s": 408,
+        "cost_s": 311,
         "summary": "embed manifest drift + payload lag + consumer smoke",
     },
     # Mirrors the Rust workspace suite only. `w3c-tests.yml` is deliberately
@@ -184,7 +184,7 @@ GATES: dict[str, dict] = {
         # it.
         "runner_workflow": True,
         "extra": ["docs/SCE_ACCEPTED_SUBSET.md", "schemas/**", "apis/**"],
-        "cost_s": 196,
+        "cost_s": 151,
         "summary": "cargo test --workspace --features cli",
     },
     # The one reader of the axis both drift hashes miss. `source-hash` and
@@ -198,13 +198,13 @@ GATES: dict[str, dict] = {
         "workflows": ["regen-reproduces.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
-        "cost_s": 60,
+        "cost_s": 117,
         "summary": "regeneration reproduces every committed tree",
     },
     "drift-suites": {
         "workflows": ["drift-verify.yml"],
         "runner_workflow": True,
-        "cost_s": 1,
+        "cost_s": 0,
         "summary": "committed-tree drift + sourcemap, serial",
     },
     # forge-conformance.yml verifies the language arms in parallel jobs, and
@@ -219,7 +219,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/go/**"],
         "deps": ["codegen-build"],
-        "cost_s": 13,
+        "cost_s": 9,
         "summary": "Go forge conformance regenerate + test",
     },
     "forge-rust": {
@@ -235,7 +235,7 @@ GATES: dict[str, dict] = {
         "workflows": ["forge-conformance.yml"],
         "runner_workflow": True,
         "extra": ["backends/python/**"],
-        "cost_s": 12,
+        "cost_s": 8,
         "summary": "Python forge conformance (numerical)",
     },
     "forge-cpp": {
@@ -251,7 +251,7 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "extra": ["backends/cpp/**", "sce/**"],
         "deps": ["codegen-build"],
-        "cost_s": 17,
+        "cost_s": 9,
         "summary": "C++ forge conformance build + test",
     },
     # Catches codegen breakage in the example documents (the namespace
@@ -289,7 +289,7 @@ GATES: dict[str, dict] = {
         # 0.29, wire 0.40, bytesguard 0.45 — 2.6s in total). The whole-tree
         # existence sweep, 4.4s over 6357 files, is now the larger half.
         # `cost_s` stays at the `--measure` figure the runner compares against.
-        "cost_s": 17,
+        "cost_s": 16,
         "summary": "spec-citation ledgers, 5 workspaces",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:
@@ -298,7 +298,7 @@ GATES: dict[str, dict] = {
     "spec-snapshot": {
         "workflows": ["spec-snapshot-drift.yml"],
         "runner_workflow": True,
-        "cost_s": 3,
+        "cost_s": 2,
         "summary": "spec snapshot integrity + verifies-catalog drift",
     },
     # A compliance verdict — an LGPL section 1 / MIT section 1 violation in a
@@ -318,13 +318,13 @@ GATES: dict[str, dict] = {
     "codec-clippy": {
         "workflows": ["sce-forge-codec-clippy.yml"],
         "runner_workflow": True,
-        "cost_s": 11,
+        "cost_s": 18,
         "summary": "clippy generated codecs, alloc on",
     },
     "codec-no-alloc": {
         "workflows": ["sce-forge-codec-no-alloc.yml"],
         "runner_workflow": True,
-        "cost_s": 10,
+        "cost_s": 17,
         "summary": "generated codecs compile without alloc",
     },
     # The two conformance surfaces nothing local ran. Both narrow their
@@ -346,7 +346,7 @@ GATES: dict[str, dict] = {
                   "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 58,
+        "cost_s": 60,
         "summary": "W3C conformance, C++ Interpreter + AOT",
     },
     # A deploy workflow whose three build steps are verdicts. Its trigger
@@ -355,7 +355,7 @@ GATES: dict[str, dict] = {
     "visualizer-wasm": {
         "workflows": ["deploy-visualizer.yml"],
         "runner_workflow": True,
-        "cost_s": 55,
+        "cost_s": 42,
         "summary": "codegen + visualizer + DOOM WASM builds",
     },
     # The other half of the main tree's ctest partition, and the half nothing
@@ -377,7 +377,7 @@ GATES: dict[str, dict] = {
                   "examples/**", "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 150,
+        "cost_s": 110,
         "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
     },
     "w3c-c11": {
@@ -389,7 +389,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/c/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 9,
+        "cost_s": 6,
         "summary": "W3C conformance, C11 MCU backend",
     },
     "w3c-go": {
@@ -400,7 +400,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/go/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 8,
+        "cost_s": 6,
         "summary": "W3C conformance, Go AOT",
     },
     "w3c-kotlin": {
@@ -412,7 +412,7 @@ GATES: dict[str, dict] = {
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 40,
+        "cost_s": 9,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino)",
     },
     "w3c-python": {
@@ -424,20 +424,22 @@ GATES: dict[str, dict] = {
         "extra": ["backends/python/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 4,
+        "cost_s": 3,
         "summary": "W3C conformance, Python AOT",
     },
     # The wrapper layer, not the engine under it: the trigger is the binding
     # sources, because `w3c-cpp` already judges the same interpreter 404 cases
-    # at a time. No `cost_s` — it has not been measured on a machine with the
-    # Python development headers, and `run_order` puts an unmeasured gate last
-    # rather than letting it claim a cheap slot it has not earned.
+    # at a time. This carried no `cost_s` for as long as no machine with the
+    # Python development headers had run it, which put it last by default.
+    # Measured 2026-08-12 on a machine that has them: it builds the pybind11
+    # extension and runs all 202 fixtures through it in 47s.
     "w3c-python-bindings": {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the pybind11 wrapper sources.",
         "extra": ["backends/python/bindings/**"],
+        "cost_s": 47,
         "summary": "W3C conformance, pybind11 -> C++ Interpreter",
     },
 }
