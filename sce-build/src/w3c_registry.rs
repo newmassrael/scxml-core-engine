@@ -107,7 +107,19 @@ impl std::fmt::Display for W3cRegistryError {
                 write!(f, "cannot read W3C conformance registry {path}: {source}")
             }
             W3cRegistryError::Parse { path, message } => {
-                write!(f, "W3C conformance registry {path} is not valid: {message}")
+                // The registry moved off `tests/CMakeLists.txt`, and
+                // that build script is still a real file — so the
+                // caller who passes it is the one working from stale
+                // instructions, and a bare parse error at column 1
+                // leaves them nowhere to go. Naming the catalog is the
+                // difference between reporting a failure and pointing
+                // at the fix.
+                write!(
+                    f,
+                    "W3C conformance registry {path} is not valid: {message} \
+                     (the registry is the JSON catalog at \
+                     {W3C_REGISTRY_RELATIVE_PATH} under the project root)"
+                )
             }
             W3cRegistryError::Invalid { path, message } => {
                 write!(f, "W3C conformance registry {path}: {message}")

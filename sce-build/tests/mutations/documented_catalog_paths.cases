@@ -1,0 +1,63 @@
+# Mutation cases for "every catalog path the CLI's help names is one that
+# flag accepts".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/documented_catalog_paths.cases`.
+#
+# The defect these stand for already shipped once: the W3C registry moved to a
+# JSON catalog and `--registry`'s help kept naming the build script it used to
+# be read from, so a caller following the help got a parse error on a file that
+# exists. The gate has to fail on that shape, on a help that names nothing, on
+# a refusal that does not say where the registry lives, on the documented path
+# ceasing to load, and on its own scan going quiet — the last one because a
+# help formatter it reads by shape can stop yielding matches without anything
+# else changing, and an empty scan prints the same green as a clean one.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test cli_documented_catalog_paths
+# `w3c_registry.rs` is linked into the test binary — the test reads the
+# canonical path constant from it — so a mutation there has to change that
+# binary. `sce_codegen.rs` is not: the test drives the CLI as a subprocess,
+# so its product is executed rather than linked, and the evidence that a
+# mutation reached what ran is the file differing on disk while the tests
+# ran.
+mutation_targets sce-build/src/w3c_registry.rs \
+                 sce-build/tests/cli_documented_catalog_paths.rs
+mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+
+mutation_case "the registry flag documents the path the registry used to live at" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH\n    )\n}",
+     "        \"tests/CMakeLists.txt\"\n    )\n}")
+PY
+
+mutation_case "the registry flag describes the catalog without naming it" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH\n    )\n}",
+     "        \"the conformance catalog for this build\"\n    )\n}")
+PY
+
+mutation_case "the catalog flag names the numerical catalog for both answers" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        sce_build::conformance::FORGE_CATALOG_RELATIVE_PATH,\n        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH",
+     "        sce_build::conformance::FORGE_CATALOG_RELATIVE_PATH,\n        sce_build::conformance::FORGE_CATALOG_RELATIVE_PATH")
+PY
+
+mutation_case "the refusal drops where the registry lives" <<'PY'
+edit("sce-build/src/w3c_registry.rs",
+     "{W3C_REGISTRY_RELATIVE_PATH} under the project root)",
+     "the location this build reads)")
+PY
+
+mutation_case "the catalog the help names stops loading" <<'PY'
+edit("sce-build/src/w3c_registry.rs",
+     "if self.version != 1 {",
+     "if self.version != 2 {")
+PY
+
+mutation_case "the scan finds no catalog paths and reports success anyway" <<'PY'
+edit("sce-build/tests/cli_documented_catalog_paths.rs",
+     "(?:fixtures\\.json|CMakeLists\\.txt)",
+     "(?:fixtures\\.yaml|CMakeLists\\.cmake)")
+PY

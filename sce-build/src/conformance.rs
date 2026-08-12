@@ -19,6 +19,15 @@ use crate::forge::codec_failure::CodecFailure;
 use crate::forge::model::RuntimeDep;
 use crate::generator::Language;
 
+/// Repository-relative location of the numerical fixture catalog.
+///
+/// The sibling registry (`w3c_registry::W3C_REGISTRY_RELATIVE_PATH`)
+/// states its own path the same way, and for the same reason: the CLI
+/// help that tells a caller where a catalog lives is formatted from the
+/// constant, so the documented path and the read path cannot become two
+/// different answers.
+pub const FORGE_CATALOG_RELATIVE_PATH: &str = "tests/forge/conformance/fixtures.json";
+
 /// Canonical primitive types used across the manifest. Each per-language
 /// template maps these to its native type system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
