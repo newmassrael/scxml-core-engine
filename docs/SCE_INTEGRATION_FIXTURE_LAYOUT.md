@@ -128,6 +128,26 @@ engine the backend embeds, and a failed evaluation raises `error.execution` and
 reads as a false condition — so a probe written with a method one engine lacks
 reports a violation that is not there.
 
+`session_ids_are_distinct` covers W3C SCXML 5.10: `_sessionid` is bound to the
+system-generated id for the *current session*, so two sessions are two ids.
+Appendix C.1.1 derives the address a session publishes from that id, which is
+what makes a shared id a routing defect rather than a cosmetic one — two live
+sessions reading one id publish one address, and a `<send>` addressed to
+either reaches both. The public IRP suite cannot ask: every test that reaches
+`_sessionid` runs a single session, so a processor handing the same value to
+every session it starts passes all of them, which is what the C11 backend did
+until this fixture was added.
+
+Its reach is stated in the fixture rather than implied. The two children are
+separate inline documents, so a processor deriving an id from the document
+still tells them apart — this pins the property across the channels and does
+not by itself reproduce the C11 defect. The same-document case, two sessions
+of one machine told apart only by the ordinal the processor issues, is pinned
+by `sce-build/tests/c11_session_identity.rs`, which instantiates one generated
+machine twice; expressing it as a fixture would need a second canonical
+document per stem, which the single-document regen contract above does not
+carry.
+
 Every channel asserts it, and the reason is the history: the C++ pair landed
 first and its own comment claimed the other five answered the same question.
 They had no driver at all. All five were violating the clause, in five

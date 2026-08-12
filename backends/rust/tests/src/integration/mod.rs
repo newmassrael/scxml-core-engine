@@ -28,3 +28,4 @@ pub mod invoke_unsupported_type;
 pub mod native_action;
 pub mod nested_final_not_terminal;
 pub mod send_param_payload;
+pub mod session_ids_are_distinct;

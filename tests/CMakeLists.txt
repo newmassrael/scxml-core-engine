@@ -508,6 +508,8 @@ add_executable(integration_tests
     integration/AutoforwardEventFieldsAotTest.cpp
     integration/EventOriginIsALocationTest.cpp
     integration/EventOriginIsALocationAotTest.cpp
+    integration/SessionIdsAreDistinctTest.cpp
+    integration/SessionIdsAreDistinctAotTest.cpp
     integration/AutoforwardDoneInvokeTest.cpp
     integration/AutoforwardDoneInvokeAotTest.cpp
     integration/AutoforwardInternalQueueTest.cpp
@@ -820,6 +822,14 @@ sce_generate_static_integration_test(autoforward_event_fields ${STATIC_INTEGRATI
 # the corpus never puts a second session on the other end.
 sce_generate_static_integration_test(event_origin_is_a_location ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_peer
+)
+
+# W3C SCXML 5.10: `_sessionid` names the session, so two live sessions carry
+# two ids. C.1.1 derives the published address from that id, which is what
+# makes one shared id a routing defect and not a cosmetic one. The corpus
+# runs one session per test and cannot ask.
+sce_generate_static_integration_test(session_ids_are_distinct ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_a inv_b
 )
 
 # W3C SCXML 6.4: Appendix D `mainEventLoop` forwards every event dequeued from

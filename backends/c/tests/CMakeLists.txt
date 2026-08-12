@@ -766,6 +766,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )
+
+    # W3C SCXML 5.10: `_sessionid` is the id of a session, not of a document.
+    # Two children run at once and report the id each was issued; a processor
+    # that hands both the same value publishes one address for two sessions
+    # (C.1.1), and a `<send>` to either reaches both. Every corpus test that
+    # reaches `_sessionid` runs a single session, so none of them can ask.
+    sce_generate_static_integration_c_test(session_ids_are_distinct "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SYNTH_INVOKE_CHILDREN inv_a inv_b
+    )
+
+    add_executable(sce_c_integration_session_ids_are_distinct
+        integration/test_session_ids_are_distinct.c
+        ${INTEGRATION_C_TEST_session_ids_are_distinct_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_session_ids_are_distinct PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_session_ids_are_distinct PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_session_ids_are_distinct PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_session_ids_are_distinct
+        COMMAND sce_c_integration_session_ids_are_distinct
+    )
+    set_tests_properties(c11_integration_session_ids_are_distinct PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
 else()
     message(STATUS
         "skipping the c11 integration fixtures — they link "
