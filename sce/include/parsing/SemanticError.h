@@ -325,4 +325,53 @@ private:
     std::optional<std::string> src_;
 };
 
+// The root declares an `sce:kind` this engine does not run.
+//
+// `SCE_ERROR_CONTRACT.md` §4.1 routes a document by that attribute:
+// absent or `"statechart"` goes to the SCXML pipeline, anything else
+// to Forge — and it calls the last row a contract guarantee, because
+// an author who wrote a kind meant a forge document and a repair
+// consumer must be routed accordingly.
+//
+// Measured 2026-08-12, before this leaf existed: the Rust pipeline
+// refused `sce:kind="bogus"` with `xml/schema-validation` and
+// `sce:kind="lookup"` with `validation/missing-element`, while this
+// parser accepted both and ran them as plain statecharts. That is not
+// the mis-routing §4.1 forbids — it is no routing at all, and it made
+// the two engines' accepted sets differ on a document an author is
+// likely to write by typo.
+//
+// No kind catalog is consulted, and deliberately: the question is not
+// which forge kind this is but whether it is a statechart, so a copy
+// of the kind list would be a second source of truth for a decision
+// that does not need one. `validation/wrong-pipeline` is the Rust
+// authority's own code for a pipeline refusing a document that
+// belongs to the other one; the inverse arm (Forge refusing a
+// statechart) already emits it from `sce-build/src/lib.rs`.
+class SemanticWrongPipeline : public SemanticError {
+public:
+    explicit SemanticWrongPipeline(std::string kind)
+        : SemanticError("Document declares sce:kind=\"" + kind +
+                            "\"; the SCXML engine runs statecharts only — generate this document with sce-codegen",
+                        {kind}),
+          kind_(std::move(kind)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/wrong-pipeline";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticWrongPipeline>(*this);
+    }
+
+    const std::string &kind() const noexcept {
+        return kind_;
+    }
+
+private:
+    std::string kind_;
+};
+
 }  // namespace SCE::parsing

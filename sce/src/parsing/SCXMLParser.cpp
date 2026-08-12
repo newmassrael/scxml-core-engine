@@ -218,6 +218,20 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
         throw SCE::parsing::ParseWrongRootElement(rootElement->getName());
     }
 
+    // §4.1 of SCE_ERROR_CONTRACT.md routes on `sce:kind`: absent or
+    // "statechart" is this engine's document, anything else belongs to
+    // Forge. Read here, at the root, because that is where the routing
+    // decision is defined — and because until it was read this parser
+    // ran forge documents as statecharts while the Rust pipeline
+    // rejected them, so the two engines disagreed about what a document
+    // even was.
+    if (rootElement->hasAttribute("sce:kind")) {
+        const auto kind = rootElement->getAttribute("sce:kind");
+        if (kind != "statechart") {
+            throw SCE::parsing::SemanticWrongPipeline(kind);
+        }
+    }
+
     SCE_LOG_INFO("Valid SCXML document found, parsing structure");
 
     // Create SCXML model

@@ -69,6 +69,19 @@ nlohmann::ordered_json SemanticHistoryDefaultMissing::to_json() const {
     return out;
 }
 
+nlohmann::ordered_json SemanticWrongPipeline::to_json() const {
+    // `actual` carries the kind that was declared, which is the one
+    // thing the author has to change and the only payload the Rust
+    // arm of `validation/wrong-pipeline` would have that this one can
+    // reproduce. The two producers do not share an id for this code —
+    // they reject the document through different stages, and the
+    // cross-producer harness records that under this leaf's exemption
+    // rather than pretending the fragments could line up.
+    auto out = baseEnvelope();
+    out["actual"] = kind_;
+    return out;
+}
+
 nlohmann::ordered_json SemanticNoStates::to_json() const {
     // `validation/empty-collection` carries no extra payload on the
     // Rust side either (only `key_fragments` for id derivation, no
