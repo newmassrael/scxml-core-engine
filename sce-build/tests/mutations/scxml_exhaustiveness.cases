@@ -1,0 +1,101 @@
+# Mutation cases for the `sce:unhandled` declaration contract.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/scxml_exhaustiveness.cases`.
+#
+# Each case restores a defect the contract exists to prevent, and the run
+# is only meaningful if the tests notice. The harness — not this file —
+# is what guarantees the mutation reached the binary and that the same
+# test set ran; see the header of `scripts/mutate`.
+#
+# Anchors are literal slices of the source, so a reformat can move one out
+# from under a case. That is reported as INCONCLUSIVE with the anchor
+# quoted, never as a pass — re-anchor the case against the current source
+# rather than reading the run as evidence.
+
+mutation_tests -p sce-build --features cli --test scxml_exhaustiveness --lib
+mutation_targets sce-build/src/scxml_exhaustiveness.rs sce-build/src/parser.rs
+
+# ── The grain of the exemption ─────────────────────────────────────
+
+mutation_case "one child's declaration covers the whole gap (the withdrawn parent-level blanket)" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     ".filter(|id| !declares_unhandled(model, id, event))",
+     ".filter(|_| !non_handlers.iter().any(|d| declares_unhandled(model, d, event)))")
+PY
+
+mutation_case "the gap set consults declarations, so a declaration justifies itself" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     "if state_handles_event(c, event) {\n                    any_handler = true;",
+     "if state_handles_event(c, event) || c.unhandled.iter().any(|e| e == event) {\n                    any_handler = true;")
+PY
+
+# ── Both directions the declaration is checked in ──────────────────
+
+mutation_case "a declaration the state's own transitions contradict is accepted" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     "if state_handles_event(state, event) {",
+     "if false && state_handles_event(state, event) {")
+PY
+
+mutation_case "a declaration that exempts nothing is accepted" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     "if !covers {",
+     "if false && !covers {")
+PY
+
+mutation_case "staleness is judged against the parent alone, ignoring which child the gap names" <<'PY'
+edit("sce-build/src/scxml_exhaustiveness.rs",
+     ".is_some_and(|non_handlers| non_handlers.contains(&state.id))",
+     ".is_some()")
+PY
+
+# ── The attribute's own shape ──────────────────────────────────────
+
+mutation_case "the withdrawn sce:exhaustive is ignored instead of rejected" <<'PY'
+edit("sce-build/src/parser.rs",
+     'if let Some(withdrawn) = node.attribute((SCE_NAMESPACE, "exhaustive")) {',
+     'if let Some(withdrawn) = Option::<&str>::None {')
+PY
+
+mutation_case "wildcard tokens are accepted, giving the attribute a second matching rule" <<'PY'
+edit("sce-build/src/parser.rs",
+     "if tok == \"*\" || tok == \".*\" || tok.ends_with(\".*\") || tok.contains('*') {",
+     "if false {")
+PY
+
+mutation_case "duplicate tokens are accepted" <<'PY'
+edit("sce-build/src/parser.rs",
+     "if out.iter().any(|seen| seen == tok) {",
+     "if false {")
+PY
+
+mutation_case "a present-but-empty declaration is accepted" <<'PY'
+edit("sce-build/src/parser.rs",
+     "if out.is_empty() {",
+     "if false {")
+PY
+
+# ── Every element that can carry a declaration must read it ────────
+#
+# `<final>` and `<parallel>` are parsed on their own paths. An element
+# that skips `parse_sce_unhandled` swallows both the declaration and the
+# withdrawn `sce:exhaustive` without a word. Both arrived on this list
+# the same way: the harness found the first, and the second was next
+# door on the very next loop.
+
+mutation_case "a <final> child's declaration is never read" <<'PY_CASE'
+edit("sce-build/src/parser.rs",
+     """            state.unhandled =
+                parse_sce_unhandled(&child, || format!("<final id=\\"{final_id}\\">"), source_name)?;""",
+     "")
+PY_CASE
+
+mutation_case "a <parallel> child's declaration is never read" <<'PY_CASE'
+edit("sce-build/src/parser.rs",
+     """            state.unhandled = parse_sce_unhandled(
+                &child,
+                || format!("<parallel id=\\"{parallel_id}\\">"),
+                source_name,
+            )?;""",
+     "")
+PY_CASE
