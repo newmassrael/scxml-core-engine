@@ -1,0 +1,125 @@
+# Mutation cases for "a conformance suite emitted outside this repository
+# builds and runs".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/conformance_suite_standalone.cases`.
+#
+# The defect these stand for shipped for as long as `--output-dir` existed:
+# the flag moved the generated trees, the vendoring claim was read off that,
+# and the tree it produced had never been compiled. Measured before the
+# change: `cargo test` on the emitted tree stopped at `unresolved module or
+# unlinked crate sce_rust_tests`.
+#
+# The cases break each half of the repair in turn — the suite's name, and the
+# files that make the tree a package — plus the two properties that keep the
+# repair from costing something elsewhere: that the default emission is still
+# byte-identical to the committed tree, and that a rename aimed at this
+# repository is refused rather than applied.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test conformance_suite_standalone
+# `w3c_suite.rs` is linked into the test binary — the test reads
+# `W3C_REGISTRY_RELATIVE_PATH` from the library and the library carries the
+# suite identity — so a mutation there must change that binary.
+# `sce_codegen.rs` is not: this test drives the CLI as a subprocess, so its
+# product is executed rather than linked, and the evidence that a mutation
+# reached what ran is the file differing on disk while the tests ran.
+mutation_targets sce-build/src/w3c_suite.rs
+mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+
+mutation_case "the generated Rust test names this repository's crate again" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        let suite = self.suite.rust_module_path();",
+     "        let suite = \"sce_rust_tests\".to_string();")
+PY
+
+mutation_case "the emitted Rust suite ships no manifest" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     '(root.join("Cargo.toml"), self.cargo_manifest(standalone))',
+     '(root.join("Cargo.toml.unused"), self.cargo_manifest(standalone))')
+PY
+
+mutation_case "the emitted Rust suite ships no harness" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                root.join(\"src/harness.rs\"),",
+     "                root.join(\"src/harness.rs.unused\"),")
+PY
+
+mutation_case "the emitted crate root declares a module it does not carry" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'             pub mod harness;\n",',
+     r'             pub mod harness_absent;\n",')
+PY
+
+mutation_case "a single-fixture suite is emitted without its module index" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    fn is_standalone_suite(&self) -> bool {\n        self.standalone.is_some()\n    }",
+     "    fn is_standalone_suite(&self) -> bool {\n        self.standalone.is_none()\n    }")
+PY
+
+mutation_case "the emitted Go test imports this repository's harness module" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        let harness_import = format!(\"{}/harness\", self.suite.go_module_path());",
+     "        let harness_import = \"github.com/newmassrael/sce-go-tests/harness\".to_string();")
+PY
+
+mutation_case "the emitted Go module carries no checksums" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                root.join(\"go.sum\"),",
+     "                root.join(\"go.sum.unused\"),")
+PY
+
+mutation_case "the Kotlin rewrite treats a suite package as a runtime one" <<'PY'
+edit("sce-build/src/w3c_suite.rs",
+     "pub const KOTLIN_RUNTIME_PACKAGES: &[&str] = &[\"runtime\", \"scripting\"];",
+     "pub const KOTLIN_RUNTIME_PACKAGES: &[&str] = &[\"runtime\", \"scripting\", \"http\"];")
+PY
+
+mutation_case "the Kotlin suite ships without the BasicHTTP test server" <<'PY'
+edit("sce-build/src/w3c_suite.rs",
+     "        \"http/W3CHttpTestServer.kt\",",
+     "        \"http/W3CHttpTestServer.kt.unused\",")
+PY
+
+mutation_case "the emitted Kotlin settings reach the SCE projects by name only" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'             includeBuild(\"{sce}\")\n",',
+     r'             // vendored at {sce}\n",')
+PY
+
+mutation_case "the emitted Python conftest keeps reaching for a sibling runtime" <<'PY'
+edit("sce-build/src/w3c_suite.rs",
+     "    Ok(source.replace(\n        PYTHON_CONFTEST_RUNTIME_LINE,",
+     "    Ok(source.replace(\n        \"a line the conftest does not contain\",")
+PY
+
+mutation_case "the Python wrapper computes the runtime path from its own depth" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     r'sys.path.insert(0, str(_HERE))\n',
+     r'sys.path.insert(0, str(_HERE.parents[2] / \"runtime\"))\n')
+PY
+
+mutation_case "renaming the suite inside this repository is quietly accepted" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "            if !standalone {",
+     "            if false {")
+PY
+
+mutation_case "a backend that names no suite accepts a name it will not use" <<'PY'
+edit("sce-build/src/w3c_suite.rs",
+     "        Self::for_language(language)?;",
+     "        let _ = Self::for_language(language);")
+PY
+
+mutation_case "a Rust keyword passes as a suite name" <<'PY'
+edit("sce-build/src/w3c_suite.rs",
+     "    if RUST_KEYWORDS.contains(&module_path.as_str()) {",
+     "    if false && RUST_KEYWORDS.contains(&module_path.as_str()) {")
+PY
+
+mutation_case "the default emission stops being the committed one" <<'PY'
+edit("sce-build/src/w3c_suite.rs",
+     "pub const RUST_DEFAULT_PACKAGE: &str = \"sce-rust-tests\";",
+     "pub const RUST_DEFAULT_PACKAGE: &str = \"sce-conformance\";")
+PY

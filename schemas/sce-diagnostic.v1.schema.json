@@ -233,6 +233,7 @@
         "cli/project-root-not-found",
         "cli/format-style-not-found",
         "cli/no-scxml-tag",
+        "cli/invalid-suite-package",
         "mesh/deploy-read",
         "mesh/deploy-parse",
         "mesh/deploy-unsupported-version",

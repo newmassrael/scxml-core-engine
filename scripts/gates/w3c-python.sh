@@ -82,3 +82,37 @@ if (( passed < 200 )); then
 fi
 
 sce_gate_step "$passed Python case(s) passed"
+
+# The same generator, asked for a tree of the caller's own.
+#
+# Python names no suite — its wrappers import the machine beside them by path —
+# so what makes an emitted tree standalone is the conftest, and the conftest
+# used to reach the runtime by walking up from its own location. Outside this
+# repository that walk lands nowhere, and every fixture fails on an import
+# error naming neither cause. The run below is deliberately given no
+# PYTHONPATH: if the emitted conftest does not find the runtime by itself,
+# nothing else will.
+sce_gate_step "running an emitted Python suite with no PYTHONPATH of its own"
+SUITE="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$SUITE'"
+
+"$CODEGEN" generate-w3c -l python --output-dir "$SUITE" -t 144 >/dev/null \
+    || sce_gate_fail "emitting a standalone Python suite"
+
+suite_status=0
+( cd "$SUITE/backends/python/tests" && env -u PYTHONPATH python3 -m pytest . --no-header -v ) \
+    >"$LOG/pytest-suite.log" 2>&1 || suite_status=$?
+if (( suite_status != 0 )); then
+    cat "$LOG/pytest-suite.log" >&2
+    sce_gate_fail "an emitted Python suite must pass from its own tree — that is what --output-dir claims"
+fi
+
+# One case, so "collected nothing" and "ran everything" differ by a single
+# line; the floor is what tells them apart.
+suite_passed="$(grep -oE '[0-9]+ passed' "$LOG/pytest-suite.log" | tail -1 | grep -oE '[0-9]+' || true)"
+if (( ${suite_passed:-0} < 1 )); then
+    cat "$LOG/pytest-suite.log" >&2
+    sce_gate_fail "the emitted Python suite collected no cases"
+fi
+
+sce_gate_step "the emitted Python suite passed ${suite_passed} case(s) on its own"

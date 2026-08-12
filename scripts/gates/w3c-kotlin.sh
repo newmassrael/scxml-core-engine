@@ -91,3 +91,54 @@ if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
 fi
 
 sce_gate_step "$cases Kotlin case(s) passed, committed tree unchanged"
+
+# The same generator, asked for a project of the caller's own.
+#
+# `--output-dir` used to emit Kotlin fixed to this repository's package names —
+# `com.sce.generated`, `com.sce.w3c` — with no build files and none of the
+# hand-authored classes the generated tests extend. The SCE Kotlin projects are
+# not published anywhere a consumer could resolve them from, so the emitted
+# settings reach them as a composite build; whether that actually resolves is
+# not something a structural check can answer, which is why this runs Gradle.
+#
+# One fixture, not 202: the claim is about packaging, and the composite build,
+# the package rewrite and the three shipped classes are all exercised by one.
+sce_gate_step "building an emitted Kotlin suite under a package root of its own"
+SUITE="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$SUITE'"
+
+"$(sce_gate_codegen)" generate-w3c -l kotlin \
+    --output-dir "$SUITE" \
+    --suite-package com.scegate.conformance \
+    -t 144 >/dev/null \
+    || sce_gate_fail "emitting a standalone Kotlin suite"
+
+suite_status=0
+./gradlew -p "$SUITE/backends/kotlin/tests" test --console=plain \
+    >"$LOG/gradle-suite.log" 2>&1 || suite_status=$?
+if (( suite_status != 0 )); then
+    tail -n 40 "$LOG/gradle-suite.log" >&2
+    sce_gate_fail "an emitted Kotlin suite must build and pass from its own tree — that is what --output-dir claims"
+fi
+
+# Same reason as the floor above: BUILD SUCCESSFUL covers a test task that
+# compiled and ran nothing, and here that is one missing line rather than 202.
+SUITE_REPORTS="$SUITE/backends/kotlin/tests/build/test-results/test"
+[ -d "$SUITE_REPORTS" ] \
+    || sce_gate_fail "the emitted Kotlin suite reported success without producing a result file"
+
+read -r suite_cases suite_failures suite_errors < <(
+    python3 - "$SUITE_REPORTS" <<'PY'
+import glob, sys, xml.etree.ElementTree as ET
+t = f = e = 0
+for p in glob.glob(sys.argv[1] + "/*.xml"):
+    r = ET.parse(p).getroot()
+    t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0))
+print(t, f, e)
+PY
+)
+if (( suite_cases < 1 || suite_failures != 0 || suite_errors != 0 )); then
+    sce_gate_fail "the emitted Kotlin suite ran $suite_cases case(s) with $suite_failures failure(s) and $suite_errors error(s)"
+fi
+
+sce_gate_step "the emitted Kotlin suite built and passed $suite_cases case(s)"

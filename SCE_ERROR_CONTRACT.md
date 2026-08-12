@@ -494,6 +494,7 @@ references against a real document and drift silently.
 | `cli/create-output-dir` | `cli` | no |  |
 | `cli/format-style-not-found` | `cli` | no |  |
 | `cli/invalid-format-option` | `cli` | `replace_one_of` |  |
+| `cli/invalid-suite-package` | `cli` | no |  |
 | `cli/json-serialization` | `cli` | no |  |
 | `cli/missing-metadata-field` | `cli` | no |  |
 | `cli/no-scxml-tag` | `cli` | no |  |

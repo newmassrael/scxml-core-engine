@@ -114,6 +114,11 @@ pub mod w3c_dist_manifest;
 /// regex over `tests/CMakeLists.txt` that made the build script the
 /// source of truth.
 pub mod w3c_registry;
+/// Identity and packaging of an emitted W3C conformance suite — the
+/// name its generated tests use to reach it, and the harness sources
+/// that travel with a tree written outside this repository. Read by
+/// `generate-w3c` when `--output-dir` names a root of the caller's own.
+pub mod w3c_suite;
 /// W3C XInclude preprocessing. Runs between XSD validation and
 /// roxmltree's document parse so the AOT code generator consumes
 /// the same post-expansion document as the C++ runtime. See

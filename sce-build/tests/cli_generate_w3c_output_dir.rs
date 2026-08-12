@@ -129,6 +129,14 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
     assert_eq!(
         written,
         vec![
+            // A root outside this repository asks for a suite of the
+            // caller's own, so the run also emits what makes the tree a
+            // package. `conformance_suite_standalone.rs` is where these
+            // three are shown to add up to something that builds; here
+            // they are listed because this test's claim is *exactly*
+            // what lands, and a set that grew silently would say the
+            // opposite of what it means.
+            "backends/rust/tests/Cargo.toml".to_string(),
             "backends/rust/tests/src/generated/mod.rs".to_string(),
             "backends/rust/tests/src/generated/test144/mod.rs".to_string(),
             // The sourcemap sidecar travels with the machine it
@@ -149,6 +157,8 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
             "backends/rust/tests/src/generated/test216/test216_hybrid0.scxml".to_string(),
             "backends/rust/tests/src/generated/test216/test216_hybrid0_sm.rs".to_string(),
             "backends/rust/tests/src/generated/test216/test216_sm.rs".to_string(),
+            "backends/rust/tests/src/harness.rs".to_string(),
+            "backends/rust/tests/src/lib.rs".to_string(),
             "backends/rust/tests/tests/test_144.rs".to_string(),
             "backends/rust/tests/tests/test_147.rs".to_string(),
             "backends/rust/tests/tests/test_216.rs".to_string(),
@@ -173,6 +183,13 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
 /// artifact unreproducible — two runs writing to different directories
 /// would differ despite identical inputs — and would defeat the
 /// `source-hash` drift gate, which is computed over inputs.
+///
+/// The emitted `Cargo.toml` is covered by this too, and is the one
+/// artifact where it took deciding rather than observing: it has to
+/// name the SCE packages by path, and the tempting expression — a path
+/// relative from the manifest to the SCE checkout — is a function of
+/// the output root and would have broken the property below. It names
+/// the resolved workspace root instead, which is an input of the run.
 #[test]
 fn generated_content_does_not_depend_on_the_output_root() {
     let staging = tempfile::tempdir().expect("tempdir");
