@@ -117,10 +117,17 @@ env:
   # set, which R840 reads to decide whether a citation was swallowed. That set is
   # 149 of 1920 build output here on synth and 9591 of 13685 on mesh, so the
   # swallowed verdict was developer-shaped even after the read set stopped being
-  # so. Still advisory and still 0 swallowed. Bumped after re-running
+  # so. Still advisory and still 0 swallowed. R1146-R1150 is this pin, and it
+  # asks nothing of us: R1146 hardens upstream's own symbol-axis control so a
+  # site that matched every answer now names one resolver, and the rest are
+  # upstream build profile and test-isolation work. Consumed for currency, not
+  # for a capability -- the plugin set is still tree-sitter-rust and
+  # tree-sitter-cpp only, so the Go/Python resolvers and the .kt extension map
+  # this repo waits on are not in it, and ledger_symbol_axis_reach.rs still
+  # reports those three backends UNREACHED. Bumped after re-running
   # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
   # enrolled workspace with the pin enforced.
-  MNEMOSYNE_REV: 89432e861968b987abd1f2eb58ecd9d7cd78a423
+  MNEMOSYNE_REV: 183a17a5254f27a246ef20e858de1523e0088815
 
 jobs:
   citations:
