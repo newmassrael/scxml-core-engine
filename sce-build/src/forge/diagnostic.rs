@@ -13903,6 +13903,17 @@ mod tests {
                 "docs/SCE_ACCEPTED_SUBSET.md",
                 include_str!("../../../docs/SCE_ACCEPTED_SUBSET.md"),
             ),
+            // The wire contract itself. It was absent from this list for
+            // as long as the list existed, and absent from the code → doc
+            // direction too, which is how its §5 came to promise the full
+            // enumeration while naming under a third of it. §5's tables
+            // are generated now, so what this direction still guards is
+            // the prose around them — every slug quoted in §2 through §11
+            // is a claim about what SCE emits.
+            (
+                "SCE_ERROR_CONTRACT.md",
+                include_str!("../../../SCE_ERROR_CONTRACT.md"),
+            ),
         ];
         let real: std::collections::BTreeSet<&str> =
             ALL_DIAGNOSTIC_CODES.iter().map(|c| c.as_str()).collect();
@@ -13942,6 +13953,204 @@ mod tests {
              Only contract documents are in scope: they describe shipped behaviour, \
              while design drafts legitimately name proposed or refused codes.",
             phantom.join("\n  ")
+        );
+    }
+
+    /// Markers bounding the generated code catalog in
+    /// `SCE_ERROR_CONTRACT.md` §5.
+    const CATALOG_BEGIN: &str = "<!-- BEGIN GENERATED: code catalog -->";
+    const CATALOG_END: &str = "<!-- END GENERATED: code catalog -->";
+
+    fn error_contract_path() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("sce-build's parent is the repo root")
+            .join("SCE_ERROR_CONTRACT.md")
+    }
+
+    /// One catalog row, with every column taken from the record the
+    /// code actually produces.
+    ///
+    /// `fix` and `stage` are collected as sets rather than single
+    /// values because neither is a property of the *code* — a code is
+    /// emitted from sites that may name different repairs. A row that
+    /// picked one and dropped the rest would be a claim the goldens do
+    /// not support, so a code with two answers renders both.
+    #[derive(Default)]
+    struct CatalogRow {
+        stages: std::collections::BTreeSet<&'static str>,
+        fixes: std::collections::BTreeSet<String>,
+        specs: std::collections::BTreeSet<&'static str>,
+    }
+
+    fn fix_kind(fix: &Fix) -> String {
+        let v = serde_json::to_value(fix).expect("Fix serialises");
+        v.get("kind")
+            .and_then(serde_json::Value::as_str)
+            .expect("Fix is an internally tagged enum with a `kind`")
+            .to_string()
+    }
+
+    fn catalog_rows(
+        diags: impl IntoIterator<Item = Diagnostic>,
+        into: &mut std::collections::BTreeMap<&'static str, CatalogRow>,
+    ) {
+        for d in diags {
+            let row = into.entry(d.code.as_str()).or_default();
+            row.stages.insert(d.stage.as_str());
+            match &d.fix {
+                Some(f) => {
+                    row.fixes.insert(format!("`{}`", fix_kind(f)));
+                }
+                None => {
+                    row.fixes.insert("no".to_string());
+                }
+            }
+            if let Some(spec) = d.spec {
+                row.specs.insert(spec);
+            }
+        }
+    }
+
+    fn render_catalog_table(rows: &std::collections::BTreeMap<&'static str, CatalogRow>) -> String {
+        let mut out = String::from("| Code | Stage | Fix? | Spec |\n|---|---|---|---|\n");
+        for (code, row) in rows {
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} |\n",
+                code,
+                row.stages
+                    .iter()
+                    .map(|s| format!("`{s}`"))
+                    .collect::<Vec<_>>()
+                    .join(" / "),
+                row.fixes.iter().cloned().collect::<Vec<_>>().join(" / "),
+                row.specs.iter().copied().collect::<Vec<_>>().join(" / "),
+            ));
+        }
+        out
+    }
+
+    /// Render §5's catalog from the goldens, grouped by the pipeline
+    /// that produces each code.
+    fn render_code_catalog() -> String {
+        let mut forge = std::collections::BTreeMap::new();
+        catalog_rows(
+            forge_golden_entries().iter().map(|(_, e, _)| single(e)),
+            &mut forge,
+        );
+        catalog_rows(
+            xsd_golden_entries()
+                .iter()
+                .flat_map(|(_, e, _)| e.to_diagnostics()),
+            &mut forge,
+        );
+        let mut cli = std::collections::BTreeMap::new();
+        catalog_rows(
+            cli_golden_entries().iter().map(|(_, e, _)| single(e)),
+            &mut cli,
+        );
+        let mut mesh = std::collections::BTreeMap::new();
+        catalog_rows(
+            mesh_golden_entries().iter().map(|(_, e, _)| single(e)),
+            &mut mesh,
+        );
+        // A code produced by more than one pipeline is listed once, under
+        // the first that claims it, so the row count below is the code
+        // count and not a number larger than it.
+        for code in forge.keys().copied().collect::<Vec<_>>() {
+            cli.remove(code);
+            mesh.remove(code);
+        }
+        for code in cli.keys().copied().collect::<Vec<_>>() {
+            mesh.remove(code);
+        }
+
+        let mut out = String::new();
+        for (title, rows) in [
+            ("5.1 Forge", &forge),
+            ("5.2 CLI", &cli),
+            ("5.3 Mesh", &mesh),
+        ] {
+            out.push_str(&format!("### {title}\n\n"));
+            out.push_str(&render_catalog_table(rows));
+            out.push('\n');
+        }
+        out.pop();
+        out
+    }
+
+    /// §5 says it is the full enumeration of `code` values. It was not:
+    /// measured 2026-08-12, it named 96 of 346, with fifteen whole
+    /// stages absent — and nothing read this file, in either direction.
+    /// The sibling gates cover `docs/SCE_ACCEPTED_SUBSET.md` and
+    /// `SCE_MESH.md`, so their green hid a document that promised more
+    /// than any check asked of it.
+    ///
+    /// Hand-completing the table would have made a second enumeration
+    /// to maintain, and this repository has measured what that costs
+    /// more than once. The table is generated from the goldens instead:
+    /// `ALL_DIAGNOSTIC_CODES` stays the one source, every column is a
+    /// property of the record the code actually emits, and completeness
+    /// stops being a claim anyone has to keep true by hand.
+    ///
+    /// Refresh with:
+    ///   `UPDATE_EXPECT=1 cargo test -p sce-build error_contract_catalog`
+    #[test]
+    fn error_contract_catalog_is_the_full_enumeration() {
+        let generated = render_code_catalog();
+        let path = error_contract_path();
+        let doc = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+
+        let begin = doc
+            .find(CATALOG_BEGIN)
+            .unwrap_or_else(|| panic!("{CATALOG_BEGIN} missing from {}", path.display()))
+            + CATALOG_BEGIN.len();
+        let end = doc
+            .find(CATALOG_END)
+            .unwrap_or_else(|| panic!("{CATALOG_END} missing from {}", path.display()));
+        assert!(
+            begin < end,
+            "the generated-catalog markers are inverted in {}",
+            path.display()
+        );
+
+        // Asserted on what is about to be written, and BEFORE the refresh
+        // path can write it. Checking the file afterwards would let a
+        // generator that dropped a pipeline round-trip against its own
+        // output: the refresh would make the document agree with the bug,
+        // and the next plain run would pass. Caught exactly that way —
+        // this assertion sat after the early return and a refresh sailed
+        // through with three codes unaccounted for.
+        let absent: Vec<&str> = ALL_DIAGNOSTIC_CODES
+            .iter()
+            .map(|c| c.as_str())
+            .filter(|c| !generated.contains(&format!("| `{c}` |")))
+            .collect();
+        assert!(
+            absent.is_empty(),
+            "the catalog calls itself the full enumeration and the generator \
+             omits {} code(s): {absent:#?}",
+            absent.len(),
+        );
+
+        let wanted = format!("\n\n{generated}\n");
+        if std::env::var_os("UPDATE_EXPECT").is_some() {
+            let mut next = String::with_capacity(doc.len());
+            next.push_str(&doc[..begin]);
+            next.push_str(&wanted);
+            next.push_str(&doc[end..]);
+            std::fs::write(&path, next).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+            return;
+        }
+
+        assert_eq!(
+            &doc[begin..end],
+            wanted,
+            "\nSCE_ERROR_CONTRACT.md \u{a7}5 is out of sync with the codes SCE \
+             emits. Run:\n  \
+             UPDATE_EXPECT=1 cargo test -p sce-build error_contract_catalog\n\
+             and commit the regenerated section with the change that moved it.",
         );
     }
 
