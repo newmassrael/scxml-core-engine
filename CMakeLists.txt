@@ -136,15 +136,14 @@ endif()
 # The remaining 66 MB per binary is .debug_gnu_pubnames (26.0) +
 # .debug_gnu_pubtypes (20.3) + .debug_addr (11.1) + .debug_line (8.5). gcc
 # turns those pubname tables on WITH -gsplit-dwarf and -gno-pubnames does not
-# decline them (measured: byte-identical output), so -32% is this toolchain's
-# ceiling rather than a setting left untuned. -Wl,--gdb-index would consume
-# them, but bfd ld rejects that option during CMake's compiler test, which runs
-# before the lld selection above.
+# decline them (measured: byte-identical output), so no *compile* flag declines
+# them. -Wl,--gdb-index consumes them instead, at link time — see the block
+# below, which is where the -32% figure stops being the ceiling.
 #
 # Applied through add_compile_options rather than CMAKE_CXX_FLAGS on purpose:
 # flags set before project() are also given to CMake's own compiler test, and
-# that is exactly where the --gdb-index attempt died. Here the flag reaches
-# real targets only.
+# that is exactly where an earlier --gdb-index attempt died. Here the flag
+# reaches real targets only.
 #
 # Debugging is unaffected as long as the .dwo files stay beside their objects
 # in the build tree, which is where the compiler writes them. gdb reads them
@@ -161,6 +160,41 @@ if(SCE_SPLIT_DWARF AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
     else()
         message(STATUS "⚠️  -gsplit-dwarf not supported by this compiler; debug info stays in the binaries")
     endif()
+endif()
+
+# =============================================================================
+# Debug symbol lookup - .gdb_index instead of pubname tables
+# =============================================================================
+# What split DWARF leaves behind is dominated by two lookup tables gcc emits
+# for the debugger's benefit: .debug_gnu_pubnames and .debug_gnu_pubtypes,
+# 47.2 MB of the 67.6 MB of debug sections on a representative test binary.
+# They are an index, not information — every fact they point at also lives in
+# the .dwo files.
+#
+# --gdb-index has the linker consume both and emit .gdb_index in their place,
+# which is the format gdb actually prefers. Measured 2026-08-13 by relinking
+# tests/action_tests three times each, same objects, gcc 13.3 + lld 18.1.3:
+#
+#   executable      74.6 MB -> 38.7 MB   (-48%)
+#   link              149 ms -> 122 ms   (-18%: 47 MB of tables cost more to
+#                                         write than an 11 MB index)
+#   .debug_gnu_pub*  47.2 MB -> 0, replaced by .gdb_index 11.3 MB
+#
+# Debugging improves rather than degrades: `info line` and `info functions`
+# both resolve through the index, and `addr2sce --pc` is unaffected either way
+# because it reads .symtab rather than DWARF (its own --help says so).
+#
+# Guarded on lld because bfd ld rejects the option; the guard is the reason
+# this sits inside the LLD_LINKER branch's reach rather than beside the
+# compile flags. add_link_options, not CMAKE_EXE_LINKER_FLAGS, for the same
+# reason the split-DWARF block gives: CMake's compiler test never sees it.
+#
+# `scripts/gates/cpp-suite.sh` asserts the emitted binaries actually carry
+# .gdb_index and no pubnames. A flag that stops reaching the link is exactly
+# the kind of change that leaves every test green.
+if(LLD_LINKER AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
+    add_link_options(-Wl,--gdb-index)
+    message(STATUS "✅ .gdb_index enabled (pubname tables consumed at link, ~48% smaller binaries)")
 endif()
 
 # Sanitizer options for Debug builds.
