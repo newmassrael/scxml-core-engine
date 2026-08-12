@@ -53,14 +53,16 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
        location, so an origin spelled that way matches nothing the child
        published and a peer comparing the two never agrees.
 
-       The child's location is the deterministic `sce://scxml/<name>_session`
-       its own `_ioprocessors` chunk emits (see `scriptengine.jinja2`), and the
-       invoke id -> child name mapping is known at codegen time, so the address
-       is resolved here without a runtime session registry. */
+       The child's location is the address it published for itself at `_init`
+       (see `scriptengine.jinja2`), read here from the child instance the
+       parent embeds. The invoke id -> child slot mapping is known at codegen
+       time, so the address still needs no runtime session registry — but the
+       address itself is the child's to state, because it names that child's
+       session rather than the document it was generated from. */
     if (invoke_id != NULL && invoke_id[0] != '\0') {
 {% for invoke_info in model.invokes | scxml %}
         if (strcmp(invoke_id, "{{ invoke_info.invoke_id }}") == 0) {
-            sce_copy_bounded_origin(evt.origin, "sce://scxml/{{ invoke_info.child_name | escape_c }}_session");
+            sce_copy_bounded_origin(evt.origin, sm->child_{{ invoke_info.field_suffix }}.scxml_location);
         }
 {% endfor %}
     }
