@@ -34,11 +34,34 @@ use crate::forge::diagnostic::{
 /// vs missing file) aren't pipeline stages in the forge/mesh sense.
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    #[error("Unknown language: {lang}. Use rust, cpp, kotlin, or go.")]
-    UnknownLanguage { lang: String },
+    /// A `--language` value no backend answers to.
+    ///
+    /// The menu comes from the route rather than from a sentence written
+    /// here: this variant is raised by seven subcommands that do not all
+    /// serve the same backends, and the one sentence that used to end it
+    /// ("Use rust, cpp, kotlin, or go.") named a set that was stale for
+    /// two of them and wrong for all seven.
+    #[error("Unknown language: {lang}. `{}` takes {}.", .route.subcommand(), .route.menu())]
+    UnknownLanguage {
+        lang: String,
+        route: crate::cli_language::LanguageRoute,
+    },
 
-    #[error("{lang} codegen is not yet supported")]
-    UnsupportedLanguage { lang: String },
+    /// A backend that exists but that this route does not serve.
+    ///
+    /// Distinct from [`CliError::UnknownLanguage`] because the repair is
+    /// different — the caller spelled a real backend and needs to know
+    /// which route reaches it, not which names parse. `lang` holds the
+    /// backend, so `actual` on the wire means one thing across both
+    /// variants; the route and its reason ride the message.
+    #[error("`{}` does not target {lang}. It takes {}{}",
+        .route.subcommand(),
+        .route.menu(),
+        .route.exclusion_reason().map(|r| format!(" — {r}")).unwrap_or_default())]
+    UnsupportedLanguage {
+        lang: String,
+        route: crate::cli_language::LanguageRoute,
+    },
 
     #[error("Cannot read {path}: {source}")]
     ReadInput {
@@ -195,19 +218,30 @@ impl SingleDiagnostic for CliError {
     /// contract.
     fn diagnostic_payload(&self) -> DiagnosticPayload {
         let (code, key_fragments, actual, fix) = match self {
-            CliError::UnknownLanguage { lang } => (
+            // The route joins the hash key because the same rejected
+            // name means a different diagnostic on a different route:
+            // `python` is unknown to nobody, but `c11` is a dead end on
+            // `generate-w3c` and a working target on `generate`, and the
+            // candidate list a consumer repairs from differs with it.
+            CliError::UnknownLanguage { lang, route } => (
                 DiagnosticCode::CliUnknownLanguage,
-                vec![lang.clone()],
+                vec![lang.clone(), route.subcommand().to_string()],
                 Some(lang.clone()),
                 Some(Fix::ReplaceOneOf {
-                    candidates: vec!["rust".into(), "cpp".into(), "kotlin".into(), "go".into()],
+                    candidates: route.candidates(),
                 }),
             ),
-            CliError::UnsupportedLanguage { lang } => (
+            // Carries the same repair as the unknown case: the caller
+            // named a real backend, so the actionable answer is which
+            // backends this route does reach. Leaving it absent made a
+            // machine consumer's only recourse the prose message.
+            CliError::UnsupportedLanguage { lang, route } => (
                 DiagnosticCode::CliUnsupportedLanguage,
-                vec![lang.clone()],
+                vec![lang.clone(), route.subcommand().to_string()],
                 Some(lang.clone()),
-                None,
+                Some(Fix::ReplaceOneOf {
+                    candidates: route.candidates(),
+                }),
             ),
             CliError::ReadInput { path, .. } => (
                 DiagnosticCode::CliReadInput,

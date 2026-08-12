@@ -18,6 +18,7 @@
 
 pub mod analyzer;
 pub mod cli_error;
+pub mod cli_language;
 pub mod conformance;
 pub mod filters;
 pub mod forge;
