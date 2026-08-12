@@ -1,0 +1,38 @@
+# Mutation cases for "no CI lane hands the runner a gate set".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ci_lane_gate_selection.cases`.
+#
+# The workflows are read by the tests at run time, not compiled into them, so
+# they are `mutation_runtime_targets`; the harness header explains what that
+# changes about the evidence.
+#
+# What these guard is a claim that is load-bearing and invisible: `cost_s` is
+# measured warm, and that basis is only sound while the derived order is
+# consumed warm. Every lane naming a single slug is what makes it so. A lane
+# that handed the runner a set would put a warm order in charge of a cold run
+# and no gate would fail, which is exactly the shape a test has to hold.
+#
+# Anchors are literal slices of the source, so an edit can move one out from
+# under a case. That is reported as INCONCLUSIVE with the anchor quoted, never
+# as a pass — re-anchor the case rather than reading the run as evidence.
+
+mutation_tests -p sce-build --features cli --test gate_registry_contract
+mutation_runtime_targets .github/workflows/tree-hygiene.yml .github/workflows/clippy-check.yml
+
+mutation_case "a lane asks for every gate, so the runner picks the order" <<'PY'
+edit(".github/workflows/tree-hygiene.yml",
+     "run: scripts/gate tree-hygiene",
+     "run: scripts/gate --all")
+PY
+
+mutation_case "a lane names two gates, so their order is derived and not authored" <<'PY'
+edit(".github/workflows/clippy-check.yml",
+     "run: scripts/gate clippy",
+     "run: scripts/gate clippy tree-hygiene")
+PY
+
+mutation_case "a lane runs the path-scoped selection with no slug at all" <<'PY'
+edit(".github/workflows/clippy-check.yml",
+     "run: scripts/gate clippy",
+     "run: scripts/gate")
+PY
