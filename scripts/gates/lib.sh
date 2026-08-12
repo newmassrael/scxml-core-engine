@@ -134,8 +134,17 @@ sce_main_build_dir() {
     # tree carried a stale `Makefile` from an earlier Make-generator configure
     # next to a cache that names Ninja, so "either one is present" answered yes
     # for a directory ninja could not build in.
+    # `|| true` because a tree that does not exist yet is the normal first run,
+    # not an error — and without it this line ENDS the gate. An assignment
+    # takes the exit status of its command substitution, `sed` exits 2 on a
+    # missing file, and `set -e` at the top of this file turns that into a
+    # silent death: no `sce_gate_fail`, no reason, just a non-zero gate.
+    # Measured 2026-08-12 on the first CI run of the cpp-suite lane, which is
+    # the only one that can start with no `build/` at all — the others' lanes
+    # restore a CMake cache first, so all three carried this and only one hit
+    # it.
     local generator generated
-    generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$SCE_MAIN_BUILD_DIR/CMakeCache.txt" 2>/dev/null)"
+    generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$SCE_MAIN_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true)"
     case "$generator" in
         Ninja*) generated="$SCE_MAIN_BUILD_DIR/build.ninja" ;;
         "")     generated="" ;;
