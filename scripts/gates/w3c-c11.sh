@@ -22,6 +22,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 sce_main_build_dir
 BUILD_DIR="$SCE_MAIN_BUILD_DIR"
 
+# A killed run leaves its log temporary behind forever; the gate that creates
+# them is the one that clears them.
+sce_prune_ctest_temporaries "$BUILD_DIR"
+
 # `sce_c11_tests` aggregates every target the C directory defines, so a
 # fixture added later is built without anyone updating a list — and building
 # it rather than the default target skips the C++ engine, mesh, forge and the
