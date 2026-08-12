@@ -1,0 +1,49 @@
+# Mutation cases for the fixed-test-port range check.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/fixed_test_ports.cases`.
+#
+# `tests/CMakeLists.txt` is read at run time by the test, so it is a
+# `mutation_runtime_targets` entry; the test source is compiled in and is an
+# ordinary target. Both kinds in one casefile, which is the arrangement the
+# harness's two evidence rules exist for.
+#
+# What these guard is a decision no build error follows. Picking a fixed port
+# out of the range the kernel hands out produces a suite that passes until it
+# does not, and the failure surfaces as an unrelated test's `init()` returning
+# false — measured 2026-08-12, on six ports of which one had actually collided.
+
+mutation_tests -p sce-build --features cli --test fixed_test_ports
+mutation_targets sce-build/tests/fixed_test_ports.rs
+mutation_runtime_targets tests/CMakeLists.txt
+
+# ── A port back inside the range ───────────────────────────────────
+
+mutation_case "a fixed port is moved back into the kernel's ephemeral range" <<'PY'
+edit("tests/CMakeLists.txt",
+     'set(SCE_TEST_CROSSDEV_DONEDATA_PORT "20824"',
+     'set(SCE_TEST_CROSSDEV_DONEDATA_PORT "55824"')
+PY
+
+# ── The check itself ───────────────────────────────────────────────
+
+mutation_case "the range comparison is inverted, so only safe ports are reported" <<'PY'
+edit("sce-build/tests/fixed_test_ports.rs",
+     ".filter(|(_, p)| (lo..=hi).contains(p))",
+     ".filter(|(_, p)| !(lo..=hi).contains(p))")
+PY
+
+# The first draft of this case deleted an explicit comment-skip and SURVIVED,
+# which was the harness telling the truth: the skip was dead code, because a
+# commented `# set(...)` already fails the anchored prefix. The mechanism that
+# actually keeps prose out is the anchor, so that is what gets broken here.
+mutation_case "the scan looks anywhere in the line, so prose counts as a declaration" <<'PY'
+edit("sce-build/tests/fixed_test_ports.rs",
+     'let Some(rest) = line.trim_start().strip_prefix("set(SCE_TEST_") else {\n            continue;\n        };',
+     'let Some(rest) = line.split_once("set(SCE_TEST_").map(|(_, r)| r) else {\n            continue;\n        };')
+PY
+
+mutation_case "the scan matches nothing and every port reads as safe" <<'PY'
+edit("sce-build/tests/fixed_test_ports.rs",
+     'line.trim_start().strip_prefix("set(SCE_TEST_")',
+     'line.trim_start().strip_prefix("set(NOTHING_MATCHES_THIS")')
+PY
