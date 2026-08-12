@@ -1,0 +1,127 @@
+name: C++ Test Suite
+
+# The half of the main tree's ctest partition that had no reader.
+#
+# Measured 2026-08-12 by running `scripts/gate --all` with a logging shim in
+# place of `ctest`: 28 gates passed and the only runs against the main build
+# were `w3c-c11`'s. 159 of 382 registered cases — every `mesh_*` case, all 19
+# zenoh ones, and twenty-four C++ unit suites — were executed by nothing. Not
+# by a gate and not by CI, because no workflow configured the main tree at all:
+# the C++ conformance job builds the single `w3c_test_cli` target.
+#
+# No `paths:` filter, for the reason `w3c-tests.yml` has none: a filter is a
+# statement about a runner paid by the minute, and the pre-push hook is where
+# this suite's real trigger set lives (`gate_registry.py`, `extra`).
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpp-suite:
+    name: C++ ctest Suite (engine + mesh)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          g++ \
+          meson \
+          ninja-build \
+          lld \
+          ccache \
+          pkg-config \
+          libxml2-dev \
+          libspdlog-dev \
+          libfmt-dev \
+          libboost-dev
+
+    - name: Setup Problem Matchers
+      run: |
+        echo "::add-matcher::.github/problem-matchers/gcc.json"
+        echo "::add-matcher::.github/problem-matchers/cmake.json"
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: |
+        # The Cargo cache restores all of `target`, but this step only builds
+        # the debug profile, so a release binary the cache still holds is not a
+        # product of this commit.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
+
+    - name: Setup Emscripten (emsdk)
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git
+        cd emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
+
+    - name: Cache CMake Build
+      uses: actions/cache@v5
+      with:
+        path: |
+          build/CMakeCache.txt
+          build/CMakeFiles
+          build/_deps
+        key: ${{ runner.os }}-cmake-${{ github.repository }}-${{ hashFiles('**/CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-${{ github.repository }}-
+
+    - name: Setup ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-cpp-suite-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-cpp-suite-
+
+    # Configure, build and run are one gate, so the check has one spelling for
+    # this lane and for the pre-push hook. The gate asserts that its half and
+    # the C11 arm's half add up to every registered case, so a case that
+    # belongs to neither fails here rather than going unrun in silence.
+    - name: Run the C++ ctest suite
+      run: |
+        ulimit -c unlimited
+        scripts/gate cpp-suite
+
+    - name: Debug Environment
+      if: failure()
+      run: |
+        set -o pipefail
+        echo "=== Registered cases ==="
+        ctest --test-dir build -N -LE c11 | tail -5
+        echo "=== Last failures ==="
+        cat build/Testing/Temporary/LastTestsFailed.log || echo "no failure log"
