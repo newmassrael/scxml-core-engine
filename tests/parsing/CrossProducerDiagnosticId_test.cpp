@@ -39,6 +39,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
@@ -47,6 +48,7 @@
 #include <set>
 #include <string>
 #include <typeinfo>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -193,6 +195,15 @@ const std::map<std::string, std::string> &exemptLeaves() {
                                "root check runs."},
         {"ParseException", "Wrapper for a non-typed `std::exception` escaping the parser (bad_alloc, third-party "
                            "throw). No document input raises it deterministically, so no fixture can pin it."},
+        {"SemanticWrongPipeline",
+         "Stage composition, measured 2026-08-12: a root that declares a forge `sce:kind` is refused by both "
+         "producers, but never through the same stage, so no fixture can put it in the code-agreeing set. Rust "
+         "routes the document to Forge per SCE_ERROR_CONTRACT.md §4.1 and answers whatever Forge finds there "
+         "(`xml/schema-validation` for an unknown kind, `validation/missing-element` for a known one whose body "
+         "is a statechart); the C++ engine has no forge pipeline to route into and answers "
+         "`validation/wrong-pipeline`. What matters across the two — that neither engine RUNS the document — is "
+         "pinned by `BothProducersAgreeOnWhichPipelineOwnsTheDocument` below, which is the property this leaf was "
+         "added for: before it existed the C++ parser accepted such documents and ran them as statecharts."},
         {"SemanticTopLevelScriptUnloaded",
          "Both producers reject what §scxml-5.8 forbids — measured on all three shapes — but "
          "through different surfaces: the C++ parser raises this leaf, while the Rust pipeline "
@@ -222,6 +233,97 @@ std::vector<std::string> fixtureNames(const std::string &root) {
 }
 
 }  // namespace
+
+// Which pipeline owns the document, asserted across both producers.
+//
+// The suite above compares HOW the two reject, over a fixture set
+// chosen so they reject through the same stage. It therefore cannot
+// see the prior question: whether they agree the document is theirs to
+// run at all. Measured 2026-08-12, that agreement did not hold — a
+// root declaring `sce:kind="lookup"` was refused by `sce-codegen` and
+// ACCEPTED by the C++ parser, which ran it as a plain statechart. The
+// two engines' accepted sets differed on a document an author writes
+// by typo, and no test in the tree asked.
+//
+// `SCE_ERROR_CONTRACT.md` §4.1 defines the routing and calls its last
+// row a contract guarantee, so the cases here are that table, not a
+// sample: absent and `"statechart"` belong to the SCXML engine, every
+// other value belongs to Forge. Documents are written at run time
+// because the class is closed and enumerable — a fixture directory
+// would invite it to be read as a sample of an open set.
+TEST(CrossProducerDiagnosticId, BothProducersAgreeOnWhichPipelineOwnsTheDocument) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+
+    struct Case {
+        const char *label;
+        const char *kindAttr;
+        bool ownedByThisEngine;
+    };
+
+    // A statechart body throughout, so the only thing that moves
+    // between cases is the routing attribute.
+    const std::vector<Case> cases = {
+        {"kind absent", "", true},
+        {"kind statechart", R"( sce:kind="statechart")", true},
+        {"kind known forge", R"( sce:kind="lookup")", false},
+        {"kind unknown", R"( sce:kind="bogus")", false},
+    };
+
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-pipeline-ownership-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(dir);
+
+    struct Cleanup {
+        std::filesystem::path dir;
+
+        ~Cleanup() {
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);
+        }
+    } cleanup{dir};
+
+    std::vector<std::string> violations;
+    for (const auto &c : cases) {
+        const auto path = dir / (std::string{"case-"} + std::to_string(&c - cases.data()) + ".scxml");
+        {
+            std::ofstream out{path};
+            out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                << "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:sce=\"http://sce.dev/ext\""
+                << " version=\"1.0\" initial=\"s1\"" << c.kindAttr << ">\n"
+                << "  <state id=\"s1\"><transition target=\"s2\"/></state>\n"
+                << "  <final id=\"s2\"/>\n"
+                << "</scxml>\n";
+        }
+        const auto rust = runRustProducer(bin, path.string());
+        const auto cpp = runCppProducer(path.string());
+
+        if (rust.emitted == c.ownedByThisEngine) {
+            violations.push_back(std::string{c.label} + ": Rust " + (rust.emitted ? "rejected" : "accepted") +
+                                 " a document §4.1 routes to " + (c.ownedByThisEngine ? "SCXML" : "Forge") +
+                                 ". Record: " + rust.raw);
+        }
+        if (cpp.emitted == c.ownedByThisEngine) {
+            violations.push_back(std::string{c.label} + ": C++ " + (cpp.emitted ? "rejected" : "accepted") +
+                                 " a document §4.1 routes to " + (c.ownedByThisEngine ? "SCXML" : "Forge") +
+                                 ". Record: " + cpp.raw);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+        << "the two producers disagree about which pipeline owns a document:\n  - " <<
+        [&] {
+            std::string joined;
+            for (const auto &v : violations) {
+                if (!joined.empty()) {
+                    joined += "\n  - ";
+                }
+                joined += v;
+            }
+            return joined;
+        }()
+        << "\nA document one engine refuses and the other runs is the same source producing two behaviours; "
+           "SCE_ERROR_CONTRACT.md §4.1 makes the routing a contract guarantee for exactly that reason.";
+}
 
 // Both producers, every fixture, one assertion per contract clause.
 //
