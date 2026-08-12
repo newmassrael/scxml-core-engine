@@ -1,0 +1,74 @@
+# Mutation cases for the generated code catalog in SCE_ERROR_CONTRACT.md §5.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/error_contract_catalog.cases`.
+#
+# What these guard is a document that PROMISED completeness and was never
+# read. Measured 2026-08-12: §5 opened with "The full enumeration of `code`
+# values" and named 96 of 343, fifteen stages absent, while the sibling gates
+# over `docs/SCE_ACCEPTED_SUBSET.md` and `SCE_MESH.md` stayed green. A claim
+# with no reader is the failure mode here, so every case below restores a
+# shape in which the claim is false and nothing says so.
+#
+# Both targets are compiled into the test binary — the document is pulled in
+# with `include_str!` and the generator is Rust — so they are ordinary
+# `mutation_targets`, not runtime ones.
+#
+# Anchors are literal slices of the source. A reformat can move one out from
+# under a case; that is reported as INCONCLUSIVE with the anchor quoted, never
+# as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/diagnostic.rs SCE_ERROR_CONTRACT.md
+
+# ── The catalog is complete ────────────────────────────────────────
+
+mutation_case "a whole pipeline is dropped from the catalog" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     '            mesh_golden_entries().iter().map(|(_, e, _)| single(e)),\n            &mut mesh,',
+     '            std::iter::empty(),\n            &mut mesh,')
+PY
+
+mutation_case "one code is filtered out of the catalog" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     "        for (code, row) in rows {",
+     "        for (code, row) in rows.iter().filter(|(c, _)| **c != \"io/filesystem\") {")
+PY
+
+# The completeness check guards the REFRESH path, so a case that only
+# deletes it proves nothing: measured, that mutation SURVIVED, and rightly
+# — while the generator is healthy the round-trip comparison is sufficient
+# on its own, and removing a net changes nothing until something falls.
+# The case has to be the composite the check exists for: a generator that
+# drops a code, and a run that takes the path which would write it.
+mutation_case "a refresh writes a catalog that is missing a code" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     "        for (code, row) in rows {",
+     "        for (code, row) in rows.iter().filter(|(c, _)| **c != \"io/filesystem\") {")
+edit("sce-build/src/forge/diagnostic.rs",
+     'if std::env::var_os("UPDATE_EXPECT").is_some() {',
+     "if true {")
+PY
+
+# ── The document matches what the producer emits ───────────────────
+
+mutation_case "a row in the checked-in catalog is edited by hand" <<'PY'
+edit("SCE_ERROR_CONTRACT.md",
+     "| `io/filesystem` | `io` | no |",
+     "| `io/filesystem` | `xml` | no |")
+PY
+
+mutation_case "a row is deleted from the checked-in catalog" <<'PY'
+import re
+p = "SCE_ERROR_CONTRACT.md"
+src = open(p).read()
+row = re.search(r"^\| `cli/unknown-language` \|.*\n", src, re.M).group(0)
+edit(p, row, "")
+PY
+
+# ── The prose cites only codes that exist ──────────────────────────
+
+mutation_case "the wire contract quotes a code SCE does not emit" <<'PY'
+edit("SCE_ERROR_CONTRACT.md",
+     "## 6. Exit codes",
+     "Consumers branch on `validation/invented-for-this-mutation`.\n\n## 6. Exit codes")
+PY
