@@ -50,6 +50,36 @@ sce_gate_step "building the main tree"
 cmake --build "$BUILD_DIR" --parallel "$(nproc)" >/dev/null \
     || sce_gate_fail "main tree build"
 
+# The debug-info layout is a property of the binaries, not of CMakeLists.txt,
+# and this is the only gate that has both a configured tree and the built
+# executables in it.
+#
+# Both settings it checks are invisible to every other kind of check. A
+# `-Wl,--gdb-index` that stops reaching the link — moved outside the
+# `LLD_LINKER` guard, dropped by a toolchain that ignores it, or configured
+# into a cache CI then restores — leaves the whole suite green while every
+# executable regrows the 47 MB of pubname tables the flag exists to consume.
+# Reading the option out of CMakeLists.txt would only confirm that someone
+# wrote it down, which is the difference between a setting being declared and
+# a setting being in effect, so the assertion is made against what came out.
+#
+# Judged on the largest executable rather than all of them: the property is
+# per-link, one binary either carries the section or the flag did not reach
+# any link, and readelf over 129 binaries would cost more than it tells.
+sce_gate_step "debug-info layout of the emitted binaries"
+biggest="$(find "$BUILD_DIR/tests" -maxdepth 1 -type f -executable -printf '%s\t%p\n' \
+    | sort -rn | head -1 | cut -f2)"
+[[ -n "$biggest" ]] \
+    || sce_gate_fail "no test executable found under $BUILD_DIR/tests to judge"
+sections="$(readelf -S --wide "$biggest")"
+grep -q '\.gdb_index' <<<"$sections" \
+    || sce_gate_fail "$biggest carries no .gdb_index — -Wl,--gdb-index did not reach the link. Reconfigure with a build type of Debug or RelWithDebInfo and lld available; without it every binary regrows ~47 MB of pubname tables."
+if grep -qE '\.debug_gnu_pub(names|types)' <<<"$sections"; then
+    sce_gate_fail "$biggest still carries pubname tables alongside .gdb_index — the linker emitted the index without consuming them, so the binary pays for both indexes."
+fi
+grep -q '\.debug_line' <<<"$sections" \
+    || sce_gate_fail "$biggest carries no .debug_line — the tree was built without debug info at all, which is not what this lane is for."
+
 count_registered() {
     ctest --test-dir "$BUILD_DIR" -N "$@" | grep -cE '^ *Test +#'
 }
