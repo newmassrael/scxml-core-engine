@@ -331,6 +331,24 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     bool is_running;
     bool transition_taken;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
+    /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
+       session, and the address that reaches it. Issued in `_init` rather
+       than baked at codegen time, because the requirement names the id of
+       the current SESSION and a document-derived value names the document:
+       two instances of one machine are two sessions, and giving them one
+       id makes their published `_ioprocessors` locations equal, so a
+       `<send>` addressed to one is a send addressed to either. Fixed
+       buffers — the profile allocates nothing.
+
+       The id buffer is sized from the machine name it is built out of,
+       not from `SCE_MAX_ID_LEN`: names of synthesised invoke children
+       (`<doc>__sce_synth_invoke__<invokeid>`) already run past 64
+       characters, and a shared cap would silently truncate the tail —
+       which is where the ordinal that distinguishes two sessions lives.
+       20 digits is `unsigned long`'s widest decimal form, and the
+       `sizeof` of the literal carries the terminator. */
+    char session_id[sizeof("{{ model.name | escape_c }}_session_") + 20u];
+    char scxml_location[sizeof("sce://scxml/{{ model.name | escape_c }}_session_") + 20u];
     void (*completion_callback)(void *user_data);
     void *completion_callback_user_data;
     {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
@@ -403,6 +421,19 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
 } {{ csym_prefix }}{{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
+
+/* W3C SCXML 5.10: the id this session was issued at `_init`, the value its
+   datamodel reads as `_sessionid`. Valid from `_init` until the storage
+   goes away; NULL for a NULL machine. Public because a session id that
+   only the datamodel can see is one a host cannot correlate its own
+   traces against, and because it is what makes "these are two sessions"
+   checkable from outside the machine. */
+const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML C.1.1: the address that reaches this session through the SCXML
+   event processor — the same string its `_ioprocessors` entry publishes and
+   the one a `<send target>` must carry to be delivered here. */
+const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
 {% if not model.has_parent_communication %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
