@@ -93,6 +93,86 @@ fn the_runner_reports_its_measurements_back_to_the_registry() {
 }
 
 #[test]
+fn no_ci_lane_asks_the_runner_to_choose_an_order() {
+    // `cost_s` is measured on a WARM tree, and the registry declares that as a
+    // deliberate basis: a push happens on a tree the developer has just built.
+    // The open question against it was whether a COLD profile would order the
+    // gates differently — deferred, at the time, until CI ran the gates through
+    // the runner, which would be the way to find out.
+    //
+    // CI does now, and the answer measured 2026-08-12 is that the question is
+    // empty. `run_order` is applied to a SET of gates, and the only selectors
+    // that produce a set are the pre-push hook's path-scoped selection and
+    // `--all` — both local, both warm. Every CI step names exactly one slug, so
+    // its position is authored in the workflow rather than derived, and a cold
+    // profile orders nothing.
+    //
+    // That is held here rather than remembered, because it is load-bearing: a
+    // lane that handed the runner a set would put a warm-derived order in
+    // charge of a cold run, and nothing else would notice.
+    let dir = repo_root().join(".github/workflows");
+    // Anything the shell would end the command at. A slug never looks like one.
+    const ENDS_THE_COMMAND: [&str; 6] = ["|", ";", "&&", "||", ">", "2>&1"];
+    let mut invocations = 0usize;
+    let mut violations: Vec<String> = Vec::new();
+
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .map(|e| e.expect("dir entry").path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
+        .collect();
+    files.sort();
+
+    for path in &files {
+        let body = std::fs::read_to_string(path).expect("read workflow");
+        for (n, line) in body.lines().enumerate() {
+            // Comments first. These files carry prose about how the gates are
+            // run — `cpp-suite.yml` records the `--all` run that produced its
+            // measurements — and a scanner that reads a sentence as a command
+            // reports the opposite of the truth. That is the same "a comment
+            // is not a contract" defect this suite has had twice.
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            // The bare token only. A `paths:` entry spells it `'scripts/gate'`,
+            // which is the file being watched, not a command being run.
+            let Some(at) = tokens.iter().position(|t| *t == "scripts/gate") else {
+                continue;
+            };
+            let args: Vec<&str> = tokens[at + 1..]
+                .iter()
+                .take_while(|t| !t.starts_with('#') && !ENDS_THE_COMMAND.contains(t))
+                .copied()
+                .collect();
+            invocations += 1;
+            let where_ = format!(
+                "{}:{}",
+                path.file_name().expect("named file").to_string_lossy(),
+                n + 1
+            );
+            if args.len() != 1 || args[0].starts_with('-') {
+                violations.push(format!("{where_}: scripts/gate {}", args.join(" ")));
+            }
+        }
+    }
+
+    // A parse that stopped matching would find nothing and report a clean
+    // sweep. The floor is what a working parse saw, and it may only grow.
+    assert!(
+        invocations >= 25,
+        "found only {invocations} runner invocation(s) across {} workflow(s) — \
+         the scan is broken, not the lanes",
+        files.len()
+    );
+    assert!(
+        violations.is_empty(),
+        "a CI lane hands the runner a gate SET, so a warm-measured cost_s \
+         would decide the order of a cold run: {violations:?}"
+    );
+}
+
+#[test]
 fn every_workflow_the_registry_maps_exists() {
     // A registry entry naming a workflow that is not there does not fail
     // loudly: `workflow_paths` returns the catch-all for a file it cannot
