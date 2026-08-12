@@ -860,6 +860,54 @@ struct GenerateArgs {
     include_dir: Vec<String>,
 }
 
+/// `--registry`'s long help, formatted from the constant the loader
+/// resolves against the project root.
+///
+/// Written this way rather than as a doc comment because the two have
+/// drifted before: the registry moved off `tests/CMakeLists.txt` and
+/// the help kept naming it, so a caller doing exactly what the help
+/// said got a JSON parse error on a build script. Formatting the one
+/// constant into the one sentence makes that particular drift
+/// unrepresentable; `cli_documented_catalog_paths` covers the rest.
+fn w3c_registry_flag_help() -> String {
+    format!(
+        "Path to the W3C conformance registry — the JSON catalog at \
+         `{}`, which declares every upstream test this build generates \
+         and the harness each one needs.\n\n\
+         Defaults to that path under the resolved project root. Name it \
+         when the caller is not this repository: together with \
+         `--resources` and `--output-dir`, that is what lets a vendoring \
+         build drive the suite without owning SCE's directory layout.",
+        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH
+    )
+}
+
+/// `--manifest`'s long help, shared by the two subcommands that read a
+/// fixture catalog. Formatted from the constant for the same reason
+/// [`w3c_registry_flag_help`] is.
+fn forge_catalog_flag_help() -> String {
+    format!(
+        "Path to fixture catalog JSON — by default the numerical fixture \
+         catalog at `{}`. Pass `--catalog` to read a different one.",
+        sce_build::conformance::FORGE_CATALOG_RELATIVE_PATH
+    )
+}
+
+/// `--catalog`'s long help. Both catalog locations come from their own
+/// modules, so neither can be renamed out from under this sentence.
+fn catalog_flag_help() -> String {
+    format!(
+        "Which catalog `--manifest` points at.\n\n\
+         `forge` (default) is the numerical fixture catalog at `{}`; \
+         `w3c` is the statechart conformance registry at `{}`. Named \
+         rather than sniffed from the file's shape: the two catalogs \
+         answer different questions, and a reader that guesses would \
+         pick one silently on a malformed file.",
+        sce_build::conformance::FORGE_CATALOG_RELATIVE_PATH,
+        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH
+    )
+}
+
 /// CLI arguments for the `generate-w3c` subcommand. Extracted into an
 /// `Args` struct (mirroring `GenerateArgs`) so `cmd_generate_w3c` takes
 /// one parameter instead of eight, free of a `too_many_arguments` allow.
@@ -868,8 +916,8 @@ struct GenerateW3cArgs {
     /// Target language (rust, cpp, kotlin, go, c11).
     #[arg(short, long)]
     language: String,
-    /// Path to tests/CMakeLists.txt (test registry)
-    #[arg(long)]
+    /// Path to the W3C conformance registry
+    #[arg(long, long_help = w3c_registry_flag_help())]
     registry: Option<String>,
     /// Path to resources directory
     #[arg(long)]
@@ -1116,8 +1164,8 @@ enum Commands {
         /// Target language (rust, cpp, kotlin, go, python)
         #[arg(short, long)]
         language: String,
-        /// Path to fixture catalog JSON (tests/forge/conformance/fixtures.json)
-        #[arg(short, long)]
+        /// Path to fixture catalog JSON
+        #[arg(short, long, long_help = forge_catalog_flag_help())]
         manifest: String,
         /// Output directory for the generated harness file
         #[arg(short, long)]
@@ -1164,8 +1212,8 @@ enum Commands {
     /// systems consume this so they don't need a native JSON parser
     /// (CMake, Gradle, plain Bash) to enumerate fixtures.
     ListFixtures {
-        /// Path to fixture catalog JSON (tests/forge/conformance/fixtures.json)
-        #[arg(short, long)]
+        /// Path to fixture catalog JSON
+        #[arg(short, long, long_help = forge_catalog_flag_help())]
         manifest: String,
         /// Output format. `plain` (default) is one fixture name per line,
         /// suitable for `for fixture in $(sce-codegen list-fixtures ...)`.
@@ -1194,16 +1242,8 @@ enum Commands {
         /// Required when `--has-test-vectors` is set.
         #[arg(long)]
         resource_dir: Option<String>,
-        /// Which catalog `--manifest` points at.
-        ///
-        /// `forge` (default) is the numerical fixture catalog at
-        /// `tests/forge/conformance/fixtures.json`; `w3c` is the
-        /// statechart conformance registry at
-        /// `tests/w3c/conformance/fixtures.json`. Named rather than
-        /// sniffed from the file's shape: the two catalogs answer
-        /// different questions, and a reader that guesses would pick
-        /// one silently on a malformed file.
-        #[arg(long, default_value = "forge")]
+        /// Which catalog `--manifest` points at
+        #[arg(long, default_value = "forge", long_help = catalog_flag_help())]
         catalog: String,
         /// Restrict a `--catalog w3c` listing to fixtures naming this
         /// harness (`simple`, `scheduled`, `http`). This is how a build
@@ -4283,11 +4323,15 @@ fn generate_w3c_unified(
     // + test harness across all 202 tests in this invocation.
     let drift_ctx = DriftContext::compute(resources_dir, None, None);
 
-    let cmake_tests = load_w3c_registry(registry_file);
-    println!("C++ test registry: {} tests", cmake_tests.len());
+    // Named for what it is read from. The line used to say "C++ test
+    // registry" from when the registry was `tests/CMakeLists.txt` and
+    // C++ was the only backend it scheduled; it is printed by every
+    // backend, and the registry is now a language-neutral catalog.
+    let registered = load_w3c_registry(registry_file);
+    println!("W3C conformance registry: {} fixtures", registered.len());
 
     if list {
-        for (tid, info) in &cmake_tests {
+        for (tid, info) in &registered {
             let scxml = find_scxml(resources_dir, tid);
             let status = if scxml.is_some() { "OK" } else { "MISSING" };
             let comment_trunc: String = info.comment.chars().take(70).collect();
@@ -4302,7 +4346,7 @@ fn generate_w3c_unified(
     let test_ids: Vec<String> = if let Some(tid) = single_test {
         vec![tid.to_string()]
     } else {
-        let mut ids: Vec<String> = cmake_tests.keys().cloned().collect();
+        let mut ids: Vec<String> = registered.keys().cloned().collect();
         ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
         ids
     };
@@ -4407,7 +4451,7 @@ fn generate_w3c_unified(
                             if let Some(ref pass) = pass_state {
                                 let machine = to_pascal_case(input_stem);
                                 let metadata = read_metadata(resources_dir, test_id);
-                                let test_type = cmake_tests
+                                let test_type = registered
                                     .get(test_id.as_str())
                                     .map(|i| i.test_type.as_str())
                                     .unwrap_or("SIMPLE");
