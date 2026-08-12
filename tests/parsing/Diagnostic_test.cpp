@@ -1054,6 +1054,24 @@ TEST(SemanticErrorWire, HistoryDefaultMissingConformsToV1Schema) {
     EXPECT_FALSE(j.contains("fix")) << "the Rust producer emits no fix for this code: " << j.dump();
 }
 
+TEST(SemanticErrorWire, WrongPipelineConformsToV1Schema) {
+    // The document declares a kind this engine does not run.
+    // `SCE_ERROR_CONTRACT.md` §4.1 routes on that attribute, and until
+    // this leaf existed the C++ parser did not read it — it ran forge
+    // documents as statecharts while `sce-codegen` rejected them.
+    //
+    // `actual` carries the declared kind, which is the field the author
+    // has to change. No `fix`: §3.1 has no variant for "generate this
+    // document with a different tool", and inventing one here would put
+    // the two producers at odds on a shared wire code.
+    const SemanticWrongPipeline err(/*kind=*/"lookup");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/wrong-pipeline");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("actual").get<std::string>(), "lookup");
+    EXPECT_FALSE(j.contains("fix")) << "the Rust producer emits no fix for this code: " << j.dump();
+}
+
 TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
     const SemanticNoStates err;
     const auto j = err.to_json();
