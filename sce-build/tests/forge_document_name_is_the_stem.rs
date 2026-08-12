@@ -293,7 +293,7 @@ fn the_identity_rule_holds_for_every_kind_the_corpus_declares() {
         // `algorithm` is the exception; every other kind takes the stem. An
         // inline-eligible document is emitted inside its host statechart, so
         // its artifact carries the stem as a prefix rather than whole.
-        let follows_name = artifacts.iter().any(|a| *a == declared);
+        let follows_name = artifacts.contains(&declared);
         let follows_stem = artifacts.iter().any(|a| a.starts_with(&stem));
         let ok = if kind == "algorithm" {
             follows_name
