@@ -1,0 +1,69 @@
+# What this repository needs from a build machine, and what "verified"
+# means for it. Machine names live in `~/.claude/remote-build/hosts.toml`,
+# never here — see the remote-build skill, rule 11.
+#
+# The verify set is a decision, not something to detect: this tree carries
+# cargo, cmake and gradle side by side, so any auto-detection picks one of
+# three and calls it the answer. Named here: the Rust workspace and the C++
+# ctest suite, which are the two heaviest lanes and the two the build
+# machine has toolchains for. The Go, Python and Kotlin lanes stay local —
+# `go` is absent on the machine, and the other two run in seconds.
+
+# `.git` and the four submodule worktrees travel too. Sending only
+# `git ls-files` output would deliver empty submodule directories, and the
+# C++ configure dies on `third_party/quickjs does not contain a
+# CMakeLists.txt` — a transfer failure that reads as a build failure.
+send    = "tracked+submodules"
+
+# `target` is a symlink into ~/.buildcache and would arrive broken.
+# `build` and `embed` are generated locally and are rebuilt there anyway.
+exclude = ["/target", "/build", "/embed"]
+
+# `node` is not optional: every BasicHTTP fixture in the Rust workspace
+# posts to localhost:8080, and without the echo server they route to their
+# `<transition event="*"/>` fail branch — 25 failures that say nothing about
+# the backend. The gates start it for the same reason.
+#
+# `mnemosyne-cli` is listed for a reason worth stating: without it the
+# citation gate cannot run, and its "cannot run" is spelled as a plain
+# failure — so `gate_registry_contract` reports "the staged gate rejected a
+# real citation" on a machine that simply lacks the binary. Measured: two
+# tests red for that reason and no other. Listing it here keeps such a
+# machine out of the candidate set instead of turning it into a red that
+# looks like a code defect.
+needs = ["cargo", "cmake", "ninja", "g++", "node", "mnemosyne-cli"]
+
+# The C++ tree is the constraint: a debug build of this repository has
+# measured 4.2 GB of debug info in its executables alone.
+min_ram_gb  = 16
+min_free_gb = 60
+
+[commands]
+# `--features cli` is not optional here: `cargo test --workspace` silently
+# skips every cli-gated target, so a workspace run without it reports green
+# on the CLI surface it never compiled.
+#
+# `-DCMAKE_BUILD_TYPE=RelWithDebInfo` is not a preference either: three gates
+# read the cache and refuse a tree configured any other way, because a
+# differently configured binary is not the one CI judges. A remote tree
+# configured without it produces a build the local gates then reject.
+#
+# The generator is built first because CMake *configure* looks for it —
+# `cmake/SCEFindCodegen.cmake` fails the configure outright when it is
+# absent, so the obvious order (configure, then build everything) does not
+# reach a single compile on a cold tree.
+build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && cargo test --workspace --features cli --no-run"
+
+# The echo server is started here rather than assumed: a bare workspace run
+# reports failures that look like backend defects and are not.
+#
+# The order is not cosmetic. The C++ suite brings up its OWN listener on
+# 8080, so a server started before ctest makes that bind fail; the Rust
+# workspace has no such fixture and needs one already listening. So: ctest
+# with the port free, then the server, then cargo. Both statuses are OR'd so
+# a red ctest cannot be hidden by a green cargo run.
+verify = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
+
+# A hint for the run-time parallelism calculation, not a limit. Rust test
+# processes here are small; the C++ link steps are what peak.
+peak_gb_per_task = 4
