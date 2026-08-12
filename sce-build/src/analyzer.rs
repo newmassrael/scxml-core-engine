@@ -710,9 +710,18 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 /// [`ScxmlSemanticError::TopLevelScriptUnloaded`]: crate::scxml_semantic::ScxmlSemanticError::TopLevelScriptUnloaded
 /// [`ScxmlSemanticError::InitialStateUnknown`]: crate::scxml_semantic::ScxmlSemanticError::InitialStateUnknown
 /// [`ValidationError::DynamicFeatures`]: crate::forge::error::ValidationError::DynamicFeatures
-pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error::ForgeError> {
-    use crate::forge::error::{ForgeError, ValidationError};
+pub fn can_generate_static(
+    model: &SCXMLModel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{ForgeError, Located, ValidationError};
     use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
+
+    // Document-scoped rejections: no node owns them, so they reach the
+    // wire with a file and no line, which is what §2.2 allows when the
+    // producer genuinely has no finer coordinate.
+    let whole_document =
+        |err: ForgeError| -> Located<ForgeError> { Located::new(err, diag_label, None, None) };
 
     if model.document_rejected {
         // Analyzer path doesn't have the failing script's index/src
@@ -720,12 +729,12 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // without preserving the metadata). Both fields stay None;
         // C++ side captures detail at parser-throw time. The drift
         // test pins both surfaces emit the same wire code.
-        return Err(ForgeError::Scxml(Box::new(
+        return Err(whole_document(ForgeError::Scxml(Box::new(
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
                 src: None,
             },
-        )));
+        ))));
     }
     if model.states.is_empty() {
         // §scxml-3.2 requires at least one `<state>`, `<parallel>` or
@@ -744,7 +753,9 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // classified a stateless document differently, and the three
         // short-circuits were guarding against a case they were told
         // could not reach them.
-        return Err(ForgeError::Scxml(Box::new(ScxmlSemanticError::NoStates)));
+        return Err(whole_document(ForgeError::Scxml(Box::new(
+            ScxmlSemanticError::NoStates,
+        ))));
     }
     if model.initial.is_empty() {
         // Genuine dynamic-feature: runtime default resolution per
@@ -752,12 +763,12 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // has no equivalent fallback. The Interpreter would NOT
         // reject this document — it's a codegen-pipeline limitation,
         // not a semantic violation.
-        return Err(ForgeError::Validation(Box::new(
+        return Err(whole_document(ForgeError::Validation(Box::new(
             ValidationError::DynamicFeatures {
                 name: model.name.clone(),
                 reason: "no initial state (runtime default resolution required)".to_string(),
             },
-        )));
+        ))));
     }
     let initial_states: Vec<&str> = model.initial.split_whitespace().collect();
     let all_known = if initial_states.len() > 1 {
@@ -770,13 +781,32 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
         // because §3.3 cannot resolve a non-existent state id. The
         // available list feeds the structured `ReplaceOneOf` fix.
         let available: Vec<String> = model.states.keys().cloned().collect();
-        return Err(ForgeError::Scxml(Box::new(
-            ScxmlSemanticError::InitialStateUnknown {
-                state_id: model.initial.clone(),
-                scope: InitialStateScope::DocumentRoot,
-                available,
-            },
-        )));
+        // The unresolved name is the root element's `initial`
+        // attribute, so the root's own coordinate is the edit site.
+        // Only line/col are taken: the recorded location carries the
+        // artifact-facing basename, the record must carry the document
+        // as the caller named it (§2.2).
+        let (line, col) = match model.source_location.as_ref() {
+            Some(loc) => (loc.line, loc.col),
+            None => (None, None),
+        };
+        let err = ForgeError::Scxml(Box::new(ScxmlSemanticError::InitialStateUnknown {
+            state_id: model.initial.clone(),
+            scope: InitialStateScope::DocumentRoot,
+            available,
+        }));
+        // Recorded rows index into the expanded document; resolve to
+        // the authored file before the record reaches a consumer that
+        // opens it.
+        let positions = model.authored_positions.as_ref();
+        let located = match positions.and_then(|p| p.resolve(line, col)) {
+            Some((file, row, col)) => Located::new(err, file, Some(row), Some(col)),
+            None => Located::new(err, diag_label, line, col),
+        };
+        return Err(match positions.and_then(|p| p.call_site_on(line)) {
+            Some((file, row, col)) => located.expanded_from(file, row, col),
+            None => located,
+        });
     }
     // State-reference resolution — the rules and their spec
     // citations live in `crate::scxml_references`. Hosted here rather
@@ -785,7 +815,7 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
     // pipelines share: the CLI re-implements parse → analyze →
     // generate and never enters that chain. See
     // `crate::scxml_references` for the placement argument.
-    crate::scxml_references::validate(model)?;
+    crate::scxml_references::validate(model, diag_label)?;
     Ok(())
 }
 
@@ -1044,9 +1074,9 @@ mod tests {
         // states map non-empty so we don't hit document_rejected first
         model.states.insert("s1".into(), Default::default());
 
-        let err = can_generate_static(&model)
+        let err = can_generate_static(&model, "probe.scxml")
             .expect_err("no initial attribute must surface a precondition failure");
-        match err {
+        match err.error {
             ForgeError::Validation(boxed) => match *boxed {
                 ValidationError::DynamicFeatures { name, reason } => {
                     assert_eq!(name, "probe");
@@ -1076,8 +1106,9 @@ mod tests {
         model.initial = "nope".into();
         model.states.insert("s1".into(), Default::default());
 
-        let err = can_generate_static(&model).expect_err("undeclared initial must reject");
-        match err {
+        let err =
+            can_generate_static(&model, "probe.scxml").expect_err("undeclared initial must reject");
+        match err.error {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::InitialStateUnknown {
                     state_id,
@@ -1104,9 +1135,9 @@ mod tests {
         let mut model = empty_model();
         model.document_rejected = true;
 
-        let err =
-            can_generate_static(&model).expect_err("document_rejected must surface a typed error");
-        match err {
+        let err = can_generate_static(&model, "probe.scxml")
+            .expect_err("document_rejected must surface a typed error");
+        match err.error {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => {
                     // Analyzer path doesn't have the failing script's
@@ -1137,7 +1168,7 @@ mod tests {
         let mut model = empty_model();
         model.initial = "nope".into();
         model.states.insert("s1".into(), Default::default());
-        let scxml_err = can_generate_static(&model).expect_err("undeclared");
+        let scxml_err = can_generate_static(&model, "probe.scxml").expect_err("undeclared");
         let scxml_diags = scxml_err.to_diagnostics();
         assert_eq!(scxml_diags.len(), 1);
         assert_eq!(scxml_diags[0].code.as_str(), "validation/invalid-reference");

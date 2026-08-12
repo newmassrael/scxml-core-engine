@@ -719,6 +719,18 @@ impl SCXMLParser {
             },
             base_dir.as_deref(),
         )
+        .map(|mut model| {
+            // The positions the parse recorded index into `expanded`.
+            // Hand the model the mapping so validators running after
+            // this point can report authored coordinates — the error
+            // path already gets that through `remap_post_expansion`,
+            // and the success path carries positions that outlive it.
+            model.authored_positions = Some(crate::model::AuthoredPositions {
+                expanded: expanded.clone(),
+                map: final_map.clone(),
+            });
+            model
+        })
         .map_err(|err| remap_post_expansion(err, &expanded, &final_map))
     }
 
@@ -2126,6 +2138,7 @@ impl SCXMLParser {
         elem: &roxmltree::Node,
         action: &mut Action,
         model: &mut SCXMLModel,
+        source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
         action.event = elem.attribute("event").unwrap_or("").to_string();
         action.eventexpr = elem.attribute("eventexpr").unwrap_or("").to_string();
@@ -2172,6 +2185,7 @@ impl SCXMLParser {
                 location: param_elem.attribute("location").unwrap_or("").to_string(),
                 is_static_literal,
                 static_value,
+                source_location: source_location_of(&param_elem, source_name),
             });
         }
 
@@ -2314,6 +2328,7 @@ impl SCXMLParser {
                 location: String::new(),
                 is_static_literal: false,
                 static_value: String::new(),
+                source_location: source_location_of(&arg, source_name),
             });
         }
 
@@ -2446,7 +2461,7 @@ impl SCXMLParser {
                     model.raised_events.insert(action.event.clone());
                 }
             }
-            "send" => self.parse_send_action(child, &mut action, model)?,
+            "send" => self.parse_send_action(child, &mut action, model, source_name)?,
             "assign" => {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
@@ -2685,6 +2700,7 @@ impl SCXMLParser {
             let expr = param.attribute("expr").unwrap_or("").to_string();
             let location = param.attribute("location").unwrap_or("").to_string();
             let is_sl = is_static_string_literal(&expr);
+            let param_at = source_location_of(&param, source_name);
             static_params.push(Param {
                 name: name.clone(),
                 expr: expr.clone(),
@@ -2695,11 +2711,13 @@ impl SCXMLParser {
                 } else {
                     String::new()
                 },
+                source_location: param_at.clone(),
             });
             hybrid_params.push(Param {
                 name,
                 expr,
                 location,
+                source_location: param_at,
                 ..Default::default()
             });
         }
@@ -3081,6 +3099,7 @@ impl SCXMLParser {
                     } else {
                         String::new()
                     },
+                    source_location: source_location_of(&param, source_name),
                 });
             }
         }

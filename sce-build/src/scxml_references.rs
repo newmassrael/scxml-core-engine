@@ -59,7 +59,7 @@
 // *referencing* transition instead of at the `<history>` element that
 // declares it.
 
-use crate::forge::error::ForgeError;
+use crate::forge::error::{ForgeError, Located, SourceLocation};
 use crate::model::SCXMLModel;
 use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
 
@@ -68,10 +68,22 @@ use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
 /// (`scxml_reachability::validate`, `scxml_exhaustiveness::validate`)
 /// because the wire layer models one rejection per document.
 ///
-/// Returns the bare [`ForgeError`] — the caller
-/// (`analyzer::can_generate_static`) shares one `Located` wrapping site
-/// with the sibling rules it hosts.
-pub fn validate(model: &SCXMLModel) -> Result<(), ForgeError> {
+/// Returns a [`Located`] error rather than a bare [`ForgeError`]: the
+/// unresolved name sits on a `<transition>` or `<state>` the model
+/// already carries a `source_location` for, and
+/// SCE_ERROR_CONTRACT.md §2.2 has the consumer open `location.file`
+/// and edit there. Handing the caller a bare error meant the shared
+/// wrapping site could only supply the file, so every
+/// `validation/invalid-reference` reached the wire with no line — and
+/// after `<sce:use>` expansion the rejected value is often a
+/// substituted string that appears nowhere in the file the record
+/// names, which leaves a whole-file search as the consumer's only
+/// strategy and that search finding nothing.
+///
+/// `diag_label` is the document as the caller named it (§2.2), not
+/// the artifact-facing basename the model's own `source_location`
+/// carries.
+pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<ForgeError>> {
     // `ScxmlSemanticError::NoStates` fires earlier in the pipeline;
     // there is nothing to resolve against here.
     if model.states.is_empty() {
@@ -91,7 +103,21 @@ pub fn validate(model: &SCXMLModel) -> Result<(), ForgeError> {
     for (history_id, info) in &model.history_states {
         for token in info.default_target.split_whitespace() {
             if !resolves(model, token) {
-                return Err(reject_target(history_id, token, &declared_states));
+                // The `<history>` element's own coordinate is the
+                // parent state's: `HistoryInfo` records the parent id,
+                // not a node position.
+                let at = model
+                    .states
+                    .get(&info.parent)
+                    .and_then(|s| s.source_location.as_ref());
+                return Err(reject_target(
+                    history_id,
+                    token,
+                    &declared_states,
+                    at,
+                    diag_label,
+                    model,
+                ));
             }
         }
     }
@@ -113,14 +139,19 @@ pub fn validate(model: &SCXMLModel) -> Result<(), ForgeError> {
                 // a wider list would put illegal values on the
                 // `Fix::ReplaceOneOf` wire.
                 let children: Vec<String> = child_ids(model, &state.id);
-                return Err(ScxmlSemanticError::InitialStateUnknown {
-                    state_id: token.to_string(),
-                    scope: InitialStateScope::CompoundState {
-                        parent_id: state.id.clone(),
-                    },
-                    available: children,
-                }
-                .into());
+                return Err(located(
+                    ScxmlSemanticError::InitialStateUnknown {
+                        state_id: token.to_string(),
+                        scope: InitialStateScope::CompoundState {
+                            parent_id: state.id.clone(),
+                        },
+                        available: children,
+                    }
+                    .into(),
+                    state.source_location.as_ref(),
+                    diag_label,
+                    model,
+                ));
             }
         }
 
@@ -129,7 +160,14 @@ pub fn validate(model: &SCXMLModel) -> Result<(), ForgeError> {
         for trans in &state.transitions {
             for token in trans.target.split_whitespace() {
                 if !resolves(model, token) {
-                    return Err(reject_target(&state.id, token, &declared_states));
+                    return Err(reject_target(
+                        &state.id,
+                        token,
+                        &declared_states,
+                        trans.source_location.as_ref(),
+                        diag_label,
+                        model,
+                    ));
                 }
             }
         }
@@ -155,13 +193,63 @@ fn child_ids(model: &SCXMLModel, parent_id: &str) -> Vec<String> {
     children.into_iter().map(|s| s.id.clone()).collect()
 }
 
-fn reject_target(owner: &str, token: &str, declared_states: &[String]) -> ForgeError {
-    ScxmlSemanticError::TransitionTargetUnknown {
-        state: owner.to_string(),
-        target: token.to_string(),
-        available: declared_states.to_vec(),
+fn reject_target(
+    owner: &str,
+    token: &str,
+    declared_states: &[String],
+    at: Option<&SourceLocation>,
+    diag_label: &str,
+    model: &SCXMLModel,
+) -> Located<ForgeError> {
+    located(
+        ScxmlSemanticError::TransitionTargetUnknown {
+            state: owner.to_string(),
+            target: token.to_string(),
+            available: declared_states.to_vec(),
+        }
+        .into(),
+        at,
+        diag_label,
+        model,
+    )
+}
+
+/// Anchor an error on a node position the model recorded.
+///
+/// The recorded position indexes into the *expanded* document, so it
+/// is resolved through the model's own mapping first. Two things can
+/// come back:
+///
+/// * Nothing to resolve (no preprocessor ran) — the row is already an
+///   authored row of `diag_label`, and only the file half is taken
+///   from there. The recorded [`SourceLocation`] cannot supply it: it
+///   carries the artifact spelling (a basename, so an SCE-MAP marker
+///   does not bake one checkout into the generated tree) and a
+///   diagnostic must name the document the way the caller named it
+///   (§2.2).
+/// * An authored origin — which after `<sce:use>` / `<xi:include>`
+///   expansion is often a *different file* than the one parsed. The
+///   record then names that file, because that is where the consumer
+///   edits.
+fn located(
+    err: ForgeError,
+    at: Option<&SourceLocation>,
+    diag_label: &str,
+    model: &SCXMLModel,
+) -> Located<ForgeError> {
+    let (line, col) = match at {
+        Some(loc) => (loc.line, loc.col),
+        None => (None, None),
+    };
+    let positions = model.authored_positions.as_ref();
+    let located = match positions.and_then(|p| p.resolve(line, col)) {
+        Some((file, row, col)) => Located::new(err, file, Some(row), Some(col)),
+        None => Located::new(err, diag_label, line, col),
+    };
+    match positions.and_then(|p| p.call_site_on(line)) {
+        Some((file, row, col)) => located.expanded_from(file, row, col),
+        None => located,
     }
-    .into()
 }
 
 #[cfg(test)]
@@ -200,7 +288,7 @@ mod tests {
         // `NoStates` owns the empty-document rejection; this pass must
         // not double-report it.
         let model = SCXMLModel::default();
-        assert!(validate(&model).is_ok());
+        assert!(validate(&model, "probe.scxml").is_ok());
     }
 
     #[test]
@@ -208,7 +296,7 @@ mod tests {
         let mut a = state("a", 0);
         a.transitions.push(transition_to("b"));
         let model = model_with(vec![a, state("b", 1)]);
-        assert!(validate(&model).is_ok());
+        assert!(validate(&model, "probe.scxml").is_ok());
     }
 
     #[test]
@@ -216,8 +304,8 @@ mod tests {
         let mut a = state("a", 0);
         a.transitions.push(transition_to("ghost"));
         let model = model_with(vec![a, state("b", 1)]);
-        let err = validate(&model).expect_err("must reject");
-        match err {
+        let err = validate(&model, "probe.scxml").expect_err("must reject");
+        match err.error {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::TransitionTargetUnknown {
                     state,
@@ -252,7 +340,7 @@ mod tests {
                 default_actions: Vec::new(),
             },
         );
-        assert!(validate(&model).is_ok());
+        assert!(validate(&model, "probe.scxml").is_ok());
     }
 
     #[test]
@@ -268,8 +356,8 @@ mod tests {
                 default_actions: Vec::new(),
             },
         );
-        let err = validate(&model).expect_err("must reject");
-        match err {
+        let err = validate(&model, "probe.scxml").expect_err("must reject");
+        match err.error {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::TransitionTargetUnknown { state, target, .. } => {
                     assert_eq!(state, "h", "the diagnostic must name the <history>");
@@ -287,8 +375,8 @@ mod tests {
         let mut a = state("a", 0);
         a.transitions.push(transition_to("b ghost"));
         let model = model_with(vec![a, state("b", 1)]);
-        let err = validate(&model).expect_err("must reject");
-        match err {
+        let err = validate(&model, "probe.scxml").expect_err("must reject");
+        match err.error {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::TransitionTargetUnknown { target, .. } => {
                     assert_eq!(target, "ghost");
@@ -306,7 +394,7 @@ mod tests {
         a.transitions.push(transition_to(""));
         a.transitions.push(transition_to("   "));
         let model = model_with(vec![a]);
-        assert!(validate(&model).is_ok());
+        assert!(validate(&model, "probe.scxml").is_ok());
     }
 
     #[test]
@@ -320,8 +408,8 @@ mod tests {
         child.parent = Some("outer".to_string());
         let unrelated = state("elsewhere", 2);
         let model = model_with(vec![outer, child, unrelated]);
-        let err = validate(&model).expect_err("must reject");
-        match err {
+        let err = validate(&model, "probe.scxml").expect_err("must reject");
+        match err.error {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::InitialStateUnknown {
                     state_id,

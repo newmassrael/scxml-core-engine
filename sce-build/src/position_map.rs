@@ -208,6 +208,35 @@ impl PositionMap {
         }
     }
 
+    /// The call site that supplied substituted bytes anywhere in
+    /// `[start, end)`, if any.
+    ///
+    /// [`Self::lookup`] answers "where did *this byte* come from" and
+    /// resolves a substituted byte to the `<sce:use>` that supplied
+    /// it. That is the right answer for a coordinate, and the wrong
+    /// one for a *value*: a value like `tick_{$n}` is part template
+    /// body and part substitution, so byte-by-byte lookup reports
+    /// whichever byte the caller happened to ask about. A diagnostic
+    /// rejecting the expanded value needs the other question — was any
+    /// of this synthesised, and by whom — which is what this answers.
+    ///
+    /// Returns the first call site in document order, matching the
+    /// depth-1 rule: nested expansions already collapse to the
+    /// outermost `<sce:use>` when the map is composed.
+    pub fn call_site_within(&self, start: usize, end: usize) -> Option<SourcePos> {
+        self.entries
+            .iter()
+            .filter(|e| e.expanded_start < end && start < e.expanded_end)
+            .find_map(|e| match &e.origin {
+                Origin::CallSite { path, row, col } => Some(SourcePos {
+                    file: path.clone(),
+                    row: *row,
+                    col: *col,
+                }),
+                Origin::File { .. } => None,
+            })
+    }
+
     /// Return the entry covering `offset`, clamped to the last
     /// entry if `offset` is at or past the expanded document's
     /// end.

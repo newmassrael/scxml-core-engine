@@ -410,6 +410,17 @@
         "col": { "type": "integer", "minimum": 1 }
       }
     },
+    "expanded_from": {
+      "description": "The <sce:use> whose parameters synthesised the rejected value. Present only when a preprocessor assembled `actual`. When present, `location` names a row in the template, which shows the parameterised shape rather than the rejected value, and the record carries no substitution `fix`: editing that row would rewrite every expansion of the template rather than the one that failed.",
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "col": { "type": "integer", "minimum": 1 }
+      }
+    },
     "expected": {
       "description": "Non-repair metadata. Holds grammatical expectations (parser token names) or cardinality notes. Never a substitution candidate list — see SCE_ERROR_CONTRACT.md §3.2 (non-overlap rule).",
       "type": "array",

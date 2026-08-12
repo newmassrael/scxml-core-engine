@@ -90,9 +90,19 @@ pub trait SingleDiagnostic: ToDiagnostics {
     /// location, computes the id, and — crucially — sets
     /// `message: self.to_string()`, the one place in the crate where
     /// a `Diagnostic`'s `message` is derived from `Display`.
+    /// The call site a preprocessor substituted from, when the
+    /// rejected value was synthesised. Default `None` — overridden by
+    /// `Located<E>`, the only wrapper that carries one.
+    fn diagnostic_expanded_from(&self) -> Option<Location> {
+        None
+    }
+
     fn to_single_diagnostic(&self) -> Diagnostic {
         let payload = self.diagnostic_payload();
         let location = self.diagnostic_location();
+        let expanded_from = self.diagnostic_expanded_from();
+        // Read before the record takes ownership of the field.
+        let synthesised = expanded_from.is_some();
         let id = compute_id(
             payload.code,
             payload.stage,
@@ -108,9 +118,26 @@ pub trait SingleDiagnostic: ToDiagnostics {
             spec: payload.code.spec_anchor(),
             message: self.to_string(),
             location,
+            expanded_from,
             expected: payload.expected,
             actual: payload.actual,
-            fix: payload.fix,
+            // One place decides whether a repair proposal survives to
+            // the wire, so the ~100 sites that build one only have to
+            // say what they know. Two rules apply here:
+            //
+            //  * a choice variant with an empty set is no repair at
+            //    all (§3.1), and
+            //  * a substitution proposal against a synthesised value
+            //    cannot be performed — `actual` is not in the file
+            //    `location` names, and rewriting the template row it
+            //    does name changes every other expansion of that
+            //    template. `expanded_from` travels instead, which
+            //    says what happened and where the parameters came
+            //    from without proposing an edit that would be wrong.
+            fix: payload
+                .fix
+                .and_then(Fix::with_a_choice_to_offer)
+                .and_then(|fix| fix.applicable_to_a_synthesised_value(synthesised)),
             spec_provenance: Vec::new(),
             question_kind: None,
         }
@@ -228,6 +255,26 @@ pub struct Diagnostic {
     /// call-site that wrapped it in `Located<ForgeError>`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
+
+    /// The `<sce:use>` whose parameters synthesised the rejected
+    /// value, present only when a preprocessor assembled it.
+    ///
+    /// `location` names the row the value occupies — after template
+    /// expansion, a row in the *template*. That row shows the shape
+    /// (`target="tick_{$n}"`), not the value that was rejected
+    /// (`tick_1`), and editing it rewrites every expansion rather
+    /// than the one that failed. This names the call site that chose
+    /// the parameters, which is the coordinate that tells the
+    /// expansions apart. A consumer holding both can describe the
+    /// rejection completely; a consumer holding only `location` sees
+    /// a row that does not contain `actual` and has no way to learn
+    /// why.
+    ///
+    /// Its presence is also the signal that the value is synthetic,
+    /// which is why no substitution `fix` accompanies it — see
+    /// [`Fix::with_a_choice_to_offer`]'s call site.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expanded_from: Option<Location>,
 
     /// Non-repair expectation metadata — parser-level expectations
     /// (e.g. "identifier") or cardinality constraints (e.g. "exactly
@@ -3106,6 +3153,9 @@ impl Diagnostic {
             generator: crate::GENERATOR_COMMIT,
             code,
             stage,
+            // A meta failure has no document behind it, so nothing
+            // was expanded to produce it.
+            expanded_from: None,
             spec: code.spec_anchor(),
             message,
             location: None,
@@ -4346,6 +4396,61 @@ pub enum Fix {
     AddOneOf { element: String, attrs: Vec<String> },
 }
 
+impl Fix {
+    /// Drop a choice-shaped proposal whose choice set came out empty.
+    ///
+    /// `replace_one_of` / `add_one_of` are defined by
+    /// SCE_ERROR_CONTRACT.md §3.1 as "the consumer or human chooses
+    /// from the list", and there is no choosing from nothing. A
+    /// producer reaching that state has not found a degenerate repair,
+    /// it has found no repair — which §3 already has a spelling for:
+    /// `fix` absent. Two sites had settled on opposite readings of
+    /// this (the statechart reference validator collapsed the empty
+    /// case to `None`, the cross-kind field validator shipped
+    /// `candidates: []` as an "honest degenerate closed set"), which
+    /// put both shapes on one wire field for consumers to
+    /// discriminate with nothing to discriminate on.
+    ///
+    /// Applied once, at the single point where a payload becomes a
+    /// record, rather than at each construction site — the sites know
+    /// their candidate set, they should not each have to remember what
+    /// an empty one means.
+    fn with_a_choice_to_offer(self) -> Option<Fix> {
+        match &self {
+            Fix::ReplaceOneOf { candidates } if candidates.is_empty() => None,
+            Fix::AddOneOf { attrs, .. } if attrs.is_empty() => None,
+            _ => Some(self),
+        }
+    }
+
+    /// Drop a substitution proposal when the value it would replace
+    /// was assembled by a preprocessor.
+    ///
+    /// `replace_with` / `replace_one_of` are both defined as replacing
+    /// the value in `actual` (§3.1), which presumes the consumer can
+    /// find that value in the document `location` names. For a
+    /// synthesised value it is not there: the authored row holds the
+    /// template's parameterised shape, and substituting into *that*
+    /// rewrites every expansion rather than the failing one. The
+    /// record still carries `expanded_from`, so the consumer is not
+    /// left guessing — it is told the value is synthetic and where
+    /// its parameters came from, which is the honest form of "no
+    /// local edit repairs this" (§3).
+    ///
+    /// The other variants are untouched: they name an element and an
+    /// attribute rather than a replacement for `actual`, so a
+    /// synthesised value does not make them unperformable.
+    fn applicable_to_a_synthesised_value(self, synthesised: bool) -> Option<Fix> {
+        if !synthesised {
+            return Some(self);
+        }
+        match self {
+            Fix::ReplaceWith { .. } | Fix::ReplaceOneOf { .. } => None,
+            other => Some(other),
+        }
+    }
+}
+
 // ── Per-error-variant field extraction ─────────────────────────
 
 /// Structured fields extracted from a single `ForgeError`. Collected
@@ -4410,6 +4515,14 @@ impl SingleDiagnostic for Located<ForgeError> {
             file: self.location.file.clone(),
             line: self.location.line,
             col: self.location.col,
+        })
+    }
+
+    fn diagnostic_expanded_from(&self) -> Option<Location> {
+        self.expanded_from.as_ref().map(|at| Location {
+            file: at.file.clone(),
+            line: at.line,
+            col: at.col,
         })
     }
 }
@@ -7333,15 +7446,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // consumers see `did_you_mean`-style typo repair.
             code: DiagnosticCode::ValidationEventPayloadFieldUnknown,
             stage: Stage::Validation,
-            // `expected` carries the declared-field surface so
-            // `Fix::ReplaceOneOf` consumers (and the
-            // FixCarriesCandidates non-overlap-class guard) see the
-            // closed candidate set verbatim.
-            expected: if candidates.is_empty() {
-                None
-            } else {
-                Some(candidates.clone())
-            },
+            // `expected` stays absent: the declared-field surface is
+            // a substitution candidate list, and §3.2 gives that role
+            // to `fix` alone — "the candidate list is never duplicated
+            // across both fields". The `FixCarriesCandidates`
+            // non-overlap class this code belongs to says the same
+            // thing from the other side; it names where the candidates
+            // ride, not a second place to copy them to.
+            expected: None,
             actual: Some(field.clone()),
             fix: if candidates.is_empty() {
                 None
@@ -10772,7 +10884,7 @@ mod tests {
                     candidates: vec!["count".into(), "status".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:fa3df31661845cdb","code":"validation/event-payload-field-unknown","stage":"validation","message":"statechart 'demo': <send event=\"job.completed\"> declares <param name=\"stauts\"> not in the EventSchema for 'job.completed' (imported event-schema 'job_completed_schema') (declared fields: count, status)","expected":["count","status"],"actual":"stauts","fix":{"kind":"replace_one_of","candidates":["count","status"]}}"#,
+                r#"{"v":1,"id":"fnv1a:fa3df31661845cdb","code":"validation/event-payload-field-unknown","stage":"validation","message":"statechart 'demo': <send event=\"job.completed\"> declares <param name=\"stauts\"> not in the EventSchema for 'job.completed' (imported event-schema 'job_completed_schema') (declared fields: count, status)","actual":"stauts","fix":{"kind":"replace_one_of","candidates":["count","status"]}}"#,
             ),
             // ── RFC `rfc-eventschema-bytes-guard.md` §bytesguard-3 B3: ordering
             //   operator on a bytes payload. `id` is a placeholder; the
