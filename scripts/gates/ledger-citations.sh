@@ -68,6 +68,39 @@ sce_citation_binary() {
     printf '%s' "$bin"
 }
 
+# Run one validator in one workspace, and report what it reported.
+#
+# The tool collapses every failure into exit 1. Measured 2026-08-12 against the
+# pinned binary: a missing `mnemosyne.toml`, a `--paths` value outside the
+# workspace and an unknown flag all exit 1, exactly as a genuine unbound
+# citation does. A status therefore does not carry a cause, and a gate that
+# names one is stating something it did not measure — which is not a wording
+# problem, because the author is the one who reads it. This gate did exactly
+# that: when the mnemosyne pin was raised and the binary was not yet installed
+# under the new revision's path, the run ended with "a staged file carries a
+# citation whose binding does not hold". The citations were fine.
+#
+# So the verdict is left to the only party that measured it. The tool's own
+# output is surfaced instead of discarded, and this gate says what it knows:
+# which workspace, which validator, which status.
+#
+# `$BIN` is resolved by the caller, in a shell that can act on the failure. It
+# used to be resolved here, per workspace, inside a command substitution inside
+# a subshell — where `sce_gate_fail` ends the substitution and nothing else, so
+# the empty expansion ran as a command and its 127 arrived as an author's fault.
+sce_citation_run() {
+    local ws="$1" out rc
+    shift
+    [[ -n "${BIN:-}" ]] \
+        || sce_gate_fail "internal: ${ws}: \`$1\` was reached before the validator was resolved"
+    out="$( cd "$SCE_REPO_ROOT/$ws" && "$BIN" "$@" 2>&1 )" && rc=0 || rc=$?
+    if (( rc == 0 )); then
+        return 0
+    fi
+    printf '%s\n' "$out" >&2
+    sce_gate_fail "${ws}: \`$1\` exited ${rc} — its own report is above"
+}
+
 # ── Staged-scope mode (tools/git-hooks/pre-commit) ────────────────
 #
 # The existence half of this gate, over the staged content only.
@@ -164,6 +197,12 @@ if [[ "${1:-}" == "--staged" ]]; then
     if (( ${#decidable[@]} > 0 )); then
         abs=("${decidable[@]/#/$SCE_REPO_ROOT/}")
         repo_real="$(readlink -f "$SCE_REPO_ROOT")"
+        # Resolved here, once, in the shell that can end the run — not per
+        # workspace inside the loop below, where its refusal had no way out.
+        # A commit with nothing decidable never reaches this line: those files
+        # are named for the push gate, so demanding the tool to judge nothing
+        # would fail a commit over a verdict that was never going to be given.
+        BIN="$(sce_citation_binary)"
         for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire \
                   docs/spec/synth docs/sce-ledger/bytesguard; do
             # A ledger reached through a symlink belongs to whatever repository
@@ -183,9 +222,7 @@ if [[ "${1:-}" == "--staged" ]]; then
             # A staged file outside a workspace's configured `paths` comes back
             # classified as out-of-read-set, not as a violation, so every
             # workspace can be handed the whole list.
-            ( cd "$SCE_REPO_ROOT/$ws" && "$(sce_citation_binary)" \
-                validate-code-refs --paths "${abs[@]}" >/dev/null ) \
-                || sce_gate_fail "${ws}: a staged file carries a citation whose binding does not hold"
+            sce_citation_run "$ws" validate-code-refs --paths "${abs[@]}"
         done
     fi
     exit 0
@@ -194,13 +231,16 @@ fi
 BIN="$(sce_citation_binary)"
 sce_gate_step "pinned to $("$BIN" --version 2>&1)"
 
+# One call per validator rather than a `&&` chain: chained, the four shared a
+# single failure message and a single discarded output, so a red said "${ws}
+# ledger validation" and the author had neither the axis nor the report. The
+# order is unchanged and so is the stop-at-first-failure behaviour, since the
+# helper ends the run.
 for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
-    ( cd "$ws" \
-        && "$BIN" validate-workspace >/dev/null \
-        && "$BIN" validate-code-refs >/dev/null \
-        && "$BIN" validate-verifies-linkage >/dev/null \
-        && "$BIN" validate-content-drift >/dev/null ) \
-        || sce_gate_fail "${ws} ledger validation"
+    for check in validate-workspace validate-code-refs validate-verifies-linkage \
+                 validate-content-drift; do
+        sce_citation_run "$ws" "$check"
+    done
 done
 
 python3 tools/mnemosyne-adoption/migrate_citations.py --check \

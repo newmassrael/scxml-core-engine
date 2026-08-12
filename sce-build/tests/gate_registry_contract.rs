@@ -494,6 +494,91 @@ fn staged_citation_fixture(dir: &Path, body: &str) {
     staged_citation_fixture_files(dir, &[("tests/cite.rs", body)]);
 }
 
+/// The same fixture, but owning its ledger workspaces instead of borrowing them.
+///
+/// The base fixture symlinks `docs` at the real checkout, and the gate refuses
+/// to judge a workspace that resolves outside the repository it was handed —
+/// rightly, since a store in another checkout cannot answer for this one's
+/// staged files. The consequence for a probe is that the binding loop skips all
+/// five workspaces by name, so a test written against the base fixture never
+/// reaches the code it means to exercise and reads as evidence anyway.
+///
+/// Copied, not created empty: the base fixture's own comment says the migrator
+/// derives its repo root from `tools/` and so reads the real stores, and that
+/// is measurably not what happens — with an empty `docs` the existence half
+/// reported `.atomic/workspace.atomic.json` missing UNDER THE FIXTURE and
+/// stopped the run before the binding half. 1.8M, which is what it costs to
+/// have both halves see one repository.
+fn staged_citation_fixture_owning_a_workspace(dir: &Path, files: &[(&str, &str)]) {
+    staged_citation_fixture_files(dir, files);
+    let docs = dir.join("docs");
+    std::fs::remove_file(&docs).expect("drop the symlinked docs tree");
+    let out = Command::new("cp")
+        .arg("-R")
+        .arg(repo_root().join("docs"))
+        .arg(&docs)
+        .output()
+        .expect("copy the ledger workspaces into the fixture");
+    assert!(out.status.success(), "cp -R docs: {out:?}");
+}
+
+/// The revision the gate pins, read from the file the gate reads it from.
+///
+/// Hardcoding it here would make this test the second reader of a fact that
+/// moves, and the pin moves on its own schedule: a bump would leave the stub
+/// announcing a revision the gate rejects, and the test would then pass for the
+/// wrong reason — a refusal to run, dressed as the refusal under study.
+fn pinned_mnemosyne_short_rev() -> String {
+    let workflow =
+        std::fs::read_to_string(repo_root().join(".github/workflows/spec-citations.yml"))
+            .expect("read .github/workflows/spec-citations.yml");
+    let rev = workflow
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("MNEMOSYNE_REV:"))
+        .map(|v| v.trim().trim_matches(['"', '\''].as_slice()).to_string())
+        .expect("the workflow declares MNEMOSYNE_REV");
+    assert_eq!(rev.len(), 40, "MNEMOSYNE_REV is a full sha: {rev}");
+    rev[..8].to_string()
+}
+
+/// Write an executable stub for the pinned validator.
+///
+/// `tail` is the script body that runs for every subcommand other than
+/// `--version`, which each stub has to answer with the pinned revision — the
+/// gate rejects a binary that reports any other one, and would do so before
+/// reaching the code under study.
+///
+/// A stub rather than the real binary because the condition under study is a
+/// validator that exits non-zero for a reason that is not the author's text.
+/// The real tool collapses every failure into exit 1 — measured 2026-08-12: a
+/// missing `mnemosyne.toml`, a `--paths` value outside the workspace and an
+/// unknown flag all return 1 — so the gate cannot read the cause off the
+/// status, and a stub is the only way to hold that cause fixed and observe
+/// what the gate does with it.
+fn stub_mnemosyne_cli(dir: &Path, name: &str, tail: &str) -> PathBuf {
+    let path = dir.join(name);
+    std::fs::write(
+        &path,
+        format!(
+            "#!/usr/bin/env bash\n\
+             if [ \"${{1:-}}\" = \"--version\" ]; then\n\
+             \x20   echo 'mnemosyne-cli 0.1.0 ({rev})'\n\
+             \x20   exit 0\n\
+             fi\n\
+             {tail}\n",
+            rev = pinned_mnemosyne_short_rev(),
+        ),
+    )
+    .expect("write the stub binary");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod the stub binary");
+    }
+    path
+}
+
 fn run_staged_gate(dir: &Path) -> std::process::Output {
     Command::new("bash")
         .arg(dir.join("scripts/gates/ledger-citations.sh"))
@@ -501,6 +586,23 @@ fn run_staged_gate(dir: &Path) -> std::process::Output {
         .current_dir(dir)
         .output()
         .expect("run the staged citation gate")
+}
+
+/// The staged gate with `MNEMOSYNE_BIN` pointed somewhere of the test's choosing.
+fn run_staged_gate_with_binary(dir: &Path, bin: &Path) -> std::process::Output {
+    Command::new("bash")
+        .arg(dir.join("scripts/gates/ledger-citations.sh"))
+        .arg("--staged")
+        .env("MNEMOSYNE_BIN", bin)
+        .current_dir(dir)
+        .output()
+        .expect("run the staged citation gate")
+}
+
+/// The verdict the gate must not reach when it did not measure it: that the
+/// author's staged text carries a citation nothing binds.
+fn asserts_the_author_is_at_fault(stderr: &str) -> bool {
+    stderr.contains("binding does not hold")
 }
 
 #[test]
@@ -537,6 +639,175 @@ fn the_commit_stage_rejects_a_fabricated_citation_in_staged_content() {
     assert!(
         good.status.success(),
         "the staged gate rejected a real citation: {good:?}"
+    );
+}
+
+#[test]
+fn the_staged_binding_half_blames_the_tool_when_the_tool_is_what_is_missing() {
+    // Observed 2026-08-12, on this repository: the mnemosyne pin was raised and
+    // the binary was not yet installed under the new revision's path, and the
+    // gate reported "a staged file carries a citation whose binding does not
+    // hold" — a verdict about the author's text, for a fault in the gate's own
+    // inputs. The author's citations were fine.
+    //
+    // The mechanism was placement. `sce_citation_binary` fails loudly when the
+    // binary is absent, but it was called from inside a command substitution
+    // inside a subshell, where its `exit` ends the substitution and nothing
+    // else: the substitution then expanded to the empty string, the empty
+    // string ran as a command, and its 127 arrived at an `||` that had one
+    // sentence to say. Resolution belongs in the shell that can act on it.
+    //
+    // The sibling block twelve lines up already stated this rule for the
+    // existence half — "reporting that as a bad citation would blame the
+    // author's text for a fault in the gate's own inputs" — and the binding
+    // half did the thing that comment forbids.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture_owning_a_workspace(
+        dir.path(),
+        &[("tests/cite.rs", "// probe: §synth-5-B is a section\n")],
+    );
+    let absent = dir.path().join("no-such-mnemosyne-cli");
+    let out = run_staged_gate_with_binary(dir.path(), &absent);
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "a gate that cannot resolve its validator must not pass — an \
+         unjudged commit that reads as judged is the failure this whole \
+         stage exists to prevent: {out:?}"
+    );
+    assert!(
+        err.contains("no rev-pinned mnemosyne-cli at"),
+        "the gate did not name the missing tool, so the author is left to \
+         guess at a fault that is not theirs: {err}"
+    );
+    assert!(
+        !asserts_the_author_is_at_fault(&err),
+        "the gate blamed the author's citations for its own missing \
+         validator: {err}"
+    );
+}
+
+#[test]
+fn the_staged_binding_half_reports_what_the_validator_said() {
+    // The second half of the same defect, and the one no placement fixes: the
+    // validator collapses every failure into exit 1. Measured 2026-08-12
+    // against the pinned binary — a missing `mnemosyne.toml`, a `--paths` value
+    // outside the workspace and an unknown flag all exit 1, exactly as a real
+    // unbound citation does. A status of 1 therefore does not carry a cause,
+    // and a gate that names one is stating something it did not measure.
+    //
+    // So the gate surfaces the validator's own report instead of paraphrasing
+    // it. That is checked from behaviour: the stub fails with a message only a
+    // broken *input* produces, and the gate has to pass it through rather than
+    // translate it into a verdict about staged text.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture_owning_a_workspace(
+        dir.path(),
+        &[("tests/cite.rs", "// probe: §synth-5-B is a section\n")],
+    );
+    const CANNOT_RUN: &str =
+        "error: mnemosyne.toml not found — CWD or ancestor in config file required";
+    // Through a file, so the message stays a fixture value rather than
+    // something that has to survive two levels of shell quoting.
+    let message = dir.path().join("stub-failure.txt");
+    std::fs::write(&message, format!("{CANNOT_RUN}\n")).expect("write the stub's message");
+    let stub = stub_mnemosyne_cli(
+        dir.path(),
+        "stub-cannot-run",
+        &format!("cat {} >&2\nexit 1", message.display()),
+    );
+    let out = run_staged_gate_with_binary(dir.path(), &stub);
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "the gate passed although its validator refused to run: {out:?}"
+    );
+    assert!(
+        err.contains(CANNOT_RUN),
+        "the gate discarded the validator's report, which is the only place \
+         the cause is visible once the exit status cannot carry it: {err}"
+    );
+    assert!(
+        !asserts_the_author_is_at_fault(&err),
+        "the gate turned a validator that could not run into a verdict about \
+         the author's citations: {err}"
+    );
+}
+
+#[test]
+fn the_staged_binding_half_still_runs_the_validator_it_resolved() {
+    // The paired direction. Every assertion above is satisfied by a gate that
+    // fails unconditionally, and one that never invokes the validator at all
+    // would satisfy them too — the fixture owns a workspace precisely so the
+    // loop body is entered, and a gate that skipped it would look identical
+    // from the outside. A stub that succeeds has to leave the gate green, and
+    // it has to have been ASKED: the stub records its own invocation.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture_owning_a_workspace(
+        dir.path(),
+        &[("tests/cite.rs", "// probe: §synth-5-B is a section\n")],
+    );
+    let witness = dir.path().join("stub-was-asked");
+    let stub = stub_mnemosyne_cli(
+        dir.path(),
+        "stub-accepts",
+        &format!("echo \"$@\" >> {}\nexit 0", witness.display()),
+    );
+
+    let out = run_staged_gate_with_binary(dir.path(), &stub);
+    assert!(
+        out.status.success(),
+        "the gate rejected a staged file its validator accepted: {out:?}"
+    );
+    let asked = std::fs::read_to_string(&witness).unwrap_or_default();
+    assert!(
+        asked.contains("validate-code-refs"),
+        "the gate never ran the binding axes, so the failure assertions above \
+         would hold for a gate that checks nothing: asked={asked:?}"
+    );
+}
+
+#[test]
+fn the_push_run_names_the_validator_that_rejected() {
+    // The push half ran its four validators as one `&&` chain, so every one of
+    // them failed as "${ws} ledger validation" with its output sent to
+    // /dev/null. Two things an author needs were missing from that: which axis
+    // refused, and what it said. The chain reads as economical and costs a
+    // whole diagnosis.
+    let dir = tempfile::tempdir().expect("tempdir");
+    staged_citation_fixture_owning_a_workspace(
+        dir.path(),
+        &[("tests/cite.rs", "// probe: §synth-5-B is a section\n")],
+    );
+    let message = dir.path().join("stub-failure.txt");
+    std::fs::write(&message, "error: the store is unreadable\n").expect("write the stub's message");
+    let stub = stub_mnemosyne_cli(
+        dir.path(),
+        "stub-cannot-run",
+        &format!("cat {} >&2\nexit 1", message.display()),
+    );
+    let out = Command::new("bash")
+        .arg(dir.path().join("scripts/gates/ledger-citations.sh"))
+        .env("MNEMOSYNE_BIN", &stub)
+        .current_dir(dir.path())
+        .output()
+        .expect("run the citation gate");
+    let err = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "the gate passed on a refusal: {out:?}"
+    );
+    assert!(
+        err.contains("validate-workspace"),
+        "the failure does not name the validator that refused, so the author \
+         is told a workspace is bad and not which axis said so: {err}"
+    );
+    assert!(
+        err.contains("error: the store is unreadable"),
+        "the validator's own report was discarded: {err}"
     );
 }
 

@@ -1,0 +1,68 @@
+# Mutation cases for the citation gate's failure reporting.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ledger_citations_gate.cases`.
+#
+# The gate is a shell script the tests execute rather than link, so it is a
+# `mutation_runtime_targets` entry: the harness — not this file — is what
+# guarantees the mutation reached the artifact that ran, and for a script that
+# evidence is the file on disk, not a rebuilt binary. See the header of
+# `scripts/mutate`.
+#
+# Every case here restores a shape the gate actually had. The defect this file
+# guards is not a crash: the gate FAILED, correctly, and named the wrong party
+# while doing it. A test suite can be entirely green about a gate that blames
+# the author for its own missing tool, which is why these are behavioural
+# probes with a stub validator rather than assertions about the script's text.
+#
+# Anchors are literal slices of the source, so a reformat can move one out
+# from under a case. That is reported as INCONCLUSIVE with the anchor quoted,
+# never as a pass — re-anchor the case against the current source rather than
+# reading the run as evidence.
+
+mutation_tests -p sce-build --features cli --test gate_registry_contract
+mutation_runtime_targets scripts/gates/ledger-citations.sh
+
+# ── Where the validator is resolved ────────────────────────────────
+
+mutation_case "the binary is resolved inside the loop, where its refusal has no way out" <<'PY'
+edit("scripts/gates/ledger-citations.sh",
+     '            sce_citation_run "$ws" validate-code-refs --paths "${abs[@]}"',
+     '            ( cd "$SCE_REPO_ROOT/$ws" && "$(sce_citation_binary)" \\\n'
+     '                validate-code-refs --paths "${abs[@]}" >/dev/null ) \\\n'
+     '                || sce_gate_fail "${ws}: a staged file carries a citation whose binding does not hold"')
+PY
+
+# ── What the gate claims when it fails ─────────────────────────────
+
+mutation_case "the failure names a cause the exit status does not carry" <<'PY'
+edit("scripts/gates/ledger-citations.sh",
+     'sce_gate_fail "${ws}: \\`$1\\` exited ${rc} — its own report is above"',
+     'sce_gate_fail "${ws}: a staged file carries a citation whose binding does not hold"')
+PY
+
+mutation_case "the validator's own report is discarded again" <<'PY'
+edit("scripts/gates/ledger-citations.sh",
+     '    printf \'%s\\n\' "$out" >&2\n',
+     '')
+PY
+
+mutation_case "the four push-time validators collapse back into one message" <<'PY'
+edit("scripts/gates/ledger-citations.sh",
+     '        sce_citation_run "$ws" "$check"',
+     '        sce_citation_run "$ws" validate-workspace >/dev/null 2>&1 \\\n'
+     '            || sce_gate_fail "${ws} ledger validation"')
+PY
+
+# ── That the axes run at all ───────────────────────────────────────
+
+mutation_case "a validator that refuses is treated as agreement" <<'PY'
+edit("scripts/gates/ledger-citations.sh",
+     "    if (( rc == 0 )); then\n        return 0\n    fi",
+     "    if (( rc == 0 )) || true; then\n        return 0\n    fi")
+PY
+
+mutation_case "the staged binding half is skipped, so nothing is judged at commit" <<'PY'
+edit("scripts/gates/ledger-citations.sh",
+     "    if (( ${#decidable[@]} > 0 )); then",
+     "    if false && (( ${#decidable[@]} > 0 )); then")
+PY
