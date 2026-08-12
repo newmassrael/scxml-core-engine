@@ -2499,8 +2499,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 return;
             }
 
-            if let Err(err) = analyzer::can_generate_static(&model) {
-                let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
+            if let Err(located) = analyzer::can_generate_static(&model, scxml_path) {
                 error_format.emit_forge_and_exit(&located);
             }
 
@@ -3110,13 +3109,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         return;
     }
 
-    if let Err(err) = analyzer::can_generate_static(&model) {
+    if let Err(located) = analyzer::can_generate_static(&model, scxml_path) {
         // §wire-W5 D3: `can_generate_static` returns the
         // correctly-classified ForgeError directly — `ScxmlSemanticError`
         // for hard semantic violations (top-level script rejected,
         // initial-state names undeclared) and `ValidationDynamicFeatures`
         // for genuine codegen limitations (no initial attribute).
-        let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
+        // It anchors the record itself: the rejections that belong to a
+        // node carry that node's line, and only the document-scoped
+        // ones arrive with the file alone.
         error_format.emit_and_exit(&located, "");
     }
 
@@ -3449,7 +3450,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 .unwrap_or(Path::new("."))
                 .join(format!("{child_stem}.scxml"));
             analyzer::analyze(&mut child_model, &synthetic_path.to_string_lossy());
-            if analyzer::can_generate_static(&child_model).is_err() {
+            if analyzer::can_generate_static(&child_model, &synthetic_path.to_string_lossy())
+                .is_err()
+            {
                 continue;
             }
             // `resolve_source_path` canonicalizes the path, which fails
@@ -4534,7 +4537,7 @@ fn generate_child_sms(
 
         analyzer::analyze(&mut child_model, &label);
 
-        if analyzer::can_generate_static(&child_model).is_err() {
+        if analyzer::can_generate_static(&child_model, &label).is_err() {
             backend.process_child_failure(test_id, child_name, test_mod_dir, drift_ctx);
             continue;
         }
@@ -4643,7 +4646,9 @@ fn generate_w3c_unified(
                 // §scxml-5.8: document_rejected models have initial->pass already
                 // redirected by the parser, so they CAN be generated. Only skip
                 // truly dynamic models.
-                if analyzer::can_generate_static(&model).is_err() && !model.document_rejected {
+                if analyzer::can_generate_static(&model, scxml_str).is_err()
+                    && !model.document_rejected
+                {
                     skipped.push((test_id.clone(), "dynamic features".to_string()));
                     continue;
                 }

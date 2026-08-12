@@ -321,6 +321,19 @@ pub struct Param {
     pub is_static_literal: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub static_value: String,
+    /// The `<param>` element's own position.
+    ///
+    /// Distinct from `location` above, which is the W3C
+    /// `<param location="X"/>` attribute (a data-model expression).
+    /// This is the coordinate a rejection of *this* param reports:
+    /// SCE_ERROR_CONTRACT.md §2.2 has the consumer open `location.file`
+    /// and edit at `location.line`, so a diagnostic naming a param's
+    /// value has to point at the param, not at the enclosing `<send>`
+    /// — that line does not contain the value being rejected.
+    /// `Variable::source_location` exists for the same reason on the
+    /// `<data>` side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// §scxml-5.2: Datamodel variable
@@ -1044,6 +1057,71 @@ pub struct State {
     pub unhandled: Vec<String>,
 }
 
+/// What a model needs to translate its own recorded positions back
+/// into the files an author wrote.
+///
+/// Held on the model rather than applied at parse time because the two
+/// consumers of a position want different things and neither is wrong:
+/// an SCE-MAP marker wants the artifact spelling (a basename, so a
+/// generated tree does not bake in one machine's checkout), while a
+/// diagnostic wants a path its reader can open, in the authored file —
+/// which after expansion may not even be the document that was parsed.
+/// Keeping the mapping lets each ask at the point of use.
+#[derive(Debug, Clone, Default)]
+pub struct AuthoredPositions {
+    /// The expanded document the recorded rows index into.
+    pub expanded: String,
+    /// Expanded byte range → authored origin.
+    pub map: crate::position_map::PositionMap,
+}
+
+impl AuthoredPositions {
+    /// Resolve an expanded (row, col) to the authored file and
+    /// position. Returns `None` when the mapping is the identity, so
+    /// callers keep whatever spelling they already had rather than
+    /// swapping in an equivalent one.
+    pub fn resolve(&self, line: Option<u32>, col: Option<u32>) -> Option<(String, u32, u32)> {
+        if self.map.is_identity() {
+            return None;
+        }
+        let (line, col) = (line?, col.unwrap_or(1));
+        let offset = crate::position_map::rowcol_to_offset(&self.expanded, line, col);
+        let pos = self.map.lookup(offset);
+        Some((pos.file.display().to_string(), pos.row, pos.col))
+    }
+
+    /// The `<sce:use>` that supplied substituted bytes on the expanded
+    /// row `line`, if any.
+    ///
+    /// A rejection whose value was assembled by parameter substitution
+    /// cannot be repaired where it is read: the authored row holds the
+    /// template's `target="tick_{$n}"`, and rewriting that rewrites
+    /// every expansion of the template, not the one that failed. The
+    /// call site is the coordinate that distinguishes them, so it
+    /// travels with the record.
+    ///
+    /// Row granularity rather than the exact value span: the recorded
+    /// position is an element's, and an element occupying one row is
+    /// the case the substitution rule (`{$name}` inside an attribute
+    /// value) produces. A multi-row element would widen this to its
+    /// first row, which under-reports rather than mis-reports.
+    pub fn call_site_on(&self, line: Option<u32>) -> Option<(String, u32, u32)> {
+        if self.map.is_identity() {
+            return None;
+        }
+        let line = line?;
+        let start = crate::position_map::rowcol_to_offset(&self.expanded, line, 1);
+        let end = crate::position_map::rowcol_to_offset(&self.expanded, line + 1, 1);
+        let end = if end <= start {
+            self.expanded.len()
+        } else {
+            end
+        };
+        let pos = self.map.call_site_within(start, end)?;
+        Some((pos.file.display().to_string(), pos.row, pos.col))
+    }
+}
+
 /// W3C SCXML: Complete state machine model
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1406,6 +1484,24 @@ pub struct SCXMLModel {
     pub scxml_source_path: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scxml_base_path: String,
+
+    /// The coordinate system this model's recorded positions live in.
+    ///
+    /// Every `source_location` on this model names a row in the
+    /// *expanded* document — the string `<xi:include>` and `<sce:use>`
+    /// expansion produced, which exists only in memory. Validators
+    /// that run after parsing (`analyzer::can_generate_static`,
+    /// `scxml_references::validate`) report positions to consumers who
+    /// open files, so they resolve through this before emitting: a row
+    /// past the end of the authored file, or a row whose text does not
+    /// contain the rejected value, is what an unresolved expanded
+    /// coordinate looks like on the wire.
+    ///
+    /// `None` for models parsed from a string with no preprocessor
+    /// pass, where expanded and authored coordinates coincide.
+    #[serde(skip)]
+    #[cfg_attr(test, schemars(skip))]
+    pub authored_positions: Option<AuthoredPositions>,
 
     // Analysis helpers (set by analyzer)
     #[serde(default, skip_serializing_if = "Option::is_none")]

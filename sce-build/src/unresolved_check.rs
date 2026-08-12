@@ -108,7 +108,8 @@ pub fn check_strict_unresolved(model: &SCXMLModel) -> Result<(), Located<ForgeEr
                     reason: marker.reason.clone(),
                 }
                 .into(),
-                location,
+                location: Box::new(location),
+                expanded_from: None,
             })
         }
     }

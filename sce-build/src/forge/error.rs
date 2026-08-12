@@ -65,7 +65,26 @@ pub struct SourceLocation {
 #[derive(Debug, Clone)]
 pub struct Located<E> {
     pub error: E,
-    pub location: SourceLocation,
+    /// Boxed for the same reason `expanded_from` is: this type is the
+    /// `Err` half of most signatures in the crate, so its size is paid
+    /// by every caller on the success path too, and
+    /// `clippy::result_large_err` is what noticed. A location is read
+    /// once, on the failure path, where an indirection costs nothing.
+    pub location: Box<SourceLocation>,
+    /// The `<sce:use>` whose parameters synthesised the rejected
+    /// value, when a preprocessor assembled it.
+    ///
+    /// Separate from `location`, which names where the value *is*.
+    /// After template expansion those are two different files and both
+    /// are load-bearing: `location` is the template row a reader opens
+    /// to see the shape, this is the call site that chose the value.
+    /// Absent for every document no preprocessor rewrote, which is
+    /// almost all of them — which is also why it is boxed: `Located`
+    /// is the `Err` half of most signatures in the crate, and paying
+    /// a `SourceLocation` inline on every one of them to describe a
+    /// case almost none of them hit is what `clippy::result_large_err`
+    /// objects to.
+    pub expanded_from: Option<Box<SourceLocation>>,
 }
 
 impl<E> Located<E> {
@@ -77,12 +96,23 @@ impl<E> Located<E> {
     pub fn new(error: E, file: impl Into<String>, line: Option<u32>, col: Option<u32>) -> Self {
         Self {
             error,
-            location: SourceLocation {
+            location: Box::new(SourceLocation {
                 file: file.into(),
                 line,
                 col,
-            },
+            }),
+            expanded_from: None,
         }
+    }
+
+    /// Record the call site that supplied the substituted bytes.
+    pub fn expanded_from(mut self, file: impl Into<String>, line: u32, col: u32) -> Self {
+        self.expanded_from = Some(Box::new(SourceLocation {
+            file: file.into(),
+            line: Some(line),
+            col: Some(col),
+        }));
+        self
     }
 }
 

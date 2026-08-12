@@ -171,9 +171,20 @@ use std::path::{Path, PathBuf};
 ///
 /// `diagnostic_label` flows into [`forge::error::Located`] and XSD
 /// [`forge::xsd_validator::XsdErrors`]`::source_label`, surfacing as the
-/// `location.file` of every NDJSON record. Should carry the full
-/// basename (with extension) so downstream tooling opens the source
-/// without guessing the suffix.
+/// `location.file` of every NDJSON record. It must carry the document
+/// **as the caller named it** — the path passed to `check` / `generate`
+/// — per SCE_ERROR_CONTRACT.md §2.2, which spells out that a basename
+/// is the wrong spelling here for two reasons: a consumer opens this
+/// value to apply a fix, and a bare filename is openable only from the
+/// one directory it happens to sit in; and `file` is an input to the
+/// record's `id` hash, so a producer that shortens it cannot share a
+/// dedup key with one that does not.
+///
+/// The artifact-facing spelling is a *different* value and is derived
+/// where it is needed: `parser::artifact_label` reduces this to a
+/// basename for SCE-MAP markers and provenance records, so a generated
+/// tree never bakes in one machine's checkout. Same document, two
+/// spellings, chosen by who reads them.
 #[derive(Debug, Clone, Copy)]
 pub struct DocumentLabel<'a> {
     pub identifier: &'a str,
@@ -325,10 +336,10 @@ pub fn lint_statechart(model: &model::SCXMLModel, source: &str) -> Result<(), Co
 /// `can_generate_static` itself now returns the correctly-classified
 /// `ForgeError` (split between `ValidationDynamicFeatures` for genuine
 /// codegen limitations and `ScxmlSemanticError::*` for hard semantic
-/// violations); this helper just stamps the source location.
+/// violations), already anchored on the node that owns the rejection
+/// where one does; this helper just names the document.
 fn guard_static_generatable(model: &SCXMLModel, source_name: &str) -> Result<(), CompileError> {
-    use forge::error::Located;
-    analyzer::can_generate_static(model).map_err(|err| Located::new(err, source_name, None, None))
+    analyzer::can_generate_static(model, source_name)
 }
 
 /// Prepend the spec §synth-6.2.6 `// SCE-GENERATED` header to every file in
@@ -1010,10 +1021,9 @@ pub fn compile_forge_file(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
     let label = DocumentLabel {
         identifier: stem,
-        diagnostic_label: basename,
+        diagnostic_label: path.to_str().unwrap_or(stem),
     };
     let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
 
@@ -2385,7 +2395,7 @@ pub fn compile_scxml_with_imports(
             .unwrap_or(path_str);
         let label = DocumentLabel {
             identifier: stem,
-            diagnostic_label: basename,
+            diagnostic_label: path_str,
         };
         let parsed =
             forge::parser::parse_forge_with_imports(&content, label)?.ok_or_else(|| {
@@ -2995,7 +3005,7 @@ pub fn compile_scxml_with_imports(
             .unwrap_or(path_str);
         let label = DocumentLabel {
             identifier: stem,
-            diagnostic_label: basename,
+            diagnostic_label: path_str,
         };
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
@@ -3189,10 +3199,9 @@ fn compute_codec_recursive_max_bytes(
         let result = (|| -> Option<u32> {
             let content = std::fs::read_to_string(&imp_path).ok()?;
             let stem = imp_path.file_stem()?.to_str()?;
-            let basename = imp_path.file_name()?.to_str()?;
             let label = DocumentLabel {
                 identifier: stem,
-                diagnostic_label: basename,
+                diagnostic_label: imp_path.to_str()?,
             };
             let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
             let inner_cm = match parsed.document {
@@ -3344,10 +3353,9 @@ fn with_resolved_import_codec<T>(
     let result = (|| -> Option<T> {
         let content = std::fs::read_to_string(&imp_path).ok()?;
         let stem = imp_path.file_stem()?.to_str()?;
-        let basename = imp_path.file_name()?.to_str()?;
         let label = DocumentLabel {
             identifier: stem,
-            diagnostic_label: basename,
+            diagnostic_label: imp_path.to_str()?,
         };
         let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
         let inner_cm = match parsed.document {
@@ -3506,13 +3514,9 @@ fn validate_and_enrich_imports(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-        let basename = src_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(stem);
         let imported_label = DocumentLabel {
             identifier: stem,
-            diagnostic_label: basename,
+            diagnostic_label: src_path.to_str().unwrap_or(stem),
         };
 
         if let Some(parsed) = forge::parser::parse_forge_with_imports(&content, imported_label)? {
