@@ -248,6 +248,30 @@ backend = "tree-sitter-cpp"
 transport = "in-process"
 backend = "tree-sitter-rust"
 
+# Go, Kotlin and Python resolvers. The three trees have been in `paths` since
+# the R1142 pin, and the comment there recorded exactly what that bought and
+# what it did not: file-level binding enforcement, "without claiming
+# symbol-level coverage nobody can deliver". The `ecee1fe0` pin delivers it —
+# that build carries tree-sitter-go, -kotlin and -python in process and routes
+# `.go`, `.kt`/`.kts` and `.py`.
+#
+# Declaring them is what turns the capability into coverage. Measured on this
+# workspace before these three blocks existed: 27 citing files across the three
+# languages sat in `symbol_axis.unresolved_languages` while
+# `symbol_mismatch_count` read 0 — the count that reads as checked-and-clean
+# and means "no instrument".
+[plugins.symbol_resolver.go]
+transport = "in-process"
+backend = "tree-sitter-go"
+
+[plugins.symbol_resolver.kotlin]
+transport = "in-process"
+backend = "tree-sitter-kotlin"
+
+[plugins.symbol_resolver.python]
+transport = "in-process"
+backend = "tree-sitter-python"
+
 # R426 verifies-catalog linkage (SCE field-report P2). The authoritative
 # correctness gate for the verify axis: every `verifies` binding must match the
 # section the test's own W3C metadata.txt `specnum` declares it targets. The
@@ -291,4 +315,4 @@ sha256 = "fd88796df0afd01c9febb650e8dd1a9ee62479ae797c7adc24ffc4f1d68c66c1"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "183a17a5"
+pin = "ecee1fe0"

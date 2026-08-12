@@ -367,6 +367,7 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "handleHierarchicalTransition",
           "kind": "implements"
         }
       ],
@@ -505,18 +506,47 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "GetActiveStates",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applySimultaneousTransitions",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "historyStore",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "preTransitionActiveStates",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_enter_target",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_take_transitions",
           "kind": "references"
         }
       ],
@@ -583,22 +613,52 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "ProcessEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "executeTransition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "handleHierarchicalTransition",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/hierarchy.go",
+          "symbol": "BuildEntryChainFromAncestor",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/hierarchy.go",
+          "symbol": "BuildExitChain",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/hierarchy.go",
+          "symbol": "FindLCA",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processEvent",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
+          "symbol": "Ignored",
           "kind": "references"
         }
       ],
@@ -669,18 +729,37 @@
         },
         {
           "file": "backends/go/runtime/event_queue.go",
+          "symbol": "Raise",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "symbol": "IsValidInvokeID",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Event.kt",
+          "symbol": "Event",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "drainEventlessAndInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "eventChannel",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "internalEventQueue",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "raiseInternal",
           "kind": "references"
         }
       ],
@@ -1373,18 +1452,92 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "checkEventlessTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "entryChain",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "executeTransition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "handleHierarchicalTransition",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "activeLeafStatesInDocumentOrder",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "computeLCCA",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "documentOrderOf",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "executeTransitionActions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "exitHierarchy",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processOneEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "removeConflictingTransitions",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
+          "symbol": "External",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
+          "symbol": "Internal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
+          "symbol": "InternalToTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
+          "symbol": "TransitionResult",
           "kind": "references"
         }
       ],
@@ -1515,10 +1668,22 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/State.kt",
+          "symbol": "State",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "enterInitialConfiguration",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "initialState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "initialize",
           "kind": "references"
         }
       ],
@@ -1821,22 +1986,77 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "executeTransition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "handleHierarchicalTransition",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "resolveCurrentStateToLeaf",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/hierarchy.go",
+          "symbol": "BuildEntryChain",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "parentOf",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "reenterParallelRegions",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_descend_initial_path",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_enter_state",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "references"
         }
       ],
@@ -2094,18 +2314,62 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "executeTransition",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applySimultaneousTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "drainEventlessAndInternal",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "enterInitialConfiguration",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "getParallelRegions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isDescendantOf",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isParallelState",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "reenterParallelRegions",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_enter_state",
           "kind": "implements"
         }
       ],
@@ -2318,6 +2582,7 @@
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         }
       ],
@@ -2474,18 +2739,47 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "isInFinalState",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "flushPendingFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "markFinalStateReached",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "send",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "start",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_take_transitions",
           "kind": "references"
         }
       ],
@@ -2696,10 +2990,17 @@
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "flushPendingFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onEntry",
           "kind": "implements"
         }
       ],
@@ -2880,10 +3181,12 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onExit",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_take_transitions",
           "kind": "implements"
         }
       ],
@@ -3443,6 +3746,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "executeForeach",
           "kind": "implements"
         }
       ],
@@ -4305,30 +4609,102 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "ProcessEventWithMeta",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "processInternalQueue",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "processNextExternalEvent",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/event.go",
+          "symbol": "EventMetadata",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/event.go",
+          "symbol": "EventWithMetadata",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "SetCurrentEventArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "setCurrentEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "setupSystemVariables",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "EventMetadata",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "QueuedEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "buildJsonFromParams",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "currentEventMetadata",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "internal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "raiseInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "send",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_dispatch",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
+          "symbol": "StatePolicy",
           "kind": "references"
         }
       ],
@@ -4564,22 +4940,37 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "RaiseExternal",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/event.go",
+          "symbol": "EventType",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/event.go",
+          "symbol": "EventTypeInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/event.go",
+          "symbol": "NewPlatformEvent",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/http.go",
+          "symbol": "HttpSendResponse",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "set_current_event",
           "kind": "implements"
         }
       ],
@@ -4713,6 +5104,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "loadDataFromSrc",
           "kind": "implements"
         }
       ],
@@ -4916,18 +5308,42 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Initialize",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "assign",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "evaluateExpr",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "getVariable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "setVariable",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "references"
         }
       ],
@@ -5133,6 +5549,7 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "processInternalQueue",
           "kind": "implements"
         }
       ],
@@ -5373,30 +5790,47 @@
         },
         {
           "file": "backends/go/runtime/done_data.go",
+          "symbol": "EmitContentLiteral",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/helpers.go",
+          "symbol": "ToLuaLiteral",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "RaiseDoneInvoke",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DoneDataHelper.kt",
+          "symbol": "emitContentLiteral",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "donedataAtFinal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startInvoke",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
           "kind": "references"
         }
       ],
@@ -5809,6 +6243,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "executeScript",
           "kind": "implements"
         }
       ],
@@ -5975,6 +6410,12 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "ScriptEngineException",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "evaluateCondition",
           "kind": "implements"
         }
       ],
@@ -6072,18 +6513,42 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "lca",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "setStateQueryCallback",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "TransitionWithDomain",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "activeStateIds",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isStateActive",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "removeConflictingTransitions",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "implements"
         }
       ],
@@ -6116,6 +6581,7 @@
         },
         {
           "file": "backends/go/runtime/event_matching.go",
+          "symbol": "MatchesEventDescriptor",
           "kind": "implements"
         }
       ],
@@ -6632,35 +7098,102 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/constants.go",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/doc.go",
           "kind": "references"
         },
         {
+          "file": "backends/go/runtime/constants.go",
+          "symbol": "ParentTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/constants.go",
+          "symbol": "SCXMLSessionTargetPrefix",
+          "kind": "references"
+        },
+        {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RunUntilCompletion",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/http.go",
+          "symbol": "HttpSendRequest",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/scheduler.go",
+          "symbol": "PullScheduler",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleEvent",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/send.go",
+          "symbol": "IsInvalidTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "IsSupportedSendType",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "ParseDelayToMs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "ValidateTarget",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "parseDelay",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "start",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "tick",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "advance_time",
           "kind": "references"
         }
       ],
@@ -6844,10 +7377,12 @@
         },
         {
           "file": "backends/go/runtime/http.go",
+          "symbol": "HttpSendRequest",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/scheduler.go",
+          "symbol": "CancelEvent",
           "kind": "implements"
         }
       ],
@@ -7013,6 +7548,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "cancelSend",
           "kind": "implements"
         }
       ],
@@ -7058,6 +7594,12 @@
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "symbol": "CreateDoneInvokeEventName",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "RaiseDoneInvoke",
           "kind": "implements"
         }
       ],
@@ -7737,42 +8279,272 @@
         },
         {
           "file": "backends/go/runtime/constants.go",
+          "symbol": "InvokeTargetPrefix",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Initialize",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RaiseExternalByNameWithMeta",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SetCompletionCallback",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Step",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "processNextExternalEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "runMainEventLoop",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "symbol": "CancelInvokesForState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildSession",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DeferInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DrainAndRaiseChildEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "ExecutePendingInvokes",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "GetPendingCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "IsInvokePending",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "PendingInvoke",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/send.go",
+          "symbol": "ExtractInvokeID",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "IsChildInvokeTarget",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/unique_id.go",
+          "symbol": "GenerateInvokeID",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "hasVariable",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "PendingInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "autoForwardEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "cancelInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "cancelPendingInvokesForState",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completion",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "deferInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "eventNameOf",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "executePendingInvokes",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "flushPendingFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onSendToParent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "pendingInvokeParams",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "resolveEventByName",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "runMainEventLoop",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleParentSend",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendByName",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendByNameWithData",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendToChild",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "setInvokeParams",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "start",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "stop",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "tick",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_route_to_child",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_run_entry",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_run_main_event_loop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_take_transitions",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "stop",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
+          "symbol": "StatePolicy",
           "kind": "references"
         }
       ],
@@ -7913,26 +8685,42 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "RaiseExternalByName",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildSession",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "PendingInvoke",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "autoForwardEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processMicrostep",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_next_external_event",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
+          "symbol": "StatePolicy",
           "kind": "references"
         }
       ],
@@ -7980,6 +8768,7 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "processNextExternalEvent",
           "kind": "implements"
         }
       ],
@@ -8195,22 +8984,52 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "processNextExternalEvent",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildSession",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "cleanupCompletedInvokes",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "executeFinalizeForChildEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processMicrostep",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "startInvoke",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_dispatch",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_next_external_event",
           "kind": "implements"
         }
       ],
@@ -8399,10 +9218,17 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "ScxmlScriptEngine",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "stop",
           "kind": "references"
         }
       ],
@@ -8987,10 +9813,17 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
+          "symbol": "parseDataValue",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "_coerce_event_data_to_lua",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "set_variable_as_dom",
           "kind": "implements"
         }
       ],
@@ -9159,6 +9992,7 @@
         },
         {
           "file": "backends/go/runtime/helpers.go",
+          "symbol": "ScriptToBool",
           "kind": "implements"
         }
       ],
@@ -9642,39 +10476,103 @@
           "kind": "implements"
         },
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
-          "kind": "implements"
+          "file": "backends/go/runtime/constants.go",
+          "symbol": "InternalTarget",
+          "kind": "references"
         },
         {
           "file": "backends/go/runtime/constants.go",
+          "symbol": "SCXMLEventProcessorType",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Raise",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "RaiseExternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "processInternalQueue",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/event_queue.go",
+          "symbol": "EventQueueManager",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/io_processors.go",
+          "symbol": "PublishedOrigin",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/io_processors.go",
+          "symbol": "ScxmlProcessorLocation",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/io_processors.go",
+          "symbol": "SessionIDFromScxmlLocation",
           "kind": "implements"
         },
         {
           "file": "backends/go/runtime/send.go",
+          "symbol": "IsInternalTarget",
           "kind": "references"
         },
         {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "IsUnreachableTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "publishedOrigin",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "scxmlLocation",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "sessionIdFromScxmlLocation",
+          "kind": "implements"
+        },
+        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "deliverToChildSession",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "advance_time",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "symbol": "published_origin",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "symbol": "scxml_location",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "symbol": "session_id_from_scxml_location",
           "kind": "implements"
         }
       ],
@@ -9724,22 +10622,32 @@
         },
         {
           "file": "backends/go/runtime/io_processors.go",
+          "symbol": "BuildIoProcessors",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "IoProcessors",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "SCXML_PROCESSOR",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "initialize",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "symbol": "build",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "setup_system_variables",
           "kind": "implements"
         }
       ],
@@ -10061,35 +10969,102 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/constants.go",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/doc.go",
           "kind": "references"
         },
         {
+          "file": "backends/go/runtime/constants.go",
+          "symbol": "BasicHTTPEventProcessorType",
+          "kind": "references"
+        },
+        {
           "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "PerformHTTPSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "SetHTTPSendCallback",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/event.go",
+          "symbol": "EventWithMetadata",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/http.go",
+          "symbol": "HttpSendRequest",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/http.go",
+          "symbol": "HttpSendResponse",
           "kind": "references"
         },
         {
           "file": "backends/go/runtime/send.go",
+          "symbol": "IsHTTPTarget",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "RequiresTargetAttribute",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/send.go",
+          "symbol": "ValidateBasicHTTPSend",
           "kind": "references"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HttpSendRequest",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "StateMachineEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onHttpSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "performHttpSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "pollScheduler",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "scheduleHttpSend",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sendEventByName",
           "kind": "references"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
           "kind": "references"
         }
       ],
@@ -10228,26 +11203,47 @@
         },
         {
           "file": "backends/go/runtime/io_processors.go",
+          "symbol": "BuildIoProcessors",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "BASIC_HTTP_PROCESSOR",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "IoProcessors",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
+          "symbol": "build",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "basicHttpAccessUri",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
           "kind": "implements"
         },
         {
-          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/io_processors.py",
+          "symbol": "build",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "setup_system_variables",
           "kind": "implements"
         }
       ],
@@ -10360,6 +11356,7 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_compute_exit_set",
           "kind": "references"
         }
       ],
@@ -10530,6 +11527,12 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_enter_target_step",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_fanout_parallel_siblings",
           "kind": "implements"
         }
       ],
@@ -10595,6 +11598,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applySimultaneousTransitions",
           "kind": "implements"
         }
       ],
@@ -10706,6 +11710,7 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_mark_root_final_if_top_level",
           "kind": "implements"
         }
       ],
@@ -10855,10 +11860,12 @@
         },
         {
           "file": "backends/go/runtime/hierarchy.go",
+          "symbol": "IsDescendantOfByWalk",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_select_from_chain",
           "kind": "implements"
         }
       ],
@@ -11076,6 +12083,17 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_next_external_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_run_main_event_loop",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "implements"
         }
       ],
@@ -11117,6 +12135,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applySimultaneousTransitions",
           "kind": "implements"
         }
       ],
@@ -11209,10 +12228,17 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processOneEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "removeConflictingTransitions",
           "kind": "implements"
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_remove_conflicting_transitions",
           "kind": "implements"
         }
       ],
@@ -11245,6 +12271,7 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_internal_queue",
           "kind": "implements"
         }
       ],
@@ -11281,6 +12308,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processOneEvent",
           "kind": "implements"
         }
       ],
@@ -11651,7 +12679,896 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "mutation_reasons": [],
+  "mutation_reasons": [
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-4.6",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.2.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.8",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.3.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1-1",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2-3",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-GlobalVariables",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-exitInterpreter",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getProperAncestors",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getProperAncestors",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-mainEventLoop",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-microstepProcedure",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectEventlessTransitions",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    }
+  ],
   "frames": {},
   "branches": {},
   "entities": {},
