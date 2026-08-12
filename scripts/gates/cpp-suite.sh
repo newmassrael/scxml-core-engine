@@ -37,6 +37,10 @@ sce_gate_requires_free_http_port
 sce_main_build_dir
 BUILD_DIR="$SCE_MAIN_BUILD_DIR"
 
+# A killed run leaves its log temporary behind forever; the gate that creates
+# them is the one that clears them.
+sce_prune_ctest_temporaries "$BUILD_DIR"
+
 # The default target, not a named one. These cases span the engine, the mesh
 # transports and the fixtures, and a target list here would be the same
 # list-shaped defect this gate exists to remove: a case whose target nobody

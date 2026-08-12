@@ -178,6 +178,27 @@ fn both_ctest_gates_resolve_the_build_directory_through_one_helper() {
     }
 }
 
+/// Both halves clear the log temporaries their own runs leak.
+///
+/// ctest renames `Testing/Temporary/LastTest.log.tmpNNNNN` to `LastTest.log`
+/// when a suite finishes, so a `.tmp` file that outlives its run belongs to a
+/// run that was killed. Nothing removed them: measured 2026-08-12, 40 orphans
+/// totalling 774 MB, one of them 652 MB, all from a single day in April. A
+/// completed run's log is 1 MB, so this is not a size problem — it is a count
+/// that only ever goes up, in a directory nobody looks at.
+#[test]
+fn both_ctest_gates_clear_the_temporaries_their_runs_leak() {
+    for gate in ["w3c-c11", "cpp-suite"] {
+        assert!(
+            code_of(gate).contains("sce_prune_ctest_temporaries"),
+            "{gate} runs ctest without clearing the log temporaries an \
+             interrupted run leaves behind. The gate that creates them is the \
+             one that has to clear them; otherwise the count only grows, and \
+             the directory it grows in is one nobody opens."
+        );
+    }
+}
+
 /// `cpp-suite` re-derives the partition from the registered counts at run time.
 ///
 /// The static check above cannot see a case that carries neither label, or
