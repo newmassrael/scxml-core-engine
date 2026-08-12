@@ -94,6 +94,8 @@
         "scxml/unreachable-state",
         "scxml/dead-transition",
         "scxml/non-exhaustive-event-handling",
+        "scxml/contradictory-unhandled-declaration",
+        "scxml/stale-unhandled-declaration",
         "scxml/always-false-guard",
         "scxml/shadowed-transition",
         "scxml/on-sample-invalid-parent",

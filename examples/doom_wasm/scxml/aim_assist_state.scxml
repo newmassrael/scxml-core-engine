@@ -45,19 +45,19 @@
     </state>
 
     <!-- Aim assist enabled - compound state with sub-states -->
-    <!-- sce:exhaustive="false" silences the whole compound, so the whole
-         set it covers is named here rather than the one event that
-         prompted it. Every entry is the same shape: a phase-specific
+    <!-- Every deliberate gap is declared on the sub-state that has it,
+         via sce:unhandled. They are all the same shape: a phase-specific
          event that only the phase which can produce it listens for, and
          a fallthrough would swallow an out-of-order arrival instead of
          leaving it unhandled, which is the honest outcome.
-           * `no_target` — the search finished with nothing found, so only
-             `searching` can receive it.
-           * `target_acquired` — the search succeeded; same reason.
+           * `no_target` / `target_acquired` — the search's two outcomes,
+             so only `searching` can receive them.
            * `target_lost` — only `locked` holds a target to lose.
-           * `shot_fired` / `shot_complete` — the shot cycle belongs to
-             `locked`; `idle` and `searching` have nothing aimed. -->
-    <state id="enabled" initial="idle" sce:exhaustive="false">
+           * `shot_complete` — the shot ends where it was aimed, in
+             `locked`.
+           * `shot_fired` — starts a new search. `idle` and `locked` both
+             begin one, so only `searching`, already searching, does not. -->
+    <state id="enabled" initial="idle">
         <onentry>
             <script><cpp>aim.onEnabled()</cpp></script>
         </onentry>
@@ -66,7 +66,7 @@
         <transition event="toggle" target="disabled"/>
 
         <!-- Idle: Waiting for shot, no target (default state) -->
-        <state id="idle">
+        <state id="idle" sce:unhandled="no_target shot_complete target_acquired target_lost">
             <onentry>
                 <script><cpp>aim.onIdle()</cpp></script>
             </onentry>
@@ -75,7 +75,7 @@
         </state>
 
         <!-- Searching: Looking for target during shot -->
-        <state id="searching">
+        <state id="searching" sce:unhandled="shot_complete shot_fired target_lost">
             <onentry>
                 <script><cpp>aim.onSearching()</cpp></script>
             </onentry>
@@ -85,7 +85,7 @@
         </state>
 
         <!-- Locked: Target acquired during current shot -->
-        <state id="locked">
+        <state id="locked" sce:unhandled="no_target target_acquired">
             <onentry>
                 <script><cpp>aim.onLocked()</cpp></script>
             </onentry>

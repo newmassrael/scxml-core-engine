@@ -13,8 +13,19 @@
 //      AND
 //   3. The compound parent itself has no transition matching that
 //      event (no fallthrough), AND
-//   4. The parent is not annotated with `sce:exhaustive="false"` to
-//      opt out.
+//   4. The child leaving the event unhandled has not declared it in
+//      `sce:unhandled`.
+//
+// Condition 4 is checked per (child, event) pair, not per parent. A
+// parent-level opt-out existed once and was withdrawn: it silenced
+// every gap under the parent, including gaps introduced after it was
+// written, so a sibling added later inherited an exemption nobody had
+// judged — the same defect this validator exists to catch, one level
+// down. Declaring the absence on the child that has it keeps the
+// annotation at the grain the author's claim is actually true at, and
+// makes it checkable in both directions: a declared event the child
+// handles is a contradiction, and a declared event that is not a gap
+// is stale. Neither can rot into unverified prose.
 //
 // The common-ground precondition is the crucial false-positive guard.
 // The W3C IRP test corpus is dominated by sequential protocol-stage
@@ -43,7 +54,7 @@
 // reported as `scxml/unreachable-state` / `scxml/dead-transition`
 // before the exhaustiveness pass surfaces a downstream consequence.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::forge::error::{ForgeError, Located};
 use crate::model::{SCXMLModel, State, Transition};
@@ -53,17 +64,50 @@ use crate::scxml_semantic::ScxmlSemanticError;
 /// Mirrors the short-circuit convention of `scxml_reachability::validate`
 /// — emitting every gap in one pass would require collecting multiple
 /// `Located<ForgeError>` records, which the wire layer does not model.
+///
+/// Two passes, in this order:
+///
+///   1. Every `sce:unhandled` declaration in the document is checked
+///      against the gap set. A declaration is the author telling the
+///      build a fact about their machine; validating it before
+///      consuming it means a gap report is never suppressed by a
+///      declaration that turns out to be untrue.
+///   2. Gaps that no declaration covers are reported.
+///
+/// Both walk in document order, so which violation surfaces first is
+/// stable across re-runs.
 pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
     if model.states.is_empty() {
         return Ok(());
     }
+
+    let gaps_by_parent = collect_gaps(model);
+    check_declarations(model, &gaps_by_parent, source)?;
+    report_uncovered_gaps(model, &gaps_by_parent, source)
+}
+
+/// Every gap in the document, keyed by compound parent id and then by
+/// event, valued by the child ids that leave that event unhandled.
+///
+/// Computed once and shared by both passes so the declaration check and
+/// the gap report can never disagree about what a gap is.
+type GapsByParent = BTreeMap<String, GapSet>;
+
+/// One parent's gaps: event → the child ids not handling it, both in
+/// the order the validator found them (`BTreeMap` over the event
+/// universe, document order within a gap).
+type GapSet = BTreeMap<String, Vec<String>>;
+
+/// Walk every compound parent and collect its gaps.
+fn collect_gaps(model: &SCXMLModel) -> GapsByParent {
+    let mut out: GapsByParent = BTreeMap::new();
 
     // Walk parents in document order so the first-fired diagnostic is
     // deterministic across re-runs.
     let mut parents: Vec<&State> = model
         .states
         .values()
-        .filter(|s| !s.is_parallel && !s.is_final && !s.exhaustive_optout)
+        .filter(|s| !s.is_parallel && !s.is_final)
         .collect();
     parents.sort_by_key(|s| s.document_order);
 
@@ -128,51 +172,195 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
         // deliberate fallthrough).
         //
         // Every gap under this parent is collected, not just the
-        // first. The rejection still carries one record — the wire
-        // layer models one — but the author about to reach for
-        // `sce:exhaustive="false"` needs to know what that blanket
-        // would cover, because it silences the parent entirely.
-        // Measured on this tree's own documents: `combo_state`'s
-        // `active` has three gaps, the author's comment reasons about
-        // one, and the other two were never surfaced by a diagnostic
-        // that stopped at the first.
-        let mut gaps: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+        // first: the author repairing this compound decides about all
+        // of them, and a report that stops at the first costs a build
+        // round per gap. Measured on this tree's own documents:
+        // `combo_state`'s `active` has three gaps and the author's
+        // comment reasoned about one.
+        //
+        // `sce:unhandled` declarations are deliberately NOT consulted
+        // here. This map is what a declaration is checked against, so
+        // letting declarations shrink it would make a declaration
+        // self-justifying.
+        let mut gaps: GapSet = BTreeMap::new();
         for event in &universe {
             if transitions_match_event(&parent.transitions, event) {
                 continue;
             }
-            let mut handlers: Vec<String> = Vec::new();
+            let mut any_handler = false;
             let mut non_handlers: Vec<String> = Vec::new();
             for c in &children {
                 if state_handles_event(c, event) {
-                    handlers.push(c.id.clone());
+                    any_handler = true;
                 } else {
                     non_handlers.push(c.id.clone());
                 }
             }
-            if !handlers.is_empty() && !non_handlers.is_empty() {
-                gaps.push((event.clone(), handlers, non_handlers));
+            if any_handler && !non_handlers.is_empty() {
+                gaps.insert(event.clone(), non_handlers);
             }
         }
-        if let Some((event, handlers, non_handlers)) = gaps.first().cloned() {
-            let also: Vec<String> = gaps.iter().skip(1).map(|(e, _, _)| e.clone()).collect();
-            return Err(Located::new(
-                ScxmlSemanticError::NonExhaustiveEventHandling {
-                    parent: parent.id.clone(),
-                    event,
-                    handlers,
-                    non_handlers,
-                    also,
-                }
-                .into(),
-                source,
-                None,
-                None,
-            ));
+        if !gaps.is_empty() {
+            out.insert(parent.id.clone(), gaps);
+        }
+    }
+
+    out
+}
+
+/// Check every `sce:unhandled` declaration in the document against the
+/// gap set, rejecting the first that is untrue.
+///
+/// Walks all states, not just the children the gap walk considered: a
+/// declaration on a `<final>`, on a transition-less state, or on a
+/// top-level state is exactly as stale as one naming the wrong event,
+/// and a walk restricted to gap-eligible children would let those three
+/// stand unexamined.
+fn check_declarations(
+    model: &SCXMLModel,
+    gaps_by_parent: &GapsByParent,
+    source: &str,
+) -> Result<(), Located<ForgeError>> {
+    let mut declarers: Vec<&State> = model
+        .states
+        .values()
+        .filter(|s| !s.unhandled.is_empty())
+        .collect();
+    declarers.sort_by_key(|s| s.document_order);
+
+    for state in declarers {
+        // `None` covers both "no compound parent" and "a parent with no
+        // gaps at all"; every declaration under either is stale, and the
+        // message distinguishes them by reporting the parent id.
+        let parent_gaps = state.parent.as_deref().and_then(|p| gaps_by_parent.get(p));
+
+        for event in &state.unhandled {
+            // The local contradiction first: a state that handles the
+            // event it declares unhandled is wrong regardless of what
+            // its siblings do, and reporting the sibling-scoped
+            // staleness instead would send the author looking at the
+            // wrong half of the document.
+            if state_handles_event(state, event) {
+                return Err(Located::new(
+                    ScxmlSemanticError::ContradictoryUnhandledDeclaration {
+                        state: state.id.clone(),
+                        event: event.clone(),
+                    }
+                    .into(),
+                    source,
+                    None,
+                    None,
+                ));
+            }
+
+            let covers = parent_gaps.is_some_and(|gaps| {
+                gaps.get(event)
+                    .is_some_and(|non_handlers| non_handlers.contains(&state.id))
+            });
+            if !covers {
+                return Err(Located::new(
+                    ScxmlSemanticError::StaleUnhandledDeclaration {
+                        state: state.id.clone(),
+                        parent: state.parent.clone().unwrap_or_else(|| "(none)".to_string()),
+                        event: event.clone(),
+                        gaps: parent_gaps
+                            .map(|gaps| {
+                                gaps.iter()
+                                    .filter(|(_, non_handlers)| non_handlers.contains(&state.id))
+                                    .map(|(e, _)| e.clone())
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    }
+                    .into(),
+                    source,
+                    None,
+                    None,
+                ));
+            }
         }
     }
 
     Ok(())
+}
+
+/// Report the first gap no `sce:unhandled` declaration covers.
+///
+/// A gap survives only for the children that did not declare it, so a
+/// compound where two of three non-handlers declared the event is
+/// reported against the third alone — the report tracks what is left to
+/// decide, not what the gap looked like before anyone decided anything.
+fn report_uncovered_gaps(
+    model: &SCXMLModel,
+    gaps_by_parent: &GapsByParent,
+    source: &str,
+) -> Result<(), Located<ForgeError>> {
+    let mut parents: Vec<&State> = model
+        .states
+        .values()
+        .filter(|s| gaps_by_parent.contains_key(&s.id))
+        .collect();
+    parents.sort_by_key(|s| s.document_order);
+
+    for parent in parents {
+        let gaps = &gaps_by_parent[&parent.id];
+
+        // Only the undeclared remainder of each gap, in the event
+        // order the gap walk produced.
+        let mut open: Vec<(String, Vec<String>)> = Vec::new();
+        for (event, non_handlers) in gaps {
+            let undeclared: Vec<String> = non_handlers
+                .iter()
+                .filter(|id| !declares_unhandled(model, id, event))
+                .cloned()
+                .collect();
+            if !undeclared.is_empty() {
+                open.push((event.clone(), undeclared));
+            }
+        }
+
+        let Some((event, non_handlers)) = open.first().cloned() else {
+            continue;
+        };
+        let also: Vec<String> = open.iter().skip(1).map(|(e, _)| e.clone()).collect();
+        let mut handling: Vec<&State> = model
+            .states
+            .values()
+            .filter(|c| c.parent.as_deref() == Some(&parent.id))
+            .filter(|c| !c.is_final && !c.transitions.is_empty())
+            .filter(|c| state_handles_event(c, &event))
+            .collect();
+        handling.sort_by_key(|c| c.document_order);
+        let handlers: Vec<String> = handling.iter().map(|c| c.id.clone()).collect();
+
+        return Err(Located::new(
+            ScxmlSemanticError::NonExhaustiveEventHandling {
+                parent: parent.id.clone(),
+                event,
+                handlers,
+                non_handlers,
+                also,
+            }
+            .into(),
+            source,
+            None,
+            None,
+        ));
+    }
+
+    Ok(())
+}
+
+/// Does the named state declare `event` in its `sce:unhandled`?
+///
+/// Declarations are matched literally against the literal gap event —
+/// the parser rejects wildcards in the attribute precisely so this
+/// comparison never needs a second matching rule.
+fn declares_unhandled(model: &SCXMLModel, state_id: &str, event: &str) -> bool {
+    model
+        .states
+        .get(state_id)
+        .is_some_and(|s| s.unhandled.iter().any(|e| e == event))
 }
 
 /// Strip wildcard markers from a single event token. Returns the
@@ -417,26 +605,172 @@ mod tests {
         assert!(validate(&model, "test.scxml").is_ok());
     }
 
-    /// `sce:exhaustive="false"` on the compound parent silences the
-    /// validator for that parent regardless of the gap shape.
+    /// The gap shape the parent-level opt-out used to silence, now
+    /// declared on the child that actually leaves `cmd.start`
+    /// unhandled.
     #[test]
-    fn exhaustive_optout_accepted() {
+    fn unhandled_declaration_on_the_non_handling_child_accepted() {
         let mut model = SCXMLModel {
             initial: "dispatch".to_string(),
             ..Default::default()
         };
-        let mut dispatch = state("dispatch", 0);
-        dispatch.exhaustive_optout = true;
+        let dispatch = state("dispatch", 0);
         let mut idle = child("idle", "dispatch", 1);
         idle.transitions.push(transition("cmd.start", "active"));
         idle.transitions.push(transition("cmd.stop", "stopped"));
         let mut active = child("active", "dispatch", 2);
         active.transitions.push(transition("cmd.stop", "stopped"));
+        active.unhandled = vec!["cmd.start".to_string()];
         let mut stopped = child("stopped", "dispatch", 3);
         stopped.transitions.push(transition("cmd.start", "active"));
         stopped.transitions.push(transition("cmd.stop", "stopped"));
         insert_states(&mut model, vec![dispatch, idle, active, stopped]);
         assert!(validate(&model, "test.scxml").is_ok());
+    }
+
+    /// The defect this attribute shape exists to prevent: a sibling
+    /// added after the exemption was written inherits nothing.
+    ///
+    /// `active` declares `cmd.start` unhandled, which is true of
+    /// `active`. A later `draining` sibling also fails to handle it
+    /// and declares nothing — under a parent-level opt-out the whole
+    /// compound would still be silent, and nobody would ever judge
+    /// `draining`.
+    #[test]
+    fn a_sibling_added_later_inherits_no_exemption() {
+        let mut model = SCXMLModel {
+            initial: "dispatch".to_string(),
+            ..Default::default()
+        };
+        let dispatch = state("dispatch", 0);
+        let mut idle = child("idle", "dispatch", 1);
+        idle.transitions.push(transition("cmd.start", "active"));
+        idle.transitions.push(transition("cmd.stop", "stopped"));
+        let mut active = child("active", "dispatch", 2);
+        active.transitions.push(transition("cmd.stop", "stopped"));
+        active.unhandled = vec!["cmd.start".to_string()];
+        let mut stopped = child("stopped", "dispatch", 3);
+        stopped.transitions.push(transition("cmd.start", "active"));
+        stopped.transitions.push(transition("cmd.stop", "stopped"));
+        let mut draining = child("draining", "dispatch", 4);
+        draining.transitions.push(transition("cmd.stop", "stopped"));
+        insert_states(&mut model, vec![dispatch, idle, active, stopped, draining]);
+
+        let err = validate(&model, "test.scxml").expect_err("draining must be judged on its own");
+        match &err.error {
+            ForgeError::Scxml(boxed) => match boxed.as_ref() {
+                ScxmlSemanticError::NonExhaustiveEventHandling {
+                    event,
+                    non_handlers,
+                    ..
+                } => {
+                    assert_eq!(event, "cmd.start");
+                    // `active` declared it; only `draining` is left to
+                    // decide about.
+                    assert_eq!(non_handlers, &vec!["draining".to_string()]);
+                }
+                other => panic!("expected NonExhaustiveEventHandling, got {other:?}"),
+            },
+            other => panic!("expected ForgeError::Scxml, got {other:?}"),
+        }
+    }
+
+    /// A declaration naming an event the state actually handles is a
+    /// contradiction, reported without reference to siblings.
+    #[test]
+    fn declaring_an_event_the_state_handles_rejects() {
+        let mut model = SCXMLModel {
+            initial: "dispatch".to_string(),
+            ..Default::default()
+        };
+        let dispatch = state("dispatch", 0);
+        let mut idle = child("idle", "dispatch", 1);
+        idle.transitions.push(transition("cmd.start", "active"));
+        idle.transitions.push(transition("cmd.stop", "stopped"));
+        let mut active = child("active", "dispatch", 2);
+        active.transitions.push(transition("cmd.stop", "stopped"));
+        // Declares the very event its own transition handles.
+        active.unhandled = vec!["cmd.stop".to_string()];
+        let mut stopped = child("stopped", "dispatch", 3);
+        stopped.transitions.push(transition("cmd.start", "active"));
+        stopped.transitions.push(transition("cmd.stop", "stopped"));
+        insert_states(&mut model, vec![dispatch, idle, active, stopped]);
+
+        let err = validate(&model, "test.scxml").expect_err("contradiction must reject");
+        match &err.error {
+            ForgeError::Scxml(boxed) => match boxed.as_ref() {
+                ScxmlSemanticError::ContradictoryUnhandledDeclaration { state, event } => {
+                    assert_eq!(state, "active");
+                    assert_eq!(event, "cmd.stop");
+                }
+                other => panic!("expected ContradictoryUnhandledDeclaration, got {other:?}"),
+            },
+            other => panic!("expected ForgeError::Scxml, got {other:?}"),
+        }
+    }
+
+    /// A declaration survives the repair that made it unnecessary:
+    /// `idle` and `stopped` both drop `cmd.start`, so it stops being
+    /// a gap, and `active`'s declaration now exempts nothing.
+    #[test]
+    fn a_declaration_that_stopped_being_a_gap_rejects() {
+        let mut model = SCXMLModel {
+            initial: "dispatch".to_string(),
+            ..Default::default()
+        };
+        let dispatch = state("dispatch", 0);
+        let mut idle = child("idle", "dispatch", 1);
+        idle.transitions.push(transition("cmd.stop", "stopped"));
+        let mut active = child("active", "dispatch", 2);
+        active.transitions.push(transition("cmd.stop", "stopped"));
+        active.unhandled = vec!["cmd.start".to_string()];
+        let mut stopped = child("stopped", "dispatch", 3);
+        stopped.transitions.push(transition("cmd.stop", "stopped"));
+        insert_states(&mut model, vec![dispatch, idle, active, stopped]);
+
+        let err = validate(&model, "test.scxml").expect_err("stale declaration must reject");
+        match &err.error {
+            ForgeError::Scxml(boxed) => match boxed.as_ref() {
+                ScxmlSemanticError::StaleUnhandledDeclaration {
+                    state,
+                    parent,
+                    event,
+                    gaps,
+                } => {
+                    assert_eq!(state, "active");
+                    assert_eq!(parent, "dispatch");
+                    assert_eq!(event, "cmd.start");
+                    assert!(gaps.is_empty(), "no gap remains under dispatch: {gaps:?}");
+                }
+                other => panic!("expected StaleUnhandledDeclaration, got {other:?}"),
+            },
+            other => panic!("expected ForgeError::Scxml, got {other:?}"),
+        }
+    }
+
+    /// A declaration on a state with no compound parent has no gap
+    /// set to be true against, so it is stale rather than ignored.
+    #[test]
+    fn a_declaration_on_a_parentless_state_rejects() {
+        let mut model = SCXMLModel {
+            initial: "lonely".to_string(),
+            ..Default::default()
+        };
+        let mut lonely = state("lonely", 0);
+        lonely.unhandled = vec!["cmd.start".to_string()];
+        insert_states(&mut model, vec![lonely]);
+
+        let err = validate(&model, "test.scxml").expect_err("parentless declaration must reject");
+        match &err.error {
+            ForgeError::Scxml(boxed) => match boxed.as_ref() {
+                ScxmlSemanticError::StaleUnhandledDeclaration { state, parent, .. } => {
+                    assert_eq!(state, "lonely");
+                    assert_eq!(parent, "(none)");
+                }
+                other => panic!("expected StaleUnhandledDeclaration, got {other:?}"),
+            },
+            other => panic!("expected ForgeError::Scxml, got {other:?}"),
+        }
     }
 
     /// Wildcard handler covers the event in the missing-sibling

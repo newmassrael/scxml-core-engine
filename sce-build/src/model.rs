@@ -1020,18 +1020,28 @@ pub struct State {
     /// `sce:unresolved` placeholder markers attached to this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<UnresolvedMarker>,
-    /// `sce:exhaustive="false"` author opt-out for the
-    /// NonExhaustiveEventHandling validator.
-    /// Default `false` — validator is active. Set to
-    /// `true` when the author has deliberately written partial event
-    /// coverage across sibling children and wants the build to accept
-    /// the document as-is.
+    /// `sce:unhandled` — the events this state deliberately does not
+    /// handle, declared on the state the absence is true of.
     ///
-    /// Only `="false"` is parsed as opt-out; `="true"` and absence both
-    /// leave the validator active. Any other value rejects the
-    /// document via `validation/invalid-attribute`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub exhaustive_optout: bool,
+    /// The declaration is what exempts a state from the
+    /// NonExhaustiveEventHandling validator. It is deliberately not a
+    /// property of the compound parent: the fact being asserted is
+    /// "*this* state does not handle *this* event", so a sibling added
+    /// later inherits no exemption and is judged on its own, and
+    /// deleting the state deletes its exemptions with it.
+    ///
+    /// Both directions are checked, so the declaration cannot rot into
+    /// prose: a state that declares an event it actually handles
+    /// rejects via `scxml/contradictory-unhandled-declaration`, and one
+    /// that declares an event which is not a gap under its parent
+    /// rejects via `scxml/stale-unhandled-declaration`.
+    ///
+    /// Tokens are literal event names in declaration order. Wildcards
+    /// are rejected at parse time — the gap set the declaration is
+    /// checked against is always literal, and a second matching
+    /// semantics here would let one attribute mean two things.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unhandled: Vec<String>,
 }
 
 /// W3C SCXML: Complete state machine model

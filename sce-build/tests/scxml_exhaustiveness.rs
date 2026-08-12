@@ -20,15 +20,22 @@
 //!   shape but the parent compound state declares a transition
 //!   handling `cmd.start` itself, turning the bubble into a
 //!   deliberate fallthrough. Accept.
-//! - **Positive (`exhaustiveness_opt_out`)** — same gap shape with
-//!   `sce:exhaustive="false"` on the parent. Accept.
+//! - **Positive (`declared`)** — same gap shape with `sce:unhandled`
+//!   on the child that leaves the event unhandled. Accept.
+//! - **Negative (`later_sibling`)** — the same declaration, plus a
+//!   sibling added afterwards that also fails to handle the event and
+//!   declares nothing. Rejected, naming only that sibling. This is the
+//!   case the withdrawn parent-level opt-out could not express.
 //! - **Positive (`exhaustiveness_disjoint_protocol`)** — the
 //!   W3C-IRP-style protocol-stage pattern with disjoint event
 //!   vocabularies across siblings. No common ground exists, so the
 //!   heuristic stays silent. Accept.
-//! - **Negative (`sce_exhaustive_invalid_value`)** — non-`true`/
-//!   `false` literal on the opt-out attribute rejects via
-//!   `validation/invalid-attribute`.
+//! - **Negative (`contradiction` / `stale`)** — a declaration the
+//!   document contradicts, and one that exempts nothing. The two
+//!   directions in which a declaration can stop being true.
+//! - **Negative (`attribute_shape_rejections`)** — the withdrawn
+//!   `sce:exhaustive` and the malformed `sce:unhandled` token forms,
+//!   all via `validation/invalid-attribute`.
 
 use std::fs;
 use std::path::Path;
@@ -151,23 +158,23 @@ fn parent_fallthrough_accepted() {
 }
 
 #[test]
-fn opt_out_attribute_accepted() {
-    // Same gap shape with `sce:exhaustive="false"` on the parent.
-    // Accept regardless of the validator's heuristic.
+fn unhandled_declaration_accepted() {
+    // Same gap shape, declared on the child that actually leaves
+    // `cmd.start` unhandled.
     let dir = tempdir().expect("tempdir");
     write_fixture(
         dir.path(),
-        "opt_out.scxml",
+        "declared.scxml",
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" name="opt_out" initial="dispatch">
-  <state id="dispatch" initial="idle" sce:exhaustive="false">
+       version="1.0" name="declared" initial="dispatch">
+  <state id="dispatch" initial="idle">
     <state id="idle">
       <transition event="cmd.start" target="active"/>
       <transition event="cmd.stop" target="stopped"/>
     </state>
-    <state id="active">
+    <state id="active" sce:unhandled="cmd.start">
       <transition event="cmd.stop" target="stopped"/>
     </state>
     <state id="stopped">
@@ -178,7 +185,251 @@ fn opt_out_attribute_accepted() {
 </scxml>
 "#,
     );
-    compile_positive(dir.path(), "opt_out.scxml");
+    compile_positive(dir.path(), "declared.scxml");
+}
+
+/// The reason the declaration sits on the child rather than the
+/// parent: a sibling added after the exemption was written inherits
+/// nothing and is judged on its own.
+///
+/// `active` declares `cmd.start`, which is true of `active`. `draining`
+/// arrives later, also fails to handle `cmd.start`, and declares
+/// nothing — under the withdrawn parent-level opt-out the compound
+/// would still be silent and nobody would ever judge `draining`.
+#[test]
+fn a_sibling_added_after_the_declaration_is_still_judged() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "later_sibling.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="later_sibling" initial="dispatch">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="active" sce:unhandled="cmd.start">
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="stopped">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="draining"/>
+    </state>
+    <state id="draining">
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "later_sibling.scxml");
+    match &err.error {
+        ForgeError::Scxml(boxed) => match boxed.as_ref() {
+            ScxmlSemanticError::NonExhaustiveEventHandling {
+                event,
+                non_handlers,
+                ..
+            } => {
+                assert_eq!(event, "cmd.start");
+                // `active` declared it; the report tracks only what is
+                // left to decide.
+                assert_eq!(non_handlers, &vec!["draining".to_string()]);
+            }
+            other => panic!("expected NonExhaustiveEventHandling variant, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Scxml, got {other:?}"),
+    }
+}
+
+#[test]
+fn declaration_contradicted_by_a_transition_rejected() {
+    // `active` declares `cmd.stop` unhandled and handles it.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "contradiction.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="contradiction" initial="dispatch">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="active" sce:unhandled="cmd.stop">
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="stopped">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "contradiction.scxml");
+    match &err.error {
+        ForgeError::Scxml(boxed) => match boxed.as_ref() {
+            ScxmlSemanticError::ContradictoryUnhandledDeclaration { state, event } => {
+                assert_eq!(state, "active");
+                assert_eq!(event, "cmd.stop");
+            }
+            other => panic!("expected ContradictoryUnhandledDeclaration, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Scxml, got {other:?}"),
+    }
+}
+
+#[test]
+fn declaration_that_names_no_gap_rejected() {
+    // `active` declares an event no sibling handles either, so the
+    // declaration exempts nothing.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "stale.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="stale" initial="dispatch">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="active" sce:unhandled="cmd.reset">
+      <transition event="cmd.start" target="stopped"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="stopped">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "stale.scxml");
+    match &err.error {
+        ForgeError::Scxml(boxed) => match boxed.as_ref() {
+            ScxmlSemanticError::StaleUnhandledDeclaration {
+                state,
+                parent,
+                event,
+                gaps,
+            } => {
+                assert_eq!(state, "active");
+                assert_eq!(parent, "dispatch");
+                assert_eq!(event, "cmd.reset");
+                assert!(gaps.is_empty(), "no gap names `active`: {gaps:?}");
+            }
+            other => panic!("expected StaleUnhandledDeclaration, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Scxml, got {other:?}"),
+    }
+}
+
+/// A declaration on a child that is not part of the comparison at all.
+///
+/// `<final>` children and children with no transitions are excluded from
+/// the sibling comparison, so they can never be a non-handler and their
+/// declarations exempt nothing — even when the event they name is a
+/// genuine gap for some other sibling. Staleness is judged per (child,
+/// event), not per parent: a mutation weakening it to "is this event a
+/// gap anywhere under the parent?" is invisible to every fixture whose
+/// declarer happens to be a real non-handler.
+#[test]
+fn declaration_on_a_child_outside_the_comparison_rejected() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "outside.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="outside" initial="dispatch">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+      <transition event="cmd.quit" target="done"/>
+    </state>
+    <state id="active" sce:unhandled="cmd.start">
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <state id="stopped">
+      <transition event="cmd.start" target="active"/>
+      <transition event="cmd.stop" target="stopped"/>
+    </state>
+    <final id="done" sce:unhandled="cmd.start"/>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "outside.scxml");
+    match &err.error {
+        ForgeError::Scxml(boxed) => match boxed.as_ref() {
+            ScxmlSemanticError::StaleUnhandledDeclaration {
+                state,
+                parent,
+                event,
+                gaps,
+            } => {
+                assert_eq!(state, "done");
+                assert_eq!(parent, "dispatch");
+                assert_eq!(event, "cmd.start");
+                // `cmd.start` IS a gap under `dispatch` — just not one
+                // that names `done`. That is the distinction.
+                assert!(gaps.is_empty(), "no gap names `done`: {gaps:?}");
+            }
+            other => panic!("expected StaleUnhandledDeclaration, got {other:?}"),
+        },
+        other => panic!("expected ForgeError::Scxml, got {other:?}"),
+    }
+}
+
+/// A `<parallel>` sibling carrying transitions is in the comparison on
+/// the same terms as a `<state>`, so it needs the same way to declare a
+/// deliberate gap.
+///
+/// The withdrawn parent-level opt-out covered this case for free by
+/// covering everything. Replacing it with a per-child declaration means
+/// every element that can be a non-handler has to be able to carry one —
+/// otherwise the replacement removes expressiveness instead of sharpening
+/// it.
+#[test]
+fn a_parallel_sibling_can_declare_its_gap() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "parallel_declares.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="parallel_declares" initial="dispatch">
+  <state id="dispatch" initial="idle">
+    <state id="idle">
+      <transition event="cmd.start" target="region"/>
+      <transition event="cmd.stop" target="idle"/>
+    </state>
+    <parallel id="region" sce:unhandled="cmd.start">
+      <transition event="cmd.stop" target="idle"/>
+      <state id="left">
+        <transition event="left.tick" target="left"/>
+      </state>
+      <state id="right">
+        <transition event="right.tick" target="right"/>
+      </state>
+    </parallel>
+  </state>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "parallel_declares.scxml");
 }
 
 #[test]
@@ -216,21 +467,61 @@ fn disjoint_protocol_stages_accepted() {
     compile_positive(dir.path(), "disjoint_protocol.scxml");
 }
 
+/// Attribute-shape rejections, all `validation/invalid-attribute`.
+///
+/// The withdrawn `sce:exhaustive` is in this table for a reason that
+/// is not tidiness: an unrecognised `sce:` attribute on a statechart
+/// element is accepted and ignored, so a document still carrying the
+/// old parent-level opt-out would lose its exemption in silence. Being
+/// rejected by name is what makes that migration loud.
 #[test]
-fn invalid_optout_value_rejected() {
-    // `sce:exhaustive` accepts only the literal `"true"` and
-    // `"false"`. Any other value rejects via
-    // `validation/invalid-attribute` so the opt-out cannot be
-    // silently mis-spelled.
-    let dir = tempdir().expect("tempdir");
-    write_fixture(
-        dir.path(),
-        "invalid_optout.scxml",
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+fn attribute_shape_rejections() {
+    let cases: &[(&str, &str, &str)] = &[
+        // (fixture stem, parent/child attribute text, `actual` payload)
+        (
+            "withdrawn_optout",
+            r#"<state id="parent" initial="a" sce:exhaustive="false">"#,
+            "false",
+        ),
+        (
+            "withdrawn_optout_true",
+            r#"<state id="parent" initial="a" sce:exhaustive="true">"#,
+            "true",
+        ),
+        (
+            "wildcard_token",
+            r#"<state id="parent" initial="a" sce:unhandled="go.*">"#,
+            "go.*",
+        ),
+        (
+            "universal_wildcard_token",
+            r#"<state id="parent" initial="a" sce:unhandled="*">"#,
+            "*",
+        ),
+        (
+            "duplicate_token",
+            r#"<state id="parent" initial="a" sce:unhandled="go go">"#,
+            "go",
+        ),
+        (
+            "empty_declaration",
+            r#"<state id="parent" initial="a" sce:unhandled="   ">"#,
+            "   ",
+        ),
+    ];
+
+    for (stem, parent_open, expected_actual) in cases {
+        let dir = tempdir().expect("tempdir");
+        let name = format!("{stem}.scxml");
+        write_fixture(
+            dir.path(),
+            &name,
+            &format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" name="invalid_optout" initial="parent">
-  <state id="parent" initial="a" sce:exhaustive="no">
+       version="1.0" name="{stem}" initial="parent">
+  {parent_open}
     <state id="a">
       <transition event="go" target="b"/>
     </state>
@@ -239,30 +530,38 @@ fn invalid_optout_value_rejected() {
     </state>
   </state>
 </scxml>
-"#,
-    );
-    let err = compile_expect_err(dir.path(), "invalid_optout.scxml");
-    let diags = {
-        use sce_build::forge::diagnostic::ToDiagnostics;
-        err.error.to_diagnostics()
-    };
-    let code_str = serde_json::to_string(&diags[0].code).unwrap();
-    assert_eq!(code_str, "\"validation/invalid-attribute\"");
-    assert_eq!(diags[0].actual.as_deref(), Some("no"));
+"#
+            ),
+        );
+        let err = compile_expect_err(dir.path(), &name);
+        let diags = {
+            use sce_build::forge::diagnostic::ToDiagnostics;
+            err.error.to_diagnostics()
+        };
+        let code_str = serde_json::to_string(&diags[0].code).unwrap();
+        assert_eq!(
+            code_str, "\"validation/invalid-attribute\"",
+            "{stem} rejected under the wrong code"
+        );
+        assert_eq!(
+            diags[0].actual.as_deref(),
+            Some(*expected_actual),
+            "{stem} named the wrong value"
+        );
+    }
 }
 
 /// A compound with more than one gap says so.
 ///
-/// `sce:exhaustive="false"` is the only escape hatch and it covers the
-/// PARENT, so an author reaching for it is deciding about every gap
-/// underneath. The validator stops at the first violation — the wire
-/// layer carries one record — and that used to mean the message named
-/// one event while the annotation would silence three. This tree's own
-/// `examples/doom_wasm/scxml/combo_state.scxml` is that case: its
-/// comment reasons about `berserk_activate` while `combo_timeout` and
-/// `berserk_timeout` are gaps too, and nothing ever showed them.
+/// The validator stops at the first violation — the wire layer carries
+/// one record — so without `also` an author repairing a compound pays a
+/// build round per gap. This tree's own
+/// `examples/doom_wasm/scxml/combo_state.scxml` is the case that
+/// motivated it: its comment reasoned about `berserk_activate` while
+/// `combo_timeout` and `berserk_timeout` were gaps too, and nothing
+/// ever showed them.
 #[test]
-fn a_compound_with_several_gaps_names_the_ones_the_optout_would_also_cover() {
+fn a_compound_with_several_gaps_names_the_others_too() {
     let dir = tempdir().expect("tempdir");
     write_fixture(
         dir.path(),
@@ -297,7 +596,7 @@ fn a_compound_with_several_gaps_names_the_ones_the_optout_would_also_cover() {
                 assert_eq!(
                     also,
                     &vec![other.to_string()],
-                    "the sibling gap the opt-out would also silence is missing",
+                    "the sibling gap needing its own repair is missing",
                 );
             }
             other => panic!("expected NonExhaustiveEventHandling, got {other:?}"),
@@ -307,7 +606,7 @@ fn a_compound_with_several_gaps_names_the_ones_the_optout_would_also_cover() {
 
     let text = err.error.to_string();
     assert!(
-        text.contains("would also silence"),
-        "message does not warn what the annotation covers: {text}",
+        text.contains("inconsistent too"),
+        "message does not report the compound's other gaps: {text}",
     );
 }
