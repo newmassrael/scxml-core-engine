@@ -98,6 +98,59 @@ sce_gate_http_fixture_server() {
     sce_gate_step "W3C HTTP fixture server up on localhost:8080"
 }
 
+# Resolve the main CMake tree into SCE_MAIN_BUILD_DIR, configuring it when it
+# is not ready, and refuse a tree configured for a build type CI never builds.
+#
+# Three gates judge this one directory — the C++ conformance suite, the C11 arm
+# and the rest of the ctest suite — and each carried its own copy of this
+# block. The copies had already diverged: `w3c-cpp` keys readiness on the
+# GENERATOR's own output file after measuring that a CI-restored cache carries
+# `CMakeCache.txt` without `build.ninja`, while `w3c-c11` still keyed it on the
+# cache alone and would send ninja into a directory it cannot build in. One
+# reader means one answer, and it means the next fix lands for all three.
+#
+# Sets a variable rather than echoing one: `sce_gate_fail` exits, and an exit
+# inside `$( )` ends the subshell while the caller carries on with an empty
+# value — a gate that judges the empty string is worse than one that stops.
+sce_main_build_dir() {
+    SCE_MAIN_BUILD_DIR="${SCE_W3C_BUILD_DIR:-build}"
+
+    # The lane builds RelWithDebInfo under Ninja. A gate that judged a
+    # differently configured binary would be reporting on something CI never
+    # sees — the defect `forge-cpp` carried until its build type was pinned. An
+    # existing tree is reused rather than reconfigured, because a developer's
+    # build directory is theirs; the mismatch is reported with the command that
+    # fixes it. The cache is read for the build type it records, which is a
+    # claim about the tree being RIGHT rather than about it being READY.
+    local configured
+    if [[ -f "$SCE_MAIN_BUILD_DIR/CMakeCache.txt" ]]; then
+        configured="$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' "$SCE_MAIN_BUILD_DIR/CMakeCache.txt")"
+        if [[ "$configured" != "RelWithDebInfo" ]]; then
+            sce_gate_fail "$SCE_MAIN_BUILD_DIR is configured CMAKE_BUILD_TYPE=${configured:-<unset>}; the lane builds RelWithDebInfo, so this tree would judge a different binary. Reconfigure with: cmake -B $SCE_MAIN_BUILD_DIR -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja"
+        fi
+    fi
+
+    # The file the cache's OWN generator produces, not "any build file". This
+    # tree carried a stale `Makefile` from an earlier Make-generator configure
+    # next to a cache that names Ninja, so "either one is present" answered yes
+    # for a directory ninja could not build in.
+    local generator generated
+    generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$SCE_MAIN_BUILD_DIR/CMakeCache.txt" 2>/dev/null)"
+    case "$generator" in
+        Ninja*) generated="$SCE_MAIN_BUILD_DIR/build.ninja" ;;
+        "")     generated="" ;;
+        *)      generated="$SCE_MAIN_BUILD_DIR/Makefile" ;;
+    esac
+    if [[ -z "$generated" || ! -f "$generated" ]]; then
+        sce_gate_step "configuring $SCE_MAIN_BUILD_DIR (RelWithDebInfo, mirroring the lane)"
+        local GENERATOR=()
+        command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
+        cmake -B "$SCE_MAIN_BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null \
+            || sce_gate_fail "cmake configure"
+    fi
+}
+
 # Refuse to run when something already holds 8080.
 #
 # The C++ conformance suite reports 13 of its cases Not Run when the fixture

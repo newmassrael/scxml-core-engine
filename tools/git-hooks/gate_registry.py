@@ -358,6 +358,28 @@ GATES: dict[str, dict] = {
         "cost_s": 55,
         "summary": "codegen + visualizer + DOOM WASM builds",
     },
+    # The other half of the main tree's ctest partition, and the half nothing
+    # ran. Measured 2026-08-12 with a logging shim in place of `ctest` during a
+    # full `scripts/gate --all`: 28 gates passed and the only runs against this
+    # build were `w3c-c11`'s two. 159 of 382 registered cases — every `mesh_*`
+    # case and every C++ unit suite — were executed by no gate and by no
+    # workflow, since none configures the main tree.
+    "cpp-suite": {
+        "workflows": ["cpp-suite.yml"],
+        "runner_workflow": True,
+        "narrows": "the lane declares no `paths:` filter, for the same reason "
+                   "`w3c-cpp`'s does not: that is a statement about a runner "
+                   "paid by the minute, not about what the suite reads. This "
+                   "one builds the whole C++ tree, so its real inputs are the "
+                   "engine, its tests, the mesh sources and the CMake "
+                   "definitions that register them.",
+        "extra": ["sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
+                  "examples/**", "resources/**", "tools/codegen/templates/**",
+                  "sce-build/src/**"],
+        "deps": ["codegen-build"],
+        "cost_s": 150,
+        "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
+    },
     "w3c-c11": {
         "workflows": ["w3c-tests.yml"],
         "runner_workflow": True,

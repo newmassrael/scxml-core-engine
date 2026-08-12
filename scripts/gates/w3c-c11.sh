@@ -19,21 +19,8 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-BUILD_DIR="${SCE_W3C_BUILD_DIR:-build}"
-
-if [[ -f "$BUILD_DIR/CMakeCache.txt" ]]; then
-    configured="$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' "$BUILD_DIR/CMakeCache.txt")"
-    if [[ "$configured" != "RelWithDebInfo" ]]; then
-        sce_gate_fail "$BUILD_DIR is configured CMAKE_BUILD_TYPE=${configured:-<unset>}; the lane builds RelWithDebInfo. Reconfigure with: cmake -B $BUILD_DIR -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja"
-    fi
-else
-    sce_gate_step "configuring $BUILD_DIR (RelWithDebInfo, mirroring the lane)"
-    GENERATOR=()
-    command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
-    cmake -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null \
-        || sce_gate_fail "cmake configure"
-fi
+sce_main_build_dir
+BUILD_DIR="$SCE_MAIN_BUILD_DIR"
 
 # `sce_c11_tests` aggregates every target the C directory defines, so a
 # fixture added later is built without anyone updating a list — and building
