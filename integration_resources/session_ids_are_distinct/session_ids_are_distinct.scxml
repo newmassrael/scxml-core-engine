@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 5.10: `_sessionid` is the id of a session, not of a document.
+
+     The clause binds `_sessionid` "to the system-generated id for the current
+     SCXML session". Two sessions are two ids. That reading is load-bearing
+     rather than pedantic, because Appendix C.1.1 derives the address a
+     session publishes in its `_ioprocessors` from that id: if two live
+     sessions read one id they publish one address, and a `<send>` addressed
+     to either is a send addressed to both.
+
+     Nothing in the public IRP suite asks the question. Every test that
+     reaches `_sessionid` runs one session, so a processor that hands the
+     same value to every session it starts passes the corpus — and the C11
+     backend did exactly that, baking `<document>_session` at codegen time
+     under a comment that restated the requirement as "bound, and unchanging
+     through the session". True of the clause, and missing the part that
+     constrains the value.
+
+     So this fixture is the question, asked where the answer differs: two
+     children run at the same time, each reports the id it was issued, and
+     the parent compares them. Reported through `<param>` rather than read
+     across sessions, because a session's system variables are its own.
+
+     What this reaches and what it does not, stated rather than implied. The
+     two children are separate inline documents, so a processor deriving an
+     id from the document still gives them different values — this pins the
+     property across every backend and does not reproduce the C11 defect on
+     its own. The same-document case (two sessions of ONE machine, told apart
+     only by the ordinal the processor issues) is pinned by
+     `sce-build/tests/c11_session_identity.rs`, which instantiates one
+     generated machine twice; it needs a host that starts two sessions, which
+     a single statechart cannot express about itself.
+
+     A processor that reuses one id lands in `fail` immediately. A processor
+     that never delivers the second report leaves the parent in `one_seen`
+     and the harness times out — a weaker signal, and the honest one for a
+     child that was never started. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="session_ids_are_distinct">
+    <datamodel>
+        <!-- Holds the first id until the second arrives. Seeded to the empty
+             string rather than left undeclared: the comparison below runs in
+             whichever datamodel engine the backend embeds, and a read of an
+             unbound variable raises `error.execution` in some of them, which
+             reads as a false condition and reports a violation that is not
+             there. -->
+        <data id="firstSid" expr="''"/>
+    </datamodel>
+
+    <!-- Both invokes live on `phase` so both children are running when the
+         comparison happens. §6.4 cancels an invoke when the state carrying
+         it is exited, so a flat arrangement that left `waiting` for a sibling
+         would destroy the first child before the second reported, and the
+         fixture would be comparing one live session against a dead one. -->
+    <state id="phase" initial="waiting">
+        <invoke type="scxml" id="inv_a">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="emit">
+                    <state id="emit">
+                        <onentry>
+                            <send target="#_parent" event="fromChild">
+                                <param name="sid" expr="_sessionid"/>
+                            </send>
+                        </onentry>
+                    </state>
+                </scxml>
+            </content>
+        </invoke>
+        <invoke type="scxml" id="inv_b">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="emit">
+                    <state id="emit">
+                        <onentry>
+                            <send target="#_parent" event="fromChild">
+                                <param name="sid" expr="_sessionid"/>
+                            </send>
+                        </onentry>
+                    </state>
+                </scxml>
+            </content>
+        </invoke>
+
+        <state id="waiting">
+            <transition event="fromChild" target="one_seen">
+                <assign location="firstSid" expr="_event.data.sid"/>
+            </transition>
+        </state>
+
+        <!-- The clause, as a comparison: the second session's id is not the
+             first session's id. Both sessions are live at this point, which
+             is what makes the two ids required to differ. -->
+        <state id="one_seen">
+            <transition event="fromChild" cond="_event.data.sid != firstSid" target="pass"/>
+            <transition event="fromChild" target="fail"/>
+        </state>
+    </state>
+
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

@@ -31,6 +31,19 @@ export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 
+# What this gate can honestly claim about the timestamp pin is that THIS RUN
+# left the tree as it found it. Comparing against HEAD answers a different
+# question — whether the working tree is clean — and an author mid-round
+# always fails that one: adding an integration stem brings new generated
+# files, and the gate reported them as proof the pin was broken. So the
+# baseline is the tree as it stands now, hashed, and the comparison after the
+# run is against that.
+kotlin_tree_hashes() {
+    find backends/kotlin/tests/src -type f -print0 2>/dev/null \
+        | sort -z | xargs -0 -r sha256sum
+}
+TREE_BEFORE="$(kotlin_tree_hashes)"
+
 sce_gate_step "generating and running the Kotlin W3C suite"
 status=0
 ./gradlew --console=plain :sce-kotlin-tests:test >"$LOG/kotlin.log" 2>&1 || status=$?
@@ -69,13 +82,12 @@ if (( cases < 200 )); then
 fi
 
 # The pin is the reason this gate can exist locally at all, so it is checked
-# rather than assumed: a run that leaves the committed tree modified has
+# rather than assumed: a run that rewrites the tree it was handed has
 # reintroduced the wall-clock stamp, and the next gate would be the one to
 # discover it.
-dirty="$(git status --porcelain -- backends/kotlin/tests/src | wc -l)"
-if (( dirty != 0 )); then
-    git status --porcelain -- backends/kotlin/tests/src | head -n 5 >&2
-    sce_gate_fail "the suite left $dirty committed Kotlin file(s) modified — SOURCE_DATE_EPOCH is not reaching the generator"
+if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
+    diff <(printf '%s\n' "$TREE_BEFORE") <(kotlin_tree_hashes) | head -n 10 >&2
+    sce_gate_fail "the suite rewrote the Kotlin tree it was handed — SOURCE_DATE_EPOCH is not reaching the generator"
 fi
 
 sce_gate_step "$cases Kotlin case(s) passed, committed tree unchanged"
