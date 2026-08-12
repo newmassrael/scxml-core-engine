@@ -32,6 +32,27 @@ sce_gate_fail() {
     exit 1
 }
 
+# Exit status for "this check could not run", kept distinct from 1 ("what the
+# gate judges is wrong"). The two are different verdicts about different
+# parties: exit 1 says the author's tree is bad, exit 3 says the gate's own
+# inputs are missing.
+#
+# Collapsing them is not a cosmetic loss. `gate_registry_contract` drives
+# `ledger-citations.sh` over a fixture holding a real citation and asserts the
+# gate accepts it; on a machine without the rev-pinned `mnemosyne-cli` the gate
+# refused — correctly, and saying so — and the assertion reported "the staged
+# gate rejected a real citation". A verdict about the author's text for a fault
+# in the checker's own inputs. Measured on the build machine 2026-08-12: two
+# tests red, nothing wrong with the tree.
+#
+# `tools/mnemosyne-adoption/migrate_citations.py` reached the same conclusion
+# first and named the constant `EXIT_CANNOT_RUN`; the value is 3 here so the
+# two halves of one gate agree.
+sce_gate_cannot_run() {
+    printf '\nERROR gate[%s]: cannot run — %s\n' "$SCE_GATE_SLUG" "$1" >&2
+    exit 3
+}
+
 # Progress line within a gate that runs several commands.
 sce_gate_step() {
     printf '  [%s] %s\n' "$SCE_GATE_SLUG" "$1" >&2
