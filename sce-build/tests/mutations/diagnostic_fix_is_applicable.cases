@@ -1,0 +1,69 @@
+# Mutation cases for "a repair proposal names an edit the consumer can
+# perform".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/diagnostic_fix_is_applicable.cases`.
+#
+# Five defects were live at once when this gate was written, and they were
+# live under a full green board: the schema validated every one of them,
+# because a `replace_one_of` naming a value that occurs nowhere in the
+# document is as well-typed as one that does. What distinguishes them is
+# performing the edit, so the mutations below break each half of that —
+# the coordinate that locates the edit, the payload that describes it, the
+# suppression that keeps an unperformable one off the wire, and the
+# provenance that explains why. The last case breaks the sweep itself,
+# because a scan that reaches nothing prints the same green as a clean run.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test diagnostic_fix_is_applicable
+# The gate drives `sce-codegen` as a subprocess, so the producer files are
+# executed rather than linked into the test binary — the evidence a mutation
+# reached what ran is the file differing on disk while the tests ran.
+mutation_targets sce-build/tests/diagnostic_fix_is_applicable.rs
+mutation_runtime_targets sce-build/src/forge/event_schema_check.rs \
+                         sce-build/src/scxml_references.rs \
+                         sce-build/src/forge/diagnostic.rs \
+                         sce-build/src/model.rs
+
+mutation_case "a param rejection anchors on the element that encloses it" <<'PY'
+edit("sce-build/src/forge/event_schema_check.rs",
+     "        return Err(located_on_param(\n            param,\n            action,\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {",
+     "        return Err(located_at(\n            action.source_location.as_ref(),\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {")
+PY
+
+mutation_case "recorded rows reach the wire in expanded coordinates" <<'PY'
+edit("sce-build/src/model.rs",
+     "        let (line, col) = (line?, col.unwrap_or(1));\n        let offset = crate::position_map::rowcol_to_offset(&self.expanded, line, col);\n        let pos = self.map.lookup(offset);\n        Some((pos.file.display().to_string(), pos.row, pos.col))",
+     "        let _ = (line, col);\n        None")
+PY
+
+mutation_case "a synthesised value still carries a substitution proposal" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     "        match self {\n            Fix::ReplaceWith { .. } | Fix::ReplaceOneOf { .. } => None,\n            other => Some(other),\n        }",
+     "        Some(self)")
+PY
+
+mutation_case "the call site that chose the parameters is dropped" <<'PY'
+edit("sce-build/src/scxml_references.rs",
+     "    match positions.and_then(|p| p.call_site_on(line)) {\n        Some((file, row, col)) => located.expanded_from(file, row, col),\n        None => located,\n    }",
+     "    located")
+PY
+
+mutation_case "an empty choice set ships as a degenerate closed set" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     "            Fix::ReplaceOneOf { candidates } if candidates.is_empty() => None,\n            Fix::AddOneOf { attrs, .. } if attrs.is_empty() => None,",
+     "")
+PY
+
+mutation_case "the candidate list is copied into the expected field as well" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     "            expected: None,\n            actual: Some(field.clone()),\n            fix: if candidates.is_empty() {",
+     "            expected: Some(candidates.clone()),\n            actual: Some(field.clone()),\n            fix: if candidates.is_empty() {")
+PY
+
+mutation_case "the sweep stops reaching the corpus" <<'PY'
+edit("sce-build/tests/diagnostic_fix_is_applicable.rs",
+     '        .args(["ls-files", "-z", "*.scxml"])',
+     '        .args(["ls-files", "-z", "sce-build/tests/fixtures/enum"])')
+PY

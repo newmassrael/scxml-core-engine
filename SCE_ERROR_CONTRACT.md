@@ -63,6 +63,7 @@ compatibility.
 | `spec` | string | Specification anchor (e.g. `"W3C SCXML 3.13"`). Present when the rule is spec-derived. Enables LLM grounding. |
 | `message` | English prose | Human-readable one-liner. **Not** machine-parsed. Not part of `id`. |
 | `location` | object | Source location when known. See [§2.2](#22-location-object). |
+| `expanded_from` | object | The `<sce:use>` whose parameters synthesised `actual`. Present only when a preprocessor assembled the rejected value. See [§2.3](#23-expanded-values). |
 | `expected` | array of strings | Non-repair expectation metadata (parser expectations like `"identifier"`, cardinality constraints like `"1"`). **Never** carries a candidate list for substitution — that role belongs to `fix`. The two fields are disjoint by contract (see [§3.2](#32-no-overlap-between-fix-and-expected)). |
 | `actual` | string | The observed value that triggered rejection. |
 | `fix` | object | Structured repair proposal. The sole channel for repair signals. See [§3 Fixes](#3-fixes). |
@@ -122,6 +123,39 @@ by who reads them.
 Mesh errors currently omit `location` — their coordinates are the
 machine / binding / target names carried by the error fields themselves.
 
+### 2.3 Expanded values
+
+`<xi:include>` and `<sce:use>` run before parsing, so a rejection can
+name a value the pipeline assembled rather than one an author typed.
+`location` still points at real source — but at the *template* row,
+which carries the parameterised shape:
+
+```
+counter.scxml:12   <transition event="tick" target="tick_{$n}"/>
+main.scxml:19        <sce:use template="counter.scxml" n="1"/>
+```
+
+Rejecting the expansion `tick_1` gives `actual: "tick_1"`,
+`location: counter.scxml:12`, and `expanded_from: main.scxml:19`. All
+three are true and none is redundant: `actual` is what failed to
+resolve, `location` is where that value takes its shape, and
+`expanded_from` is what chose the parameters — the only coordinate that
+distinguishes this expansion from its siblings.
+
+Two consequences for consumers:
+
+- **`actual` need not occur in `location`'s row when `expanded_from`
+  is present.** That row holds `tick_{$n}`. Outside this case it does
+  occur there, and [§3.1.1](#311-locating-the-edit) is what enforces
+  it.
+- **No substitution `fix` accompanies such a record.** Rewriting the
+  template row would change every expansion of the template, so no
+  local edit repairs the failure — the case [§3](#3-fixes) already
+  spells as "`fix` absent". The repair is the author's judgment
+  between fixing the template, the call site's parameters, or the
+  document the expansion refers into, and the three coordinates are
+  what let a consumer state that choice.
+
 ## 3. Fixes
 
 `fix` is the **sole channel** for repair signals. Whenever the producer
@@ -151,6 +185,32 @@ The variant name encodes the *shape* of the repair: deterministic
 variants can be applied without further judgment; choice variants
 (`replace_one_of`, `add_one_of`) require the consumer or human to pick
 from the closed candidate set.
+
+A choice variant's set is never empty. There is no choosing from
+nothing, so a producer that reaches that state has found no repair
+rather than a degenerate one, and the record carries no `fix` at all —
+the spelling [§3](#3-fixes) already defines for that case. Consumers
+therefore never have to decide what `"candidates": []` means, and the
+producer cannot ship the two readings of it from different sites.
+
+### 3.1.1 Locating the edit
+
+Every `fix` names an edit the consumer performs on the document in
+[`location.file`](#22-location-object). Two properties make that
+possible, and both are enforced against the emitted corpus by
+`sce-build/tests/diagnostic_fix_is_applicable.rs` rather than asserted
+here:
+
+- When the record carries `location.line`, the value in `actual` occurs
+  on that line. A coordinate on an enclosing element — the `<send>`
+  around the offending `<param>`, say — sends the consumer to a line
+  the token is absent from.
+- When it does not, `actual` occurs exactly once in the document, since
+  a whole-file search is then the only locating strategy the wire
+  offers.
+
+The same target replays each substitution proposal against the CLI:
+applying it must clear the record's `id`.
 
 Consumers holding a dispatch table keyed on `fix.kind` may safely
 enumerate these — the set only grows in backward-compatible ways

@@ -102,6 +102,10 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                     generator: crate::GENERATOR_COMMIT,
                     code,
                     stage,
+                    // Schema-validation rows are already remapped to
+                    // authored coordinates by `remap_post_expansion`;
+                    // they carry no per-record call site.
+                    expanded_from: None,
                     spec: code.spec_anchor(),
                     message: d.message.clone(),
                     location: Some(Location {

@@ -1683,7 +1683,8 @@ fn check_send_param(
         let mut candidates: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
         candidates.sort();
         candidates.dedup();
-        return Err(located_on_action(
+        return Err(located_on_param(
+            param,
             action,
             diag_label,
             ValidationError::EventPayloadFieldUnknown {
@@ -1712,7 +1713,8 @@ fn check_send_param(
         return Ok(());
     };
     if !literal_is_compatible_with(&field.sce_type, literal_kind) {
-        return Err(located_on_action(
+        return Err(located_on_param(
+            param,
             action,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
@@ -1726,7 +1728,8 @@ fn check_send_param(
         ));
     }
     if let Some(overflow) = enum_underlying_overflow(&field.sce_type, &expr_ast, imported_enums) {
-        return Err(located_on_action(
+        return Err(located_on_param(
+            param,
             action,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
@@ -1747,7 +1750,8 @@ fn check_send_param(
     if let Some(not_declared) =
         enum_variant_not_declared(&field.sce_type, &expr_ast, imported_enums)
     {
-        return Err(located_on_action(
+        return Err(located_on_param(
+            param,
             action,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
@@ -1763,16 +1767,47 @@ fn check_send_param(
     Ok(())
 }
 
-/// Anchor a [`ValidationError`] on an action's recorded source
-/// location, falling back to the statechart's `diag_label` when the
-/// action has no captured location (legacy parse paths that predate
-/// the per-executable-content source-position capture).
-fn located_on_action(
+/// Anchor a [`ValidationError`] on the `<param>` that carries the
+/// rejected value, not on the `<send>` that encloses it.
+///
+/// SCE_ERROR_CONTRACT.md §2.2 has the consumer open `location.file`
+/// and edit at `location.line`; §3.1 calls the substitution variants
+/// applicable "without further judgment". A param-level rejection
+/// anchored on its `<send>` breaks both promises at once — the value
+/// in `actual` is not on the line the record names, so the consumer
+/// either edits the wrong token or finds nothing to edit.
+///
+/// The action location remains the fallback for models built outside
+/// the parser (unit tests, in-memory construction), where the param
+/// never passed a node to record.
+fn located_on_param(
+    param: &Param,
     action: &Action,
     diag_label: &str,
     err: ValidationError,
 ) -> Located<ForgeError> {
-    let (line, col) = match action.source_location.as_ref() {
+    located_at(
+        param
+            .source_location
+            .as_ref()
+            .or(action.source_location.as_ref()),
+        diag_label,
+        err,
+    )
+}
+
+/// Shared line/col extraction. The `file` half never comes from the
+/// recorded [`SourceLocation`]: that field carries the *artifact*
+/// spelling (a basename, so a generated marker does not bake one
+/// machine's checkout into the tree), while a diagnostic must name
+/// the document the way the caller named it — `diag_label`. Same
+/// document, two spellings, chosen by who reads them (§2.2).
+fn located_at(
+    at: Option<&SourceLocation>,
+    diag_label: &str,
+    err: ValidationError,
+) -> Located<ForgeError> {
+    let (line, col) = match at {
         Some(SourceLocation {
             line: Some(l),
             col: Some(c),

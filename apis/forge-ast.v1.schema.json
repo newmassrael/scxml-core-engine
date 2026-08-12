@@ -4347,6 +4347,17 @@
         "name": {
           "type": "string"
         },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `<param>` element's own position.\n\nDistinct from `location` above, which is the W3C `<param location=\"X\"/>` attribute (a data-model expression). This is the coordinate a rejection of *this* param reports: SCE_ERROR_CONTRACT.md §2.2 has the consumer open `location.file` and edit at `location.line`, so a diagnostic naming a param's value has to point at the param, not at the enclosing `<send>` — that line does not contain the value being rejected. `Variable::source_location` exists for the same reason on the `<data>` side."
+        },
         "static_value": {
           "type": "string"
         }

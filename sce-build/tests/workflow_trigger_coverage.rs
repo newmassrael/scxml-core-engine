@@ -47,6 +47,10 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "codegen_binary_resolution",
     "committed_sourcemap_drift",
     "diagnostic_corpus_schema",
+    // Runs the CLI over every committed *.scxml and performs the repair
+    // each rejection proposes, so a document added anywhere changes both
+    // what it reads and what it replays.
+    "diagnostic_fix_is_applicable",
     // Derives the kinds it checks from every committed *.scxml, so no
     // `paths:` filter enumerates its inputs — a document added anywhere
     // changes what it reads.
