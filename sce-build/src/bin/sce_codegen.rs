@@ -28,6 +28,63 @@ use sce_build::manifest::{
 };
 
 use sce_build::generator::with_trailing_newline;
+use sce_build::w3c_suite::{SuiteIdentity, SuiteIdentityError};
+
+/// Where a conformance suite of the caller's own is rooted, and which
+/// SCE checkout it depends on.
+///
+/// Present only when `--output-dir` names a root outside this
+/// repository. The repository's own trees sit inside a Cargo
+/// workspace / Gradle build / Go module that is hand-authored and
+/// already correct; emitting the standalone shape over them would
+/// replace working build files with ones that describe a package
+/// standing alone, which this repository's is not.
+struct StandaloneSuite {
+    /// Directory the emitted package is rooted at — the one holding
+    /// its build manifest (`<output-root>/backends/rust/tests`, ...).
+    package_root: PathBuf,
+    /// SCE checkout the emitted manifest points at for the runtime
+    /// packages the suite depends on. Resolved from the same ladder
+    /// that finds the registry, so it is a function of the run's
+    /// inputs and never of where the output happened to land.
+    sce_root: PathBuf,
+}
+
+/// Everything the emitted suite needs to know about itself, resolved
+/// once per run and handed to whichever backend the run selected.
+struct SuitePackaging {
+    /// What the suite calls itself. `None` for the backends whose
+    /// emitted code names no suite — see
+    /// [`sce_build::w3c_suite::SuiteIdentity::for_language`].
+    identity: Option<SuiteIdentity>,
+    /// `Some` when the run writes a suite of the caller's own.
+    standalone: Option<StandaloneSuite>,
+}
+
+impl SuitePackaging {
+    /// The identity, for the three backends that always have one.
+    ///
+    /// Panics rather than defaulting: reaching here without an identity
+    /// would mean a backend whose generated code names the suite was
+    /// constructed for a language that
+    /// [`SuiteIdentity::for_language`] refuses, and emitting some
+    /// fallback name would put an unbuildable reference into every
+    /// generated test instead of failing the run.
+    fn identity(&self) -> &SuiteIdentity {
+        self.identity
+            .as_ref()
+            .expect("this backend's generated code names the suite, so the run resolved one")
+    }
+
+    /// The standalone roots for a backend rooted at `relative` beneath
+    /// the output root — `None` for an in-repo regeneration.
+    fn standalone_at(&self, relative: &str) -> Option<StandaloneSuite> {
+        self.standalone.as_ref().map(|s| StandaloneSuite {
+            package_root: s.package_root.join(relative),
+            sce_root: s.sce_root.clone(),
+        })
+    }
+}
 
 /// Write `contents` to `path` or emit a structured `WriteOutput`
 /// diagnostic and terminate. Centralising the write+exit pattern
@@ -925,18 +982,45 @@ struct GenerateW3cArgs {
     /// Root the generated trees are written under.
     ///
     /// Each backend keeps its own layout beneath this root
-    /// (`backends/rust/tests/src/generated`, `backends/kotlin/tests/
-    /// src/main/kotlin/com/sce/generated`, ...) because the emitted code
-    /// depends on it: Rust test files name `sce_rust_tests::generated::…`
-    /// and Kotlin sources carry a package path. Only the root moves.
+    /// (`backends/rust/tests/`, `backends/kotlin/tests/`, ...) because
+    /// the emitted code depends on it: the tests sit at a fixed place
+    /// relative to the machines they exercise. Only the root moves.
     ///
     /// Defaults to the project root, which is what an in-repo
-    /// regeneration wants. Set it when the caller is not this repository
-    /// — together with `--registry` and `--resources`, that is what lets
-    /// a vendoring build drive the conformance suite without owning
-    /// SCE's directory layout.
+    /// regeneration wants. Naming a root outside this repository asks
+    /// for a suite of the caller's own, and the run then also emits the
+    /// files that make the tree buildable on its own — the build
+    /// manifest, the module root, and the harness the generated tests
+    /// call into. Together with `--registry`, `--resources` and
+    /// `--suite-package`, that is what lets a vendoring build drive the
+    /// conformance suite without owning SCE's directory layout or its
+    /// build system.
     #[arg(long)]
     output_dir: Option<String>,
+    /// Name the emitted conformance suite calls itself.
+    ///
+    /// Generated tests have to spell the suite they belong to: a Rust
+    /// integration test lives outside the crate and names it
+    /// (`sce_rust_tests::generated::test144`), a Go test imports
+    /// `<module>/harness`, a Kotlin test imports the package root. Give
+    /// the name in the target language's own idiom — a Cargo package
+    /// name (`acme-conformance`), a Go module path
+    /// (`github.com/acme/conformance`), a Kotlin package root
+    /// (`com.acme.conformance`).
+    ///
+    /// Defaults to the name this repository's own suite carries, so an
+    /// in-repo regeneration is unaffected. Only meaningful alongside an
+    /// `--output-dir` outside this repository: renaming the suite while
+    /// writing into the repository would desync the emitted sources
+    /// from the committed build files, so that combination is refused.
+    ///
+    /// The Python and C++/C11 backends refuse it, because neither emits
+    /// anything that names a suite — Python's tests import the machine
+    /// beside them by path and take fixtures from pytest's
+    /// directory-scoped conftest, and the C++ drivers are hand-authored
+    /// headers that CMake configures.
+    #[arg(long, value_name = "NAME")]
+    suite_package: Option<String>,
     /// Generate single test by ID
     #[arg(short, long)]
     test: Option<String>,
@@ -3779,6 +3863,7 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         registry,
         resources,
         output_dir,
+        suite_package,
         test,
         clean,
         list,
@@ -3821,12 +3906,20 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         let _ = OUTPUT_ROOT.set(output_root.clone());
     }
 
+    let packaging = resolve_suite_packaging(
+        lang,
+        suite_package.as_deref(),
+        &project_root,
+        &output_root,
+        output_dir.is_some(),
+    );
+
     let backend: Box<dyn W3cBackend> = match lang {
-        Language::Rust => Box::new(RustBackend::new(&output_root)),
-        Language::Go => Box::new(GoBackend::new(&output_root)),
-        Language::Kotlin => Box::new(KotlinBackend::new(&output_root)),
+        Language::Rust => Box::new(RustBackend::new(&output_root, &packaging)),
+        Language::Go => Box::new(GoBackend::new(&output_root, &packaging)),
+        Language::Kotlin => Box::new(KotlinBackend::new(&output_root, &packaging)),
         Language::Cpp => Box::new(CppBackend::new(&output_root)),
-        Language::Python => Box::new(PythonBackend::new(&output_root)),
+        Language::Python => Box::new(PythonBackend::new(&output_root, &packaging)),
         Language::C11 => cli_exit(CliError::UnsupportedLanguage {
             lang: "C11 W3C statechart emitter (RFC §5.J.1)".into(),
         }),
@@ -3844,6 +3937,73 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         list,
         &cpp_formatter,
     );
+}
+
+/// Decide what the emitted suite calls itself and whether it has to
+/// arrive buildable.
+///
+/// Two facts come out of this, and keeping them together is deliberate
+/// — every refusal below is about their combination. A run writing
+/// into this repository is a regeneration of the committed trees,
+/// whose build files are hand-authored and fix the name; a run writing
+/// anywhere else is producing a package that has to stand on its own.
+fn resolve_suite_packaging(
+    lang: Language,
+    suite_package: Option<&str>,
+    project_root: &Path,
+    output_root: &Path,
+    output_dir_named: bool,
+) -> SuitePackaging {
+    // Compared after realising the directory, because an output root
+    // that does not exist yet canonicalises to nothing and would
+    // compare unequal to every path including itself.
+    let standalone = output_dir_named && {
+        if let Err(e) = fs::create_dir_all(output_root) {
+            cli_exit(CliError::CreateOutputDir {
+                path: output_root.display().to_string(),
+                source: e,
+            });
+        }
+        let resolved = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        resolved(output_root) != resolved(project_root)
+    };
+
+    let refuse = |detail: String| -> ! { cli_exit(CliError::InvalidSuitePackage { detail }) };
+
+    let identity = match suite_package {
+        Some(name) => {
+            // Applicability before spelling: a caller naming a suite for
+            // a backend that has none should be told that, not told
+            // their perfectly good name is malformed.
+            let parsed = SuiteIdentity::parse(lang, name)
+                .unwrap_or_else(|e: SuiteIdentityError| refuse(e.to_string()));
+            if !standalone {
+                refuse(format!(
+                    "naming a suite only applies to a tree written outside this repository. \
+                     This run writes into {}, whose build files are committed and already fix \
+                     the name to '{}'; renaming the emitted sources would leave them naming a \
+                     package that does not exist. Pass --output-dir <DIR> to emit a suite of \
+                     your own.",
+                    project_root.display(),
+                    SuiteIdentity::for_language(lang)
+                        .expect("applicability established above")
+                        .name(),
+                ));
+            }
+            Some(parsed)
+        }
+        // Silence is right when the caller did not ask: the backends
+        // that name no suite simply have nothing to resolve.
+        None => SuiteIdentity::for_language(lang).ok(),
+    };
+
+    SuitePackaging {
+        identity,
+        standalone: standalone.then(|| StandaloneSuite {
+            package_root: output_root.to_path_buf(),
+            sce_root: project_root.to_path_buf(),
+        }),
+    }
 }
 
 fn find_project_root() -> PathBuf {
@@ -4158,6 +4318,41 @@ trait W3cBackend {
     /// C++ test headers are managed by CMake, not by sce-codegen.
     fn generates_test_files(&self) -> bool {
         true
+    }
+
+    /// Files that make the emitted tree a package in its own right:
+    /// the build manifest, the module root, the harness the generated
+    /// tests call into.
+    ///
+    /// Absolute paths, so a backend can put them wherever its language
+    /// expects rather than beneath one of the two generated-code roots.
+    /// Empty for an in-repo regeneration — the repository already
+    /// carries hand-authored ones — and empty for a backend whose
+    /// suite is not a package `sce-codegen` can describe.
+    ///
+    /// Deliberately separate from the generated-code path: none of
+    /// these is derived from an SCXML document, so none carries a
+    /// drift header or an `SCE-MAP:` marker, and the traceability
+    /// walker skips them for exactly that reason. This method does not
+    /// implement the drift contract — it names files that sit outside
+    /// it — so it cites no section.
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        Vec::new()
+    }
+
+    /// Whether the tree being written is a suite of the caller's own
+    /// rather than this repository's committed one.
+    ///
+    /// Decides one thing beyond the support files: whether a
+    /// single-fixture run still writes the module index. In this
+    /// repository it must not — the committed index enumerates every
+    /// fixture and a one-fixture run would truncate it to one. In an
+    /// emitted suite the index describes what the run produced, so a
+    /// one-fixture suite listing one fixture is the correct and
+    /// complete answer, and withholding it leaves a package whose
+    /// crate root names a module that does not exist.
+    fn is_standalone_suite(&self) -> bool {
+        false
     }
 
     /// Called after main loop to write module indices (Rust writes root mod.rs).
@@ -4554,7 +4749,7 @@ fn generate_w3c_unified(
     }
 
     // Finalize (Rust writes root mod.rs)
-    if single_test.is_none() {
+    if single_test.is_none() || backend.is_standalone_suite() {
         let mut all_ids: Vec<String> = generated_static
             .iter()
             .chain(generated_script.iter())
@@ -4562,6 +4757,25 @@ fn generate_w3c_unified(
             .collect();
         all_ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
         backend.finalize(&all_ids, &drift_ctx);
+    }
+
+    // A suite of the caller's own arrives buildable or it does not
+    // arrive at all: the generated tests name a package, and the
+    // package is these files. Outside the `single_test` guard above,
+    // because unlike the module index they do not enumerate fixtures —
+    // a one-fixture suite needs its manifest and its harness exactly as
+    // much as a full one.
+    for (path, contents) in backend.suite_support_files() {
+        if let Some(parent) = path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                cli_exit(CliError::CreateOutputDir {
+                    path: parent.display().to_string(),
+                    source: e,
+                });
+            }
+        }
+        write_or_exit(current_error_format(), &path, contents);
+        println!("  Suite support: {}", path.display());
     }
 
     // Summary
@@ -4655,16 +4869,93 @@ struct RustBackend {
     sm_base: PathBuf,
     test_dir: PathBuf,
     tmpl_dir: PathBuf,
+    /// Crate the generated integration tests name. They live outside
+    /// the crate they exercise, so `use`-ing it is not optional.
+    suite: SuiteIdentity,
+    /// Set when the emitted crate has to stand on its own.
+    standalone: Option<StandaloneSuite>,
 }
 
 impl RustBackend {
-    fn new(output_root: &Path) -> Self {
-        let tests_crate = output_root.join("backends/rust/tests");
+    const RELATIVE_ROOT: &'static str = "backends/rust/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+        let tests_crate = output_root.join(Self::RELATIVE_ROOT);
         Self {
             sm_base: tests_crate.join("src/generated"),
             test_dir: tests_crate.join("tests"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Rust),
+            suite: packaging.identity().clone(),
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
+    }
+
+    /// Cargo manifest for a suite standing on its own.
+    ///
+    /// The SCE dependencies are named by path into the checkout that
+    /// generated the suite. That is a function of the run's inputs —
+    /// `--workspace-root` / `SCE_WORKSPACE_ROOT` / the registry walk —
+    /// and never of where the output landed, so two runs writing to
+    /// different roots still emit the same manifest.
+    ///
+    /// The empty `[workspace]` table is not decoration: without it a
+    /// suite emitted anywhere beneath a Cargo workspace is claimed by
+    /// that workspace, and cargo refuses to build a package its
+    /// workspace root does not list.
+    fn cargo_manifest(&self, standalone: &StandaloneSuite) -> String {
+        let sce = standalone.sce_root.display();
+        format!(
+            "# GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             #\n\
+             # W3C SCXML 1.0 conformance suite. The SCE packages below are\n\
+             # named by path into the checkout this suite was generated from;\n\
+             # re-point them if that checkout moves.\n\
+             \n\
+             [workspace]\n\
+             \n\
+             [package]\n\
+             name = \"{name}\"\n\
+             version = \"0.0.0\"\n\
+             edition = \"2021\"\n\
+             rust-version = \"1.75\"\n\
+             publish = false\n\
+             \n\
+             [dependencies]\n\
+             sce-rust-runtime = {{ path = \"{sce}/backends/rust/runtime\", \
+             default-features = false, features = [\"http-send\"] }}\n\
+             sce-rust-lua = {{ path = \"{sce}/backends/rust/lua\" }}\n\
+             linkme = \"0.3\"\n\
+             log = \"0.4\"\n\
+             reqwest = {{ version = \"0.12\", features = [\"blocking\"] }}\n\
+             serde_json = \"1\"\n",
+            name = self.suite.name(),
+        )
+    }
+
+    /// Crate root. Names the two modules the generated integration
+    /// tests reach through, and nothing else: this repository's own
+    /// `lib.rs` also declares `integration`, a hand-curated tree the
+    /// W3C generator never writes and an emitted suite therefore does
+    /// not have.
+    fn crate_root(&self) -> String {
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             \n\
+             //! W3C SCXML 1.0 conformance suite generated by `sce-codegen`.\n\
+             //!\n\
+             //! - [`generated`]: one module per fixture, each holding the\n\
+             //!   state machine compiled from that fixture's SCXML.\n\
+             //! - [`harness`]: the runner the generated integration tests in\n\
+             //!   `tests/` call into.\n\
+             //!\n\
+             //! ```bash\n\
+             //! cargo test -p {name}\n\
+             //! ```\n\
+             \n\
+             pub mod generated;\n\
+             pub mod harness;\n",
+            name = self.suite.name(),
+        )
     }
 }
 
@@ -4776,14 +5067,23 @@ impl W3cBackend for RustBackend {
         } else {
             3
         };
+        // An integration test compiles as its own crate, so every path
+        // into the suite is spelled from outside it. `suite` is what
+        // the caller named the suite, defaulting to this repository's
+        // own crate — before it was an input, the literal here made the
+        // emitted tests compile only inside a checkout carrying that
+        // one name.
+        let suite = self.suite.rust_module_path();
         // Engine DI parity: instantiate LuaEngine per-test and pass it
         // to `Policy::new(engine)` instead of registering a process-global singleton.
         let policy_ctor = if needs_script {
-            "    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = \
-             std::sync::Arc::new(sce_rust_lua::LuaEngine::new());\n\
-             \x20   {POLICY_BINDING} = sce_rust_tests::generated::test"
+            format!(
+                "    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = \
+                 std::sync::Arc::new(sce_rust_lua::LuaEngine::new());\n\
+                 \x20   {{POLICY_BINDING}} = {suite}::generated::test"
+            )
         } else {
-            "    {POLICY_BINDING} = sce_rust_tests::generated::test"
+            format!("    {{POLICY_BINDING}} = {suite}::generated::test")
         };
         let policy_args = if needs_script {
             "(script_engine)"
@@ -4792,9 +5092,9 @@ impl W3cBackend for RustBackend {
         };
         let is_http = test_type == "http" && uses_http;
         let http_setup = if is_http {
-            "    sce_rust_tests::harness::setup_http_test(&mut engine);\n"
+            format!("    {suite}::harness::setup_http_test(&mut engine);\n")
         } else {
-            ""
+            String::new()
         };
         // §scxml-C-2-3: the harness owns the inbound listener, so it declares
         // the access URI the machine publishes in `_ioprocessors`. Documents
@@ -4808,9 +5108,11 @@ impl W3cBackend for RustBackend {
             "let policy"
         };
         let http_access_uri = if is_http && needs_script {
-            "\x20   policy.set_basic_http_access_uri(sce_rust_tests::harness::HTTP_TEST_SERVER_URL);\n"
+            format!(
+                "\x20   policy.set_basic_http_access_uri({suite}::harness::HTTP_TEST_SERVER_URL);\n"
+            )
         } else {
-            ""
+            String::new()
         };
         let policy_ctor = policy_ctor.replace("{POLICY_BINDING}", policy_binding);
         let pass_variant = to_pascal_case(pass_state);
@@ -4834,7 +5136,7 @@ impl W3cBackend for RustBackend {
              \x20   assert!(completed, \"Test {test_id} timed out\");\n\
              \x20   assert_eq!(\n\
              \x20       engine.get_current_state(),\n\
-             \x20       sce_rust_tests::generated::test{test_id}::{machine_name}State::{pass_variant},\n\
+             \x20       {suite}::generated::test{test_id}::{machine_name}State::{pass_variant},\n\
              \x20       \"Test {test_id} reached wrong final state\"\n\
              \x20   );\n\
              }}\n"
@@ -4843,6 +5145,30 @@ impl W3cBackend for RustBackend {
 
     fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
         format!("test_{test_id}.rs")
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        let root = &standalone.package_root;
+        vec![
+            (root.join("Cargo.toml"), self.cargo_manifest(standalone)),
+            (root.join("src/lib.rs"), self.crate_root()),
+            // The committed harness itself, compiled into the
+            // generator, so an emitted suite cannot carry a stale copy.
+            // The only edit is the suite's own name, which the harness
+            // spells in the usage example it documents.
+            (
+                root.join("src/harness.rs"),
+                self.suite
+                    .rewrite_rust_source(sce_build::w3c_suite::RUST_HARNESS_SOURCE),
+            ),
+        ]
     }
 
     fn finalize(&self, generated_ids: &[String], drift_ctx: &DriftContext) {
@@ -4911,15 +5237,58 @@ impl W3cBackend for RustBackend {
 struct GoBackend {
     sm_base: PathBuf,
     tmpl_dir: PathBuf,
+    /// Module the generated tests import their harness from.
+    suite: SuiteIdentity,
+    /// Set when the emitted module has to stand on its own.
+    standalone: Option<StandaloneSuite>,
 }
 
 impl GoBackend {
-    fn new(output_root: &Path) -> Self {
-        let tests_module = output_root.join("backends/go/tests");
+    const RELATIVE_ROOT: &'static str = "backends/go/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+        let tests_module = output_root.join(Self::RELATIVE_ROOT);
         Self {
             sm_base: tests_module.join("generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Go),
+            suite: packaging.identity().clone(),
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
+    }
+
+    /// Module file for a suite standing on its own.
+    ///
+    /// The SCE modules keep the import paths their own sources declare
+    /// — a Go package's import path is baked into every file that
+    /// imports it — and are redirected to the generating checkout with
+    /// `replace`, which is what the committed module file already does
+    /// for its siblings. Only the redirect target moves.
+    fn go_mod(&self, standalone: &StandaloneSuite) -> String {
+        let sce = standalone.sce_root.display();
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             //\n\
+             // W3C SCXML 1.0 conformance suite. The SCE modules below are\n\
+             // redirected into the checkout this suite was generated from;\n\
+             // re-point the replace directives if that checkout moves.\n\
+             \n\
+             module {module}\n\
+             \n\
+             go 1.22\n\
+             \n\
+             require (\n\
+             \tgithub.com/newmassrael/sce-go-lua v0.0.0\n\
+             \tgithub.com/newmassrael/sce-go-runtime v0.0.0\n\
+             )\n\
+             \n\
+             require github.com/Shopify/go-lua v0.0.0-20221004153744-91867de107cf // indirect\n\
+             \n\
+             replace (\n\
+             \tgithub.com/newmassrael/sce-go-lua => {sce}/backends/go/lua\n\
+             \tgithub.com/newmassrael/sce-go-runtime => {sce}/backends/go/runtime\n\
+             )\n",
+            module = self.suite.go_module_path(),
+        )
     }
 }
 
@@ -4979,6 +5348,12 @@ impl W3cBackend for GoBackend {
             "3 * time.Second"
         };
 
+        // The harness is a package inside the suite's own module, so
+        // the import path is the module path. Before it was an input,
+        // the literal here made the emitted tests importable only from
+        // a module carrying this repository's name.
+        let harness_import = format!("{}/harness", self.suite.go_module_path());
+
         let engine_setup = if needs_script {
             // Engine DI parity: each test owns its LuaEngine; the
             // process-global `RegisterLuaEngine` / `GetScriptEngine` singleton
@@ -5024,7 +5399,7 @@ impl W3cBackend for GoBackend {
              \t\"time\"\n\
              \n\
              \tsce \"github.com/newmassrael/sce-go-runtime\"\n\
-             \tscegotest \"github.com/newmassrael/sce-go-tests/harness\"\n\
+             \tscegotest \"{harness_import}\"\n\
              )\n\
              \n\
              func TestW3C{test_id}(t *testing.T) {{\n\
@@ -5049,6 +5424,34 @@ impl W3cBackend for GoBackend {
         true
     }
 
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        let root = &standalone.package_root;
+        vec![
+            (root.join("go.mod"), self.go_mod(standalone)),
+            // The one remote dependency the SCE Lua module pulls in
+            // needs its checksum, and the redirected SCE modules do not
+            // — a `replace` onto a filesystem path is verified by the
+            // path, not by go.sum. Shipping the committed sums keeps
+            // the emitted module verifiable without a network fetch to
+            // rebuild them.
+            (
+                root.join("go.sum"),
+                sce_build::w3c_suite::GO_SUM_SOURCE.to_string(),
+            ),
+            (
+                root.join("harness/harness.go"),
+                sce_build::w3c_suite::GO_HARNESS_SOURCE.to_string(),
+            ),
+        ]
+    }
+
     fn clean(&self) {
         if self.sm_base.exists() {
             fs::remove_dir_all(&self.sm_base).ok();
@@ -5063,16 +5466,118 @@ struct KotlinBackend {
     sm_base: PathBuf,
     test_dir: PathBuf,
     tmpl_dir: PathBuf,
+    /// Package root the generated machines and JUnit classes sit under.
+    suite: SuiteIdentity,
+    /// Set when the emitted project has to stand on its own.
+    standalone: Option<StandaloneSuite>,
 }
 
 impl KotlinBackend {
-    fn new(output_root: &Path) -> Self {
-        let tests_module = output_root.join("backends/kotlin/tests");
+    const RELATIVE_ROOT: &'static str = "backends/kotlin/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
+        let tests_module = output_root.join(Self::RELATIVE_ROOT);
+        let suite = packaging.identity().clone();
+        // A Kotlin source tree mirrors its package names as
+        // directories, so the package root the caller named decides
+        // where these two trees live. Deriving both from one accessor
+        // is what keeps the `package` clause and the path from becoming
+        // two answers.
+        let package_dir = suite.kotlin_package_dir();
         Self {
-            sm_base: tests_module.join("src/main/kotlin/com/sce/generated"),
-            test_dir: tests_module.join("src/test/kotlin/com/sce/w3c"),
+            sm_base: tests_module.join(format!("src/main/kotlin/{package_dir}/generated")),
+            test_dir: tests_module.join(format!("src/test/kotlin/{package_dir}/w3c")),
             tmpl_dir: sce_build::find_template_dir_for(Language::Kotlin),
+            suite,
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
+    }
+
+    /// Gradle settings for a suite standing on its own.
+    ///
+    /// A composite build rather than a dependency on published
+    /// artifacts: SCE's Kotlin runtime is not published anywhere a
+    /// vendoring consumer could resolve it from, and the checkout that
+    /// generated the suite is by construction present. Gradle
+    /// substitutes the `com.sce:…` coordinates below for the included
+    /// build's own projects, which carry exactly those group and
+    /// artifact names.
+    fn gradle_settings(&self, standalone: &StandaloneSuite) -> String {
+        let sce = standalone.sce_root.display();
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             //\n\
+             // W3C SCXML 1.0 conformance suite. The SCE Kotlin projects are\n\
+             // reached through a composite build into the checkout this suite\n\
+             // was generated from; re-point includeBuild if that checkout moves.\n\
+             \n\
+             pluginManagement {{\n\
+             \x20   repositories {{\n\
+             \x20       gradlePluginPortal()\n\
+             \x20       mavenCentral()\n\
+             \x20   }}\n\
+             }}\n\
+             \n\
+             dependencyResolutionManagement {{\n\
+             \x20   repositories {{\n\
+             \x20       mavenCentral()\n\
+             \x20   }}\n\
+             }}\n\
+             \n\
+             rootProject.name = \"{name}\"\n\
+             \n\
+             includeBuild(\"{sce}\")\n",
+            name = self
+                .suite
+                .kotlin_package_root()
+                .rsplit('.')
+                .next()
+                .expect("a package root has at least one element"),
+        )
+    }
+
+    /// Gradle build file for a suite standing on its own.
+    ///
+    /// Restates the versions the committed build reads from the version
+    /// catalog, because a catalog is a property of the build that owns
+    /// it and an emitted suite owns none. The end-to-end gate compiles
+    /// and runs what this describes, so a version that stops resolving
+    /// fails there rather than in a consumer's tree.
+    fn gradle_build(&self) -> String {
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen generate-w3c)\n\
+             \n\
+             plugins {{\n\
+             \x20   kotlin(\"jvm\") version \"2.1.20\"\n\
+             }}\n\
+             \n\
+             group = \"{root}\"\n\
+             version = \"0.0.0\"\n\
+             \n\
+             dependencies {{\n\
+             \x20   implementation(\"com.sce:sce-kotlin-runtime:1.0.0\")\n\
+             \x20   implementation(\"com.sce:sce-kotlin-rhino:1.0.0\")\n\
+             \x20   implementation(\"com.sce:sce-kotlin-lua:1.0.0\")\n\
+             \x20   implementation(\"com.sce:sce-kotlin-quickjs:1.0.0\")\n\
+             \x20   implementation(\"org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1\")\n\
+             \n\
+             \x20   testImplementation(kotlin(\"test\"))\n\
+             \x20   testImplementation(\"org.junit.jupiter:junit-jupiter:5.10.2\")\n\
+             }}\n\
+             \n\
+             kotlin {{\n\
+             \x20   jvmToolchain(17)\n\
+             }}\n\
+             \n\
+             tasks.test {{\n\
+             \x20   useJUnitPlatform()\n\
+             \x20   // The default engine is Rhino, which is pure JVM. Selecting\n\
+             \x20   // lua or quickjs additionally needs their JNI libraries on\n\
+             \x20   // java.library.path, which the SCE build produces.\n\
+             \x20   systemProperty(\"junit.jupiter.execution.timeout.default\", \"10s\")\n\
+             }}\n",
+            root = self.suite.kotlin_package_root(),
+        )
     }
 }
 
@@ -5093,7 +5598,15 @@ impl W3cBackend for KotlinBackend {
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError> {
         let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir, None)?;
-        Ok(vec![(format!("{input_stem}Sm.kt"), code)])
+        // The Kotlin templates spell this repository's package root.
+        // Rewriting on the way out rather than parameterising the
+        // template keeps `template-hash` — and therefore every
+        // committed generated file in every backend — unmoved by a
+        // change that generates no new state machine code.
+        Ok(vec![(
+            format!("{input_stem}Sm.kt"),
+            self.suite.rewrite_kotlin_source(&code),
+        )])
     }
 
     fn process_child(
@@ -5104,11 +5617,13 @@ impl W3cBackend for KotlinBackend {
         test_mod_dir: &Path,
         drift_ctx: &DriftContext,
     ) {
+        let root = self.suite.kotlin_package_root();
         let parent_package = format!("test{test_id}");
         let child_package = child_name.to_lowercase();
+        let code = self.suite.rewrite_kotlin_source(&code);
         let fixed_code = code.replace(
-            &format!("package com.sce.generated.{child_package}"),
-            &format!("package com.sce.generated.{parent_package}"),
+            &format!("package {root}.generated.{child_package}"),
+            &format!("package {root}.generated.{parent_package}"),
         );
         let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
         write_if_changed_drift_aware(&child_sm_file, &fixed_code, drift_ctx);
@@ -5132,12 +5647,13 @@ impl W3cBackend for KotlinBackend {
         test_mod_dir: &Path,
         drift_ctx: &DriftContext,
     ) {
+        let root = self.suite.kotlin_package_root();
         let parent_package = format!("test{test_id}");
         let child_class = to_pascal_case(child_name);
         let stub = format!(
             "// GENERATED STUB -- child codegen failed (no-op)\n\
              // SCE-MAP: {child_name}.scxml:1\n\
-             package com.sce.generated.{parent_package}\n\n\
+             package {root}.generated.{parent_package}\n\n\
              import com.sce.runtime.*\n\n\
              sealed interface {child_class}State : State {{\n\
              \x20   data object Initial : {child_class}State\n\
@@ -5194,14 +5710,20 @@ impl W3cBackend for KotlinBackend {
             format!("    override fun createStateMachine() = {sm_class}StateMachine()\n")
         };
 
+        // The suite's own package root, which the generated JUnit class
+        // and the machines it imports both sit under. Before it was an
+        // input, the literal here fixed the emitted tree to this
+        // repository's package names.
+        let root = self.suite.kotlin_package_root();
+
         format!(
             "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
              // SCE-MAP: {input_stem}.scxml:1\n\
-             package com.sce.w3c\n\
+             package {root}.w3c\n\
              \n\
-             import com.sce.generated.{sm_package}.{sm_class}Event\n\
-             import com.sce.generated.{sm_package}.{sm_class}State\n\
-             import com.sce.generated.{sm_package}.{sm_class}StateMachine\n\
+             import {root}.generated.{sm_package}.{sm_class}Event\n\
+             import {root}.generated.{sm_package}.{sm_class}State\n\
+             import {root}.generated.{sm_package}.{sm_class}StateMachine\n\
              import org.junit.jupiter.api.DisplayName\n\
              \n\
              // W3C SCXML {specnum}: {description}\n\
@@ -5218,6 +5740,43 @@ impl W3cBackend for KotlinBackend {
 
     fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
         format!("Test{}.kt", to_pascal_case(test_id))
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        let root = &standalone.package_root;
+        let mut files = vec![
+            (
+                root.join("settings.gradle.kts"),
+                self.gradle_settings(standalone),
+            ),
+            (root.join("build.gradle.kts"), self.gradle_build()),
+        ];
+        // The hand-authored Kotlin the suite carries: the JUnit base
+        // classes every generated test extends, and the BasicHTTP test
+        // server one of them drives. Each lands in its own source set
+        // under the package root, mirroring where it sits here — which
+        // is also why `clean_stale` already names the two in the
+        // generated test directory as files it must not remove.
+        let module_root = self
+            .standalone
+            .as_ref()
+            .map(|s| s.package_root.clone())
+            .expect("guarded above");
+        let package_dir = self.suite.kotlin_package_dir();
+        for (source_set, path, source) in sce_build::w3c_suite::KOTLIN_SUITE_SOURCES {
+            files.push((
+                module_root.join(source_set).join(&package_dir).join(path),
+                self.suite.rewrite_kotlin_source(source),
+            ));
+        }
+        files
     }
 
     fn clean(&self) {
@@ -5362,13 +5921,18 @@ impl W3cBackend for CppBackend {
 struct PythonBackend {
     sm_base: PathBuf,
     tmpl_dir: PathBuf,
+    /// Set when the emitted tree has to stand on its own.
+    standalone: Option<StandaloneSuite>,
 }
 
 impl PythonBackend {
-    fn new(output_root: &Path) -> Self {
+    const RELATIVE_ROOT: &'static str = "backends/python/tests";
+
+    fn new(output_root: &Path, packaging: &SuitePackaging) -> Self {
         Self {
-            sm_base: output_root.join("backends/python/tests/generated"),
+            sm_base: output_root.join(Self::RELATIVE_ROOT).join("generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Python),
+            standalone: packaging.standalone_at(Self::RELATIVE_ROOT),
         }
     }
 }
@@ -5456,6 +6020,13 @@ impl W3cBackend for PythonBackend {
         // wrapper compares on that string, so we lowercase here.
         let pass_literal = pass_state.to_ascii_lowercase();
         let pass_literal = pass_literal.as_str();
+        // The runtime is reached through the suite's conftest, which
+        // pytest imports before it collects anything beneath it. The
+        // wrapper used to insert that path itself, computing it from
+        // its own depth below `backends/python/` — a second answer to
+        // the same question, and one that named a directory an emitted
+        // suite does not have.
+        //
         // §scxml-C-2 — documents that use BasicHTTP transport take
         // the `setup_http` fixture from backends/python/tests/conftest.py,
         // which spawns the W3C echo server (port 8080) and registers
@@ -5490,7 +6061,6 @@ impl W3cBackend for PythonBackend {
              \n\
              _HERE = Path(__file__).resolve().parent\n\
              sys.path.insert(0, str(_HERE))\n\
-             sys.path.insert(0, str(_HERE.parents[2] / \"runtime\"))\n\
              \n\
              import {input_stem}_sm as _sm  # noqa: E402 — path inserted above\n\
              \n\
@@ -5518,6 +6088,27 @@ impl W3cBackend for PythonBackend {
 
     fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
         format!("test_w3c_{test_id}.py")
+    }
+
+    fn is_standalone_suite(&self) -> bool {
+        self.standalone.is_some()
+    }
+
+    fn suite_support_files(&self) -> Vec<(PathBuf, String)> {
+        let Some(standalone) = self.standalone.as_ref() else {
+            return Vec::new();
+        };
+        // The committed conftest, with the one line that assumes SCE's
+        // directory layout re-pointed at the checkout this suite was
+        // generated from. Everything else in it — the W3C echo server,
+        // the `setup_http` fixture — is layout-independent and travels
+        // verbatim.
+        let conftest = sce_build::w3c_suite::rewrite_python_conftest(
+            sce_build::w3c_suite::PYTHON_CONFTEST_SOURCE,
+            &standalone.sce_root,
+        )
+        .unwrap_or_else(|detail| cli_exit(CliError::InvalidSuitePackage { detail }));
+        vec![(standalone.package_root.join("conftest.py"), conftest)]
     }
 
     fn clean(&self) {

@@ -68,3 +68,51 @@ if (( cases < 200 )); then
 fi
 
 sce_gate_step "$cases Go case(s) passed"
+
+# The same generator, asked for a module of the caller's own.
+#
+# `--output-dir` used to emit a fragment: the generated tests imported
+# `github.com/newmassrael/sce-go-tests/harness` by literal, and neither go.mod
+# nor the harness itself was written, so the tree compiled only inside a
+# checkout carrying this repository's module path. The Rust half of that claim
+# is gated inside `cargo test`
+# (`sce-build/tests/conformance_suite_standalone.rs`); the Go half is here,
+# because this is where the Go toolchain is known to exist.
+#
+# One fixture, not 202: the claim is about packaging, and a module with one
+# package exercises go.mod, go.sum and the harness import exactly as a full one
+# does.
+sce_gate_step "building an emitted Go suite under a module name of its own"
+SUITE="$(mktemp -d)"
+sce_gate_on_exit "rm -rf '$SUITE'"
+
+"$CODEGEN" generate-w3c -l go \
+    --output-dir "$SUITE" \
+    --suite-package github.com/sce-gate/conformance \
+    -t 144 >/dev/null \
+    || sce_gate_fail "emitting a standalone Go suite"
+
+suite_status=0
+( cd "$SUITE/backends/go/tests" && go test ./... -v -count=1 ) \
+    >"$LOG/go-suite.log" 2>&1 || suite_status=$?
+if (( suite_status != 0 )); then
+    cat "$LOG/go-suite.log" >&2
+    sce_gate_fail "an emitted Go suite must build and pass from its own tree — that is what --output-dir claims"
+fi
+
+# Same reason as the floor above, and more load-bearing here: this tree holds
+# one case, so "compiled nothing" and "ran everything" differ by a single line.
+suite_cases="$(grep -cE '^--- (PASS|FAIL):' "$LOG/go-suite.log" || true)"
+if (( suite_cases < 1 )); then
+    cat "$LOG/go-suite.log" >&2
+    sce_gate_fail "the emitted Go suite ran no cases — it compiled without collecting its fixture"
+fi
+
+# The import the whole exercise is about. Asserted on the source rather than
+# inferred from the build, because a module that happened to be named like this
+# repository's would compile either way.
+if grep -q 'newmassrael/sce-go-tests' "$SUITE/backends/go/tests/generated/test144/test144_test.go"; then
+    sce_gate_fail "the emitted Go test still imports this repository's own module"
+fi
+
+sce_gate_step "the emitted Go suite built and passed $suite_cases case(s)"

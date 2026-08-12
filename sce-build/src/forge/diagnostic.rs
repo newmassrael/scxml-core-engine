@@ -1907,6 +1907,8 @@ pub enum DiagnosticCode {
     CliFormatStyleNotFound,
     #[serde(rename = "cli/no-scxml-tag")]
     CliNoScxmlTag,
+    #[serde(rename = "cli/invalid-suite-package")]
+    CliInvalidSuitePackage,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -2917,6 +2919,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliProjectRootNotFound,
         CliFormatStyleNotFound,
         CliNoScxmlTag,
+        CliInvalidSuitePackage,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -3677,6 +3680,7 @@ impl DiagnosticCode {
             | CliProjectRootNotFound
             | CliFormatStyleNotFound
             | CliNoScxmlTag
+            | CliInvalidSuitePackage
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4042,6 +4046,7 @@ impl DiagnosticCode {
             CliProjectRootNotFound => "cli/project-root-not-found",
             CliFormatStyleNotFound => "cli/format-style-not-found",
             CliNoScxmlTag => "cli/no-scxml-tag",
+            CliInvalidSuitePackage => "cli/invalid-suite-package",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -12266,6 +12271,15 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:94f3f36322d6b380","code":"cli/no-scxml-tag","stage":"cli","message":"No <scxml> tag found in notes.txt","actual":"notes.txt"}"#,
             ),
+            (
+                "cli/invalid-suite-package",
+                CliError::InvalidSuitePackage {
+                    detail: "'crate' is not a usable rust conformance suite name: its module \
+                             path 'crate' is a Rust keyword, so generated tests could not name it"
+                        .into(),
+                },
+                r#"{"v":1,"id":"fnv1a:c241dc46b96f9f91","code":"cli/invalid-suite-package","stage":"cli","message":"--suite-package: 'crate' is not a usable rust conformance suite name: its module path 'crate' is a Rust keyword, so generated tests could not name it"}"#,
+            ),
             // ── §synth-6.2.6 generated-source drift (B9, 2026-05-14) ──
             //    Single code covers both axes (source-hash + template-hash).
             //    `axis` field carries `"source"` or `"template"` to
@@ -13016,6 +13030,11 @@ mod tests {
             | CliProjectRootNotFound
             | CliFormatStyleNotFound
             | CliNoScxmlTag
+            // The refusal names one fact about the run — the backend
+            // emits no suite name, or the name is unspellable, or the
+            // tree is this repository's own. None of the three has a
+            // candidate list to offer, and none carries an `expected`.
+            | CliInvalidSuitePackage
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -13682,6 +13701,7 @@ mod tests {
                 | CliMissingMetadataField | CliNotADirectory
                 | CliInvalidFormatOption | CliJsonSerialization
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
+                | CliInvalidSuitePackage
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -13839,9 +13859,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            343,
+            344,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 343 distinct variants to match the DiagnosticCode \
+             expected 344 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
