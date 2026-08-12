@@ -503,7 +503,7 @@ references against a real document and drift silently.
 | `cli/read-input` | `cli` | no |  |
 | `cli/scxml-generate` | `cli` | no |  |
 | `cli/unknown-language` | `cli` | `replace_one_of` |  |
-| `cli/unsupported-language` | `cli` | no |  |
+| `cli/unsupported-language` | `cli` | `replace_one_of` |  |
 | `cli/write-output` | `cli` | no |  |
 | `forge/source-hash-input-uncovered` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
 | `forge/source-hash-mismatch` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |

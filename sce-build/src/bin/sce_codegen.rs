@@ -20,6 +20,7 @@ use std::sync::OnceLock;
 
 use sce_build::analyzer;
 use sce_build::cli_error::CliError;
+use sce_build::cli_language::LanguageRoute;
 use sce_build::filters;
 use sce_build::forge::diagnostic::{Diagnostic, Stage, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
@@ -706,8 +707,13 @@ SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
 struct GenerateArgs {
     /// Input SCXML file path
     scxml: String,
-    /// Target language (rust, cpp, kotlin, go, c11).
-    #[arg(short, long, default_value = "cpp")]
+    #[arg(
+        short,
+        long,
+        default_value = "cpp",
+        help = LanguageRoute::Generate.flag_summary("Target language"),
+        long_help = LanguageRoute::Generate.flag_help("Target language"),
+    )]
     language: String,
     /// Output directory
     #[arg(short, long, default_value = ".")]
@@ -950,6 +956,41 @@ fn forge_catalog_flag_help() -> String {
     )
 }
 
+/// `check --language`'s long help: the route's menu, then the part
+/// specific to this subcommand — that the flag is repeatable and that
+/// naming nothing means sweeping every backend.
+///
+/// The menu half is formatted from [`LanguageRoute`] like every other
+/// route's, so the promise `check`'s own subcommand help makes — that
+/// `check -l X` and `generate -l X` always agree — cannot be broken by
+/// one of the two listing a backend the other omits. It was: `check`
+/// listed all six and `generate` omitted `python`.
+fn check_language_flag_help() -> String {
+    format!(
+        "{}\n\n\
+         Repeatable. When omitted every backend is checked and the \
+         per-backend verdict rides the manifest instead of the exit code \
+         — see the subcommand's long help for the exit contract.",
+        LanguageRoute::Check.flag_summary("Backend to check against")
+    )
+}
+
+/// `list-fixtures --language`'s long help. The flag filters a listing
+/// rather than selecting an output target, but it parses the same names
+/// through the same [`Language`] `FromStr`, so it owes callers the same
+/// menu — a name this route rejects is a name it must not have offered.
+fn list_fixtures_language_flag_help() -> String {
+    format!(
+        "{}\n\n\
+         When set to `c11`, applies the same `c11_supported_kind` filter \
+         that `generate-conformance` uses, so the c11 cmake harness can \
+         derive its fixture set from the single manifest source of truth. \
+         Every other backend (and the unset default) emits every fixture \
+         in the manifest unchanged.",
+        LanguageRoute::ListFixtures.flag_summary("Optional language gate")
+    )
+}
+
 /// `--catalog`'s long help. Both catalog locations come from their own
 /// modules, so neither can be renamed out from under this sentence.
 fn catalog_flag_help() -> String {
@@ -970,8 +1011,12 @@ fn catalog_flag_help() -> String {
 /// one parameter instead of eight, free of a `too_many_arguments` allow.
 #[derive(clap::Args)]
 struct GenerateW3cArgs {
-    /// Target language (rust, cpp, kotlin, go, c11).
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = LanguageRoute::GenerateW3c.flag_summary("Target language"),
+        long_help = LanguageRoute::GenerateW3c.flag_help("Target language"),
+    )]
     language: String,
     /// Path to the W3C conformance registry
     #[arg(long, long_help = w3c_registry_flag_help())]
@@ -1080,11 +1125,13 @@ struct CheckArgs {
     /// silent-skip. Omit to keep the run deploy-unaware.
     #[arg(long = "deploy", value_name = "PATH")]
     deploy: Option<String>,
-    /// Backend to check against (rust, cpp, kotlin, go, python, c11).
-    /// Repeatable. When omitted every backend is checked and the
-    /// per-backend verdict rides the manifest instead of the exit code
-    /// — see the subcommand's long help for the exit contract.
-    #[arg(short, long = "language", value_name = "LANG")]
+    #[arg(
+        short,
+        long = "language",
+        value_name = "LANG",
+        help = LanguageRoute::Check.flag_summary("Backend to check against"),
+        long_help = check_language_flag_help(),
+    )]
     language: Vec<String>,
     /// Additional directories searched (in declaration order) to
     /// resolve `<xi:include href="...">` and `<sce:use template="...">`
@@ -1201,8 +1248,12 @@ enum Commands {
     /// (see `cmake/SCEStaticIntegrationFixture.cmake`) without an
     /// sce-codegen-driven regen pipeline.
     GenerateIntegration {
-        /// Target language (rust, kotlin, go, python).
-        #[arg(short, long)]
+        #[arg(
+            short,
+            long,
+            help = LanguageRoute::GenerateIntegration.flag_summary("Target language"),
+            long_help = LanguageRoute::GenerateIntegration.flag_help("Target language"),
+        )]
         language: String,
         /// Single fixture stem to regenerate. When omitted, every
         /// `integration_resources/<stem>/` directory is processed.
@@ -1242,11 +1293,21 @@ enum Commands {
         /// SCXML file path
         scxml: String,
     },
-    /// Generate a cross-language numerical conformance test harness from a
-    /// fixture catalog (single source of truth for all 5 languages).
+    /// Generate a cross-language numerical conformance test harness from
+    /// a fixture catalog — one catalog is the single source of truth for
+    /// every backend it serves, which `--language` names.
+    ///
+    /// The count used to be spelled out here ("all 5 languages") and was
+    /// one short of what the dispatcher emitted; a sentence that counts
+    /// the backends has to be corrected every time one lands, so this
+    /// one does not count them.
     GenerateConformance {
-        /// Target language (rust, cpp, kotlin, go, python)
-        #[arg(short, long)]
+        #[arg(
+            short,
+            long,
+            help = LanguageRoute::GenerateConformance.flag_summary("Target language"),
+            long_help = LanguageRoute::GenerateConformance.flag_help("Target language"),
+        )]
         language: String,
         /// Path to fixture catalog JSON
         #[arg(short, long, long_help = forge_catalog_flag_help())]
@@ -1305,12 +1366,12 @@ enum Commands {
         /// `space` emits a single space-separated line.
         #[arg(short, long, default_value = "plain")]
         format: String,
-        /// Optional language gate. When set to `c11`, applies the same
-        /// `c11_supported_kind` filter that `generate-conformance` uses,
-        /// so the c11 cmake harness can derive its fixture set from the
-        /// single manifest source of truth. Other values (and the unset
-        /// default) emit every fixture in the manifest unchanged.
-        #[arg(short, long)]
+        #[arg(
+            short,
+            long,
+            help = LanguageRoute::ListFixtures.flag_summary("Optional language gate"),
+            long_help = list_fixtures_language_flag_help(),
+        )]
         language: Option<String>,
         /// RFC §synth-5-B B2-test-vector: restrict the listing to fixtures
         /// whose SCXML carries at least one `<sce:test-vector>` element
@@ -1496,8 +1557,12 @@ struct OrchestrateArgs {
     /// only, which is the whole search path a multi-doc build had.
     #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
     include_dir: Vec<String>,
-    /// Target language (rust, cpp, kotlin, go, c11).
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = LanguageRoute::Orchestrate.flag_summary("Target language"),
+        long_help = LanguageRoute::Orchestrate.flag_help("Target language"),
+    )]
     language: String,
     /// Output directory (one entry per input doc; sidecars travel
     /// with their primary in `GeneratedOutput::files`).
@@ -1704,6 +1769,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         error_format.emit_and_exit(
             &CliError::UnknownLanguage {
                 lang: language.to_string(),
+                route: LanguageRoute::Orchestrate,
             },
             "",
         )
@@ -2051,6 +2117,7 @@ fn requested_backends(language: &[String], error_format: ErrorFormat) -> (bool, 
                     error_format.emit_and_exit(
                         &CliError::UnknownLanguage {
                             lang: name.to_string(),
+                            route: LanguageRoute::Check,
                         },
                         "",
                     )
@@ -2581,6 +2648,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         error_format.emit_and_exit(
             &CliError::UnknownLanguage {
                 lang: language.to_string(),
+                route: LanguageRoute::Generate,
             },
             "",
         )
@@ -3880,6 +3948,7 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
         cli_exit(CliError::UnknownLanguage {
             lang: language.to_string(),
+            route: LanguageRoute::GenerateW3c,
         })
     });
 
@@ -3920,8 +3989,13 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         Language::Kotlin => Box::new(KotlinBackend::new(&output_root, &packaging)),
         Language::Cpp => Box::new(CppBackend::new(&output_root)),
         Language::Python => Box::new(PythonBackend::new(&output_root, &packaging)),
+        // `lang` holds the backend the caller named, not prose about
+        // it: `actual` on the wire then means the same kind of value
+        // here as on every other language refusal, and the reason the
+        // route excludes it rides the route's own exclusion note.
         Language::C11 => cli_exit(CliError::UnsupportedLanguage {
-            lang: "C11 W3C statechart emitter (RFC §5.J.1)".into(),
+            lang: Language::C11.canonical_name().to_string(),
+            route: LanguageRoute::GenerateW3c,
         }),
     };
 
@@ -6277,23 +6351,29 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
         error_format.emit_and_exit(
             &CliError::UnknownLanguage {
                 lang: language.to_string(),
+                route: LanguageRoute::GenerateIntegration,
             },
             "",
         )
     });
 
+    // The refusal routes through `CliError` like every other language
+    // refusal rather than through a bare `eprintln!` + `exit(2)`: this
+    // one restated its own menu in prose, so `--error-format=json`
+    // received nothing structured for the one route whose restriction is
+    // real, and the sentence was a third copy of the set to keep current.
     let script_suffix = match lang {
         Language::Rust => "",
         Language::Kotlin => "_kotlin",
         Language::Go => "_go",
         Language::Python => "_python",
-        _ => {
-            eprintln!(
-                "generate-integration: only rust/kotlin/go/python are supported (cpp / c11 \
-                 emit at CMake time without an sce-codegen-driven pipeline)"
-            );
-            std::process::exit(2);
-        }
+        _ => error_format.emit_and_exit(
+            &CliError::UnsupportedLanguage {
+                lang: lang.canonical_name().to_string(),
+                route: LanguageRoute::GenerateIntegration,
+            },
+            "",
+        ),
     };
 
     let project_root = find_project_root();
@@ -6364,6 +6444,7 @@ fn cmd_generate_conformance(
     let lang: Language = language.parse().unwrap_or_else(|_| {
         cli_exit(CliError::UnknownLanguage {
             lang: language.to_string(),
+            route: LanguageRoute::GenerateConformance,
         })
     });
 
@@ -6914,6 +6995,7 @@ fn cmd_list_fixtures(
         s.parse::<Language>().unwrap_or_else(|_| {
             cli_exit(CliError::UnknownLanguage {
                 lang: s.to_string(),
+                route: LanguageRoute::ListFixtures,
             })
         })
     });
