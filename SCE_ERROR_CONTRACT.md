@@ -234,130 +234,404 @@ The routing primitive is `sce_build::classify_document` in
 
 ## 5. Code catalog
 
-The full enumeration of `code` values, grouped by stage. The set is
-extended additively — a code is never renamed or repurposed without
-a schema bump ([§8](#8-evolution-policy)).
+The full enumeration of `code` values, grouped by the pipeline that
+produces them. The set is extended additively — a code is never renamed
+or repurposed without a schema bump ([§8](#8-evolution-policy)).
+
+**The tables below are generated**, from the golden record each code
+emits plus `DiagnosticCode::spec_anchor`. They were hand-maintained
+until 2026-08-12, and by then named 96 of 346 codes while opening with
+the sentence above: fifteen stages had no row at all, and no test read
+this file in either direction, so the claim had nothing holding it up.
+Completing the table by hand would have created a second enumeration to
+keep true beside `ALL_DIAGNOSTIC_CODES`, which is the shape that went
+stale in the first place. Regenerate with:
+
+```
+UPDATE_EXPECT=1 cargo test -p sce-build error_contract_catalog
+```
+
+The `Stage` column is the record's `stage` field, which is **not** the
+code's prefix — 250 of the 346 codes differ, so a consumer must branch
+on `stage` rather than on the text before the slash.
+
+The `Fix?` column names the `fix.kind` the code's golden carries, or
+`no` where the record has none. A code emitted from sites that name
+different repairs lists each, separated by `/`: `fix` is a property of
+the failure, not of the code, and a single value would be a claim the
+goldens do not support.
 
 The `Spec` column names the authoritative section that defines the rule
 being enforced. An empty `Spec` column means the code records an
 operational failure (I/O, template render, argument parsing) rather
-than a specification violation. Section references follow
+than a specification violation. Section references come from
 `DiagnosticCode::spec_anchor` in `sce-build/src/forge/diagnostic.rs` and
 must point at a real section — adding a plausible-looking anchor for a
 rule that is not actually documented there is strictly worse than
 leaving the column empty, because consumers ground hallucinated
 references against a real document and drift silently.
 
+<!-- BEGIN GENERATED: code catalog -->
+
 ### 5.1 Forge
 
 | Code | Stage | Fix? | Spec |
 |---|---|---|---|
-| `xml/parse` | `xml` | no | |
-| `xml/schema-validation` | `xml` | no | SCE Forge XSD |
-| `validation/missing-element` | `validation` | no | |
-| `validation/missing-attribute` | `validation` | `add_attribute` | |
-| `validation/invalid-attribute` | `validation` | `replace_one_of` | |
-| `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |
-| `validation/duplicate-id` | `validation` | `rename_duplicate` | |
-| `validation/duplicate-context-object` | `validation` | `rename_duplicate` | |
-| `validation/empty-collection` | `validation` | no | |
-| `validation/count-mismatch` | `validation` | no | |
-| `validation/incompatible-attributes` | `validation` | no | |
-| `validation/missing-context` | `validation` | no | |
-| `validation/invalid-reference` | `validation` | `replace_one_of` | |
-| `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
-| `validation/duplicate-requirement-id` | `validation` | no | |
-| `validation/unresolved-placeholder` | `validation` | no | |
-| `validation/numeric-parse` | `validation` | no | |
-| `validation/empty-value` | `validation` | `add_attribute` | |
-| `validation/singleton-violation` | `validation` | no | |
-| `validation/require-either` | `validation` | `add_one_of` | |
-| `validation/wrong-pipeline` | `validation` | no | SCE Forge §4 |
-| `validation/dynamic-features` | `validation` | no | |
+| `algorithm/append-target-not-buffer` | `validation` | no | SCE Forge §4.12 |
+| `algorithm/append-type-mismatch` | `validation` | no | SCE Forge §4.12 |
+| `algorithm/bc-mutation-forbidden` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/call-arg-count-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/call-target-method-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/call-target-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/const-fold-budget-exceeded` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
+| `algorithm/const-not-foldable` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
+| `algorithm/const-yield-type-mismatch` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
+| `algorithm/foreach-source-bc-with-bytes-item-type` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/foreach-source-not-iterable` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
+| `algorithm/local-shadows-param` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
+| `algorithm/lvalue-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
+| `algorithm/return-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
+| `algorithm/test-vector-unsupported-kind` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/dma-alignment-unsatisfiable` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-bind-carrier-after-embed` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-bind-duplicate-input` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-bind-input-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-bind-source-not-resolved` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-bind-width-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-input-unbound` | `validation` | `add_attribute` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/peek-byte-flag-layout-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/present-if-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/repeat-count-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/tlv-chain-depth-unspecified` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/tlv-chain-truncate-under-entry-flag` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-arm-body-caller-tag-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-arm-inner-mid-undeclared` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-arm-mid-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-arm-unreachable` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-default-overlay-arm-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-dispatch-arms-not-distinguishable-without-default` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-dispatch-bit-width-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-dispatch-carrier-after-embed` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-dispatch-flag-has-static-value` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-dispatch-flag-not-resolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-duplicate-default-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codec/variant-no-default-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codegen/generic-kind-backend-emit-missing` | `generate` | no |  |
+| `codegen/mcu-class-kind-on-non-mcu-language` | `generate` | no |  |
+| `codegen/no-std-fs-load-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
+| `codegen/no-std-http-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
+| `codegen/no-std-invoke-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
+| `codegen/no-std-script-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
+| `collection/capacity-unresolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
+| `collection/element-type-not-a-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
+| `collection/index-by-field-missing` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
+| `collection/multi-writer-without-atomics` | `validation` | no | SCE Protocol-Synthesis RFC §5.L |
+| `collection/ordering-sorted-requires-index-by` | `validation` | no | SCE Protocol-Synthesis RFC §5.L |
+| `collection/overflow-policy-oldest-wins-requires-ordering-insertion` | `validation` | no | SCE Protocol-Synthesis RFC §5.L |
 | `expression/empty` | `expression` | no | SCE Forge §3.4 |
-| `expression/lex` | `expression` | no | SCE Forge §3.4 |
-| `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
-| `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |
-| `expression/parse-mismatch` | `expression` | no | SCE Forge §3.4 |
-| `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
-| `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
-| `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
 | `expression/go-ternary-unsupported` | `expression` | no | SCE Forge §3.4 |
-| `import/file-not-found` | `import` | no | |
-| `import/kind-mismatch` | `import` | `replace_with` | |
-| `import/not-forge` | `import` | no | |
-| `import/read-error` | `import` | no | |
-| `manifest/circular-dependency` | `manifest` | no | |
-| `manifest/io` | `manifest` | no | |
-| `generate/invalid-config` | `generate` | no | |
-| `generate/template-load` | `generate` | no | |
-| `generate/template-render` | `generate` | no | |
-| `generate/unsupported-feature` | `generate` | no | |
-| `codegen/mcu-class-kind-on-non-mcu-language` | `generate` | no | |
-| `codegen/generic-kind-backend-emit-missing` | `generate` | no | |
-| `io/filesystem` | `io` | no | |
+| `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
+| `expression/lex` | `expression` | no | SCE Forge §3.4 |
+| `expression/parse-mismatch` | `expression` | no | SCE Forge §3.4 |
+| `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |
+| `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
+| `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
+| `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
+| `extern/abi-mismatch` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
+| `extern/ordering-unspecified` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
+| `extern/signature-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |
+| `extern/symbol-not-in-whitelist` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
+| `extern/target-plugin-symbol-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
+| `generate/invalid-config` | `generate` | no |  |
+| `generate/template-load` | `generate` | no |  |
+| `generate/template-render` | `generate` | no |  |
+| `generate/unsupported-feature` | `generate` | no |  |
+| `import/file-not-found` | `import` | no |  |
+| `import/kind-mismatch` | `import` | `replace_with` |  |
+| `import/not-forge` | `import` | no |  |
+| `import/read-error` | `import` | no |  |
+| `io/filesystem` | `io` | no |  |
+| `link/backpressure-undeclared` | `validation` | no | SCE Protocol-Synthesis RFC §5.C |
+| `link/class-unsupported-on-target` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.C |
+| `link/deploy-role-listener-without-scxml-accept-side-role` | `validation` | no |  |
+| `link/framer-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.C |
+| `link/framer-ref-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.C |
+| `link/inbound-event-queue-unsized` | `validation` | no | SCE Protocol-Synthesis RFC §5.N |
+| `link/link-class-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.C |
+| `link/listener-link-not-paired-with-established-sibling` | `validation` | no | SCE Protocol-Synthesis RFC §5.C |
+| `link/pool-ref-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.C |
+| `link/pool-slot-smaller-than-framer-max` | `validation` | no | SCE Protocol-Synthesis RFC §5.C |
+| `link/role-listener-with-non-session-arming-trust-class` | `validation` | no |  |
+| `manifest/circular-dependency` | `manifest` | no |  |
+| `manifest/io` | `manifest` | no |  |
+| `mcu/driver-header-not-found` | `validation` | no | SCE Protocol-Synthesis RFC §5.2 |
+| `mcu/section-attribute-name-invalid` | `generate` | no | SCE Protocol-Synthesis RFC §5.2 |
+| `mcu/section-attribute-on-non-mcu-target` | `generate` | no | SCE Protocol-Synthesis RFC §5.2 |
+| `mem/alignment-not-power-of-two` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `mem/cache-line-alignment` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `mem/cache-policy-unsupported-on-no-dcache-core` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `mem/dcache-line-size-not-power-of-two` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `mem/inter-pool-padding-not-emitted` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `mem/pool-section-conflict` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `mem/pool-too-large` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `mem/reassembly-pool-variant-missing-max-fragments` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `mem/reassembly-pool-variant-missing-timeout` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `mem/reassembly-slot-size-below-declared-mtu` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `mem/slot-size-not-alignment-multiple` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `pool/cache-maintenance-misplaced` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `pool/cache-pre-arm-invalidate-missing-on-speculative-core` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `pool/sample-callback-signature-non-borrow` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `pool/sample-take-without-stage-pool` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `pool/sample-typestate-attributes-disabled` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `pool/speculative-prefetch-flag-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `pool/stage-copy-accept-rejected-under-forbid` | `validation` | no | SCE Protocol-Synthesis RFC §5.K |
+| `pool/stage-copy-policy-error` | `validation` | no | SCE Protocol-Synthesis RFC §5.K |
+| `reassembly/binding-on-unpaired-listener` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/expected-fragmentation-rate-high` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/max-fragments-insufficient-for-mtu` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/peer-id-not-zid-on-established-session` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/per-peer-quota-build-invariant-violated` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/stage-copy-wcet-exceeds-slot-budget` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/trust-class-missing-on-fragmenting-link` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `reassembly/untrusted-link-binding` | `validation` | no | SCE Protocol-Synthesis RFC §5.M |
+| `scxml/accept-side-role-without-listener-link` | `validation` | no |  |
+| `scxml/accept-side-states-without-role-declaration` | `validation` | no |  |
+| `scxml/always-false-guard` | `validation` | no |  |
+| `scxml/contradictory-unhandled-declaration` | `validation` | no |  |
+| `scxml/dead-transition` | `validation` | no |  |
+| `scxml/duplicate-session-role-declaration` | `validation` | no |  |
+| `scxml/non-exhaustive-event-handling` | `validation` | no |  |
+| `scxml/on-sample-event-name-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `scxml/on-sample-invalid-parent` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `scxml/on-sample-link-duplicate-in-state` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
+| `scxml/on-sample-link-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `scxml/on-sample-link-wrong-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `scxml/shadowed-transition` | `validation` | no |  |
+| `scxml/stale-unhandled-declaration` | `validation` | no |  |
+| `scxml/top-level-script-unloaded` | `validation` | no | W3C SCXML §5.8 |
+| `scxml/unknown-session-role-kind` | `validation` | `replace_one_of` |  |
+| `scxml/unreachable-state` | `validation` | no |  |
+| `timer/period-below-tick-rate` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |
+| `traceability/meta-generated-source-line-marker-missing` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
+| `traceability/sce-map-attribute-stripped` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
+| `traceability/scxml-line-range-missing` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
+| `traceability/sourcemap-source-hash-mismatch` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
+| `traceability/state-id-collision` | `generate` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.O |
+| `traceability/symbol-name-exceeds-c-identifier-limit` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
+| `validation/bytes-comparison-not-equality` | `validation` | no |  |
+| `validation/bytes-max-size-violation` | `validation` | no |  |
+| `validation/count-mismatch` | `validation` | no |  |
+| `validation/cross-kind-circular-dependency` | `validation` | no |  |
+| `validation/cross-kind-field-not-found` | `validation` | `replace_one_of` |  |
+| `validation/cross-kind-type-mismatch` | `validation` | no |  |
+| `validation/duplicate-context-object` | `validation` | `rename_duplicate` |  |
+| `validation/duplicate-id` | `validation` | `rename_duplicate` |  |
+| `validation/duplicate-requirement-id` | `validation` | no |  |
+| `validation/dynamic-features` | `validation` | no |  |
+| `validation/empty-collection` | `validation` | no |  |
+| `validation/empty-value` | `validation` | `add_attribute` |  |
+| `validation/enum-no-variants` | `validation` | no |  |
+| `validation/enum-unsupported-underlying-type` | `validation` | no |  |
+| `validation/enum-variant-duplicate-name` | `validation` | no |  |
+| `validation/enum-variant-duplicate-value` | `validation` | no |  |
+| `validation/enum-variant-value-overflows-underlying` | `validation` | no |  |
+| `validation/event-payload-field-unknown` | `validation` | `replace_one_of` |  |
+| `validation/event-schema-on-builtin-event` | `validation` | no |  |
+| `validation/incompatible-attributes` | `validation` | no |  |
+| `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
+| `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
+| `validation/invalid-reference` | `validation` | `replace_one_of` |  |
+| `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |
+| `validation/mesh-rpc-missing-target` | `validation` | no | SCE Mesh §9.5 |
+| `validation/mesh-rpc-reserved-param` | `validation` | no | SCE Mesh §9.5 |
+| `validation/missing-attribute` | `validation` | `add_attribute` |  |
+| `validation/missing-context` | `validation` | no |  |
+| `validation/missing-element` | `validation` | no |  |
+| `validation/native-action-argument` | `validation` | no |  |
+| `validation/native-action-placement` | `validation` | no |  |
+| `validation/native-action-signature-conflict` | `validation` | no |  |
+| `validation/numeric-parse` | `validation` | no |  |
+| `validation/removed-attribute` | `validation` | `remove_fields` | SCE Mesh §13 |
+| `validation/require-either` | `validation` | `add_one_of` |  |
+| `validation/reserved-context-id` | `validation` | no |  |
+| `validation/singleton-violation` | `validation` | no |  |
+| `validation/unresolved-placeholder` | `validation` | no |  |
+| `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |
+| `validation/wrong-pipeline` | `validation` | no | SCE Forge §4 |
+| `worker/inbox-ordering-relaxed-across-cores` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
+| `worker/inbox-ordering-unspecified` | `validation` | no | SCE Protocol-Synthesis RFC §5.I |
+| `worker/link-rx-ref-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.D |
+| `worker/outbox-ref-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.D |
+| `worker/outbox-target-suffix-invalid` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.D |
+| `worker/outbox-target-wrong-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.D |
+| `worker/scheduler-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |
+| `worker/shared-mutable-state` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |
+| `xml/file-not-found` | `xml` | no |  |
+| `xml/parse` | `xml` | no |  |
+| `xml/preprocessor-not-run` | `xml` | no |  |
+| `xml/schema-validation` | `xml` | no | SCE Forge XSD |
+| `xml/template-cycle` | `xml` | no |  |
+| `xml/template-malformed` | `xml` | no |  |
+| `xml/template-missing-attribute` | `xml` | `add_attribute` |  |
+| `xml/template-missing-param` | `xml` | `add_attribute` |  |
+| `xml/template-not-found` | `xml` | no |  |
+| `xml/template-read-error` | `xml` | no |  |
+| `xml/template-too-deep` | `xml` | no |  |
+| `xml/template-unknown-param` | `xml` | no |  |
+| `xml/wrong-root-element` | `xml` | no |  |
+| `xml/xinclude-cycle` | `xml` | no |  |
+| `xml/xinclude-malformed` | `xml` | no |  |
+| `xml/xinclude-missing-href` | `xml` | `add_attribute` |  |
+| `xml/xinclude-not-found` | `xml` | no |  |
+| `xml/xinclude-read-error` | `xml` | no |  |
+| `xml/xinclude-too-deep` | `xml` | no |  |
+| `xml/xinclude-unsupported` | `xml` | no |  |
 
 ### 5.2 CLI
 
 | Code | Stage | Fix? | Spec |
 |---|---|---|---|
-| `cli/unknown-language` | `cli` | `replace_one_of` | |
-| `cli/unsupported-language` | `cli` | no | |
-| `cli/read-input` | `cli` | no | |
-| `cli/write-output` | `cli` | no | |
-| `cli/create-output-dir` | `cli` | no | |
-| `cli/scxml-generate` | `cli` | no | |
-| `cli/missing-metadata-field` | `cli` | no | |
-| `cli/not-a-directory` | `cli` | no | |
-| `cli/invalid-format-option` | `cli` | `replace_one_of` | |
-| `cli/json-serialization` | `cli` | no | |
-| `cli/project-root-not-found` | `cli` | no | |
-| `cli/format-style-not-found` | `cli` | no | |
-| `cli/no-scxml-tag` | `cli` | no | |
+| `cli/create-output-dir` | `cli` | no |  |
+| `cli/format-style-not-found` | `cli` | no |  |
+| `cli/invalid-format-option` | `cli` | `replace_one_of` |  |
+| `cli/json-serialization` | `cli` | no |  |
+| `cli/missing-metadata-field` | `cli` | no |  |
+| `cli/no-scxml-tag` | `cli` | no |  |
+| `cli/not-a-directory` | `cli` | no |  |
+| `cli/project-root-not-found` | `cli` | no |  |
+| `cli/read-input` | `cli` | no |  |
+| `cli/scxml-generate` | `cli` | no |  |
+| `cli/unknown-language` | `cli` | `replace_one_of` |  |
+| `cli/unsupported-language` | `cli` | no |  |
+| `cli/write-output` | `cli` | no |  |
+| `forge/source-hash-input-uncovered` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
+| `forge/source-hash-mismatch` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
+| `forge/source-hash-walk-unbounded` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
 
 ### 5.3 Mesh
 
 | Code | Stage | Fix? | Spec |
 |---|---|---|---|
-| `mesh/deploy-read` | `mesh-deploy` | no | |
-| `mesh/deploy-parse` | `mesh-deploy` | no | SCE Mesh §14 |
-| `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` | SCE Mesh §14 |
-| `mesh/deploy-duplicate-machine` | `mesh-deploy` | no | SCE Mesh §14 |
-| `mesh/deploy-platform-class-os-mismatch` | `mesh-deploy` | no | SCE Mesh §14 |
-| `deploy/worker-stack-budget-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
-| `deploy/worker-slot-budget-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/accept-rate-config-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
 | `deploy/keepalive-jitter-budget-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-burst-absorption-insufficient` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-burst-pps-missing-on-isr-dispatch` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-driver-class-mismatch` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-driver-unknown` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-expected-p99-exceeds-mtu` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-mtu-below-driver-floor` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-mtu-missing-on-fragmenting-link` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-not-declared-in-deploy` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-not-declared-in-forge` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/link-rx-dispatch-worker-tick-on-high-burst` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
 | `deploy/scheduler-incompatible-with-worker-count` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
-| `timer/slot-overflow` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.D |
-| `mesh/external-read` | `mesh-external` | no | |
-| `mesh/external-parse` | `mesh-external` | no | |
-| `mesh/external-unresolved-names` | `mesh-external` | no | |
-| `mesh/external-ambiguous-event-group` | `mesh-external` | no | |
-| `mesh/external-empty-event-group` | `mesh-external` | no | |
-| `mesh/external-named-reference-without-config` | `mesh-external` | no | |
-| `mesh/external-reserved-someip-id-keys` | `mesh-external` | `remove_fields` | |
-| `mesh/external-someip-field-on-non-someip-transport` | `mesh-external` | `replace_with` | |
-| `mesh/external-conflicting-event-schema` | `mesh-external` | no | |
-| `mesh/external-conflicting-event-field-kinds` | `mesh-external` | no | |
-| `mesh/external-empty-event-entry` | `mesh-external` | no | |
-| `mesh/topology-unresolved-targets` | `mesh-topology` | no | SCE Mesh §9 |
-| `mesh/topology-machine-not-found` | `mesh-topology` | `replace_one_of` | SCE Mesh §14 |
-| `mesh/topology-receiver-not-declared` | `mesh-topology` | no | SCE Mesh §9 |
-| `mesh/topology-absolute-source-path` | `mesh-topology` | no | |
-| `mesh/topology-receiver-source-read` | `mesh-topology` | no | |
-| `mesh/topology-receiver-source-parse` | `mesh-topology` | no | |
-| `mesh/topology-uncovered-events` | `mesh-topology` | no | SCE Mesh §9 |
-| `mesh/topology-pattern-capability-violation` | `mesh-topology` | no | SCE Mesh §9 |
-| `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` | SCE Mesh §14 |
-| `mesh/topology-invalid-binding-field` | `mesh-topology` | no | SCE Mesh §14 |
-| `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` | SCE Mesh §14 |
-| `mesh/topology-ordering-cannot-be-guaranteed` | `mesh-topology` | no | SCE Mesh §10.6 |
+| `deploy/session-arming-fields-on-non-arming-link` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/session-arming-quota-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/session-arming-quota-vs-peer-table-invariant-violated` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/stage-copy-policy-unknown` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/stateless-accept-extern-not-whitelisted` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/stateless-accept-key-rotation-shorter-than-lifetime` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/stateless-accept-required-on-untrusted-source` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/worker-slot-budget-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `deploy/worker-stack-budget-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
+| `link/concurrent-count-exceeds-scheduler-slots` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
+| `link/per-link-budget-exceeds-tick-period` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
+| `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
+| `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
+| `mesh/codegen-template-read` | `mesh-codegen` | no |  |
+| `mesh/codegen-template-render` | `mesh-codegen` | no |  |
 | `mesh/codegen-unsupported-language` | `mesh-codegen` | `replace_one_of` | SCE Mesh §7 |
 | `mesh/codegen-unsupported-transport` | `mesh-codegen` | `replace_one_of` | SCE Mesh §8 |
-| `mesh/codegen-template-read` | `mesh-codegen` | no | |
-| `mesh/codegen-template-render` | `mesh-codegen` | no | |
-| `mesh/codegen-event-name-collision` | `mesh-codegen` | no | |
-| `mesh/io` | `io` | no | |
+| `mesh/deploy-cross-target-reply-not-supported` | `mesh-deploy` | no | SCE Mesh §14.6 |
+| `mesh/deploy-discovery-not-supported` | `mesh-deploy` | no | SCE Mesh §3.3 |
+| `mesh/deploy-duplicate-machine` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-invalid-auth-policy` | `mesh-deploy` | no | SCE Mesh §16.7 |
+| `mesh/deploy-invalid-custom-tcp-socket` | `mesh-deploy` | no | SCE Mesh §16.8.3 |
+| `mesh/deploy-invalid-dds-qos` | `mesh-deploy` | no | SCE Mesh §8.2 |
+| `mesh/deploy-invalid-dedup-window` | `mesh-deploy` | no | SCE Mesh §10.5 |
+| `mesh/deploy-invalid-liveliness` | `mesh-deploy` | no | SCE Mesh §16.7 |
+| `mesh/deploy-invalid-ordering-timings` | `mesh-deploy` | no | SCE Mesh §10.6 |
+| `mesh/deploy-invalid-outbound-buffer` | `mesh-deploy` | no | SCE Mesh §10.10 |
+| `mesh/deploy-invalid-reply-from` | `mesh-deploy` | no | SCE Mesh §14.6 |
+| `mesh/deploy-invalid-retry-policy` | `mesh-deploy` | no | SCE Mesh §16.7 |
+| `mesh/deploy-invalid-server-response-deadline` | `mesh-deploy` | no | SCE Mesh §9.5 |
+| `mesh/deploy-parse` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-barrier-timeout-invalid` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-duplicate-name` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-empty` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-machine-not-listed` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-multi-device` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-name-not-identifier` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-partial-coverage-requires-default` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-pool-machine` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-synth-infix-collision` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-transport-binding-unsupported` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-uncovered-unit` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-partition-unit-duplicate` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-platform-class-os-mismatch` | `mesh-deploy` | no | SCE Mesh §14 |
+| `mesh/deploy-pool-binding-field-not-supported` | `mesh-deploy` | `remove_fields` | SCE Mesh §14.4 |
+| `mesh/deploy-pool-dispatch-without-member` | `mesh-deploy` | `remove_fields` | SCE Mesh §14.4 |
+| `mesh/deploy-pool-empty-member-list` | `mesh-deploy` | no | SCE Mesh §14.4 |
+| `mesh/deploy-pool-invalid-placeholder` | `mesh-deploy` | no | SCE Mesh §14.4 |
+| `mesh/deploy-pool-missing-member-list` | `mesh-deploy` | no | SCE Mesh §14.4 |
+| `mesh/deploy-pool-not-supported-by-transport` | `mesh-deploy` | no | SCE Mesh §14.4 |
+| `mesh/deploy-read` | `mesh-deploy` | no |  |
+| `mesh/deploy-scxml-invoke-cross-device-transport` | `mesh-deploy` | no | SCE Mesh §9.6 L1393 |
+| `mesh/deploy-scxml-invoke-target-conflict` | `mesh-deploy` | no | SCE Mesh §9.6 |
+| `mesh/deploy-server-pool-not-supported` | `mesh-deploy` | `remove_fields` | SCE Mesh §14.4 |
+| `mesh/deploy-someip-liveness-service-id-overflow` | `mesh-deploy` | no | SCE Mesh §16.4 |
+| `mesh/deploy-someip-liveness-service-id-pin-collision` | `mesh-deploy` | no | SCE Mesh §16.4 |
+| `mesh/deploy-someip-liveness-service-id-pin-out-of-range` | `mesh-deploy` | no | SCE Mesh §16.4 |
+| `mesh/deploy-someip-machine-liveness-service-id-overflow` | `mesh-deploy` | no | SCE Mesh §16.7 |
+| `mesh/deploy-someip-machine-liveness-service-id-pin-collision` | `mesh-deploy` | no | SCE Mesh §16.7 |
+| `mesh/deploy-someip-machine-liveness-service-id-pin-out-of-range` | `mesh-deploy` | no | SCE Mesh §16.7 |
+| `mesh/deploy-someip-scxml-invoke-service-id-overflow` | `mesh-deploy` | no | SCE Mesh §9.6 |
+| `mesh/deploy-someip-scxml-invoke-service-id-pin-collision` | `mesh-deploy` | no | SCE Mesh §9.6 |
+| `mesh/deploy-someip-scxml-invoke-service-id-pin-out-of-range` | `mesh-deploy` | no | SCE Mesh §9.6 |
+| `mesh/deploy-stage-pool-not-declared` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `mesh/deploy-stage-pool-transport-mismatch` | `mesh-deploy` | `remove_fields` | SCE Protocol-Synthesis RFC §5.E |
+| `mesh/deploy-stage-pool-wrong-kind` | `mesh-deploy` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
+| `mesh/deploy-unknown-binding-field` | `mesh-deploy` | `replace_one_of` | SCE Mesh §14 |
+| `mesh/deploy-unsupported-version` | `mesh-deploy` | `replace_one_of` | SCE Mesh §14 |
+| `mesh/distributability-r1-shared-write` | `mesh-deploy` | no | SCE Mesh §16.3 |
+| `mesh/distributability-r2-cross-region-transition` | `mesh-deploy` | no | SCE Mesh §16.3 |
+| `mesh/event-schema-mismatch` | `mesh-deploy` | no |  |
+| `mesh/external-ambiguous-event-group` | `mesh-external` | no |  |
+| `mesh/external-conflicting-event-field-kinds` | `mesh-external` | no |  |
+| `mesh/external-conflicting-event-schema` | `mesh-external` | no |  |
+| `mesh/external-empty-event-entry` | `mesh-external` | no |  |
+| `mesh/external-empty-event-group` | `mesh-external` | no |  |
+| `mesh/external-named-reference-without-config` | `mesh-external` | no |  |
+| `mesh/external-parse` | `mesh-external` | no |  |
+| `mesh/external-read` | `mesh-external` | no |  |
+| `mesh/external-reserved-someip-id-keys` | `mesh-external` | `remove_fields` |  |
+| `mesh/external-someip-field-on-non-someip-transport` | `mesh-external` | `replace_with` |  |
+| `mesh/external-unresolved-names` | `mesh-external` | no |  |
+| `mesh/io` | `io` | no |  |
+| `mesh/partition-barrier-timeout-without-root` | `mesh-deploy` | no | SCE Mesh §14 rule 12 |
+| `mesh/partition-parallel-root-ambiguous` | `mesh-deploy` | no | SCE Mesh §14 rule 12 |
+| `mesh/partition-parallel-root-non-host` | `mesh-deploy` | no | SCE Mesh §14 rule 12 |
+| `mesh/partition-parallel-root-not-in-machines` | `mesh-deploy` | no | SCE Mesh §14 rule 12 |
+| `mesh/partition-parallel-root-undesignated` | `mesh-deploy` | no | SCE Mesh §14 rule 12 |
+| `mesh/partition-wire21-custom-tcp-unimplemented` | `mesh-deploy` | no | SCE Mesh §16.5 |
+| `mesh/topology-absolute-source-path` | `mesh-topology` | no |  |
+| `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` | SCE Mesh §14 |
+| `mesh/topology-invalid-binding-field` | `mesh-topology` | no | SCE Mesh §14 |
+| `mesh/topology-machine-lifetime-subscription-unsupported` | `mesh-topology` | no | SCE Mesh §13 |
+| `mesh/topology-machine-not-found` | `mesh-topology` | `replace_one_of` | SCE Mesh §14 |
+| `mesh/topology-missing-binding-field` | `mesh-topology` | `add_attribute` | SCE Mesh §14 |
+| `mesh/topology-ordering-cannot-be-guaranteed` | `mesh-topology` | no | SCE Mesh §10.6 |
+| `mesh/topology-pattern-capability-violation` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-pool-param-name-missing` | `mesh-topology` | no | SCE Mesh §14.4 |
+| `mesh/topology-receiver-not-declared` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-receiver-source-parse` | `mesh-topology` | no |  |
+| `mesh/topology-receiver-source-read` | `mesh-topology` | no |  |
+| `mesh/topology-subscription-source-unbound` | `mesh-topology` | `replace_one_of` | SCE Mesh §13 |
+| `mesh/topology-uncovered-events` | `mesh-topology` | no | SCE Mesh §9 |
+| `mesh/topology-unresolved-targets` | `mesh-topology` | no | SCE Mesh §9 |
+| `timer/slot-overflow` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.D |
+
+<!-- END GENERATED: code catalog -->
 
 ## 6. Exit codes
 
