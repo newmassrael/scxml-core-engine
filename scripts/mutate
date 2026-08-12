@@ -44,6 +44,14 @@
 #     mutation_tests -p sce-build --features cli --test scxml_exhaustiveness
 #     mutation_targets sce-build/src/parser.rs
 #
+# `mutation_targets` names files COMPILED INTO the tests. A file the tests
+# instead READ AT RUN TIME — a gate script a test executes, a fixture it
+# loads — goes in `mutation_runtime_targets`, because check 1 above is
+# answered differently for it: a script is read fresh on every run, so its
+# test binaries are unchanged by definition and demanding a changed binary
+# would call every such case INCONCLUSIVE. The evidence there is that the
+# file on disk differed from the baseline while the tests ran.
+#
 #     mutation_case "parser accepts a wildcard token" <<'PY'
 #     edit("sce-build/src/parser.rs",
 #          "if tok == \"*\" ||",
@@ -69,6 +77,7 @@ trap 'mutation_restore_quiet; rm -rf "$WORK"' EXIT
 
 MUTATION_CARGO_ARGS=()
 MUTATION_TARGET_FILES=()
+MUTATION_RUNTIME_FILES=()
 MUTATION_EXES=()
 MUTATION_CAUGHT=0
 MUTATION_SURVIVED=0
@@ -86,31 +95,81 @@ dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
 # matched, which is failure mode 2 above.
 mutation_tests() { MUTATION_CARGO_ARGS=("$@"); }
 
-# Files a case is allowed to edit. Snapshotted at init and restored after
-# every case, so a case body never has to clean up after itself and a case
-# that dies mid-edit cannot leave the tree broken for the next one.
+# Files a case is allowed to edit, COMPILED INTO the tests. Snapshotted at
+# init and restored after every case, so a case body never has to clean up
+# after itself and a case that dies mid-edit cannot leave the tree broken
+# for the next one.
 mutation_targets() { MUTATION_TARGET_FILES=("$@"); }
 
+# Files a case is allowed to edit that the tests READ AT RUN TIME — a shell
+# script a test executes, a fixture a test loads — rather than link into a
+# binary.
+#
+# They need their own list because failure mode 1 is detected differently for
+# them, not because they are edited differently. For a compiled target the
+# evidence that a mutation reached the code that ran is a CHANGED test binary:
+# an unchanged one means cargo re-ran the artifact it already had. A script is
+# read fresh on every execution, so its binaries are unchanged by definition,
+# and demanding a changed binary would report every such case INCONCLUSIVE —
+# a harness that cannot answer its own question for this kind of target.
+# The evidence here is that the file on disk differed from the baseline while
+# the tests ran, which is checked below and is the same question asked of the
+# artifact that actually decides the behaviour.
+#
+# Declaring one in the wrong list is caught rather than believed: a case that
+# edits a compiled target is still held to the changed-binary rule, whichever
+# list named the file.
+mutation_runtime_targets() { MUTATION_RUNTIME_FILES=("$@"); }
+
 # ── Internals ──────────────────────────────────────────────────────
+
+# Every file a case may edit, of either kind.
+mutation_all_targets() {
+    printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
+                  ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"}
+}
+
+# "<sha> <path>" per named file, in the order given.
+mutation_file_hashes() {
+    local f
+    for f in "$@"; do
+        printf '%s %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$f"
+    done
+}
+
+# The same, over every target of either kind. Reads the list rather than
+# splitting a command substitution on whitespace, so a path is a path.
+mutation_all_target_hashes() {
+    local f
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        printf '%s %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$f"
+    done < <(mutation_all_targets)
+}
 
 mutation_snapshot() {
     mkdir -p "$WORK/snapshot"
     local f
-    for f in "${MUTATION_TARGET_FILES[@]}"; do
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
         mkdir -p "$WORK/snapshot/$(dirname "$f")"
         # Deliberately not `cp -a`: preserving mtime is what lets a later
         # rebuild be skipped. The hash check below would catch that, but
         # there is no reason to create the condition in the first place.
         cp "$f" "$WORK/snapshot/$f"
-    done
+    done < <(mutation_all_targets)
 }
 
 mutation_restore() {
     local f
-    for f in "${MUTATION_TARGET_FILES[@]}"; do
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        # Into the existing file, so its mode survives: a gate script restored
+        # without its executable bit would fail every later case for a reason
+        # that has nothing to do with the mutation.
         cp "$WORK/snapshot/$f" "$f"
         touch "$f"
-    done
+    done < <(mutation_all_targets)
 }
 
 mutation_restore_quiet() {
@@ -177,14 +236,17 @@ mutation_init() {
         red "the casefile declared no mutation_tests selector"
         exit 2
     fi
-    if [[ ${#MUTATION_TARGET_FILES[@]} -eq 0 ]]; then
-        red "the casefile declared no mutation_targets"
+    if [[ ${#MUTATION_TARGET_FILES[@]} -eq 0 && ${#MUTATION_RUNTIME_FILES[@]} -eq 0 ]]; then
+        red "the casefile declared no mutation_targets or mutation_runtime_targets"
         exit 2
     fi
     mutation_snapshot
     mutation_resolve_exes
     dim "resolved ${#MUTATION_EXES[@]} test executable(s)"
 
+    BASELINE_FILE_HASHES="$(mutation_all_target_hashes)"
+    BASELINE_COMPILED_HASHES="$(mutation_file_hashes \
+        ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"})"
     BASELINE_HASHES="$(mutation_build_and_hash)" || { red "baseline build failed"; exit 2; }
     read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_exes)"
     if [[ "$BASELINE_FAILED" != "0" ]]; then
@@ -204,7 +266,10 @@ mutation_init() {
 mutation_case() {
     local label="$1"
     local body
+    # Read unconditionally: the heredoc has to be consumed on the declaration
+    # pass too, or the shell would hand its lines to the parser as commands.
     body="$(cat)"
+    [[ "${MUTATION_PASS:-run}" == "run" ]] || return 0
 
     printf '%s\n' "$body" > "$WORK/case.py"
     if ! python3 - "$WORK/case.py" <<'PY'
@@ -229,6 +294,23 @@ PY
         return
     fi
 
+    # What the case actually changed on disk, before asking what that did to
+    # the artifacts. A body whose `edit()` matched but replaced a string with
+    # itself leaves the tree at the baseline, and every check below would then
+    # be measuring the unmutated code and reporting it as SURVIVED.
+    local file_hashes compiled_hashes
+    file_hashes="$(mutation_all_target_hashes)"
+    compiled_hashes="$(mutation_file_hashes \
+        ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"})"
+    if [[ "$file_hashes" == "$BASELINE_FILE_HASHES" ]]; then
+        red "INCONCLUSIVE  $label"
+        red "              the case body left every target byte-identical —"
+        red "              nothing was mutated, so nothing was tested"
+        MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
+        mutation_restore
+        return
+    fi
+
     local hashes
     if ! hashes="$(mutation_build_and_hash)"; then
         # A mutation that does not compile is a legitimate outcome — the
@@ -241,7 +323,12 @@ PY
         return
     fi
 
-    if [[ "$hashes" == "$BASELINE_HASHES" ]]; then
+    # Only a case that touched a COMPILED target owes a changed binary. One
+    # that edited a script the tests execute is expected to leave every binary
+    # identical — the mutated artifact is the file on disk, and the check above
+    # already established it differs from the baseline.
+    if [[ "$compiled_hashes" != "$BASELINE_COMPILED_HASHES" \
+          && "$hashes" == "$BASELINE_HASHES" ]]; then
         red "INCONCLUSIVE  $label"
         red "              every test binary is byte-identical to the baseline —"
         red "              the mutation never reached the code under test"
@@ -281,6 +368,13 @@ PY
         red "              — later cases would be measured against a moved baseline"
         exit 2
     fi
+    # And the files themselves, which for a runtime target is the only place a
+    # botched restore would show: its binaries are identical either way.
+    if [[ "$(mutation_all_target_hashes)" != "$BASELINE_FILE_HASHES" ]]; then
+        red "              restore did not reproduce the baseline files"
+        red "              — later cases would be measured against a moved baseline"
+        exit 2
+    fi
 }
 
 mutation_report() {
@@ -307,10 +401,18 @@ CASEFILE="$1"
 # The casefile declares the selector and targets, then the cases. Sourcing
 # happens in two passes so `mutation_init` can run — and reject a red
 # baseline — before the first case body edits anything.
+#
+# Both passes source the whole file, and `mutation_case` decides which pass it
+# is in. The first pass used to be a grep for the declaration names, which was
+# a second copy of this file's vocabulary — and the copy is what goes stale:
+# `mutation_runtime_targets` was invisible to it on the day it was added, and
+# the casefile that used it was rejected as declaring no targets at all.
+MUTATION_PASS=declare
 # shellcheck disable=SC1090
-source <(grep -E '^\s*mutation_(tests|targets)\b' "$CASEFILE")
+source "$CASEFILE"
 mutation_init
 
+MUTATION_PASS=run
 # shellcheck disable=SC1090
 source "$CASEFILE"
 
