@@ -37,12 +37,26 @@
 #
 #     scripts/mutate <casefile>
 #
-# The casefile is sourced by this script. It declares the cargo selector for
-# the tests under study, the files a case may edit, and one `case` block per
+# The casefile is sourced by this script. It declares the selector for the
+# tests under study, the files a case may edit, and one `case` block per
 # mutation:
 #
 #     mutation_tests -p sce-build --features cli --test scxml_exhaustiveness
 #     mutation_targets sce-build/src/parser.rs
+#
+# A suite this repository runs through ctest is declared instead with
+# `mutation_ctest`, whose arguments are a ctest selector and must include
+# `--test-dir` so the harness knows which tree to rebuild:
+#
+#     mutation_ctest --test-dir build -R '^SceKindRouting'
+#     mutation_targets sce/src/parser/SCXMLParser.cpp
+#
+# The two runners are not two procedures. Both answers this harness exists to
+# give — did the mutation reach what ran, and did the same tests run — are
+# asked of every runner, from the same three operations: resolve the artifacts
+# a run will execute, rebuild and hash them, run them and report how many
+# tests ran and how many failed. Only those three differ between cargo and
+# ctest; every verdict below is computed identically for both.
 #
 # `mutation_targets` names files COMPILED INTO the tests. A file the tests
 # instead READ AT RUN TIME — a gate script a test executes, a fixture it
@@ -75,10 +89,12 @@ cd "$SCE_REPO_ROOT"
 WORK="$(mktemp -d)"
 trap 'mutation_restore_quiet; rm -rf "$WORK"' EXIT
 
-MUTATION_CARGO_ARGS=()
+MUTATION_RUNNER=""
+MUTATION_RUNNER_ARGS=()
+MUTATION_BUILD_DIR=""
 MUTATION_TARGET_FILES=()
 MUTATION_RUNTIME_FILES=()
-MUTATION_EXES=()
+MUTATION_ARTIFACTS=()
 MUTATION_CAUGHT=0
 MUTATION_SURVIVED=0
 MUTATION_INCONCLUSIVE=0
@@ -89,11 +105,34 @@ dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
 
 # ── Casefile vocabulary ────────────────────────────────────────────
 
+# Declare which runner drives the tests, and with what selector. A casefile
+# names exactly one: two would leave the verdicts below describing two
+# different suites under one label.
+mutation_declare_runner() {
+    local runner="$1"
+    shift
+    if [[ -n "$MUTATION_RUNNER" && "$MUTATION_RUNNER" != "$runner" ]]; then
+        red "the casefile declared both mutation_${MUTATION_RUNNER} and mutation_${runner}"
+        red "— one casefile studies one suite, or the verdicts name neither"
+        exit 2
+    fi
+    MUTATION_RUNNER="$runner"
+    MUTATION_RUNNER_ARGS=("$@")
+}
+
 # Cargo selector for the tests under study. Passed to `cargo test`
 # verbatim. Give it target selectors (`--test`, `--lib`, `-p`), never a
 # bare filter argument — a filter reaches every binary the selector
 # matched, which is failure mode 2 above.
-mutation_tests() { MUTATION_CARGO_ARGS=("$@"); }
+mutation_tests() { mutation_declare_runner cargo "$@"; }
+
+# ctest selector for the tests under study, passed to `ctest` verbatim by
+# both the resolve step and the run step, so the two cannot describe
+# different sets. It must carry `--test-dir <dir>`: that directory is the
+# tree the harness rebuilds between cases, and guessing it from the
+# repository layout would be a second answer to a question the selector
+# already contains.
+mutation_ctest() { mutation_declare_runner ctest "$@"; }
 
 # Files a case is allowed to edit, COMPILED INTO the tests. Snapshotted at
 # init and restored after every case, so a case body never has to clean up
@@ -177,17 +216,34 @@ mutation_restore_quiet() {
     mutation_restore 2>/dev/null || true
 }
 
+# ── Runner interface ───────────────────────────────────────────────
+#
+# Three operations, one implementation per runner. Everything that decides a
+# verdict is written once, against these:
+#
+#   mutation_resolve_artifacts   populate MUTATION_ARTIFACTS with the files a
+#                                run executes, resolved ONCE so no later
+#                                argument can narrow the set
+#   mutation_build_and_hash      rebuild, then print "<sha> <path>" per
+#                                artifact — evidence about what will run,
+#                                which mtime and fingerprint logs only proxy
+#   mutation_run_artifacts       run them; print "<tests_run> <tests_failed>"
+
+mutation_resolve_artifacts() { "mutation_${MUTATION_RUNNER}_resolve"; }
+mutation_build_and_hash() { "mutation_${MUTATION_RUNNER}_build_and_hash"; }
+mutation_run_artifacts() { "mutation_${MUTATION_RUNNER}_run"; }
+
 # Resolve the test executables the selector names. Doing this once, and
 # then running the binaries directly, is what removes the shared-filter
 # hazard: there is no argument left that could narrow one binary's run.
-mutation_resolve_exes() {
+mutation_cargo_resolve() {
     local json
-    json="$(cargo test --no-run --message-format=json "${MUTATION_CARGO_ARGS[@]}" 2>/dev/null)" || {
+    json="$(cargo test --no-run --message-format=json "${MUTATION_RUNNER_ARGS[@]}" 2>/dev/null)" || {
         red "build failed while resolving test executables"
-        cargo test --no-run "${MUTATION_CARGO_ARGS[@]}" 2>&1 | tail -30
+        cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" 2>&1 | tail -30
         exit 2
     }
-    mapfile -t MUTATION_EXES < <(printf '%s\n' "$json" | python3 -c '
+    mapfile -t MUTATION_ARTIFACTS < <(printf '%s\n' "$json" | python3 -c '
 import json, sys
 for line in sys.stdin:
     line = line.strip()
@@ -200,8 +256,8 @@ for line in sys.stdin:
     if rec.get("reason") == "compiler-artifact" and rec.get("executable") and rec.get("profile", {}).get("test"):
         print(rec["executable"])
 ')
-    if [[ ${#MUTATION_EXES[@]} -eq 0 ]]; then
-        red "the selector matched no test executables: ${MUTATION_CARGO_ARGS[*]}"
+    if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
+        red "the selector matched no test executables: ${MUTATION_RUNNER_ARGS[*]}"
         exit 2
     fi
 }
@@ -210,18 +266,24 @@ for line in sys.stdin:
 # point: it is evidence about the artifact that will actually run, which
 # mtime, cargo's fingerprint log, and the source on disk are all merely
 # proxies for.
-mutation_build_and_hash() {
-    cargo test --no-run "${MUTATION_CARGO_ARGS[@]}" >/dev/null 2>&1 || return 1
-    local exe
-    for exe in "${MUTATION_EXES[@]}"; do
-        printf '%s %s\n' "$(sha256sum "$exe" | cut -d' ' -f1)" "$exe"
+mutation_cargo_build_and_hash() {
+    cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" >/dev/null 2>&1 || return 1
+    mutation_hash_artifacts
+}
+
+# "<sha> <path>" per resolved artifact, in resolution order. Shared by the
+# runners because the evidence is the same evidence.
+mutation_hash_artifacts() {
+    local artifact
+    for artifact in "${MUTATION_ARTIFACTS[@]}"; do
+        printf '%s %s\n' "$(sha256sum "$artifact" | cut -d' ' -f1)" "$artifact"
     done
 }
 
 # Run every executable; print "<tests_run> <failed>" totalled across them.
-mutation_run_exes() {
+mutation_cargo_run() {
     local exe out run failed total_run=0 total_failed=0
-    for exe in "${MUTATION_EXES[@]}"; do
+    for exe in "${MUTATION_ARTIFACTS[@]}"; do
         out="$("$exe" 2>&1 || true)"
         run="$(printf '%s\n' "$out" | sed -n 's/^running \([0-9]*\) test.*/\1/p' | awk '{s+=$1} END {print s+0}')"
         failed="$(printf '%s\n' "$out" | sed -n 's/.*[0-9]* passed; \([0-9]*\) failed.*/\1/p' | awk '{s+=$1} END {print s+0}')"
@@ -231,9 +293,113 @@ mutation_run_exes() {
     printf '%s %s\n' "$total_run" "$total_failed"
 }
 
+# The build tree the ctest selector names, read out of the selector itself
+# so the tree that gets rebuilt is the tree that gets run.
+mutation_ctest_build_dir() {
+    local i
+    for ((i = 0; i < ${#MUTATION_RUNNER_ARGS[@]}; i++)); do
+        case "${MUTATION_RUNNER_ARGS[i]}" in
+            --test-dir) printf '%s\n' "${MUTATION_RUNNER_ARGS[i + 1]:-}"; return 0 ;;
+            --test-dir=*) printf '%s\n' "${MUTATION_RUNNER_ARGS[i]#--test-dir=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Every file this repository owns that a registered test command names.
+#
+# `command[0]` alone is not the artifact set: a case can be `bash <script>`
+# or a driver invoked with per-case arguments, and hashing the interpreter
+# would report an unchanged system binary as evidence that a mutation did
+# not land. Paths outside the repository are dropped for the same reason —
+# a mutation here cannot change them, so they can only dilute the check.
+mutation_ctest_resolve() {
+    local build_dir json
+    build_dir="$(mutation_ctest_build_dir)" || {
+        red "mutation_ctest needs --test-dir <dir>: it names the tree to rebuild"
+        exit 2
+    }
+    MUTATION_BUILD_DIR="$build_dir"
+    json="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null)" || {
+        red "ctest could not enumerate the suite: ${MUTATION_RUNNER_ARGS[*]}"
+        ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>&1 | tail -20
+        exit 2
+    }
+    mapfile -t MUTATION_ARTIFACTS < <(printf '%s\n' "$json" | python3 -c '
+import json, os, sys
+
+repo = os.path.realpath(sys.argv[1])
+seen = []
+for test in json.load(sys.stdin).get("tests", []):
+    for token in test.get("command") or []:
+        path = os.path.realpath(token)
+        if not os.path.isfile(path):
+            continue
+        if os.path.commonpath([repo, path]) != repo:
+            continue
+        if path not in seen:
+            seen.append(path)
+for path in sorted(seen):
+    print(path)
+' "$SCE_REPO_ROOT")
+    if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
+        red "the selector matched no in-repository test artifacts: ${MUTATION_RUNNER_ARGS[*]}"
+        exit 2
+    fi
+}
+
+# The default target, not the artifact list. A test whose executable this
+# harness resolved is not the only thing a mutation can break: a source it
+# links reaches other targets too, and building only the resolved set would
+# leave the tree half-rebuilt and the next case measuring a mixture. This is
+# the same reasoning `scripts/gates/cpp-suite.sh` states for not naming
+# targets.
+mutation_ctest_build_and_hash() {
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(nproc)" >/dev/null 2>&1 || return 1
+    mutation_hash_artifacts
+}
+
+# One ctest run over the declared selector; "<tests_run> <failed>" read from
+# the JUnit report it writes. `--no-tests=error` is what keeps an empty run
+# from reporting as a green one.
+#
+# The report rather than the console summary, because that summary is not one
+# sentence: an all-passing run prints "100% tests passed out of 2" and a
+# failing one "50% tests passed, 1 tests failed out of 2". A parser written
+# against either form reads the other as zero tests — which is how the first
+# ctest round here ended, saved only by the guard that refuses a baseline of
+# zero. The counts are attributes of a machine-readable document instead, and
+# skipped cases are subtracted because a case that did not run is not one
+# this harness can claim anything about.
+mutation_ctest_run() {
+    local report="$WORK/ctest-junit.xml"
+    rm -f "$report"
+    ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(nproc)" \
+        --output-junit "$report" >/dev/null 2>&1 || true
+    if [[ ! -f "$report" ]]; then
+        printf '0 0\n'
+        return
+    fi
+    python3 - "$report" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+suites = [root] if root.tag == "testsuite" else root.iter("testsuite")
+run = failed = 0
+for suite in suites:
+    total = int(suite.get("tests", 0))
+    skipped = int(suite.get("skipped", 0))
+    disabled = int(suite.get("disabled", 0))
+    run += total - skipped - disabled
+    failed += int(suite.get("failures", 0)) + int(suite.get("errors", 0))
+print(f"{run} {failed}")
+PY
+}
+
 mutation_init() {
-    if [[ ${#MUTATION_CARGO_ARGS[@]} -eq 0 ]]; then
-        red "the casefile declared no mutation_tests selector"
+    if [[ -z "$MUTATION_RUNNER" ]]; then
+        red "the casefile declared no mutation_tests or mutation_ctest selector"
         exit 2
     fi
     if [[ ${#MUTATION_TARGET_FILES[@]} -eq 0 && ${#MUTATION_RUNTIME_FILES[@]} -eq 0 ]]; then
@@ -241,14 +407,14 @@ mutation_init() {
         exit 2
     fi
     mutation_snapshot
-    mutation_resolve_exes
-    dim "resolved ${#MUTATION_EXES[@]} test executable(s)"
+    mutation_resolve_artifacts
+    dim "resolved ${#MUTATION_ARTIFACTS[@]} test artifact(s) via $MUTATION_RUNNER"
 
     BASELINE_FILE_HASHES="$(mutation_all_target_hashes)"
     BASELINE_COMPILED_HASHES="$(mutation_file_hashes \
         ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"})"
     BASELINE_HASHES="$(mutation_build_and_hash)" || { red "baseline build failed"; exit 2; }
-    read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_exes)"
+    read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_artifacts)"
     if [[ "$BASELINE_FAILED" != "0" ]]; then
         red "baseline is not green ($BASELINE_FAILED failing) — fix that before mutating,"
         red "or every case below will read as CAUGHT for the wrong reason"
@@ -338,7 +504,7 @@ PY
     fi
 
     local run failed
-    read -r run failed <<<"$(mutation_run_exes)"
+    read -r run failed <<<"$(mutation_run_artifacts)"
 
     if [[ "$run" != "$BASELINE_RUN" ]]; then
         red "INCONCLUSIVE  $label"

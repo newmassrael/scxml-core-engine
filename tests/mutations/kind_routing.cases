@@ -1,0 +1,37 @@
+# Mutation cases for "the C++ parser routes on `sce:kind`".
+#
+# Run with `scripts/mutate tests/mutations/kind_routing.cases`.
+#
+# This is the round that made the harness speak ctest. The defect it stands
+# for is the one A6 fixed: until this parser read `sce:kind`, it ran forge
+# documents as statecharts while the Rust pipeline rejected them, so the two
+# engines disagreed about what a document even was. That fix was verified by
+# hand — rebuild, compare binary hashes, re-run, restore, compare again —
+# because the harness could only express a cargo selector, which is exactly
+# the procedure a tool exists to make repeatable.
+#
+# The suite named here is the pair of ctest cases that own the claim: one
+# asserts the routing table, the other that both producers answer the same
+# way. Naming those rather than the whole tree keeps a case's verdict about
+# the code it mutated.
+
+mutation_ctest --test-dir build -R "^(DiagnosticTests|CrossProducerDiagnosticIdTests)$"
+mutation_targets sce/src/parsing/SCXMLParser.cpp
+
+mutation_case "a document routed to Forge is parsed as a statechart" <<'PY'
+edit("sce/src/parsing/SCXMLParser.cpp",
+     '        if (kind != "statechart") {',
+     '        if (false) {')
+PY
+
+mutation_case "the routing attribute is never read" <<'PY'
+edit("sce/src/parsing/SCXMLParser.cpp",
+     '    if (rootElement->hasAttribute("sce:kind")) {',
+     '    if (false && rootElement->hasAttribute("sce:kind")) {')
+PY
+
+mutation_case "the engine's own documents are refused along with the rest" <<'PY'
+edit("sce/src/parsing/SCXMLParser.cpp",
+     '        if (kind != "statechart") {',
+     '        if (kind == kind) {')
+PY
