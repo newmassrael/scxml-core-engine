@@ -1,0 +1,67 @@
+# Mutation cases for "the symbol axis reaches every language the runtimes are
+# written in".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ledger_symbol_axis_reach.cases`.
+#
+# Two defects shipped inside one pin bump and these stand for both.
+#
+# The first: Mnemosyne gained tree-sitter-go, -kotlin and -python, and the three
+# UNREACHED entries went on saying it ships no resolver for them. Every
+# assertion in the file stayed green, because nothing asked the tool.
+#
+# The second is the trap on the other side, and it was nearly landed. A build
+# that CAN resolve a language is not a workspace that DOES — enrolment is
+# per-ledger, and the axis only judges a binding that records a symbol. Reading
+# only `describe-symbol-axis-reach` retires gaps that `validate-code-refs` still
+# reports; declaring the resolvers without recording the symbols moves 151
+# bindings out of `unresolved_languages` and into `covered` while comparing
+# nothing.
+#
+# So the cases cover both readings, a runtime the workspace cannot reach going
+# unnamed, and the scans going quiet — that last kind because an empty parse
+# makes every direction vacuous and prints the same green.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test ledger_symbol_axis_reach
+# The judgement lives in the test binary: the product under test is the pinned
+# mnemosyne-cli, executed as a subprocess, and this file decides whether its two
+# answers match the repository's recorded claims.
+mutation_targets sce-build/tests/ledger_symbol_axis_reach.rs
+
+mutation_case "a runtime the workspace cannot reach goes unnamed" <<'PY'
+edit("sce-build/tests/ledger_symbol_axis_reach.rs",
+     "        .keys()\n        .cloned()\n        .collect()\n}",
+     "        .keys()\n        .cloned()\n        .chain([\"kotlin\".to_string()])\n        .collect()\n}")
+PY
+
+mutation_case "workspace reach is read as build reach" <<'PY'
+edit("sce-build/tests/ledger_symbol_axis_reach.rs",
+     '    axis.get("unresolved_languages")',
+     '    axis.get("covered_but_not_unresolved")')
+PY
+
+mutation_case "the workspace report parses empty and every gap looks closed" <<'PY'
+edit("sce-build/tests/ledger_symbol_axis_reach.rs",
+     'let axis = report\n        .get("symbol_axis")',
+     'let axis = report\n        .get("symbol_axiz")')
+PY
+
+mutation_case "the backend list parses empty so no cause can be checked" <<'PY'
+edit("sce-build/tests/ledger_symbol_axis_reach.rs",
+     'if let Some((_, lang)) = line.split_once(" resolves `") {',
+     'if let Some((_, lang)) = line.split_once(" resolvez `") {')
+PY
+
+mutation_case "the extension table parses empty so no runtime asks anything" <<'PY'
+edit("sce-build/tests/ledger_symbol_axis_reach.rs",
+     '} else if let Some((ext, lang)) = line.split_once(" -> ") {',
+     '} else if let Some((ext, lang)) = line.split_once(" ->> ") {')
+PY
+
+mutation_case "a runtime tree stops contributing its extensions" <<'PY'
+edit("sce-build/tests/ledger_symbol_axis_reach.rs",
+     "    let mut out = BTreeSet::new();\n    walk(&root.join(dir), &mut out);\n    out",
+     "    let mut out = BTreeSet::new();\n    let _ = dir;\n    let _ = root;\n    walk(Path::new(\"/nonexistent\"), &mut out);\n    out")
+PY

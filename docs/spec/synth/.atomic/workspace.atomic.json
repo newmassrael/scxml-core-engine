@@ -420,34 +420,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/forge-runtime/codec/codec.go",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_a/codec_default_marker_arm_a.go",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_b/codec_default_marker_arm_b.go",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/DefaultRoundTripTest.kt",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/forge-runtime/tests/test_default_round_trip.py",
-          "kind": "references"
-        },
-        {
           "file": "backends/python/forge-runtime/tests/test_numerical_conformance.py",
           "kind": "references"
         },
@@ -1242,6 +1214,116 @@
         },
         {
           "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "ErrBufferOverflow",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "ErrInvalidUTF8",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "ErrNeedMoreBytes",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "ErrTlvChainOverflow",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "ErrVLEWidthOverflow",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "readVLEInner",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "writeVLEInner",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_a/codec_default_marker_arm_a.go",
+          "symbol": "DecodeCodecDefaultMarkerArmA",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_a/codec_default_marker_arm_a.go",
+          "symbol": "Kind",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_b/codec_default_marker_arm_b.go",
+          "symbol": "DecodeCodecDefaultMarkerArmB",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_b/codec_default_marker_arm_b.go",
+          "symbol": "Kind",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
+          "symbol": "CodecVariantDefaultMarkerDefault",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
+          "symbol": "CodecVariantDefaultMarkerVariant",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
+          "symbol": "DecodeCodecVariantDefaultMarker",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
+          "symbol": "Encode",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+          "symbol": "BufferOverflow",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+          "symbol": "CodecError",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+          "symbol": "VleWidthOverflow",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+          "symbol": "readVleU16",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+          "symbol": "writeVleInner",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/DefaultRoundTripTest.kt",
+          "symbol": "roundTripLandsInDeclaredDefaultArm",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_default_round_trip.py",
+          "symbol": "test_round_trip_lands_in_declared_default_arm",
           "kind": "references"
         }
       ]
@@ -4488,6 +4570,50 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
+  "mutation_reasons": [
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    }
+  ],
   "frames": {},
   "branches": {},
   "entities": {},
@@ -4502,5 +4628,5 @@
   "parameter_deltas": {},
   "parameter_gates": {},
   "fact_counts": {},
-  "schema_version": 44
+  "schema_version": 46
 }
