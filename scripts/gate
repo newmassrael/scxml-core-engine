@@ -140,9 +140,20 @@ for slug in "${ORDER[@]}"; do
     printf '\n==> gate[%s]\n' "$slug" >&2
     start=$SECONDS
     bash "$script" || {
-        printf '\nERROR gate: %s FAILED — run just this one with: scripts/gate %s\n' \
-            "$slug" "$slug" >&2
-        exit 1
+        rc=$?
+        # Exit 3 is `sce_gate_cannot_run`: the gate's own tooling is missing,
+        # not the tree it judges. Still a failure — a machine that cannot run a
+        # gate has not passed it — but saying "FAILED" for it sends the reader
+        # looking for a defect in their own changes, which is the whole reason
+        # the status is distinct.
+        if (( rc == 3 )); then
+            printf '\nERROR gate: %s COULD NOT RUN — its own inputs are missing (see above). Nothing is claimed about the tree.\n' \
+                "$slug" >&2
+        else
+            printf '\nERROR gate: %s FAILED — run just this one with: scripts/gate %s\n' \
+                "$slug" "$slug" >&2
+        fi
+        exit "$rc"
     }
     ELAPSED["$slug"]=$(( SECONDS - start ))
 done
