@@ -3440,8 +3440,25 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # macro, so the codegen-baked port and the in-test recording
     # server's port stay in lockstep — diverging them would fail at
     # the test's parse_endpoint regression check.
-    set(SCE_TEST_CUSTOM_TCP_PORT "55821" CACHE STRING
-        "TCP loopback port for the custom_tcp harness test (IANA dynamic range)")
+    # Every fixed port in this file sits BELOW the kernel's ephemeral
+    # floor, and that is the whole of the collision defence.
+    #
+    # These were in the IANA *dynamic* range (49152-65535), chosen for
+    # being "not a registered service" — which is true and is the wrong
+    # property. Linux hands out 32768-60999 (`ip_local_port_range`) to
+    # every `bind(port 0)`, so a fixed port up there is one the kernel
+    # may give to any sibling test at any moment. `RESOURCE_LOCK`
+    # cannot help: it serialises tests that declare the same lock, and
+    # the competitor here is an ephemeral bind that declares nothing.
+    #
+    # Measured 2026-08-12: `mesh_session_f_crossdev_donedata` failed a
+    # full-suite run on `TransportRouter::init` while its own sibling
+    # workers held 33837/36605/45821 — and all six fixed ports in this
+    # file were in the range, so five of them were unlucky-not-yet
+    # rather than safe. `sce-build/tests/fixed_test_ports.rs` keeps
+    # them out of it.
+    set(SCE_TEST_CUSTOM_TCP_PORT "20821" CACHE STRING
+        "TCP loopback port for the custom_tcp harness test (below the kernel ephemeral floor)")
     # The configured deploy.yaml lives in the build dir, so its `source:`
     # paths must be relative-from-there to the SCXML files in the source
     # tree. (deploy.rs rejects absolute `source:` per the portability
@@ -3523,7 +3540,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
         # Loopback port from SCE_TEST_CUSTOM_TCP_PORT — serialise to
         # avoid bind() collisions when ctest runs in parallel. The lock
         # key includes the port so an override picks a different lock
-        # bucket from the default 55821 (matters when a developer runs
+        # bucket from the default 20821 (matters when a developer runs
         # parallel ctest invocations against different ports).
         RESOURCE_LOCK sce_mesh_custom_tcp_${SCE_TEST_CUSTOM_TCP_PORT})
 
@@ -3538,8 +3555,8 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     # Distinct from SCE_TEST_CUSTOM_TCP_PORT so the two custom_tcp tests
     # can run concurrently; each takes its own RESOURCE_LOCK bucket.
-    set(SCE_TEST_TCP_MULTI_PORT "55831" CACHE STRING
-        "TCP loopback port for the custom_tcp multi-pattern test (IANA dynamic range)")
+    set(SCE_TEST_TCP_MULTI_PORT "20831" CACHE STRING
+        "TCP loopback port for the custom_tcp multi-pattern test (below the kernel ephemeral floor)")
 
     file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
         "${MESH_TCP_MULTI_OUTPUT_DIR}" "${MESH_TEST_DIR}")
@@ -3610,8 +3627,8 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     # Distinct from the two custom_tcp ports above so all three fixtures
     # can run concurrently; each takes its own RESOURCE_LOCK bucket.
-    set(SCE_TEST_TCP_SERVER_DEADLINE_PORT "55841" CACHE STRING
-        "TCP loopback port for the custom_tcp server-deadline test (IANA dynamic range)")
+    set(SCE_TEST_TCP_SERVER_DEADLINE_PORT "20841" CACHE STRING
+        "TCP loopback port for the custom_tcp server-deadline test (below the kernel ephemeral floor)")
 
     file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
         "${MESH_TCP_SERVER_DEADLINE_OUTPUT_DIR}" "${MESH_TEST_DIR}")
@@ -3681,8 +3698,8 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     # Distinct from the custom_tcp ports above so all four fixtures can run
     # concurrently; each takes its own RESOURCE_LOCK bucket.
-    set(SCE_TEST_TCP_MACHINE_LIFETIME_PORT "55851" CACHE STRING
-        "TCP loopback port for the custom_tcp machine-lifetime subscribe test (IANA dynamic range)")
+    set(SCE_TEST_TCP_MACHINE_LIFETIME_PORT "20851" CACHE STRING
+        "TCP loopback port for the custom_tcp machine-lifetime subscribe test (below the kernel ephemeral floor)")
 
     file(RELATIVE_PATH SCE_MESH_TEST_DIR_REL
         "${MESH_TCP_MACHINE_LIFETIME_OUTPUT_DIR}" "${MESH_TEST_DIR}")
@@ -3836,9 +3853,9 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(MESH_CROSSDEV_LIFECYCLE_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_crossdev_lifecycle_generated")
 
-    set(SCE_TEST_CROSSDEV_LIFECYCLE_PORT "55823" CACHE STRING
+    set(SCE_TEST_CROSSDEV_LIFECYCLE_PORT "20823" CACHE STRING
         "Static TCP loopback port the crossdev lifecycle parent Server binds \
-(IANA dynamic range). Override with \
+(below the kernel ephemeral floor). Override with \
 -DSCE_TEST_CROSSDEV_LIFECYCLE_PORT=N when the default collides; \
 RESOURCE_LOCK keys off the value so parallel ctest stays safe.")
 
@@ -3931,9 +3948,9 @@ RESOURCE_LOCK keys off the value so parallel ctest stays safe.")
     set(MESH_CROSSDEV_DONEDATA_OUTPUT_DIR
         "${CMAKE_CURRENT_BINARY_DIR}/mesh_session_f_crossdev_donedata_generated")
 
-    set(SCE_TEST_CROSSDEV_DONEDATA_PORT "55824" CACHE STRING
+    set(SCE_TEST_CROSSDEV_DONEDATA_PORT "20824" CACHE STRING
         "Static TCP loopback port the crossdev donedata parent Server binds \
-(IANA dynamic range). Separate from SCE_TEST_CROSSDEV_LIFECYCLE_PORT so \
+(below the kernel ephemeral floor). Separate from SCE_TEST_CROSSDEV_LIFECYCLE_PORT so \
 parallel ctest runs of the two crossdev fixtures don't serialise; override \
 with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
