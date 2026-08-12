@@ -114,6 +114,55 @@ else()
     message(STATUS "⚠️  lld not found, using default linker (consider: sudo apt install lld)")
 endif()
 
+# =============================================================================
+# Debug information layout - split DWARF
+# =============================================================================
+# Debug info is what this build directory is made of, and the linker copies it
+# into every executable that links a translation unit. Measured 2026-08-12 over
+# the 134 test executables: 4.20 GB of .debug* sections against 0.16 GB of
+# .text. One binary, state_machine_tests, is 106.9 MB of which 100.4 MB is
+# debug info that also sits in every other binary linking the same headers.
+#
+# -gsplit-dwarf leaves .debug_info, .debug_loclists and .debug_str in a .dwo
+# file beside the object instead. The .dwo exists once per translation unit,
+# so the per-binary duplication is what disappears. Measured on three
+# representative targets, same tree, same targets, on a 32-core / 125 GB Linux
+# build machine with gcc 13.3 and lld 18:
+#
+#   executable   106.9 MB -> 72.4 MB   (-32%)
+#   build tree      1.2 GB -> 800 MB   (-33%, .dwo files included)
+#   relink            98 ms -> 74 ms
+#
+# The remaining 66 MB per binary is .debug_gnu_pubnames (26.0) +
+# .debug_gnu_pubtypes (20.3) + .debug_addr (11.1) + .debug_line (8.5). gcc
+# turns those pubname tables on WITH -gsplit-dwarf and -gno-pubnames does not
+# decline them (measured: byte-identical output), so -32% is this toolchain's
+# ceiling rather than a setting left untuned. -Wl,--gdb-index would consume
+# them, but bfd ld rejects that option during CMake's compiler test, which runs
+# before the lld selection above.
+#
+# Applied through add_compile_options rather than CMAKE_CXX_FLAGS on purpose:
+# flags set before project() are also given to CMake's own compiler test, and
+# that is exactly where the --gdb-index attempt died. Here the flag reaches
+# real targets only.
+#
+# Debugging is unaffected as long as the .dwo files stay beside their objects
+# in the build tree, which is where the compiler writes them. gdb reads them
+# through the skeleton unit; a build tree moved without its .dwo files loses
+# variable and type detail, so this is a build-tree setting, not a shipping one.
+option(SCE_SPLIT_DWARF "Keep DWARF in .dwo files instead of copying it into every binary" ON)
+
+if(SCE_SPLIT_DWARF AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-gsplit-dwarf" SCE_HAS_SPLIT_DWARF)
+    if(SCE_HAS_SPLIT_DWARF)
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-gsplit-dwarf>)
+        message(STATUS "✅ Split DWARF enabled (debug info stays in .dwo, ~32% smaller binaries)")
+    else()
+        message(STATUS "⚠️  -gsplit-dwarf not supported by this compiler; debug info stays in the binaries")
+    endif()
+endif()
+
 # Sanitizer options for Debug builds.
 # ThreadSanitizer is a host-native build: `cmake -DENABLE_TSAN=ON` (see
 # scripts/build_tsan.sh). No container is required — TSAN is a compiler
