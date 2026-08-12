@@ -791,18 +791,24 @@ mod tests {
                 "scxml/top-level-script-unloaded",
                 "SemanticTopLevelScriptUnloaded",
             ),
+            // The routing leaf: a root declaring an `sce:kind` this engine
+            // does not run. Reuses `validation/wrong-pipeline`, which the
+            // Rust side already emits from the inverse arm (Forge refusing
+            // a statechart) — so no new wire code, only a second producer
+            // of an existing one.
+            ("validation/wrong-pipeline", "SemanticWrongPipeline"),
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            5,
-            "Expected 5 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 4 REUSED)"
+            6,
+            "Expected 6 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 5 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            5,
-            "Expected 5 distinct SemanticError subtypes"
+            6,
+            "Expected 6 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
