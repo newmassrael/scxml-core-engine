@@ -151,6 +151,33 @@ sce_main_build_dir() {
     fi
 }
 
+# Remove ctest log temporaries that interrupted runs left behind.
+#
+# ctest writes `Testing/Temporary/LastTest.log.tmpNNNNN` while a suite runs and
+# renames it to `LastTest.log` when the suite finishes. So every `.tmp` file
+# still present belongs to a run that was killed — a Ctrl-C, a timeout, a
+# machine that went down — and nothing in this tree ever removed one.
+#
+# Measured 2026-08-12: 40 orphans totalling 774 MB in `build/Testing`, all from
+# a single day in April, one of them 652 MB on its own. A completed run's log
+# is 1 MB; the 652 MB one had been running at spdlog debug level. The size is
+# incidental — the unbounded part is that the count only ever goes up.
+#
+# Age, not mere existence: a suite running right now owns a fresh `.tmp`, and
+# deleting that would corrupt a concurrent gate's log. The threshold is far
+# longer than any suite here (the longest measured is 437s), so a live run is
+# never a candidate.
+sce_prune_ctest_temporaries() {
+    local dir="$1/Testing/Temporary"
+    [[ -d "$dir" ]] || return 0
+    local pruned
+    pruned="$(find "$dir" -maxdepth 1 -name 'LastTest.log.tmp*' -mmin +60 -print -delete 2>/dev/null | wc -l)"
+    if (( pruned > 0 )); then
+        sce_gate_step "pruned $pruned ctest log(s) left by interrupted runs"
+    fi
+    return 0
+}
+
 # Refuse to run when something already holds 8080.
 #
 # The C++ conformance suite reports 13 of its cases Not Run when the fixture
