@@ -1,0 +1,76 @@
+# Mutation cases for "the backends a --language flag documents are the
+# backends it serves".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/cli_language_surface.cases`.
+#
+# The defect these stand for was live on four of seven routes at once, in both
+# directions: `generate-w3c` documented `c11` and answered exit 20, and hid
+# `python`, which generates all 202 fixtures. So the gate has to fail on a
+# route that over-declares, on one that under-declares, on a dispatcher that
+# quietly stops serving something its help still names, on a candidate list
+# that stops being the route's own, on help that carries no menu at all, and
+# on its own scan going quiet — that last one because the menu is parsed by
+# shape out of help text, and a scan that matches nothing prints the same
+# green as a clean run.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test cli_language_surface
+# `cli_language.rs` is linked into the test binary (the test reads
+# `LanguageRoute::ALL` to check route coverage) and is also compiled into the
+# CLI, which renders help from it. `sce_codegen.rs` is not linked: the test
+# drives the CLI as a subprocess, so its dispatcher is executed rather than
+# linked, and the evidence a mutation reached what ran is the file differing
+# on disk while the tests ran.
+mutation_targets sce-build/src/cli_language.rs \
+                 sce-build/tests/cli_language_surface.rs
+mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+
+mutation_case "the batch suite documents the backend it has no emitter for" <<'PY'
+edit("sce-build/src/cli_language.rs",
+     "            LanguageRoute::GenerateW3c => &[\n                Language::Rust,\n                Language::Cpp,\n                Language::Kotlin,\n                Language::Go,\n                Language::Python,\n            ],",
+     "            LanguageRoute::GenerateW3c => Language::ALL,")
+PY
+
+mutation_case "a route hides a backend it serves" <<'PY'
+edit("sce-build/src/cli_language.rs",
+     "            | LanguageRoute::GenerateConformance\n            | LanguageRoute::ListFixtures => Language::ALL,",
+     "            | LanguageRoute::ListFixtures => Language::ALL,\n            LanguageRoute::GenerateConformance => &[\n                Language::Rust,\n                Language::Cpp,\n                Language::Kotlin,\n                Language::Go,\n                Language::Python,\n            ],")
+PY
+
+mutation_case "the dispatcher stops serving a backend its help still names" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     '        Language::Python => "_python",\n',
+     '')
+PY
+
+mutation_case "the refusal offers every backend instead of the route's own" <<'PY'
+edit("sce-build/src/cli_language.rs",
+     "    pub fn candidates(self) -> Vec<String> {\n        self.languages()",
+     "    pub fn candidates(self) -> Vec<String> {\n        Language::ALL")
+PY
+
+mutation_case "the flag's help stops carrying a menu" <<'PY'
+edit("sce-build/src/cli_language.rs",
+     '        format!("{lead} ({}).", self.menu())',
+     '        format!("{lead}.")')
+PY
+
+mutation_case "a restricted route stops saying why it is restricted" <<'PY'
+edit("sce-build/src/cli_language.rs",
+     '            LanguageRoute::GenerateIntegration => Some(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate",\n            ),',
+     '            LanguageRoute::GenerateIntegration => None,')
+PY
+
+mutation_case "the scan finds no menus and reports success anyway" <<'PY'
+edit("sce-build/tests/cli_language_surface.rs",
+     r'\(([a-z0-9]+(?:, [a-z0-9]+)+)\)',
+     r'\[([a-z0-9]+(?:; [a-z0-9]+)+)\]')
+PY
+
+mutation_case "a served backend is classified from prose instead of the wire code" <<'PY'
+edit("sce-build/tests/cli_language_surface.rs",
+     'if code != "cli/unknown-language" && code != "cli/unsupported-language" {',
+     'if code != "cli/unknown-language" {')
+PY

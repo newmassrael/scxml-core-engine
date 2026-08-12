@@ -12181,15 +12181,21 @@ mod tests {
                 "cli/unknown-language",
                 CliError::UnknownLanguage {
                     lang: "ruby".into(),
+                    // A route with a restricted menu, so the golden pins
+                    // that the candidates are the *route's* set rather
+                    // than every backend the enum has: offering `c11`
+                    // here would be a repair that fails again.
+                    route: crate::cli_language::LanguageRoute::GenerateW3c,
                 },
-                r#"{"v":1,"id":"fnv1a:0b7cd966f5ada566","code":"cli/unknown-language","stage":"cli","message":"Unknown language: ruby. Use rust, cpp, kotlin, or go.","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go"]}}"#,
+                r#"{"v":1,"id":"fnv1a:9ddf2f566ce27ec2","code":"cli/unknown-language","stage":"cli","message":"Unknown language: ruby. `generate-w3c` takes rust, cpp, kotlin, go, python.","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go","python"]}}"#,
             ),
             (
                 "cli/unsupported-language",
                 CliError::UnsupportedLanguage {
-                    lang: "Python statechart".into(),
+                    lang: "c11".into(),
+                    route: crate::cli_language::LanguageRoute::GenerateW3c,
                 },
-                r#"{"v":1,"id":"fnv1a:d4b360b4aec82aca","code":"cli/unsupported-language","stage":"cli","message":"Python statechart codegen is not yet supported","actual":"Python statechart"}"#,
+                r#"{"v":1,"id":"fnv1a:d4ef6ce0e63e47bc","code":"cli/unsupported-language","stage":"cli","message":"`generate-w3c` does not target c11. It takes rust, cpp, kotlin, go, python — C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); single-document `generate -l c11` uses a different emitter and does work","actual":"c11","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go","python"]}}"#,
             ),
             (
                 "cli/read-input",
