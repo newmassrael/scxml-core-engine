@@ -210,8 +210,25 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                         }
                     }
                 } else {
-                    // Normal state - add to configuration
-                    addStateToConfiguration(initialChild);
+                    // Reflect what the region actually entered.
+                    //
+                    // `ConcurrentRegion::enterInitialState` has already
+                    // descended this region — a region root whose initial child
+                    // is itself compound is entered all the way to a leaf.
+                    // Naming only the initial child here recomputed one level
+                    // of that descent and stopped, so a region three levels
+                    // deep reached the configuration without its leaf while the
+                    // region's own view had it: two bookkeepers, one of them
+                    // wrong, for a configuration the specification defines
+                    // once.
+                    const auto entered = region->getActiveStates();
+                    if (entered.empty()) {
+                        addStateToConfiguration(initialChild);
+                    } else {
+                        for (const auto &enteredState : entered) {
+                            addStateToConfiguration(enteredState);
+                        }
+                    }
                 }
 
                 // §scxml-6.4: Invoke defer is handled by ConcurrentRegion via callback

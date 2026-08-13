@@ -1,0 +1,79 @@
+# Mutation cases for W3C SCXML 3.4 — every region of a `<parallel>` takes its
+# own enabled transition, and a region is found at whatever depth it rests.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/parallel_region_transition_domain.cases`.
+#
+# The three defects below were live in this tree on 2026-08-13 and none of them
+# produced a build error, a warning, or a failing test. What they produced was a
+# `<parallel>` whose region silently stopped: no active leaf, no transition
+# content executed, and every existing suite still green — the W3C parallel
+# fixtures are all one level deep and reach their regions through the eventless
+# path, so nothing in them sampled either condition.
+#
+# Each case restores one of those defects verbatim. A case that SURVIVES means
+# the gate that replaced it is decorative.
+
+mutation_ctest --test-dir build -R '^(StatesTests|IntegrationTests)$'
+mutation_targets sce/include/core/HierarchicalStateHelper.h sce/src/states/ConcurrentRegion.cpp
+mutation_targets sce/src/runtime/StateHierarchyManager.cpp
+
+# ── The domain of a self-transition ────────────────────────────────
+#
+# §scxml-D-findLCCA chooses among `getProperAncestors`, which excludes the
+# state itself. Answering with the state is the textbook "least common
+# ancestor" and the wrong procedure: `computeExitSet` climbs from the source
+# until it reaches the state just below the domain, so a source that is its own
+# domain leaves that walk with no stopping point. It runs to the document root,
+# the exit set names the enclosing `<parallel>`, and conflict resolution
+# preempts the sibling regions' transitions on the same event.
+
+mutation_case "a self-transition is its own transition domain" <<'PY'
+edit("sce/include/core/HierarchicalStateHelper.h",
+     "        if (state1 == state2) {\n            return getParent(state1);\n        }",
+     "        if (state1 == state2) {\n            return state1;\n        }")
+PY
+
+# ── Finding the region's active state ──────────────────────────────
+#
+# A region's active state is a direct child of the region root only when that
+# child is atomic. Searching one level down leaves a deeper region unable to
+# locate its own active state, so no transition in it is ever enabled — the
+# region sits still while its siblings move, and the engine logs nothing worse
+# than "No enabled transitions found".
+
+mutation_case "a region looks for its active state only among direct children" <<'PY'
+edit("sce/src/states/ConcurrentRegion.cpp",
+     "        std::shared_ptr<IStateNode> stateNode = findStateInRegion(rootState_, currentState_);",
+     """        std::shared_ptr<IStateNode> stateNode = nullptr;
+        if (currentState_ == rootState_->getId()) {
+            stateNode = rootState_;
+        } else {
+            for (const auto &child : rootState_->getChildren()) {
+                if (child->getId() == currentState_) {
+                    stateNode = child;
+                    break;
+                }
+            }
+        }""")
+PY
+
+# ── Reflecting what the region entered ─────────────────────────────
+#
+# `ConcurrentRegion::enterInitialState` descends the region to a leaf.
+# Recomputing one level of that descent here and stopping puts a three-level
+# region into the configuration without its leaf, so `In()` and every
+# configuration query disagree with the region's own view of itself.
+
+mutation_case "the configuration recomputes one level of the region's descent" <<'PY'
+edit("sce/src/runtime/StateHierarchyManager.cpp",
+     """                    const auto entered = region->getActiveStates();
+                    if (entered.empty()) {
+                        addStateToConfiguration(initialChild);
+                    } else {
+                        for (const auto &enteredState : entered) {
+                            addStateToConfiguration(enteredState);
+                        }
+                    }""",
+     "                    addStateToConfiguration(initialChild);")
+PY

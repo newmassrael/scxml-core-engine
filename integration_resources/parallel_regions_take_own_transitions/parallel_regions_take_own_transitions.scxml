@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 3.4: when one event enables a transition in more than one region of
+  a `<parallel>`, every region takes its own transition in the same microstep.
+
+  The shape that matters here is the asymmetry, because a symmetric one passes
+  under a wrong exit set as readily as under a right one:
+
+    - `budget`'s transition on `e` is an *external self-transition*. Appendix D
+      resolves its domain through `findLCCA`, and `getProperAncestors` excludes
+      the state itself, so the domain is `budget` and the exit set is `{within}`.
+      Answering `within` instead leaves the "climb from source to just below the
+      domain" walk with no stopping point: it runs to the document root, and the
+      exit set then names the enclosing `<parallel>`.
+    - `drive`'s transition on `e` starts one level deeper. An exit set that
+      names `run` swallows it during conflict resolution, so `drive` loses its
+      leaf and its `<assign>` never runs.
+
+  The document decides its own verdict rather than leaving it to the host: only
+  `check` carries the machine to `settled`, and only when both regions'
+  assignments actually ran. A harness that merely looked at the configuration
+  could still be fooled by a region that moved without executing its content.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_regions_take_own_transitions" datamodel="ecmascript" initial="run">
+
+  <datamodel>
+    <data id="n" expr="0"/>
+    <data id="m" expr="0"/>
+  </datamodel>
+
+  <parallel id="run">
+
+    <!-- The deeper region: run > drive > running > working. -->
+    <state id="drive" initial="running">
+      <state id="running" initial="working">
+        <state id="working">
+          <transition event="e" target="judging">
+            <assign location="n" expr="n + 1"/>
+          </transition>
+        </state>
+        <state id="judging">
+          <transition event="check" cond="n == 1 &amp;&amp; m == 1" target="settled"/>
+        </state>
+        <state id="settled"/>
+      </state>
+    </state>
+
+    <!-- The shallower region, whose transition on the same event is an
+         external self-transition. -->
+    <state id="budget" initial="within">
+      <state id="within">
+        <transition event="e" target="within">
+          <assign location="m" expr="m + 1"/>
+        </transition>
+      </state>
+    </state>
+
+  </parallel>
+</scxml>
