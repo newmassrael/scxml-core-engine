@@ -122,7 +122,7 @@ function(sce_add_state_machine)
     set(_SCE_DEPFILE "${GENERATED_OUTPUT}.d")
 
     # Build codegen command with optional template dir (installed package scenario)
-    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
+    set(_SCE_CODEGEN_CMD ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate
         "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
         -l "${SCE_LANGUAGE}"
         --write-deps "${_SCE_DEPFILE}")
@@ -290,7 +290,7 @@ function(sce_create_state_machine_library)
 
     # Build codegen command with optional template dir (installed package scenario)
     set(_SCE_DEPFILE "${GENERATED_HEADER}.d")
-    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
+    set(_SCE_CODEGEN_CMD ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate
         "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
         --write-deps "${_SCE_DEPFILE}")
     if(SCE_TEMPLATE_DIR)

@@ -1275,14 +1275,49 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
                 std::string subScxml = static_cast<SCE::W3C::TXMLConverter *>(converter_.get())
                                            ->convertTXMLToSCXMLWithoutValidation(subTxml);
 
-                // Write converted SCXML file
+                // Write the converted SCXML only when it differs from what is
+                // already there.
+                //
+                // This writes into `resources/<N>/`, which is the TRACKED
+                // source tree, and the conversion is deterministic — the
+                // result equals the committed file every time. Writing it
+                // unconditionally therefore changed nothing but the mtime,
+                // and that was not free: the generated `.d` depfiles list
+                // these documents as inputs, so one test run left eight
+                // generation rules permanently dirty. Every subsequent build
+                // regenerated and relinked, and the relinked binary differed
+                // (measured 2026-08-13: 40 bytes, in `.debug_info` and the
+                // build-id derived from it) even though every object file was
+                // byte-identical.
+                //
+                // The cost of that was a check nobody could run: the second
+                // question `scripts/mutate` asks is "did restoring the source
+                // restore the binaries", and for any ctest target reached
+                // through this runner the answer was permanently no — so
+                // mutation evidence there was unavailable rather than merely
+                // unpinned.
                 std::filesystem::path scxmlPath = entry.path();
                 scxmlPath.replace_extension(".scxml");
-                std::ofstream scxmlFile(scxmlPath);
-                scxmlFile << subScxml;
 
-                SCE_LOG_DEBUG("W3C Test {}: Converted sub-file {} to {}", report.testId, filename,
-                              scxmlPath.filename().string());
+                bool identical = false;
+                {
+                    std::ifstream existing(scxmlPath);
+                    if (existing) {
+                        const std::string current((std::istreambuf_iterator<char>(existing)),
+                                                  std::istreambuf_iterator<char>());
+                        identical = (current == subScxml);
+                    }
+                }
+
+                if (identical) {
+                    SCE_LOG_DEBUG("W3C Test {}: Sub-file {} already matches its conversion, leaving it alone",
+                                  report.testId, filename);
+                } else {
+                    std::ofstream scxmlFile(scxmlPath);
+                    scxmlFile << subScxml;
+                    SCE_LOG_DEBUG("W3C Test {}: Converted sub-file {} to {}", report.testId, filename,
+                                  scxmlPath.filename().string());
+                }
             }
         }
 

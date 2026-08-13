@@ -172,7 +172,7 @@ foreach(fixture IN LISTS FIXTURES)
     endif()
     add_custom_command(
         OUTPUT ${_outputs}
-        COMMAND "${SCE_CODEGEN}" generate "${scxml}"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${scxml}"
                 --language cpp
                 --output-dir "${GENERATED_DIR}"
                 --write-deps "${GENERATED_DIR}/${fixture}.h.d"
@@ -195,7 +195,7 @@ endforeach()
 set(HARNESS_SRC "${GENERATED_DIR}/numerical_conformance_test.cpp")
 add_custom_command(
     OUTPUT "${HARNESS_SRC}"
-    COMMAND "${SCE_CODEGEN}" generate-conformance
+    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate-conformance
             --language cpp
             --manifest "${FIXTURE_MANIFEST}"
             --output-dir "${GENERATED_DIR}"

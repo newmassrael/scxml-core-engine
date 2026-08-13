@@ -57,6 +57,33 @@ if(NOT SCE_CODEGEN)
         "cargo build --bin sce-codegen --features cli -p sce-build")
 endif()
 
+# ── Generation is reproducible ────────────────────────────────────────
+#
+# Every emitted file carries a `generated-at` header, and it defaults to
+# wall-clock seconds. Spec line 3505 calls it informational — it feeds
+# neither the source-hash nor the template-hash — but it is still bytes in
+# a compiled translation unit, so the build was not reproducible: measured
+# 2026-08-13, a no-op `cmake --build build --target w3c_test_cli` produced
+# a different binary (6a7d888e… → 6667bde9…) with no source changed.
+#
+# `sce-codegen` already implements the reproducible-builds convention
+# (`now_utc_seconds` honours SOURCE_DATE_EPOCH), and the committed trees
+# already pin it to 0 through `regen_all_committed_trees.sh`. This is the
+# same pin for build-time generation, so the two agree.
+#
+# What it cost while missing was not a wrong build — the field is a
+# comment — but a check nobody could run: `scripts/mutate`'s second
+# question is "did restoring the source restore the binaries", and against
+# any ctest target that compiles generated W3C sources the answer was
+# permanently no. A harness that cannot verify its own restore reports
+# every case as INCONCLUSIVE, so the mutation evidence for those targets
+# was unavailable rather than merely unpinned.
+#
+# A prefix rather than a redefinition of SCE_CODEGEN: that variable is also
+# a `DEPENDS` file path and an `install(PROGRAMS)` argument, and a list
+# would break both.
+set(SCE_CODEGEN_ENV ${CMAKE_COMMAND} -E env "SOURCE_DATE_EPOCH=0")
+
 # ── The generator's age ───────────────────────────────────────────────
 #
 # Finding the binary is not the same as finding the right one, and until
