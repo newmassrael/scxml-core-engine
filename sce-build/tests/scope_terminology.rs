@@ -185,6 +185,53 @@ fn term_lines(body: &str) -> Vec<usize> {
     hits
 }
 
+/// Does one `EXEMPT_PREFIXES` entry cover this repo-relative path?
+///
+/// A trailing `/` is what separates the two kinds of entry: with one, the
+/// entry covers a directory and everything beneath it; without one, it
+/// names a single file and covers only that file.
+///
+/// Extracted rather than written inline for the same reason `term_lines`
+/// is: the tree cannot demonstrate it. Every entry in the table today is a
+/// directory, so the file branch is unreachable from the sweep and would
+/// ship unexercised — and an exemption rule that is never exercised is one
+/// nobody can tell from a rule that exempts everything.
+fn exemption_covers(prefix: &str, rel: &str) -> bool {
+    if prefix.ends_with('/') {
+        rel.starts_with(prefix)
+    } else {
+        rel == prefix
+    }
+}
+
+/// A file entry covers itself and stops there; a directory entry reaches
+/// its descendants.
+///
+/// The pair matters in one specific direction: under the previous rule the
+/// only expressible entry was a directory, so exempting one file meant
+/// exempting its siblings too. `first.rs` below is the case that could not
+/// be said before — and `second.rs` is the sibling that must stay covered
+/// by the sweep, which is the whole point.
+#[test]
+fn a_file_exemption_does_not_reach_its_siblings() {
+    assert!(exemption_covers("a/b/first.rs", "a/b/first.rs"));
+    assert!(!exemption_covers("a/b/first.rs", "a/b/second.rs"));
+    // Not a prefix match in disguise: a longer path that merely starts
+    // with the entry's bytes is a different file.
+    assert!(!exemption_covers("a/b/first.rs", "a/b/first.rs.bak"));
+    // And a file entry never opens a directory of the same stem.
+    assert!(!exemption_covers("a/b/first", "a/b/first/inner.rs"));
+
+    assert!(exemption_covers("a/b/", "a/b/first.rs"));
+    assert!(exemption_covers("a/b/", "a/b/deeper/third.rs"));
+    assert!(!exemption_covers("a/b/", "a/c/fourth.rs"));
+    // The trailing slash is load-bearing: without it this would match
+    // `a/bc/` as well, which is the accidental sibling coverage the
+    // trailing-`/` requirement was originally written to prevent and
+    // which exact matching now prevents properly.
+    assert!(!exemption_covers("a/b/", "a/bc/fifth.rs"));
+}
+
 #[test]
 fn sce_does_not_name_its_readers() {
     let root = repo_root();
@@ -214,7 +261,7 @@ fn sce_does_not_name_its_readers() {
         }
         if let Some(prefix) = EXEMPT_PREFIXES
             .iter()
-            .find(|(p, _)| rel.starts_with(p))
+            .find(|(p, _)| exemption_covers(p, &rel))
             .map(|(p, _)| *p)
         {
             exempt_prefixes_seen.insert(prefix);
@@ -261,9 +308,24 @@ fn sce_does_not_name_its_readers() {
 /// Every exemption states a reason, and the reason is a sentence rather
 /// than a placeholder.
 ///
-/// The prefix list is the one place a reader learns why a directory is
-/// allowed to differ. `feedback_capability_lists_in_prose_drift` is the
-/// failure this avoids: a claim nothing checks decays into a label.
+/// The table is the one place a reader learns why a path is allowed to
+/// differ. `feedback_capability_lists_in_prose_drift` is the failure this
+/// avoids: a claim nothing checks decays into a label.
+///
+/// An entry names either a directory (trailing `/`) or one file (no
+/// trailing `/`), and both are checked to exist. The rule used to demand
+/// the trailing `/` outright, so that an entry "cannot match a sibling
+/// file by accident" — but exact path equality serves that purpose
+/// strictly better, and demanding the slash inverted the intent: the only
+/// way to excuse a single file was to excuse its whole directory, which
+/// is precisely the accidental sibling coverage the rule was written to
+/// prevent. One file under `tests/` would have exempted every driver
+/// beside it.
+///
+/// Existence is asserted because a mistyped entry is silent otherwise: it
+/// exempts nothing, and the sweep's own staleness check would then report
+/// it as an exemption covering nothing — a message about a dead entry,
+/// for what is really a typo.
 #[test]
 fn every_exemption_states_why() {
     assert!(
@@ -271,17 +333,71 @@ fn every_exemption_states_why() {
         "the exemption table is empty — either the reverse check above \
          is now unreachable or the table was dropped by accident"
     );
+    let root = repo_root();
     for (prefix, reason) in EXEMPT_PREFIXES {
         assert!(
             reason.len() > 60,
             "exemption for {prefix:?} has no real reason: {reason:?}"
         );
-        assert!(
-            prefix.ends_with('/'),
-            "exemption {prefix:?} must be a directory prefix ending in \
-             `/`, so it cannot match a sibling file by accident"
+        assert_eq!(
+            exemption_resolves(&root, prefix),
+            Ok(()),
+            "exemption {prefix:?} does not resolve"
         );
     }
+}
+
+/// Does the entry name something that is actually there?
+///
+/// Split out so it can be asked about a path that is deliberately wrong,
+/// which the table itself can never supply: a const cannot be given a
+/// typo at test time, so the check would otherwise be asserted only
+/// against entries that already pass and would keep passing if it were
+/// deleted.
+fn exemption_resolves(root: &Path, prefix: &str) -> Result<(), String> {
+    let target = root.join(prefix.trim_end_matches('/'));
+    if prefix.ends_with('/') {
+        if target.is_dir() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{prefix:?} ends in `/` so it names a directory, but \
+                 {target:?} is not one — an entry that resolves to nothing \
+                 exempts nothing, silently"
+            ))
+        }
+    } else if target.is_file() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{prefix:?} has no trailing `/` so it names one file, but \
+             {target:?} is not one — add the `/` to cover a directory, or \
+             correct the path"
+        ))
+    }
+}
+
+/// A mistyped entry is refused rather than quietly exempting nothing.
+///
+/// Without this the existence check is unfalsifiable: every entry in the
+/// table resolves, so deleting the check changes no verdict. The two
+/// wrong-kind cases are here because they are the likely mistakes — a
+/// directory written without its slash, and a file written with one.
+#[test]
+fn an_exemption_that_resolves_to_nothing_is_refused() {
+    let root = repo_root();
+
+    assert!(exemption_resolves(&root, "docs/adr/").is_ok());
+    assert!(exemption_resolves(&root, "sce-build/tests/scope_terminology.rs").is_ok());
+
+    // Neither kind of typo passes.
+    assert!(exemption_resolves(&root, "docs/adr-does-not-exist/").is_err());
+    assert!(exemption_resolves(&root, "sce-build/tests/not_a_real_test.rs").is_err());
+
+    // A directory named as a file, and a file named as a directory: both
+    // resolve to something on disk, so only the kind check rejects them.
+    assert!(exemption_resolves(&root, "docs/adr").is_err());
+    assert!(exemption_resolves(&root, "sce-build/tests/scope_terminology.rs/").is_err());
 }
 
 /// The matcher recognises the term and nothing that merely contains it.
