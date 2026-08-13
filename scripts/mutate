@@ -51,6 +51,28 @@
 #     mutation_ctest --test-dir build -R '^SceKindRouting'
 #     mutation_targets sce/src/parser/SCXMLParser.cpp
 #
+# ── Where this runs, and why that is a decision ────────────────────
+#
+# Locally, always. This script calls `cargo`, `cmake` and `ctest` directly and
+# never goes through `~/.claude/remote-build/bin/bx`, so no placement decision
+# is made for it — which is worth saying out loud, because a mutation round is
+# a full rebuild plus a suite run and is among the heaviest things this
+# repository does.
+#
+# Local is nevertheless the right answer, for reasons that are properties of
+# the harness rather than of any machine:
+#   - it needs the CONFIGURED build tree, and `build/` is excluded from the
+#     transfer that populates a build machine;
+#   - it EDITS FILES IN PLACE and owns restoring them. Splitting the tree from
+#     the restore is how a mutation survives a round — this harness was fixed
+#     once for exactly that (`mutation_harness_did_not_own_its_restore`);
+#   - a round is edit → rebuild → run → restore, repeated per case, so the
+#     transfer would be paid on every case rather than once.
+#
+# Stated here so it stays a decision. The failure mode it guards against is
+# the ordinary one: a choice nothing writes down is never re-examined, which
+# is the same reason `bx --local` now demands a sentence.
+#
 # The two runners are not two procedures. Both answers this harness exists to
 # give — did the mutation reach what ran, and did the same tests run — are
 # asked of every runner, from the same three operations: resolve the artifacts

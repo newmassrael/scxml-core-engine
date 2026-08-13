@@ -33,6 +33,7 @@
 #include "core/LogMacros.h"
 #include "core/StatePolicyConcepts.h"
 #include "events/EventDescriptor.h"
+#include <algorithm>
 #include <any>
 #include <chrono>
 #include <cstdint>
@@ -474,13 +475,67 @@ private:
             handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
                                          [this] { policy_.executeTransitionActions(*this); });
         }
-        // W3C SCXML Appendix D: a parallel policy needs nothing here —
+        // W3C SCXML Appendix D: a parallel policy needs no exit/entry here —
         // `executeMicrostep` has already exited, run the transition content and
         // entered. See this function's contract above for why adding to it
-        // costs a region its leaf.
+        // costs a region its leaf. What it does not do is settle
+        // `currentState_`, which is the next statement's job.
+        else {
+            resolveCurrentStateToLeaf();
+        }
         postTransition();
         checkEventlessTransitions();
         return true;
+    }
+
+    /**
+     * @brief Settle `currentState_` on an atomic state
+     *
+     * `executeMicrostep` leaves `currentState_` on the last transition target
+     * it processed, and a target may be a compound state. The configuration is
+     * then right and this one field is not: `getCurrentState()` names a state
+     * the machine is *within* rather than the atomic state it is *in*.
+     *
+     * Measured 2026-08-13 on a two-region `<parallel>` whose transition
+     * targets a compound state: the active set was
+     * `[run | counter | drive | within | outer | a]` and `getCurrentState()`
+     * answered `outer`. `sce_rust_runtime`'s `resolve_current_state_to_leaf`
+     * and the Go engine's `resolveCurrentStateToLeaf` both answer `a`, so C++
+     * was the one backend of three disagreeing on a public accessor that 105
+     * files in this repository read.
+     *
+     * The descent reads the CONFIGURATION rather than recomputing initial or
+     * history children, which the other two backends do. That is deliberate:
+     * `activeStates_` is what the microstep actually entered, so a descent
+     * through it cannot disagree with what happened. Recomputing can — the
+     * generated microstep builds its entry chain from plain initial children
+     * while `getInitialOrHistoryChild` is history-aware, and the two answers
+     * part company exactly when a `<history>` is involved.
+     */
+    void resolveCurrentStateToLeaf() {
+        // A region holds one atomic state, so this descends once per level.
+        // The bound is a cycle guard, not a depth policy: a parent chain that
+        // loops would otherwise hang here rather than report anything.
+        constexpr int MAX_DESCENTS = 50;
+        const std::vector<State> active = getActiveStates();
+        for (int depth = 0; depth < MAX_DESCENTS; ++depth) {
+            if (!StatePolicy::isCompoundState(currentState_)) {
+                return;
+            }
+            const auto child = std::find_if(active.begin(), active.end(), [this](State candidate) {
+                const auto parent = StatePolicy::getParent(candidate);
+                return parent.has_value() && parent.value() == currentState_;
+            });
+            // A compound state with no active child is not a configuration
+            // this can repair, so it is left as it is rather than guessed at.
+            if (child == active.end()) {
+                return;
+            }
+            currentState_ = *child;
+        }
+        SCE_LOG_ERROR("AOT resolveCurrentStateToLeaf: exceeded {} descents from a compound state — "
+                      "the parent chain does not terminate",
+                      MAX_DESCENTS);
     }
 
     /**

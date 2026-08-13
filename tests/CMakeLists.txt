@@ -528,6 +528,7 @@ add_executable(integration_tests
     integration/ParallelRegionsTakeOwnTransitionsTest.cpp
     integration/ParallelRegionsTakeOwnTransitionsAotTest.cpp
     integration/AiLoopAotTest.cpp
+    integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
     integration/SendParamPayloadTest.cpp
@@ -971,6 +972,22 @@ target_include_directories(integration_tests PRIVATE ${STATIC_INTEGRATION_OUTPUT
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml
+)
+
+# W3C SCXML 3.4: `getCurrentState()` names an atomic state in a parallel
+# machine. Its fixture sits beside the test rather than under
+# `integration_resources/`, and that is a decision rather than an oversight:
+# a stem there is a seven-channel commitment (19 sites, enforced by
+# `integration_stem_registration.rs`), and the clause it pins is already
+# honoured by the Rust and Go engines — `resolve_current_state_to_leaf` and
+# `resolveCurrentStateToLeaf` respectively. Committing generated trees to six
+# backends to re-ask a question five of them answer correctly would advertise
+# coverage nobody needed. The convention followed instead is
+# `tests/api/timer_test.scxml`: the document lives next to the test that
+# compiles it.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/parallel_current_state.scxml
 )
 
 # ── W3C test registrations, derived from the conformance registry ──
