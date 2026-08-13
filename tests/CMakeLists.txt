@@ -527,6 +527,7 @@ add_executable(integration_tests
     integration/NestedFinalNotTerminalAotTest.cpp
     integration/ParallelRegionsTakeOwnTransitionsTest.cpp
     integration/ParallelRegionsTakeOwnTransitionsAotTest.cpp
+    integration/AiLoopAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
     integration/SendParamPayloadTest.cpp
@@ -946,6 +947,31 @@ sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUT
 # headers are known so Ninja schedules codegen before compilation.
 target_sources(integration_tests PRIVATE ${GENERATED_INTEGRATION_HEADERS})
 target_include_directories(integration_tests PRIVATE ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# The AI supervision loop is the one integration fixture whose canonical
+# document lives under `examples/` rather than `integration_resources/`, so it
+# is generated directly rather than through
+# `sce_generate_static_integration_test`. That is deliberate on both counts.
+#
+# It stays an example because its value is being readable: it is the worked
+# answer to "what does a statechart supervising a long-running session look
+# like", and a reader finds it under examples/. And it stays out of the stem
+# contract in docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md because that contract
+# commits a fixture to all seven backend channels off ONE canonical document,
+# while this document is deliberately asked in two channels only — here and
+# `backends/rust/tests/tests/ai_loop.rs`. Two engines are what the clauses need
+# (a topology change only one of them honours fails on the other); committing
+# generated trees for the other five would advertise coverage nobody asked for.
+#
+# Why the assertions are here and not in the example's own driver: the driver
+# checks the OUTCOME of four scripted runs, and an outcome cannot see a
+# configuration. Measured 2026-08-13 — deleting the shared history filter
+# outright left all four of its scenarios green. The per-clause questions are
+# about configurations, so they live with the rest of the integration suite.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/examples/ai_loop/ai_loop.scxml
+)
 
 # ── W3C test registrations, derived from the conformance registry ──
 #
