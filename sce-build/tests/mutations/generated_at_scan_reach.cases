@@ -1,0 +1,52 @@
+# Mutation cases for the `generated-at` pin scan — every committed generated
+# tree is watched, not only the ones someone remembered to list.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/generated_at_scan_reach.cases`.
+#
+# The roots this test iterates were incomplete until 2026-08-13: Go and Kotlin
+# had their W3C `generated` trees listed and their `integration` trees not.
+# The omission was not theoretical. Adding one integration stem with the
+# per-stem regen scripts — which do not export `SOURCE_DATE_EPOCH`, only
+# `regen_all_committed_trees.sh` does — left a wall-clock stamp in the Rust,
+# Go and Kotlin outputs, and this test reported exactly one of the three.
+#
+# Widening was green on the spot, because all 64 existing integration files
+# were already pinned. So the thing the gap cost was never a dirty tree; it was
+# the guarantee. That is precisely the shape a coverage claim hides behind, and
+# the reason each root needs a case rather than a count.
+#
+# A case that SURVIVES here means that backend's integration tree is unwatched.
+
+mutation_tests -p sce-build --features cli --test b9_drift_detection
+
+# Read at run time, not compiled in: the test walks these files from disk, so
+# the `sce-build` test binary cannot change when one of them does. Declared as
+# compiled targets every case below would be INCONCLUSIVE by construction.
+mutation_runtime_targets backends/go/tests/integration/parallel_done_state_is_delivered/parallel_done_state_is_delivered_sm.go
+mutation_runtime_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_done_state_is_delivered/parallel_done_state_is_deliveredSm.kt
+
+# ── Go's integration tree ──────────────────────────────────────────
+#
+# The exact value this file carried before it was regenerated with the epoch
+# exported. An unpinned regeneration rewrites every file with a fresh
+# wall-clock stamp, so the diff reads as churn and hides any real change in it.
+
+mutation_case "an unpinned stamp in the go integration tree" <<'PY'
+edit("backends/go/tests/integration/parallel_done_state_is_delivered/parallel_done_state_is_delivered_sm.go",
+     "generated-at: 0",
+     "generated-at: 1786624467")
+PY
+
+# ── Kotlin's integration tree ──────────────────────────────────────
+#
+# Same stamp, same round, different backend — and the reason both get a case
+# rather than one standing for the other: they were two separate missing
+# entries in the root list, and a single case would leave whichever root it did
+# not touch exactly as unproven as it was before.
+
+mutation_case "an unpinned stamp in the kotlin integration tree" <<'PY'
+edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_done_state_is_delivered/parallel_done_state_is_deliveredSm.kt",
+     "generated-at: 0",
+     "generated-at: 1786624467")
+PY

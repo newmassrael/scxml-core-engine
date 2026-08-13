@@ -837,11 +837,25 @@ fn generate_hashes_a_symlinked_input_rather_than_the_empty_digest() {
 #[test]
 fn committed_trees_carry_a_pinned_generated_at() {
     let workspace = workspace_root();
+    // Both trees per backend that commits one. The integration roots for Go
+    // and Kotlin were missing until 2026-08-13, and the omission was not
+    // theoretical: adding one stem with a per-stem regen script — which does
+    // not export `SOURCE_DATE_EPOCH`, only the master script does — left
+    // wall-clock stamps in all three of its Rust, Go and Kotlin trees, and
+    // this test reported exactly one of them. The Rust file was caught
+    // because `backends/rust/tests/src/integration` was listed; its Go and
+    // Kotlin siblings sat in roots nothing scanned.
+    //
+    // Adding them was green on the spot — all 64 existing integration files
+    // were already pinned — so what the gap cost was not a dirty tree but the
+    // guarantee: two thirds of a stem's committed output was unwatched.
     let roots = [
         "backends/rust/tests/src/generated",
         "backends/rust/tests/src/integration",
         "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
+        "backends/kotlin/tests/src/main/kotlin/com/sce/integration",
         "backends/go/tests/generated",
+        "backends/go/tests/integration",
     ];
 
     let mut checked = 0usize;
