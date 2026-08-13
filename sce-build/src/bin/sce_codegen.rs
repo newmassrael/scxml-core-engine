@@ -544,6 +544,141 @@ fn cli_exit(err: CliError) -> ! {
     current_error_format().emit_and_exit(&err, "")
 }
 
+// ── Path arithmetic ────────────────────────────────────────────
+//
+// `Path::parent` answers a lexical question, not a filesystem one:
+// for a path carrying no separator it returns `Some("")`, and `""`
+// names no directory — `read_dir("")` fails with `ENOENT`, and
+// `create_dir_all("")` with it. Callers here want the *containing
+// directory*, whose answer for a bare filename is the working
+// directory.
+//
+// The gap opens on the shortest way there is to name a document:
+//
+//     cd resources && sce-codegen generate door.scxml -l rust -o out
+//
+// which walked `""` for the §synth-6.2.6 source set and refused with
+// `cli/read-input` — carrying an empty path in the message, because
+// the path that failed to read *was* the empty string. Naming the
+// same document `./door.scxml`, or by any path with a separator in
+// it, generated it. Every site below already carried an
+// `unwrap_or(".")` written for this exact case; none of them fired,
+// because the case is `Some("")` and not `None`.
+
+/// The directory `path` lives in, as a directory that can be opened.
+fn containing_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        // Either `path` is a bare filename (`Some("")`) or it is a root
+        // with nothing above it (`None`). In both cases the directory
+        // holding it is the one the process is standing in.
+        _ => PathBuf::from("."),
+    }
+}
+
+/// The directory named `name` beside the directory `path` lives in.
+///
+/// `tests/forge/conformance/fixtures.json` + `resources` →
+/// `tests/forge/resources`, the in-repo conformance layout.
+///
+/// Kept apart from [`containing_dir`] rather than composed from it
+/// because the degenerate case resolves differently: the directory
+/// above `.` has no name a `Path` can spell without `..`, while the
+/// directory above a single relative component is the working
+/// directory and needs no prefix at all.
+fn sibling_of_containing_dir(path: &Path, name: &str) -> PathBuf {
+    let dir = containing_dir(path);
+    match dir.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.join(name),
+        // `dir` is the working directory itself — reached from a bare
+        // filename or a `./`-prefixed one. Its parent is spellable
+        // only as `..`.
+        _ if dir == Path::new(".") => Path::new("..").join(name),
+        // `dir` is one relative component (`tests/`), so the directory
+        // above it is the working directory and `name` alone names the
+        // sibling.
+        _ => PathBuf::from(name),
+    }
+}
+
+// ── Stdout ─────────────────────────────────────────────────────
+//
+// Every byte this process puts on stdout leaves through here.
+//
+// A consumer that stops reading closes the pipe, and the next write
+// fails with `BrokenPipe`. `println!` panics on that — exit 101, a
+// panic message on stderr, no NDJSON record — which is a status §6
+// does not define at all, reached by a condition the *consumer*
+// chose rather than a fault of this run. §6 states the universal the
+// other way round: "A non-zero exit with no NDJSON record is a
+// contract violation."
+//
+// It surfaced on `list-fixtures` first because that is the
+// subcommand whose help tells build systems to consume it without a
+// JSON parser, and its output outruns the pipe buffer, so
+// `list-fixtures … | head` lost the race about half the time. The
+// other stdout writers differed only in printing too little to lose
+// it — the panic was one long document away.
+//
+// `expand`, `requirements` and `unresolved` already carried the rule
+// this restores: a stdout write failure is `cli/write-output` at exit
+// 20, with a record naming the stream. Routing every writer through
+// these two helpers makes that rule the only way to reach stdout, so
+// a subcommand added later cannot reintroduce the panic by reaching
+// for `println!`.
+
+/// The path a stdout failure names. One spelling — the three sites
+/// that already handled the failure used two.
+const STDOUT_LABEL: &str = "<stdout>";
+
+/// Hand locked stdout to `emit` and end the process on failure.
+///
+/// The one primitive. Streaming producers (the NDJSON reports) need a
+/// writer rather than a finished string, so the writer — not the
+/// bytes — is what this takes.
+fn out_stream(emit: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    // Stdout is line-buffered, so output that ends without a newline
+    // sits in the buffer until the implicit flush at exit — which
+    // discards its error. Flushing here is what makes the failure
+    // reportable at all.
+    let result = emit(&mut handle).and_then(|()| handle.flush());
+    if let Err(source) = result {
+        drop(handle);
+        cli_exit(CliError::WriteOutput {
+            path: STDOUT_LABEL.to_string(),
+            source,
+        });
+    }
+}
+
+/// Write `text` to stdout, followed by a newline.
+fn out_line(text: &str) {
+    out_stream(|w| {
+        w.write_all(text.as_bytes())?;
+        w.write_all(b"\n")
+    })
+}
+
+/// Write `bytes` to stdout with nothing appended.
+///
+/// `expand` needs this: its output is compared byte-for-byte against
+/// the C++ pugixml canonicalisation, which carries no trailing
+/// newline.
+fn out_bytes(bytes: &[u8]) {
+    out_stream(|w| w.write_all(bytes))
+}
+
+/// `println!` for this binary's stdout: same call shape, but a closed
+/// reader ends the process through [`out_line`]'s contract instead of
+/// a panic.
+macro_rules! outln {
+    () => { out_line("") };
+    ($($arg:tt)*) => { out_line(&format!($($arg)*)) };
+}
+
 // ── Stdout manifest (success-path contract) ─────────────────────
 
 /// Accumulator populated during a single `generate` run and serialised
@@ -609,7 +744,7 @@ fn build_manifest<'a>(
 
 /// Serialise `report` and write it as a single JSON line to stdout.
 fn emit_generate_manifest(report: &GenerateReport) {
-    println!(
+    outln!(
         "{}",
         build_manifest(report, ManifestKind::Generate, None).to_line()
     );
@@ -1904,14 +2039,14 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
 
     // Spec §synth-6.2.6 drift context — covers every output file written
     // below with a `// SCE-GENERATED` header that `sce-codegen verify`
-    // can recompute and gate on. `input_root` defaults to the parent
-    // of the first SCXML path so a typical batch (all docs in one
+    // can recompute and gate on. `input_root` defaults to the directory
+    // holding the first SCXML path so a typical batch (all docs in one
     // directory) hashes its whole input set; a flat fallback to "."
     // keeps multi-dir invocations functional even though their hash
     // is then the cwd recursive walk.
     let drift_input_root: std::path::PathBuf = scxml_path_bufs
         .first()
-        .and_then(|p| p.parent().map(|x| x.to_path_buf()))
+        .map(|p| containing_dir(p))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     let drift_ctx = DriftContext::compute(
         &drift_input_root,
@@ -1967,7 +2102,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         let _ = basename; // basename is the input-doc label; outputs already self-name.
     }
 
-    println!(
+    outln!(
         "{}",
         build_manifest(&report, ManifestKind::Orchestrate, None).to_line()
     );
@@ -2378,7 +2513,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         );
     }
 
-    println!(
+    outln!(
         "{}",
         build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
     );
@@ -2566,7 +2701,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         sce_build::manifest::language_wire_name(*lang),
                     ));
                 }
-                println!(
+                outln!(
                     "{}",
                     build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
                 );
@@ -2667,7 +2802,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         }
     }
 
-    println!(
+    outln!(
         "{}",
         build_manifest(&report, ManifestKind::Check, Some(verdicts)).to_line()
     );
@@ -2759,10 +2894,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // generated tree shares one source-hash / template-hash pair.
     let drift_input_root: std::path::PathBuf = match input_root_override {
         Some(s) => std::path::PathBuf::from(s),
-        None => Path::new(scxml_path)
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from(".")),
+        None => containing_dir(Path::new(scxml_path)),
     };
     // Coverage is asserted only when the root was inferred above; an
     // explicit `--input-root` is the caller declaring the source set.
@@ -4674,14 +4806,14 @@ fn generate_w3c_unified(
     // C++ was the only backend it scheduled; it is printed by every
     // backend, and the registry is now a language-neutral catalog.
     let registered = load_w3c_registry(registry_file);
-    println!("W3C conformance registry: {} fixtures", registered.len());
+    outln!("W3C conformance registry: {} fixtures", registered.len());
 
     if list {
         for (tid, info) in &registered {
             let scxml = find_scxml(resources_dir, tid);
             let status = if scxml.is_some() { "OK" } else { "MISSING" };
             let comment_trunc: String = info.comment.chars().take(70).collect();
-            println!(
+            outln!(
                 "  {tid:6} [{:9}] {status} -- {comment_trunc}",
                 info.type_str()
             );
@@ -4919,64 +5051,63 @@ fn generate_w3c_unified(
     // a one-fixture suite needs its manifest and its harness exactly as
     // much as a full one.
     for (path, contents) in backend.suite_support_files() {
-        if let Some(parent) = path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                cli_exit(CliError::CreateOutputDir {
-                    path: parent.display().to_string(),
-                    source: e,
-                });
-            }
+        let parent = containing_dir(&path);
+        if let Err(e) = fs::create_dir_all(&parent) {
+            cli_exit(CliError::CreateOutputDir {
+                path: parent.display().to_string(),
+                source: e,
+            });
         }
         write_or_exit(current_error_format(), &path, contents);
-        println!("  Suite support: {}", path.display());
+        outln!("  Suite support: {}", path.display());
     }
 
     // Summary
     let total_generated = generated_static.len() + generated_script.len();
-    println!("\n{}", "=".repeat(60));
-    println!("{} W3C Test Generation Summary", backend.language_name());
-    println!("{}", "=".repeat(60));
-    println!("  Generated (pure static):    {}", generated_static.len());
-    println!("  Generated (script engine):  {}", generated_script.len());
-    println!("  Generated (total):          {total_generated}");
-    println!("  Skipped:                    {}", skipped.len());
-    println!("  Failed:                     {}", failed.len());
+    outln!("\n{}", "=".repeat(60));
+    outln!("{} W3C Test Generation Summary", backend.language_name());
+    outln!("{}", "=".repeat(60));
+    outln!("  Generated (pure static):    {}", generated_static.len());
+    outln!("  Generated (script engine):  {}", generated_script.len());
+    outln!("  Generated (total):          {total_generated}");
+    outln!("  Skipped:                    {}", skipped.len());
+    outln!("  Failed:                     {}", failed.len());
     if stale_removed > 0 {
-        println!("  Stale removed:              {stale_removed}");
+        outln!("  Stale removed:              {stale_removed}");
     }
-    println!("  Total:                      {}", test_ids.len());
+    outln!("  Total:                      {}", test_ids.len());
 
     if !skipped.is_empty() {
-        println!("\nSkipped:");
+        outln!("\nSkipped:");
         for (tid, reason) in &skipped {
-            println!("  {tid}: {reason}");
+            outln!("  {tid}: {reason}");
         }
     }
 
     if !failed.is_empty() {
-        println!("\nFailed tests:");
+        outln!("\nFailed tests:");
         for (tid, reason) in &failed {
-            println!("  {tid}: {reason}");
+            outln!("  {tid}: {reason}");
         }
     }
 
     if total_generated > 0 {
-        println!(
+        outln!(
             "\nGenerated SM classes: {}",
             backend.sm_output_base().display()
         );
         if !backend.test_in_sm_dir() {
-            println!(
+            outln!(
                 "Generated test classes: {}",
                 backend.test_output_dir().display()
             );
         }
-        println!(
+        outln!(
             "\nGenerated test IDs (static): {}",
             generated_static.join(" ")
         );
         if !generated_script.is_empty() {
-            println!(
+            outln!(
                 "Generated test IDs (script): {}",
                 generated_script.join(" ")
             );
@@ -5381,7 +5512,7 @@ impl W3cBackend for RustBackend {
                 }
             }
         }
-        println!("Cleaned Rust generated files");
+        outln!("Cleaned Rust generated files");
     }
 }
 
@@ -5608,7 +5739,7 @@ impl W3cBackend for GoBackend {
     fn clean(&self) {
         if self.sm_base.exists() {
             fs::remove_dir_all(&self.sm_base).ok();
-            println!("Cleaned: {}", self.sm_base.display());
+            outln!("Cleaned: {}", self.sm_base.display());
         }
     }
 }
@@ -5935,7 +6066,7 @@ impl W3cBackend for KotlinBackend {
     fn clean(&self) {
         if self.sm_base.exists() {
             fs::remove_dir_all(&self.sm_base).ok();
-            println!("Cleaned: {}", self.sm_base.display());
+            outln!("Cleaned: {}", self.sm_base.display());
         }
         for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -5943,7 +6074,7 @@ impl W3cBackend for KotlinBackend {
                 fs::remove_file(entry.path()).ok();
             }
         }
-        println!("Cleaned test classes in: {}", self.test_dir.display());
+        outln!("Cleaned test classes in: {}", self.test_dir.display());
     }
 
     fn clean_stale(&self, valid_ids: &BTreeSet<String>) -> usize {
@@ -5962,7 +6093,7 @@ impl W3cBackend for KotlinBackend {
                 let dir_test_id = &name[4..];
                 if !valid_ids.contains(dir_test_id) {
                     fs::remove_dir_all(entry.path()).ok();
-                    println!("  Removed stale SM dir: {name}");
+                    outln!("  Removed stale SM dir: {name}");
                     removed += 1;
                 }
             }
@@ -5986,7 +6117,7 @@ impl W3cBackend for KotlinBackend {
                     && !valid_lower.contains(&file_test_id.to_lowercase())
                 {
                     fs::remove_file(entry.path()).ok();
-                    println!("  Removed stale test: {name}");
+                    outln!("  Removed stale test: {name}");
                     removed += 1;
                 }
             }
@@ -6053,7 +6184,7 @@ impl W3cBackend for CppBackend {
     fn clean(&self) {
         if self.output_dir.exists() {
             fs::remove_dir_all(&self.output_dir).ok();
-            println!("Cleaned: {}", self.output_dir.display());
+            outln!("Cleaned: {}", self.output_dir.display());
         }
     }
 }
@@ -6267,7 +6398,7 @@ impl W3cBackend for PythonBackend {
     fn clean(&self) {
         if self.sm_base.exists() {
             fs::remove_dir_all(&self.sm_base).ok();
-            println!("Cleaned: {}", self.sm_base.display());
+            outln!("Cleaned: {}", self.sm_base.display());
         }
     }
 }
@@ -6326,7 +6457,7 @@ fn cmd_read_metadata(metadata_file: &str) {
         let line = line.trim();
         if line.starts_with("description:") {
             let description = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
-            println!("{description}");
+            outln!("{description}");
             return;
         }
     }
@@ -6355,7 +6486,7 @@ fn cmd_manifest(dir: &str) {
         })
     });
 
-    println!("{json}");
+    outln!("{json}");
 }
 
 // ── Subcommand: requirements ──────────────────────────────────
@@ -6371,16 +6502,7 @@ fn cmd_requirements(scxml: &str, error_format: ErrorFormat) {
     let model = parser
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-    sce_build::requirements_report::emit_requirements_ndjson(&model, &mut handle).unwrap_or_else(
-        |source| {
-            cli_exit(CliError::WriteOutput {
-                path: "stdout".to_string(),
-                source,
-            })
-        },
-    );
+    out_stream(|w| sce_build::requirements_report::emit_requirements_ndjson(&model, w));
 }
 
 // ── Subcommand: unresolved ─────────────────────────────────────
@@ -6395,16 +6517,7 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
     let model = parser
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-    sce_build::unresolved_check::emit_unresolved_ndjson(&model, &mut handle).unwrap_or_else(
-        |source| {
-            cli_exit(CliError::WriteOutput {
-                path: "stdout".to_string(),
-                source,
-            })
-        },
-    );
+    out_stream(|w| sce_build::unresolved_check::emit_unresolved_ndjson(&model, w));
 }
 
 // ── Subcommand: generate-integration ───────────────────────────
@@ -6538,19 +6651,7 @@ fn cmd_generate_conformance(
         });
 
     let template_base = sce_build::find_template_base();
-    let resource_dir = Path::new(manifest_path)
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("resources"))
-        .unwrap_or_else(|| {
-            cli_exit(CliError::ReadInput {
-                path: manifest_path.to_string(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "cannot derive resource_dir from manifest path",
-                ),
-            })
-        });
+    let resource_dir = sibling_of_containing_dir(Path::new(manifest_path), "resources");
     let rendered =
         sce_build::conformance::render_harness(&manifest, lang, &template_base, &resource_dir)
             .unwrap_or_else(|e| {
@@ -6572,13 +6673,10 @@ fn cmd_generate_conformance(
     // Spec §synth-6.2.6: input root for the conformance harness is the
     // sibling `resources/` of the manifest (mirrors
     // `cmd_list_fixtures`'s resolution), so the embedded source-hash
-    // covers exactly the SCXML inputs the harness asserts against.
-    let drift_input_root: std::path::PathBuf = Path::new(manifest_path)
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("resources"))
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let drift_ctx = DriftContext::compute(&drift_input_root, None, None);
+    // covers exactly the SCXML inputs the harness asserts against. It
+    // is the directory `render_harness` just read from, so the two
+    // cannot disagree about which fixtures the header describes.
+    let drift_ctx = DriftContext::compute(&resource_dir, None, None);
     write_drift_aware(
         current_error_format(),
         &out_path,
@@ -6614,7 +6712,7 @@ fn cmd_generate_conformance(
             },
         );
     }
-    println!("Generated conformance harness: {}", out_path.display());
+    outln!("Generated conformance harness: {}", out_path.display());
 }
 
 // ── Subcommand: expand ─────────────────────────────────────────
@@ -6636,15 +6734,7 @@ fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
     // Write raw bytes to stdout without trailing newline so the
     // template parity harness can byte-compare against the C++
     // pugixml canonicalisation without newline handling quirks.
-    use std::io::Write;
-    std::io::stdout()
-        .write_all(expanded.as_bytes())
-        .unwrap_or_else(|e| {
-            cli_exit(CliError::WriteOutput {
-                path: "<stdout>".to_string(),
-                source: e,
-            })
-        });
+    out_bytes(expanded.as_bytes());
 }
 
 // ── Subcommand: verify ─────────────────────────────────────────
@@ -6879,11 +6969,11 @@ fn emit_fixture_names(names: &[&str], format: &str) {
     match format {
         "plain" => {
             for n in names {
-                println!("{n}");
+                outln!("{n}");
             }
         }
-        "cmake" => println!("{}", names.join(";")),
-        "space" => println!("{}", names.join(" ")),
+        "cmake" => outln!("{}", names.join(";")),
+        "space" => outln!("{}", names.join(" ")),
         other => cli_exit(CliError::InvalidFormatOption {
             value: other.to_string(),
             expected: "plain|cmake|space".into(),
@@ -7010,13 +7100,7 @@ fn cmd_list_fixtures(
         // without forcing every caller to pass the resource path.
         let resource_root: std::path::PathBuf = match resource_dir {
             Some(rd) => std::path::PathBuf::from(rd),
-            None => {
-                let manifest_dir = Path::new(manifest_path).parent().unwrap_or(Path::new("."));
-                manifest_dir
-                    .parent()
-                    .map(|p| p.join("resources"))
-                    .unwrap_or_else(|| manifest_dir.join("resources"))
-            }
+            None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
         };
         // Pre-resolve `--language` so the per-kind sidecar gate
         // (codec sidecar = Rust + C11 only) can be applied
@@ -7094,13 +7178,7 @@ fn cmd_list_fixtures(
     // earlier sidecar enrichment block above.
     let resource_root_for_filter: std::path::PathBuf = match resource_dir {
         Some(rd) => std::path::PathBuf::from(rd),
-        None => {
-            let manifest_dir = Path::new(manifest_path).parent().unwrap_or(Path::new("."));
-            manifest_dir
-                .parent()
-                .map(|p| p.join("resources"))
-                .unwrap_or_else(|| manifest_dir.join("resources"))
-        }
+        None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
     };
     let names: Vec<&str> = manifest
         .fixtures
@@ -7218,9 +7296,7 @@ fn write_if_changed(path: &Path, content: &str) -> bool {
             }
         }
     }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
+    fs::create_dir_all(containing_dir(path)).ok();
     fs::write(path, content).unwrap_or_else(|e| {
         cli_exit(CliError::WriteOutput {
             path: path.display().to_string(),
@@ -7527,7 +7603,7 @@ fn print_lookup_record(
         symbol,
         entry,
     };
-    println!("{}", record.to_line());
+    outln!("{}", record.to_line());
 }
 
 /// Look `symbol` up in the loaded sourcemap and print the resolved

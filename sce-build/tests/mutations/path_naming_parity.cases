@@ -1,0 +1,107 @@
+# Mutation cases for "how a caller names an input does not change what the
+# tool says about it".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/path_naming_parity.cases`.
+#
+# The first four restore the defect exactly as it was: `Path::parent` used
+# directly, with the `unwrap_or(".")` that reads like it covers the bare
+# filename and does not, because the case is `Some("")` and not `None`. Each
+# one is a separate call site, and the original was live at all of them, so a
+# gate that catches one and misses the others would report the axis closed
+# with most of it still open.
+#
+# The last two break the gate itself. It compares a group of namings against
+# each other, so a group that loses its members compares nothing and passes;
+# and it compares emitted bytes, so a comparison that stops reading files
+# passes on an empty tree. Both go green in exactly the way a clean run does.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test path_naming_parity
+# The gate drives the CLI as a subprocess and reads the emitted tree off
+# disk, so `sce_codegen.rs` is not linked into the test binary — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran. Only the gate's own source compiles into it.
+mutation_targets sce-build/tests/path_naming_parity.rs
+mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
+
+mutation_case "generate infers its source-set root lexically again" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        None => containing_dir(Path::new(scxml_path)),",
+     """        None => Path::new(scxml_path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from(".")),""")
+PY
+
+mutation_case "orchestrate infers its source-set root lexically again" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        .map(|p| containing_dir(p))",
+     "        .and_then(|p| p.parent().map(|x| x.to_path_buf()))")
+PY
+
+mutation_case "generate-conformance derives resources lexically again" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """    let resource_dir = sibling_of_containing_dir(Path::new(manifest_path), "resources");""",
+     """    let resource_dir = Path::new(manifest_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("resources"))
+        .unwrap_or_else(|| {
+            cli_exit(CliError::ReadInput {
+                path: manifest_path.to_string(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "cannot derive resource_dir from manifest path",
+                ),
+            })
+        });""")
+PY
+
+# `cmd_list_fixtures` derives the directory twice — once to enrich the
+# per-kind sidecar list, once for the backend filter that decides which
+# fixtures the listing names. Only the second one moves the output, so a
+# case aimed at the first reports SURVIVED while the defect is live. This
+# aims at the filter; the anchor's 4-space indent is what distinguishes it
+# from its 8-space twin.
+mutation_case "list-fixtures derives its filter's resources lexically again" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """    let resource_root_for_filter: std::path::PathBuf = match resource_dir {
+        Some(rd) => std::path::PathBuf::from(rd),
+        None => sibling_of_containing_dir(Path::new(manifest_path), "resources"),
+    };""",
+     """    let resource_root_for_filter: std::path::PathBuf = match resource_dir {
+        Some(rd) => std::path::PathBuf::from(rd),
+        None => {
+            let manifest_dir = Path::new(manifest_path).parent().unwrap_or(Path::new("."));
+            manifest_dir
+                .parent()
+                .map(|p| p.join("resources"))
+                .unwrap_or_else(|| manifest_dir.join("resources"))
+        }
+    };""")
+PY
+
+mutation_case "the containing directory of a bare filename becomes the empty path" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        // Either `path` is a bare filename (`Some(\"\")`) or it is a root""",
+     """        Some(parent) => parent.to_path_buf(),
+        // Either `path` is a bare filename (`Some(\"\")`) or it is a root""")
+PY
+
+mutation_case "the naming group collapses to one member and compares nothing" <<'PY'
+edit("sce-build/tests/path_naming_parity.rs",
+     """    let all = vec![
+        (\"bare\", file_name.to_string()),
+        (\"dot-relative\", format!(\"./{file_name}\")),""",
+     """    let all = vec![
+        (\"bare\", file_name.to_string()),""")
+PY
+
+mutation_case "the byte comparison reads an empty tree" <<'PY'
+edit("sce-build/tests/path_naming_parity.rs",
+     "    out.sort();\n    out\n}",
+     "    out.sort();\n    out.truncate(0);\n    out\n}")
+PY
