@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -244,7 +244,7 @@ impl Test322Policy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "machineName", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -255,7 +255,7 @@ impl Test322Policy {
             "Var1",
             "_sessionid",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2: Runtime variable 'Var2' (global, late binding, init to nil)
@@ -282,7 +282,7 @@ impl Test322Policy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "machineName", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -293,7 +293,7 @@ impl Test322Policy {
             "Var1",
             "_sessionid",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 Test322Event::ErrorExecution,
             ));
@@ -314,7 +314,7 @@ impl Test322Policy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     Test322Event::ErrorExecution,
                 ));
@@ -616,7 +616,9 @@ impl StatePolicy for Test322Policy {
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         // W3C SCXML 5.3/B.2: Invalid or read-only location "_sessionid"
-                        log::error!("W3C SCXML 5.3: Invalid assign location '_sessionid'");
+                        ::sce_rust_runtime::sce_log_error!(
+                            "W3C SCXML 5.3: Invalid assign location '_sessionid'"
+                        );
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             Test322Event::ErrorExecution,
                         ));

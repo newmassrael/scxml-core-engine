@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9559f7034cb0e413a2c5aa2055ca23d5b6d7fecbb68ab13dd3b257c7755faaca
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -244,7 +244,7 @@ impl SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
             "session_ids_are_distinct__sce_synth_invoke__inv_a",
             &io_processors,
         ) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -274,7 +274,7 @@ impl SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
             "session_ids_are_distinct__sce_synth_invoke__inv_a",
             &io_processors,
         ) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -291,7 +291,7 @@ impl SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     SessionIdsAreDistinctSceSynthInvokeInvAEvent::ErrorExecution,
                 ));
@@ -591,7 +591,10 @@ impl StatePolicy for SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
                                     parts.push(format!("[{:?}]={}", "sid", val.to_lua_literal()));
                                 }
                                 Err(e) => {
-                                    log::error!("send param 'sid' eval failed: {}", e);
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'sid' eval failed: {}",
+                                        e
+                                    );
                                     engine.raise(sce_rust_runtime::EventWithMetadata::new(SessionIdsAreDistinctSceSynthInvokeInvAEvent::ErrorExecution));
                                 }
                             }

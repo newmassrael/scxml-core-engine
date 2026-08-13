@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 195556f7381b7d98e015a576c984a3d37618cbcc845bd17300f1f7caca179032
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -379,7 +379,7 @@ impl AiLoopPolicy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "ai_loop", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -390,7 +390,7 @@ impl AiLoopPolicy {
             "north_star",
             "'(edit me) the outcome this loop exists to reach'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'milestone' from expr (global)
@@ -400,7 +400,7 @@ impl AiLoopPolicy {
             "milestone",
             "'(edit me) the next checkpoint on the way there'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'reference' from expr (global)
@@ -410,19 +410,19 @@ impl AiLoopPolicy {
             "reference",
             "'(edit me) paths, URLs or repos to consult'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'start_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "start_prompt", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'") {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turn_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "turn_prompt", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'") {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'end_prompt' from expr (global)
@@ -432,7 +432,7 @@ impl AiLoopPolicy {
             "end_prompt",
             "'Summarise what changed, what was verified, and what is left open.'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'done_marker' from expr (global)
@@ -442,13 +442,13 @@ impl AiLoopPolicy {
             "done_marker",
             "'MILESTONE REACHED'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'screen_rules' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "screen_rules", "{             { when = 'design-decision', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'design-proposal', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'multiple-choice', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' }           }") {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'screen_permissions' from expr (global)
@@ -458,7 +458,7 @@ impl AiLoopPolicy {
             "screen_permissions",
             "false",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'max_turns' from expr (global)
@@ -468,7 +468,7 @@ impl AiLoopPolicy {
             "max_turns",
             "40",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'reflect_every' from expr (global)
@@ -478,7 +478,7 @@ impl AiLoopPolicy {
             "reflect_every",
             "8",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'max_restarts' from expr (global)
@@ -488,14 +488,14 @@ impl AiLoopPolicy {
             "max_restarts",
             "6",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turns' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "turns", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turns_since_reflect' from expr (global)
@@ -505,21 +505,21 @@ impl AiLoopPolicy {
             "turns_since_reflect",
             "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'screened' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "screened", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'restarts' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "restarts", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.9.2: Register In() state query callback
@@ -559,7 +559,7 @@ impl AiLoopPolicy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "ai_loop", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -570,7 +570,7 @@ impl AiLoopPolicy {
             "north_star",
             "'(edit me) the outcome this loop exists to reach'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -583,7 +583,7 @@ impl AiLoopPolicy {
             "milestone",
             "'(edit me) the next checkpoint on the way there'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -596,7 +596,7 @@ impl AiLoopPolicy {
             "reference",
             "'(edit me) paths, URLs or repos to consult'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -605,14 +605,14 @@ impl AiLoopPolicy {
         // W3C SCXML 5.2/5.3: Initialize 'start_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "start_prompt", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'") {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turn_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "turn_prompt", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'") {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
         }
 
@@ -623,7 +623,7 @@ impl AiLoopPolicy {
             "end_prompt",
             "'Summarise what changed, what was verified, and what is left open.'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -636,7 +636,7 @@ impl AiLoopPolicy {
             "done_marker",
             "'MILESTONE REACHED'",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -645,7 +645,7 @@ impl AiLoopPolicy {
         // W3C SCXML 5.2/5.3: Initialize 'screen_rules' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "screen_rules", "{             { when = 'design-decision', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'design-proposal', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'multiple-choice', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' }           }") {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
         }
 
@@ -656,7 +656,7 @@ impl AiLoopPolicy {
             "screen_permissions",
             "false",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -669,7 +669,7 @@ impl AiLoopPolicy {
             "max_turns",
             "40",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -682,7 +682,7 @@ impl AiLoopPolicy {
             "reflect_every",
             "8",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -695,7 +695,7 @@ impl AiLoopPolicy {
             "max_restarts",
             "6",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -705,7 +705,7 @@ impl AiLoopPolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "turns", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -718,7 +718,7 @@ impl AiLoopPolicy {
             "turns_since_reflect",
             "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -728,7 +728,7 @@ impl AiLoopPolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "screened", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -738,7 +738,7 @@ impl AiLoopPolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "restarts", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 AiLoopEvent::ErrorExecution,
             ));
@@ -772,7 +772,7 @@ impl AiLoopPolicy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     AiLoopEvent::ErrorExecution,
                 ));
@@ -1379,7 +1379,10 @@ impl StatePolicy for AiLoopPolicy {
                         // and create a fresh table, breaking reference equality.
                         let assign_script = format!("{} = {}", "turns_since_reflect", expr);
                         if let Err(e) = se.execute_script(&sid, &assign_script) {
-                            log::error!("Assign failed for 'turns_since_reflect': {}", e);
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'turns_since_reflect': {}",
+                                e
+                            );
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 AiLoopEvent::ErrorExecution,
                             ));
@@ -1444,7 +1447,10 @@ impl StatePolicy for AiLoopPolicy {
                         // and create a fresh table, breaking reference equality.
                         let assign_script = format!("{} = {}", "restarts", expr);
                         if let Err(e) = se.execute_script(&sid, &assign_script) {
-                            log::error!("Assign failed for 'restarts': {}", e);
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'restarts': {}",
+                                e
+                            );
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 AiLoopEvent::ErrorExecution,
                             ));
@@ -1495,7 +1501,10 @@ impl StatePolicy for AiLoopPolicy {
                         // and create a fresh table, breaking reference equality.
                         let assign_script = format!("{} = {}", "screened", expr);
                         if let Err(e) = se.execute_script(&sid, &assign_script) {
-                            log::error!("Assign failed for 'screened': {}", e);
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Assign failed for 'screened': {}",
+                                e
+                            );
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 AiLoopEvent::ErrorExecution,
                             ));
@@ -1878,7 +1887,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "turns_since_reflect", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'turns_since_reflect': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'turns_since_reflect': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));
@@ -1907,7 +1919,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "start_prompt", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'start_prompt': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'start_prompt': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));
@@ -1927,7 +1942,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "turn_prompt", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'turn_prompt': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'turn_prompt': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));
@@ -1947,7 +1965,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "milestone", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'milestone': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'milestone': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));
@@ -2003,7 +2024,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "turns", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'turns': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'turns': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));
@@ -2027,7 +2051,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "turns", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'turns': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'turns': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));
@@ -2056,7 +2083,10 @@ impl StatePolicy for AiLoopPolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "turns_since_reflect", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'turns_since_reflect': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'turns_since_reflect': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     AiLoopEvent::ErrorExecution,
                                 ));

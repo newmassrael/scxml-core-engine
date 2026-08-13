@@ -61,7 +61,7 @@
             &self.basic_http_access_uri,
         );
         if let Err(e) = se.setup_system_variables(&sid, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_rust }}", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -82,7 +82,7 @@
         // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
 {% for script in model.global_scripts %}
         if let Err(e) = se.execute_script(&sid, "{{ script.content | to_lua_script | escape_rust }}") {
-            log::error!("Global script execution failed: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Global script execution failed: {}", e);
         }
 {% endfor %}
 {% endif %}
@@ -111,7 +111,7 @@
             &self.basic_http_access_uri,
         );
         if let Err(e) = se.setup_system_variables(&sid, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_rust }}", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -132,7 +132,7 @@
         // W3C SCXML 5.8: Execute global scripts at document load time
 {% for script in model.global_scripts %}
         if let Err(e) = se.execute_script(&sid, "{{ script.content | to_lua_script | escape_rust }}") {
-            log::error!("Global script execution failed: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Global script execution failed: {}", e);
 {% if 'error.execution' in model.events %}
             engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
@@ -153,7 +153,7 @@
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
 {% if 'error.execution' in model.events %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
