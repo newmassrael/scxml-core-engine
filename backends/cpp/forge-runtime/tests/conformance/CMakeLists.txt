@@ -48,13 +48,26 @@ set(NLOHMANN_JSON_INCLUDE_DIR "${REPO_ROOT}/third_party/nlohmann_json/include")
 # the stale-binary foot-gun where a schema change in conformance.rs would
 # otherwise be silently ignored by a C++ test invoking the old binary.
 #
-# The `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` call tracks sce-build
-# sources as configure-time inputs, so CMake re-runs configure — and thus
-# re-executes the cargo build below — whenever any .rs file changes. In CI
-# the conformance-cpp job downloads a pre-built artifact from the build-
-# codegen job and has no Rust toolchain; `find_program` returns NOTFOUND
-# and the configure-time rebuild is skipped, falling through to the
-# existence check.
+# The `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` call re-runs this glob at
+# build time and re-runs configure — and thus the cargo build below — when
+# its RESULT changes: a .rs file added or removed. Editing one does not
+# reach it. CMake's own generated check is a list comparison
+# (`if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")`, reporting "files were
+# added" / "files were removed"), so content is never consulted.
+#
+# This comment claimed the opposite until 2026-08-13 — "whenever any .rs
+# file changes" — which is the interesting half: the stale-binary foot-gun
+# it names was therefore NOT closed here for the ordinary case of editing
+# the generator. What closes it is the content witness in
+# `cmake/SCEFindCodegen.cmake`, which compares a digest of the generator's
+# sources against the one the binary was stamped with, at configure and
+# again at build time. The glob's remaining value is narrow and real: a new
+# .rs file re-runs the cargo build without a manual reconfigure.
+#
+# In CI the conformance-cpp job downloads a pre-built artifact from the
+# build-codegen job and has no Rust toolchain; `find_program` returns
+# NOTFOUND and the configure-time rebuild is skipped, falling through to
+# the existence check.
 find_program(CARGO_EXECUTABLE cargo)
 if(CARGO_EXECUTABLE)
     file(GLOB_RECURSE _sce_build_sources CONFIGURE_DEPENDS
