@@ -5,10 +5,20 @@
 #
 # `examples/ai_loop/ai_loop.scxml` carries `<history id="where">` inside the
 # turn cycle so that a person who holds the run to look at the work resumes it
-# where it stopped. That clause had no runtime witness on the C++ side: the
-# static side is validated, and the W3C corpus reaches history through documents
-# whose restoration target is also their initial state, where a history that
-# records nothing is indistinguishable from one that works.
+# where it stopped.
+#
+# An earlier revision of this comment claimed the W3C corpus could not see the
+# clause at all — that it reaches history only through documents whose
+# restoration target is also their initial state, where a history recording
+# nothing is indistinguishable from one that works. That is FALSE, and it was
+# inherited rather than measured. Breaking the filter and running the corpus
+# reds W3C **388, 579 and 580**, on both engines. The clause is guarded, and
+# guarded on every backend, since the W3C suite runs on all of them.
+#
+# What this file therefore pins is narrower and worth stating honestly: the
+# same filter under a `<parallel>` with three regions and a hold taken away
+# from the history default — the shape `ai_loop` has and the corpus does not.
+# It is a second sampling of one clause, not the only one.
 #
 # The runner is the integration suite rather than the example, and the reason is
 # a measurement. `ai_loop_example` runs four scripted runs and checks that each

@@ -112,7 +112,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
 
     add_custom_command(
         OUTPUT "${PARENT_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
                 --write-deps "${_PARENT_DEPFILE}"
@@ -147,7 +147,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
 
         add_custom_command(
             OUTPUT "${_CHILD_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
                     --as-child --parent-stem "${STEM}"
                     -l cpp -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"
@@ -226,7 +226,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
 
     add_custom_command(
         OUTPUT "${PARENT_SOURCE}"
-        COMMAND "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${STAGED_SCXML}"
                 -l c11 -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
                 --write-deps "${_PARENT_DEPFILE}"
@@ -248,7 +248,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
 
         add_custom_command(
             OUTPUT "${_CHILD_SOURCE}" "${_CHILD_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
                     --as-child --parent-stem "${STEM}"
                     -l c11 -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"

@@ -147,7 +147,7 @@ foreach(fixture IN LISTS C11_FIXTURES)
     # leave the fixture stale and the build would reuse it silently.
     add_custom_command(
         OUTPUT ${_outputs}
-        COMMAND "${SCE_CODEGEN}" generate "${scxml}"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${scxml}"
                 --language c11
                 --output-dir "${GENERATED_DIR}"
                 --write-deps "${GENERATED_DIR}/${fixture}.h.d"
@@ -170,7 +170,7 @@ endforeach()
 set(HARNESS_SRC "${GENERATED_DIR}/numerical_conformance_test.c")
 add_custom_command(
     OUTPUT "${HARNESS_SRC}"
-    COMMAND "${SCE_CODEGEN}" generate-conformance
+    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate-conformance
             --language c11
             --manifest "${FIXTURE_MANIFEST}"
             --output-dir "${GENERATED_DIR}"

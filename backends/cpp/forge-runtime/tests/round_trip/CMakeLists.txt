@@ -80,7 +80,7 @@ foreach(fixture IN LISTS FIXTURES)
     set(scxml "${RESOURCE_DIR}/${fixture}.scxml")
     add_custom_command(
         OUTPUT "${out_header}"
-        COMMAND "${SCE_CODEGEN}" generate "${scxml}"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${scxml}"
                 --language cpp
                 --output-dir "${GENERATED_DIR}"
                 --write-deps "${out_header}.d"
