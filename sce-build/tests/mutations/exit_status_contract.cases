@@ -1,0 +1,118 @@
+# Mutation cases for "every non-zero exit carries a record, with a status
+# SCE_ERROR_CONTRACT.md §6 assigns".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/exit_status_contract.cases`.
+#
+# The defect these stand for was live on eight failure modes at once and in
+# two distinct shapes, so the gate has to fail on both: a path that exits
+# with no record at all (the argument parser's own failure, and every
+# hand-rolled `eprintln! + exit`), and a path that emits a record under a
+# status §6 assigns elsewhere (a query miss collapsed into the CLI-boundary
+# 20, or a `cli/*` leaving as 2).
+#
+# Three of the cases break the *document* rather than the code, because §6
+# is one of the two independent sources this gate compares — a table that
+# stops naming a status the binary produces is exactly as much a defect as a
+# binary that stops honouring the table, and a gate that only watched the
+# code would call the first one green.
+#
+# The last two break the gate itself: the table is found by shape in
+# markdown and the probe list is hand-written, and either going quiet prints
+# the same green as a clean run.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test exit_status_contract
+# Only the test file itself is compiled into what runs. Everything the gate
+# judges is reached at run time: it drives the CLI as a subprocess and reads
+# the contract off disk, so neither `sce_codegen.rs` nor `cli_error.rs` nor
+# the markdown is linked into the test binary — the evidence a mutation
+# reached what ran is the file differing on disk while the tests ran.
+#
+# `cli_error.rs` was classified as a compiled target first, and the harness
+# refused the case: this gate names nothing from the `sce_build` library, so
+# the rlib is not linked and every binary stayed byte-identical. A gate that
+# executes its subject rather than calling it has no compiled subject.
+mutation_targets sce-build/tests/exit_status_contract.rs
+mutation_runtime_targets sce-build/src/bin/sce_codegen.rs \
+                         sce-build/src/cli_error.rs \
+                         SCE_ERROR_CONTRACT.md
+
+mutation_case "the argument parser's failure leaves through its own exit" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """            let _ = ERROR_FORMAT.set(peek_error_format(std::env::args()));""",
+     """            err.exit();
+            #[allow(unreachable_code)]
+            let _ = ERROR_FORMAT.set(peek_error_format(std::env::args()));""")
+PY
+
+mutation_case "a query miss collapses into the CLI-boundary status" <<'PY'
+edit("sce-build/src/cli_error.rs",
+     "            CliError::QueryNoMatch { .. } => Self::EXIT_QUERY_NO_MATCH,\n",
+     "")
+PY
+
+mutation_case "a query miss stops carrying a record" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """    let Some(entry) = map.symbols.get(symbol) else {
+        cli_exit(CliError::QueryNoMatch {
+            tool: "addr2sce",
+            query: format!("symbol '{symbol}'"),
+            searched: map_path.display().to_string(),
+        })
+    };""",
+     """    let Some(entry) = map.symbols.get(symbol) else {
+        eprintln!("addr2sce: symbol '{symbol}' not found");
+        std::process::exit(1);
+    };""")
+PY
+
+mutation_case "generate-integration reverts to a bare exit for a missing script" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """            cli_exit(CliError::ReadInput {
+                path: script.display().to_string(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no regen script for this stem",
+                ),
+            });""",
+     """            eprintln!("generate-integration: missing regen script");
+            std::process::exit(1);""")
+PY
+
+mutation_case "a flag stops requiring the companion it cannot work without" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     '        #[arg(long, requires = "elf", value_parser = parse_pc_address)]',
+     "        #[arg(long, value_parser = parse_pc_address)]")
+PY
+
+mutation_case "--version is routed like a failure" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion",
+     "                ErrorKind::DisplayHelp")
+PY
+
+mutation_case "the table stops registering the status a query miss exits with" <<'PY'
+edit("SCE_ERROR_CONTRACT.md",
+     "| `1` | `cli/query-no-match`",
+     "| `99` | `cli/query-no-match`")
+PY
+
+mutation_case "the table's exact row loses to the family wildcard" <<'PY'
+edit("SCE_ERROR_CONTRACT.md",
+     "| `1` | `cli/query-no-match` — a well-formed query",
+     "| `1` | `cli/*` — a well-formed query")
+PY
+
+mutation_case "the section that documents statuses is renamed out of reach" <<'PY'
+edit("SCE_ERROR_CONTRACT.md",
+     "## 6. Exit codes",
+     "## 6. Process statuses")
+PY
+
+mutation_case "the probe list empties and the sweep proves nothing" <<'PY'
+edit("sce-build/tests/exit_status_contract.rs",
+     "    out\n}\n\n/// §6's own universal",
+     "    out.truncate(0);\n    out\n}\n\n/// §6's own universal")
+PY

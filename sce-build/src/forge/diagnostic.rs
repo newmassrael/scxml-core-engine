@@ -1956,6 +1956,30 @@ pub enum DiagnosticCode {
     CliNoScxmlTag,
     #[serde(rename = "cli/invalid-suite-package")]
     CliInvalidSuitePackage,
+    /// The invocation itself did not parse: a required argument is
+    /// absent, a flag is unknown, a value is outside its enumeration,
+    /// or two mutually-exclusive modes were named together.
+    ///
+    /// Exists because the argument parser's own failure path is still a
+    /// failure of this process, and [§6](SCE_ERROR_CONTRACT.md) makes a
+    /// non-zero exit carrying no record a contract violation. Without
+    /// this code the most common failure a machine caller produces —
+    /// a malformed command line — arrived as prose under the exit
+    /// status reserved for `xml/*`, which tells a repair consumer that
+    /// the *document* is broken.
+    #[serde(rename = "cli/usage")]
+    CliUsage,
+    /// A well-formed query that matched nothing: no such symbol in the
+    /// sourcemap, no symbol at the requested coordinates, no frame that
+    /// resolved.
+    ///
+    /// Distinct from [`DiagnosticCode::CliReadInput`] because nothing
+    /// failed — the tool ran, looked, and found no answer. It is the
+    /// one CLI code that does not exit 20: the query tools document a
+    /// dedicated status for a miss so a build gate can branch on it
+    /// without a JSON parser, and §6 registers that status.
+    #[serde(rename = "cli/query-no-match")]
+    CliQueryNoMatch,
 
     // ── Mesh pipeline ────────────────────────────────────────
     // Deploy stage
@@ -2967,6 +2991,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliFormatStyleNotFound,
         CliNoScxmlTag,
         CliInvalidSuitePackage,
+        CliUsage,
+        CliQueryNoMatch,
         // Mesh Deploy
         MeshDeployRead,
         MeshDeployParse,
@@ -3731,6 +3757,8 @@ impl DiagnosticCode {
             | CliFormatStyleNotFound
             | CliNoScxmlTag
             | CliInvalidSuitePackage
+            | CliUsage
+            | CliQueryNoMatch
             | MeshDeployRead
             | MeshExternalRead
             | MeshExternalParse
@@ -4097,6 +4125,8 @@ impl DiagnosticCode {
             CliFormatStyleNotFound => "cli/format-style-not-found",
             CliNoScxmlTag => "cli/no-scxml-tag",
             CliInvalidSuitePackage => "cli/invalid-suite-package",
+            CliUsage => "cli/usage",
+            CliQueryNoMatch => "cli/query-no-match",
             MeshDeployRead => "mesh/deploy-read",
             MeshDeployParse => "mesh/deploy-parse",
             MeshDeployUnsupportedVersion => "mesh/deploy-unsupported-version",
@@ -12448,6 +12478,31 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:a692356602400fc9","code":"forge/source-hash-walk-unbounded","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"src/scxml: §6.2.6 source set exceeds 1000000 directories — a directory symlink reaching a sibling multiplies the paths under it; re-point --input-root at a tree without the aliasing, or remove it","actual":"root=src/scxml descent-limit=1000000"}"#,
             ),
+            // ── The argument parser's own failure ──
+            //    Pinned as a golden because the message is not SCE's
+            //    prose: it is clap's rendering, carried verbatim. If a
+            //    future refactor starts rewriting it, this entry moves
+            //    and the change has to be deliberate.
+            (
+                "cli/usage",
+                CliError::Usage {
+                    detail: "unexpected argument '--frobnicate' found".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:8428d1db7db324b9","code":"cli/usage","stage":"cli","message":"unexpected argument '--frobnicate' found"}"#,
+            ),
+            // ── A query that ran and found nothing ──
+            //    The one CLI code whose exit status is not 20. `searched`
+            //    rides the message but not the id, so the same miss in a
+            //    tree checked out at another path is the same diagnostic.
+            (
+                "cli/query-no-match",
+                CliError::QueryNoMatch {
+                    tool: "addr2sce",
+                    query: "symbol 'probe__s0__on_entry'".into(),
+                    searched: "out/sce_sourcemap.json".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:6b1e65365d0453bb","code":"cli/query-no-match","stage":"cli","message":"addr2sce: symbol 'probe__s0__on_entry' matched nothing in out/sce_sourcemap.json","actual":"symbol 'probe__s0__on_entry'"}"#,
+            ),
         ]
     }
 
@@ -13153,6 +13208,14 @@ mod tests {
             // tree is this repository's own. None of the three has a
             // candidate list to offer, and none carries an `expected`.
             | CliInvalidSuitePackage
+            // The argument parser's message already carries the usage
+            // line, and the repair is a different command line rather
+            // than a substitution into this one — there is no token in
+            // a record to replace.
+            | CliUsage
+            // Nothing was expected and nothing is offered: the query was
+            // legal and the artifact simply holds no answer.
+            | CliQueryNoMatch
             | MeshDeployRead
             | MeshDeployParse
             | MeshDeployDuplicateMachine
@@ -13819,7 +13882,7 @@ mod tests {
                 | CliMissingMetadataField | CliNotADirectory
                 | CliInvalidFormatOption | CliJsonSerialization
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
-                | CliInvalidSuitePackage
+                | CliInvalidSuitePackage | CliUsage | CliQueryNoMatch
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -13977,9 +14040,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            344,
+            346,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 344 distinct variants to match the DiagnosticCode \
+             expected 346 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
