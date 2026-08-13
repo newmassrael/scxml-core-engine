@@ -175,7 +175,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         endif()
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
             ${_SUB_FORMAT_CMD}
             DEPENDS "${SUB_SCXML_FILE}" "${SCE_CODEGEN}"
             DEPFILE "${SUB_HEADER_FILE}.d"
@@ -248,29 +248,90 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         endif()
     endif()
 
-    # Step 2: SCXML -> C++ code generation (parent + inline children)
-    # W3C SCXML 6.2/6.4: Parent header must depend on child headers (template detection)
-    set(CHILDREN_METADATA "${OUTPUT_DIR}/test${TEST_NUM}_children.txt")
-    set(PROCESS_CHILDREN_SCRIPT "${OUTPUT_DIR}/process_children_${TEST_NUM}.cmake")
+    # Step 2: SCXML -> C++ code generation (parent + children)
+    #
+    # ── One owner per generated file ──────────────────────────────────
+    #
+    # Until 2026-08-13 the children were emitted by a generated CMake script
+    # the parent rule invoked (`process_children_<N>.cmake`), reading a
+    # `_children.txt` the generator wrote. That script was a second producer
+    # ninja could not see: its outputs were declared nowhere, so nothing
+    # rebuilt them when their inputs changed, and it re-emitted files that
+    # DID have rules — rewriting them after ninja had recorded those rules'
+    # depfiles. `ninja -d explain` reported `stored deps info out of date`
+    # and eight rules regenerated on every build, forever, forcing a relink
+    # whose binary differed in 40 bytes with every object byte-identical.
+    #
+    # The three child kinds have three different natural owners, and once
+    # each is named the script has nothing left to do:
+    #
+    #   `test<N>sub*`              own rule (above) — an author-supplied
+    #                              sibling fixture, reached by
+    #                              `<invoke src="file:...">`.
+    #   `__sce_synth_invoke__*`    THE PARENT RULE. The parent's own
+    #                              generation materialises these; measured,
+    #                              `generate test239.scxml` emits
+    #                              `test239__sce_synth_invoke__invoke_1_sm.h`
+    #                              beside its own header. So they are its
+    #                              byproducts, not a separate step's output.
+    #   `test<N>_hybrid*`          own rule (below). Measured: the parent
+    #                              does NOT emit these — `generate
+    #                              test216.scxml` produces `test216_sm.h`
+    #                              alone — so they are the one kind that
+    #                              genuinely needs a producer of its own.
+    #
+    # All three are discoverable at configure time from RESOURCE_DIR, which
+    # is what makes declaring them possible: the synth-invoke and hybrid
+    # documents are committed there (`write_if_changed` in sce-build keeps
+    # them stable), exactly as the C11 path below has always relied on.
+    #
+    # W3C SCXML 6.2/6.4: the parent header depends on child headers.
 
-    # Generate CMake script to process inline children
-    file(WRITE "${PROCESS_CHILDREN_SCRIPT}" "
-        if(EXISTS \"${CHILDREN_METADATA}\")
-            file(STRINGS \"${CHILDREN_METADATA}\" CHILDREN)
-            foreach(child \${CHILDREN})
-                if(child)
-                    execute_process(
-                        COMMAND \"${SCE_CODEGEN}\" generate
-                                \"${OUTPUT_DIR}/\${child}.scxml\" -l cpp -o \"${OUTPUT_DIR}\" --as-child
-                        RESULT_VARIABLE result
-                    )
-                    if(NOT result EQUAL 0)
-                        message(WARNING \"Failed to generate child: \${child}\")
-                    endif()
-                endif()
-            endforeach()
-        endif()
-    ")
+    # Synth-invoke children: byproducts of the parent's own generation.
+    # Declared so ninja knows who makes them and stops treating them as
+    # files that appeared from nowhere.
+    file(GLOB _CPP_SYNTH_FILES
+        "${RESOURCE_DIR}/test${TEST_NUM}__sce_synth_invoke__*.scxml")
+    set(_CPP_PARENT_BYPRODUCTS "")
+    foreach(_CPP_SYNTH ${_CPP_SYNTH_FILES})
+        get_filename_component(_CPP_SYNTH_NAME "${_CPP_SYNTH}" NAME_WE)
+        list(APPEND _CPP_PARENT_BYPRODUCTS
+            "${OUTPUT_DIR}/${_CPP_SYNTH_NAME}_sm.h"
+            "${OUTPUT_DIR}/${_CPP_SYNTH_NAME}_sm.inl")
+    endforeach()
+
+    # Hybrid `<invoke srcexpr=...>` stubs: the one child kind with no other
+    # producer. Staged then generated, mirroring the sub-fixture rules above
+    # and the C11 path below, so it too is a declared output with a depfile.
+    file(GLOB _CPP_HYBRID_FILES "${RESOURCE_DIR}/test${TEST_NUM}_hybrid*.scxml")
+    foreach(_CPP_HYBRID ${_CPP_HYBRID_FILES})
+        get_filename_component(_CPP_HYBRID_NAME "${_CPP_HYBRID}" NAME_WE)
+        set(_CPP_HYBRID_SCXML "${OUTPUT_DIR}/${_CPP_HYBRID_NAME}.scxml")
+        set(_CPP_HYBRID_HEADER "${OUTPUT_DIR}/${_CPP_HYBRID_NAME}_sm.h")
+        set(_CPP_HYBRID_INL "${OUTPUT_DIR}/${_CPP_HYBRID_NAME}_sm.inl")
+
+        add_custom_command(
+            OUTPUT "${_CPP_HYBRID_SCXML}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${_CPP_HYBRID}" "${_CPP_HYBRID_SCXML}"
+            DEPENDS "${_CPP_HYBRID}"
+            COMMENT "Staging hybrid child SCXML: ${_CPP_HYBRID_NAME}.scxml"
+            VERBATIM
+        )
+        add_custom_command(
+            OUTPUT "${_CPP_HYBRID_HEADER}"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_CPP_HYBRID_SCXML}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${_CPP_HYBRID_HEADER}.d"
+            DEPENDS "${_CPP_HYBRID_SCXML}" "${SCE_CODEGEN}"
+            DEPFILE "${_CPP_HYBRID_HEADER}.d"
+            BYPRODUCTS "${_CPP_HYBRID_INL}"
+            COMMENT "Generating C++ code: ${_CPP_HYBRID_NAME}_sm.h + .inl"
+            VERBATIM
+        )
+
+        list(APPEND SUB_HEADER_DEPENDENCIES "${_CPP_HYBRID_HEADER}")
+        list(APPEND GENERATED_W3C_HEADERS "${_CPP_HYBRID_HEADER}")
+        set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
+    endforeach()
 
     # clang-format post-processing (no-op if not available)
     if(SCE_CLANG_FORMAT_FOUND)
@@ -280,12 +341,11 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     endif()
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d"
-        COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d"
         ${_PARENT_FORMAT_CMD}
         DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} "${SCE_CODEGEN}"
         DEPFILE "${GENERATED_HEADER}.d"
-        BYPRODUCTS "${GENERATED_INL}"
+        BYPRODUCTS "${GENERATED_INL}" ${_CPP_PARENT_BYPRODUCTS}
         COMMENT "Generating C++ code: test${TEST_NUM}_sm.h + .inl"
         VERBATIM
     )
@@ -418,7 +478,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         # backend, where a template fix needed a manual `rm` to compile.
         add_custom_command(
             OUTPUT "${_CHILD_HEADER}" "${_CHILD_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_CHILD_SOURCE}.d"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_CHILD_SOURCE}.d"
             DEPENDS "${_CHILD_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_CHILD_SOURCE}.d"
             COMMENT "Generating C11 code: ${_CHILD_NAME}_sm.{h,c}"
@@ -452,7 +512,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_SUB_HEADER}" "${_SUB_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_SUB_SOURCE}.d"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_SUB_SOURCE}.d"
             DEPENDS "${_SUB_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_SUB_SOURCE}.d"
             COMMENT "Generating C11 code: ${_SUB_NAME}_sm.{h,c}"
@@ -492,7 +552,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
-            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_HYBRID_SOURCE}.d"
+            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_HYBRID_SOURCE}.d"
             DEPENDS "${_HYBRID_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_HYBRID_SOURCE}.d"
             COMMENT "Generating C11 code: ${_HYBRID_NAME}_sm.{h,c}"
@@ -576,7 +636,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
 
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
+        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
         DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
         DEPFILE "${GENERATED_SOURCE}.d"
         COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
