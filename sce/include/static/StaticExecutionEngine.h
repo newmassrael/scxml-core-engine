@@ -414,14 +414,11 @@ private:
     /**
      * @brief Execute a state transition with default handlers (for event queue processing)
      *
-     * W3C SCXML Appendix D: For parallel states, executeMicrostep already handles
-     * exit/entry, so no parallel handler is needed.
-     *
      * @param event Event to process
      * @return true if a hierarchical state change occurred
      */
     bool executeTransition(Event event) {
-        return executeTransition(event, [](auto, const auto &) {}, [] {});
+        return executeTransition(event, [] {});
     }
 
     /**
@@ -430,21 +427,30 @@ private:
      * §scxml-3.13: Single Source of Truth for transition execution across all
      * processing paths (event queues, direct processEvent, eventless transitions).
      *
-     * Callers customize two axes of variation via template callbacks:
-     * - onParallelTransition: how parallel states handle exit/entry (queue path: executeMicrostep
-     *   already handled; direct path: explicit executeOnExit/executeOnEntry)
+     * Callers customize one axis of variation via a template callback:
      * - postTransition: work after hierarchical handling, before eventless check
      *   (queue path: nothing; direct path: runMainEventLoop)
      *
-     * @tparam ParallelHandlerFn Callable(State oldState, vector<State> preStates) for parallel states
+     * W3C SCXML Appendix D: who performs exit/entry is *not* an axis of
+     * variation, because it is fixed by the document's shape rather than by the
+     * caller. A policy with parallel states routes every event — external and
+     * eventless alike — through `executeMicrostep`, which owns the whole
+     * exit → transition content → entry sequence and maintains `activeStates_`
+     * itself. Any exit/entry this function adds on top of that is a second
+     * application: `executeExitActions` removes its argument from the
+     * configuration, so re-exiting `oldState` after the microstep has already
+     * re-entered it drops that region's leaf while leaving the region's
+     * ancestors active. The region then holds no atomic state and can never
+     * fire again. `checkEventlessTransitions` already states this invariant for
+     * its own path; expressing it once, here, is what keeps the two paths from
+     * disagreeing.
+     *
      * @tparam PostTransitionFn Callable() for post-hierarchical work
      * @param event Event to process
-     * @param onParallelTransition Parallel exit/entry handler
      * @param postTransition Post-hierarchical work before eventless check
      * @return true if a hierarchical state change occurred
      */
-    template <typename ParallelHandlerFn, typename PostTransitionFn>
-    bool executeTransition(Event event, ParallelHandlerFn &&onParallelTransition, PostTransitionFn &&postTransition) {
+    template <typename PostTransitionFn> bool executeTransition(Event event, PostTransitionFn &&postTransition) {
         State oldState = currentState_;
         std::vector<State> preTransitionStates = getActiveStates();
         if (!policy_.processTransition(currentState_, event, *this)) {
@@ -467,10 +473,11 @@ private:
         if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
             handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
                                          [this] { policy_.executeTransitionActions(*this); });
-        } else {
-            // W3C SCXML Appendix D: Parallel states - caller provides context-specific handling
-            onParallelTransition(oldState, preTransitionStates);
         }
+        // W3C SCXML Appendix D: a parallel policy needs nothing here —
+        // `executeMicrostep` has already exited, run the transition content and
+        // entered. See this function's contract above for why adding to it
+        // costs a region its leaf.
         postTransition();
         checkEventlessTransitions();
         return true;
@@ -484,13 +491,7 @@ private:
      * @param event Event to process
      */
     void processEventImpl(Event event) {
-        bool stateChanged = executeTransition(
-            event,
-            [this](State oldState, const std::vector<State> &preTransitionStates) {
-                executeOnExit(oldState, preTransitionStates);
-                executeOnEntry(currentState_);
-            },
-            [this] { runMainEventLoop(); });
+        bool stateChanged = executeTransition(event, [this] { runMainEventLoop(); });
         // §scxml-6.4: Notify parent only when the machine has globally
         // terminated. `isInFinalState()` adds the parent-presence check to
         // the structural `StatePolicy::isFinalState`, excluding a regional

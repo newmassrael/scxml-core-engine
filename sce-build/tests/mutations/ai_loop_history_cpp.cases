@@ -1,0 +1,62 @@
+# Mutation cases for W3C SCXML 3.10 + 3.11 — a `<history>` restores the cycle
+# to where it was, not to the top of the loop.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ai_loop_history_cpp.cases`.
+#
+# `examples/ai_loop/ai_loop.scxml` carries `<history id="where">` inside the
+# turn cycle so that a person who holds the run to look at the work resumes it
+# where it stopped. That clause had no runtime witness on the C++ side: the
+# static side is validated, and the W3C corpus reaches history through documents
+# whose restoration target is also their initial state, where a history that
+# records nothing is indistinguishable from one that works.
+#
+# The runner is the integration suite rather than the example, and the reason is
+# a measurement. `ai_loop_example` runs four scripted runs and checks that each
+# ends somewhere the document enumerates — and an outcome cannot see a
+# configuration. Measured 2026-08-13: both cases below SURVIVED against
+# `-R '^ai_loop_example$'`, because a run whose `<history>` records nothing
+# still converges. `tests/integration/AiLoopAotTest.cpp` asks the per-clause
+# question instead, and `ResumeReturnsSomewhereTheHistoryDefaultDoesNot` is the
+# assertion written for this one: it holds the cycle in `priming`, which is the
+# single place where a working history and the history state's own
+# `<transition target="working"/>` default give different answers.
+#
+# The helper below is shared between the Interpreter and the AOT engines
+# (`ai_loop_sm.inl` calls it by name), so a defect restored here is a defect in
+# both. Its Rust sibling is `ai_loop_history_rust.cases`, which mutates the
+# committed generated tree because that backend inlines the same filter instead
+# of calling a helper.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/core/HistoryHelper.h
+
+# ── Shallow history records nothing ────────────────────────────────
+#
+# §scxml-3.10 has a shallow `<history>` record the ACTIVE CHILDREN of its
+# parent. Recording an empty set is the shape a filter takes when its parent
+# comparison is wrong in a way that never matches: entry then falls back to the
+# parent's `initial`, so `resume` lands at the top of the cycle instead of
+# where the person paused it. Nothing crashes and no state is left invalid,
+# which is why only a document that pauses somewhere OTHER than its initial
+# state can tell the difference.
+
+mutation_case "shallow history records no state at all" <<'PY'
+edit("sce/include/core/HistoryHelper.h",
+     "        if (parent.has_value() && parent.value() == parentState) {",
+     "        if (false && parent.has_value() && parent.value() == parentState) {")
+PY
+
+# ── Shallow history records the wrong states ───────────────────────
+#
+# The opposite error: keep everything EXCEPT the parent's direct children. A
+# comparison inverted by one character produces it, and in a three-region
+# `<parallel>` what gets recorded is most of the rest of the configuration —
+# states in regions the history state has no business naming. Restoration then
+# re-enters them, so the run comes back from a hold in a configuration no
+# transition produced.
+
+mutation_case "shallow history records everything but the direct children" <<'PY'
+edit("sce/include/core/HistoryHelper.h",
+     "        if (parent.has_value() && parent.value() == parentState) {",
+     "        if (parent.has_value() && parent.value() != parentState) {")
+PY
