@@ -72,8 +72,18 @@ struct HierarchicalAlgorithms {
         // §scxml-D-findLCCA: the Least Common Compound Ancestor is the state that
         // is a proper ancestor of every state in the list and has no descendant
         // with that property. Both engines reach the procedure through here.
+        //
+        // The candidates come from the proper ancestors, which exclude the
+        // state itself, so the two states being equal — an external
+        // self-transition — resolves to the parent and never to the state.
+        // Answering with the state instead left the exit-set walk, which
+        // climbs from the source to just below this answer, without a stopping
+        // point: it ran to the document root, the exit set then named the
+        // enclosing `<parallel>`, and conflict resolution preempted the
+        // sibling regions' own transitions on that same event — where every
+        // region is required to take its enabled transition in one microstep.
         if (state1 == state2) {
-            return state1;
+            return getParent(state1);
         }
 
         // §scxml-3.13: Build ancestor chain starting from state1's parent (test 504)
@@ -573,13 +583,14 @@ public:
      * auto lca = HierarchicalStateHelper<Policy>::findLCA(State::S011, State::S021);
      * // Returns: State::S0 (common parent of S01 and S02)
      *
-     * // Same state
+     * // Same state — an external self-transition
      * lca = HierarchicalStateHelper<Policy>::findLCA(State::S011, State::S011);
-     * // Returns: State::S011 (state is its own LCA)
+     * // Returns: State::S01 (the parent; §scxml-D-findLCCA chooses among
+     * //          proper ancestors, so a state is never its own domain)
      * @endcode
      *
      * @par §scxml-3.13 Compliance
-     * Matches Interpreter's findLCA() behavior for external transitions.
+     * Both engines resolve a transition's domain through this one procedure.
      */
     static std::optional<State> findLCA(State state1, State state2) {
         return HierarchicalAlgorithms::findLCA(state1, state2, [](State s) { return StatePolicy::getParent(s); });

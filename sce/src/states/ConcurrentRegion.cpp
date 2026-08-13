@@ -16,6 +16,31 @@
 
 namespace SCE {
 
+namespace {
+
+/// Find a state by id within one region's subtree.
+///
+/// A region's active state is whatever leaf its own descent reached, which is
+/// only a direct child of the region root when that child is atomic. The search
+/// is bounded by the subtree so a region can never resolve an id belonging to a
+/// sibling region.
+std::shared_ptr<IStateNode> findStateInRegion(const std::shared_ptr<IStateNode> &root, const std::string &stateId) {
+    if (!root) {
+        return nullptr;
+    }
+    if (root->getId() == stateId) {
+        return root;
+    }
+    for (const auto &child : root->getChildren()) {
+        if (auto found = findStateInRegion(child, stateId)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 ConcurrentRegion::ConcurrentRegion(const std::string &id, std::shared_ptr<IStateNode> rootState,
                                    std::shared_ptr<IExecutionContext> executionContext)
     : id_(id), status_(ConcurrentRegionStatus::INACTIVE), rootState_(rootState), executionContext_(executionContext),
@@ -169,20 +194,16 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
 
     // §scxml-3.13: Hierarchical event bubbling - check from current state up through parent hierarchy
     if (!currentState_.empty()) {
-        // Find current state node
-        std::shared_ptr<IStateNode> stateNode = nullptr;
-        if (currentState_ == rootState_->getId()) {
-            stateNode = rootState_;
-        } else {
-            // Search in child states
-            const auto &children = rootState_->getChildren();
-            for (const auto &child : children) {
-                if (child->getId() == currentState_) {
-                    stateNode = child;
-                    break;
-                }
-            }
-        }
+        // Find the region's active state anywhere below the region root, not
+        // only among its direct children. A region whose child is
+        // itself compound comes to rest deeper than one level, and searching
+        // one level down left such a region unable to locate its own active
+        // state at all — so no transition in it was ever enabled and the region
+        // sat still while its siblings moved.
+        //
+        // The search stays inside the region's own subtree, which is the same
+        // boundary the bubbling loop below stops at.
+        std::shared_ptr<IStateNode> stateNode = findStateInRegion(rootState_, currentState_);
 
         if (stateNode) {
             // §scxml-3.13: Hierarchical event bubbling (innermost to outermost)
@@ -749,7 +770,12 @@ bool ConcurrentRegion::determineIfInFinalState() const {
         return false;
     }
 
-    // Check if the current state is a final state by searching through child states
+    // §scxml-D-isInFinalState: a compound state is in a final state exactly when
+    // the child of it that is in the configuration is a `<final>`. Direct
+    // children are the rule here, not a shortcut past the hierarchy: a
+    // `<final>` has no children, so a final child is always itself the active
+    // leaf, and a region resting deeper is one whose child on that path is a
+    // compound state — not final, and correctly reported so.
     const auto &children = rootState_->getChildren();
     for (const auto &child : children) {
         if (child && child->getId() == currentState_) {
@@ -766,7 +792,11 @@ bool ConcurrentRegion::determineIfInFinalState() const {
         return isFinal;
     }
 
-    SCE_LOG_WARN("Region {} current state '{}' not found in state hierarchy", id_, currentState_);
+    // Resting below a direct child is ordinary — a region whose child is itself
+    // compound is there whenever it is not in one of its own `<final>`s. It was
+    // logged as a hierarchy error, which is what made an every-run condition
+    // read as a defect.
+    SCE_LOG_DEBUG("Region {} rests below a direct child at '{}' — not final", id_, currentState_);
     return false;
 }
 

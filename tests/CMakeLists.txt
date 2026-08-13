@@ -271,6 +271,7 @@ target_link_libraries(state_machine_tests
 add_executable(states_tests
     states/ConcurrentRegionTest.cpp
     states/ParallelPseudoStateChildTest.cpp
+    states/TransitionDomainSelfTransitionTest.cpp
     mocks/MockActionExecutor.cpp
 )
 
@@ -524,6 +525,10 @@ add_executable(integration_tests
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
     integration/NestedFinalNotTerminalAotTest.cpp
+    integration/ParallelRegionsTakeOwnTransitionsTest.cpp
+    integration/ParallelRegionsTakeOwnTransitionsAotTest.cpp
+    integration/ParallelCompletionRaisesDoneStateTest.cpp
+    integration/ParallelCompletionRaisesDoneStateAotTest.cpp
     integration/SendParamPayloadTest.cpp
     integration/SendParamPayloadAotTest.cpp
     integration/SCXMLEventTest.cpp
@@ -883,6 +888,28 @@ sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INT
 # the final's parent is the `<scxml>` element. The fixture rests in the nested
 # final so the completion predicate is sampled while the machine is still live.
 sce_generate_static_integration_test(nested_final_not_terminal ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.4: one event can enable a transition in more than one region of a
+# `<parallel>`, and every such region takes its own in the same microstep. Both
+# engines reach a transition's domain through the same shared helper, so the
+# fixture is asymmetric on purpose: one region's transition on the event is an
+# external self-transition, whose domain Appendix D resolves through `findLCCA`
+# over `getProperAncestors` — candidates that never include the state itself.
+# Answering with the state left `computeExitSet`'s climb without a stopping
+# point, so the exit set reached the enclosing `<parallel>` and preempted the
+# other region. The fixture's own guard, not the harness, decides the verdict:
+# `settled` is reachable only once both regions' assignments have run.
+sce_generate_static_integration_test(parallel_regions_take_own_transitions ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.4 + 3.7: a `<parallel>` completes when every region has reached a
+# `<final>`, and that raises `done.state.<parallel>`. A parallel owns no
+# `<final>` directly — the regions do — so a rule that registers the event by
+# walking from a final to its parent never reaches it, while the C++ and C11
+# emitters raise it anyway from the grandparent. The result was generated code
+# naming an undeclared enumerator, which `check` cannot see because acceptance
+# is decided before anything is compiled. Registering the fixture here is what
+# turns that into a build failure.
+sce_generate_static_integration_test(parallel_completion_raises_done_state ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4.1: an `<invoke>` whose `type` names no processor this platform
 # implements is valid SCXML that must raise `error.execution` — not a document

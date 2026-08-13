@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 3.4 + 3.7: a `<parallel>` is done once every one of its regions has
+  reached a `<final>`, and reaching that point raises `done.state.<parallel>`.
+
+  A `<parallel>` owns no `<final>` of its own — its finals sit one level down,
+  inside the regions — so the rule that registers `done.state.<id>` by walking
+  from a `<final>` to its direct parent never reaches the parallel at all. The
+  C++ and C11 emitters raise the parallel's event regardless, guarding on the
+  grandparent, so the generated code referenced an enumerator nothing had
+  declared and did not compile. `check` reported the document acceptable for
+  every backend, because acceptance is decided before anything is compiled.
+
+  Registering the fixture here is what makes that a gate: the generated sources
+  are compiled by this build, so an undeclared event is a build failure rather
+  than a document that passes review and breaks at the consumer.
+
+  `null` datamodel deliberately — the clause under test is about which events a
+  document declares, and nothing here should need a script engine to observe.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_completion_raises_done_state" datamodel="null" initial="run">
+
+  <parallel id="run">
+
+    <state id="a" initial="a1">
+      <state id="a1">
+        <transition event="go" target="a2"/>
+      </state>
+      <final id="a2"/>
+    </state>
+
+    <state id="b" initial="b1">
+      <state id="b1">
+        <transition event="go" target="b2"/>
+      </state>
+      <final id="b2"/>
+    </state>
+
+    <!--
+      Deliberately NOT a transition on `done.state.run`.
+
+      An event named by a transition is collected from that attribute, which
+      would register `done.state.run` no matter what the `<final>` walk does
+      and leave this fixture unable to fail. The defect is precisely the case
+      where nothing listens: the emitter raises the parallel's completion event
+      anyway, so it must be declared because the machine raises it, not because
+      some transition mentions it.
+    -->
+    <transition event="bail" target="stopped"/>
+
+  </parallel>
+
+  <final id="stopped"/>
+</scxml>
