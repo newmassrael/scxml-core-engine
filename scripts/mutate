@@ -203,23 +203,39 @@ mutation_all_targets() {
         awk 'NF && !seen[$0]++'
 }
 
-# "<sha> <path>" per named file, in the order given.
-mutation_file_hashes() {
-    local f
-    for f in "$@"; do
-        printf '%s %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$f"
-    done
+# The compiled targets alone, under the same rule and for the same reason.
+#
+# The de-duplication above was applied to the combined list and not to this
+# one, and the omission was not cosmetic: the baseline is taken between the
+# two passes, so it saw one copy of each declaration while every case saw
+# two. The two readings then differed for reasons that had nothing to do
+# with the mutation, and the "did the mutation reach a compiled target"
+# test below read that difference as yes. Any case whose mutation
+# legitimately leaves the test binaries alone — which is precisely what a
+# `mutation_runtime_targets` case is — was therefore reported
+# INCONCLUSIVE with its real verdict discarded.
+mutation_compiled_targets() {
+    printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} |
+        awk 'NF && !seen[$0]++'
 }
 
-# The same, over every target of either kind. Reads the list rather than
-# splitting a command substitution on whitespace, so a path is a path.
-mutation_all_target_hashes() {
+# "<sha> <path>" for each path read on stdin, in the order given. Reads a
+# stream rather than taking arguments so a path is a path — splitting a
+# command substitution on whitespace would break the first one containing a
+# space.
+mutation_hash_stream() {
     local f
     while IFS= read -r f; do
         [[ -n "$f" ]] || continue
         printf '%s %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$f"
-    done < <(mutation_all_targets)
+    done
 }
+
+# Over every target of either kind, and over the compiled ones alone. Both
+# read a de-duplicated list, so the two readings a verdict compares can
+# only differ because a file's contents did.
+mutation_all_target_hashes() { mutation_all_targets | mutation_hash_stream; }
+mutation_compiled_target_hashes() { mutation_compiled_targets | mutation_hash_stream; }
 
 mutation_snapshot() {
     mkdir -p "$WORK/snapshot"
@@ -446,8 +462,7 @@ mutation_init() {
     dim "resolved ${#MUTATION_ARTIFACTS[@]} test artifact(s) via $MUTATION_RUNNER"
 
     BASELINE_FILE_HASHES="$(mutation_all_target_hashes)"
-    BASELINE_COMPILED_HASHES="$(mutation_file_hashes \
-        ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"})"
+    BASELINE_COMPILED_HASHES="$(mutation_compiled_target_hashes)"
     BASELINE_HASHES="$(mutation_build_and_hash)" || { red "baseline build failed"; exit 2; }
     read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_artifacts)"
     if [[ "$BASELINE_FAILED" != "0" ]]; then
@@ -524,8 +539,7 @@ PY
     # be measuring the unmutated code and reporting it as SURVIVED.
     local file_hashes compiled_hashes
     file_hashes="$(mutation_all_target_hashes)"
-    compiled_hashes="$(mutation_file_hashes \
-        ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"})"
+    compiled_hashes="$(mutation_compiled_target_hashes)"
     if [[ "$file_hashes" == "$BASELINE_FILE_HASHES" ]]; then
         red "INCONCLUSIVE  $label"
         red "              the case body left every target byte-identical —"
