@@ -640,6 +640,68 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.4 + 3.7: a <parallel> completes when every region reaches a
+    # <final>, and that raises done.state.<parallel>. A parallel owns no <final>
+    # directly, so a rule registering the event by walking to a final's parent
+    # never reaches it — while this backend's emitter raises it from the
+    # grandparent. The generated code then named an undeclared enumerator, which
+    # is a compile failure: building this target is most of the gate.
+    sce_generate_static_integration_c_test(parallel_completion_raises_done_state "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_parallel_completion_raises_done_state
+        integration/test_parallel_completion_raises_done_state.c
+        ${INTEGRATION_C_TEST_parallel_completion_raises_done_state_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_parallel_completion_raises_done_state PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_parallel_completion_raises_done_state PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_parallel_completion_raises_done_state PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_parallel_completion_raises_done_state
+        COMMAND sce_c_integration_parallel_completion_raises_done_state
+    )
+    set_tests_properties(c11_integration_parallel_completion_raises_done_state PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # W3C SCXML 3.4: one event can enable a transition in more than one region
+    # of a <parallel>, and every such region takes its own in the same
+    # microstep. The fixture is asymmetric on purpose — one region's transition
+    # is an external self-transition, whose domain is a proper ancestor and
+    # never the state itself; answering otherwise made the exit set name the
+    # enclosing <parallel> and preempt the sibling region.
+    sce_generate_static_integration_c_test(parallel_regions_take_own_transitions "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_parallel_regions_take_own_transitions
+        integration/test_parallel_regions_take_own_transitions.c
+        ${INTEGRATION_C_TEST_parallel_regions_take_own_transitions_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_parallel_regions_take_own_transitions PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_parallel_regions_take_own_transitions PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_parallel_regions_take_own_transitions PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_parallel_regions_take_own_transitions
+        COMMAND sce_c_integration_parallel_regions_take_own_transitions
+    )
+    set_tests_properties(c11_integration_parallel_regions_take_own_transitions PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
     # implements is valid SCXML that must raise error.execution — not a document to
     # reject at build time. C11 reaches that raise through three gates the other

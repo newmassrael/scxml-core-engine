@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b55270895e642c72e5ee41ffae14f94aed361c40fde647371624ef22d0fa79da
+// source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
 // template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
 // generated-at: 0
 
@@ -57,7 +57,6 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         is ParallelRegionsTakeOwnTransitionsState.Drive -> ParallelRegionsTakeOwnTransitionsState.Run
         is ParallelRegionsTakeOwnTransitionsState.Judging -> ParallelRegionsTakeOwnTransitionsState.Running
         is ParallelRegionsTakeOwnTransitionsState.Running -> ParallelRegionsTakeOwnTransitionsState.Drive
-        is ParallelRegionsTakeOwnTransitionsState.Settled -> ParallelRegionsTakeOwnTransitionsState.Running
         is ParallelRegionsTakeOwnTransitionsState.Within -> ParallelRegionsTakeOwnTransitionsState.Budget
         is ParallelRegionsTakeOwnTransitionsState.Working -> ParallelRegionsTakeOwnTransitionsState.Running
         else -> null
@@ -120,13 +119,13 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: ParallelRegionsTakeOwnTransitionsState): Int = when (state) {
-        is ParallelRegionsTakeOwnTransitionsState.Budget -> 6
+        is ParallelRegionsTakeOwnTransitionsState.Budget -> 5
         is ParallelRegionsTakeOwnTransitionsState.Drive -> 1
         is ParallelRegionsTakeOwnTransitionsState.Judging -> 4
         is ParallelRegionsTakeOwnTransitionsState.Run -> 0
         is ParallelRegionsTakeOwnTransitionsState.Running -> 2
-        is ParallelRegionsTakeOwnTransitionsState.Settled -> 5
-        is ParallelRegionsTakeOwnTransitionsState.Within -> 7
+        is ParallelRegionsTakeOwnTransitionsState.Settled -> 7
+        is ParallelRegionsTakeOwnTransitionsState.Within -> 6
         is ParallelRegionsTakeOwnTransitionsState.Working -> 3
     }
 
@@ -329,7 +328,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     override fun onEntry(state: ParallelRegionsTakeOwnTransitionsState) {
         when (state) {
             is ParallelRegionsTakeOwnTransitionsState.Budget -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:51 :: budget :: _state_body
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:60 :: budget :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("budget")) return
                 if (!suppressChildEntry) {
@@ -370,12 +369,14 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 }
             }
             is ParallelRegionsTakeOwnTransitionsState.Settled -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:45 :: settled :: _state_body
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:70 :: settled :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("settled")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
             }
             is ParallelRegionsTakeOwnTransitionsState.Within -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:52 :: within :: _state_body
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:61 :: within :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("within")) return
             }
@@ -392,7 +393,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
     override fun onExit(state: ParallelRegionsTakeOwnTransitionsState) {
         when (state) {
             is ParallelRegionsTakeOwnTransitionsState.Budget -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:51 :: budget :: _state_body
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:60 :: budget :: _state_body
                 activeStateIds.remove("budget")
             }
             is ParallelRegionsTakeOwnTransitionsState.Drive -> {
@@ -412,10 +413,10 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<ParallelRegionsTakeOwnTransitionsState, Int>>()
                 if (activeStateIds.contains("budget")) {
-                    toExit.add(ParallelRegionsTakeOwnTransitionsState.Budget to 6)
+                    toExit.add(ParallelRegionsTakeOwnTransitionsState.Budget to 5)
                 }
                 if (activeStateIds.contains("within")) {
-                    toExit.add(ParallelRegionsTakeOwnTransitionsState.Within to 7)
+                    toExit.add(ParallelRegionsTakeOwnTransitionsState.Within to 6)
                 }
                 if (activeStateIds.contains("drive")) {
                     toExit.add(ParallelRegionsTakeOwnTransitionsState.Drive to 1)
@@ -425,9 +426,6 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 }
                 if (activeStateIds.contains("judging")) {
                     toExit.add(ParallelRegionsTakeOwnTransitionsState.Judging to 4)
-                }
-                if (activeStateIds.contains("settled")) {
-                    toExit.add(ParallelRegionsTakeOwnTransitionsState.Settled to 5)
                 }
                 if (activeStateIds.contains("working")) {
                     toExit.add(ParallelRegionsTakeOwnTransitionsState.Working to 3)
@@ -443,11 +441,11 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 activeStateIds.remove("running")
             }
             is ParallelRegionsTakeOwnTransitionsState.Settled -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:45 :: settled :: _state_body
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:70 :: settled :: _state_body
                 activeStateIds.remove("settled")
             }
             is ParallelRegionsTakeOwnTransitionsState.Within -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:52 :: within :: _state_body
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:61 :: within :: _state_body
                 activeStateIds.remove("within")
             }
             is ParallelRegionsTakeOwnTransitionsState.Working -> {
@@ -467,7 +465,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         when (source) {
         is ParallelRegionsTakeOwnTransitionsState.Within -> when {
             event is ParallelRegionsTakeOwnTransitionsEvent.E -> {
-                // SCE-MAP: parallel_regions_take_own_transitions.scxml:53 :: within :: _transition_0
+                // SCE-MAP: parallel_regions_take_own_transitions.scxml:62 :: within :: _transition_0
 
 
             executeAssign("m", "m + 1")

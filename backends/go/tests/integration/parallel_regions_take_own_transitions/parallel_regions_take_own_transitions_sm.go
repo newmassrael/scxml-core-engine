@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b55270895e642c72e5ee41ffae14f94aed361c40fde647371624ef22d0fa79da
+// source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
 // template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
 // generated-at: 0
 
@@ -366,6 +366,8 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) InitialState() ParallelRegions
 // IsFinalState returns true if state is a <final> state (W3C SCXML 3.7).
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) IsFinalState(state ParallelRegionsTakeOwnTransitionsState) bool {
 	switch state {
+	case ParallelRegionsTakeOwnTransitionsStateSettled:
+		return true
 	}
 	return false
 }
@@ -381,8 +383,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetParent(state ParallelRegion
 		return ParallelRegionsTakeOwnTransitionsStateRunning, true
 	case ParallelRegionsTakeOwnTransitionsStateRunning:
 		return ParallelRegionsTakeOwnTransitionsStateDrive, true
-	case ParallelRegionsTakeOwnTransitionsStateSettled:
-		return ParallelRegionsTakeOwnTransitionsStateRunning, true
 	case ParallelRegionsTakeOwnTransitionsStateWithin:
 		return ParallelRegionsTakeOwnTransitionsStateBudget, true
 	case ParallelRegionsTakeOwnTransitionsStateWorking:
@@ -444,7 +444,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) IsDescendantOf(desc, anc Paral
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetDocumentOrder(state ParallelRegionsTakeOwnTransitionsState) int {
 	switch state {
 	case ParallelRegionsTakeOwnTransitionsStateBudget:
-		return 6
+		return 5
 	case ParallelRegionsTakeOwnTransitionsStateDrive:
 		return 1
 	case ParallelRegionsTakeOwnTransitionsStateJudging:
@@ -454,9 +454,9 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetDocumentOrder(state Paralle
 	case ParallelRegionsTakeOwnTransitionsStateRunning:
 		return 2
 	case ParallelRegionsTakeOwnTransitionsStateSettled:
-		return 5
-	case ParallelRegionsTakeOwnTransitionsStateWithin:
 		return 7
+	case ParallelRegionsTakeOwnTransitionsStateWithin:
+		return 6
 	case ParallelRegionsTakeOwnTransitionsStateWorking:
 		return 3
 	}
@@ -901,7 +901,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionActions(engin
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == ParallelRegionsTakeOwnTransitionsStateWithin && idx == 0 {
-		//line parallel_regions_take_own_transitions.scxml:53
+		//line parallel_regions_take_own_transitions.scxml:62
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
 	if err := p.assignVariable(`m`, `m + 1`); err != nil {
