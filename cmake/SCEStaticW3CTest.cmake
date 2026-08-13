@@ -13,21 +13,23 @@ endif()
 # clang-format integration for generated C++ code
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 
-# Find sce-codegen binary (built via: cargo build --bin sce-codegen --features cli -p sce-build)
-find_program(SCE_CODEGEN sce-codegen
-    PATHS "${CMAKE_SOURCE_DIR}/target/debug" "${CMAKE_SOURCE_DIR}/target/release"
-    NO_DEFAULT_PATH
-)
-if(NOT SCE_CODEGEN)
-    # Fallback: check system PATH
-    find_program(SCE_CODEGEN sce-codegen)
-endif()
-
-if(SCE_CODEGEN)
-    message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
-else()
-    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli -p sce-build")
-endif()
+# Resolve the generator through the ecosystem locator rather than here.
+#
+# This module used to carry its own `find_program`, with the profiles in
+# its own order, and that second copy cost twice. It listed debug before
+# release while the root list's install rule listed them the other way, so
+# one tree could build against a fresh debug binary and install a stale
+# release one. And because it never reached SCEFindCodegen, it never
+# reached the content witness that module runs — on the W3C static-test
+# lane, which is exactly where a months-old generator was found generating
+# on 2026-08-13.
+#
+# The duplicate hid from `codegen_binary_resolution.rs` because CMake
+# spells the search across two arguments and that gate matched only the
+# one-line shell spelling. `nothing_outside_the_locators_reaches_into_a_
+# profile_directory` is the check that now sees this shape.
+include(${CMAKE_CURRENT_LIST_DIR}/SCEFindCodegen.cmake)
+message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
 # sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
 #

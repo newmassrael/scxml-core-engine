@@ -25,6 +25,65 @@ pub mod forge;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod formatter;
 pub mod generator;
+/// Content witness binding the `sce-codegen` binary to the sources it was
+/// built from.
+///
+/// # The failure this exists for
+///
+/// CMake does not build `sce-codegen`. `cmake/SCEFindCodegen.cmake` locates
+/// whatever binary happens to sit in `target/`, and the generation rules
+/// list that binary in `DEPENDS` — so a *changed* binary regenerates, but
+/// nothing ever produces a new one. `target/` is also excluded from the
+/// transfer that populates a build machine, so a tree whose Rust sources
+/// are current can generate with a binary that is months old.
+///
+/// That happened on 2026-08-13: one commit compiled locally and failed on
+/// the build machine with an undeclared `Done_state_run`. The two trees
+/// were byte-identical; the only difference was which binary was on disk.
+/// Compilation failure is the lucky direction — when the older generator
+/// is the *more permissive* one, the output compiles and is wrong, and the
+/// acceptance suites cannot see it because they run against the generator
+/// rather than against its age.
+///
+/// # Why the witness is content and not a timestamp
+///
+/// The first attempt at this compared mtimes at configure time and was
+/// reverted the same day. The transfer that populates a build machine runs
+/// `rsync -rlpgoD --checksum` — no `-t`, so mtimes are not preserved. Every
+/// arriving source is newer than the remote binary, and the check refused
+/// every remote configure for a generator that was in fact current. A
+/// digest over bytes has no such dependency on how the tree was delivered.
+///
+/// # What the witness covers, and what it deliberately does not
+///
+/// The set is everything that decides what the compiled binary *is*:
+/// [`generator_witness::WITNESS_FILES`] plus every file under
+/// [`generator_witness::WITNESS_TREES`]. `Cargo.lock` is folded in for the
+/// same reason [`forge::drift::compute_template_hash`] folds it — it is the
+/// surrogate for dependency identity, since compiled bytes are not
+/// reproducible enough to hash directly.
+///
+/// The Jinja2 template tree is **not** in the set, and that omission is
+/// load-bearing rather than an oversight. A native `sce-codegen` reads
+/// templates from disk at run time (`SCE_TEMPLATE_DIR`, resolved by
+/// `template::find_template_base`); the `include_str!` registry `build.rs`
+/// emits serves the WASM build, which has no filesystem. So an edited
+/// template is already in effect for the binary CMake invokes, and
+/// demanding a rebuild for one would refuse a build that is correct — the
+/// same false refusal the mtime attempt was reverted for. Template drift
+/// has its own witness in the §synth-6.2.6 `template-hash`, which is
+/// recomputed per run from the bytes on disk.
+///
+/// # How the two halves are compared
+///
+/// `build.rs` calls [`generator_witness::digest_hex`] at compile time and
+/// embeds the result as [`GENERATOR_SOURCE_DIGEST`]. `sce-codegen
+/// verify-generator` calls the *same* function against the tree in front of
+/// it and compares. One implementation answers both halves, so the
+/// comparison cannot fail because two spellings of the algorithm drifted
+/// apart — which is the failure mode a CMake-side reimplementation of the
+/// hash would carry.
+pub mod generator_witness;
 pub mod kotlin;
 pub mod lua_transformer;
 /// The stdout manifest wire surface — the single JSON line
@@ -151,6 +210,24 @@ pub mod xinclude;
 /// here, and why uncommitted edits are the job of the §synth-6.2.6
 /// source/template hashes instead.
 pub const GENERATOR_COMMIT: &str = env!("SCE_GIT_COMMIT");
+
+/// Digest of the sources this generator was compiled from, or
+/// [`generator_witness::DIGEST_UNAVAILABLE`] when the build could not read
+/// them.
+///
+/// The sibling above names the *committed* state a build started from,
+/// which is exactly what it can keep honest — and exactly what does not
+/// answer the question a build system has to ask. Uncommitted edits are
+/// the normal working state of this repository, so a binary and a tree can
+/// agree on the commit and still disagree on every line the generator
+/// runs. This constant closes that gap: it is a function of the bytes in
+/// [`generator_witness::WITNESS_FILES`] and [`generator_witness::WITNESS_TREES`],
+/// recomputable at any later moment by `sce-codegen verify-generator`.
+///
+/// It exists because nothing else in the build graph produces the binary.
+/// See [`generator_witness`] for the failure that made that visible and
+/// for why a timestamp cannot stand in for this.
+pub const GENERATOR_SOURCE_DIGEST: &str = env!("SCE_GENERATOR_SOURCE_DIGEST");
 
 use model::SCXMLModel;
 use std::collections::HashSet;

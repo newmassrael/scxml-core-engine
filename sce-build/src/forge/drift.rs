@@ -33,7 +33,7 @@
 //!   spec's "sce-build binary" reference because compiled binary bytes are
 //!   linker-non-deterministic.
 
-use sha2::{Digest, Sha256};
+use crate::generator_witness::{hash_btreemap, hex_encode, sha256_bytes};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -723,40 +723,12 @@ fn canonical_key(dir: &Path) -> PathBuf {
     fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())
 }
 
-fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hasher.finalize().into()
-}
-
-/// Deterministic folding of the per-file hashes: emits a fixed-format
-/// concatenation of `(len(path_bytes), path_bytes, hash_bytes)` for each
-/// entry in BTreeMap order, then sha256s the result. Avoids a serde
-/// crate dep and keeps the hash invariant under path-encoding (UTF-8
-/// is required because BTreeMap iteration order is byte-stable on
-/// `PathBuf`'s lossy str representation).
-fn hash_btreemap(entries: &BTreeMap<PathBuf, [u8; 32]>) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    for (path, hash) in entries {
-        let path_str = path.to_string_lossy();
-        let path_bytes = path_str.as_bytes();
-        let len = path_bytes.len() as u64;
-        hasher.update(len.to_le_bytes());
-        hasher.update(path_bytes);
-        hasher.update(hash);
-    }
-    hasher.finalize().into()
-}
-
-fn hex_encode(bytes: &[u8; 32]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for &b in bytes {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0x0f) as usize] as char);
-    }
-    out
-}
+// The three primitives this module folds its hashes with — `sha256_bytes`,
+// `hash_btreemap`, `hex_encode` — live in [`crate::generator_witness`]
+// because `sce-build/build.rs` `include!`s that file and cannot reach the
+// library. Stating them twice would put the §synth-6.2.6 `template-hash`
+// one careless edit away from moving silently under every committed
+// generated header in the tree.
 
 // ── tests ─────────────────────────────────────────────────────────────
 

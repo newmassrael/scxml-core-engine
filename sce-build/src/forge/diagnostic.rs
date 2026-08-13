@@ -1956,6 +1956,31 @@ pub enum DiagnosticCode {
     CliNoScxmlTag,
     #[serde(rename = "cli/invalid-suite-package")]
     CliInvalidSuitePackage,
+    /// The generator binary was not built from the sources it is being
+    /// run against.
+    ///
+    /// Nothing in the C++ build graph produces `sce-codegen`; CMake finds
+    /// whatever binary is in `target/` and uses it, and `target/` does not
+    /// travel to a build machine. So a tree whose sources are current can
+    /// generate with a binary that is arbitrarily old, and the acceptance
+    /// suites cannot see it because they run *against* the generator.
+    ///
+    /// `expected` carries the digest of the tree, `actual` the digest the
+    /// binary was stamped with. Repair is a rebuild, not an edit — see
+    /// [`crate::generator_witness`].
+    #[serde(rename = "cli/generator-source-drift")]
+    CliGeneratorSourceDrift,
+    /// Freshness could not be established, which is not the same claim as
+    /// drift and must not be reported as one.
+    ///
+    /// The binary carries [`crate::generator_witness::DIGEST_UNAVAILABLE`]
+    /// because the build that produced it could not read the witness set —
+    /// a vendored crate or a release tarball with no workspace
+    /// `Cargo.lock` beside it. Reporting that as drift would blame the
+    /// tree for the tool's own missing input, which is the misattribution
+    /// `sce_gate_cannot_run` exists to prevent elsewhere.
+    #[serde(rename = "cli/generator-source-unverifiable")]
+    CliGeneratorSourceUnverifiable,
     /// The invocation itself did not parse: a required argument is
     /// absent, a flag is unknown, a value is outside its enumeration,
     /// or two mutually-exclusive modes were named together.
@@ -2991,6 +3016,8 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliFormatStyleNotFound,
         CliNoScxmlTag,
         CliInvalidSuitePackage,
+        CliGeneratorSourceDrift,
+        CliGeneratorSourceUnverifiable,
         CliUsage,
         CliQueryNoMatch,
         // Mesh Deploy
@@ -3757,6 +3784,8 @@ impl DiagnosticCode {
             | CliFormatStyleNotFound
             | CliNoScxmlTag
             | CliInvalidSuitePackage
+            | CliGeneratorSourceDrift
+            | CliGeneratorSourceUnverifiable
             | CliUsage
             | CliQueryNoMatch
             | MeshDeployRead
@@ -4125,6 +4154,8 @@ impl DiagnosticCode {
             CliFormatStyleNotFound => "cli/format-style-not-found",
             CliNoScxmlTag => "cli/no-scxml-tag",
             CliInvalidSuitePackage => "cli/invalid-suite-package",
+            CliGeneratorSourceDrift => "cli/generator-source-drift",
+            CliGeneratorSourceUnverifiable => "cli/generator-source-unverifiable",
             CliUsage => "cli/usage",
             CliQueryNoMatch => "cli/query-no-match",
             MeshDeployRead => "mesh/deploy-read",
@@ -12428,6 +12459,31 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:c241dc46b96f9f91","code":"cli/invalid-suite-package","stage":"cli","message":"--suite-package: 'crate' is not a usable rust conformance suite name: its module path 'crate' is a Rust keyword, so generated tests could not name it"}"#,
             ),
+            // ── Generator content witness ──
+            //    Two codes rather than one because "the binary disagrees
+            //    with this tree" and "the comparison could not be made"
+            //    send the reader to different places, and a consumer
+            //    branching on the code must be able to tell them apart
+            //    without reading prose.
+            (
+                "cli/generator-source-drift",
+                CliError::GeneratorSourceDrift {
+                    root: "/home/dev/scxml-core-engine".into(),
+                    embedded_hex:
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                    recomputed_hex:
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:6d7738e11a3600c2","code":"cli/generator-source-drift","stage":"cli","message":"this sce-codegen was built from different sources than /home/dev/scxml-core-engine holds (binary=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, tree=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) — rebuild it with: cargo build --bin sce-codegen --features cli -p sce-build","actual":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            ),
+            (
+                "cli/generator-source-unverifiable",
+                CliError::GeneratorSourceUnverifiable {
+                    root: "/home/dev/scxml-core-engine".into(),
+                    reason: "this binary carries no source witness".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:3e7c8b218f240010","code":"cli/generator-source-unverifiable","stage":"cli","message":"cannot establish whether this sce-codegen matches /home/dev/scxml-core-engine: this binary carries no source witness. Both halves need a full checkout — rebuild the binary with `cargo build --bin sce-codegen --features cli -p sce-build`, or point --root at the workspace it was built from"}"#,
+            ),
             // ── §synth-6.2.6 generated-source drift (B9, 2026-05-14) ──
             //    Single code covers both axes (source-hash + template-hash).
             //    `axis` field carries `"source"` or `"template"` to
@@ -13364,6 +13420,13 @@ mod tests {
             //    deterministic `sce-codegen <regen-command>` — no
             //    candidate set across multiple repair paths. ──
             | ForgeSourceHashMismatch
+            // ── Generator content witness. Both repairs are single and
+            //    deterministic — rebuild the binary, or build one from a
+            //    tree it can read — so neither offers candidates, and the
+            //    two digests ride `message` + `actual` rather than
+            //    `expected`, which no CLI-family code carries. ──
+            | CliGeneratorSourceDrift
+            | CliGeneratorSourceUnverifiable
             // ── §synth-6.2.6 source-set coverage guard. One repair
             //    path — re-point `--input-root` at a directory that
             //    contains the input — so there is no candidate set. ──
@@ -13882,7 +13945,9 @@ mod tests {
                 | CliMissingMetadataField | CliNotADirectory
                 | CliInvalidFormatOption | CliJsonSerialization
                 | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
-                | CliInvalidSuitePackage | CliUsage | CliQueryNoMatch
+                | CliInvalidSuitePackage
+                | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
+                | CliUsage | CliQueryNoMatch
                 | MeshDeployRead | MeshDeployParse | MeshDeployUnsupportedVersion
                 | MeshDeployDuplicateMachine | MeshDeployInvalidOrderingTimings
                 | MeshDeployInvalidDedupWindow
@@ -14040,9 +14105,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            346,
+            348,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 346 distinct variants to match the DiagnosticCode \
+             expected 348 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

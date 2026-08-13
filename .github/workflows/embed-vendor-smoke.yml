@@ -107,8 +107,16 @@ jobs:
     - name: Put sce-codegen on PATH
       # SCECodegen.cmake's find_program resolves sce-codegen from PATH
       # in the embed vendoring scenario (no system SCE install).
+      #
+      # The directory comes from the locator, not from this file. Named
+      # here it said `target/release` — the profile the step above had
+      # just deleted, and not the one the build beside it produces. So
+      # this line added an empty directory to PATH and the step's whole
+      # stated purpose went unmet, silently, because a PATH entry that
+      # resolves to nothing looks exactly like one that was not needed.
       run: |
-        echo "${{ github.workspace }}/target/release" >> "$GITHUB_PATH"
+        source scripts/lib/sce_codegen.sh
+        dirname "$(sce_codegen_require)" >> "$GITHUB_PATH"
 
     # Delegates to the gate runner rather than restating the three
     # verification scripts, which the gate already runs in this order:

@@ -126,6 +126,44 @@ pub enum CliError {
     #[error("--suite-package: {detail}")]
     InvalidSuitePackage { detail: String },
 
+    /// The binary was not built from the sources it is standing in.
+    ///
+    /// The message carries the rebuild command rather than a description
+    /// of the mismatch, because the mismatch is never the interesting
+    /// half: whoever sees this needs the one command that makes it go
+    /// away, and every caller — CMake, gradle, a developer — repairs it
+    /// the same way. See [`crate::generator_witness`] for why the check
+    /// is a digest over bytes and not a comparison of timestamps.
+    #[error(
+        "this sce-codegen was built from different sources than {root} holds \
+         (binary={embedded_hex}, tree={recomputed_hex}) — rebuild it with: \
+         cargo build --bin sce-codegen --features cli -p sce-build"
+    )]
+    GeneratorSourceDrift {
+        root: String,
+        embedded_hex: String,
+        recomputed_hex: String,
+    },
+
+    /// Freshness could not be established, on either side of the
+    /// comparison. Deliberately not spelled as drift: nothing was
+    /// measured, so there is no disagreement to report, and saying there
+    /// is would send the reader to rebuild against a tree that was never
+    /// the problem.
+    ///
+    /// `reason` carries which half was missing — the binary was built
+    /// where the witness set was unreadable, or the tree in front of it
+    /// does not hold one. One variant rather than two because the reader's
+    /// next move is the same in both cases (get a full checkout on the
+    /// side that lacks one) and `reason` already names which side.
+    #[error(
+        "cannot establish whether this sce-codegen matches {root}: {reason}. \
+         Both halves need a full checkout — rebuild the binary with \
+         `cargo build --bin sce-codegen --features cli -p sce-build`, or point \
+         --root at the workspace it was built from"
+    )]
+    GeneratorSourceUnverifiable { root: String, reason: String },
+
     /// Spec §synth-6.2.6 generated-source drift: the embedded `source-hash`
     /// or `template-hash` in a generated file no longer matches the
     /// recomputed value over the current source + template state.
@@ -361,6 +399,30 @@ impl SingleDiagnostic for CliError {
             CliError::InvalidSuitePackage { detail } => (
                 DiagnosticCode::CliInvalidSuitePackage,
                 vec![detail.clone()],
+                None,
+                None,
+            ),
+            CliError::GeneratorSourceDrift {
+                root,
+                embedded_hex,
+                recomputed_hex,
+            } => (
+                DiagnosticCode::CliGeneratorSourceDrift,
+                // The tree's digest is the identity of the answer: the
+                // same stale binary in front of two different trees is
+                // two different facts, while the same tree reported twice
+                // is one. Keying on the embedded digest instead would
+                // collapse the first pair and split the second.
+                vec![root.clone(), recomputed_hex.clone()],
+                // `actual` is what the binary claims to be — the value a
+                // consumer needs in order to say *which* generator it
+                // was holding.
+                Some(embedded_hex.clone()),
+                None,
+            ),
+            CliError::GeneratorSourceUnverifiable { root, reason } => (
+                DiagnosticCode::CliGeneratorSourceUnverifiable,
+                vec![root.clone(), reason.clone()],
                 None,
                 None,
             ),
