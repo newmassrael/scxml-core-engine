@@ -27,11 +27,13 @@
      regression that fires a second raise on this path is caught before
      it reaches the W3C harness.
 
-     `datamodel="null"` mirrors the existing mesh-rpc runtime fixtures
-     (brake_invoke.scxml, pool_client.scxml, etc.). srcexpr evaluation
-     uses the build-configured default script engine (Lua) regardless
-     of the declared datamodel — the attribute governs author
-     `<script>` / `<assign>` semantics, not the mesh-rpc binding.
+     `datamodel="ecmascript"` mirrors the existing mesh-rpc runtime
+     fixtures (brake_invoke.scxml, pool_client.scxml, etc.). It is the
+     honest declaration for a document carrying `srcexpr` and `<param
+     expr>`: W3C SCXML B.1.4 gives the Null data model no value
+     expression language, so `null` would name a model in which none of
+     these attributes can be written. The fixture read `null` for as
+     long as the attribute reached no decision.
 
      The `phantom` state carries a static `src="#motor_srcexpr_stub"`
      invoke whose sole purpose is codegen: without at least one
@@ -43,7 +45,7 @@
      is non-empty and `#ghost_target` genuinely misses the match
      loop rather than hitting a degenerate empty table. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" name="srcexpr_miss" initial="idle">
+       version="1.0" datamodel="ecmascript" name="srcexpr_miss" initial="idle">
     <state id="idle">
         <transition event="probe.go" target="calling_miss"/>
     </state>

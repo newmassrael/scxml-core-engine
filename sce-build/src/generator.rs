@@ -1905,7 +1905,7 @@ mod tests {
     /// rejection path on backends without mesh codegen.
     const MESH_RPC_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null" name="brake" initial="idle">
+       datamodel="ecmascript" name="brake" initial="idle">
   <state id="idle">
     <invoke type="sce:mesh-rpc" src="#motor">
       <param name="_mesh_event" expr="'service.request.compute_force'"/>
@@ -2739,7 +2739,7 @@ mod tests {
     /// of the emission, so both are exercised here.
     const STATIC_PARAM_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null" name="sp_fixture" initial="idle">
+       datamodel="ecmascript" name="sp_fixture" initial="idle">
   <state id="idle">
     <onentry>
       <send event="now.fired">
@@ -2840,7 +2840,7 @@ mod tests {
             let doc = format!(
                 r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null" name="dyn_fixture" initial="idle">
+       datamodel="ecmascript" name="dyn_fixture" initial="idle">
   <state id="idle">
     <onentry><send {attrs}/></onentry>
     <transition event="e.x" target="done"/>

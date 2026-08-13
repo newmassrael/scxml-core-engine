@@ -461,6 +461,7 @@ references against a real document and drift silently.
 | `scxml/dead-transition` | `validation` | no |  |
 | `scxml/duplicate-session-role-declaration` | `validation` | no |  |
 | `scxml/non-exhaustive-event-handling` | `validation` | no |  |
+| `scxml/null-datamodel-forbids-construct` | `validation` | no | W3C SCXML §B.1 |
 | `scxml/on-sample-event-name-conflict` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
 | `scxml/on-sample-invalid-parent` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
 | `scxml/on-sample-link-duplicate-in-state` | `validation` | no | SCE Protocol-Synthesis RFC §5.E |
@@ -471,6 +472,7 @@ references against a real document and drift silently.
 | `scxml/top-level-script-unloaded` | `validation` | no | W3C SCXML §5.8 |
 | `scxml/unknown-session-role-kind` | `validation` | `replace_one_of` |  |
 | `scxml/unreachable-state` | `validation` | no |  |
+| `scxml/unsupported-datamodel` | `validation` | `replace_one_of` | W3C SCXML §3.2 |
 | `timer/period-below-tick-rate` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |
 | `traceability/meta-generated-source-line-marker-missing` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/sce-map-attribute-stripped` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |

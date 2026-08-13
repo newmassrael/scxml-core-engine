@@ -10,7 +10,7 @@
      paired performMeshInvoke / performMeshCancel sites — regression in
      either pool branch of mesh_transport.h.jinja2 surfaces at compile. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" name="pool_client" initial="idle">
+       version="1.0" datamodel="ecmascript" name="pool_client" initial="idle">
     <state id="idle">
         <transition event="query.gamer" target="calling_gamer"/>
         <transition event="query.controller" target="calling_controller"/>
@@ -19,11 +19,14 @@
     <state id="calling_gamer">
         <invoke type="sce:mesh-rpc" src="#gamer">
             <param name="_mesh_event" expr="'service.request.ping'"/>
-            <!-- String literal so the compile-only fixture stays on
-                 datamodel="null". Runtime pool substitution parses the
-                 value shape-agnostically — the leading/trailing quotes
-                 from scriptValueToJsonString are stripped before
-                 KeyExpr assembly. -->
+            <!-- A string literal, so nothing here needs evaluating at
+                 runtime. The declaration is `ecmascript` regardless:
+                 `expr` is a value expression whichever way it folds,
+                 and W3C SCXML B.1.4 gives the Null data model no value
+                 expression language to write one in. Runtime pool
+                 substitution parses the value shape-agnostically — the
+                 leading/trailing quotes from scriptValueToJsonString
+                 are stripped before KeyExpr assembly. -->
             <param name="id" expr="'42'"/>
         </invoke>
         <transition event="done.invoke" target="ok"/>

@@ -10,7 +10,7 @@
      same stash, same publish, same parent `setPolicyMetadata` hydration
      via `EventDataHelper::jsonStringToScriptValue`. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" initial="done"
+       version="1.0" datamodel="ecmascript" initial="done"
        name="worker_session_f_donedata_content">
     <final id="done">
         <donedata>

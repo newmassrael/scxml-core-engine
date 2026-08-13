@@ -51,9 +51,10 @@ The accepted surface comprises:
   both-empty shape is rejected at parse time, wire
   `validation/require-either`), `<assign>`, `<log>`, `<script>`.
 - **Datamodel**: `<datamodel>` / `<data>` with expression-language
-  assignment. The generated code runs a Lua 5.4 datamodel by default
-  (see `lua_engine_default.md`); ECMAScript data-model documents are
-  accepted and rewritten through the Lua engine at generation time.
+  assignment, under the two data models SCE implements — see
+  [the `datamodel` attribute](#the-datamodel-attribute) for which
+  values are accepted, what the Null data model withholds, and what
+  declaring `ecmascript` currently obliges.
 - **Invoke**: `<invoke type="scxml">` with inline `<content>` or
   external `src`, static param binding via `<param>` and `<finalize>`.
 - **HTTP event processor**: `<send type="BasicHTTPEventProcessor">`
@@ -74,6 +75,73 @@ of whether the IRP suite happens to exercise those categories today.
 The acceptance boundary for each specific rejection is linked from the
 appendix. Codes are grouped by pipeline stage, matching the Stage
 taxonomy in `SCE_ERROR_CONTRACT.md` §4.
+
+### The `datamodel` attribute
+
+W3C SCXML §3.2 gives `datamodel` the valid values `"null"`,
+`"ecmascript"`, `"xpath"` "or other platform-defined values", and leaves
+its default platform-specific. §B adds the obligation: a conformant
+processor MUST support the null data model and MAY support the others.
+
+SCE accepts two values and rejects the rest at parse:
+
+| Value | Status |
+|---|---|
+| `null` | Accepted — §B.1 enforced (see below) |
+| `ecmascript` | Accepted — evaluated by the injected script engine |
+| `xpath` | Rejected, `scxml/unsupported-datamodel` — a spec-defined data model SCE has not implemented |
+| anything else | Rejected, `scxml/unsupported-datamodel` — §3.2 permits platform-defined values and SCE defines none |
+| absent | `ecmascript` |
+
+The default is a choice, not an inference. §3.2 leaves it to the
+platform, and SCE picks `ecmascript` because a document that omits the
+attribute and then writes `cond="x > 1"` is asking for a value
+expression language that the Null data model does not have. The choice
+is made in one place (`sce_build::model::Datamodel`'s `Default`) so the
+engines cannot answer it differently.
+
+**Null data model.** §B.1 is not "a data model with nothing in it" — it
+withholds four languages separately, and SCE reports each under its own
+sub-section as `scxml/null-datamodel-forbids-construct`:
+
+| Rule | Withheld |
+|---|---|
+| §B.1.1 | The underlying data model — `<datamodel>`, `<data>`, `<assign>`, `<foreach>` |
+| §B.1.2 | Boolean expressions other than `In(id)` |
+| §B.1.3 | Location expressions — `location=`, `idlocation=` |
+| §B.1.4 | Value expressions — `expr=`, `srcexpr=`, `targetexpr=`, `delayexpr=`, `eventexpr=`, `typeexpr=` |
+| §B.1.5 | Scripting |
+
+Two deliberate narrowings, both extensions rather than readings:
+
+- **Literal `<donedata>` / `<content>` / `<param>` are admitted.** §B.1.7
+  withholds the §5 elements wholesale. SCE refuses only those that need
+  the data model itself (the §B.1.1 row above) and admits the other three
+  when they carry literals, because §B.1 withholds four *languages* and a
+  literal payload names an expression in none of them. An `expr` on any
+  of them is still refused — by the §B.1.3/§B.1.4 rows, under the
+  sub-section that actually withholds the language.
+- **Native `<script><cpp>…</cpp></script>` / `<kt>` is admitted.** It is
+  SCE's native host action (§2.11), lowered straight into the generated
+  language with no script engine involved, so §B.1.5 withholds nothing it
+  uses. A `<script>` carrying data model script text — or mixing text
+  with native blocks — is still refused.
+
+A nested `<scxml>` inside `<content>` declares its own data model and is
+judged as the document it is, not by its parent's declaration. `sce:`
+extension elements are governed by §2 below, not by Appendix B.
+
+**What `ecmascript` currently means.** §B.2 obliges an implementation
+that accepts this value to support the third edition of ECMAScript. SCE
+does not yet ship an ECMAScript engine: expressions are rewritten to Lua
+at generation time and evaluated by the injected `IScriptEngine`
+(`sce-rust-lua` today). The rewrite covers the constructs the W3C IRP
+suite and the fixtures in this repository exercise; it is a translation,
+not an ECMAScript implementation, and the boundary of what it translates
+is not yet declared. Until it is, a construct outside that boundary is
+passed through rather than rejected. Closing that gap — a declared
+subset with a diagnostic per construct outside it — is tracked as the
+successor to this section.
 
 ---
 
@@ -1506,6 +1574,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `extern/ordering-unspecified` | Validation |
 | `extern/target-plugin-symbol-conflict` | Validation |
 | `scxml/top-level-script-unloaded` | Validation |
+| `scxml/unsupported-datamodel` | Validation |
+| `scxml/null-datamodel-forbids-construct` | Validation |
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |

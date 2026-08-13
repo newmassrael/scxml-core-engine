@@ -203,7 +203,7 @@ topology:
 /// already terminated.
 const BRAKE_INVOKE_RETRY_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" name="brake_invoke_retry" initial="idle">
+       version="1.0" datamodel="ecmascript" name="brake_invoke_retry" initial="idle">
   <state id="idle">
     <transition event="go" target="computing"/>
   </state>

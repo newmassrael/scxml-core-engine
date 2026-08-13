@@ -19,7 +19,7 @@
          — a regression in the string/number JSON serializer would
          surface as `_event.data.result.codes[1] == "200"` mismatch. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" initial="done"
+       version="1.0" datamodel="ecmascript" initial="done"
        name="worker_session_f_donedata_nested">
     <final id="done">
         <donedata>

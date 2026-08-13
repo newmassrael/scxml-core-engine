@@ -15,7 +15,7 @@
      correctly the query never reaches the harness and the invoke
      deadlines out with RpcStatus::Unavailable. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" name="pool_zenoh_client" initial="idle">
+       version="1.0" datamodel="ecmascript" name="pool_zenoh_client" initial="idle">
     <state id="idle">
         <transition event="query.gamer" target="calling_gamer"/>
     </state>

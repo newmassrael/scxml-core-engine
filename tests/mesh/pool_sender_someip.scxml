@@ -12,16 +12,19 @@
      generator that baked one instance in at build time; re-entering the
      same site cannot, because there is only one emitted call.
 
-     `datamodel="lua"` so the instance id reaches the transport as a
-     typed numeric `<param>` read out of the datamodel — the shape an
-     author writes, and the shape whose JSON encoding the pool parser
-     has to accept.
+     A data model, so the instance id reaches the transport as a typed
+     numeric `<param>` read out of it — the shape an author writes, and
+     the shape whose JSON encoding the pool parser has to accept. The
+     declaration read `datamodel="ecmascript"` for as long as the attribute
+     reached no decision — a value W3C SCXML §3.2 does not define and
+     SCE never read. The engine was always Lua regardless; `ecmascript`
+     is what these expressions are written in.
 
      `service.fire_forget.ping` rather than an RPC method: the claim is
      about which member a request lands on, and a reply channel would
      let a correct-looking round trip mask the wrong member answering. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" name="pool_sender_someip" initial="idle">
+       version="1.0" datamodel="ecmascript" name="pool_sender_someip" initial="idle">
     <datamodel>
         <data id="unitId" expr="1"/>
     </datamodel>

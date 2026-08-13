@@ -21,7 +21,7 @@
   the single source for both.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null" name="mesh_worker" initial="s0">
+       datamodel="ecmascript" name="mesh_worker" initial="s0">
   <state id="s0">
     <onentry>
       <send event="e_meshparent" target="#_parent">

@@ -73,6 +73,24 @@ fn gaps_clause(gaps: &[String]) -> String {
     )
 }
 
+/// Why a declared data model was refused.
+///
+/// Both refusals reject the document; they are kept apart because the
+/// author's next move differs. "Unimplemented" says the document is
+/// well-formed W3C SCXML and SCE is the limitation — the repair is to pick
+/// a data model SCE has, or to wait for one. "Undefined" says no processor
+/// anywhere would accept the value — the repair is almost always a typo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnsupportedDatamodelKind {
+    /// A value §scxml-3.2 defines that SCE has not implemented (`xpath`).
+    Unimplemented,
+    /// A value neither the spec nor SCE defines. §scxml-3.2 permits
+    /// "other platform-defined values", so this is not malformed on its
+    /// face — it is only unusable because SCE, the platform reading it,
+    /// defines none.
+    Undefined,
+}
+
 /// Disambiguates the document scope for an unresolved `initial`
 /// attribute. The wire code is the same
 /// (`validation/invalid-reference`) for both, but consumers
@@ -170,6 +188,71 @@ pub enum ScxmlSemanticError {
     /// Mirrors C++ `SemanticNoStates`.
     #[error("No state nodes found in SCXML document")]
     NoStates,
+
+    /// The `datamodel` attribute names a data model SCE does not
+    /// implement, or one no processor defines.
+    ///
+    /// §scxml-3.2 lists `"null"`, `"ecmascript"` and `"xpath"` as the
+    /// spec-defined values and admits "other platform-defined values".
+    /// SCE implements the first two and defines none of its own, so the
+    /// remaining cases split into the two `kind`s below — a split that
+    /// exists because the repairs differ, not because the messages do.
+    ///
+    /// Reported where the attribute is read, so an unsupported value never
+    /// reaches [`crate::model::Datamodel`]. Before this rule the attribute
+    /// reached no decision at all: `"xpath"`, and any invented string,
+    /// were accepted and their expressions handed to whichever script
+    /// engine the deployment injected.
+    #[error(
+        "datamodel=\"{declared}\" is {}",
+        match kind {
+            UnsupportedDatamodelKind::Unimplemented =>
+                "a W3C SCXML data model that SCE does not implement",
+            UnsupportedDatamodelKind::Undefined =>
+                "not a data model any processor defines",
+        }
+    )]
+    UnsupportedDatamodel {
+        /// The attribute value verbatim, as the author wrote it.
+        declared: String,
+        /// Which of the two rejections this is.
+        kind: UnsupportedDatamodelKind,
+        /// The values SCE accepts, for the repair candidate list.
+        supported: Vec<String>,
+    },
+
+    /// A construct appears in a document whose declared data model has no
+    /// language for it (§scxml-B-1).
+    ///
+    /// The Null data model is not "a data model with nothing in it" — it
+    /// is the absence of four separate languages, and §scxml-B-1 names
+    /// them one at a time: `In()` is the whole boolean expression language
+    /// (B-1-2), there is no location expression language (B-1-3), no value
+    /// expression language (B-1-4), no scripting language (B-1-5), system
+    /// variables are not accessible (B-1-6), and `<foreach>` plus the
+    /// elements of §5 are unsupported (B-1-7).
+    ///
+    /// `rule` carries which one, because an author who wrote
+    /// `<param expr=…>` under `datamodel="null"` is not making the same
+    /// mistake as one who wrote `<script>`, and the sub-section is the
+    /// thing they need to read.
+    #[error(
+        "{construct} is not available under datamodel=\"null\": it needs \
+         {needs}, which W3C SCXML {rule} withholds — declare the data \
+         model this document actually uses, or remove the construct"
+    )]
+    NullDatamodelForbidsConstruct {
+        /// What appeared, spelled as the author wrote it (`<script>`,
+        /// `expr=`, `cond="x > 1"`).
+        construct: String,
+        /// The language the construct requires — "a value expression
+        /// language", "a scripting language", …
+        needs: String,
+        /// The §scxml-B-1 sub-section that withholds it.
+        rule: String,
+        /// Owning state id, empty at document scope.
+        state: String,
+    },
 
     /// Top-level `<script>` element either (a) has empty content
     /// AND empty `src`, or (b) has `src` but the file failed to
@@ -601,6 +684,17 @@ mod tests {
                 available: vec![],
             },
             ScxmlSemanticError::NoStates,
+            ScxmlSemanticError::UnsupportedDatamodel {
+                declared: "xpath".into(),
+                kind: UnsupportedDatamodelKind::Unimplemented,
+                supported: vec!["null".into(), "ecmascript".into()],
+            },
+            ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                construct: "<script>".into(),
+                needs: "a scripting language".into(),
+                rule: "B.1.5".into(),
+                state: "s1".into(),
+            },
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
                 src: None,
@@ -668,7 +762,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 12;
+    const VARIANT_COUNT: usize = 14;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -680,6 +774,10 @@ mod tests {
                 "HistoryDefaultTransitionMissing"
             }
             ScxmlSemanticError::NoStates => "NoStates",
+            ScxmlSemanticError::UnsupportedDatamodel { .. } => "UnsupportedDatamodel",
+            ScxmlSemanticError::NullDatamodelForbidsConstruct { .. } => {
+                "NullDatamodelForbidsConstruct"
+            }
             ScxmlSemanticError::TopLevelScriptUnloaded { .. } => "TopLevelScriptUnloaded",
             ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",
