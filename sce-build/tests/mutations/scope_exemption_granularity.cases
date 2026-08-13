@@ -1,0 +1,58 @@
+# Mutation cases for the vocabulary gate's exemption table — an entry names
+# either a directory or one file, and it covers exactly that.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/scope_exemption_granularity.cases`.
+#
+# The gate's logic lives in its own test file, so that file is the target
+# here. Both cases restore a shape the rule had until 2026-08-13.
+#
+# Why the rule changed: it used to demand a trailing `/` on every entry, and
+# the reason given was that an entry "cannot match a sibling file by
+# accident". Exact path equality serves that purpose strictly better, and
+# demanding the slash inverted the intent — the only way to excuse one file
+# was to excuse its whole directory, which is the accidental sibling
+# coverage the rule existed to prevent. Exempting one driver under
+# `backends/rust/tests/tests/` would have covered every driver beside it.
+#
+# A case that SURVIVES here means the new granularity is asserted by nothing.
+
+mutation_tests -p sce-build --features cli --test scope_terminology
+mutation_targets sce-build/tests/scope_terminology.rs
+
+# ── A file entry reaches its siblings ──────────────────────────────
+#
+# The old matcher, restored: one comparison for both kinds of entry. Every
+# current entry is a directory, so the sweep's verdict over this tree does
+# not change at all — which is exactly why the algebra needs a unit test
+# rather than the tree. `a/b/first.rs` would begin covering
+# `a/b/first.rs.bak`, and a file entry would open a directory of the same
+# stem.
+
+mutation_case "a file exemption matches by prefix like a directory" <<'PY'
+edit("sce-build/tests/scope_terminology.rs",
+     """    if prefix.ends_with('/') {
+        rel.starts_with(prefix)
+    } else {
+        rel == prefix
+    }""",
+     "    rel.starts_with(prefix)")
+PY
+
+# ── A mistyped entry resolves to nothing, quietly ──────────────────
+#
+# Existence dropped. A typo then exempts nothing while looking registered,
+# and the sweep's own staleness check reports it as "an exemption covering
+# nothing" — a message about a dead entry for what is really a misspelling.
+# Nothing in the table can supply the typo, so deleting this check changes
+# no verdict unless something asks it about a path that is wrong on purpose.
+
+mutation_case "an exemption is not checked for existing" <<'PY'
+edit("sce-build/tests/scope_terminology.rs",
+     "fn exemption_resolves(root: &Path, prefix: &str) -> Result<(), String> {",
+     """fn exemption_resolves(root: &Path, prefix: &str) -> Result<(), String> {
+    if true {
+        let _ = (root, prefix);
+        return Ok(());
+    }""")
+PY
