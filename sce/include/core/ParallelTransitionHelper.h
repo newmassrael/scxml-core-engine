@@ -337,39 +337,36 @@ public:
                         current = parent.value();
                     }
                 } else {
-                    // §scxml-3.13: Collect all active descendants of LCA
-                    // External transitions must exit source state even if source == LCA
-                    bool shouldExitSource = !trans.isInternal && trans.source == lca.value();
-
+                    // §scxml-D-computeExitSet: exit every active descendant of
+                    // the transition's domain; the domain itself stays.
+                    //
+                    // The domain can never be the source: the ancestor search
+                    // chooses among proper ancestors, which exclude the state
+                    // itself, and the one other answer `computeEffectiveLCA`
+                    // gives — the source, for an internal transition to a
+                    // descendant — is handled by the `isInternal` branch above.
+                    // An external self-transition is therefore an ordinary
+                    // descendant of its parent domain and needs no case of its
+                    // own.
                     for (const auto &activeState : activeStates) {
                         if (activeState == lca.value()) {
-                            // §scxml-3.13: For external transitions where source == LCA, include source
-                            if (!shouldExitSource) {
-                                continue;  // Exclude LCA from exit set (internal or source != LCA)
-                            }
+                            continue;  // The domain is not exited
                         }
 
-                        // Check if activeState is a descendant of LCA or is LCA itself (for external source == LCA)
                         bool shouldExit = false;
+                        auto current = activeState;
 
-                        if (activeState == lca.value() && shouldExitSource) {
-                            shouldExit = true;  // Exit source state for external transition
-                        } else {
-                            // Check if activeState is a descendant of LCA
-                            auto current = activeState;
-
-                            while (true) {
-                                auto parent = PolicyType::getParent(current);
-                                if (!parent.has_value()) {
-                                    break;  // Reached root without finding LCA
-                                }
-
-                                if (parent.value() == lca.value()) {
-                                    shouldExit = true;
-                                    break;
-                                }
-                                current = parent.value();
+                        while (true) {
+                            auto parent = PolicyType::getParent(current);
+                            if (!parent.has_value()) {
+                                break;  // Reached root without finding the domain
                             }
+
+                            if (parent.value() == lca.value()) {
+                                shouldExit = true;
+                                break;
+                            }
+                            current = parent.value();
                         }
 
                         // Add to exit set if should exit and not already present

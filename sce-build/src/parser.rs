@@ -3448,6 +3448,26 @@ impl SCXMLParser {
         model.has_hierarchy = model.states.values().any(|s| s.parent.is_some());
     }
 
+    /// Register the `done.state.*` events the generated machines raise.
+    ///
+    /// Two producers, not one. A compound state raises
+    /// `done.state.<id>` when a `<final>` child is entered — that is the
+    /// direct-parent rule. A `<parallel>` raises `done.state.<id>` when
+    /// *every* region has reached a final, and a parallel owns no `<final>`
+    /// of its own: its finals sit one level down, inside the regions. Walking
+    /// only to the direct parent therefore never reaches it.
+    ///
+    /// It stayed invisible because the event was still *raised*: the C++ and
+    /// C11 emitters raise `Done_state_<parallel>` at the same site they raise
+    /// the region's, so the generated code referenced an enumerator this
+    /// function never declared and did not compile. `check` reported the
+    /// document acceptable for every backend, because acceptance is decided
+    /// before anything is compiled.
+    ///
+    /// The grandparent condition here is deliberately the emitters' own —
+    /// `entry_exit_actions.jinja2` guards its raise on
+    /// `states[state.parent].parent and states[...].is_parallel`. A rule that
+    /// merely resembled it would drift; this one is the same rule.
     fn add_done_state_events(&self, model: &mut SCXMLModel) {
         let parent_ids_with_finals: Vec<String> = model
             .states
@@ -3455,8 +3475,19 @@ impl SCXMLParser {
             .filter(|s| s.is_final)
             .filter_map(|s| s.parent.clone())
             .collect();
+        let mut event_names: Vec<String> = Vec::new();
         for parent_id in parent_ids_with_finals {
-            let event_name = format!("done.state.{parent_id}");
+            event_names.push(format!("done.state.{parent_id}"));
+            let enclosing_parallel = model
+                .states
+                .get(&parent_id)
+                .and_then(|region| region.parent.as_ref())
+                .filter(|id| model.states.get(*id).is_some_and(|s| s.is_parallel));
+            if let Some(parallel_id) = enclosing_parallel {
+                event_names.push(format!("done.state.{parallel_id}"));
+            }
+        }
+        for event_name in event_names {
             model.events.insert(event_name);
         }
     }
