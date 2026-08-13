@@ -12,14 +12,14 @@
 // (Kotlin AOT, 4d284cb4..b070a7ad) for the Rust AOT code path through
 // `sce_rust_runtime::helpers::invoke_processing::raise_done_invoke`.
 //
-// Fixture: backends/rust/tests/fixtures/donedata_local_invoke.scxml
+// Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
 //   scripts/regen_donedata_local_invoke.sh
 //
 // The script wraps the mktemp + per-child --as-child workflow so the
 // synth-invoke side files (Mesh §9.6.6 rule 1 pins them adjacent to the
-// parent input) do not pollute the tracked `backends/rust/tests/fixtures/`
+// parent input) do not pollute the tracked `integration_resources/`
 // directory and the `_sm.rs` artefacts land in this dir with mod.rs
 // stitched to match.
 

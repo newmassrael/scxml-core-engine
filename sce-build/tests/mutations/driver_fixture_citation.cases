@@ -1,0 +1,43 @@
+# Mutation cases for the integration drivers' fixture citations — the
+# document a driver's header names is a document that is there.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/driver_fixture_citation.cases`.
+#
+# The case below restores the exact text that was in the tree until
+# 2026-08-13. `backends/rust/tests/fixtures/` was never a real directory —
+# the canonical documents live under `integration_resources/<stem>/` — and
+# the sentence had been wrong long enough to be corrected once already, in
+# `src/integration/mod.rs`, while this second copy survived. That is the
+# ordinary outcome of fixing a duplicated claim by hand.
+#
+# Nothing else in the repository could see it. Comments are not compiled, so
+# no build, no clippy pass and no test read that line. Measured before the
+# gate landed: 89 fixture citations across the drivers, one of them broken,
+# and every suite green.
+#
+# A case that SURVIVES here means the gate is decorative.
+
+mutation_tests -p sce-build --features cli --test integration_stem_registration
+
+# `mutation_runtime_targets`, not `mutation_targets`: the gate READS this
+# driver at run time rather than compiling it. Declared as a compiled
+# target the case is INCONCLUSIVE by definition — the `sce-build` test
+# binary cannot change when a file in `backends/rust/tests/` does, and the
+# harness says so rather than reporting a false CAUGHT. Measured here
+# first, which is the harness catching the casefile's own mistake.
+mutation_runtime_targets backends/rust/tests/tests/donedata_local_invoke.rs
+
+# ── A driver points at a directory that does not exist ─────────────
+#
+# The reader who wants to edit this machine is sent to
+# `backends/rust/tests/fixtures/`, finds nothing, and has to grep the tree
+# for the stem to discover where the document actually lives. The failure is
+# entirely in what a person is told; the run itself is unaffected, which is
+# why only a gate that reads the prose can report it.
+
+mutation_case "a driver cites a fixture directory that was never real" <<'PY'
+edit("backends/rust/tests/tests/donedata_local_invoke.rs",
+     "// Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml",
+     "// Fixture: backends/rust/tests/fixtures/donedata_local_invoke.scxml")
+PY

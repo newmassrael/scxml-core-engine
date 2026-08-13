@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Inside a <parallel>, a transition whose TARGET IS A COMPOUND state.
+
+  W3C SCXML 3.4 makes the configuration the truth for a parallel machine, but
+  `getCurrentState()` is a single state and 105 files in this repository read
+  it. `executeMicrostep` leaves it on the last transition target it processed,
+  and that target may be a compound state — so the accessor can name a state
+  the machine is merely *within* while the atomic state it is *in* sits one
+  level below, correctly present in the configuration.
+
+  `drive` is the region that shows it: `idle` transitions to `outer`, which is
+  compound with initial child `a`. `counter` is here to make the machine
+  genuinely parallel, so the microstep path is the one under test rather than
+  the hierarchical one.
+
+  Measured 2026-08-13 before StaticExecutionEngine grew
+  `resolveCurrentStateToLeaf`: the active set was
+  [run | counter | drive | within | outer | a] and `getCurrentState()`
+  answered `outer`. `sce_rust_runtime`'s `resolve_current_state_to_leaf` and
+  the Go engine's `resolveCurrentStateToLeaf` both answer `a`, so C++ was the
+  one backend of three disagreeing on a public accessor.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_current_state" datamodel="null" initial="run">
+
+  <parallel id="run">
+
+    <state id="counter" initial="within">
+      <state id="within">
+        <transition event="go" target="within"/>
+      </state>
+    </state>
+
+    <state id="drive" initial="idle">
+      <state id="idle">
+        <transition event="go" target="outer"/>
+      </state>
+      <state id="outer" initial="a">
+        <state id="a">
+          <transition event="step" target="b"/>
+        </state>
+        <state id="b"/>
+      </state>
+    </state>
+
+  </parallel>
+</scxml>

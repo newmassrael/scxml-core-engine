@@ -25,6 +25,8 @@
 
 use std::path::{Path, PathBuf};
 
+use regex::Regex;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -168,6 +170,100 @@ fn required_sites(stem: &str) -> Vec<Site> {
             stem.to_string(),
         ),
     ]
+}
+
+/// The driver files a stem is asserted in, for the channels that have one.
+///
+/// A subset of `required_sites` — only the per-channel drivers, and only
+/// the ones present, since the test above is what reports an absent one.
+fn existing_driver_paths(root: &Path, stem: &str) -> Vec<String> {
+    required_sites(stem)
+        .into_iter()
+        .filter(|s| s.marker.is_none() && s.channel.contains("driver"))
+        .map(|s| s.path)
+        .filter(|p| root.join(p).is_file())
+        .collect()
+}
+
+/// Every `.scxml` path a driver's comments name is a path that is there.
+///
+/// A driver's header says which document it compiles, and that sentence is
+/// the only place a reader learns where to edit the machine. When it is
+/// wrong the reader is sent to a directory that does not exist, and
+/// nothing says so: comments are not compiled, so the drift is invisible
+/// to every other gate in this repository.
+///
+/// This has now been wrong twice for one stem. `backends/rust/tests/
+/// fixtures/` was never a real directory — the canonical documents live
+/// under `integration_resources/<stem>/`. A round in 2026-08 corrected the
+/// copy in `src/integration/mod.rs` and left the copy in the driver, which
+/// is the ordinary outcome of fixing a duplicated claim by hand: the
+/// second copy is found by whoever trips over it next.
+///
+/// Scoped to `.scxml` deliberately. Every path-shaped token would flag
+/// prose that names a path to say it is *gone* — a legitimate sentence
+/// this repository writes often — and a gate that cries wolf gets an
+/// exemption table instead of obedience. A fixture citation is a narrow,
+/// checkable claim: this document, here.
+#[test]
+fn every_fixture_a_driver_cites_is_a_document_that_exists() {
+    let root = repo_root();
+    let stems = stems(&root);
+    let scxml = Regex::new(r"[A-Za-z0-9_./-]+\.scxml").expect("static regex");
+
+    let mut cited = 0usize;
+    let mut broken: Vec<String> = Vec::new();
+
+    for stem in &stems {
+        for rel in existing_driver_paths(&root, stem) {
+            for (n, line) in read(&root, &rel).lines().enumerate() {
+                let trimmed = line.trim_start();
+                // Comment leaders across the five driver languages. A
+                // citation in live code is a path the compiler or the
+                // runtime already resolves; only prose can rot unnoticed.
+                if !(trimmed.starts_with("//")
+                    || trimmed.starts_with('#')
+                    || trimmed.starts_with('*'))
+                {
+                    continue;
+                }
+                for hit in scxml.find_iter(line) {
+                    let path = hit.as_str();
+                    // A bare filename names the document beside the text,
+                    // not a location in the tree, so there is nothing to
+                    // resolve it against.
+                    if !path.contains('/') {
+                        continue;
+                    }
+                    cited += 1;
+                    if !root.join(path).exists() {
+                        broken.push(format!("{rel}:{}: {path}", n + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    // A floor, because the interesting failure is a scan that reads
+    // nothing: no citations found reports a clean tree just as loudly as
+    // every citation resolving. Eighty-nine were cited when this was set.
+    assert!(
+        cited >= 60,
+        "found only {cited} fixture citation(s) across the integration \
+         drivers; the comment scan or the driver enumeration is broken, not \
+         the tree"
+    );
+
+    assert!(
+        broken.is_empty(),
+        "a driver names a fixture that is not there ({} citation(s)):\n  {}\n\n\
+         The canonical document for a stem is \
+         `integration_resources/<stem>/<stem>.scxml`. Point the comment at \
+         it — a header that names the wrong location is the one sentence a \
+         reader trusts to find the machine.",
+        broken.len(),
+        broken.join("\n  "),
+    );
 }
 
 #[test]

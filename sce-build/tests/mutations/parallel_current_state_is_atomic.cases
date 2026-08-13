@@ -1,0 +1,54 @@
+# Mutation cases for W3C SCXML 3.4 — `getCurrentState()` names an atomic
+# state in a parallel machine.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/parallel_current_state_is_atomic.cases`.
+#
+# The first case restores the tree as it stood until 2026-08-13: no descent at
+# all. That shipped for as long as the engine has had parallel support and no
+# suite saw it, because every parallel assertion in this repository reads
+# `getActiveStates()` — which was correct the whole time. Only the single-state
+# accessor was wrong, and 105 files read it.
+#
+# Sibling of `parallel_microstep_owns_exit_and_entry.cases`. That one guards
+# the CONFIGURATION across a microstep; this one guards the one field the
+# microstep leaves unsettled. Both live on the same statement in
+# `executeTransition` and neither can see the other's defect.
+#
+# A case that SURVIVES here means the descent is asserted by nothing.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h
+
+# ── No descent at all ──────────────────────────────────────────────
+#
+# `executeMicrostep` leaves `currentState_` on the last transition target it
+# processed. When that target is compound the accessor names a state the
+# machine is merely within — `outer` where the truth is `a`.
+
+mutation_case "a parallel transition leaves currentState on the target" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        else {
+            resolveCurrentStateToLeaf();
+        }""",
+     """        else {
+            // descent removed
+        }""")
+PY
+
+# ── The descent ignores the configuration ──────────────────────────
+#
+# Descending by the policy's initial child instead of by what is actually
+# active is the shape the other two backends use, and it agrees with the
+# configuration in the ordinary case — which is exactly why it is worth a
+# case of its own. Here it is broken to always take the FIRST active state
+# regardless of parentage, which a descent written without the parent test
+# would do: it wanders out of `drive` and lands in the sibling region.
+
+mutation_case "the descent does not check parentage" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                const auto parent = StatePolicy::getParent(candidate);
+                return parent.has_value() && parent.value() == currentState_;""",
+     """                const auto parent = StatePolicy::getParent(candidate);
+                return parent.has_value() && candidate != currentState_;""")
+PY
