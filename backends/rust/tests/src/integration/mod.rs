@@ -5,15 +5,24 @@
 //!
 //! See `docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md` for the per-backend
 //! policy governing this layer. Each sub-module is a state machine
-//! generated from a fixture under `backends/rust/tests/fixtures/<stem>.scxml`
-//! by a dedicated regen script (e.g.
-//! `scripts/regen_donedata_local_invoke.sh`). The files under each
+//! generated from the canonical fixture at
+//! `integration_resources/<stem>/<stem>.scxml` by a dedicated regen script
+//! (e.g. `scripts/regen_donedata_local_invoke.sh`). The files under each
 //! sub-directory carry the standard §6.2.6 `SCE-GENERATED` drift
 //! header and `SCE-MAP:` markers; only this `mod.rs` is hand-authored,
 //! so the W3C regen pipeline (`sce-codegen generate-w3c -l rust`)
 //! never touches it and adding or dropping an integration fixture is
 //! a single-line edit here.
+//!
+//! One entry does not come from there. `ai_loop` is generated from the
+//! worked example at `examples/ai_loop/ai_loop.scxml`, so that a document
+//! shipped as an example is asserted by two engines rather than one: the
+//! C++ driver next to it and `tests/ai_loop.rs` here.
+//! `integration_stem_registration` enumerates `integration_resources/` and
+//! so does not reach it — the example is not on the seven-channel contract,
+//! and its regen script says why.
 
+pub mod ai_loop;
 pub mod autoforward_dequeue_point;
 pub mod autoforward_done_invoke;
 pub mod autoforward_event_fields;

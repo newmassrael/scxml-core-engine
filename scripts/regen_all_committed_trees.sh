@@ -89,6 +89,15 @@ scripts/regen_event_schema_native_python.sh
 echo "==> Native-action host-trait Rust tree"
 scripts/regen_native_action.sh
 
+# The AI supervision loop example. Its input is `examples/ai_loop/ai_loop.scxml`
+# rather than a stem under `integration_resources/`, so the `generate-integration`
+# fan-out above does not reach it — and a committed tree this script does not
+# know about is exactly the stale-artifact shape described for the W3C Go and
+# Python trees. Its `template-hash` covers the same template tree as everything
+# else, so a template edit invalidates it identically.
+echo "==> AI loop example Rust tree"
+scripts/regen_ai_loop.sh
+
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
 # as the emitter writes it. `backends/rust/tests` is a workspace member, so
 # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
