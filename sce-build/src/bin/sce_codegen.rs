@@ -1456,7 +1456,17 @@ enum Commands {
     ///
     /// For the opposite direction — SCXML coordinates to the symbols
     /// they lowered to — see `sce2sym`.
+    // The three modes and the `--elf` they need are expressed to the
+    // argument parser rather than checked by hand after it. A
+    // hand-rolled arity check is a second argument parser: it emitted
+    // prose and exited 2, which SCE_ERROR_CONTRACT.md §6 assigns to
+    // `xml/*` — so mistyping a flag reported a malformed *document*.
+    // Declared here, the same mistakes leave as `cli/usage`.
     #[command(name = "addr2sce")]
+    #[command(group = clap::ArgGroup::new("addr2sce_mode")
+        .required(true)
+        .multiple(false)
+        .args(["symbol", "pc", "hardfault"]))]
     Addr2Sce {
         /// Directory containing `sce_sourcemap.json` (per-machine
         /// output, e.g. `target/.../src/generated/test144/`).
@@ -1468,16 +1478,19 @@ enum Commands {
         /// ELF program-counter address, hexadecimal with or without a
         /// `0x` prefix (a bare value is read as hex — every stack dump
         /// prints hex). Requires `--elf`.
-        #[arg(long)]
-        pc: Option<String>,
+        #[arg(long, requires = "elf", value_parser = parse_pc_address)]
+        pc: Option<u64>,
         /// ELF image whose symbol table maps an address to a function.
-        /// Required by `--pc` / `--hardfault`.
+        ///
+        /// Required by `--pc` / `--hardfault`: the sourcemap keys on
+        /// symbol *names*, and only the image knows which name owns a
+        /// given address.
         #[arg(long)]
         elf: Option<String>,
         /// Read PC addresses from stdin, one per line, and resolve each
         /// as `--pc` would. Blank lines are skipped so a pasted dump
         /// works verbatim. Requires `--elf`.
-        #[arg(long, default_value_t = false)]
+        #[arg(long, requires = "elf")]
         hardfault: bool,
     },
     /// Resolve SCXML coordinates to the symbols they lowered to — the
@@ -1618,8 +1631,69 @@ struct OrchestrateArgs {
     const_fold_budget: Option<u64>,
 }
 
+/// Recover `--error-format` from the raw argument vector.
+///
+/// Needed only on the parse-failure path: when [`Cli::try_parse`]
+/// fails there is no parsed `--error-format` to read, yet the failure
+/// still has to be rendered in the format the caller asked for. A
+/// caller that mistyped the format flag itself falls back to human,
+/// which is the right direction — the prose says what was wrong with
+/// the flag.
+fn peek_error_format<I: IntoIterator<Item = String>>(args: I) -> ErrorFormat {
+    let mut want_value = false;
+    for arg in args {
+        if want_value {
+            return if arg == "json" {
+                ErrorFormat::Json
+            } else {
+                ErrorFormat::Human
+            };
+        }
+        match arg.as_str() {
+            "--error-format" => want_value = true,
+            "--error-format=json" => return ErrorFormat::Json,
+            _ => {}
+        }
+    }
+    ErrorFormat::Human
+}
+
+/// Parse the command line, reporting a parse failure through the same
+/// diagnostic pipeline as every other failure.
+///
+/// `clap`'s own `parse()` prints prose and exits 2 on a malformed
+/// invocation. Both halves of that break the contract: exit 2 is the
+/// status `SCE_ERROR_CONTRACT.md` §6 assigns to `xml/*`, so a caller
+/// that mistyped a flag was told its document was malformed, and the
+/// prose carries no `code` for it to read instead.
+///
+/// `--help` and `--version` keep clap's behaviour exactly — they are
+/// successful requests for output, not failures, and they leave
+/// through clap's own writer on stdout with status 0.
+fn parse_cli() -> Cli {
+    match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            use clap::error::ErrorKind;
+            if matches!(
+                err.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                err.exit();
+            }
+            let _ = ERROR_FORMAT.set(peek_error_format(std::env::args()));
+            // `render()` is the message without clap's ANSI styling —
+            // §7 forbids escapes in JSON mode, and a human-mode reader
+            // gains nothing from colour it did not ask for.
+            cli_exit(CliError::Usage {
+                detail: err.render().to_string().trim_end().to_string(),
+            })
+        }
+    }
+}
+
 fn main() {
-    let cli = Cli::parse();
+    let cli = parse_cli();
     let error_format = cli.error_format;
     // Install the format once so every termination helper can read
     // it without plumbing through function signatures. Tests that
@@ -1698,7 +1772,7 @@ fn main() {
         } => cmd_addr2sce(
             &sourcemap_dir,
             symbol.as_deref(),
-            pc.as_deref(),
+            pc,
             elf.as_deref(),
             hardfault,
             error_format,
@@ -6389,11 +6463,10 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
         None => {
             let mut v = Vec::new();
             let entries = std::fs::read_dir(&integration_root).unwrap_or_else(|e| {
-                eprintln!(
-                    "generate-integration: cannot read {}: {e}",
-                    integration_root.display()
-                );
-                std::process::exit(1);
+                cli_exit(CliError::ReadInput {
+                    path: integration_root.display().to_string(),
+                    source: e,
+                })
             });
             for entry in entries.flatten() {
                 if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
@@ -6410,30 +6483,33 @@ fn cmd_generate_integration(language: &str, stem: Option<&str>, error_format: Er
     for stem in &stems {
         let script = project_root.join(format!("scripts/regen_{stem}{script_suffix}.sh"));
         if !script.exists() {
-            eprintln!(
-                "generate-integration: missing regen script {}",
-                script.display()
-            );
-            std::process::exit(1);
+            cli_exit(CliError::ReadInput {
+                path: script.display().to_string(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no regen script for this stem",
+                ),
+            });
         }
         let status = std::process::Command::new("bash")
             .arg(&script)
             .current_dir(&project_root)
             .status()
             .unwrap_or_else(|e| {
-                eprintln!(
-                    "generate-integration: cannot spawn {}: {e}",
-                    script.display()
-                );
-                std::process::exit(1);
+                cli_exit(CliError::ReadInput {
+                    path: script.display().to_string(),
+                    source: e,
+                })
             });
         if !status.success() {
-            eprintln!(
-                "generate-integration: {} failed (exit {})",
-                script.display(),
-                status.code().unwrap_or(-1)
-            );
-            std::process::exit(1);
+            cli_exit(CliError::ScxmlGenerate {
+                stage: "generate-integration",
+                detail: format!(
+                    "{} failed (exit {})",
+                    script.display(),
+                    status.code().unwrap_or(-1)
+                ),
+            });
         }
     }
 }
@@ -7192,21 +7268,27 @@ impl TestInfo {
 fn cmd_addr2sce(
     sourcemap_dir: &str,
     symbol: Option<&str>,
-    pc: Option<&str>,
+    pc: Option<u64>,
     elf: Option<&str>,
     hardfault: bool,
     error_format: ErrorFormat,
 ) {
+    let _ = error_format;
     let (map, map_path) = load_sourcemap(sourcemap_dir);
 
-    // Mode dispatch: exactly one of `--symbol` / `--pc` / `--hardfault`.
+    // Mode dispatch. Exactly one of the three arrived: the
+    // `addr2sce_mode` group on the subcommand makes any other
+    // combination a parse failure, reported as `cli/usage`.
     match (symbol, pc, hardfault) {
         (Some(name), None, false) => addr2sce_resolve_symbol(&map, name, &map_path),
         (None, Some(addr), false) => {
             let symbols = addr2sce_load_symbol_table(elf);
-            let pc = addr2sce_parse_pc(addr);
-            if !addr2sce_resolve_pc(&map, &symbols, pc, &map_path) {
-                std::process::exit(1);
+            if !addr2sce_resolve_pc(&map, &symbols, addr, &map_path) {
+                cli_exit(CliError::QueryNoMatch {
+                    tool: "addr2sce",
+                    query: format!("pc {addr:#x}"),
+                    searched: map_path.display().to_string(),
+                });
             }
         }
         (None, None, true) => {
@@ -7227,30 +7309,35 @@ fn cmd_addr2sce(
                     continue;
                 }
                 frames += 1;
-                let pc = addr2sce_parse_pc(trimmed);
+                let pc = addr2sce_parse_stdin_pc(trimmed);
                 if !addr2sce_resolve_pc(&map, &symbols, pc, &map_path) {
                     unresolved += 1;
                 }
             }
             if frames == 0 {
-                eprintln!("addr2sce: --hardfault read no addresses from stdin");
-                std::process::exit(2);
+                cli_exit(CliError::ReadInput {
+                    path: "<stdin>".to_string(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "--hardfault read no addresses",
+                    ),
+                });
             }
             // A partially-resolved stack is a narrative with a hole in
             // it; the frames that did resolve stay on stdout so the
             // operator sees how far the walk got.
             if unresolved > 0 {
-                std::process::exit(1);
+                cli_exit(CliError::QueryNoMatch {
+                    tool: "addr2sce",
+                    query: format!("{unresolved} of {frames} frame(s)"),
+                    searched: map_path.display().to_string(),
+                });
             }
         }
-        _ => {
-            let _ = error_format;
-            eprintln!(
-                "addr2sce: exactly one of --symbol / --pc / --hardfault required \
-                 (use --symbol <NAME> for direct sourcemap lookup)"
-            );
-            std::process::exit(2);
-        }
+        // Unreachable by construction: `addr2sce_mode` is
+        // `required(true).multiple(false)`, so clap rejects zero modes
+        // and two modes alike before this function is entered.
+        _ => unreachable!("clap group `addr2sce_mode` admits exactly one mode"),
     }
 }
 
@@ -7264,17 +7351,15 @@ struct FunctionSymbol {
 
 /// Every sized function symbol in `elf`, address-sorted.
 ///
-/// `--elf` is required by both PC modes: the sourcemap keys on symbol
-/// names, and only the image knows which name owns an address.
+/// `elf` is `Some` whenever this is reached: `--pc` and `--hardfault`
+/// both carry `requires = "elf"`, so the parser refuses the invocation
+/// that would leave it absent. The argument stays optional in the
+/// struct because the third mode, `--symbol`, does not take one.
 fn addr2sce_load_symbol_table(elf: Option<&str>) -> Vec<FunctionSymbol> {
     use object::{Object, ObjectSymbol};
 
     let Some(path) = elf else {
-        eprintln!(
-            "addr2sce: --pc / --hardfault require --elf <PATH> — the address \
-             is resolved to a function symbol through the image's symbol table"
-        );
-        std::process::exit(2);
+        unreachable!("`--pc` / `--hardfault` declare `requires = \"elf\"`")
     };
     let bytes = match fs::read(path) {
         Ok(b) => b,
@@ -7311,34 +7396,48 @@ fn addr2sce_load_symbol_table(elf: Option<&str>) -> Vec<FunctionSymbol> {
         })
         .collect();
     if symbols.is_empty() {
-        eprintln!(
-            "addr2sce: {path} carries no function symbols — a fully stripped \
-             image cannot be attributed; keep `.symtab` in the artifact used \
-             for triage"
-        );
-        std::process::exit(2);
+        cli_exit(CliError::ReadInput {
+            path: path.to_string(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "carries no function symbols — a fully stripped image cannot \
+                 be attributed; keep `.symtab` in the artifact used for triage",
+            ),
+        });
     }
     symbols.sort_by_key(|s| s.addr);
     symbols
 }
 
 /// Parse a PC written with or without the `0x` prefix.
-fn addr2sce_parse_pc(raw: &str) -> u64 {
+///
+/// One parser, two callers with different failure meanings: as a
+/// `value_parser` on `--pc` a bad value is a malformed command line
+/// (`cli/usage`, via clap), and on a `--hardfault` stdin line it is
+/// unusable input (`cli/read-input`). Sharing the function keeps the
+/// two spellings of "what counts as an address" from drifting.
+fn parse_pc_address(raw: &str) -> Result<u64, String> {
     let text = raw.trim();
-    let (digits, radix) = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
-        Some(hex) => (hex, 16),
+    let digits = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => hex,
         // Bare digits are hex too: every tool that prints a stack dump
         // (gdb, a Cortex-M fault handler, objdump) writes hex, and
         // reading `1024` as decimal would resolve the wrong function
         // silently.
-        None => (text, 16),
+        None => text,
     };
-    match u64::from_str_radix(digits, radix) {
+    u64::from_str_radix(digits, 16)
+        .map_err(|_| format!("'{raw}' is not a hexadecimal program-counter address"))
+}
+
+/// Parse one address off a `--hardfault` stdin line.
+fn addr2sce_parse_stdin_pc(raw: &str) -> u64 {
+    match parse_pc_address(raw) {
         Ok(v) => v,
-        Err(_) => {
-            eprintln!("addr2sce: '{raw}' is not a hexadecimal program-counter address");
-            std::process::exit(2);
-        }
+        Err(detail) => cli_exit(CliError::ReadInput {
+            path: "<stdin>".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, detail),
+        }),
     }
 }
 
@@ -7441,11 +7540,11 @@ fn addr2sce_resolve_symbol(
     map_path: &Path,
 ) {
     let Some(entry) = map.symbols.get(symbol) else {
-        eprintln!(
-            "addr2sce: symbol '{symbol}' not found in {}",
-            map_path.display()
-        );
-        std::process::exit(1);
+        cli_exit(CliError::QueryNoMatch {
+            tool: "addr2sce",
+            query: format!("symbol '{symbol}'"),
+            searched: map_path.display().to_string(),
+        })
     };
     print_lookup_record(
         sce_build::forge::sourcemap::LookupKind::Addr2Sce,
@@ -7477,10 +7576,10 @@ fn cmd_sce2sym(sourcemap_dirs: &[String], query: sce_build::forge::sourcemap::Sy
         }
     }
     if hits == 0 {
-        eprintln!(
-            "sce2sym: no symbol matched the query in {} sourcemap(s)",
-            sourcemap_dirs.len()
-        );
-        std::process::exit(1);
+        cli_exit(CliError::QueryNoMatch {
+            tool: "sce2sym",
+            query: "the query".to_string(),
+            searched: format!("{} sourcemap(s)", sourcemap_dirs.len()),
+        });
     }
 }

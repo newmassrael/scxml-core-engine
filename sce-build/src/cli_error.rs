@@ -27,11 +27,17 @@ use crate::forge::diagnostic::{
 /// `--error-format=json` flag is honoured uniformly: the flag is not
 /// a contract if half the failure modes still emit prose.
 ///
-/// Exit codes share a single value (20) so build systems that branch
-/// on 0 / non-zero keep working while consumers use the structured
+/// Almost every variant exits 20 so build systems that branch on
+/// 0 / non-zero keep working while consumers use the structured
 /// `code` field for finer routing. Dedicated codes would be
 /// over-fitting — the user-visible distinctions (unknown language
 /// vs missing file) aren't pipeline stages in the forge/mesh sense.
+///
+/// [`CliError::QueryNoMatch`] is the one exception, and it is an
+/// exception about what happened rather than about how loudly to
+/// complain: nothing failed there, so collapsing it into the
+/// driver-failure status would erase the distinction a shell consumer
+/// branches on. `SCE_ERROR_CONTRACT.md` §6 registers both statuses.
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
     /// A `--language` value no backend answers to.
@@ -191,17 +197,58 @@ pub enum CliError {
          --input-root at a tree without the aliasing, or remove it"
     )]
     SourceHashWalkUnbounded { root: String, limit: usize },
+
+    /// The command line did not parse.
+    ///
+    /// `detail` is the argument parser's own rendering, kept verbatim
+    /// because it already names the offending token and prints the
+    /// usage line — restating it here would be a second sentence about
+    /// one fact, which is how the two halves drift apart.
+    ///
+    /// This variant is why the binary parses with `try_parse` rather
+    /// than `parse`: the derive helper's failure path prints prose and
+    /// exits 2 on its own, and 2 is the status
+    /// `SCE_ERROR_CONTRACT.md` §6 assigns to `xml/*`. A machine caller
+    /// that mistypes a flag was being told its *document* was
+    /// malformed, with no record to read.
+    #[error("{detail}")]
+    Usage { detail: String },
+
+    /// A query ran against a well-formed artifact and matched nothing.
+    ///
+    /// `searched` names what was looked in so the caller can tell an
+    /// empty artifact from a wrong query; it stays out of
+    /// `key_fragments` because it carries a caller-supplied path and
+    /// the `id` must not move with it.
+    #[error("{tool}: {query} matched nothing in {searched}")]
+    QueryNoMatch {
+        tool: &'static str,
+        query: String,
+        searched: String,
+    },
 }
 
 impl CliError {
-    /// Canonical CLI-boundary exit code. Shared across every variant —
-    /// see the type-level comment for the rationale.
+    /// Canonical CLI-boundary exit code. Shared across every variant
+    /// except [`CliError::QueryNoMatch`] — see the type-level comment.
     pub const EXIT_CODE: i32 = 20;
+
+    /// Exit status for a query that ran and found nothing.
+    ///
+    /// Separate from [`CliError::EXIT_CODE`] because the two answer
+    /// different questions: 20 means the driver could not do the work,
+    /// 1 means it did the work and the answer was "none". The query
+    /// subcommands document this so a build gate can assert symbol
+    /// presence without parsing JSON.
+    pub const EXIT_QUERY_NO_MATCH: i32 = 1;
 }
 
 impl ToDiagnostics for CliError {
     fn exit_code(&self) -> i32 {
-        Self::EXIT_CODE
+        match self {
+            CliError::QueryNoMatch { .. } => Self::EXIT_QUERY_NO_MATCH,
+            _ => Self::EXIT_CODE,
+        }
     }
 
     fn to_diagnostics(&self) -> Vec<Diagnostic> {
@@ -356,6 +403,18 @@ impl SingleDiagnostic for CliError {
                 // `actual` states the ceiling rather than a traversal count
                 // so the record is identical for one tree on any machine.
                 Some(format!("root={root} descent-limit={limit}")),
+                None,
+            ),
+            // The parser's text is the whole diagnostic, so it is also
+            // the whole hash key: two different malformed command lines
+            // are two different diagnostics.
+            CliError::Usage { detail } => {
+                (DiagnosticCode::CliUsage, vec![detail.clone()], None, None)
+            }
+            CliError::QueryNoMatch { tool, query, .. } => (
+                DiagnosticCode::CliQueryNoMatch,
+                vec![(*tool).to_string(), query.clone()],
+                Some(query.clone()),
                 None,
             ),
         };
