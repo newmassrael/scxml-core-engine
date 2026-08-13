@@ -1,0 +1,59 @@
+# Mutation cases for W3C SCXML Appendix D — in a document with `<parallel>`,
+# `executeMicrostep` owns exit, transition content and entry, and nothing above
+# it may repeat any of the three.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/parallel_microstep_owns_exit_and_entry.cases`.
+#
+# The defect restored below was live in this tree on 2026-08-13 and produced no
+# build error, no warning and no failing test. What it produced was a
+# `<parallel>` in which one region kept its root and lost its leaf: the region
+# still read as present in the configuration while holding no atomic state, so
+# nothing in it could ever fire again. Silent, because every W3C parallel
+# fixture asks its question within a single microstep, and a region without a
+# leaf answers the first event correctly — it is the SECOND event that finds
+# nothing there.
+#
+# Sibling of `parallel_region_transition_domain.cases`. That file guards the
+# three Appendix D algorithms (`findLCCA`, region lookup, configuration
+# reflection); this one guards the execution path that calls them. Both were
+# needed: the algorithms were measured correct while the caller was wrong, so a
+# case in that file says nothing about this site.
+#
+# A case that SURVIVES here means the gate that replaced the defect is
+# decorative.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/include/static/StaticExecutionEngine.h
+
+# ── Exit and entry applied twice ───────────────────────────────────
+#
+# §scxml-D-microstepProcedure runs exit → transition content → entry as one
+# atomic step, and for a parallel policy `processTransition` has already
+# completed all three before `executeTransition` regains control. Adding a
+# caller-supplied exit/entry on top reads as symmetry with the non-parallel
+# branch above it and is a second application: `executeExitActions` removes its
+# argument from the active configuration, so re-exiting `oldState` after the
+# microstep has already re-entered it takes that state back out. It is not put
+# back, because `currentState_` names the last transition the microstep
+# processed, which belongs to a DIFFERENT region.
+#
+# The trigger needs all three of: one event enabling a transition in two
+# regions, one of those being a self-transition, and the two regions resting at
+# different depths. Drop any one and the configuration survives — which is why
+# the symmetric, equal-depth fixtures in the W3C corpus never sampled it.
+
+mutation_case "a parallel transition exits and enters a second time" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
+                                         [this] { policy_.executeTransitionActions(*this); });
+        }""",
+     """        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
+                                         [this] { policy_.executeTransitionActions(*this); });
+        } else {
+            executeOnExit(oldState, preTransitionStates);
+            executeOnEntry(currentState_);
+        }""")
+PY
