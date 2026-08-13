@@ -560,10 +560,12 @@ references against a real document and drift silently.
 | `cli/no-scxml-tag` | `cli` | no |  |
 | `cli/not-a-directory` | `cli` | no |  |
 | `cli/project-root-not-found` | `cli` | no |  |
+| `cli/query-no-match` | `cli` | no |  |
 | `cli/read-input` | `cli` | no |  |
 | `cli/scxml-generate` | `cli` | no |  |
 | `cli/unknown-language` | `cli` | `replace_one_of` |  |
 | `cli/unsupported-language` | `cli` | `replace_one_of` |  |
+| `cli/usage` | `cli` | no |  |
 | `cli/write-output` | `cli` | no |  |
 | `forge/source-hash-input-uncovered` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
 | `forge/source-hash-mismatch` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
@@ -699,9 +701,24 @@ references against a real document and drift silently.
 Exit status is a coarse routing signal; `code` is the finer one.
 A non-zero exit with no NDJSON record is a contract violation.
 
+That last sentence is a claim about *every* way this process can
+end, including the ones no pipeline stage produces: an unparseable
+command line and a query that matched nothing both leave through
+here, and both carry a record. `1` and `20` are the two statuses
+that exist for those, and the table below is the whole set — a
+status outside it is a defect, not an undocumented convention.
+Pinned by `sce-build/tests/exit_status_contract.rs`, which reads
+this table and probes the real binary.
+
+Two rows can name one code — an exact code and the `family/*` that
+contains it. **The exact row wins.** Without that rule the table is
+not a function from code to status, and a consumer branching on it
+would have to guess; `cli/query-no-match` is the case that exists.
+
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
+| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. |
 | `2` | `xml/*` |
 | `3` | `validation/*` |
 | `4` | `expression/*` |
@@ -714,7 +731,7 @@ A non-zero exit with no NDJSON record is a contract violation.
 | `12` | `mesh/codegen-*` |
 | `13` | `mesh/io` |
 | `14` | `mesh/external-*` |
-| `20` | `cli/*` (CLI-boundary errors) |
+| `20` | `cli/*` (CLI-boundary errors), including `cli/usage` — the command line itself did not parse |
 
 ## 7. Determinism guarantees
 

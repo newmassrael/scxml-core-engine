@@ -318,12 +318,14 @@ fn addr2sce_rejects_unknown_symbol() {
         .arg("definitely__not_a_real___state_body")
         .output()
         .expect("invoke addr2sce");
-    assert!(
-        !out.status.success(),
-        "addr2sce should reject missing symbol"
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a miss exits 1 — the status SCE_ERROR_CONTRACT.md §6 registers \
+         for `cli/query-no-match`",
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("not found"), "stderr: {stderr}");
+    assert!(stderr.contains("matched nothing"), "stderr: {stderr}");
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -625,10 +627,17 @@ fn sce2sym_rejects_a_query_that_matches_nothing() {
         .arg("definitely_not_a_state")
         .output()
         .expect("invoke sce2sym");
-    assert!(!out.status.success(), "a miss must exit non-zero");
+    // §6 gives a miss its own status, distinct from the CLI-boundary
+    // 20: the tool ran and the answer was "none".
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a miss exits 1 — the status SCE_ERROR_CONTRACT.md §6 registers \
+         for `cli/query-no-match`",
+    );
     assert!(out.stdout.is_empty(), "a miss must emit no records");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("no symbol matched"), "stderr: {stderr}");
+    assert!(stderr.contains("matched nothing"), "stderr: {stderr}");
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -854,14 +863,24 @@ fn addr2sce_pc_modes_refuse_an_image_that_cannot_answer() {
         );
     }
 
-    // Omitting `--elf` is an argument error, and that one is exit 2.
+    // Omitting `--elf` is an argument error, and §6 has one status for
+    // those too: `cli/usage`, exit 20. This line asserted exit 2 for
+    // two rounds, matching what the code did — and 2 is the status §6
+    // assigns to `xml/*`, so the caller was told its document was
+    // malformed. The correct rule was already written twenty lines
+    // above, in this same test.
     let out = Command::new(sce_codegen_bin())
         .arg("addr2sce")
         .arg(&tmp)
         .args(["--pc", "0x08001234"])
         .output()
         .expect("invoke addr2sce");
-    assert_eq!(out.status.code(), Some(2), "missing --elf is exit 2");
+    assert_eq!(
+        out.status.code(),
+        Some(20),
+        "a malformed invocation is `cli/usage` (exit 20), not exit 2 — \
+         2 belongs to `xml/*`",
+    );
 
     // The help text must describe the modes as they behave. It said
     // "NOT IMPLEMENTED" while they exited 2; it must not keep saying so

@@ -866,8 +866,9 @@ fn document_set_flags_the_route_cannot_honour_are_refused() {
             let (verdict, stdout) = run(&args, &cwd);
             assert_eq!(
                 verdict.exit,
-                Some(2),
-                "{flag:?} with {route:?} must be refused as a usage error, not accepted",
+                Some(20),
+                "{flag:?} with {route:?} must be refused as `cli/usage` (exit 20), \
+                 not accepted — SCE_ERROR_CONTRACT.md §6 reserves exit 2 for `xml/*`",
             );
             assert!(
                 stdout.trim().is_empty(),
