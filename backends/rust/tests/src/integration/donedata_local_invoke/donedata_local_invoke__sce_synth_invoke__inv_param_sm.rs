@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -243,7 +243,7 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
             "donedata_local_invoke__sce_synth_invoke__inv_param",
             &io_processors,
         ) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -273,7 +273,7 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
             "donedata_local_invoke__sce_synth_invoke__inv_param",
             &io_processors,
         ) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -290,7 +290,7 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     DonedataLocalInvokeSceSynthInvokeInvParamEvent::ErrorExecution,
                 ));
@@ -589,7 +589,10 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
                             json_parts.push(part);
                         }
                         Err(e) => {
-                            log::error!("Donedata param 'result' eval failed: {}", e);
+                            ::sce_rust_runtime::sce_log_error!(
+                                "Donedata param 'result' eval failed: {}",
+                                e
+                            );
                             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                 DonedataLocalInvokeSceSynthInvokeInvParamEvent::ErrorExecution,
                             ));

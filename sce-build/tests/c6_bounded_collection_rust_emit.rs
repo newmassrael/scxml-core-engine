@@ -177,7 +177,16 @@ fn happy_compile_const_no_index_by() {
     assert!(code.contains("#[cfg(not(feature = \"no_std\"))]"));
     assert!(code.contains("#[cfg(feature = \"no_std\")]"));
     assert!(code.contains("::std::vec::Vec<Option<SubscriptionEntry>>"));
-    assert!(code.contains("::heapless::Vec<Option<SubscriptionEntry>, CAPACITY>"));
+    // Reached through the runtime's re-export, not as `::heapless`. This
+    // alias is private and no public signature exposes a heapless type, so
+    // naming the crate directly would oblige every consumer to declare a
+    // dependency for code they never wrote. Asserted in the full form
+    // because the bare `::heapless::Vec<…>` spelling is a substring of the
+    // re-exported one — a check for the short form passes either way and
+    // would not notice the regression.
+    assert!(
+        code.contains("::sce_forge_runtime::heapless::Vec<Option<SubscriptionEntry>, CAPACITY>")
+    );
 
     // Generation array + occupancy bitmap.
     assert!(code.contains("generation: [u32; CAPACITY]"));
@@ -750,10 +759,6 @@ fn composite_element_bounded_collection_builds_without_an_allocator() {
         .expect("workspace root")
         .to_path_buf();
     let runtime_path = repo_root.join("backends/rust/forge-runtime");
-    // The BC template selects `heapless::Vec<Option<T>, CAPACITY>` as its
-    // backing under the `no_std` feature and names `::heapless` directly, so
-    // the probe crate carries the same pinned version the workspace does.
-    let heapless_version = workspace_heapless_version(&repo_root);
     fs::write(
         crate_dir.join("Cargo.toml"),
         format!(
@@ -769,13 +774,17 @@ fn composite_element_bounded_collection_builds_without_an_allocator() {
              default = [\"no_std\"]\n\
              no_std = []\n\
              \n\
+             # One entry, deliberately. The emitted collection stores its\n\
+             # slots in a heapless vector, and this crate declaring heapless\n\
+             # too is what kept the template free to name `::heapless`\n\
+             # directly — a dependency no consumer manifest was ever told\n\
+             # about. With the backing reached through the runtime's\n\
+             # re-export, a second line here would restore that blind spot.\n\
              [dependencies]\n\
              sce-forge-runtime = {{ path = {runtime:?} }}\n\
-             heapless = {heapless:?}\n\
              \n\
              [workspace]\n",
             runtime = runtime_path.to_string_lossy(),
-            heapless = heapless_version,
         ),
     )
     .expect("write Cargo.toml");
@@ -794,28 +803,8 @@ fn composite_element_bounded_collection_builds_without_an_allocator() {
     );
 }
 
-/// The `heapless` version the workspace pins, read from the root manifest so
-/// the probe crate cannot drift onto a different one.
-fn workspace_heapless_version(repo_root: &Path) -> String {
-    let manifest = fs::read_to_string(repo_root.join("Cargo.toml")).expect("read root Cargo.toml");
-    manifest
-        .lines()
-        .find_map(|line| {
-            let rest = line.trim().strip_prefix("heapless")?;
-            let rest = rest.trim_start().strip_prefix('=')?;
-            let quoted = rest.trim();
-            // Either `heapless = "x.y"` or `heapless = { version = "x.y", .. }`.
-            let inner = quoted
-                .strip_prefix('{')
-                .and_then(|b| b.split("version").nth(1))
-                .and_then(|v| v.trim_start().strip_prefix('='))
-                .unwrap_or(quoted);
-            inner
-                .trim()
-                .trim_start_matches('"')
-                .split('"')
-                .next()
-                .map(str::to_string)
-        })
-        .expect("workspace pins a heapless version")
-}
+// The probe crate used to re-derive the workspace's pinned `heapless`
+// version so its own dependency line could not drift onto a different one.
+// It no longer has that line: the emitted backing reaches heapless through
+// `sce_forge_runtime::heapless`, so the single pin the runtime carries is
+// the only one in play and there is nothing left to keep in step.

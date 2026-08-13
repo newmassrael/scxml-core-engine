@@ -177,7 +177,7 @@
 {% set param_expr = param.expr if param.expr else param.location %}
 {% if not param_expr %}
                     // W3C SCXML 5.7: Empty location raises error.execution (structural error)
-                    log::error!("Donedata param '{{ param.name | escape_rust }}': empty location (structural error)");
+                    ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}': empty location (structural error)");
 {% if 'error.execution' in model.events %}
                     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
@@ -190,7 +190,7 @@
                             json_parts.push(part);
                         }
                         Err(e) => {
-                            log::error!("Donedata param '{{ param.name | escape_rust }}' eval failed: {}", e);
+                            ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
                             engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
@@ -214,7 +214,7 @@
                     match se.evaluate_expression(&sid, "{{ state.donedata.content.text | to_lua_expr | escape_rust }}") {
                         Ok(val) => { done_event_data = val.to_lua_literal(); }
                         Err(e) => {
-                            log::error!("Donedata content expr eval failed: {}", e);
+                            ::sce_rust_runtime::sce_log_error!("Donedata content expr eval failed: {}", e);
 {% if 'error.execution' in model.events %}
                             engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}

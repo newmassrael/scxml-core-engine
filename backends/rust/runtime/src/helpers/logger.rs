@@ -4,18 +4,32 @@
 //! Logging facade — thin re-exports of the `log` crate macros under SCE names.
 //!
 //! Ports C++ `sce/include/core/LogMacros.h`. Generated code calls
-//! `sce_log_debug!("AOT processTransition: ...")` which expands to
-//! `log::debug!(target: "sce", "...")`. Users configure output via standard
-//! `log` facade backends (e.g., `env_logger`, `tracing-log`).
+//! `::sce_rust_runtime::sce_log_debug!("AOT processTransition: ...")`, which
+//! expands to `log::debug!(target: "sce", "...")`. Users configure output via
+//! standard `log` facade backends (e.g., `env_logger`, `tracing-log`).
 //!
 //! The `target: "sce"` prefix matches the C++ spdlog logger name, enabling
 //! cross-language log filtering (`RUST_LOG=sce=debug` or equivalent).
+//!
+//! # Why `$crate::log` and not `::log`
+//!
+//! These are `#[macro_export]` macros, so their bodies resolve paths in the
+//! *calling* crate. A `::log::debug!` expansion therefore demands that every
+//! consumer of a generated machine declare `log` in its own `Cargo.toml` —
+//! a dependency contract that appears in no manifest, no README, and no
+//! generated header. `$crate` resolves to `sce_rust_runtime` at every call
+//! site, so `$crate::log` reaches the [re-export](crate::log) the runtime
+//! already carries and the consumer needs no `log` entry at all.
+//!
+//! This keeps logging under the same rule as the rest of the generated
+//! surface: emitted code names one crate, `sce-rust-runtime`, and reaches
+//! everything else through it.
 
 /// Debug-level log. Matches C++ `SCE_LOG_DEBUG(...)`.
 #[macro_export]
 macro_rules! sce_log_debug {
     ($($arg:tt)*) => {
-        ::log::debug!(target: "sce", $($arg)*)
+        $crate::log::debug!(target: "sce", $($arg)*)
     };
 }
 
@@ -23,7 +37,7 @@ macro_rules! sce_log_debug {
 #[macro_export]
 macro_rules! sce_log_info {
     ($($arg:tt)*) => {
-        ::log::info!(target: "sce", $($arg)*)
+        $crate::log::info!(target: "sce", $($arg)*)
     };
 }
 
@@ -31,7 +45,7 @@ macro_rules! sce_log_info {
 #[macro_export]
 macro_rules! sce_log_warn {
     ($($arg:tt)*) => {
-        ::log::warn!(target: "sce", $($arg)*)
+        $crate::log::warn!(target: "sce", $($arg)*)
     };
 }
 
@@ -39,6 +53,6 @@ macro_rules! sce_log_warn {
 #[macro_export]
 macro_rules! sce_log_error {
     ($($arg:tt)*) => {
-        ::log::error!(target: "sce", $($arg)*)
+        $crate::log::error!(target: "sce", $($arg)*)
     };
 }

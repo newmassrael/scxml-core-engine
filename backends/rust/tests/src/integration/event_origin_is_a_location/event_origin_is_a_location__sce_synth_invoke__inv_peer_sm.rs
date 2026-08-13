@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -253,7 +253,7 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
             "event_origin_is_a_location__sce_synth_invoke__inv_peer",
             &io_processors,
         ) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -283,7 +283,7 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
             "event_origin_is_a_location__sce_synth_invoke__inv_peer",
             &io_processors,
         ) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -300,7 +300,7 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution,
                 ));
@@ -613,7 +613,10 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                                     ));
                                 }
                                 Err(e) => {
-                                    log::error!("send param 'myLocation' eval failed: {}", e);
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 'myLocation' eval failed: {}",
+                                        e
+                                    );
                                     engine.raise(sce_rust_runtime::EventWithMetadata::new(EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution));
                                 }
                             }
