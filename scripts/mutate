@@ -138,7 +138,13 @@ mutation_ctest() { mutation_declare_runner ctest "$@"; }
 # init and restored after every case, so a case body never has to clean up
 # after itself and a case that dies mid-edit cannot leave the tree broken
 # for the next one.
-mutation_targets() { MUTATION_TARGET_FILES=("$@"); }
+#
+# Accumulates rather than replaces. A casefile whose cases reach into several
+# files spells one declaration per line as readily as one line of many, and
+# replacing on the second call silently narrowed the snapshot to the last line
+# — leaving the earlier files edited, unrestored, and reported as though the
+# case body had changed nothing.
+mutation_targets() { MUTATION_TARGET_FILES+=("$@"); }
 
 # Files a case is allowed to edit that the tests READ AT RUN TIME — a shell
 # script a test executes, a fixture a test loads — rather than link into a
@@ -158,14 +164,21 @@ mutation_targets() { MUTATION_TARGET_FILES=("$@"); }
 # Declaring one in the wrong list is caught rather than believed: a case that
 # edits a compiled target is still held to the changed-binary rule, whichever
 # list named the file.
-mutation_runtime_targets() { MUTATION_RUNTIME_FILES=("$@"); }
+mutation_runtime_targets() { MUTATION_RUNTIME_FILES+=("$@"); }
 
 # ── Internals ──────────────────────────────────────────────────────
 
 # Every file a case may edit, of either kind.
+# Every path exactly once, first mention winning. The casefile is sourced on
+# both passes, so an accumulating declaration is seen twice; and a casefile may
+# name the same file in two declarations for its own reasons. Neither should
+# reach the snapshot, the restore, or — above all — the hash list the restore
+# is checked against, where a repeated path makes the baseline and the
+# post-restore reading disagree over files that are in fact identical.
 mutation_all_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
-                  ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"}
+                  ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"} |
+        awk 'NF && !seen[$0]++'
 }
 
 # "<sha> <path>" per named file, in the order given.
@@ -438,10 +451,32 @@ mutation_case() {
     [[ "${MUTATION_PASS:-run}" == "run" ]] || return 0
 
     printf '%s\n' "$body" > "$WORK/case.py"
-    if ! python3 - "$WORK/case.py" <<'PY'
+    if ! MUTATION_DECLARED_FILES="$(printf '%s\n' \
+            ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
+            ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"})" \
+        python3 - "$WORK/case.py" <<'PY'
+import os
 import sys
 
+# Only declared files are snapshotted, and only snapshotted files are restored.
+# An edit outside that set therefore outlives the round: the mutation stays in
+# the working tree, and because the harness compares only declared files the
+# case is reported as though the body had changed nothing — a false
+# INCONCLUSIVE sitting on top of a source tree that is now silently broken.
+# Refusing here is the difference between a harness that owns the restore and
+# one that only appears to.
+_declared = {line for line in os.environ.get("MUTATION_DECLARED_FILES", "").splitlines() if line}
+
+
 def edit(path, old, new):
+    if path not in _declared:
+        raise SystemExit(
+            "%s is edited by this case but declared by neither mutation_targets "
+            "nor mutation_runtime_targets.\n"
+            "Only declared files are snapshotted and restored, so this edit would "
+            "survive the round and leave the mutation in the tree.\n"
+            "  declared: %s" % (path, ", ".join(sorted(_declared)) or "(none)")
+        )
     src = open(path).read()
     if old not in src:
         raise SystemExit(
@@ -449,6 +484,7 @@ def edit(path, old, new):
             "would have read as SURVIVED:\n  %r" % (path, old[:120])
         )
     open(path, "w").write(src.replace(old, new, 1))
+
 
 exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), {"edit": edit})
 PY
