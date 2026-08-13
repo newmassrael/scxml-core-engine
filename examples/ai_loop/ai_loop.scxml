@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An agent-supervision loop, as a statechart.
+
+  A long-running AI agent is driven by something that decides when to prompt
+  it, when to stop, when to let a person in, and when the agent's whole session
+  has to be replaced. That "something" is usually a while-loop with flags. This
+  example is the claim that it is a statechart, and that saying so buys the
+  three things a flag-pile does not: the outcomes are enumerated, the
+  concurrent concerns are separate regions, and the whole thing is one document
+  a person can read and edit.
+
+  ## What drives what
+
+  This machine decides WHEN. A host — see `ai_loop_example.cpp` — owns every
+  effect: sending a prompt, reading the agent's screen, writing files, ending
+  and restarting the session. The host reports what happened as events; the
+  machine answers with what to do next. Neither knows the other's internals,
+  which is what lets the example ship with a scripted host and a real
+  deployment use a terminal one.
+
+  ## Three regions, because three things are true at once
+
+  A single-region draft of this machine repeated `fail` on eight states and
+  `cancel` on six, and it could only notice a spent budget while it happened to
+  be in `judging`. Both are the same missing idea: a run has concerns that are
+  live no matter what the turn cycle is doing.
+
+    drive    — the turn cycle. What to send and when.
+    watch    — is the agent's session still there? Independent of the cycle,
+               because a session can die mid-turn and the cycle would never
+               look.
+    budget   — how much of the run is spent. Counts every completed turn from
+               wherever the cycle is, instead of only where someone remembered
+               to check.
+
+  `fail` and `cancel` now sit once each, on the parallel, and reach every
+  region. The terminals live outside it: a transition from inside a parallel to
+  an outer final exits all three regions at once, which is exactly the meaning
+  wanted — a run ends as a whole.
+
+  ## Why a session is REPLACED rather than reconfigured
+
+  The things a loop wants to improve about itself — the agent's base context,
+  which tools are loaded, its instruction file, its memory — are read when a
+  session starts. A live session cannot be asked to re-read them. So
+  `reflecting` writes the improvements and `restarting` ends the session and
+  starts a fresh one, which reads them on the way up. That is the whole reason
+  this machine has a restart state instead of a "reconfigure" event.
+
+  ## Where a person fits
+
+  An agent that stops to ASK does not end the run. `screening` first checks the
+  standing instructions the author wrote in advance, and only an unmatched
+  question wakes somebody. `blocked` remains the terminal for the case that
+  actually ends a run — nobody came.
+
+  The loop never answers a dialog on its own authority. A screened answer is
+  the author's decision, made earlier and written down.
+
+  ## Reading this file
+
+  Everything in `<datamodel>` above the bookkeeping line is the editable
+  surface — the part a person fills in per run. Everything below it is the
+  machine's own counting. Nothing else in the document changes per loop.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       name="ai_loop"
+       datamodel="ecmascript"
+       initial="run">
+
+  <datamodel>
+    <!-- Where this loop is ultimately going. Never rewritten by reflection. -->
+    <data id="north_star" expr="'(edit me) the outcome this loop exists to reach'"/>
+    <!-- The step being worked on now. Reflection may rewrite this. -->
+    <data id="milestone" expr="'(edit me) the next checkpoint on the way there'"/>
+    <!-- Prior art the agent should read before deciding anything. -->
+    <data id="reference" expr="'(edit me) paths, URLs or repos to consult'"/>
+
+    <!-- Sent once, into a freshly started session. -->
+    <data id="start_prompt"
+          expr="'North star: ' + north_star + '\n' +
+                'Milestone: ' + milestone + '\n' +
+                'Reference: ' + reference + '\n' +
+                'Report what you did and what is left.'"/>
+    <!-- Sent on every turn after the first. -->
+    <data id="turn_prompt"
+          expr="'Continue toward: ' + milestone + '\n' +
+                'Do the next smallest thing that is verifiable, then report.'"/>
+    <!-- Sent once before the loop reports converged. -->
+    <data id="end_prompt"
+          expr="'Summarise what changed, what was verified, and what is left open.'"/>
+
+    <!-- Termination: the loop converges when the agent says this. -->
+    <data id="done_marker" expr="'MILESTONE REACHED'"/>
+
+    <!--
+      Standing instructions for questions the author has already decided about.
+      `screening` matches a raised dialog against these before anybody is woken;
+      a match is answered with the reply written here and the run carries on.
+
+      This is not the loop deciding. It is the loop CARRYING OUT a decision made
+      in advance and written down — which is why the rules live in the authored
+      half of this document and not in the host.
+    -->
+    <data id="screen_rules"
+          expr="[
+            { when: 'design-decision', keys: 'Escape',
+              text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },
+            { when: 'design-proposal', keys: 'Escape',
+              text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },
+            { when: 'multiple-choice', keys: 'Escape',
+              text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }
+          ]"/>
+
+    <!--
+      Permission dialogs are NOT screened by default, and the flag is separate
+      from the rules on purpose.
+
+      Redirecting a design question costs a turn. Approving a permission grants
+      an agent the ability to act — delete files, publish, spend money — and a
+      standing "yes" to that is a different kind of promise than a standing
+      "think about it again". Someone who wants it turns it on knowingly; nobody
+      gets it by writing a rule that happened to match.
+    -->
+    <data id="screen_permissions" expr="false"/>
+
+    <!-- Budgets. `max_turns` bounds the run, `reflect_every` sets how often the
+         loop stops to improve itself, `max_restarts` bounds how many times a
+         session may be replaced before the run is called stuck. -->
+    <data id="max_turns" expr="40"/>
+    <data id="reflect_every" expr="8"/>
+    <data id="max_restarts" expr="6"/>
+
+    <!-- ── below the line: loop bookkeeping, not authored ── -->
+    <data id="turns" expr="0"/>
+    <data id="turns_since_reflect" expr="0"/>
+    <!-- How many dialogs a standing instruction answered. Counted so an
+         auto-answered run does not read like a hand-answered one. -->
+    <data id="screened" expr="0"/>
+    <data id="restarts" expr="0"/>
+  </datamodel>
+
+  <parallel id="run">
+
+    <!-- ══ region: the turn cycle ═══════════════════════════════════════ -->
+    <state id="drive" initial="running">
+
+      <!--
+        Written once here rather than on each child. A person can hold the loop
+        and an agent can be interrupted at any point in the cycle, so these
+        belong to the cycle as a whole.
+      -->
+      <transition event="hold" target="paused"/>
+      <transition event="turn.interrupted" target="paused"/>
+      <!--
+        The session went away under us — `watch` saw it. Rebuild rather than
+        fail: a lost session is the case `restarting` already knows how to
+        answer.
+      -->
+      <transition event="session.lost" target="restarting"/>
+
+      <state id="running" initial="priming">
+
+        <!--
+          Where the cycle was when a person took over. `paused` returns here, so
+          being held during the closing report resumes the closing report rather
+          than restarting the cycle.
+        -->
+        <history id="where" type="shallow">
+          <transition target="working"/>
+        </history>
+
+        <!--
+          A session exists and has not been prompted yet. Entered at the very
+          beginning and again after every restart, which is what makes a
+          restarted loop resume with the CURRENT prompts rather than the ones it
+          started with.
+        -->
+        <state id="priming">
+          <onentry>
+            <send event="prompt.start"/>
+          </onentry>
+          <transition event="prompt.sent" target="working"/>
+        </state>
+
+        <!-- The agent is running. The host watches it. -->
+        <state id="working">
+          <transition event="turn.done" target="judging">
+            <assign location="turns_since_reflect" expr="turns_since_reflect + 1"/>
+          </transition>
+          <!-- The agent asked. Try the standing instructions before waking
+               anybody. -->
+          <transition event="turn.blocked" target="screening"/>
+        </state>
+
+        <!--
+          A dialog is up. Does a standing instruction cover it?
+
+          A state rather than something the host swallows, because a rule that
+          fires is a thing that happened to the run: it consumed a turn, it
+          steered the agent, and whoever reads the trace afterwards needs to see
+          it.
+        -->
+        <state id="screening">
+          <onentry>
+            <assign location="screened" expr="screened + 1"/>
+            <send event="screen.begin"/>
+          </onentry>
+          <!-- A rule claimed it; the host sent the keys and the reply. -->
+          <transition event="screen.matched" target="working"/>
+          <!-- Nothing covers this one. A person decides. -->
+          <transition event="screen.none" target="paused"/>
+        </state>
+
+        <!--
+          One turn has landed. Decide in priority order: goal met, time to
+          improve ourselves, otherwise take another turn. The budget is NOT
+          checked here — `budget` watches it from its own region and ends the
+          run from wherever the cycle happens to be.
+        -->
+        <state id="judging">
+          <transition event="judge" cond="_event.data.done" target="closing"/>
+          <transition event="judge" cond="turns_since_reflect &gt;= reflect_every"
+                      target="reflecting"/>
+          <transition event="judge" target="working">
+            <send event="prompt.turn"/>
+          </transition>
+        </state>
+
+        <!--
+          Improve the loop's own setup from the record so far. Everything it can
+          improve is read at session start, which is why this state's only
+          forward exit is a restart.
+        -->
+        <state id="reflecting">
+          <onentry>
+            <assign location="turns_since_reflect" expr="0"/>
+            <send event="reflect.begin"/>
+          </onentry>
+          <transition event="reflect.applied" target="restarting">
+            <assign location="start_prompt" expr="_event.data.start_prompt"/>
+            <assign location="turn_prompt" expr="_event.data.turn_prompt"/>
+            <assign location="milestone" expr="_event.data.milestone"/>
+          </transition>
+          <!-- Nothing worth changing: carry on without paying for a restart. -->
+          <transition event="reflect.none" target="working">
+            <send event="prompt.turn"/>
+          </transition>
+        </state>
+
+        <!-- End the session and start a fresh one, which reads whatever
+             `reflecting` wrote on its way up. -->
+        <state id="restarting">
+          <onentry>
+            <assign location="restarts" expr="restarts + 1"/>
+            <send event="session.replace"/>
+          </onentry>
+          <transition event="session.ready" cond="restarts &gt; max_restarts"
+                      target="stuck"/>
+          <transition event="session.ready" target="priming"/>
+        </state>
+
+        <!-- The goal was met; ask for the closing report before ending. -->
+        <state id="closing">
+          <onentry>
+            <send event="prompt.end"/>
+          </onentry>
+          <transition event="turn.done" target="reported"/>
+          <transition event="turn.blocked" target="screening"/>
+        </state>
+
+        <!--
+          The cycle is finished, one way or the other.
+
+          These raise rather than target a terminal directly. A `<parallel>`
+          only completes when EVERY region reaches a final state, and `watch`
+          and `budget` have no finals — they are live for as long as the run is.
+          So the cycle announces its outcome and the parallel-level transitions
+          below take all three regions out together. Relying on parallel
+          completion here would have meant a cycle that finished and a run that
+          never ended.
+        -->
+        <final id="reported">
+          <onentry>
+            <raise event="run.converged"/>
+          </onentry>
+        </final>
+        <!-- Rebuilt the session more times than the author allowed. That is a
+             spent budget, not a broken document, so it reports as
+             `exhausted`. -->
+        <final id="stuck">
+          <onentry>
+            <raise event="run.exhausted"/>
+          </onentry>
+        </final>
+      </state>
+
+      <!--
+        The run is paused and a person is expected. Three ways in: a dialog no
+        standing instruction covered, the person interrupting the agent by hand,
+        or the person asking the loop to hold.
+
+        Nothing is sent from here. The agent's screen stays exactly as the
+        person found it, which is what makes it readable — a loop that kept
+        prompting while somebody was reading would move the screen out from
+        under them.
+      -->
+      <state id="paused">
+        <onentry>
+          <!-- The loop's own channel to a person: the host raises whatever
+               attention signal its environment offers, so a waiting run is
+               visible without anybody watching the screen for it. -->
+          <send event="notify.human"/>
+        </onentry>
+        <!-- The person answered (or typed a turn themselves) and it completed. -->
+        <transition event="turn.done" target="judging">
+          <assign location="turns_since_reflect" expr="turns_since_reflect + 1"/>
+        </transition>
+        <!--
+          The person interrupted again while the loop was already waiting — they
+          are working by hand. Stay put; do not start prompting underneath
+          somebody who is typing.
+        -->
+        <transition event="turn.interrupted" target="paused"/>
+        <!-- Looked, changed nothing, waved it on — back to exactly where we
+             were, which is what `where` is for. -->
+        <transition event="resume" target="where"/>
+        <!-- Nobody came within the host's patience. The run-ending one. -->
+        <transition event="unattended" target="abandoned"/>
+      </state>
+
+      <!--
+        A SIBLING of `paused`, not a child of it.
+
+        As a child it was the only one, which made `paused` compound — and a
+        compound state enters its initial child on entry, so `paused` reached
+        its own final the instant it was entered and the run ended without ever
+        waiting for anybody. `check` accepts both shapes, and so does the
+        reachability lint; only running it tells them apart.
+      -->
+      <final id="abandoned">
+        <onentry>
+          <raise event="run.blocked"/>
+        </onentry>
+      </final>
+    </state>
+
+    <!-- ══ region: is the session still there? ══════════════════════════ -->
+    <!--
+      Its own region because a session can die mid-turn, and a cycle waiting on
+      `turn.done` would wait forever for an event no living process will send.
+    -->
+    <state id="watch" initial="alive">
+      <state id="alive">
+        <transition event="session.lost" target="rebuilding"/>
+      </state>
+      <state id="rebuilding">
+        <transition event="session.ready" target="alive"/>
+      </state>
+    </state>
+
+    <!-- ══ region: how much of the run is spent ═════════════════════════ -->
+    <!--
+      Counting lives here, not in `judging`, so a turn is counted wherever it
+      completes — including the ones a person answered by hand while the cycle
+      sat in `paused`.
+    -->
+    <state id="budget" initial="within">
+      <state id="within">
+        <transition event="turn.done" cond="turns + 1 &gt;= max_turns" target="spent">
+          <assign location="turns" expr="turns + 1"/>
+        </transition>
+        <transition event="turn.done" target="within">
+          <assign location="turns" expr="turns + 1"/>
+        </transition>
+      </state>
+      <state id="spent">
+        <onentry>
+          <raise event="run.exhausted"/>
+        </onentry>
+      </state>
+    </state>
+
+    <!-- Written once, reaching every region. A run ends as a whole. -->
+    <transition event="run.converged" target="converged"/>
+    <transition event="run.exhausted" target="exhausted"/>
+    <transition event="run.blocked" target="blocked"/>
+    <transition event="fail" target="failed"/>
+    <transition event="cancel" target="cancelled"/>
+  </parallel>
+
+  <final id="converged"/>
+  <final id="exhausted"/>
+  <final id="failed"/>
+  <final id="cancelled"/>
+  <final id="blocked"/>
+</scxml>
