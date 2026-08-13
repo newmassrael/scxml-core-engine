@@ -40,9 +40,18 @@
           </transition>
         </state>
         <state id="judging">
+          <!--
+            The verdict leaves the `<parallel>` for a top-level `<final>`.
+
+            Keeping it inside would make the observable a member of a
+            configuration, and not every backend exposes one: the Kotlin engine
+            reports a single current leaf, which in a parallel is whichever
+            region comes last in document order. A channel that cannot see the
+            verdict cannot fail on it, and a driver that cannot fail is not
+            coverage.
+          -->
           <transition event="check" cond="n == 1 &amp;&amp; m == 1" target="settled"/>
         </state>
-        <state id="settled"/>
       </state>
     </state>
 
@@ -57,4 +66,6 @@
     </state>
 
   </parallel>
+
+  <final id="settled"/>
 </scxml>

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b55270895e642c72e5ee41ffae14f94aed361c40fde647371624ef22d0fa79da
+// source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
 // template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
 // generated-at: 0
 
@@ -550,6 +550,7 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
 
     fn is_final_state(state: Self::State) -> bool {
         match state {
+            ParallelRegionsTakeOwnTransitionsState::Settled => true,
             _ => false,
         }
     }
@@ -567,9 +568,6 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
             }
             ParallelRegionsTakeOwnTransitionsState::Running => {
                 Some(ParallelRegionsTakeOwnTransitionsState::Drive)
-            }
-            ParallelRegionsTakeOwnTransitionsState::Settled => {
-                Some(ParallelRegionsTakeOwnTransitionsState::Running)
             }
             ParallelRegionsTakeOwnTransitionsState::Within => {
                 Some(ParallelRegionsTakeOwnTransitionsState::Budget)
@@ -624,13 +622,13 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-            ParallelRegionsTakeOwnTransitionsState::Budget => 6,
+            ParallelRegionsTakeOwnTransitionsState::Budget => 5,
             ParallelRegionsTakeOwnTransitionsState::Drive => 1,
             ParallelRegionsTakeOwnTransitionsState::Judging => 4,
             ParallelRegionsTakeOwnTransitionsState::Run => 0,
             ParallelRegionsTakeOwnTransitionsState::Running => 2,
-            ParallelRegionsTakeOwnTransitionsState::Settled => 5,
-            ParallelRegionsTakeOwnTransitionsState::Within => 7,
+            ParallelRegionsTakeOwnTransitionsState::Settled => 7,
+            ParallelRegionsTakeOwnTransitionsState::Within => 6,
             ParallelRegionsTakeOwnTransitionsState::Working => 3,
         }
     }
@@ -1067,7 +1065,7 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
             ParallelRegionsTakeOwnTransitionsState::Within => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: parallel_regions_take_own_transitions.scxml:53 :: within :: _transition_0
+                        // SCE-MAP: parallel_regions_take_own_transitions.scxml:62 :: within :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
