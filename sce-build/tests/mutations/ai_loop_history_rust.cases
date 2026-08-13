@@ -1,0 +1,45 @@
+# Mutation cases for W3C SCXML 3.10 + 3.11 — a `<history>` restores the cycle
+# to where it was, on the Rust AOT path.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ai_loop_history_rust.cases`.
+#
+# Sibling of `ai_loop_history_cpp.cases`. The two backends do not share this
+# code: C++ calls `SCE::Core::HistoryHelper::recordHistory` at run time, while
+# the Rust emitter inlines the same filter into the generated policy. So the
+# clause needs a case on each side — a mutation of the C++ helper says nothing
+# about what the Rust template emits, and the committed tree here is what the
+# Rust test actually compiles.
+#
+# Mutating the committed generated source rather than the template is what
+# makes check 1 of the harness answerable: the template is not compiled into
+# these binaries, so an edit there would leave every artifact hash unchanged
+# and the round INCONCLUSIVE. What the case below asks is the useful question
+# anyway — if the emitter stopped producing this filter, would anything notice?
+
+mutation_tests -p sce-rust-tests --test ai_loop
+mutation_targets backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs
+
+# ── Shallow history records nothing ────────────────────────────────
+#
+# §scxml-3.10 has a shallow `<history>` record the active CHILDREN of its
+# parent. A filter that matches nothing records an empty set, so re-entry falls
+# back to the parent's `initial` and `resume` lands at the top of the cycle
+# rather than where the person paused it.
+
+mutation_case "shallow history records no state at all" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     ".filter(|&&s| Self::get_parent(s) == Some(AiLoopState::Running))",
+     ".filter(|&&s| false && Self::get_parent(s) == Some(AiLoopState::Running))")
+PY
+
+# ── Shallow history records the wrong states ───────────────────────
+#
+# The inverted comparison: keep everything except the parent's direct children.
+# In a three-region `<parallel>` that is most of the rest of the configuration,
+# so restoration re-enters states in regions the history state does not name.
+
+mutation_case "shallow history records everything but the direct children" <<'PY'
+edit("backends/rust/tests/src/integration/ai_loop/ai_loop_sm.rs",
+     ".filter(|&&s| Self::get_parent(s) == Some(AiLoopState::Running))",
+     ".filter(|&&s| Self::get_parent(s) != Some(AiLoopState::Running))")
+PY
