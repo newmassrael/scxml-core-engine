@@ -40,10 +40,65 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// The witness algorithm is included rather than imported: a build script
+// is its own crate and cannot depend on the library it builds. Including
+// the one implementation is what makes the two halves of the check —
+// embedded here, recomputed by `sce-codegen verify-generator` — provably
+// the same function rather than two spellings that must be kept in step.
+//
+// Wrapped in a module rather than included flat so the file keeps its own
+// imports and its `//!` header, and so neither side has to avoid names the
+// other already uses.
+mod generator_witness {
+    include!("src/generator_witness.rs");
+}
+use generator_witness::{digest_hex, witness_paths, DIGEST_UNAVAILABLE};
+
 fn main() {
     let commit = git_commit().unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=SCE_GIT_COMMIT={commit}");
+    emit_source_digest();
     emit_template_registry();
+}
+
+/// Workspace root, one level above this crate.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo"))
+        .join("..")
+}
+
+/// Embed the content witness described in `src/generator_witness.rs`.
+///
+/// Absence is a supported build shape, not a failure: a vendored crate has
+/// no workspace `Cargo.lock` beside it, and refusing to compile there would
+/// break consumers to serve a check that only this repository's build
+/// system runs. The sentinel is a distinct value rather than a plausible
+/// digest, so `verify-generator` reports "cannot be checked" instead of
+/// reporting drift it never measured.
+fn emit_source_digest() {
+    let root = workspace_root();
+    match digest_hex(&root) {
+        Ok(digest) => {
+            println!("cargo:rustc-env=SCE_GENERATOR_SOURCE_DIGEST={digest}");
+            // One watch per file. A watch on the directory would move only
+            // when a file is added or removed, leaving the embedded digest
+            // describing a tree that had since been edited — and a stale
+            // digest makes the check refuse a generator that is current,
+            // which is the failure the reverted mtime attempt shipped.
+            match witness_paths(&root) {
+                Ok(paths) => {
+                    for path in paths {
+                        watch(&path);
+                    }
+                }
+                Err(e) => panic!("witness digest succeeded but its path list did not: {e}"),
+            }
+        }
+        Err(e) => {
+            println!("cargo:rustc-env=SCE_GENERATOR_SOURCE_DIGEST={DIGEST_UNAVAILABLE}");
+            println!("cargo:warning=sce-build: generator source witness unavailable ({e}); `sce-codegen verify-generator` cannot check this binary");
+        }
+    }
 }
 
 /// Template tree root, relative to this crate's manifest directory.

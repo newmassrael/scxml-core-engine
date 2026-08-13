@@ -56,3 +56,62 @@ if(NOT SCE_CODEGEN)
         "SCE: sce-codegen not found. Build it with: "
         "cargo build --bin sce-codegen --features cli -p sce-build")
 endif()
+
+# ── The generator's age ───────────────────────────────────────────────
+#
+# Finding the binary is not the same as finding the right one, and until
+# here nothing checked the difference. CMake does not build sce-codegen:
+# the generation rules list it in DEPENDS, so a *changed* binary
+# regenerates, but no rule produces a new one. `target/` is also excluded
+# from the transfer that populates a build machine, so a tree whose Rust
+# sources are current can generate with a binary that is months old. That
+# happened on 2026-08-13 — one commit compiled here and failed there, and
+# the only difference between the two trees was which binary was on disk.
+#
+# The binary answers the question itself (`sce_build::generator_witness`
+# says why the comparison must live on that side), so this asks and reports.
+# The previous attempt compared mtimes from here and had to be reverted:
+# the transfer is `rsync` without `-t`, so every arriving source outranked
+# the remote binary and the check refused every remote configure.
+#
+# Only in a tree that holds the generator's sources. An installed or
+# vendored SCE has nothing to compare against, and a check that cannot run
+# must skip rather than fail — reporting "cannot run" as "you are stale"
+# is the misattribution this repository has already paid for twice.
+get_filename_component(_SCE_WITNESS_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
+if(EXISTS "${_SCE_WITNESS_ROOT}/sce-build/src" AND EXISTS "${_SCE_WITNESS_ROOT}/Cargo.lock")
+    # Configure time, because configure is already a consumer: the forge
+    # conformance harnesses call the generator from `execute_process` here,
+    # long before the first build rule runs.
+    execute_process(
+        COMMAND "${SCE_CODEGEN}" verify-generator --root "${_SCE_WITNESS_ROOT}"
+        RESULT_VARIABLE _sce_witness_rc
+        ERROR_VARIABLE _sce_witness_err
+    )
+    if(NOT _sce_witness_rc EQUAL 0)
+        message(FATAL_ERROR "SCE: ${_sce_witness_err}")
+    endif()
+    # Said out loud on success, unlike the tool itself. A check whose only
+    # observable behaviour is a refusal cannot be distinguished from one
+    # that is not running — which is how a gate ends up believed on a
+    # machine where it silently never fired.
+    message(STATUS "SCE: code generator matches the sources in ${_SCE_WITNESS_ROOT}")
+
+    # And again at build time, which is not redundant: editing a `.rs` file
+    # does not re-run configure, so without this the whole check would be
+    # blind to exactly the sequence that produces the failure — edit the
+    # generator, then build the C++ without rebuilding it.
+    #
+    # Nothing is ordered behind this target, and it does not need to be.
+    # A refusal fails the build, and every generation rule already lists
+    # the binary in DEPENDS — so once the generator is rebuilt, everything
+    # it produced is regenerated. What a stale run leaves in the build
+    # directory cannot survive into a build that succeeds.
+    if(NOT TARGET sce_codegen_source_witness)
+        add_custom_target(sce_codegen_source_witness ALL
+            COMMAND "${SCE_CODEGEN}" verify-generator --root "${_SCE_WITNESS_ROOT}"
+            COMMENT "Checking sce-codegen against the sources it was built from"
+            VERBATIM
+        )
+    endif()
+endif()

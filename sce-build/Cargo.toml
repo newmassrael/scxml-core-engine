@@ -65,6 +65,14 @@ object = { version = "0.36", default-features = false, features = [
     "std",
 ], optional = true }
 
+[build-dependencies]
+# The build script `include!`s `src/generator_witness.rs` to embed the
+# content witness that binds this binary to the sources it was compiled
+# from. Same crate as the library uses, so the digest the script writes and
+# the digest `sce-codegen verify-generator` recomputes come from one
+# implementation of one algorithm.
+sha2 = { workspace = true }
+
 [features]
 # `xsd` is on by default so every native build validates at the parser entry
 # point; a build that opts out says so at runtime rather than reporting the same
@@ -369,6 +377,17 @@ path = "tests/cli_meta_and_workspace_root.rs"
 required-features = ["cli"]
 
 
+
+# Generator content witness, end-to-end. Drives the real binary because
+# the claim under test is a process observation — what `verify-generator`
+# says about a tree it is pointed at — so it takes the same `cli` feature
+# gate as the other binary-driven targets. Its own target because the
+# input is a staged copy of the generator's own sources, which makes it a
+# tree-wide probe rather than a fixture test.
+[[test]]
+name = "generator_source_witness"
+path = "tests/generator_source_witness.rs"
+required-features = ["cli"]
 
 # Forge AST export wire-format drift guard. Reads the checked-in
 # `apis/forge-ast.v1.schema.json` and round-trips every emittable

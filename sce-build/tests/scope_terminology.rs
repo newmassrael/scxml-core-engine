@@ -103,6 +103,17 @@ const EXEMPT_PREFIXES: &[(&str, &str)] = &[
          taken under. The vocabulary moved afterwards; the record of \
          why it was chosen did not.",
     ),
+    (
+        "examples/ai_loop/",
+        "the agent here is the subject the state machine supervises, not \
+         the audience of anything SCE emits — the same distinction that \
+         puts `on-target agent` in NON_READER_PREFIXES. The example's \
+         whole point is that SCE stays a deterministic supervisor of a \
+         process it does not model, so renaming the supervised party \
+         would remove the one thing the example demonstrates. What the \
+         rule forbids is SCE claiming who reads its wire surfaces, and \
+         this example claims nothing about that.",
+    ),
 ];
 
 /// Lower bound on files the scan must read. Measured, not guessed:
@@ -153,9 +164,17 @@ fn term_lines(body: &str) -> Vec<usize> {
                     .unwrap_or(true),
                 Some(c) => !c.is_ascii_alphanumeric(),
             };
+            // `get` rather than an index: the left edge is `start` minus a
+            // prefix length in BYTES, and a multi-byte char straddling it
+            // makes indexing panic. A gate that panics reports nothing —
+            // this one crashed on `— is the agent's session still there?`
+            // in `examples/ai_loop/`, and the violation it was scanning
+            // for went unreported behind its own backtrace for two
+            // commits. `get` yields `None` there, which is the right
+            // answer anyway: a byte sequence that is not this prefix.
             let other_noun = NON_READER_PREFIXES
                 .iter()
-                .any(|p| start >= p.len() && &lower[start - p.len()..start] == *p);
+                .any(|p| start >= p.len() && lower.get(start - p.len()..start) == Some(*p));
             if before_ok && after_ok && !other_noun {
                 hits.push(i + 1);
                 break;
@@ -290,6 +309,17 @@ fn the_matcher_reads_words_not_substrings() {
         // is a boundary here for exactly that reason: a helper called
         // `agent_facing_surfaces` is the same claim as the prose.
         "fn agents_dispatch_on_code()",
+        // A multi-byte char inside the prefix window. The matcher steps
+        // back a prefix length in BYTES to test for `user-` and friends,
+        // and indexing there used to panic when an em-dash straddled the
+        // edge — so the scan died mid-tree and the 29 real violations it
+        // was walking toward went unreported behind the backtrace for
+        // two commits. A gate that crashes is indistinguishable from a
+        // gate that found nothing, and this line is the one that did it.
+        "watch    — is the agent's session still there?",
+        // The same edge one byte over, so the assertion does not rest on
+        // a single alignment.
+        "the loop — an agent — is supervised",
     ] {
         assert_eq!(
             term_lines(line),

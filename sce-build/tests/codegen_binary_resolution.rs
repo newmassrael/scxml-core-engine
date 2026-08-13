@@ -66,6 +66,25 @@ fn tracked_files(root: &Path) -> Vec<String> {
         .collect()
 }
 
+/// `(line number, text)` for the lines of `text` that are not wholly a
+/// comment, in `#` and `//` dialects — which is every file type that
+/// mentions the generator here (YAML, CMake, shell, Rust, Kotlin, Python).
+///
+/// Both scans below are about where the binary is *resolved*, and a
+/// sentence describing a resolution does not perform one. Without this the
+/// gates fire on the comments explaining why a site was consolidated,
+/// which pushes the next author to describe the fix vaguely or not at all
+/// — a scanner that punishes documentation gets less documentation.
+///
+/// A trailing comment after code stays in, deliberately: that line still
+/// carries the code.
+fn code_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    text.lines().enumerate().filter_map(|(i, line)| {
+        let trimmed = line.trim_start();
+        (!trimmed.starts_with('#') && !trimmed.starts_with("//")).then_some((i + 1, line))
+    })
+}
+
 /// Nothing outside the locators may name the release profile.
 ///
 /// Stated as a ban on `target/release/sce-codegen` rather than on
@@ -89,9 +108,9 @@ fn nothing_outside_the_locators_names_the_release_profile() {
             continue; // binary or non-UTF-8 file
         };
         scanned += 1;
-        for (i, line) in text.lines().enumerate() {
+        for (lineno, line) in code_lines(&text) {
             if line.contains(needle) {
-                violations.push(format!("{rel}:{}: {}", i + 1, line.trim()));
+                violations.push(format!("{rel}:{lineno}: {}", line.trim()));
             }
         }
     }
@@ -107,6 +126,71 @@ fn nothing_outside_the_locators_names_the_release_profile() {
         "{} site(s) name the release profile of the generator, which no \
          build path in this repository produces. Resolve it through the \
          ecosystem locator instead ({}):\n{}",
+        violations.len(),
+        LOCATORS[..4].join(", "),
+        violations.join("\n"),
+    );
+}
+
+/// The same ban, in the spelling the check above cannot see.
+///
+/// `nothing_outside_the_locators_names_the_release_profile` looks for
+/// `target/release/sce-codegen` — the directory and the binary adjacent on
+/// one line. That is how a shell script writes it and how a workflow
+/// writes it, and it is *not* how CMake writes it: `find_program` takes
+/// the name in one argument and the directories in another, so the two
+/// halves land on different lines and the needle never matches.
+///
+/// The gap was not theoretical. Four sites lived inside it, and two of
+/// them were the ones that mattered most — the W3C static-test module and
+/// the root list's install rule — each carrying its own `find_program`
+/// with the profiles in the opposite order to the locator's, so a stale
+/// release binary outranked a fresh debug one on exactly the lane where a
+/// months-old generator was found generating in the first place.
+///
+/// So this scans for the directory alone, in any file that also mentions
+/// the generator. Restricting it to those files is what keeps it from
+/// firing on the many unrelated uses of a release profile in a Rust
+/// workspace; a file that never names `sce-codegen` is not resolving one.
+#[test]
+fn nothing_outside_the_locators_reaches_into_a_profile_directory() {
+    let root = repo_root();
+    let profile_dir = "target/release";
+    let generator = "sce-codegen";
+    let mut scanned = 0usize;
+    let mut violations: Vec<String> = Vec::new();
+
+    for rel in tracked_files(&root) {
+        if LOCATORS.contains(&rel.as_str()) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(root.join(&rel)) else {
+            continue; // binary or non-UTF-8 file
+        };
+        scanned += 1;
+        if !text.contains(generator) {
+            continue;
+        }
+        for (lineno, line) in code_lines(&text) {
+            if line.contains(profile_dir) {
+                violations.push(format!("{rel}:{lineno}: {}", line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        scanned >= MIN_SCANNED_FILES,
+        "only {scanned} tracked text files reached the scan (expected at \
+         least {MIN_SCANNED_FILES}); the enumeration broke, so a clean \
+         result would prove nothing",
+    );
+    assert!(
+        violations.is_empty(),
+        "{} site(s) reach into a build-profile directory to find the \
+         generator. The profile is a build-layout detail, and a second \
+         copy of the search is also a second copy of the profile ORDER — \
+         which is what decides whether a stale binary outranks a fresh \
+         one. Resolve through the ecosystem locator instead ({}):\n{}",
         violations.len(),
         LOCATORS[..4].join(", "),
         violations.join("\n"),
