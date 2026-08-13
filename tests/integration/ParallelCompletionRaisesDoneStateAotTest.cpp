@@ -13,9 +13,16 @@
 //
 // That defect is a *compile* failure, which is why registering the fixture is
 // itself most of the gate — `check` returns `cpp=ok` for this document either
-// way, because acceptance is decided before anything is compiled. This file
-// adds the behavioural half: that the event is not merely declared but
-// actually carries the machine out of the parallel.
+// way, because acceptance is decided before anything is compiled. What this
+// file adds is the precondition: that one event really does carry both regions
+// to their finals, so the completion the enumerator names is a state the
+// machine actually reaches.
+//
+// It does NOT show the event is delivered, and said so until 2026-08-13. It
+// cannot: this document has no listener, deliberately, so there is nothing
+// here for `done.state.run` to do and no observable difference between an
+// engine that raises it and one that drops it. That half is
+// `parallel_done_state_is_delivered`, whose document does listen.
 //
 // Sibling of `ParallelCompletionRaisesDoneStateTest.cpp` (Interpreter channel).
 //

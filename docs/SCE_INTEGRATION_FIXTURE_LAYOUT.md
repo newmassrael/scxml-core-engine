@@ -137,6 +137,29 @@ before anything is compiled. Nothing in the fixture listens for
 attribute, which would register it no matter what the `<final>` walk does and
 leave the fixture unable to fail.
 
+`parallel_done_state_is_delivered` covers the other half of the same clause,
+and the split is forced rather than chosen. Its sibling above cannot listen for
+`done.state.run`: an event named by a transition is collected from that `event`
+attribute, so a listener would register the enumerator no matter what the
+`<final>` walk does and leave that fixture unable to fail. What it proves is
+therefore that the event is *declared*, which the build proves by compiling.
+
+Declared is not delivered. A backend that names the enumerator and never raises
+it, or raises it where nothing selects from, compiles clean and passes there.
+Measured 2026-08-13: all six code-generating backends do raise it, and no
+channel asserted so — every driver on the pair checked that the regions reached
+`a2`/`b2`, which is the precondition and not the event. So this fixture
+listens, and its verdict is the top-level `<final>` `settled`, which the
+completion event alone can reach and which the Kotlin channel can observe
+through the single current leaf it exposes.
+
+One shape worth recording, because it cost a round of red drivers: completion
+is selected in the SAME macrostep as the regions' finals, so once the step
+returns the parallel has been exited and `a2`/`b2` are gone. Asserting them as
+a precondition fails against an engine that has done exactly the right thing.
+Each driver therefore makes one assertion and puts the configuration in its
+failure message, where `a1`/`b1` and `a2`/`b2` name the two different defects.
+
 `event_origin_is_a_location` covers W3C SCXML Appendix C.1: the origin of a
 delivered event is the `location` the sending session published for the SCXML
 Event I/O Processor, and that location is a usable `<send>` target. The public

@@ -531,6 +531,8 @@ add_executable(integration_tests
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
     integration/ParallelCompletionRaisesDoneStateAotTest.cpp
+    integration/ParallelDoneStateIsDeliveredTest.cpp
+    integration/ParallelDoneStateIsDeliveredAotTest.cpp
     integration/SendParamPayloadTest.cpp
     integration/SendParamPayloadAotTest.cpp
     integration/SCXMLEventTest.cpp
@@ -912,6 +914,19 @@ sce_generate_static_integration_test(parallel_regions_take_own_transitions ${STA
 # is decided before anything is compiled. Registering the fixture here is what
 # turns that into a build failure.
 sce_generate_static_integration_test(parallel_completion_raises_done_state ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.4 + 3.7, the other half: declared is not delivered. The fixture
+# above cannot listen for `done.state.run` — a transition's `event` attribute
+# is itself a registration site, so a listener there would register the event
+# no matter what the `<final>` walk does and leave that fixture unable to fail.
+# What it proves is therefore that the enumeration DECLARES the event, which
+# the build proves by compiling.
+#
+# A backend that names the enumerator and never raises it, or raises it into a
+# queue nothing selects from, compiles clean and passes there. This fixture
+# listens, and its verdict is a top-level `<final>` the completion event alone
+# can reach.
+sce_generate_static_integration_test(parallel_done_state_is_delivered ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.4.1: an `<invoke>` whose `type` names no processor this platform
 # implements is valid SCXML that must raise `error.execution` — not a document
