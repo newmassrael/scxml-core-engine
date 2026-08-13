@@ -509,6 +509,15 @@ INERT = [
     ".gitattributes",
     "*.md",
     "docs/adr/**",
+    # `*.md` above is fnmatch, whose `*` does not cross `/`, so a document
+    # one directory down falls through to FULL. This one is read by a gate —
+    # `integration_stem_registration` requires every stem to appear in it —
+    # and is inert anyway for the reason at the top of this list: that test
+    # lives in `tree-hygiene`, whose workflow declares no `paths:` filter and
+    # therefore runs for every change. Listed by name rather than as
+    # `docs/**`, because a document under `docs/` that IS a path-scoped
+    # gate's input and has no trigger would then be skipped in silence.
+    "docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md",
     "LICENSE*",
     # Local tooling. The one gate that reads these, `roadmap_marker_gate`,
     # reaches every change through `tree-hygiene`, and this file's own
