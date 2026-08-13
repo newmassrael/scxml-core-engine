@@ -671,6 +671,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.4 + 3.7, the other half: declared is not delivered. The
+    # fixture above carries no listener on purpose — a transition's `event`
+    # attribute registers the name by itself, which would leave it unable to
+    # fail — so what it proves is that this backend DECLARES the enumerator.
+    # An emitter that names it and never raises it still compiles. This one
+    # listens, and its verdict is a top-level <final> nothing else can reach.
+    sce_generate_static_integration_c_test(parallel_done_state_is_delivered "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_parallel_done_state_is_delivered
+        integration/test_parallel_done_state_is_delivered.c
+        ${INTEGRATION_C_TEST_parallel_done_state_is_delivered_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_parallel_done_state_is_delivered PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_parallel_done_state_is_delivered PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_parallel_done_state_is_delivered PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_parallel_done_state_is_delivered
+        COMMAND sce_c_integration_parallel_done_state_is_delivered
+    )
+    set_tests_properties(c11_integration_parallel_done_state_is_delivered PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.4: one event can enable a transition in more than one region
     # of a <parallel>, and every such region takes its own in the same
     # microstep. The fixture is asymmetric on purpose — one region's transition

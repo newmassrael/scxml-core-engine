@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 3.4 + 3.7: `done.state.<parallel>` is not merely declared — it is
+  raised when the last region reaches its `<final>`, and a transition selected
+  on it runs.
+
+  This is the second half of an axis its sibling
+  `parallel_completion_raises_done_state` cannot ask. That fixture has no
+  listener ON PURPOSE: an event named by a transition is collected from that
+  `event` attribute, so a listener would register `done.state.run` in the
+  enumeration no matter what the `<final>` walk does, and the fixture could no
+  longer fail for the defect it exists to catch. What it proves is therefore
+  narrow — that the enumeration DECLARES the event, which the build proves by
+  compiling.
+
+  Declared is not delivered. A backend that names the enumerator and never
+  raises it, or raises it into a queue nothing selects from, compiles clean and
+  passes there. Measured 2026-08-13: all six code-generating backends do raise
+  it, but no channel asserted so — every driver in the pair of parallel
+  fixtures checks that the regions reached `a2`/`b2`, which is the precondition
+  and not the event.
+
+  So this document listens. `settled` is a TOP-LEVEL `<final>`, reachable only
+  by the `done.state.run` transition, because a top-level final is the one
+  observable every backend exposes — including those that report a single
+  current leaf rather than a configuration.
+
+  `null` datamodel deliberately: delivery of a completion event needs no script
+  engine to observe, and a document that needed one would narrow which channels
+  could host it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_done_state_is_delivered" datamodel="null" initial="run">
+
+  <parallel id="run">
+
+    <state id="a" initial="a1">
+      <state id="a1">
+        <transition event="go" target="a2"/>
+      </state>
+      <final id="a2"/>
+    </state>
+
+    <state id="b" initial="b1">
+      <state id="b1">
+        <transition event="go" target="b2"/>
+      </state>
+      <final id="b2"/>
+    </state>
+
+    <!--
+      The listener. One event moves both regions to their finals, which
+      completes the parallel and must raise `done.state.run`; selecting on it
+      is what carries the machine to `settled`.
+
+      A run that stalls in `[run | a | a2 | b | b2]` is the failure this
+      fixture reports: the regions are done and the completion event went
+      nowhere.
+    -->
+    <transition event="done.state.run" target="settled"/>
+
+  </parallel>
+
+  <final id="settled"/>
+</scxml>
