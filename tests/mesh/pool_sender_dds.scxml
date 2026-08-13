@@ -9,14 +9,18 @@
 
      This comment used to argue that driving the `<send>` from `<onentry>`
      would only test the same arm through a longer path. That was wrong,
-     and the cost was concrete: under `datamodel="null"` the `corner`
-     param emitted `std::to_string('front_left')` — a C++
-     multi-character literal, so the value on the wire was a number — and
-     because nothing entered `sending`, it compiled and shipped unread.
-     §4 now drives the engine, which is what makes the param path
-     observable at all. -->
+     and the cost was concrete: the `corner` param emitted
+     `std::to_string('front_left')` — a C++ multi-character literal, so
+     the value on the wire was a number — and because nothing entered
+     `sending`, it compiled and shipped unread. §4 now drives the engine,
+     which is what makes the param path observable at all.
+
+     The document declared `datamodel="null"` while carrying `<param
+     expr>` for as long as the attribute reached no decision. W3C SCXML
+     B.1.4 gives the Null data model no value expression language, so
+     `ecmascript` is what these params were always written in. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null" name="pool_sender_dds" initial="idle">
+       datamodel="ecmascript" name="pool_sender_dds" initial="idle">
     <state id="idle">
         <transition event="ping.sensor" target="sending"/>
     </state>

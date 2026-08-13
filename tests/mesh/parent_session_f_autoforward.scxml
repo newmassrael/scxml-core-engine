@@ -17,7 +17,7 @@
      Reaching `pass` proves both the lifecycle round-trip and that the
      forward was not stripped down to the bare event name. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" initial="waiting" name="parent_session_f_autoforward">
+       version="1.0" datamodel="ecmascript" initial="waiting" name="parent_session_f_autoforward">
     <state id="waiting">
         <invoke type="scxml" src="#worker_session_f_autoforward" id="remote_inv" autoforward="true"/>
         <!-- `trigger` must be in the parent's Event enum so the test driver

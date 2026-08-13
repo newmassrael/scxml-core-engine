@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
+// source-hash: 8c4a7d84a6ea23ea88829e171f3ef6f30c77da38dc5a67c7f0b53b8d9b23526b
 // template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: send_param_payload.scxml:38 :: _machine
+// SCE-MAP: send_param_payload.scxml:44 :: _machine
 
 package send_param_payload
 
@@ -636,12 +636,12 @@ func (p *SendParamPayloadPolicy) ClearEventMetadata() {
 
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
-//line send_param_payload.scxml:38
+//line send_param_payload.scxml:44
 func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
 	p.ensureScriptEngine()
 	switch state {
 	case SendParamPayloadStateAwaitChild:
-		//line send_param_payload.scxml:42
+		//line send_param_payload.scxml:48
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_emitter", "awaitChild", sce.NextInvokeCounter())
@@ -651,7 +651,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 			})
 		}
 	case SendParamPayloadStateInternalPhase:
-		//line send_param_payload.scxml:67
+		//line send_param_payload.scxml:73
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -682,7 +682,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 }
 
 // ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
-//line send_param_payload.scxml:38
+//line send_param_payload.scxml:44
 func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], preTransitionActive []SendParamPayloadState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
@@ -704,7 +704,7 @@ func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState,
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
-//line send_param_payload.scxml:38
+//line send_param_payload.scxml:44
 func (p *SendParamPayloadPolicy) ProcessTransition(currentState *SendParamPayloadState, event SendParamPayloadEvent, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) bool {
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
 	if event != SendParamPayloadEventNull {
@@ -722,7 +722,7 @@ func (p *SendParamPayloadPolicy) ProcessTransition(currentState *SendParamPayloa
 
 
 // tryTransitionInState checks transitions for a single state.
-//line send_param_payload.scxml:38
+//line send_param_payload.scxml:44
 func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloadState, event SendParamPayloadEvent, currentState *SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) bool {
 	switch checkState {
 	case SendParamPayloadStateAwaitChild:
@@ -768,6 +768,6 @@ func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloa
 }
 
 // ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line send_param_payload.scxml:38
+//line send_param_payload.scxml:44
 func (p *SendParamPayloadPolicy) ExecuteTransitionActions(engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
 }

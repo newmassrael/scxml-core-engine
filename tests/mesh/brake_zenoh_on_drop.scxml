@@ -7,7 +7,7 @@
      override) fires — i.e., the Z3 wiring actually took effect. Without
      Z3 the test would sit for ~10 s before error.invoke surfaced. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" name="brake_zenoh_on_drop" initial="idle">
+       version="1.0" datamodel="ecmascript" name="brake_zenoh_on_drop" initial="idle">
     <state id="idle">
         <transition event="go" target="computing"/>
     </state>

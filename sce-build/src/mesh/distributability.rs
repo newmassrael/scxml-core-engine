@@ -885,7 +885,7 @@ mod tests {
     // write. Used to exercise R1 shared-write detection.
     const MOTOR_R1_VIOLATION: &str = r#"<?xml version="1.0"?>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor"
-               datamodel="lua" initial="root">
+               datamodel="ecmascript" initial="root">
           <datamodel>
             <data id="shared" expr="0"/>
           </datamodel>
@@ -902,7 +902,7 @@ mod tests {
     // Two-region machine with a cross-region transition (R2 violation).
     const MOTOR_R2_VIOLATION: &str = r#"<?xml version="1.0"?>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor"
-               datamodel="lua" initial="root">
+               datamodel="ecmascript" initial="root">
           <parallel id="root">
             <state id="left" initial="l1">
               <state id="l1">
@@ -919,7 +919,7 @@ mod tests {
     // same ancestor-scope data (R3 notice, not a violation).
     const MOTOR_R3_NOTICE: &str = r#"<?xml version="1.0"?>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor"
-               datamodel="lua" initial="root">
+               datamodel="ecmascript" initial="root">
           <datamodel>
             <data id="shared" expr="0"/>
           </datamodel>
@@ -937,7 +937,7 @@ mod tests {
     // region-local datamodels and transitions. Happy path.
     const MOTOR_HAPPY: &str = r#"<?xml version="1.0"?>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor"
-               datamodel="lua" initial="root">
+               datamodel="ecmascript" initial="root">
           <parallel id="root">
             <state id="left">
               <datamodel><data id="local_l" expr="0"/></datamodel>
@@ -956,7 +956,7 @@ mod tests {
     // with a sibling assign forces R1.
     const MOTOR_R4_SCRIPT: &str = r#"<?xml version="1.0"?>
         <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor"
-               datamodel="lua" initial="root">
+               datamodel="ecmascript" initial="root">
           <datamodel>
             <data id="shared" expr="0"/>
           </datamodel>
@@ -1196,7 +1196,7 @@ partitions:
         let cfg = parse_deploy_str(yaml).expect("deploy parse");
         let xml = r#"<?xml version="1.0"?>
             <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="motor"
-                   datamodel="lua" initial="root">
+                   datamodel="ecmascript" initial="root">
               <datamodel>
                 <data id="shared_lr" expr="0"/>
                 <data id="shared_mr" expr="0"/>

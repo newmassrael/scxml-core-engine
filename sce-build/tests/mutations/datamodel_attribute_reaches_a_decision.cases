@@ -1,0 +1,122 @@
+# Mutation cases for "the `datamodel` attribute reaches a decision".
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/datamodel_attribute_reaches_a_decision.cases
+#
+# The defect this suite closes was an absence, not a wrong answer: the
+# attribute was read into a field nothing consulted. So the cases restore
+# the absence one decision at a time — a value that stops being refused, a
+# §B-1 rule that stops being applied — and each has to turn the suite red
+# on its own. A rule that no case can break is a rule the suite is not
+# actually asserting.
+#
+# The last two break the gate itself. A suite that drives a CLI can pass by
+# never reaching it, and an "is refused" assertion is satisfied by a tool
+# that refuses everything.
+
+mutation_tests -p sce-build --features cli --test datamodel_attribute_reaches_a_decision
+# The gate's own source is linked into the test binary. `parser.rs`
+# compiles into `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran, the same rule a template or script target gets.
+mutation_targets sce-build/tests/datamodel_attribute_reaches_a_decision.rs
+mutation_runtime_targets sce-build/src/parser.rs
+
+# The original defect, restored exactly: the attribute is read and no
+# value is ever refused.
+#
+# The replacement keeps `UnsupportedDatamodelKind` referenced: the
+# workspace denies warnings, so dropping the only use of an import turns
+# the mutation into a compile error, and a mutation rustc rejects is
+# reported INCONCLUSIVE and says nothing about the suite.
+mutation_case "any datamodel string is accepted again" <<'PY'
+edit("sce-build/src/parser.rs",
+     """        "ecmascript" => Ok(Datamodel::EcmaScript),
+        other => Err(ScxmlSemanticError::UnsupportedDatamodel {
+            declared: other.to_string(),
+            // §scxml-3.2 names `xpath` as a data model; SCE has no XPath
+            // expression pipeline, so it is refused as unimplemented
+            // rather than as nonsense. Any other token is a value the
+            // spec permits a platform to define and SCE has not.
+            kind: if other == "xpath" {
+                UnsupportedDatamodelKind::Unimplemented
+            } else {
+                UnsupportedDatamodelKind::Undefined
+            },
+            supported: vec![
+                Datamodel::Null.as_str().to_string(),
+                Datamodel::EcmaScript.as_str().to_string(),
+            ],
+        }),
+    }""",
+     """        _ => {
+            let _unused = UnsupportedDatamodelKind::Undefined;
+            Ok(Datamodel::EcmaScript)
+        }
+    }""")
+PY
+
+# The two refusals collapse into one. Both still reject, so a suite that
+# only checked "is it refused" stays green — the split exists because the
+# repairs differ, and only an assertion on which one fired can see it.
+mutation_case "an unimplemented data model is reported as nonsense" <<'PY'
+edit("sce-build/src/parser.rs",
+     """            kind: if other == "xpath" {
+                UnsupportedDatamodelKind::Unimplemented
+            } else {
+                UnsupportedDatamodelKind::Undefined
+            },""",
+     """            kind: UnsupportedDatamodelKind::Undefined,""")
+PY
+
+# §B-1 stops being enforced at all. The rule that the Null data model
+# withholds four languages becomes decoration again.
+mutation_case "the Null data model stops withholding anything" <<'PY'
+edit("sce-build/src/parser.rs",
+     "    if datamodel != Datamodel::Null {\n        return Ok(());\n    }",
+     "    if datamodel != Datamodel::Null || true {\n        return Ok(());\n    }")
+PY
+
+# §B-1-2 widens to "contains an In()", which is the reading that readmits
+# `In('a') && x > 1` — a conjunction written in the value expression
+# language B-1-4 withholds.
+mutation_case "the In() rule widens to contains-an-In" <<'PY'
+edit("sce-build/src/parser.rs",
+     """    let Some(inner) = c.strip_prefix("In(").and_then(|r| r.strip_suffix(')')) else {
+        return false;
+    };""",
+     """    if c.contains("In(") {
+        return true;
+    }
+    let Some(inner) = c.strip_prefix("In(").and_then(|r| r.strip_suffix(')')) else {
+        return false;
+    };""")
+PY
+
+# The native-block carve-out swallows every `<script>`, so script text
+# under `null` compiles again. This is the half that cost the seven
+# `examples/doom_wasm` documents their honest declaration when it was
+# missing, and would cost §B-1-5 its whole reach if it were too wide.
+mutation_case "every script counts as a native block" <<'PY'
+edit("sce-build/src/parser.rs",
+     "fn is_native_script_block(node: &roxmltree::Node) -> bool {",
+     "fn is_native_script_block(node: &roxmltree::Node) -> bool {\n    if node.is_element() {\n        return true;\n    }")
+PY
+
+# The gate stops reaching the tool: every document reads as accepted, so
+# every "must be refused" assertion fails and every "must compile" one
+# passes. A suite with no negative cases would go green here.
+mutation_case "the gate reports every document as accepted" <<'PY'
+edit("sce-build/tests/datamodel_attribute_reaches_a_decision.rs",
+     "    (\n        out.status.success(),",
+     "    (\n        true,")
+PY
+
+# The tool refuses everything. The positive cases — In() admitted, a
+# native block admitted, a nested document judged on its own terms — are
+# what stand between this and a green run.
+mutation_case "the gate reports every document as refused" <<'PY'
+edit("sce-build/tests/datamodel_attribute_reaches_a_decision.rs",
+     "    (\n        out.status.success(),",
+     "    (\n        false,")
+PY

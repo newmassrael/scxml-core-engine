@@ -19,7 +19,7 @@
        (b) the parent ran `<finalize>` before evaluating cond,
        (c) the W3C ordering contract holds over mesh transport. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" initial="waiting" name="parent_session_f_eventful">
+       version="1.0" datamodel="ecmascript" initial="waiting" name="parent_session_f_eventful">
     <datamodel>
         <data id="finalized" expr="false"/>
     </datamodel>

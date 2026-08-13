@@ -18,7 +18,7 @@
      The verdict rides back to the parent as `<donedata>` on wire-18, so a
      stripped forward surfaces as an explicit `fail` rather than a timeout. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" initial="await" name="worker_session_f_autoforward">
+       version="1.0" datamodel="ecmascript" initial="await" name="worker_session_f_autoforward">
     <state id="await">
         <transition event="trigger"
                     cond="_event.data ~= nil and _event.data.value == 42 and _event.sendid == 'trigger_send_1'"

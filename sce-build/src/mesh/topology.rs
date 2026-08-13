@@ -3901,7 +3901,7 @@ topology:
         // literal transition for the reply event (it rides the correlation
         // table), so the coverage check must exempt it.
         const BRAKE_INVOKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="brake" initial="idle">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" name="brake" initial="idle">
     <state id="idle">
         <transition event="go" target="computing"/>
     </state>
@@ -4418,7 +4418,7 @@ topology:
         format!(
             r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null" name="brake" initial="idle">
+       datamodel="ecmascript" name="brake" initial="idle">
   <state id="idle">
     <invoke type="sce:mesh-rpc" src="#motor">
       <param name="_mesh_event" expr="'service.request.compute_force'"/>{dl_param}
@@ -4543,7 +4543,7 @@ topology:
 
     /// SCXML with a subscribe nested inside <if> (should lint, not auto-generate).
     const NESTED_SUB_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="nested_test" initial="s">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" name="nested_test" initial="s">
     <state id="s">
         <onentry>
             <if cond="true">

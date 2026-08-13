@@ -17,7 +17,7 @@
      the shortest success path through §9.6.6's cross-partition
      override. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" initial="waiting" name="parent_synth_inline">
+       version="1.0" datamodel="ecmascript" initial="waiting" name="parent_synth_inline">
     <state id="waiting">
         <invoke type="scxml" id="remote_inv">
             <content>

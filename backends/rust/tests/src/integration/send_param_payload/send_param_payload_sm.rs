@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
+// source-hash: 8c4a7d84a6ea23ea88829e171f3ef6f30c77da38dc5a67c7f0b53b8d9b23526b
 // template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: send_param_payload.scxml:38 :: _machine"]
-// SCE-MAP: send_param_payload.scxml:38 :: _machine
+#![doc = "SCE-MAP: send_param_payload.scxml:44 :: _machine"]
+// SCE-MAP: send_param_payload.scxml:44 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -777,8 +777,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: send_param_payload.scxml:38 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:44 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -786,7 +786,7 @@ impl StatePolicy for SendParamPayloadPolicy {
     ) {
         match state {
             SendParamPayloadState::AwaitChild => {
-                // SCE-MAP: send_param_payload.scxml:42 :: awaitChild :: _state_body
+                // SCE-MAP: send_param_payload.scxml:48 :: awaitChild :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -801,7 +801,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 }
             }
             SendParamPayloadState::InternalPhase => {
-                // SCE-MAP: send_param_payload.scxml:67 :: internalPhase :: _state_body
+                // SCE-MAP: send_param_payload.scxml:73 :: internalPhase :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -835,8 +835,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: send_param_payload.scxml:38 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:44 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -873,8 +873,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: send_param_payload.scxml:38 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:44 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -929,8 +929,8 @@ impl StatePolicy for SendParamPayloadPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: send_param_payload.scxml:38 :: _machine"]
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    #[doc = "SCE-MAP: send_param_payload.scxml:44 :: _machine"]
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;

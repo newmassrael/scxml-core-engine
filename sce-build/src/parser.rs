@@ -5,6 +5,7 @@
 // Parses W3C SCXML files into SCXMLModel for code generation.
 
 use crate::model::*;
+use crate::scxml_semantic::{ScxmlSemanticError, UnsupportedDatamodelKind};
 use crate::DocumentLabel;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -333,6 +334,234 @@ fn artifact_label(source_name: &str) -> String {
         .and_then(|s| s.to_str())
         .unwrap_or(source_name)
         .to_string()
+}
+
+/// Resolve the `datamodel` attribute to the data model SCE will use.
+///
+/// `None` is an absent attribute, whose value the spec leaves
+/// platform-specific; [`Datamodel::default`] is where SCE makes that choice
+/// and says why.
+///
+/// The two rejections are the whole reason this returns a `Result`. Before
+/// it existed the attribute was read into a `String` that nothing
+/// subsequently consulted, so `datamodel="xpath"` and `datamodel="typo"`
+/// both compiled — their expressions handed to whatever script engine the
+/// deployment happened to inject, in a language the document never named.
+fn resolve_declared_datamodel(declared: Option<&str>) -> Result<Datamodel, ScxmlSemanticError> {
+    let Some(declared) = declared else {
+        return Ok(Datamodel::default());
+    };
+    match declared {
+        "null" => Ok(Datamodel::Null),
+        "ecmascript" => Ok(Datamodel::EcmaScript),
+        other => Err(ScxmlSemanticError::UnsupportedDatamodel {
+            declared: other.to_string(),
+            // §scxml-3.2 names `xpath` as a data model; SCE has no XPath
+            // expression pipeline, so it is refused as unimplemented
+            // rather than as nonsense. Any other token is a value the
+            // spec permits a platform to define and SCE has not.
+            kind: if other == "xpath" {
+                UnsupportedDatamodelKind::Unimplemented
+            } else {
+                UnsupportedDatamodelKind::Undefined
+            },
+            supported: vec![
+                Datamodel::Null.as_str().to_string(),
+                Datamodel::EcmaScript.as_str().to_string(),
+            ],
+        }),
+    }
+}
+
+/// Elements that need the underlying data model the Null model does not
+/// have — a place to declare a variable, store into, or iterate.
+///
+/// The spec withholds "the elements defined in 5 Data Model and Data
+/// Manipulation" wholesale, and SCE is deliberately narrower: the elements
+/// listed here are refused, while `<donedata>`, `<content>` and `<param>`
+/// are admitted when they carry only literals. That is an SCE extension to
+/// the Null data model, recorded as one in `docs/SCE_ACCEPTED_SUBSET.md`,
+/// and it is drawn where it is because the Null model withholds four
+/// *languages* rather than syntax: a literal payload names no expression
+/// in any of them, so refusing it would deny an author a construct that
+/// needs nothing the model lacks. An expression on any of those three
+/// elements is still refused — by the attribute rules below, under the
+/// sub-section that actually withholds the language.
+const ELEMENTS_NEEDING_A_DATA_MODEL: &[&str] = &["datamodel", "data", "assign", "foreach"];
+
+/// Attributes that hold a value expression or a location expression,
+/// paired with the language each one needs and the rule that withholds it.
+const EXPRESSION_ATTRIBUTES: &[(&str, &str, &str)] = &[
+    ("expr", "a value expression language", "B.1.4"),
+    ("srcexpr", "a value expression language", "B.1.4"),
+    ("targetexpr", "a value expression language", "B.1.4"),
+    ("delayexpr", "a value expression language", "B.1.4"),
+    ("eventexpr", "a value expression language", "B.1.4"),
+    ("typeexpr", "a value expression language", "B.1.4"),
+    ("location", "a location expression language", "B.1.3"),
+    ("idlocation", "a location expression language", "B.1.3"),
+];
+
+/// Is `cond` the whole of the Null data model's boolean expression
+/// language?
+///
+/// The boolean expression language consists of the In predicate only, and
+/// has the form `In(id)`. Anything else — a comparison, a conjunction,
+/// even a negated `In()` — is a language the
+/// model does not have. The rule is deliberately literal: widening it to
+/// "contains an In()" would readmit `In('a') && x > 1`, which is the
+/// value expression language B-1-4 withholds.
+fn is_null_datamodel_condition(cond: &str) -> bool {
+    // §scxml-B-1-2: "The boolean expression language consists of the In
+    // predicate only. It has the form 'In(id)'."
+    let c = cond.trim();
+    let Some(inner) = c.strip_prefix("In(").and_then(|r| r.strip_suffix(')')) else {
+        return false;
+    };
+    // A single state reference, quoted or bare. Nested parentheses would
+    // mean a call or a sub-expression, neither of which B-1-2 admits.
+    !inner.contains(['(', ')', ',']) && !inner.trim().is_empty()
+}
+
+/// Does this `<script>` carry native host code rather than data model
+/// script text?
+///
+/// SCE spells a native action as `<script><cpp>…</cpp></script>` (or
+/// `<kt>`, or the `urn:sce:cpp` / `urn:sce:kotlin` namespaces) and lowers
+/// it straight into the generated host language — see the `is_cpp_function`
+/// branch in `parse_executable_content`. Such an element names no data
+/// model expression at all.
+///
+/// Requires *every* element child to be native: a `<script>` mixing native
+/// blocks with script text still needs the language for the text.
+fn is_native_script_block(node: &roxmltree::Node) -> bool {
+    let mut saw_native = false;
+    for child in node.children().filter(|n| n.is_element()) {
+        let n = child.tag_name().name();
+        let ns = child.tag_name().namespace();
+        if n == "cpp" || n == "kt" || ns == Some("urn:sce:cpp") || ns == Some("urn:sce:kotlin") {
+            saw_native = true;
+        } else {
+            return false;
+        }
+    }
+    // Text alongside the native blocks is data model script.
+    saw_native
+        && node
+            .children()
+            .filter(|n| n.is_text())
+            .all(|n| n.text().unwrap_or("").trim().is_empty())
+}
+
+/// Refuse constructs the declared data model has no language for.
+///
+/// Only the Null data model withholds anything today, and the spec says
+/// what: `In()` is the entire boolean expression language, there is no
+/// location or value expression language, no scripting language, and
+/// `<foreach>` plus the data-manipulation elements are unsupported. Each
+/// rule is reported
+/// under its own sub-section because they are separate absences — an
+/// author who wrote `<param expr=…>` needs B-1-4, one who wrote `<script>`
+/// needs B-1-5, and telling both of them "the null data model is empty"
+/// names none of it.
+///
+/// Walks only SCXML-namespace elements: `sce:` extensions are governed by
+/// `docs/SCE_ACCEPTED_SUBSET.md`, not by Appendix B. A nested `<scxml>`
+/// (an inline `<invoke>` document) is skipped with its subtree — it
+/// declares its own data model and is validated when it is parsed as the
+/// document it is.
+fn enforce_datamodel_languages(
+    root: &roxmltree::Node,
+    datamodel: Datamodel,
+) -> Result<(), ScxmlSemanticError> {
+    // §scxml-B-1 withholds four languages one sub-section at a time:
+    // §scxml-B-1-1 the underlying data model, §scxml-B-1-2 every boolean
+    // expression but `In(id)`, §scxml-B-1-3 location expressions,
+    // §scxml-B-1-4 value expressions, §scxml-B-1-5 scripting. §scxml-B-1-7
+    // withholds `<foreach>` and the §scxml-5 elements wholesale; the
+    // narrowing SCE draws against that one is on
+    // `ELEMENTS_NEEDING_A_DATA_MODEL`.
+    if datamodel != Datamodel::Null {
+        return Ok(());
+    }
+    fn owning_state(node: &roxmltree::Node) -> String {
+        let mut cur = node.parent();
+        while let Some(n) = cur {
+            if n.tag_name().name() == "state" || n.tag_name().name() == "parallel" {
+                return n.attribute("id").unwrap_or("").to_string();
+            }
+            cur = n.parent();
+        }
+        String::new()
+    }
+
+    let mut stack: Vec<roxmltree::Node> = root.children().filter(|n| n.is_element()).collect();
+    while let Some(node) = stack.pop() {
+        if node.tag_name().namespace() != root.tag_name().namespace() {
+            continue;
+        }
+        let name = node.tag_name().name();
+        // A nested inline document owns its own datamodel declaration.
+        if name == "scxml" {
+            continue;
+        }
+
+        // `<script><cpp>…</cpp></script>` / `<kt>` is SCE's native host
+        // action (§2.11), not the data model's scripting language: the
+        // parser lowers it to host code and no script engine evaluates
+        // it. §B-1-5 withholds a scripting language, and a document that
+        // uses none is entitled to say so — rejecting this would push
+        // honestly engine-free documents onto the scripting tier to
+        // satisfy a rule about a language they never used.
+        if name == "script" && is_native_script_block(&node) {
+            continue;
+        }
+
+        // A `<script>` that is not a native block carries data model
+        // script text, which B-1-5 has no language for.
+        if name == "script" {
+            return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                construct: "<script>".to_string(),
+                needs: "a scripting language".to_string(),
+                rule: "B.1.5".to_string(),
+                state: owning_state(&node),
+            });
+        }
+
+        if ELEMENTS_NEEDING_A_DATA_MODEL.contains(&name) {
+            return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                construct: format!("<{name}>"),
+                needs: "the underlying data model it declares or writes to".to_string(),
+                rule: "B.1.1".to_string(),
+                state: owning_state(&node),
+            });
+        }
+
+        for (attr, needs, rule) in EXPRESSION_ATTRIBUTES {
+            if let Some(value) = node.attribute(*attr) {
+                return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                    construct: format!("{attr}=\"{value}\""),
+                    needs: (*needs).to_string(),
+                    rule: (*rule).to_string(),
+                    state: owning_state(&node),
+                });
+            }
+        }
+
+        if let Some(cond) = node.attribute("cond") {
+            if !is_null_datamodel_condition(cond) {
+                return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                    construct: format!("cond=\"{cond}\""),
+                    needs: "a boolean expression language beyond In()".to_string(),
+                    rule: "B.1.2".to_string(),
+                    state: owning_state(&node),
+                });
+            }
+        }
+
+        stack.extend(node.children().filter(|n| n.is_element()));
+    }
+    Ok(())
 }
 
 /// Collect `<sce:unresolved>` markers attached to `node` — both
@@ -1049,15 +1278,22 @@ impl SCXMLParser {
             scxml_name: root.attribute("name").unwrap_or("").to_string(),
             initial,
             binding: root.attribute("binding").unwrap_or("early").to_string(),
-            datamodel_type: root
-                .attribute("datamodel")
-                .unwrap_or("ecmascript")
-                .to_string(),
+            datamodel: resolve_declared_datamodel(root.attribute("datamodel"))
+                .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?,
             event_queue_capacity,
             source_location: root_source_location,
             forge_imports,
             ..Default::default()
         };
+
+        // §scxml-B-1: refuse constructs the declared data model has no
+        // language for, before anything downstream reads them. Placed
+        // ahead of every other parse step because the alternative is to
+        // build a model whose expressions were never in a language the
+        // document named — the state the `datamodel` attribute existed to
+        // prevent and, until now, did not.
+        enforce_datamodel_languages(&root, model.datamodel)
+            .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?;
 
         // Parse datamodel
         self.parse_datamodel(&root, &mut model, diag_label)?;
@@ -1865,7 +2101,7 @@ impl SCXMLParser {
 
             // Parse donedata
             if let Some(dd_elem) = scxml_child(&child, "donedata") {
-                state.donedata = Some(self.parse_donedata(&dd_elem, &model.datamodel_type));
+                state.donedata = Some(self.parse_donedata(&dd_elem, model.datamodel));
             }
 
             model.states.insert(final_id, state);
@@ -3132,7 +3368,7 @@ impl SCXMLParser {
         })
     }
 
-    fn parse_donedata(&mut self, elem: &roxmltree::Node, datamodel_type: &str) -> DoneData {
+    fn parse_donedata(&mut self, elem: &roxmltree::Node, datamodel: Datamodel) -> DoneData {
         let mut dd = DoneData::default();
 
         // §scxml-5.7: Parse <param> elements.
@@ -3166,7 +3402,7 @@ impl SCXMLParser {
             } else if let Some(text) = content_elem.text() {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    dd.content = if datamodel_type == "null" {
+                    dd.content = if datamodel == Datamodel::Null {
                         crate::model::DoneDataContent::Literal(trimmed.to_string())
                     } else {
                         crate::model::DoneDataContent::Expression(trimmed.to_string())
