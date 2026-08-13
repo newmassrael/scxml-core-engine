@@ -295,6 +295,7 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/timer)
     add_subdirectory(examples/async_dispatcher)
     add_subdirectory(examples/traffic_light_auto)
+    add_subdirectory(examples/ai_loop)
 endif()
 
 # Python bindings option (disabled by default, excluded from WASM builds)
