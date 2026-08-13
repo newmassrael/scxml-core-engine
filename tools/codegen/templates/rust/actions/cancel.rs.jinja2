@@ -18,7 +18,7 @@
             engine.cancel_event(&send_id_val);
         }
         _ => {
-            log::error!("Cancel: failed to evaluate sendidexpr '{{ action.sendidexpr | escape_rust }}'");
+            ::sce_rust_runtime::sce_log_error!("Cancel: failed to evaluate sendidexpr '{{ action.sendidexpr | escape_rust }}'");
         }
     }
 }

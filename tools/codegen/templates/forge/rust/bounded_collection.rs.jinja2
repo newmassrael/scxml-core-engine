@@ -90,11 +90,20 @@ pub struct {{ pascal }}OverflowError;
 {# cfg-conditional backing storage per spec line 2571. The
    #![cfg_attr(...)] form keeps the type alias visible to both
    feature configurations so generated test code doesn't need
-   feature-aware imports. #}
+   feature-aware imports.
+
+   The no_std arm reaches heapless through the runtime's re-export
+   (`sce_forge_runtime::heapless`, the form the sibling codec template
+   already uses) rather than naming `::heapless` directly. This alias is
+   private and the crate exposes no heapless type in any public
+   signature, so a consumer never writes the name — naming it here would
+   have made heapless a dependency their manifest must declare to
+   compile code they never wrote. Consumers keep a single dependency
+   edge, on one pinned heapless version. #}
 #[cfg(not(feature = "no_std"))]
 type {{ pascal }}Backing = ::std::vec::Vec<Option<{{ element_stored }}>>;
 #[cfg(feature = "no_std")]
-type {{ pascal }}Backing = ::heapless::Vec<Option<{{ element_stored }}>, CAPACITY>;
+type {{ pascal }}Backing = ::sce_forge_runtime::heapless::Vec<Option<{{ element_stored }}>, CAPACITY>;
 
 /// `{{ pascal }}` — RFC §synth-5-L bounded-collection over element type
 /// `{{ element_pascal }}`. Capacity `{{ capacity }}`,

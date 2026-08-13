@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -271,7 +271,7 @@ impl DonedataLocalInvokePolicy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "donedata_local_invoke", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -279,7 +279,7 @@ impl DonedataLocalInvokePolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "param_ok", "false",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         self.script_engine_initialized = true;
@@ -303,7 +303,7 @@ impl DonedataLocalInvokePolicy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "donedata_local_invoke", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -311,7 +311,7 @@ impl DonedataLocalInvokePolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "param_ok", "false",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 DonedataLocalInvokeEvent::ErrorExecution,
             ));
@@ -329,7 +329,7 @@ impl DonedataLocalInvokePolicy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     DonedataLocalInvokeEvent::ErrorExecution,
                 ));
@@ -1122,7 +1122,10 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                             // and create a fresh table, breaking reference equality.
                             let assign_script = format!("{} = {}", "param_ok", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
-                                log::error!("Assign failed for 'param_ok': {}", e);
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'param_ok': {}",
+                                    e
+                                );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                     DonedataLocalInvokeEvent::ErrorExecution,
                                 ));

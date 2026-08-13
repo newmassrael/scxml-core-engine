@@ -499,12 +499,25 @@ pub mod sched_send_id;
 pub mod scripting;
 
 // Public re-exports — the primary API surface
+
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};
+/// The [`log`] facade crate, re-exported so generated code can reach it
+/// without the consumer declaring it.
+///
+/// Generated machines name every runtime symbol through this crate
+/// (`::sce_rust_runtime::SceString`, `::sce_rust_runtime::helpers::…`), so a
+/// consumer's `Cargo.toml` needs exactly one SCE entry. Logging is emitted
+/// through the [`sce_log_error!`] family, whose expansion resolves
+/// `$crate::log` — this re-export is what makes that path exist. Without it
+/// the macros would expand to a bare `::log`, which resolves in the *calling*
+/// crate and so silently made `log` an undeclared dependency of every consumer
+/// compiling a machine with a datamodel.
+pub use log;
 pub use policy::StatePolicy;
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 #[cfg(not(feature = "no_std"))]

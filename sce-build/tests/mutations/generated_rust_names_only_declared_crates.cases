@@ -1,0 +1,123 @@
+# Mutation cases for "generated Rust may only name crates the consumer was
+# told to declare".
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/generated_rust_names_only_declared_crates.cases
+#
+# The fix has three parts and each one can be reverted on its own, so each
+# gets a case. Two of the three are invisible to a source scan of the
+# emitted file — the emitted text still reads
+# `::sce_rust_runtime::sce_log_error!` while the expansion behind it
+# reaches a crate the consumer never declared — which is why the suite
+# compiles a real one-dependency crate instead of only reading bytes.
+#
+# The last two cases break the gate itself. A gate over emitted source can
+# pass by scanning nothing, and a "names no bad crate" assertion is
+# satisfied by emitting no names at all; both go green in exactly the way a
+# clean run does.
+
+mutation_tests -p sce-build --features cli --test generated_rust_names_only_declared_crates
+# Only the gate's own source is linked into the test binary. The templates
+# are read off disk by `compile_scxml_with_imports` on every run, and the
+# runtime crate is compiled by the *inner* `cargo build` the second test
+# drives — so for both, the evidence a mutation reached what ran is the
+# file differing on disk while the tests ran.
+mutation_targets sce-build/tests/generated_rust_names_only_declared_crates.rs
+mutation_runtime_targets tools/codegen/templates/rust/actions/assign.rs.jinja2
+mutation_runtime_targets tools/codegen/templates/rust/datamodel_macros.rs.jinja2
+mutation_runtime_targets backends/rust/runtime/src/lib.rs
+mutation_runtime_targets backends/rust/runtime/src/helpers/logger.rs
+
+# The reported defect, restored at one `<assign>` site. This is the form a
+# source scan sees directly.
+mutation_case "an assign error path names log directly again" <<'PY'
+edit("tools/codegen/templates/rust/actions/assign.rs.jinja2",
+     """        ::sce_rust_runtime::sce_log_error!("Assign failed for '{{ loc }}': {}", e);""",
+     """        log::error!("Assign failed for '{{ loc }}': {}", e);""")
+PY
+
+# The same defect at a `<data>` init site. PINION-PR86 counted 30 of the 42
+# errors here, so a fix that reached `<assign>` and missed this template
+# would still leave a consumer unable to build.
+mutation_case "a datamodel init error path names log directly again" <<'PY'
+edit("tools/codegen/templates/rust/datamodel_macros.rs.jinja2",
+     """            ::sce_rust_runtime::sce_log_error!("{{ state_id }}: {}", e);""",
+     """            log::error!("{{ state_id }}: {}", e);""")
+PY
+
+# Half two of the fix. The templates still emit the facade, and the emitted
+# bytes are unchanged — but `#[macro_export]` bodies resolve in the calling
+# crate, so a `::log` expansion demands the consumer declare `log` exactly
+# as the bare call did. Only compiling a consumer can tell the difference.
+mutation_case "the facade expands to the caller's log again" <<'PY'
+edit("backends/rust/runtime/src/helpers/logger.rs",
+     """        $crate::log::error!(target: "sce", $($arg)*)""",
+     """        ::log::error!(target: "sce", $($arg)*)""")
+PY
+
+# Half three. `$crate::log` is only a path if the runtime actually carries
+# the re-export; drop it and every consumer's build fails on a path into a
+# crate that no longer exposes it.
+mutation_case "the runtime stops re-exporting log" <<'PY'
+edit("backends/rust/runtime/src/lib.rs",
+     "pub use log;",
+     "use log as _;")
+PY
+
+# The gate reads emitted source; a scan of an empty string finds no bad
+# crate name. The lower bound on facade sites is what stands between that
+# and a green run. Emptied at the end of `strip_comments` rather than at
+# the call site, so the mutated tree still compiles — a mutation rustc
+# rejects is reported INCONCLUSIVE and says nothing about the gate.
+mutation_case "the comment stripper returns an empty file" <<'PY'
+edit("sce-build/tests/generated_rust_names_only_declared_crates.rs",
+     "        out.push(c);\n        i += 1;\n    }\n    out\n}",
+     "        out.push(c);\n        i += 1;\n    }\n    out.truncate(0);\n    out\n}")
+PY
+
+# The fixture is the gate's reach, and what gives it reach is its
+# expressions, not its datamodel string — switching the string to `null`
+# changes nothing, which is why that is not the case written here. Take the
+# expressions away and the emitted file no longer contains a site where the
+# defect could appear, so the scan passes over a document that proves
+# nothing. The lower bound on facade sites is what makes that drift visible
+# instead of silent.
+mutation_case "the fixture drifts to a document with no expressions" <<'PY'
+edit("sce-build/tests/generated_rust_names_only_declared_crates.rs",
+     """  <datamodel>
+    <data id="budget" expr="40"/>
+    <data id="seen" expr="0"/>
+    <data id="items" expr="[1,2,3]"/>
+  </datamodel>
+""",
+     "")
+edit("sce-build/tests/generated_rust_names_only_declared_crates.rs",
+     """      <log label="entering" expr="budget"/>
+      <script>seen = 0</script>
+      <assign location="seen" expr="seen + 1"/>
+      <foreach array="items" item="it" index="ix">
+        <assign location="seen" expr="seen + it"/>
+      </foreach>
+      <send event="ping" target="#_internal">
+        <param name="count" expr="seen"/>
+      </send>
+""",
+     """      <log label="entering"/>
+""")
+edit("sce-build/tests/generated_rust_names_only_declared_crates.rs",
+     """    <transition event="ping" cond="seen &lt; budget" target="s2"/>
+""",
+     "")
+PY
+
+# The allowlist is the gate's whole judgement, and a scan that walks
+# nothing satisfies it just as well as a clean tree does. Withdrawing the
+# runtime from the list has to turn the gate red — every generated machine
+# names it on nearly every line — so a green run here would mean the walk
+# never reached the source.
+mutation_case "the allowlist stops admitting the runtime" <<'PY'
+edit("sce-build/tests/generated_rust_names_only_declared_crates.rs",
+     """const ALLOWED_CRATE_ROOTS: &[&str] = &[
+    "sce_rust_runtime",""",
+     """const ALLOWED_CRATE_ROOTS: &[&str] = &[""")
+PY

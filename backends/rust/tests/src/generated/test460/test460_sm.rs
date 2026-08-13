@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 74ba562b33766da248288b5dadec1e79a0ebb46a66e38786f6a7a4b2ccd653e3
+// template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -243,7 +243,7 @@ impl Test460Policy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "test460", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
@@ -251,14 +251,14 @@ impl Test460Policy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "Var1", "{1,2,3}",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'Var2' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "Var2", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         self.script_engine_initialized = true;
@@ -282,7 +282,7 @@ impl Test460Policy {
         let io_processors =
             sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "test460", &io_processors) {
-            log::error!("Failed to setup system variables: {}", e);
+            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
@@ -290,7 +290,7 @@ impl Test460Policy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "Var1", "{1,2,3}",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 Test460Event::ErrorExecution,
             ));
@@ -300,7 +300,7 @@ impl Test460Policy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "Var2", "0",
         ) {
-            log::error!("global: {}", e);
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
                 Test460Event::ErrorExecution,
             ));
@@ -318,7 +318,7 @@ impl Test460Policy {
         match se.evaluate_expression(&sid, cond) {
             Ok(val) => val.to_bool(),
             Err(e) => {
-                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(
                     Test460Event::ErrorExecution,
                 ));
@@ -614,8 +614,11 @@ impl StatePolicy for Test460Policy {
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         match se.evaluate_expression(&sid, "'fail'") {
-                            Ok(val) => log::info!("Outcome: {:?}", val),
-                            Err(e) => log::error!("Log expression eval failed: {}", e),
+                            Ok(val) => ::sce_rust_runtime::sce_log_info!("Outcome: {:?}", val),
+                            Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                "Log expression eval failed: {}",
+                                e
+                            ),
                         }
                     }
                 }
@@ -632,8 +635,11 @@ impl StatePolicy for Test460Policy {
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         match se.evaluate_expression(&sid, "'pass'") {
-                            Ok(val) => log::info!("Outcome: {:?}", val),
-                            Err(e) => log::error!("Log expression eval failed: {}", e),
+                            Ok(val) => ::sce_rust_runtime::sce_log_info!("Outcome: {:?}", val),
+                            Err(e) => ::sce_rust_runtime::sce_log_error!(
+                                "Log expression eval failed: {}",
+                                e
+                            ),
                         }
                     }
                 }
@@ -657,7 +663,7 @@ impl StatePolicy for Test460Policy {
                         // identifier.
                         let item_name = "Var3";
                         if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
-                            log::error!(
+                            ::sce_rust_runtime::sce_log_error!(
                                 "Foreach validation failed: '{}' is not a legal variable name",
                                 item_name
                             );
@@ -673,7 +679,7 @@ impl StatePolicy for Test460Policy {
                                     for (_idx, item_val) in arr.into_iter().enumerate() {
                                         // Set item variable
                                         if let Err(e) = se.set_variable(&sid, item_name, item_val) {
-                                            log::error!(
+                                            ::sce_rust_runtime::sce_log_error!(
                                                 "Foreach: failed to set item '{}': {}",
                                                 item_name,
                                                 e
@@ -704,7 +710,10 @@ impl StatePolicy for Test460Policy {
                                                 if let Err(e) =
                                                     se.execute_script(&sid, &assign_script)
                                                 {
-                                                    log::error!("Assign failed for 'Var1': {}", e);
+                                                    ::sce_rust_runtime::sce_log_error!(
+                                                        "Assign failed for 'Var1': {}",
+                                                        e
+                                                    );
                                                     engine.raise(
                                                         sce_rust_runtime::EventWithMetadata::new(
                                                             Test460Event::ErrorExecution,
@@ -732,7 +741,10 @@ impl StatePolicy for Test460Policy {
                                                 if let Err(e) =
                                                     se.execute_script(&sid, &assign_script)
                                                 {
-                                                    log::error!("Assign failed for 'Var2': {}", e);
+                                                    ::sce_rust_runtime::sce_log_error!(
+                                                        "Assign failed for 'Var2': {}",
+                                                        e
+                                                    );
                                                     engine.raise(
                                                         sce_rust_runtime::EventWithMetadata::new(
                                                             Test460Event::ErrorExecution,
@@ -745,7 +757,7 @@ impl StatePolicy for Test460Policy {
                                             }
                                         }
                                         if !iteration_success {
-                                            log::debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
+                                            ::sce_rust_runtime::sce_log_debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
                                             foreach_success = false;
                                             break;
                                         }
@@ -758,13 +770,18 @@ impl StatePolicy for Test460Policy {
                                 }
                                 Ok(_) => {
                                     // Not an array — raise error.execution (W3C SCXML 5.6)
-                                    log::error!("Foreach: 'Var1' is not an array");
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Foreach: 'Var1' is not an array"
+                                    );
                                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                         Test460Event::ErrorExecution,
                                     ));
                                 }
                                 Err(e) => {
-                                    log::error!("Foreach: failed to evaluate array 'Var1': {}", e);
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "Foreach: failed to evaluate array 'Var1': {}",
+                                        e
+                                    );
                                     engine.raise(sce_rust_runtime::EventWithMetadata::new(
                                         Test460Event::ErrorExecution,
                                     ));

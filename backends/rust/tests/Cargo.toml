@@ -18,7 +18,13 @@ sce-rust-runtime = { path = "../runtime", default-features = false, features = [
 # rather than an optional feature.
 sce-rust-lua = { path = "../lua" }
 linkme = { workspace = true }
-log = { workspace = true }
+# No `log` entry, deliberately. Nothing hand-written here calls it — the
+# line existed only because generated machines emitted a bare `log::error!`
+# on every datamodel error path, and carrying it made this crate the one
+# consumer of SCE codegen that could not see the undeclared dependency
+# (PINION-PR86). Generated code now reaches the facade through
+# `sce_rust_runtime`, so this crate compiles the same 200+ machines a
+# consumer does, under the same manifest a consumer would write.
 reqwest = { version = "0.12", features = ["blocking"] }
 serde_json = "1"
 
