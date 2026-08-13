@@ -110,6 +110,33 @@ the naming: Appendix D's separate `isInFinalState(s)` is a third thing again,
 asking whether a compound or parallel state has completed for the done.state
 computation.
 
+`parallel_regions_take_own_transitions` covers W3C SCXML 3.4: when one event
+enables a transition in more than one region of a `<parallel>`, every such
+region takes its own in the same microstep. The fixture is asymmetric on
+purpose, because a symmetric one passes under a wrong exit set as readily as
+under a right one — one region's transition is an external self-transition,
+whose domain Appendix D resolves through `findLCCA` over `getProperAncestors`,
+candidates that never include the state itself. Answering with the state left
+`computeExitSet`'s climb without a stopping point: it ran to the document root,
+the exit set named the enclosing `<parallel>`, and conflict resolution preempted
+the other region. The verdict is a top-level `<final id="settled">` guarded on
+both regions' assignments having run, so a region that moved without executing
+its transition content still fails — and a top-level final is the one
+observable every backend exposes, including the ones that report a single
+current leaf rather than a configuration.
+
+`parallel_completion_raises_done_state` covers W3C SCXML 3.4 + 3.7: a
+`<parallel>` is done once every region has reached a `<final>`, and that raises
+`done.state.<parallel>`. A parallel owns no `<final>` of its own — the regions
+do — so a rule that registers the event by walking from a final to its direct
+parent never reaches it, while the C++ and C11 emitters raise it from the
+grandparent regardless. The result was generated code naming an enumerator the
+model never declared, which `check` cannot see because acceptance is decided
+before anything is compiled. Nothing in the fixture listens for
+`done.state.run`: an event named by a transition is collected from that
+attribute, which would register it no matter what the `<final>` walk does and
+leave the fixture unable to fail.
+
 `event_origin_is_a_location` covers W3C SCXML Appendix C.1: the origin of a
 delivered event is the `location` the sending session published for the SCXML
 Event I/O Processor, and that location is a usable `<send>` target. The public
