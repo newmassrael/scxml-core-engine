@@ -132,7 +132,14 @@ struct UnresolvedRecord<'a> {
 
 /// Emit one NDJSON record per `<sce:unresolved>` marker. Stable
 /// document order. Empty output when the model is clean.
-pub fn emit_unresolved_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) -> io::Result<()> {
+///
+/// `?Sized` for the same reason as
+/// [`emit_requirements_ndjson`](crate::requirements_report::emit_requirements_ndjson):
+/// the CLI streams this into an erased stdout sink.
+pub fn emit_unresolved_ndjson<W: Write + ?Sized>(
+    model: &SCXMLModel,
+    writer: &mut W,
+) -> io::Result<()> {
     let mut states: Vec<&State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
@@ -190,7 +197,7 @@ pub fn emit_unresolved_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) -> i
     Ok(())
 }
 
-fn write_marker<W: Write>(
+fn write_marker<W: Write + ?Sized>(
     writer: &mut W,
     node_path: &str,
     node_type: &'static str,

@@ -43,7 +43,15 @@ struct RequirementRecord<'a> {
 /// Records are written in stable document order: states sorted by
 /// `document_order`, with transitions → on_entry_blocks →
 /// on_exit_blocks → invokes inside each state.
-pub fn emit_requirements_ndjson<W: Write>(model: &SCXMLModel, writer: &mut W) -> io::Result<()> {
+///
+/// `?Sized` so a caller holding an erased sink (`&mut dyn Write`) can
+/// stream into it. The CLI does: every one of its stdout writers goes
+/// through one failure-handling helper, and that helper cannot be
+/// generic over the writer and still be one function.
+pub fn emit_requirements_ndjson<W: Write + ?Sized>(
+    model: &SCXMLModel,
+    writer: &mut W,
+) -> io::Result<()> {
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
@@ -123,7 +131,10 @@ fn refs_of(ids: &[RequirementId]) -> Vec<&str> {
     ids.iter().map(|r| r.0.as_str()).collect()
 }
 
-fn write_record<W: Write>(writer: &mut W, record: &RequirementRecord<'_>) -> io::Result<()> {
+fn write_record<W: Write + ?Sized>(
+    writer: &mut W,
+    record: &RequirementRecord<'_>,
+) -> io::Result<()> {
     let line = serde_json::to_string(record)
         .expect("RequirementRecord serialises; all fields are owned or borrowed primitives");
     writeln!(writer, "{line}")

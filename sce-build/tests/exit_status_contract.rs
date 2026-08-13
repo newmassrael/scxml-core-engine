@@ -54,31 +54,55 @@ const MIN_PROBES: usize = 24;
 /// can rot, and a silently-skipped one reads exactly like a covered one.
 /// The partition test below fails if this list and the probed set stop
 /// covering the table exactly, so adding a row forces a decision here.
+///
+/// A reason has to be a fact about coverage, not about fixtures. Six of
+/// these once delegated to a gate on the strength of that gate owning
+/// the family's *documents* — and owning a document is not asserting a
+/// status. Measured across the whole test tree, `mesh_error_format_json`
+/// is the only gate that asserts a mesh exit status at all, and it
+/// asserts two: 10 and 11. Rows 5, 6 and 12 were asserted nowhere, by
+/// anyone, and each turned out to be one invocation away; they are
+/// probed above now. What stays here is what a probe was actually run
+/// for and did not reach.
 const ROWS_NOT_PROBED_HERE: &[(&str, &str)] = &[
     (
-        "5",
-        "`import/*` needs a document set whose imports resolve to a \
-         missing sibling; `cli_check_cross_doc` owns that fixture shape",
-    ),
-    (
-        "6",
-        "`manifest/*` is raised by the forge dependency-manifest walker, \
-         driven by `forge_conformance`",
-    ),
-    (
         "8",
-        "`io/filesystem` is a forge-internal I/O failure — reaching it \
-         needs an unreadable path mid-pipeline, not a CLI argument",
+        "`io/filesystem` is raised inside the forge pipeline, past the \
+         point a CLI argument can steer. Made a forge input unreadable \
+         mid-pipeline and the §synth-6.2.6 source-hash walk refuses \
+         first, with `cli/read-input` — the same refusal the row-13 \
+         probe below hits, and for the same reason",
     ),
     (
         "10",
-        "`mesh/deploy-*` needs a deploy declaration; `mesh_error_format_json` \
-         drives the mesh families",
+        "`mesh/deploy-*` is asserted by `mesh_error_format_json`, which \
+         drives `generate --deploy` and pins `status.code() == Some(10)` \
+         on two fixtures — a real assertion on this row, unlike the \
+         reasons that used to sit beside it",
     ),
-    ("11", "`mesh/topology-*` — same fixture family as 10"),
-    ("12", "`mesh/codegen-*` — same fixture family as 10"),
-    ("13", "`mesh/io` — same fixture family as 10"),
-    ("14", "`mesh/external-*` — same fixture family as 10"),
+    (
+        "11",
+        "`mesh/topology-*` — same gate, `Some(11)` on \
+         `topology_machine_not_found_is_ndjson`",
+    ),
+    (
+        "13",
+        "`mesh/io` is raised when the partition walker re-parses a \
+         machine's SCXML. Probed by making a declared machine source \
+         unreadable: the drift walk refuses first (`cli/read-input`, \
+         exit 20), so the mesh stage is never entered. Reaching it \
+         needs a source readable at hash time and not at partition \
+         time — a race, not an invocation",
+    ),
+    (
+        "14",
+        "`mesh/external-*` needs a deploy naming an external OEM config \
+         (vsomeip.json / zenoh.json5) under a transport binding. Probed \
+         with a hand-written device-level `transport:` key and the \
+         deploy schema refused it as an unknown field (`mesh/deploy-parse`, \
+         exit 10) — the fixture has to come from the binding shape \
+         `mesh_error_format_json` already stages, not from this file",
+    ),
 ];
 
 fn sce_codegen_bin() -> PathBuf {
@@ -142,10 +166,22 @@ fn backticked(s: &str) -> Vec<String> {
 }
 
 /// Whether `code` is named by `pattern`, which is either an exact code
-/// or a `family/*` wildcard.
+/// or a prefix ending in `*`.
+///
+/// The wildcard has to be a prefix rule rather than a `family/*` one.
+/// §6 spells five of its rows as `mesh/deploy-*`, `mesh/topology-*`,
+/// `mesh/codegen-*` and `mesh/external-*` — the split is inside the
+/// family, past the slash — and a matcher that only understood `/*`
+/// matched none of them. That went unseen for as long as those rows
+/// went unprobed: with no code reaching the comparison, a rule that
+/// could never fire and a rule that never had to are the same green.
+/// The first probe aimed at row 12 reported its code as belonging to
+/// no row at all.
 fn pattern_matches(pattern: &str, code: &str) -> bool {
-    match pattern.strip_suffix("/*") {
-        Some(family) => code.starts_with(family) && code[family.len()..].starts_with('/'),
+    match pattern.strip_suffix('*') {
+        // At least one character past the prefix, so `cli/*` names the
+        // codes under `cli/` and not the empty stem itself.
+        Some(prefix) => code.len() > prefix.len() && code.starts_with(prefix),
         None => pattern == code,
     }
 }
@@ -272,6 +308,21 @@ impl Fixtures {
         )
         .expect("write dangling.scxml");
         std::fs::write(dir.join("bad.json"), "not json at all\n").expect("write bad.json");
+        // One line, no newline anywhere — the shape whose `expand`
+        // output stays entirely inside stdout's line buffer. Every
+        // other document flushes on its own newlines, so a write that
+        // fails does so during `write_all`; this one only fails when
+        // something asks for the flush. Without it in the sweep, the
+        // buffered-tail half of the stdout contract is unprobed.
+        std::fs::write(
+            dir.join("single_line.scxml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" \
+             name=\"single_line\" initial=\"s0\">\
+             <state id=\"s0\"><transition event=\"go\" target=\"s1\"/></state>\
+             <final id=\"s1\"/></scxml>",
+        )
+        .expect("write single_line.scxml");
 
         // A typed native guard whose expression does not parse — the
         // only shape that reaches the `expression/*` family from a CLI
@@ -298,6 +349,43 @@ impl Fixtures {
                 .replace("statechart_cross_state_guard", "unparseable_guard"),
         )
         .expect("write unparseable_guard.scxml");
+        // A forge document whose `<sce:import src>` resolves to
+        // nothing — the `import/*` family, which reaches its refusal
+        // before any backend is consulted.
+        std::fs::write(
+            dir.join("missing_import.scxml"),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+             xmlns:sce=\"http://sce.dev/ext\" \
+             sce:kind=\"link\" name=\"missing_import\" version=\"1.0\">\n\
+             \x20 <sce:import as=\"peer\" src=\"no_such_sibling.scxml\" kind=\"codec\"/>\n\
+             \x20 <sce:link-class>udp</sce:link-class>\n\
+             \x20 <sce:framer ref=\"peer\"/>\n\
+             \x20 <sce:backpressure>drop</sce:backpressure>\n\
+             </scxml>\n",
+        )
+        .expect("write missing_import.scxml");
+
+        // Two codecs importing each other, in a directory of their
+        // own: the `manifest` subcommand walks a whole directory, so
+        // the cycle has to be the only thing in it.
+        std::fs::create_dir_all(dir.join("cycle")).expect("create cycle dir");
+        for (name, other) in [("a", "b"), ("b", "a")] {
+            std::fs::write(
+                dir.join("cycle").join(format!("{name}.scxml")),
+                format!(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                     <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+                     xmlns:sce=\"http://sce.dev/ext\" \
+                     sce:kind=\"codec\" sce:default-endian=\"little\" name=\"{name}\">\n\
+                     \x20 <sce:import as=\"{other}\" src=\"{other}.scxml\" kind=\"codec\"/>\n\
+                     \x20 <datamodel/>\n\
+                     </scxml>\n"
+                ),
+            )
+            .expect("write cycle document");
+        }
+
         // The guard document imports its event schema by sibling path.
         let schema_src = guard_src
             .parent()
@@ -596,6 +684,51 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
         ],
         None,
     );
+
+    // ── stage families reached past the CLI boundary ──
+    //
+    // These three were delegated to other gates on the reading that
+    // owning a family's *fixtures* is owning its exit status. It is
+    // not: `cli_check_cross_doc` asserts only that its refusals are
+    // non-zero, and `forge_conformance` asserts no status at all. The
+    // rows were unprobed everywhere, which is the state the partition
+    // assertion below exists to make visible — so they are probed here
+    // instead, each by the shortest invocation that reaches it.
+    add(
+        "import/file-not-found",
+        vec![
+            s("check"),
+            fx.path("missing_import.scxml"),
+            s("-l"),
+            s("rust"),
+        ],
+        None,
+    );
+    add(
+        "manifest/circular-dependency",
+        vec![s("manifest"), fx.path("cycle")],
+        None,
+    );
+    // `mesh/codegen-*` needs a document the mesh pipeline compiles,
+    // which is a two-machine topology rather than anything that can be
+    // written inline — so it comes from the tracked fixture. C++ is
+    // the one backend mesh codegen emits for; every other `--language`
+    // reaches the refusal.
+    let mesh = repo_root().join("sce-build/tests/fixtures/author_literal_mesh");
+    add(
+        "mesh/codegen-unsupported-language",
+        vec![
+            s("generate"),
+            mesh.join("mesh_parent.scxml").display().to_string(),
+            s("-l"),
+            s("rust"),
+            s("-o"),
+            fx.path("gen"),
+            s("--deploy"),
+            mesh.join("deploy.yaml").display().to_string(),
+        ],
+        None,
+    );
     out
 }
 
@@ -813,4 +946,211 @@ fn help_and_version_stay_successful_output_on_stdout() {
             String::from_utf8_lossy(&out.stderr)
         );
     }
+}
+
+/// Lower bound on invocations driven with their reader already gone.
+const MIN_CLOSED_READER_PROBES: usize = 8;
+
+/// Lower bound on those that actually reached the failing write.
+///
+/// A probe whose subcommand happens to print nothing exits 0 and
+/// proves nothing about the write path. Without this the sweep could
+/// go quiet — every probe silently producing no output — and read
+/// exactly like a sweep that found the contract kept.
+///
+/// It is a floor under the sweep, not the per-probe rule: a single
+/// writer falling silent stays above any floor worth setting. Which
+/// probes must report is decided per probe, by running each one twice
+/// — see [`a_reader_that_stops_reading_is_not_a_way_out_of_the_table`].
+const MIN_CLOSED_READER_REFUSALS: usize = 5;
+
+/// A reader that stops reading is not a way out of §6.
+///
+/// The status table is stated as the whole set — "a status outside it
+/// is a defect, not an undocumented convention" — and that has to hold
+/// for endings this process does not choose. A consumer closing the
+/// pipe is the everyday one: `| head`, `| grep -q`, a build system
+/// that has what it needs. `list-fixtures` exists *for* those
+/// consumers; its help tells build systems to read it without a JSON
+/// parser.
+///
+/// `println!` panics when the write fails, so that invocation exited
+/// **101** with a panic message and no NDJSON record — a status §6
+/// never mentions, reached by a condition the consumer chose. It went
+/// unnoticed because it was also a race: the panic needed the writer
+/// to still have bytes left when the reader vanished, so
+/// `list-fixtures … | head` failed about half the time and every
+/// shorter-spoken subcommand simply never lost the race. Closing the
+/// reader *before* the child writes removes the race from the probe:
+/// the first write fails, whatever its size.
+///
+/// The three subcommands that already handled the failure — `expand`,
+/// `requirements`, `unresolved` — are probed alongside the rest rather
+/// than trusted, because they are the sibling evidence for what the
+/// rule is, and a rule kept in three places out of ten is the shape
+/// this whole file exists to refuse.
+#[test]
+fn a_reader_that_stops_reading_is_not_a_way_out_of_the_table() {
+    let fx = Fixtures::build();
+    let table = documented_table();
+    let documented: BTreeSet<i32> = table.keys().copied().collect();
+
+    let w3c_catalog = repo_root().join("tests/w3c/conformance/fixtures.json");
+    let forge_catalog = repo_root().join("tests/forge/conformance/fixtures.json");
+    let argvs: Vec<Vec<String>> = vec![
+        vec![
+            "list-fixtures".into(),
+            "--manifest".into(),
+            w3c_catalog.display().to_string(),
+            "--catalog".into(),
+            "w3c".into(),
+        ],
+        vec![
+            "list-fixtures".into(),
+            "--manifest".into(),
+            forge_catalog.display().to_string(),
+            "--catalog".into(),
+            "forge".into(),
+        ],
+        vec![
+            "list-fixtures".into(),
+            "--manifest".into(),
+            forge_catalog.display().to_string(),
+            "--catalog".into(),
+            "forge".into(),
+            "--format".into(),
+            "cmake".into(),
+        ],
+        vec!["expand".into(), fx.path("valid.scxml")],
+        // Same subcommand, output with no newline in it — see
+        // `single_line.scxml`. The two are one probe apart and fail
+        // through different halves of the writer.
+        vec!["expand".into(), fx.path("single_line.scxml")],
+        vec!["check".into(), fx.path("valid.scxml")],
+        vec![
+            "check".into(),
+            fx.path("valid.scxml"),
+            "-l".into(),
+            "rust".into(),
+        ],
+        vec![
+            "generate".into(),
+            fx.path("valid.scxml"),
+            "-l".into(),
+            "rust".into(),
+            "-o".into(),
+            fx.path("gen"),
+        ],
+        vec!["requirements".into(), fx.path("valid.scxml")],
+        vec!["unresolved".into(), fx.path("valid.scxml")],
+        vec![
+            "sce2sym".into(),
+            "--sourcemap".into(),
+            fx.path("gen/sce_sourcemap.json"),
+        ],
+    ];
+
+    let mut violations: Vec<String> = Vec::new();
+    let mut reached = 0usize;
+    for argv in &argvs {
+        // Which probes *must* report is decided here rather than
+        // listed: run the invocation with a reader that stays, and
+        // whatever it wrote is what a vanished reader would have made
+        // it fail on. A subcommand that prints nothing (`requirements`
+        // against a document carrying no annotations) has no write to
+        // fail and is held to nothing; every other one must report.
+        //
+        // Deciding it by list instead would rot the moment a
+        // subcommand's output became conditional, and deciding it in
+        // aggregate — "at least N probes reported" — cannot see one
+        // writer falling silent, which is the shape a stdout helper
+        // regresses in.
+        let control = Command::new(sce_codegen_bin())
+            .arg("--error-format=json")
+            .args(argv)
+            .current_dir(repo_root())
+            .stdin(Stdio::null())
+            .output()
+            .expect("run sce-codegen with its reader intact");
+        let wrote_something = !control.stdout.is_empty();
+
+        let mut child = Command::new(sce_codegen_bin())
+            .arg("--error-format=json")
+            .args(argv)
+            .current_dir(repo_root())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sce-codegen");
+        // Close the read end before the child writes. Everything after
+        // this is the child answering a question it cannot avoid.
+        drop(child.stdout.take().expect("piped stdout"));
+        let out = child.wait_with_output().expect("await sce-codegen");
+        let status = out.status.code().expect("terminated by signal");
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let codes: Vec<&str> = stderr
+            .lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())
+            .filter_map(|v| v.get("code").and_then(|c| c.as_str()).map(str::to_string))
+            .map(|s| Box::leak(s.into_boxed_str()) as &str)
+            .collect();
+
+        if status != 0 {
+            reached += 1;
+        }
+        if wrote_something && status == 0 {
+            violations.push(format!(
+                "`{argv:?}` writes {} bytes to stdout, yet exited 0 with its reader \
+                 gone — the failed write went unreported and the caller cannot tell \
+                 truncated output from complete output",
+                control.stdout.len(),
+            ));
+        }
+        if stderr.contains("panicked at") {
+            violations.push(format!(
+                "`{argv:?}` panicked instead of reporting: exit {status}\n{stderr}"
+            ));
+            continue;
+        }
+        if status != 0 && !documented.contains(&status) {
+            violations.push(format!(
+                "`{argv:?}` exited {status}, which §6 does not document (rows {documented:?})"
+            ));
+        }
+        if status != 0 && codes.is_empty() {
+            violations.push(format!(
+                "`{argv:?}` exited {status} with no NDJSON record; §6: \"A non-zero \
+                 exit with no NDJSON record is a contract violation\". stderr:\n{stderr}"
+            ));
+        }
+        for code in &codes {
+            let allowed = documented_status(&table, code);
+            if !allowed.is_empty() && !allowed.contains(&status) {
+                violations.push(format!(
+                    "`{argv:?}` reported `{code}` but exited {status}; §6 assigns {allowed:?}"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{} of {} closed-reader probes broke the contract:\n  {}",
+        violations.len(),
+        argvs.len(),
+        violations.join("\n  "),
+    );
+    assert!(
+        argvs.len() >= MIN_CLOSED_READER_PROBES,
+        "ran only {} closed-reader probes; expected at least {MIN_CLOSED_READER_PROBES}",
+        argvs.len(),
+    );
+    assert!(
+        reached >= MIN_CLOSED_READER_REFUSALS,
+        "only {reached} of {} probes reached the failing write; the rest exited 0 \
+         because they printed nothing, so this sweep would pass against a binary \
+         that panics on every write it makes",
+        argvs.len(),
+    );
 }

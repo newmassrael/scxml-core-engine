@@ -37,6 +37,8 @@ mutation_tests -p sce-build --features cli --test exit_status_contract
 mutation_targets sce-build/tests/exit_status_contract.rs
 mutation_runtime_targets sce-build/src/bin/sce_codegen.rs \
                          sce-build/src/cli_error.rs \
+                         sce-build/src/forge/diagnostic.rs \
+                         sce-build/src/mesh/error.rs \
                          SCE_ERROR_CONTRACT.md
 
 mutation_case "the argument parser's failure leaves through its own exit" <<'PY'
@@ -115,4 +117,93 @@ mutation_case "the probe list empties and the sweep proves nothing" <<'PY'
 edit("sce-build/tests/exit_status_contract.rs",
      "    out\n}\n\n/// §6's own universal",
      "    out.truncate(0);\n    out\n}\n\n/// §6's own universal")
+PY
+
+# ── A reader that stops reading ────────────────────────────────────
+#
+# The closed-reader sweep added a second shape of "ends outside the table":
+# a status the process never chose. These three break it in the three ways
+# that all print the same green — the panicking macro comes back, the
+# failure is swallowed into a successful-looking exit, and the buffered
+# tail never reaches a write that could fail.
+
+mutation_case "list-fixtures prints through the panicking macro again" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """            for n in names {
+                outln!("{n}");
+            }""",
+     """            for n in names {
+                println!("{n}");
+            }""")
+PY
+
+# The workspace denies warnings, so a mutation that leaves a binding
+# unreferenced fails to compile and reports INCONCLUSIVE rather than
+# exercising anything. Both bodies below keep every name in use and change
+# only the behaviour under study.
+
+mutation_case "a failed stdout write is swallowed into a clean exit" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """        cli_exit(CliError::WriteOutput {
+            path: STDOUT_LABEL.to_string(),
+            source,
+        });""",
+     """        let _ = (STDOUT_LABEL, source);""")
+PY
+
+mutation_case "output that ends without a newline is never flushed" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    let result = emit(&mut handle).and_then(|()| handle.flush());",
+     "    let result = emit(&mut handle).and_then(|()| Write::flush(&mut std::io::sink()));")
+PY
+
+mutation_case "the closed-reader sweep loses its probes" <<'PY'
+edit("sce-build/tests/exit_status_contract.rs",
+     "    let mut violations: Vec<String> = Vec::new();\n    let mut reached = 0usize;\n    for argv in &argvs {",
+     "    let mut violations: Vec<String> = Vec::new();\n    let mut reached = 0usize;\n    for argv in argvs.iter().take(0) {")
+PY
+
+# ── The rows that were delegated on a false reason ──────────────────
+#
+# Rows 5, 6 and 12 were declared covered by other gates and asserted by
+# none. Each is now probed here, so each gets a case that breaks the
+# producer it probes. The last one breaks the matcher: §6 spells five rows
+# with the wildcard inside the family (`mesh/codegen-*`), and a matcher
+# that only understood a trailing `/*` matched none of them — invisible
+# for exactly as long as those rows went unprobed.
+
+mutation_case "an unresolved import leaves under the backend family" <<'PY'
+edit("sce-build/src/forge/diagnostic.rs",
+     '    #[serde(rename = "import/file-not-found")]',
+     '    #[serde(rename = "generate/file-not-found")]')
+PY
+
+mutation_case "a dependency cycle leaves under the CLI boundary" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     """    let manifest = sce_build::build_forge_manifest(dir_path)
+        .unwrap_or_else(|e| current_error_format().emit_and_exit(&e, "Forge codegen error: "));""",
+     """    let manifest = sce_build::build_forge_manifest(dir_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ScxmlGenerate {
+            stage: "manifest",
+            detail: e.error.to_string(),
+        })
+    });""")
+PY
+
+mutation_case "the mesh codegen refusal collapses onto the deploy status" <<'PY'
+edit("sce-build/src/mesh/error.rs",
+     "            MeshError::Codegen(_) => 12,",
+     "            MeshError::Codegen(_) => 10,")
+PY
+
+mutation_case "the wildcard stops reaching inside a family" <<'PY'
+edit("sce-build/tests/exit_status_contract.rs",
+     """        Some(prefix) => code.len() > prefix.len() && code.starts_with(prefix),""",
+     """        Some(prefix) => {
+            let prefix = prefix.strip_suffix('/').map(|p| p.to_string() + "/");
+            match prefix {
+                Some(p) => code.len() > p.len() && code.starts_with(&p),
+                None => false,
+            }
+        }""")
 PY
