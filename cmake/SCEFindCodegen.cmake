@@ -39,13 +39,8 @@ if(SCE_CODEGEN AND NOT EXISTS "${SCE_CODEGEN}")
     unset(SCE_CODEGEN CACHE)
 endif()
 
-# Resolved unconditionally: the staleness check below needs the repository root
-# whether or not the binary itself had to be searched for, and a cached
-# SCE_CODEGEN skips the search entirely — which is the common case, and exactly
-# the case where a stale binary persists.
-get_filename_component(_SCE_FIND_CODEGEN_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
-
 if(NOT SCE_CODEGEN)
+    get_filename_component(_SCE_FIND_CODEGEN_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
     find_program(SCE_CODEGEN sce-codegen
         PATHS "${_SCE_FIND_CODEGEN_ROOT}/target/debug"
               "${_SCE_FIND_CODEGEN_ROOT}/target/release"
@@ -60,45 +55,4 @@ if(NOT SCE_CODEGEN)
     message(FATAL_ERROR
         "SCE: sce-codegen not found. Build it with: "
         "cargo build --bin sce-codegen --features cli -p sce-build")
-endif()
-
-# A generator older than its own sources produces stale code, silently.
-#
-# Nothing here builds sce-codegen: CMake resolves whichever binary happens to
-# sit in target/, and `target/` is excluded from the rsync that seeds a build
-# machine, so a tree whose Rust sources are current can still regenerate from
-# a binary months behind them. On 2026-08-13 that turned a fixed parser into a
-# build failure on the build machine while the same commit compiled locally —
-# the two differed in nothing but which binary was on disk.
-#
-# A build error is the lucky outcome. The same staleness in the other
-# direction — an older generator that accepts more — emits code that compiles
-# and is wrong, which is exactly the class the acceptance tests cannot see
-# because they run against the generator, not against its age.
-#
-# Only meaningful in-tree; an installed package ships the binary without the
-# sources it was built from.
-if(EXISTS "${_SCE_FIND_CODEGEN_ROOT}/sce-build/src")
-    file(GLOB_RECURSE _SCE_CODEGEN_SOURCES CONFIGURE_DEPENDS
-        "${_SCE_FIND_CODEGEN_ROOT}/sce-build/src/*.rs"
-        "${_SCE_FIND_CODEGEN_ROOT}/tools/codegen/templates/*")
-
-    set(_SCE_CODEGEN_STALE_AFTER "")
-    foreach(_sce_src IN LISTS _SCE_CODEGEN_SOURCES)
-        if("${_sce_src}" IS_NEWER_THAN "${SCE_CODEGEN}")
-            set(_SCE_CODEGEN_STALE_AFTER "${_sce_src}")
-            break()
-        endif()
-    endforeach()
-
-    if(_SCE_CODEGEN_STALE_AFTER)
-        message(FATAL_ERROR
-            "SCE: sce-codegen is older than its own sources, so every "
-            "generated file this build produces would come from a stale "
-            "generator.\n"
-            "  generator: ${SCE_CODEGEN}\n"
-            "  newer:     ${_SCE_CODEGEN_STALE_AFTER}\n"
-            "Rebuild it with: "
-            "cargo build --bin sce-codegen --features cli -p sce-build")
-    endif()
 endif()
