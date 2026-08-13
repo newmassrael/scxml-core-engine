@@ -601,21 +601,22 @@ install(FILES ${SCE_CODEGEN_STYLE_FILE}
     COMPONENT Codegen
 )
 
-# Install sce-codegen binary if it was built before cmake configure.
-# Build order: cargo build --bin sce-codegen --features cli -p sce-build
-# Then: cmake -B build && cmake --install build
-find_program(_SCE_CODEGEN_BIN sce-codegen
-    PATHS "${CMAKE_SOURCE_DIR}/target/release" "${CMAKE_SOURCE_DIR}/target/debug"
-    NO_DEFAULT_PATH
+# Install the sce-codegen binary this build used.
+#
+# `SCE_CODEGEN` is already resolved — `cmake/SCECodegen.cmake` runs the
+# ecosystem locator near the top of this file, and that locator has both
+# checked the binary against its own sources and put the profiles in the
+# order that keeps a stale one from outranking a fresh one.
+#
+# A second `find_program` used to stand here with the profiles reversed,
+# which meant `cmake --install` could ship a release binary this build
+# never used while the build itself ran on debug. Nothing reported the
+# difference: both steps succeeded, and the installed generator was simply
+# not the one anything had verified.
+install(PROGRAMS "${SCE_CODEGEN}"
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT Codegen
 )
-if(_SCE_CODEGEN_BIN)
-    install(PROGRAMS "${_SCE_CODEGEN_BIN}"
-        DESTINATION ${CMAKE_INSTALL_BINDIR}
-        COMPONENT Codegen
-    )
-else()
-    message(STATUS "SCE: sce-codegen not found in target/ -- skipping binary install")
-endif()
 
 # =============================================================================
 # Package Configuration for find_package(SCE)
@@ -673,7 +674,12 @@ endif()
 # ---------------------------------------------------------------------------
 set(INCLUDE_INSTALL_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/sce/include")
 set(CODEGEN_INSTALL_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen")
-set(CODEGEN_BIN_DIR      "${CMAKE_CURRENT_SOURCE_DIR}/target/release")
+# Derived from the resolved binary rather than named, so a build-tree
+# consumer is pointed at the generator this build actually used. Named, it
+# said `target/release` — a directory nothing in this repository produces
+# any more, so `find_package(SCE)` against a build tree handed consumers a
+# path that does not exist.
+get_filename_component(CODEGEN_BIN_DIR "${SCE_CODEGEN}" DIRECTORY)
 set(SCE_HTTPLIB_FIND_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib/cmake")
 configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEConfig.cmake.in"

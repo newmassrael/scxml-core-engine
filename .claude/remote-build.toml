@@ -31,7 +31,16 @@ exclude = ["/target", "/build", "/embed"]
 # tests red for that reason and no other. Listing it here keeps such a
 # machine out of the candidate set instead of turning it into a red that
 # looks like a code defect.
-needs = ["cargo", "cmake", "ninja", "g++", "node", "mnemosyne-cli"]
+#
+# `git` is listed because `bx` runs it on the far side to PROVE the two trees
+# are equal (`git rev-parse HEAD` + `git status --porcelain`) before it starts
+# any work. Without it that probe returns nothing and the run dies with "the
+# remote tree is at <nothing>" — a sentence about tree state, on a machine
+# whose real problem is a missing binary. The same misattribution this
+# repository's own gates were fixed for: a tool that cannot run must say so
+# instead of blaming what it was pointed at. Invisible on a machine that
+# happens to have git, which is why it went undeclared.
+needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli"]
 
 # The C++ tree is the constraint: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.

@@ -1564,6 +1564,27 @@ enum Commands {
         cargo_lock: Option<String>,
     },
 
+    /// Answer whether this binary was built from the sources in a given
+    /// tree.
+    ///
+    /// Nothing in the C++ build graph produces `sce-codegen` — CMake finds
+    /// whatever binary is in `target/` and generates with it — so a build
+    /// system has no way to ask that question of the build graph, and this
+    /// is where it asks instead. `cmake/SCEFindCodegen.cmake` runs it at
+    /// configure time and again as a build-time target, because a source
+    /// edit followed by `ninja` does not re-run configure.
+    ///
+    /// Exits `0` when the binary is current, `20` (`cli/*`) when it is
+    /// stale or carries no witness — two distinct codes, since "disagrees
+    /// with this tree" and "cannot be checked" have different repairs.
+    VerifyGenerator {
+        /// Workspace root to check this binary against. Defaults to the
+        /// same resolution chain `verify` uses, so an invocation from
+        /// anywhere inside the checkout finds it.
+        #[arg(long)]
+        root: Option<String>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
     /// PC offset back to its originating SCXML coordinates.
     ///
@@ -1898,6 +1919,7 @@ fn main() {
             cargo_lock.as_deref(),
             error_format,
         ),
+        Commands::VerifyGenerator { root } => cmd_verify_generator(root.as_deref(), error_format),
         Commands::Addr2Sce {
             sourcemap_dir,
             symbol,
@@ -6841,6 +6863,74 @@ fn cmd_verify(
             "sce-codegen verify: {} headerless file(s) skipped (no SCE-GENERATED block); first: {}",
             headerless.len(),
             headerless[0].display()
+        );
+    }
+}
+
+/// Answer whether this binary was built from the sources under `root`.
+///
+/// Both halves of the comparison come from one function — `build.rs`
+/// called [`sce_build::generator_witness::digest_hex`] at compile time and
+/// this calls it again now. A build system asking the question from the
+/// outside would have to reimplement the digest, and a reimplementation
+/// that drifted would refuse correct builds rather than stale ones, which
+/// is how the previous attempt at this check failed.
+///
+/// Silence on success is deliberate: this runs on every CMake configure,
+/// and a line of output per configure trains the reader to skip it.
+fn cmd_verify_generator(root: Option<&str>, error_format: ErrorFormat) {
+    // An explicit `--root` is taken verbatim rather than run through
+    // `locate_workspace_root`. That chain validates a candidate by looking
+    // for `tools/codegen/templates/` and falls through to the next layer
+    // when it is absent — sensible for a hash that needs a template tree,
+    // and wrong here: it would answer about a *different* tree than the
+    // operator named, and report the answer as if it were about theirs.
+    // The witness set does not include the template tree anyway
+    // (`sce_build::generator_witness` says why), so there is nothing for
+    // that validation to establish.
+    let workspace_root = match root {
+        Some(explicit) => PathBuf::from(explicit),
+        None => locate_workspace_root(current_workspace_root_override().as_deref()).unwrap_or_else(
+            || std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        ),
+    };
+    let shown = workspace_root.display().to_string();
+
+    // The binary's half first. A binary with no witness cannot be judged
+    // against any tree, so reading the tree to compare against it would
+    // only produce a second fact about a comparison that is not happening.
+    if sce_build::GENERATOR_SOURCE_DIGEST == sce_build::generator_witness::DIGEST_UNAVAILABLE {
+        error_format.emit_and_exit(
+            &CliError::GeneratorSourceUnverifiable {
+                root: shown,
+                reason: "this binary carries no source witness".to_string(),
+            },
+            "",
+        );
+    }
+
+    let recomputed = match sce_build::generator_witness::digest_hex(&workspace_root) {
+        Ok(digest) => digest,
+        // The tree, not the binary, is the half that is missing. Reported
+        // as "cannot establish" rather than as drift: a tree that cannot
+        // be read has not disagreed with anything.
+        Err(e) => error_format.emit_and_exit(
+            &CliError::GeneratorSourceUnverifiable {
+                root: shown,
+                reason: e.to_string(),
+            },
+            "",
+        ),
+    };
+
+    if recomputed != sce_build::GENERATOR_SOURCE_DIGEST {
+        error_format.emit_and_exit(
+            &CliError::GeneratorSourceDrift {
+                root: shown,
+                embedded_hex: sce_build::GENERATOR_SOURCE_DIGEST.to_string(),
+                recomputed_hex: recomputed,
+            },
+            "",
         );
     }
 }

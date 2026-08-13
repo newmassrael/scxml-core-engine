@@ -234,6 +234,8 @@
         "cli/format-style-not-found",
         "cli/no-scxml-tag",
         "cli/invalid-suite-package",
+        "cli/generator-source-drift",
+        "cli/generator-source-unverifiable",
         "cli/usage",
         "cli/query-no-match",
         "mesh/deploy-read",
