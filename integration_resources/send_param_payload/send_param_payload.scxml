@@ -12,8 +12,8 @@
      failure names which one broke rather than reporting "payload lost":
 
        child -> parent, from a machine with no script engine
-         The child is `datamodel="null"`: every param folds to a literal at
-         codegen time and the machine needs no script engine at all. Kotlin
+         The child needs no script engine at all: every one of its params
+         is a literal, so each folds at codegen time. Kotlin
          used to gate param emission on the *machine* needing one, so this
          shape shipped a `<send>` with its params dropped. The right question
          is whether *this send* needs an engine, which is what the C++
@@ -26,10 +26,16 @@
          then discarded. Reaching `pass` means an internal raise now carries
          its params to the receiving transition's `_event.data`.
 
-     The parent is `datamodel="ecmascript"` because it has to *read* the
-     payload to judge it; the child is `datamodel="null"` because being
-     engine-less is precisely the property under test. The two cannot be one
-     machine.
+     The parent has to *read* the payload to judge it, so it needs an
+     engine; the child only emits literals, so it needs none, and being
+     engine-less is precisely the property under test. The two cannot be
+     one machine.
+
+     Both declare `datamodel="ecmascript"`. The child read `null` for as
+     long as the attribute reached no decision, and that reading was
+     wrong twice over: it is not what makes the child engine-less (its
+     literal params are), and W3C SCXML B.1.4 gives the Null data model
+     no value expression language for the `expr` attributes it carries.
 
      Values are strings on both paths: `<param>` payload marshalling is not
      the axis here, and a numeric literal would additionally assert how each
@@ -43,7 +49,7 @@
         <invoke type="scxml" id="inv_emitter">
             <content>
                 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-                       version="1.0" datamodel="null" initial="emit">
+                       version="1.0" datamodel="ecmascript" initial="emit">
                     <state id="emit">
                         <onentry>
                             <send target="#_parent" event="fromChild">

@@ -1122,6 +1122,54 @@ impl AuthoredPositions {
     }
 }
 
+/// The data model a document declares, restricted to what SCE supports.
+///
+/// §scxml-3.2 lists the attribute's valid values as `"null"`,
+/// `"ecmascript"`, `"xpath"` "or other platform-defined values", and its
+/// default as platform-specific. Appendix B adds the obligation: a conformant
+/// processor MUST support the null data model and MAY support the others.
+///
+/// This enum is the set SCE supports, not the set the spec names. `"xpath"`
+/// is a legal value SCE does not implement and SCE defines no values of its
+/// own, so both are rejected where the attribute is read rather than being
+/// carried into the model — an unsupported data model that reaches code
+/// generation is a document silently evaluated in a language nobody
+/// declared, which is the defect this type exists to make unrepresentable.
+/// The two rejections stay distinct because their repairs differ: one is
+/// "SCE has not implemented this yet", the other is "no processor defines
+/// this at all".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub enum Datamodel {
+    /// §scxml-B-1. An absent or empty data model: `In()` is the whole
+    /// boolean expression language, and there is no location expression
+    /// language, no value expression language, and no scripting language.
+    Null,
+
+    /// §scxml-B-2. Declaring this obliges the processor to support the
+    /// third edition of ECMAScript.
+    ///
+    /// The platform-specific default §scxml-3.2 leaves to implementations.
+    /// SCE picks ECMAScript because a document that omits the attribute
+    /// and then writes `cond="x > 1"` is asking for a value expression
+    /// language, and the Null data model has none — defaulting to Null
+    /// would reject the common case on a technicality. The choice is made
+    /// here, once, so the two engines cannot answer it differently.
+    #[default]
+    EcmaScript,
+}
+
+impl Datamodel {
+    /// The attribute spelling, for diagnostics and the manifest.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Datamodel::Null => "null",
+            Datamodel::EcmaScript => "ecmascript",
+        }
+    }
+}
+
 /// W3C SCXML: Complete state machine model
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1174,7 +1222,13 @@ pub struct SCXMLModel {
     pub initial: String,
     pub initial_leaf: String,
     pub binding: String,
-    pub datamodel_type: String,
+    /// The data model this document declares (§scxml-3.2 `datamodel`).
+    ///
+    /// Typed rather than the raw attribute string so a value SCE cannot
+    /// honor has no representation that reaches code generation. See
+    /// [`Datamodel`] for what the vocabulary is and why it has exactly
+    /// these two members.
+    pub datamodel: Datamodel,
 
     /// SCE Protocol-Synthesis RFC §synth-5-J-2 + §synth-5-L: per-document event-queue
     /// capacity declared via

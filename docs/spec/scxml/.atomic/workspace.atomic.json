@@ -1685,6 +1685,46 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "initialize",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "resolve_declared_datamodel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Datamodel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "ScxmlSemanticError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "UnsupportedDatamodelKind",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4032,6 +4072,13 @@
       "title": "Data Model and Data Manipulation",
       "parent_doc": "scxml",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "scxml-5.1": {
@@ -9230,6 +9277,41 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "stop",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Datamodel",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "ScxmlSemanticError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -9252,7 +9334,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
-      "coverage_expectation": "out_of_scope_here",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9279,6 +9367,16 @@
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::inFunctionWrapper",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "is_null_datamodel_condition",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9302,7 +9400,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
-      "coverage_expectation": "out_of_scope_here",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9324,7 +9428,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
-      "coverage_expectation": "out_of_scope_here",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9346,7 +9456,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
-      "coverage_expectation": "out_of_scope_here",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9396,7 +9512,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
-      "coverage_expectation": "out_of_scope_here",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "enforce_datamodel_languages",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9825,6 +9947,16 @@
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "set_variable_as_dom",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Datamodel",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -13567,6 +13699,36 @@
       "target_kind": "section",
       "target_id": "scxml-D-selectTransitions",
       "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "set_section_coverage_expectation",
+      "target_kind": "section",
+      "target_id": "scxml-B-1-1",
+      "reason": "sce-build/src/parser.rs::enforce_datamodel_languages now refuses the constructs this sub-section withholds; the section was exempt only while the datamodel attribute reached no decision"
+    },
+    {
+      "primitive": "set_section_coverage_expectation",
+      "target_kind": "section",
+      "target_id": "scxml-B-1-3",
+      "reason": "sce-build/src/parser.rs::enforce_datamodel_languages now refuses the constructs this sub-section withholds; the section was exempt only while the datamodel attribute reached no decision"
+    },
+    {
+      "primitive": "set_section_coverage_expectation",
+      "target_kind": "section",
+      "target_id": "scxml-B-1-4",
+      "reason": "sce-build/src/parser.rs::enforce_datamodel_languages now refuses the constructs this sub-section withholds; the section was exempt only while the datamodel attribute reached no decision"
+    },
+    {
+      "primitive": "set_section_coverage_expectation",
+      "target_kind": "section",
+      "target_id": "scxml-B-1-5",
+      "reason": "sce-build/src/parser.rs::enforce_datamodel_languages now refuses the constructs this sub-section withholds; the section was exempt only while the datamodel attribute reached no decision"
+    },
+    {
+      "primitive": "set_section_coverage_expectation",
+      "target_kind": "section",
+      "target_id": "scxml-B-1-7",
+      "reason": "sce-build/src/parser.rs::enforce_datamodel_languages now refuses the constructs this sub-section withholds; the section was exempt only while the datamodel attribute reached no decision"
     }
   ],
   "frames": {},

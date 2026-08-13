@@ -1195,6 +1195,25 @@
         }
       ]
     },
+    "Datamodel": {
+      "description": "The data model a document declares, restricted to what SCE supports.\n\n§scxml-3.2 lists the attribute's valid values as `\"null\"`, `\"ecmascript\"`, `\"xpath\"` \"or other platform-defined values\", and its default as platform-specific. Appendix B adds the obligation: a conformant processor MUST support the null data model and MAY support the others.\n\nThis enum is the set SCE supports, not the set the spec names. `\"xpath\"` is a legal value SCE does not implement and SCE defines no values of its own, so both are rejected where the attribute is read rather than being carried into the model — an unsupported data model that reaches code generation is a document silently evaluated in a language nobody declared, which is the defect this type exists to make unrepresentable. The two rejections stay distinct because their repairs differ: one is \"SCE has not implemented this yet\", the other is \"no processor defines this at all\".",
+      "oneOf": [
+        {
+          "description": "§scxml-B-1. An absent or empty data model: `In()` is the whole boolean expression language, and there is no location expression language, no value expression language, and no scripting language.",
+          "enum": [
+            "null"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "§scxml-B-2. Declaring this obliges the processor to support the third edition of ECMAScript.\n\nThe platform-specific default §scxml-3.2 leaves to implementations. SCE picks ECMAScript because a document that omits the attribute and then writes `cond=\"x > 1\"` is asking for a value expression language, and the Null data model has none — defaulting to Null would reject the common case on a technicality. The choice is made here, once, so the two engines cannot answer it differently.",
+          "enum": [
+            "ecmascript"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "DecodedField": {
       "description": "One `<sce:decoded field=\"...\" value|hex|string=\"...\"/>` row inside a `<sce:test-vector>`. Field name is matched against `CodecModel.fields` at parse time; value carries the typed scalar / bytes / string literal compatible with that field's `sce_type`.",
       "properties": {
@@ -1807,8 +1826,13 @@
               },
               "type": "array"
             },
-            "datamodel_type": {
-              "type": "string"
+            "datamodel": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Datamodel"
+                }
+              ],
+              "description": "The data model this document declares (§scxml-3.2 `datamodel`).\n\nTyped rather than the raw attribute string so a value SCE cannot honor has no representation that reaches code generation. See [`Datamodel`] for what the vocabulary is and why it has exactly these two members."
             },
             "declared_session_roles": {
               "description": "Set of session-FSM roles this SCXML document explicitly declares via top-level `<sce:session-role kind=\"...\"/>` elements. Each variant appears at most once (parse-time uniqueness is enforced by [`crate::forge::error::ValidationError::ScxmlDuplicateSessionRoleDeclaration`]).\n\nEmpty when the document declares no roles (the common case for non-session-FSM SCXML). Non-empty: drives the orchestrator's cross-doc listener-pair join — [`crate::resolve_listener_links`] reads this set to pair `role: listener` deploy links with machines declaring the matching session role.\n\n`BTreeSet` keeps iteration order deterministic so any diagnostic quoting the declared-roles list produces a stable string.",
@@ -2190,7 +2214,7 @@
           "required": [
             "binding",
             "context_objects",
-            "datamodel_type",
+            "datamodel",
             "document_rejected",
             "events",
             "global_scripts",

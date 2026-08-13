@@ -647,6 +647,18 @@ pub enum DiagnosticCode {
     //    `<script>` rejection per §5.8 has no forge analog). ──
     #[serde(rename = "scxml/top-level-script-unloaded")]
     ScxmlTopLevelScriptUnloaded,
+    // ── §scxml-3.2 `datamodel` attribute. The attribute names the
+    //    languages a document's expressions are written in; SCE read it
+    //    into a string that no decision consulted, so `xpath` and any
+    //    invented token compiled and were evaluated by whichever engine
+    //    the deployment injected. `scxml/unsupported-datamodel` refuses
+    //    the value, and `scxml/null-datamodel-forbids-construct` refuses
+    //    a construct whose language the declared model does not have
+    //    (§scxml-B-1). ────────────────────────────────────────────────
+    #[serde(rename = "scxml/unsupported-datamodel")]
+    ScxmlUnsupportedDatamodel,
+    #[serde(rename = "scxml/null-datamodel-forbids-construct")]
+    ScxmlNullDatamodelForbidsConstruct,
     // ── NL→IR Mapping Roadmap Item 3 — Statechart graph
     //    reachability. BFS from the document `initial` (plus the
     //    parallel-all-children, compound-initial-cascade, and history
@@ -2819,6 +2831,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmAppendTypeMismatch,
         // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
+        // §scxml-3.2 datamodel attribute + §scxml-B-1 Null data model
+        ScxmlUnsupportedDatamodel,
+        ScxmlNullDatamodelForbidsConstruct,
         // NL→IR Mapping Roadmap Item 3 — Statechart graph reachability
         ScxmlUnreachableState,
         ScxmlDeadTransition,
@@ -3319,6 +3334,14 @@ impl DiagnosticCode {
 
             // ── SCXML §5.8 top-level script (§wire-W5) ─────────────
             ScxmlTopLevelScriptUnloaded => Some("W3C SCXML §5.8"),
+
+            // ── SCXML data models ──────────────────────────────────
+            // The attribute is defined in §3.2 and the data models it
+            // selects in Appendix B, so the two codes anchor apart: one
+            // is about the value being unusable, the other about a
+            // construct the selected model has no language for.
+            ScxmlUnsupportedDatamodel => Some("W3C SCXML §3.2"),
+            ScxmlNullDatamodelForbidsConstruct => Some("W3C SCXML §B.1"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -3967,6 +3990,8 @@ impl DiagnosticCode {
             AlgorithmAppendTargetNotBuffer => "algorithm/append-target-not-buffer",
             AlgorithmAppendTypeMismatch => "algorithm/append-type-mismatch",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
+            ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
+            ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
@@ -8079,6 +8104,58 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             fix: None,
             key_fragments: vec!["scxml".to_string(), "state".to_string()],
         },
+        ScxmlSemanticError::UnsupportedDatamodel {
+            declared,
+            kind,
+            supported,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlUnsupportedDatamodel,
+            stage: Stage::Validation,
+            // `expected` is the closed vocabulary, `actual` what the
+            // document wrote — the pair a consumer needs to render
+            // "did you mean" without re-deriving SCE's support matrix.
+            expected: Some(supported.clone()),
+            actual: Some(declared.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: supported.clone(),
+            }),
+            // `kind` rides the id so a document that moves from `xpath`
+            // to a typo does not reuse the previous record's identity.
+            key_fragments: vec![
+                "datamodel".to_string(),
+                declared.clone(),
+                match kind {
+                    crate::scxml_semantic::UnsupportedDatamodelKind::Unimplemented => {
+                        "unimplemented".to_string()
+                    }
+                    crate::scxml_semantic::UnsupportedDatamodelKind::Undefined => {
+                        "undefined".to_string()
+                    }
+                },
+            ],
+        },
+        ScxmlSemanticError::NullDatamodelForbidsConstruct {
+            construct,
+            needs,
+            rule,
+            state,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlNullDatamodelForbidsConstruct,
+            stage: Stage::Validation,
+            // What the Null data model offers for this construct is
+            // nothing, and saying so is the point — `expected` names the
+            // missing language rather than a value to substitute.
+            expected: Some(vec![format!("{needs} (W3C SCXML {rule})")]),
+            actual: Some(construct.clone()),
+            fix: None,
+            key_fragments: {
+                let mut k = vec!["null-datamodel".to_string(), construct.clone()];
+                if !state.is_empty() {
+                    k.push(state.clone());
+                }
+                k
+            },
+        },
         ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => DiagnosticPayload {
             // NEW — §scxml-5.8 has no forge analog. The 1 NEW
             // wire code §wire-W5 D2 introduces.
@@ -8911,6 +8988,38 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:60cc8f4eef6d11ca","code":"scxml/top-level-script-unloaded","stage":"validation","spec":"W3C SCXML §5.8","message":"Top-level <script> rejected per W3C SCXML 5.8","actual":"init.js"}"#,
+            ),
+            (
+                // §scxml-3.2 — a data model SCE cannot honor. Golden
+                // uses `xpath`, the Unimplemented half, because it is
+                // the case where the document is valid W3C SCXML and
+                // SCE is the limitation; the Undefined half differs
+                // only in the key fragment that rides the id.
+                "forge/scxml-unsupported-datamodel-xpath",
+                crate::scxml_semantic::ScxmlSemanticError::UnsupportedDatamodel {
+                    declared: "xpath".into(),
+                    kind: crate::scxml_semantic::UnsupportedDatamodelKind::Unimplemented,
+                    supported: vec!["null".into(), "ecmascript".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:975893e56914aa49","code":"scxml/unsupported-datamodel","stage":"validation","spec":"W3C SCXML §3.2","message":"datamodel=\"xpath\" is a W3C SCXML data model that SCE does not implement","expected":["null","ecmascript"],"actual":"xpath","fix":{"kind":"replace_one_of","candidates":["null","ecmascript"]}}"#,
+            ),
+            (
+                // §scxml-B-1 — a construct whose language the declared
+                // model does not have. Golden uses the `<param expr=…>`
+                // shape because it is the one the repository's own
+                // fixtures walked into: `<param>` is a §5 element
+                // (B-1-7) and its `expr` needs the value expression
+                // language (B-1-4), so the element rule is what fires.
+                "forge/scxml-null-datamodel-forbids-construct",
+                crate::scxml_semantic::ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                    construct: "<param>".into(),
+                    needs: "the data model its §5 semantics operate on".into(),
+                    rule: "B.1.7".into(),
+                    state: "idle".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:18b3e668983fd6d6","code":"scxml/null-datamodel-forbids-construct","stage":"validation","spec":"W3C SCXML §B.1","message":"<param> is not available under datamodel=\"null\": it needs the data model its §5 semantics operate on, which W3C SCXML B.1.7 withholds — declare the data model this document actually uses, or remove the construct","expected":["the data model its §5 semantics operate on (W3C SCXML B.1.7)"],"actual":"<param>"}"#,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — Statechart
@@ -12777,6 +12886,12 @@ mod tests {
             // kind variants extend the candidate list in lockstep
             // without changing the non-overlap bucket.
             | ScxmlUnknownSessionRoleKind
+            // `datamodel="X"` for an X SCE cannot honor: the same shape
+            // as the session-role kind above — an enumerated attribute
+            // whose legal values are a closed set, so the fix is
+            // `Fix::ReplaceOneOf` over that set. `xpath` and a typo take
+            // the same repair even though they differ in why.
+            | ScxmlUnsupportedDatamodel
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -13171,6 +13286,11 @@ mod tests {
             // single `Fix::Replace`. Mirrors `AlgorithmForeachSourceNotIterable`.
             | AlgorithmAppendTargetNotBuffer
             | ScxmlTopLevelScriptUnloaded
+            // Two-axis repair: declare the data model the document
+            // actually uses, or drop the construct. Neither is the
+            // author's obvious intent from the code alone, so no single
+            // `Fix` is offered.
+            | ScxmlNullDatamodelForbidsConstruct
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict
@@ -13827,6 +13947,8 @@ mod tests {
                 | AlgorithmAppendTargetNotBuffer
                 | AlgorithmAppendTypeMismatch
                 | ScxmlTopLevelScriptUnloaded
+                | ScxmlUnsupportedDatamodel
+                | ScxmlNullDatamodelForbidsConstruct
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
                 | ScxmlNonExhaustiveEventHandling
@@ -14105,9 +14227,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            348,
+            350,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 348 distinct variants to match the DiagnosticCode \
+             expected 350 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

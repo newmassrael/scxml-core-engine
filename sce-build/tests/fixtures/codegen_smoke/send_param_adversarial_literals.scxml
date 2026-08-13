@@ -17,15 +17,20 @@
       them too: the SCXML parser admits a quote in `name`, so the name
       slot is as exposed as the value slot and is escaped alongside it.
 
-  `datamodel="null"` keeps every param on the static branch — the
-  codegen-time paste — rather than the runtime-evaluation branch.
+  Every param stays on the static branch — the codegen-time paste —
+  rather than the runtime-evaluation branch, because every `expr` here
+  is a literal. This note used to credit `datamodel="null"` for that.
+  It never did: the attribute reached no codegen decision, and the
+  declaration was wrong on its own terms besides — W3C SCXML B.1.4
+  gives the Null data model no value expression language to write
+  `expr` in.
 
   Shared with `author_literal_boundaries.rs`, which asserts the values
   survive rather than that the source parses. Keep the param set there
   and here in step: that gate asserts the key sets match exactly.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       datamodel="null"
+       datamodel="ecmascript"
        name="send_param_adversarial_literals" initial="s0">
   <state id="s0">
     <onentry>

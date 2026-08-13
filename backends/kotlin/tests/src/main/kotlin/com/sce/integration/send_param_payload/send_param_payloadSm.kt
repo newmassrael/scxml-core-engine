@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 80019160c3aa65735e97becd4bf633d4c0625505c4e9a1dfa038840895ba7e34
+// source-hash: 8c4a7d84a6ea23ea88829e171f3ef6f30c77da38dc5a67c7f0b53b8d9b23526b
 // template-hash: 1a8ddcbb228f3ef044e3bb4816cee0949e9f0fe8b8be399bb322260197948169
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/send_param_payload/send_param_payload.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: send_param_payload.scxml:38 :: _machine
+// SCE-MAP: send_param_payload.scxml:44 :: _machine
 
 package com.sce.integration.send_param_payload
 
@@ -266,11 +266,11 @@ class SendParamPayloadStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     override fun onEntry(state: SendParamPayloadState) {
         when (state) {
             is SendParamPayloadState.AwaitChild -> {
-                // SCE-MAP: send_param_payload.scxml:42 :: awaitChild :: _state_body
+                // SCE-MAP: send_param_payload.scxml:48 :: awaitChild :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("awaitChild")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -285,21 +285,21 @@ class SendParamPayloadStateMachine(
                 }
             }
             is SendParamPayloadState.FailChildPayload -> {
-                // SCE-MAP: send_param_payload.scxml:80 :: failChildPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:86 :: failChildPayload :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failChildPayload")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.FailInternalPayload -> {
-                // SCE-MAP: send_param_payload.scxml:81 :: failInternalPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:87 :: failInternalPayload :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("failInternalPayload")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendParamPayloadState.InternalPhase -> {
-                // SCE-MAP: send_param_payload.scxml:67 :: internalPhase :: _state_body
+                // SCE-MAP: send_param_payload.scxml:73 :: internalPhase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("internalPhase")) return
 
@@ -314,7 +314,7 @@ class SendParamPayloadStateMachine(
             }
             }
             is SendParamPayloadState.Pass -> {
-                // SCE-MAP: send_param_payload.scxml:79 :: pass :: _state_body
+                // SCE-MAP: send_param_payload.scxml:85 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -324,11 +324,11 @@ class SendParamPayloadStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     override fun onExit(state: SendParamPayloadState) {
         when (state) {
             is SendParamPayloadState.AwaitChild -> {
-                // SCE-MAP: send_param_payload.scxml:42 :: awaitChild :: _state_body
+                // SCE-MAP: send_param_payload.scxml:48 :: awaitChild :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -336,19 +336,19 @@ class SendParamPayloadStateMachine(
                 activeStateIds.remove("awaitChild")
             }
             is SendParamPayloadState.FailChildPayload -> {
-                // SCE-MAP: send_param_payload.scxml:80 :: failChildPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:86 :: failChildPayload :: _state_body
                 activeStateIds.remove("failChildPayload")
             }
             is SendParamPayloadState.FailInternalPayload -> {
-                // SCE-MAP: send_param_payload.scxml:81 :: failInternalPayload :: _state_body
+                // SCE-MAP: send_param_payload.scxml:87 :: failInternalPayload :: _state_body
                 activeStateIds.remove("failInternalPayload")
             }
             is SendParamPayloadState.InternalPhase -> {
-                // SCE-MAP: send_param_payload.scxml:67 :: internalPhase :: _state_body
+                // SCE-MAP: send_param_payload.scxml:73 :: internalPhase :: _state_body
                 activeStateIds.remove("internalPhase")
             }
             is SendParamPayloadState.Pass -> {
-                // SCE-MAP: send_param_payload.scxml:79 :: pass :: _state_body
+                // SCE-MAP: send_param_payload.scxml:85 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
         }
@@ -356,7 +356,7 @@ class SendParamPayloadStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: send_param_payload.scxml:38 :: _machine
+    // SCE-MAP: send_param_payload.scxml:44 :: _machine
     override fun executeTransitionActions(
         source: SendParamPayloadState,
         event: SendParamPayloadEvent?

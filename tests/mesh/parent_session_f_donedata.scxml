@@ -33,7 +33,7 @@
      `fail` transition so regressions surface as a deterministic fail
      rather than a 5s timeout. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" initial="phase_param"
+       version="1.0" datamodel="ecmascript" initial="phase_param"
        name="parent_session_f_donedata">
     <datamodel>
         <data id="param_ok" expr="false"/>

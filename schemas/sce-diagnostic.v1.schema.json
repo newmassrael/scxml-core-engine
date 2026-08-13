@@ -91,6 +91,8 @@
         "algorithm/append-target-not-buffer",
         "algorithm/append-type-mismatch",
         "scxml/top-level-script-unloaded",
+        "scxml/unsupported-datamodel",
+        "scxml/null-datamodel-forbids-construct",
         "scxml/unreachable-state",
         "scxml/dead-transition",
         "scxml/non-exhaustive-event-handling",

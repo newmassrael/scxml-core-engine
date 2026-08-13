@@ -13,17 +13,20 @@
      that baked the substituted key in at build time; re-entering the
      same site cannot, because there is only one emitted call.
 
-     `datamodel="lua"` for the same reason: the placeholder value
-     reaches the transport as a typed `<param>` read out of the
-     datamodel, which is how an author writes it. A string literal in
-     the `<send>` would leave "the value is a build-time constant"
-     open.
+     A data model, for the same reason: the placeholder value reaches
+     the transport as a typed `<param>` read out of it, which is how an
+     author writes it. A string literal in the `<send>` would leave
+     "the value is a build-time constant" open. The declaration read
+     `datamodel="ecmascript"` for as long as the attribute reached no
+     decision — a value W3C SCXML §3.2 does not define and SCE never
+     read. The engine was always Lua regardless; `ecmascript` is what
+     these expressions are written in.
 
      `player.ping` carries no request/reply convention, so it resolves
      to PatternKind::FireForget and takes the Zenoh put path — the leg
      with no reply channel to surface a misaddressed key. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="lua" name="pool_sender_zenoh" initial="idle">
+       version="1.0" datamodel="ecmascript" name="pool_sender_zenoh" initial="idle">
     <datamodel>
         <data id="playerId" expr="'42'"/>
     </datamodel>

@@ -5,7 +5,7 @@
      cancelMeshRpc / InvokeCorrelation / MeshDeadlineScheduler / the ctor
      setMeshInvokeCallback lambda when this fixture is compiled. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" name="brake_invoke" initial="idle">
+       version="1.0" datamodel="ecmascript" name="brake_invoke" initial="idle">
     <state id="idle">
         <transition event="go" target="computing"/>
     </state>
