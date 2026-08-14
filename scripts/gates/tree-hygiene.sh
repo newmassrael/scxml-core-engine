@@ -53,4 +53,5 @@ cargo test -p sce-build --features cli \
     --test integration_stem_registration \
     --test datamodel_read_accessor \
     --test ecmascript_semantics \
+    --test mutation_rounds_selection \
     || sce_gate_fail "tree-wide hygiene gates"

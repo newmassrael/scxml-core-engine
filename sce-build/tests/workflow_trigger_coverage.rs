@@ -68,6 +68,14 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "forge_document_name_is_the_stem",
     "gate_registry_contract",
     "hook_ci_parity",
+    // Asks `git ls-files` for the mutation corpus and then asks the harness
+    // what each casefile declares, so a casefile added anywhere — or one
+    // that starts naming a new target — changes both what it reads and what
+    // it expects. A `paths:` filter over `sce-build/tests/mutations/**`
+    // would cover the corpus and still miss the half that matters: the
+    // declared targets are files all over the tree, and it is a change to
+    // one of THOSE that the selection has to keep getting right.
+    "mutation_rounds_selection",
     // Asks `git ls-files` which trees cite the spec, so a citation added
     // to any file anywhere changes its verdict. A `paths:` filter over
     // the backend runtimes would cover today's answer and miss the one

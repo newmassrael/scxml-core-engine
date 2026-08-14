@@ -141,6 +141,39 @@ GATES: dict[str, dict] = {
         "cost_s": 7,
         "summary": "every mutation casefile still applies",
     },
+    # The other half of the same corpus: whether a case still turns its
+    # suite red, which only a build can answer. Trigger is unconditional for
+    # the reason above — the union it reads is the casefiles' own — and the
+    # narrowing happens inside the gate, which runs a round only for a
+    # casefile whose declared target is in the change set. Most pushes select
+    # none and it costs a read of 25 declarations.
+    #
+    # No `deps`, though the first draft named `workspace-tests` and
+    # `cpp-suite`: a round's cost is dominated by its baseline build and
+    # those two have already paid it, which is a reason to want them first
+    # and not a dependency. `deps` here means a gate whose OUTPUT this one
+    # executes, and a round builds whatever it needs itself. Declaring the
+    # preference as a dependency put a 4-second gate behind the two most
+    # expensive in the table and the order self-test rejected it — correctly,
+    # and that is what the self-test is for.
+    #
+    # `cost_s` is the common case, which is the one that decides order: most
+    # pushes touch no declared target and the gate costs one read of 25
+    # declarations. A push that does touch one pays a round on top — measured
+    # warm, 139s for a 5-case cargo casefile and 237s for a 3-case ctest one.
+    "mutation-rounds": {
+        "local": ["sce-build/tests/mutations/**"],
+        "no_ci_reason": "no counterpart yet, and the reason is cost rather "
+                        "than principle: four casefiles select through "
+                        "ctest, so a CI job running them must configure and "
+                        "build the CMake tree before the first round. Until "
+                        "that job exists the gate refuses (exit 3) on a "
+                        "machine with no build tree rather than passing "
+                        "over what it cannot run, so a bypass loses "
+                        "coverage visibly instead of silently.",
+        "cost_s": 4,
+        "summary": "changed mutation targets still turn their suites red",
+    },
     "clippy": {
         "workflows": ["clippy-check.yml"],
         "runner_workflow": True,
