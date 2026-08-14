@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "7a5423e619",
+  "embed_version": "cf01a08b25",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 243,
+  "symbol_count": 244,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -143,6 +143,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::DataModelInitHelper"
+    },
+    {
+      "header": "common/DataModelReadHelper.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::DataModelReadHelper"
     },
     {
       "header": "common/DatamodelValidationHelper.h",
