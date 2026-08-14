@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// `scripts/mutate --check` refuses the shapes a dead mutation case takes.
+// The mutation harness tells the truth about its own verdicts.
+//
+// Two halves. `scripts/mutate --check` refuses the shapes a dead mutation
+// case takes, and the parsers in `scripts/lib/mutation_failures.sh` name the
+// tests a CAUGHT verdict is made of. Both are checked here against inputs
+// built to break them, because both are the kind of code whose failure looks
+// exactly like success: a refusal that stopped refusing reads as a clean
+// corpus, and a parser that stopped matching reads as a verdict with nothing
+// to attribute.
 //
 // The gate `mutation-cases` runs that mode over every casefile in
 // `sce-build/tests/mutations/` on every push, and a gate is only worth its
@@ -204,6 +212,94 @@ fn a_sound_case_passes_and_leaves_its_subject_where_it_found_it() {
         body,
         "the check mode left its subject mutated"
     );
+}
+
+/// Feed captured runner output to one of the failure-name parsers.
+fn failure_names(function: &str, captured: &str) -> Vec<String> {
+    let dir = tempdir().expect("temp dir");
+    let sample = dir.path().join("captured.txt");
+    fs::write(&sample, captured).expect("write the sample");
+
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "source scripts/lib/mutation_failures.sh; {function} < {}",
+            sample.display()
+        ))
+        .current_dir(repo_root())
+        .output()
+        .expect("run the parser");
+    assert!(
+        out.status.success(),
+        "{function} exited {}: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn a_gtest_failure_is_named_through_ctests_job_prefix() {
+    // `ctest -j` puts `N: ` in front of every line a test prints, so the
+    // marker is not at the start of the line. gtest also prints each failure
+    // twice — once where it happens, once in a summary that opens with a
+    // COUNT where a test name would be.
+    let names = failure_names(
+        "mutation_failures_from_gtest",
+        "1: [ RUN      ] ResumeSuite.ReturnsSomewhereTheDefaultDoesNot\n\
+         1: [  FAILED  ] ResumeSuite.ReturnsSomewhereTheDefaultDoesNot (2 ms)\n\
+         2: [       OK ] OtherSuite.StillGreen (1 ms)\n\
+         1: [  FAILED  ] 1 test, listed below:\n\
+         1: [  FAILED  ] ResumeSuite.ReturnsSomewhereTheDefaultDoesNot\n",
+    );
+    assert_eq!(
+        names,
+        vec!["ResumeSuite.ReturnsSomewhereTheDefaultDoesNot".to_string()],
+        "the gtest parser must name each red test once, and must not read \
+         the summary line's count as a test called `1`"
+    );
+}
+
+#[test]
+fn a_cargo_failure_is_named_once_and_not_again_from_the_index() {
+    // libtest prints the name twice as well: the verdict line, then a
+    // `failures:` index. Counting both would double whatever a caller
+    // derives from this.
+    let names = failure_names(
+        "mutation_failures_from_cargo",
+        "running 3 tests\n\
+         test a_thing_that_passes ... ok\n\
+         test inner::a_thing_that_does_not ... FAILED\n\
+         test another_pass ... ok\n\n\
+         failures:\n    inner::a_thing_that_does_not\n\n\
+         test result: FAILED. 2 passed; 1 failed; 0 ignored\n",
+    );
+    assert_eq!(
+        names,
+        vec!["inner::a_thing_that_does_not".to_string()],
+        "the cargo parser must name the red test exactly once"
+    );
+}
+
+#[test]
+fn a_green_run_names_nothing() {
+    // The direction that matters for a mutation round: a parser that
+    // hallucinated a name on a passing run would make every SURVIVED
+    // verdict look attributable.
+    assert!(failure_names(
+        "mutation_failures_from_gtest",
+        "1: [       OK ] OtherSuite.StillGreen (1 ms)\n1: [  PASSED  ] 1 test.\n",
+    )
+    .is_empty());
+    assert!(failure_names(
+        "mutation_failures_from_cargo",
+        "running 1 test\ntest a_thing ... ok\n\n\
+         test result: ok. 1 passed; 0 failed; 0 ignored\n",
+    )
+    .is_empty());
 }
 
 #[test]
