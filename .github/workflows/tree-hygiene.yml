@@ -91,3 +91,18 @@ jobs:
     # after one had already been written. One spelling cannot diverge.
     - name: Tree-wide hygiene gates
       run: scripts/gate tree-hygiene
+
+    # Same arrangement, different alphabet. `sce-build/tests/mutations/*.cases`
+    # is the one source here that nothing compiles: each case is a literal
+    # anchor into a file that goes on changing, and a moved or duplicated
+    # anchor turns the case into evidence it no longer produces. What the
+    # gate reads is the union of every `mutation_targets` declaration inside
+    # those files, so no `paths:` filter tracks it without being a second
+    # copy of a declaration the casefiles already carry — which is what this
+    # workflow's missing filter is for.
+    #
+    # Seconds, not a mutation round: it applies each case and restores it
+    # without building or running anything. The full round stays a
+    # deliberate `scripts/mutate <casefile>`.
+    - name: Mutation casefiles still apply
+      run: scripts/gate mutation-cases

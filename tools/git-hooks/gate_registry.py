@@ -128,6 +128,19 @@ GATES: dict[str, dict] = {
         "cost_s": 13,
         "summary": "tree-wide marker + trigger + parity gates",
     },
+    # Rides the same unfiltered workflow, for the same reason in a different
+    # alphabet: what this gate reads is the union of every `mutation_targets`
+    # declaration inside `sce-build/tests/mutations/*.cases`, which today
+    # spans `sce/`, `sce-build/`, `backends/`, generator templates, a
+    # CMakeLists, two workflows and a gate script. A `paths:` list restating
+    # that union would be a second copy of a declaration the casefiles
+    # already carry, stale the first time a case names a new file.
+    "mutation-cases": {
+        "workflows": ["tree-hygiene.yml"],
+        "runner_workflow": True,
+        "cost_s": 7,
+        "summary": "every mutation casefile still applies",
+    },
     "clippy": {
         "workflows": ["clippy-check.yml"],
         "runner_workflow": True,
@@ -533,6 +546,12 @@ INERT = [
     "tools/git-hooks/**",
     "scripts/gates/**",
     "scripts/gate",
+    # The mutation harness, for the same reason one line up: its only gate
+    # is `mutation-cases`, which rides an unfiltered workflow and therefore
+    # runs for every change regardless of what this list says. Without the
+    # entry an edit here is an unclassified path, and rule 1 buys the entire
+    # suite to verify a script that one always-on gate already exercises.
+    "scripts/mutate",
 ]
 
 # Entries here list only TRACKED paths, because a changed path comes from

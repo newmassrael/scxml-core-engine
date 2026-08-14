@@ -1,0 +1,75 @@
+# Mutation cases for "a dead mutation case is refused rather than counted".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/mutation_case_liveness.cases`.
+#
+# The defect these stand for is the one this corpus had for as long as it
+# existed: nothing ran it. A case is a literal anchor into a file that goes on
+# changing, and when the anchor moves or splits the case stops testing what
+# its comment says. `parallel_microstep_owns_exit_and_entry.cases` stood in
+# the debt registry as CAUGHT 1/1 for a day while a neighbouring commit had
+# made its mutated tree stop compiling, and the first sweep of `--check`
+# found three more in two other files.
+#
+# `scripts/gates/mutation-cases.sh` now runs `--check` over every casefile on
+# every push, so these cases ask the question one level up: can that check
+# still fail? Each one disables a single refusal in the harness and requires
+# `mutation_case_liveness` to notice.
+#
+# `scripts/mutate` is a runtime target: the tests drive it as a subprocess,
+# so it is read fresh on every run rather than linked into the binary, and
+# the evidence that a mutation reached what ran is the file differing on disk
+# while the tests ran. Mutating the harness with the harness is not circular
+# — the copy under study is the one the TESTS execute, while the round itself
+# is driven by the snapshot the shell already sourced.
+
+mutation_tests -p sce-build --features cli --test mutation_case_liveness
+mutation_runtime_targets scripts/mutate
+
+# ── An anchor that matches nothing ─────────────────────────────────
+#
+# The plainest way for a case to die: the code it names was edited. Without
+# this refusal `edit()` would replace nothing and the round would report
+# SURVIVED — a verdict about a test, drawn from a mutation that never
+# happened.
+
+mutation_case "a vanished anchor stops being refused" <<'PY'
+edit("scripts/mutate",
+     "    if occurrences == 0:",
+     "    if False and occurrences == 0:")
+PY
+
+# ── An anchor that matches several places ──────────────────────────
+#
+# `edit()` replaces the first occurrence, so an anchor that has come to match
+# more than one site aims at whichever the file happens to list first — a
+# fact about document order, not about the defect the case describes. Three
+# cases in this corpus were in that state when the check first ran.
+
+mutation_case "an ambiguous anchor stops being refused" <<'PY'
+edit("scripts/mutate",
+     "    if occurrences > 1:",
+     "    if False and occurrences > 1:")
+PY
+
+# ── A declared target that is no longer there ──────────────────────
+#
+# A renamed or deleted target takes every case in the file with it. Without
+# this the snapshot dies on `cp`, naming neither the casefile nor the
+# declaration that went stale.
+
+mutation_case "a missing declared target stops being refused" <<'PY'
+edit("scripts/mutate",
+     "        [[ -e \"$f\" ]] && continue",
+     "        [[ -e \"$f\" ]] || true; continue")
+PY
+
+# ── A casefile with no cases at all ────────────────────────────────
+#
+# The emptiest form of the failure this harness is about: it declares a
+# suite and a target, runs clean, and tests nothing.
+
+mutation_case "an empty casefile stops being refused" <<'PY'
+edit("scripts/mutate",
+     "    if [[ $total -eq 0 ]]; then",
+     "    if [[ $total -eq -1 ]]; then")
+PY

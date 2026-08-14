@@ -52,9 +52,16 @@ edit("sce-build/src/bin/sce_codegen.rs",
      r'             pub mod harness_absent;\n",')
 PY
 
-mutation_case "a single-fixture suite is emitted without its module index" <<'PY'
+# Anchored through the Rust emitter's `test_filename` because all four
+# backends spell this predicate identically, and `edit()` takes the first
+# match: the case aimed at whichever emitter happened to appear first in the
+# file, which is a fact about document order rather than about this suite.
+# The Rust one is the site the neighbouring cases mutate.
+mutation_case "a single-fixture Rust suite is emitted without its module index" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
+     "        format!(\"test_{test_id}.rs\")\n    }\n\n"
      "    fn is_standalone_suite(&self) -> bool {\n        self.standalone.is_some()\n    }",
+     "        format!(\"test_{test_id}.rs\")\n    }\n\n"
      "    fn is_standalone_suite(&self) -> bool {\n        self.standalone.is_none()\n    }")
 PY
 
