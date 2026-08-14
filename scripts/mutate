@@ -35,7 +35,7 @@
 #
 # Usage:
 #
-#     scripts/mutate <casefile>
+#     scripts/mutate [--check] <casefile>
 #
 # The casefile is sourced by this script. It declares the selector for the
 # tests under study, the files a case may edit, and one `case` block per
@@ -102,6 +102,33 @@
 #                            # applying nothing and reading as SURVIVED.
 #
 # Exit status is 0 only when every case was CAUGHT.
+#
+# ── `--check`: is this casefile still alive? ───────────────────────
+#
+#     scripts/mutate --check <casefile>
+#
+# Applies every case and restores it, without building or running anything.
+# It answers the cheap half of the question a full round asks — *does this
+# case still say what it was written to say* — in milliseconds rather than a
+# rebuild per case.
+#
+# It exists because a casefile is source that nothing compiles. Each case is
+# written against an anchor in a file that goes on changing, and when the
+# anchor moves the case stops applying. The harness says so, honestly and
+# loudly — to whoever happens to run it by hand, which between two commits is
+# nobody. `parallel_microstep_owns_exit_and_entry.cases` stood in the debt
+# registry as CAUGHT 1/1 while it was in fact INCONCLUSIVE, and the only
+# reason that surfaced is that someone went back and ran it.
+#
+# So this is the mode a gate can afford over the whole corpus on every push:
+# `scripts/gates/mutation-cases.sh` runs it for every casefile under its own
+# floors, and `sce-build/tests/mutation_case_liveness.rs` proves it can fail
+# — one fixture per shape it refuses.
+#
+# What it cannot answer is what only a build can: whether the mutated tree
+# still COMPILES, and whether the suite still turns red. Those stay with the
+# full round, which is why this mode reports "applies" and never "CAUGHT" —
+# a check that cannot see a test result must not print a word that names one.
 
 set -euo pipefail
 
@@ -120,10 +147,24 @@ MUTATION_ARTIFACTS=()
 MUTATION_CAUGHT=0
 MUTATION_SURVIVED=0
 MUTATION_INCONCLUSIVE=0
+# `run` (the default) or `check`. Set once by the driver, read by the two
+# places whose work differs: what the baseline has to establish, and how far
+# a case is taken before its verdict.
+MUTATION_MODE=run
 
-red()   { printf '\033[31m%s\033[0m\n' "$*"; }
-green() { printf '\033[32m%s\033[0m\n' "$*"; }
-dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+# Colour only for a terminal. A gate reads this output rather than watching
+# it, and an escape sequence in front of every verdict makes `^applies` match
+# nothing — which is how the first run of `scripts/gates/mutation-cases.sh`
+# counted zero cases across a corpus that had just reported 124.
+if [[ -t 1 ]]; then
+    red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+    green() { printf '\033[32m%s\033[0m\n' "$*"; }
+    dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+else
+    red()   { printf '%s\n' "$*"; }
+    green() { printf '%s\n' "$*"; }
+    dim()   { printf '%s\n' "$*"; }
+fi
 
 # ── Casefile vocabulary ────────────────────────────────────────────
 
@@ -448,6 +489,133 @@ print(f"{run} {failed}")
 PY
 }
 
+# ── Cheap liveness ─────────────────────────────────────────────────
+#
+# What `--check` asks of a casefile beyond applying its cases. Everything
+# here reads manifests and enumerates; nothing compiles, which is what makes
+# the mode affordable over the whole corpus on every push.
+
+# Every declared file is still there. A target that was renamed or deleted
+# takes every case in the file with it, and the failure a full round gives
+# for it — `sha256sum: No such file` from inside the snapshot — names
+# neither the casefile nor the declaration that went stale.
+mutation_check_targets_exist() {
+    local missing=0 f
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        [[ -e "$f" ]] && continue
+        red "declared target does not exist: $f"
+        missing=$((missing + 1))
+    done < <(mutation_all_targets)
+    (( missing == 0 ))
+}
+
+mutation_check_selector() { "mutation_${MUTATION_RUNNER}_check_selector"; }
+
+# The cargo selector still names a package that exists, features that
+# package declares, and test targets it has. `cargo metadata` reads the
+# manifests and compiles nothing, so this is the part of the runner
+# question a cheap mode can answer. The expensive part — do those targets
+# still BUILD — is `mutation_cargo_resolve`'s, in the full round.
+mutation_cargo_check_selector() {
+    # Into a file rather than down a pipe: the script itself arrives on
+    # stdin as a heredoc, so a piped payload would be swallowed by it and
+    # the reader would get an empty document. Measured the moment this was
+    # first run.
+    local meta="$WORK/cargo-metadata.json"
+    cargo metadata --no-deps --format-version 1 >"$meta" 2>/dev/null || {
+        red "cargo metadata failed — the selector cannot be checked"
+        return 1
+    }
+    python3 - "$meta" "${MUTATION_RUNNER_ARGS[@]}" <<'PY'
+import json
+import sys
+
+args = sys.argv[2:]
+meta = json.load(open(sys.argv[1]))
+
+named_pkgs, wanted_tests, wanted_features = [], [], []
+want_lib = False
+i = 0
+while i < len(args):
+    a = args[i]
+    if a in ("-p", "--package") and i + 1 < len(args):
+        named_pkgs.append(args[i + 1]); i += 2; continue
+    if a == "--test" and i + 1 < len(args):
+        wanted_tests.append(args[i + 1]); i += 2; continue
+    if a == "--features" and i + 1 < len(args):
+        wanted_features += [f for f in args[i + 1].replace(",", " ").split() if f]
+        i += 2; continue
+    if a == "--lib":
+        want_lib = True
+    i += 1
+
+packages = {p["name"]: p for p in meta["packages"]}
+problems = []
+for name in named_pkgs:
+    if name not in packages:
+        problems.append("no package named %r in this workspace" % name)
+
+# A selector with no `-p` reaches the whole workspace, so the targets it
+# names may live in any member. Scoping to the named packages when there
+# are any is what makes a renamed test in the RIGHT package a failure
+# rather than a pass because some other member happens to have that name.
+scope = [packages[n] for n in named_pkgs if n in packages] or list(packages.values())
+
+for test in wanted_tests:
+    if not any(t["name"] == test and "test" in t["kind"]
+               for p in scope for t in p["targets"]):
+        problems.append(
+            "--test %s names no test target in %s"
+            % (test, ", ".join(sorted(p["name"] for p in scope))))
+
+# `--lib` selects whatever library target a package has, and cargo reports
+# that target under its crate type rather than under the word "lib" — this
+# workspace's is `rlib`. Testing for the literal string called every `--lib`
+# selector broken on the first run of this check.
+LIB_KINDS = {"lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"}
+if want_lib and not any(LIB_KINDS.intersection(t["kind"])
+                        for p in scope for t in p["targets"]):
+    problems.append("--lib, but no package in scope has a library target")
+
+for feature in wanted_features:
+    if not any(feature in p.get("features", {}) for p in scope):
+        problems.append("--features %s names a feature no package in scope declares" % feature)
+
+for problem in problems:
+    print("  " + problem, file=sys.stderr)
+raise SystemExit(1 if problems else 0)
+PY
+}
+
+# The ctest selector still matches at least one registered test.
+#
+# Skipped rather than failed when the tree is not configured: configuring a
+# CMake tree is minutes, and a mode whose whole claim is that it costs
+# nothing must not quietly start doing that. Said out loud, because a check
+# that skips in silence is the thing this harness exists to prevent.
+mutation_ctest_check_selector() {
+    local build_dir
+    build_dir="$(mutation_ctest_build_dir)" || {
+        red "mutation_ctest needs --test-dir <dir>: it names the tree to rebuild"
+        return 1
+    }
+    if [[ ! -f "$build_dir/CMakeCache.txt" ]]; then
+        dim "selector NOT checked: $build_dir is not configured — configuring one"
+        dim "would cost more than everything else this mode does put together"
+        return 0
+    fi
+    local n
+    n="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null |
+         python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("tests", [])))' 2>/dev/null)" \
+        || n=0
+    if [[ "${n:-0}" -eq 0 ]]; then
+        red "the ctest selector matches no registered test: ${MUTATION_RUNNER_ARGS[*]}"
+        return 1
+    fi
+    dim "selector matches $n registered test(s)"
+}
+
 mutation_init() {
     if [[ -z "$MUTATION_RUNNER" ]]; then
         red "the casefile declared no mutation_tests or mutation_ctest selector"
@@ -457,7 +625,21 @@ mutation_init() {
         red "the casefile declared no mutation_targets or mutation_runtime_targets"
         exit 2
     fi
+    # Before the snapshot, which reads every declared file and would other-
+    # wise die on the missing one with `cp`'s message instead of this one.
+    mutation_check_targets_exist || exit 2
     mutation_snapshot
+
+    if [[ "$MUTATION_MODE" == "check" ]]; then
+        mutation_check_selector || exit 2
+        # The case bodies still need a baseline to compare against; it is
+        # just the files this time, since nothing gets built.
+        BASELINE_FILE_HASHES="$(mutation_all_target_hashes)"
+        green "check: $(mutation_all_targets | wc -l) declared target(s), selector resolves"
+        echo
+        return
+    fi
+
     mutation_resolve_artifacts
     dim "resolved ${#MUTATION_ARTIFACTS[@]} test artifact(s) via $MUTATION_RUNNER"
 
@@ -485,7 +667,7 @@ mutation_case() {
     # Read unconditionally: the heredoc has to be consumed on the declaration
     # pass too, or the shell would hand its lines to the parser as commands.
     body="$(cat)"
-    [[ "${MUTATION_PASS:-run}" == "run" ]] || return 0
+    [[ "${MUTATION_PASS:-run}" != "declare" ]] || return 0
 
     printf '%s\n' "$body" > "$WORK/case.py"
     if ! MUTATION_DECLARED_FILES="$(printf '%s\n' \
@@ -514,11 +696,30 @@ def edit(path, old, new):
             "survive the round and leave the mutation in the tree.\n"
             "  declared: %s" % (path, ", ".join(sorted(_declared)) or "(none)")
         )
+    if old == new:
+        raise SystemExit(
+            "%s: this edit replaces its anchor with itself, so the case "
+            "mutates nothing.\n  %r" % (path, old[:120])
+        )
     src = open(path).read()
-    if old not in src:
+    occurrences = src.count(old)
+    if occurrences == 0:
         raise SystemExit(
             "anchor not found in %s — the mutation matched nothing, which "
             "would have read as SURVIVED:\n  %r" % (path, old[:120])
+        )
+    # An anchor that matches twice is a case that no longer says where it
+    # aims: `replace(..., 1)` takes the first, and which line that is can be
+    # changed by an edit somewhere else in the file that the case never
+    # mentions. The verdict would still be printed, against a different
+    # defect than the one the comment above it describes. Widen the anchor
+    # with a line of surrounding context to make it say which site it means.
+    if occurrences > 1:
+        raise SystemExit(
+            "anchor matches %d places in %s — this case would silently mutate "
+            "the first, and a later edit elsewhere in the file can change "
+            "which one that is. Widen it with surrounding context:\n  %r"
+            % (occurrences, path, old[:120])
         )
     open(path, "w").write(src.replace(old, new, 1))
 
@@ -546,6 +747,21 @@ PY
         red "              nothing was mutated, so nothing was tested"
         MUTATION_INCONCLUSIVE=$((MUTATION_INCONCLUSIVE + 1))
         mutation_restore
+        return
+    fi
+
+    # `--check` stops here, having established the whole of what it claims:
+    # the case still finds its anchors and still changes the tree. It
+    # deliberately does not say CAUGHT — nothing was built and no test ran,
+    # so there is no verdict about a test to report.
+    if [[ "$MUTATION_MODE" == "check" ]]; then
+        green "applies       $label"
+        MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1))
+        mutation_restore
+        if [[ "$(mutation_all_target_hashes)" != "$BASELINE_FILE_HASHES" ]]; then
+            red "              restore did not reproduce the baseline files"
+            exit 2
+        fi
         return
     fi
 
@@ -618,6 +834,21 @@ PY
 mutation_report() {
     echo
     local total=$((MUTATION_CAUGHT + MUTATION_SURVIVED + MUTATION_INCONCLUSIVE))
+    # A casefile with no cases is the emptiest form of the failure this whole
+    # harness is about: it declares a suite and a target, runs clean, and
+    # tests nothing. Neither mode may report that as a pass.
+    if [[ $total -eq 0 ]]; then
+        red "the casefile declared no mutation_case — nothing was tested"
+        return 1
+    fi
+    if [[ "$MUTATION_MODE" == "check" ]]; then
+        if [[ $MUTATION_INCONCLUSIVE -eq 0 ]]; then
+            green "$MUTATION_CAUGHT/$total case(s) still apply"
+            return 0
+        fi
+        red "$MUTATION_CAUGHT/$total case(s) still apply, $MUTATION_INCONCLUSIVE stale"
+        return 1
+    fi
     if [[ $MUTATION_SURVIVED -eq 0 && $MUTATION_INCONCLUSIVE -eq 0 ]]; then
         green "$MUTATION_CAUGHT/$total caught"
         return 0
@@ -628,12 +859,31 @@ mutation_report() {
 
 # ── Driver ─────────────────────────────────────────────────────────
 
-if [[ $# -ne 1 ]]; then
-    echo "usage: scripts/mutate <casefile>" >&2
+MUTATION_ARGV=()
+while (( $# )); do
+    case "$1" in
+        --check) MUTATION_MODE=check ;;
+        # Spelled out rather than sliced out of the header with a line
+        # range: a range silently prints the wrong block the first time
+        # anything above it grows, and this file's header has grown twice.
+        -h|--help)
+            printf 'usage: scripts/mutate [--check] <casefile>\n\n'
+            printf '  (default)  full round — build, run, require every case CAUGHT\n'
+            printf '  --check    apply and restore only; no build, no test run\n\n'
+            printf 'The casefile vocabulary is documented in this file'\''s header.\n'
+            exit 0 ;;
+        -*) red "mutate: unknown option $1"; exit 2 ;;
+        *) MUTATION_ARGV+=("$1") ;;
+    esac
+    shift
+done
+
+if (( ${#MUTATION_ARGV[@]} != 1 )); then
+    echo "usage: scripts/mutate [--check] <casefile>" >&2
     exit 2
 fi
 
-CASEFILE="$1"
+CASEFILE="${MUTATION_ARGV[0]}"
 [[ -f "$CASEFILE" ]] || { red "no such casefile: $CASEFILE"; exit 2; }
 
 # The casefile declares the selector and targets, then the cases. Sourcing
@@ -650,7 +900,7 @@ MUTATION_PASS=declare
 source "$CASEFILE"
 mutation_init
 
-MUTATION_PASS=run
+MUTATION_PASS="$MUTATION_MODE"
 # shellcheck disable=SC1090
 source "$CASEFILE"
 
