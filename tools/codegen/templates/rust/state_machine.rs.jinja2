@@ -342,8 +342,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 
 impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
 {% if model.needs_script_engine %}
-{% for var in model.variables %}
-{% if var.type in ['int', 'string', 'bool'] %}
+{% for var in model.readable_variables %}
     /// §scxml-5.3: what the `{{ var.id }}` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the
@@ -359,7 +358,6 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         )
     }
 
-{% endif %}
 {% endfor %}
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.

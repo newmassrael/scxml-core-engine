@@ -65,11 +65,10 @@ class {{ machine_name }}StateMachine(
    itself what makes a document need a script engine, so the property was
    unreachable. What a consumer actually wanted is below: a read of the value
    the session is holding. #}
-{% if model.variables %}
+{% if model.readable_variables %}
 
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
-{% for var in model.variables %}
-{% if var.type in ['int', 'string', 'bool'] %}
+{% for var in model.readable_variables %}
 
     /**
      * §scxml-5.3: what the `{{ var.id }}` datamodel variable is holding now.
@@ -82,7 +81,6 @@ class {{ machine_name }}StateMachine(
      */
     fun {{ var.id | to_camel_case }}(): {{ 'Long' if var.type == 'int' else ('String' if var.type == 'string' else 'Boolean') }}? =
         com.sce.runtime.DatamodelRead.read{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(scriptEngine, scriptSessionId, "{{ var.id }}")
-{% endif %}
 {% endfor %}
 {% endif %}
 {% if inline_kind_code %}

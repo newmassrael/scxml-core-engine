@@ -4185,8 +4185,7 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? NULL : sm->scxml_location;
 }
-{% set typed_vars = model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
-{% for var in typed_vars %}
+{% for var in model.readable_variables %}
 
 /* W3C SCXML 5.3: what `{{ var.id }}` is holding now.
 

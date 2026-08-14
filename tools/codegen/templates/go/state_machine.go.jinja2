@@ -222,8 +222,7 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 {% endif %}
 	}
 }
-{% for var in model.variables %}
-{% if var.type in ['int', 'string', 'bool'] %}
+{% for var in model.readable_variables %}
 
 // {{ var.id | to_pascal_case }} reports what the `{{ var.id }}` datamodel variable is holding now
 // (W3C SCXML 5.3).
@@ -236,7 +235,6 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 func (p *{{ machine_name }}Policy) {{ var.id | to_pascal_case }}() ({{ 'int64' if var.type == 'int' else var.type }}, bool) {
 	return sce.ReadDatamodel{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(p.ScriptEngine, p.SessionID, "{{ var.id }}")
 }
-{% endif %}
 {% endfor %}
 
 {% include 'utility_methods.go.jinja2' %}

@@ -2148,6 +2148,13 @@
               "description": "SCE_MESH.md §16.5 wire-21 outbound routes for the partition currently being codegen'd. Maps each `<parallel>` whose role here is [`PartitionRole::NonRoot`] to the **destination partition name** — the partition that claims the parallel's root via `partitions.<root>.hosts_parallel_roots:`. Codegen uses this to pick the outbound shm channel inside `sendParallelRegionDone(parallel_id, ...)`. Empty when the partition is pure-Root, has no NonRoot parallels, or codegen runs without `--partition`.",
               "type": "object"
             },
+            "readable_variables": {
+              "description": "The `<data>` declarations that get a typed read accessor, one entry per name. The clause is cited where the rule lives, on `analyzer::readable_variables`, which computes this.\n\nDerived by [`crate::analyzer`] rather than filtered in each template, because the answer spans [`Self::variables`] and every state's own `<datamodel>` and has to reconcile them: the data model is one flat set of names, so a name declared at both depths is one variable and must yield one accessor. An emitter that walked the two lists in turn would define it twice, which is a compile failure in generated code — the kind that is loud but far from its cause. Six backends read this list; none of them repeats the reconciliation.",
+              "items": {
+                "$ref": "#/definitions/Variable"
+              },
+              "type": "array"
+            },
             "scxml_base_path": {
               "type": "string"
             },
@@ -2251,6 +2258,7 @@
             "needs_parent_template",
             "needs_script_engine",
             "parallel_regions",
+            "readable_variables",
             "states",
             "uses_cancel",
             "uses_in_predicate",

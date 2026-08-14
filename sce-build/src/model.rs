@@ -1472,6 +1472,19 @@ pub struct SCXMLModel {
 
     // Variables
     pub variables: Vec<Variable>,
+    /// The `<data>` declarations that get a typed read accessor, one entry
+    /// per name. The clause is cited where the rule lives, on
+    /// `analyzer::readable_variables`, which computes this.
+    ///
+    /// Derived by [`crate::analyzer`] rather than filtered in each
+    /// template, because the answer spans [`Self::variables`] and every
+    /// state's own `<datamodel>` and has to reconcile them: the data model
+    /// is one flat set of names, so a name declared at both depths is one
+    /// variable and must yield one accessor. An emitter that walked the two
+    /// lists in turn would define it twice, which is a compile failure in
+    /// generated code — the kind that is loud but far from its cause. Six
+    /// backends read this list; none of them repeats the reconciliation.
+    pub readable_variables: Vec<Variable>,
     pub global_scripts: Vec<Action>,
     /// True iff a `<script src="...">` element appeared in the source
     /// document but could not be loaded because the parser had no
