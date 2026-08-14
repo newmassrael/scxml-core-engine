@@ -364,6 +364,33 @@ impl LuaEngine {
         ))
         .exec()?;
 
+        // …except for `parse`, which the shared file implements as a textual
+        // JSON→Lua rewrite fed to `load()`. That makes its accepted input
+        // "JSON that also happens to be Lua", and the two are not the same
+        // language: `\uXXXX` and `\/` are legal JSON escapes Lua's lexer
+        // rejects. Overriding it with the same decoder `_event.data` uses
+        // means a document reaching a script through `JSON.parse` and the
+        // same document arriving as event data cannot disagree — which they
+        // could while one was decoded and the other rewritten. Go's engine
+        // already overrides `parse` for this reason; this is the Rust half.
+        // `stringify` stays shared: emitting JSON has no such mismatch.
+        {
+            let json_table: LuaTable = lua.globals().get("JSON")?;
+            let parse_fn = lua.create_function(|lua, text: Option<LuaString>| {
+                let Some(text) = text else {
+                    return Ok(LuaValue::Nil);
+                };
+                // A payload that is not JSON is `nil`, not an error — the
+                // shared implementation answers that way and callers test the
+                // result rather than pcall it.
+                match text.to_str() {
+                    Ok(s) => Ok(json_to_lua_value(lua, &s).unwrap_or(LuaValue::Nil)),
+                    Err(_) => Ok(LuaValue::Nil),
+                }
+            })?;
+            json_table.set("parse", parse_fn)?;
+        }
+
         // Object.keys(tbl): returns array of string keys
         let object_table = lua.create_table()?;
         let keys_fn = lua.create_function(|lua, tbl: LuaValue| {
@@ -493,81 +520,62 @@ fn lua_values_equal(a: &LuaValue, b: &LuaValue) -> bool {
     }
 }
 
-/// W3C SCXML B.2 test 578: Convert JSON object/array notation to Lua table syntax.
-/// Transforms `"key" : value` → `["key"] = value` and handles nested structures.
+/// W3C SCXML B.2 test 578: decode a JSON event payload into a Lua value.
 ///
-/// The scan is over bytes and the output is over **slices of the input**, and
-/// the split matters. Every delimiter this rewrite decides on — `"`, `\`, `:`,
-/// whitespace — is ASCII, and a UTF-8 continuation byte is always `0x80..=0xBF`,
-/// so no multi-byte character can ever be mistaken for one: scanning bytes is
-/// exact. Producing output byte-by-byte is not. Widening each byte with
-/// `as char` — which this did at four sites — decodes the input as Latin-1, so
-/// `북` (`EB B6 81`) came out as three characters and re-encoded to six bytes.
-/// Nothing failed: the rewrite succeeded, the Lua parsed, and only the value
-/// was different. A non-ASCII *key* fared worse still — mangled, it no longer
-/// matched the lookup, and the field read back as nil.
+/// Returns `None` when the payload is not JSON, which is the caller's signal to
+/// fall through to the plain-string treatment §B.2 gives non-structured data.
 ///
-/// Copying `&json[..]` ranges keeps the bytes the caller sent. The indices are
-/// always on character boundaries because they only ever advance past an ASCII
-/// delimiter or run to the end.
-fn json_to_lua_table(json: &str) -> String {
-    let mut result = String::with_capacity(json.len());
-    let bytes = json.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    while i < len {
-        if bytes[i] == b'"' {
-            // Capture the full quoted string, closing quote included.
-            let string_start = i;
-            i += 1;
-            while i < len {
-                let b = bytes[i];
-                i += 1;
-                if b == b'"' {
-                    break;
-                }
-                // An escape consumes the next byte without inspecting it. If
-                // that byte begins a multi-byte character the loop simply walks
-                // its continuation bytes, none of which can close the string.
-                if b == b'\\' && i < len {
-                    i += 1;
-                }
-            }
-            let quoted = &json[string_start..i];
+/// This replaced a rewrite that turned JSON text into Lua *source* and handed
+/// it to `load()`. That design makes the accepted input set "JSON that also
+/// happens to be Lua", and the gap is not small: `\uXXXX` and `\/` are legal
+/// JSON escapes Lua's lexer rejects, and `[1, 2]` is Lua's index syntax, not a
+/// table constructor. Each of those made `load()` fail, and the failure was not
+/// reported — it fell through to the string branch, so `_event.data` quietly
+/// stopped being a table and every field read on it came back nil. Decoding
+/// removes the whole class rather than patching its instances.
+fn json_to_lua_value(lua: &Lua, json: &str) -> Option<LuaValue> {
+    let parsed: serde_json::Value = serde_json::from_str(json).ok()?;
+    json_value_to_lua(lua, &parsed).ok()
+}
 
-            // Skip whitespace after the string. `is_ascii()` guards the widen:
-            // `char::is_whitespace` is true for U+00A0, so a bare `as char`
-            // would treat the byte 0xA0 — a legal UTF-8 continuation byte — as
-            // a separator and cut a character in half.
-            let spaces_start = i;
-            while i < len && bytes[i].is_ascii() && (bytes[i] as char).is_whitespace() {
-                i += 1;
-            }
-            let spaces = &json[spaces_start..i];
-
-            if i < len && bytes[i] == b':' {
-                i += 1; // consume ':'
-                        // JSON key → Lua: ["key"] =
-                result.push('[');
-                result.push_str(quoted);
-                result.push(']');
-                result.push_str(spaces);
-                result.push('=');
+/// Build the Lua representation of one decoded JSON node.
+fn json_value_to_lua(lua: &Lua, value: &serde_json::Value) -> LuaResult<LuaValue> {
+    match value {
+        // W3C SCXML B.2: JSON null is the datamodel's null, which Lua spells
+        // `nil`. Assigned into a table this removes the key, matching the
+        // ECMAScript datamodel's "reading an absent member yields undefined".
+        serde_json::Value::Null => Ok(LuaValue::Nil),
+        serde_json::Value::Bool(b) => Ok(LuaValue::Boolean(*b)),
+        serde_json::Value::Number(n) => {
+            // Integers stay integers. Lua 5.4 has a distinct integer subtype
+            // and `ScriptValue` reports it separately, so a payload's `200`
+            // must not arrive as `200.0` — a guard comparing against an
+            // integer literal would still pass, but anything that renders the
+            // value back into text would not round-trip.
+            if let Some(i) = n.as_i64() {
+                Ok(LuaValue::Integer(i))
             } else {
-                // Just a string value
-                result.push_str(quoted);
-                result.push_str(spaces);
+                Ok(LuaValue::Number(n.as_f64().unwrap_or(f64::NAN)))
             }
-        } else {
-            // Everything up to the next quote is carried across verbatim.
-            let run_start = i;
-            while i < len && bytes[i] != b'"' {
-                i += 1;
+        }
+        serde_json::Value::String(s) => Ok(LuaValue::String(lua.create_string(s)?)),
+        serde_json::Value::Array(items) => {
+            let table = lua.create_table()?;
+            // Lua sequences are 1-based, which is what `#t`, `ipairs` and the
+            // generated `foreach` lowering all assume.
+            for (index, item) in items.iter().enumerate() {
+                table.set(index + 1, json_value_to_lua(lua, item)?)?;
             }
-            result.push_str(&json[run_start..i]);
+            Ok(LuaValue::Table(table))
+        }
+        serde_json::Value::Object(fields) => {
+            let table = lua.create_table()?;
+            for (key, item) in fields {
+                table.set(lua.create_string(key)?, json_value_to_lua(lua, item)?)?;
+            }
+            Ok(LuaValue::Table(table))
         }
     }
-    result
 }
 
 /// Parse `xml_content` into a full DOM tree and push the resulting
@@ -813,17 +821,12 @@ impl IScriptEngine for LuaEngine {
                         event_table.set("data", val).map_err(map_lua_err)?;
                     }
                     Err(_) => {
-                        // W3C SCXML B.2 test 578: Try JSON-to-Lua conversion ("key": val → ["key"] = val)
-                        let lua_syntax = json_to_lua_table(event_data);
-                        let json_result = session
-                            .lua
-                            .load(format!("return {}", lua_syntax))
-                            .eval::<LuaValue>();
-                        match json_result {
-                            Ok(val) => {
+                        // W3C SCXML B.2 test 578: the payload is JSON, so decode it.
+                        match json_to_lua_value(&session.lua, event_data) {
+                            Some(val) => {
                                 event_table.set("data", val).map_err(map_lua_err)?;
                             }
-                            Err(_) => {
+                            None => {
                                 // W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
                                 let normalized: String = event_data
                                     .split_whitespace()
