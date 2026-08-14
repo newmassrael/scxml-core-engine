@@ -8,7 +8,6 @@
 #include "events/EventRaiserService.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
-#include "runtime/JsonUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <sstream>
 
@@ -71,21 +70,13 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
 
         // W3C SCXML: Format params as JSON object to match ECMAScript data model
         // This enables _event.data.paramName access (Test 233, 178 compliance)
-        if (!event.params.empty()) {
-            json eventDataJson = json::object();
-
-            // Add all params to the JSON object (W3C SCXML: Support duplicate param names - Test 178)
-            for (const auto &param : event.params) {
-                if (param.second.size() == 1) {
-                    // Single value: store as string
-                    eventDataJson[param.first] = param.second[0];
-                } else if (param.second.size() > 1) {
-                    // Multiple values: store as array (duplicate param names)
-                    eventDataJson[param.first] = param.second;
-                }
-            }
-
-            eventData = JsonUtils::toCompactString(eventDataJson);
+        //
+        // Through EventDataHelper rather than inline, for the reason spelled
+        // out in ParentEventTarget: the inline copy ignored `typedParams` and
+        // stringified every value, so a numeric `<param>` reaching an invoked
+        // child compared unequal to its own literal.
+        if (!event.params.empty() || !event.typedParams.empty()) {
+            eventData = EventDataHelper::buildEventDataJson(event.params, event.typedParams);
         }
 
         // §scxml-5.10: Raise event with origin tracking and origintype (test 253)
