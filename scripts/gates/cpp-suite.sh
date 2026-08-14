@@ -96,6 +96,34 @@ if (( registered + c11 != total )); then
 fi
 
 sce_gate_step "registered non-c11 tests: $registered (of $total)"
+
+# Whether this machine could register the mesh half at all.
+#
+# The floor below asks "did the tree lose cases", and on a machine without the
+# transport SDKs it was answering a different question. The mesh transport
+# suites are registered only when `find_package` locates vsomeip3, zenohcxx or
+# CycloneDDS, and the configure says so in as many words — `vsomeip3 not found
+# — skipping mesh_someip_compile_test`. Measured 2026-08-14 on the build
+# machine: 49 mesh cases absent for that reason, 129 non-c11 registered, and
+# this gate reported FAILED — a verdict about the author's tree for a fact
+# about the machine's installed packages. That is the distinction
+# `sce_gate_cannot_run` exists for, and the one
+# `gate_registry_contract`/`mnemosyne-cli` already paid for once.
+#
+# The `..._DIR` cache entries are read rather than the packages re-detected:
+# they are what the SAME `find_package` calls that gate the tests left behind,
+# so this cannot disagree with the configure the way a second detection would.
+missing_transports=()
+for _pkg in vsomeip3 zenohcxx CycloneDDS; do
+    if grep -q "^${_pkg}_DIR:PATH=.*-NOTFOUND$" "$BUILD_DIR/CMakeCache.txt" 2>/dev/null; then
+        missing_transports+=("$_pkg")
+    fi
+done
+
+if (( ${#missing_transports[@]} > 0 )); then
+    sce_gate_cannot_run "this machine has no ${missing_transports[*]}, so the mesh transport cases are not registered ($registered non-c11 here against a floor of 140) and the 'engine + mesh' half this gate is named for cannot be assembled. Nothing is claimed about the tree. Install the SDK(s), or run this gate where they are present — the local workstation registers 178."
+fi
+
 if (( registered < 140 )); then
     sce_gate_fail "only $registered non-c11 test(s) registered (expected at least 140) — the gate would report on a smaller set than its name claims"
 fi
