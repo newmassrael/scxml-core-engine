@@ -157,6 +157,18 @@ func NewSessionIdsAreDistinctPolicy() SessionIdsAreDistinctPolicy {
 	}
 }
 
+// FirstSid reports what the `firstSid` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `firstSid` was assigned a value of another type, or the engine refused.
+func (p *SessionIdsAreDistinctPolicy) FirstSid() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "firstSid")
+}
+
 
 
 

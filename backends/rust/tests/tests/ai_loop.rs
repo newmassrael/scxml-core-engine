@@ -371,6 +371,58 @@ fn the_machine_answers_what_its_own_datamodel_holds() {
     );
 }
 
+/// The strategy a host edits is the strategy it can read back.
+///
+/// The budget above is the numeric half of the datamodel. This is the other
+/// half, and it is the half the example's own comment calls editable: the
+/// north star, the milestone, the prompts built from them, the marker that
+/// ends the run. A supervisor that is going to send `start_prompt` has to be
+/// able to see what it is about to send, and a UI over this loop has nothing
+/// to display without these.
+///
+/// They were unreadable for the same reason none of them looked unusual: the
+/// document spells its strings with `'…'`, and the classifier deciding which
+/// variables get an accessor tested for `"`. Eight of the sixteen declarations
+/// were silently untyped, so this file could assert the budget and pass while
+/// the strategy was not reachable at all.
+///
+/// `start_prompt` is asserted through its parts rather than as one literal,
+/// because it is a concatenation: it exists to prove that a value the document
+/// COMPUTES from its strings is readable too, not only the ones it spells out.
+#[test]
+fn the_strategy_a_host_edits_is_the_strategy_it_can_read_back() {
+    let e = started();
+
+    assert_eq!(
+        e.policy().done_marker(),
+        Some("MILESTONE REACHED".to_string()),
+        "⚠ the marker that decides when the run has converged must be readable \
+         off the machine — a host matching the session's report against it \
+         cannot ask the document"
+    );
+    assert_eq!(
+        e.policy().north_star(),
+        Some("(edit me) the outcome this loop exists to reach".to_string()),
+        "the goal the author edits is the first thing a supervisor displays"
+    );
+    assert_eq!(
+        e.policy().milestone(),
+        Some("(edit me) the next checkpoint on the way there".to_string()),
+        "so is the checkpoint it is working toward"
+    );
+
+    let start = e.policy().start_prompt().expect(
+        "⚠ the prompt the loop sends into a fresh session must be \
+                 readable before it is sent",
+    );
+    assert!(
+        start.contains("(edit me) the outcome this loop exists to reach")
+            && start.contains("Report what you did"),
+        "the composed prompt must carry the authored strings it was built from, \
+         so a host reading it sees what the session will receive: {start:?}"
+    );
+}
+
 /// A machine that has not been booted cannot answer, and says so.
 ///
 /// The failure this refuses is the one a default-valued field would produce: a

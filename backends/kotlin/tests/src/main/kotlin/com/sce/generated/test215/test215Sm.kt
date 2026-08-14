@@ -43,6 +43,18 @@ class Test215StateMachine(
 
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
 
+    /**
+     * §scxml-5.3: what the `Var1` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `Var1` was assigned a value of another type, or the engine refused.
+     */
+    fun Var1(): String? =
+        com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "Var1")
+
     override val initialState: Test215State = Test215State.S0
 
     // W3C SCXML B.1: Initialize script engine before entering initial state

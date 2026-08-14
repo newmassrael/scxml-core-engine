@@ -45,6 +45,18 @@ class SessionIdsAreDistinctStateMachine(
 
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
 
+    /**
+     * §scxml-5.3: what the `firstSid` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `firstSid` was assigned a value of another type, or the engine refused.
+     */
+    fun firstSid(): String? =
+        com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "firstSid")
+
     override val initialState: SessionIdsAreDistinctState = SessionIdsAreDistinctState.Waiting
 
     // W3C SCXML B.1: Initialize script engine before entering initial state
