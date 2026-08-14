@@ -487,8 +487,13 @@ mutation_ctest_run() {
     # Kept rather than discarded, because it carries the only naming of what
     # went red that is finer than a ctest entry: one entry here is a binary
     # holding hundreds of assertions.
+    # `--output-on-failure` is what puts gtest's own verdict lines in reach:
+    # without it ctest prints only its per-entry pass/fail, so a red round
+    # over a binary holding hundreds of assertions could be attributed no
+    # further than the binary's name. Measured — the first C++ round under
+    # this harness reported `red: IntegrationTests` and nothing finer.
     ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(nproc)" \
-        --output-junit "$report" >"$console" 2>&1 || true
+        --output-on-failure --output-junit "$report" >"$console" 2>&1 || true
     mutation_failures_from_gtest < "$console" > "$MUTATION_FAILING"
     if [[ ! -f "$report" ]]; then
         printf '0 0\n'
