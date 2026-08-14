@@ -4,26 +4,30 @@
      Exercises the canonical-JSON contract introduced when
      `DoneDataHelper::evaluateContent` was rewired through
      `EventDataHelper::scriptValueToJsonString`. The `<content>`
-     expression evaluates to a two-level nested Lua table mixing an
+     expression evaluates to a two-level nested object mixing an
      inner object (`status`) and an inner array (`codes`) of integers.
 
      Round-trip proof: the worker stashes canonical JSON
      (`{"result":{"codes":[200,201],"status":"ok"}}`) onto the engine,
      `ChildSessionAdapter::getDonedata` forwards it unchanged to the
      wire, and the parent's `setPolicyMetadata` hydrates it back into
-     a typed Lua table via `EventDataHelper::jsonStringToScriptValue`.
+     a typed value via `EventDataHelper::jsonStringToScriptValue`.
      The parent cond asserts all three axes simultaneously:
-       - nested object property access (`.result.status == 'ok'`);
-       - nested array element access (`.result.codes[1] == 200`);
+       - nested object property access (`.result.status === 'ok'`);
+       - nested array element access (`.result.codes[0] === 200`);
        - numeric type preservation (integer equality on `200`, `201`)
          — a regression in the string/number JSON serializer would
-         surface as `_event.data.result.codes[1] == "200"` mismatch. -->
+         surface as `_event.data.result.codes[0] === "200"` mismatch.
+
+     The expression is ECMAScript because the document declares
+     `datamodel="ecmascript"`; it is parenthesised so the leading `{`
+     opens an object literal rather than a block. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" initial="done"
        name="worker_session_f_donedata_nested">
     <final id="done">
         <donedata>
-            <content expr="{result = {status = 'ok', codes = {200, 201}}}"/>
+            <content expr="({result: {status: 'ok', codes: [200, 201]}})"/>
         </donedata>
     </final>
 </scxml>
