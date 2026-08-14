@@ -1106,7 +1106,6 @@ fn render_kotlin(
         event_members => event_members,
         leaf_events => minijinja::Value::from_serialize(&leaf_events),
         license_config => minijinja::Value::from_serialize(license_config()),
-        kotlin_default => minijinja::Value::from_object(KotlinDefaultFn),
         kotlin_package_prefix => package_prefix.unwrap_or("com.sce.generated"),
         initial_entry_root => initial_entry_root,
         ancestor_chains => minijinja::Value::from_serialize(&ancestor_chains),
@@ -1129,88 +1128,6 @@ fn render_kotlin(
     let output = tmpl.render(ctx).map_err(render_error)?;
     // Template leaves class body open; we close it here (implicit contract with state_machine.kt.jinja2)
     Ok(output.trim_end().to_string() + "\n}\n")
-}
-
-/// kotlin_default callable from templates.
-#[derive(Debug)]
-struct KotlinDefaultFn;
-
-impl std::fmt::Display for KotlinDefaultFn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<kotlin_default>")
-    }
-}
-
-impl minijinja::value::Object for KotlinDefaultFn {
-    fn call(
-        self: &std::sync::Arc<Self>,
-        _state: &minijinja::State,
-        args: &[minijinja::Value],
-    ) -> Result<minijinja::Value, minijinja::Error> {
-        if let Some(var) = args.first() {
-            let var_type = var
-                .get_attr("type")
-                .ok()
-                .and_then(|v| {
-                    if v.is_undefined() {
-                        None
-                    } else {
-                        Some(v.to_string())
-                    }
-                })
-                .unwrap_or_default();
-            let expr = var
-                .get_attr("expr")
-                .ok()
-                .and_then(|v| {
-                    if v.is_undefined() {
-                        None
-                    } else {
-                        Some(v.to_string())
-                    }
-                })
-                .unwrap_or_default();
-
-            let default = if expr.is_empty() {
-                // No expr: return type-based default
-                match var_type.as_str() {
-                    "int" => "0".to_string(),
-                    "string" => "\"\"".to_string(),
-                    "bool" => "false".to_string(),
-                    _ => "null".to_string(),
-                }
-            } else {
-                // Has expr: use the expression value
-                match var_type.as_str() {
-                    "int" => expr.clone(),
-                    "bool" => {
-                        if expr == "true" || expr == "false" {
-                            expr.clone()
-                        } else {
-                            "false".to_string()
-                        }
-                    }
-                    "string" => {
-                        if expr.starts_with('"') && expr.ends_with('"') {
-                            // Already double-quoted: escape $ for Kotlin string interpolation
-                            let inner = &expr[1..expr.len() - 1];
-                            format!("\"{}\"", inner.replace('$', "\\$"))
-                        } else if expr.starts_with('\'') && expr.ends_with('\'') {
-                            // Single-quoted: convert to double-quoted Kotlin string
-                            let inner = &expr[1..expr.len() - 1];
-                            format!("\"{}\"", inner.replace('$', "\\$"))
-                        } else {
-                            expr.clone()
-                        }
-                    }
-                    _ => "null".to_string(),
-                }
-            };
-            Ok(minijinja::Value::from(default))
-        } else {
-            Ok(minijinja::Value::from("null"))
-        }
-    }
 }
 
 // ── Go generator ────────────────────────────────────────────────

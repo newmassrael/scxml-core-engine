@@ -19,15 +19,19 @@
 // W3C SCXML C.1: `publishedOrigin` turns the sender's session id into the
 // address it published, at the boundary where `_event.origin` becomes
 // visible to the document.
-#include "common/EventDataHelper.h"
 #include "common/FinalizeHelper.h"
 #include "common/IOProcessorHelper.h"
+// §scxml-5.3: the typed read accessors below take the datamodel back out of
+// the session the script engine owns, rather than shadowing it in a member.
+#include "common/DataModelReadHelper.h"
+#include "common/EventDataHelper.h"
 #include "common/InPredicateHelper.h"
 #include "core/EntryExitHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/StateEntryHelper.h"
 #include "core/TransitionHelper.h"
 #include <cstring>
+#include <optional>
 #include <optional>
 #include <vector>
 // W3C SCXML B.1: every generated SM exposes setScriptEngine(IScriptEngine&)
@@ -96,8 +100,23 @@ struct inline_mixedPolicy {
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = true;
 
-    // Datamodel variables
-    int rpm = 0;
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+    /**
+     * @brief §scxml-5.3: what the `rpm` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: <assign> writes into the session,
+     * so a reader frozen at generation time would answer the document's
+     * literal for the whole run. `nullopt` means the machine cannot answer —
+     * no script engine is set, the session is not initialized yet,
+     * `rpm` was assigned a value of another type, or the engine refused.
+     */
+    ::std::optional<int64_t> rpm() const {
+        if (!scriptEngine_ || !sessionId_.has_value()) {
+            return ::std::nullopt;
+        }
+        return ::SCE::DataModelReadHelper::readInt(
+            *scriptEngine_, sessionId_.value(), "rpm");
+    }
 
     // ── SCE Forge: Inline kind member functions ──────────────
     // SCE Forge: Inline lookup 'rpmStatus'

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 195556f7381b7d98e015a576c984a3d37618cbcc845bd17300f1f7caca179032
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -257,15 +257,6 @@ pub struct AiLoopPolicy {
     // under no_std), mirroring `active_states`. Recorded history is always a
     // subset of the active configuration, so it cannot exceed the depth bound.
     history_where: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<AiLoopState>>,
-    // W3C SCXML 5.3: Datamodel variables
-    screen_permissions: bool,
-    max_turns: i64,
-    reflect_every: i64,
-    max_restarts: i64,
-    turns: i64,
-    turns_since_reflect: i64,
-    screened: i64,
-    restarts: i64,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -300,6 +291,126 @@ pub struct AiLoopPolicy {
 }
 
 impl AiLoopPolicy {
+    /// §scxml-5.3: what the `screen_permissions` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `screen_permissions` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn screen_permissions(&self) -> Option<bool> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_bool(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "screen_permissions",
+        )
+    }
+
+    /// §scxml-5.3: what the `max_turns` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `max_turns` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn max_turns(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "max_turns",
+        )
+    }
+
+    /// §scxml-5.3: what the `reflect_every` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `reflect_every` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn reflect_every(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "reflect_every",
+        )
+    }
+
+    /// §scxml-5.3: what the `max_restarts` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `max_restarts` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn max_restarts(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "max_restarts",
+        )
+    }
+
+    /// §scxml-5.3: what the `turns` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `turns` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn turns(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "turns",
+        )
+    }
+
+    /// §scxml-5.3: what the `turns_since_reflect` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `turns_since_reflect` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn turns_since_reflect(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "turns_since_reflect",
+        )
+    }
+
+    /// §scxml-5.3: what the `screened` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `screened` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn screened(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "screened",
+        )
+    }
+
+    /// §scxml-5.3: what the `restarts` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `restarts` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn restarts(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "restarts",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -326,14 +437,6 @@ impl AiLoopPolicy {
             pending_event_origintype: ::sce_rust_runtime::SceString::new(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             history_where: None,
-            screen_permissions: false,
-            max_turns: 40,
-            reflect_every: 8,
-            max_restarts: 6,
-            turns: 0,
-            turns_since_reflect: 0,
-            screened: 0,
-            restarts: 0,
             session_id: None,
             script_engine_initialized: false,
             basic_http_access_uri: String::new(),
