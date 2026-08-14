@@ -21,13 +21,32 @@ import org.xml.sax.InputSource
 import java.io.StringReader
 
 /**
- * Lua 5.4 ECMAScript engine for W3C SCXML datamodel evaluation.
+ * Lua 5.4, running SCXML expressions that were rewritten from ECMAScript.
  *
- * Each session gets its own lua_State (variable isolation).
- * ECMAScript expressions from SCXML are automatically transformed to Lua
- * via [EcmaScriptToLuaTransformer] before evaluation.
+ * **This is not an ECMAScript engine, and a `datamodel="ecmascript"` document
+ * does not run correctly on it.** Measured 2026-08-14 against the shared
+ * table in `tests/ecmascript/ecma262_semantics.json`: 27 of its 58 cases are
+ * answered differently from what ECMA-262 says, and the disagreements are not
+ * exotic — `0 && x` comes back true, `1 == '1'` comes back false, `-7 % 3`
+ * comes back 2, a computed array index is off by one. The C++ build measured
+ * the same class at 26 of 58 and flipped its default engine away from Lua for
+ * that reason. `EcmaScriptSemanticsTest` holds this paragraph to the
+ * measurement, so it cannot go back to promising more than the engine does.
  *
- * For AOSP/AAOS production, this replaces Rhino with a faster native engine.
+ * This header used to read "For AOSP/AAOS production, this replaces Rhino
+ * with a faster native engine". It is faster, and that sentence sent a reader
+ * building an AAOS product to an engine that answers their guards wrong.
+ * For that product the engines that answer ECMA-262 are Rhino on the JVM and
+ * QuickJS natively — both measured at 58 of 58 by the same test.
+ *
+ * What it remains good for is a document whose expressions stay inside what
+ * the rewriter covers, on a device with no room for a JS engine. That is a
+ * real position; it is just not the same as running ECMAScript.
+ *
+ * Each session gets its own lua_State (variable isolation). ECMAScript
+ * expressions from SCXML are transformed to Lua via
+ * [EcmaScriptToLuaTransformer] before evaluation — a rewriter, not an
+ * interpreter of the language, which is where the 27 come from.
  */
 class LuaScriptEngine : ScxmlScriptEngine {
 
