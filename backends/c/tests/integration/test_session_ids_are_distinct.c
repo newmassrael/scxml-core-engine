@@ -27,16 +27,107 @@
 // there is no committed tree for the c11 backend.
 
 #include <stdio.h>
+#include <string.h>
 
 #include "session_ids_are_distinct_sm.h"
 
+// W3C SCXML 5.3: the machine answers what its own datamodel holds.
+//
+// Asserted here rather than in a fixture of its own because this document
+// already declares the shape that separates a real reader from a frozen one:
+// `firstSid` is authored `''` and then assigned the first child's session id
+// while the run is going. A reader that answered the document's literal would
+// say "" at every point, and pass any check that only asked whether it could
+// be called.
+//
+// The other five backends have had this since the accessor emission landed;
+// C11 emitted no datamodel reader at all, so a host driving a generated
+// machine on an MCU could not ask it anything about its own datamodel. This
+// is that gap's assertion, on the backend that had it.
+static int check_datamodel_reader(const session_ids_are_distinct_t *sm) {
+    char buf[SCE_MAX_ID_LEN];
+    size_t len = (size_t)-1;
+
+    if (!session_ids_are_distinct_first_sid(sm, buf, sizeof(buf), &len)) {
+        fprintf(stderr, "session_ids_are_distinct: FAIL - `firstSid` could not be read. A `<data>` "
+                        "the document declares with a string initializer must be readable off the "
+                        "machine, in the host's own type.\n");
+        return 1;
+    }
+    // The document authors `firstSid` as `''` and assigns a child's session id
+    // while the run is going, so anything non-empty here is a value only the
+    // datamodel knew. This is the whole discriminator: a reader backed by a
+    // copy taken at generation time answers "" for the entire run.
+    if (buf[0] == '\0') {
+        fprintf(stderr, "session_ids_are_distinct: FAIL - `firstSid` read as empty. The reader must "
+                        "report what the datamodel HOLDS, and by this point a child's session id "
+                        "has been assigned over the authored empty string.\n");
+        return 1;
+    }
+    if (len != strlen(buf)) {
+        fprintf(stderr,
+                "session_ids_are_distinct: FAIL - the reader reported length %zu for a %zu-byte "
+                "answer. `len` carries the FULL length so a caller can size its buffer.\n",
+                len, strlen(buf));
+        return 1;
+    }
+    // A one-byte buffer can hold nothing but the terminator, so it forces the
+    // truncating branch. `len` must still name what would have fit, which is
+    // the only thing that lets a caller recover.
+    char tiny[1];
+    size_t needed = 0u;
+    if (!session_ids_are_distinct_first_sid(sm, tiny, sizeof(tiny), &needed)) {
+        fprintf(stderr, "session_ids_are_distinct: FAIL - a buffer too small to hold the answer "
+                        "made the reader report that it could not answer. Truncation is a fact "
+                        "about the caller's buffer, not about the machine.\n");
+        return 1;
+    }
+    if (tiny[0] != '\0' || needed != len) {
+        fprintf(stderr,
+                "session_ids_are_distinct: FAIL - the truncating branch wrote %zu byte(s) and "
+                "reported a needed length of %zu, expected an empty NUL-terminated prefix and %zu. "
+                "A caller sizing its next buffer from this would get it wrong.\n",
+                strlen(tiny), needed, len);
+        return 1;
+    }
+    return 0;
+}
+
 int main(void) {
-    session_ids_are_distinct_t sm;
+    // Zero-initialised rather than left indeterminate: the check below reads
+    // the machine BEFORE `_init` has run, and an indeterminate `L` would make
+    // that read undefined rather than answerable. `_init` memsets the struct
+    // regardless, so this costs the run nothing.
+    //
+    // There is no second reading taken between `_init` and `_run`: measured,
+    // `_init` stabilises the initial macrostep, so a child has already
+    // reported and `firstSid` is assigned by the time it returns. A check
+    // expecting the authored `''` there was asserting something false about
+    // this document.
+    session_ids_are_distinct_t sm = {0};
+
+    // Nothing has read the document yet, so there is no session holding a
+    // datamodel and the only honest answer is "cannot answer". A reader
+    // backed by a struct member would report the authored literal here.
+    {
+        char buf[SCE_MAX_ID_LEN];
+        if (session_ids_are_distinct_first_sid(&sm, buf, sizeof(buf), NULL)) {
+            fprintf(stderr, "session_ids_are_distinct: FAIL - an uninitialised machine answered a "
+                            "datamodel read. Before `_init` there is no session holding one.\n");
+            return 1;
+        }
+    }
+
     session_ids_are_distinct_init(&sm);
 
     // No `<send delay>` here: both children report during their own `_init`,
     // so the macrostep loop in `_run` decides the verdict.
     session_ids_are_distinct_run(&sm);
+
+    if (check_datamodel_reader(&sm)) {
+        session_ids_are_distinct_destroy(&sm);
+        return 1;
+    }
 
     const int pass = session_ids_are_distinct_in_state(&sm, SESSION_IDS_ARE_DISTINCT_STATE_PASS);
     const int fail = session_ids_are_distinct_in_state(&sm, SESSION_IDS_ARE_DISTINCT_STATE_FAIL);

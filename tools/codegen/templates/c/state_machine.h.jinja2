@@ -435,6 +435,54 @@ const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}
    the one a `<send target>` must carry to be delivered here. */
 const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
+{% set typed_vars = model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
+{% if typed_vars %}
+
+/* ── Datamodel readers (W3C SCXML 5.3) ────────────────────────────── */
+
+/* What a declared `<data>` is holding NOW, in the host's own type.
+   Cpp / Rust / Go / Kotlin / Python return the same three types through
+   their own read helpers; this is the C11 member of that set, shaped to
+   C's conventions rather than to theirs.
+
+   The read goes to the datamodel's one home — the lua_State this machine
+   owns. There is no copy on the struct to read instead, and there could
+   not be a useful one: `<assign>` writes into the session, so anything
+   captured at generation time would answer the authored literal for the
+   whole run.
+
+   `false` means the machine cannot answer, and collapses the three
+   reasons a consumer would act on identically: the machine is not
+   initialised, the variable was assigned a value of another type while
+   the run was going, or the lua_State is gone. A NULL `sm` reads the
+   same way.
+
+   Only a `<data>` whose initializer declares a host type gets a reader.
+   One initialised from an expression whose type the document does not
+   state stays reachable the way it always was — through the datamodel
+   itself — because a reader that guessed would be wrong on the first
+   `<assign>`.
+
+   Strings are copied into the caller's buffer rather than returned as a
+   pointer: the value belongs to the lua_State and may be collected, and
+   this backend targets deployments with no allocator to hand one out
+   from. `len` follows the snprintf convention — it receives the FULL
+   length, so `*len >= cap` says the copy in `out` is a truncated prefix
+   and names the buffer that would hold it. Pass NULL for `len` when the
+   buffer is known to be large enough. `out` is always NUL-terminated
+   when the call returns true. */
+{% for var in typed_vars %}
+{% if var.type == 'string' %}
+bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
+{{ ' ' * (csym_prefix | length + model.name | length + (var.id | to_snake_case | length) + 11) }}char *out, size_t cap, size_t *len);
+{% elif var.type == 'int' %}
+bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t *out);
+{% else %}
+bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm, bool *out);
+{% endif %}
+{% endfor %}
+{% endif %}
+
 {% if not model.has_parent_communication %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
    Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
