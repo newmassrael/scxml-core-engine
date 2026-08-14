@@ -26,15 +26,25 @@ mutation_targets sce-build/src/w3c_registry.rs \
                  sce-build/tests/cli_documented_catalog_paths.rs
 mutation_runtime_targets sce-build/src/bin/sce_codegen.rs
 
+# Both anchored through the last line of `w3c_registry_flag_help`'s format
+# string. The constant alone closes two `format!` calls in this file — the
+# registry flag's help and the catalog flag's — so the shorter anchor named
+# the registry flag only because it comes first, and the case below it
+# mutates the OTHER one deliberately. An anchor that distinguishes them is
+# what makes the pair say two different things.
 mutation_case "the registry flag documents the path the registry used to live at" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
+     "         build drive the suite without owning SCE's directory layout.\",\n"
      "        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH\n    )\n}",
+     "         build drive the suite without owning SCE's directory layout.\",\n"
      "        \"tests/CMakeLists.txt\"\n    )\n}")
 PY
 
 mutation_case "the registry flag describes the catalog without naming it" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
+     "         build drive the suite without owning SCE's directory layout.\",\n"
      "        sce_build::w3c_registry::W3C_REGISTRY_RELATIVE_PATH\n    )\n}",
+     "         build drive the suite without owning SCE's directory layout.\",\n"
      "        \"the conformance catalog for this build\"\n    )\n}")
 PY
 
