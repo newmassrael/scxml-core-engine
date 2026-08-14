@@ -77,7 +77,7 @@
 {% if model.needs_script_engine %}
 #include "common/FinalizeHelper.h"
 {% endif %}
-{% if model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
+{% if model.readable_variables %}
 // §scxml-5.3: the typed read accessors below take the datamodel back out of
 // the session the script engine owns, rather than shadowing it in a member.
 #include "common/DataModelReadHelper.h"
@@ -331,10 +331,9 @@ struct {{ model.name }}Policy {
        DataModelReadHelper (see the accessors below) instead of shadowing it.
        Kotlin's template already drew this line; the other backends now do
        too. #}
-    {% if model.variables %}
+    {% if model.readable_variables %}
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
-    {% for var in model.variables %}
-    {% if var.type in ['int', 'string', 'bool'] %}
+    {% for var in model.readable_variables %}
     /**
      * @brief §scxml-5.3: what the `{{ var.id }}` datamodel variable is holding now.
      *
@@ -351,7 +350,6 @@ struct {{ model.name }}Policy {
         return ::SCE::DataModelReadHelper::read{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(
             *scriptEngine_, sessionId_.value(), "{{ var.id }}");
     }
-    {% endif %}
     {% endfor %}
     {% endif %}
 {% if inline_kind_code %}

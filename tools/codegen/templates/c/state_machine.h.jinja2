@@ -435,8 +435,7 @@ const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}
    the one a `<send target>` must carry to be delivered here. */
 const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
-{% set typed_vars = model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
-{% if typed_vars %}
+{% if model.readable_variables %}
 
 /* ── Datamodel readers (W3C SCXML 5.3) ────────────────────────────── */
 
@@ -471,7 +470,7 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    and names the buffer that would hold it. Pass NULL for `len` when the
    buffer is known to be large enough. `out` is always NUL-terminated
    when the call returns true. */
-{% for var in typed_vars %}
+{% for var in model.readable_variables %}
 {% if var.type == 'string' %}
 bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
 {{ ' ' * (csym_prefix | length + model.name | length + (var.id | to_snake_case | length) + 11) }}char *out, size_t cap, size_t *len);

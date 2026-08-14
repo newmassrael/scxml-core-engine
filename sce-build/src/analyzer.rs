@@ -94,6 +94,72 @@ fn classify_variables(model: &mut SCXMLModel) {
     for var in &mut model.variables {
         var.var_type = declared_type(&var.expr).to_string();
     }
+    // A state-scoped `<data>` is classified by the same rule, because it is
+    // the same kind of declaration into the same place: §scxml-5.3's data
+    // model is one flat set of names for the whole document, and a
+    // `<datamodel>` under a `<state>` populates that set rather than a scope
+    // of its own. The generated initialization already writes it into the
+    // session under its bare id; the only thing that used to differ was that
+    // nothing read it back.
+    for state in model.states.values_mut() {
+        for var in &mut state.datamodel {
+            var.var_type = declared_type(&var.expr).to_string();
+        }
+    }
+    model.readable_variables = readable_variables(model);
+}
+
+/// §scxml-5.3: the `<data>` declarations a typed read accessor is emitted
+/// for — one entry per name, whichever depth the name was declared at.
+///
+/// The list exists because the answer takes both halves of the document
+/// into account and the six backends must not each work that out for
+/// themselves: a name declared at both depths is one variable, so an
+/// emitter walking the two lists in turn would define the same accessor
+/// twice and the generated code would not compile. W3C's own corpus writes
+/// that shape — tests 240 and 241 declare `Var1` at the document level and
+/// again inside a state, which is the point they are making about binding.
+///
+/// A name whose declarations disagree about type gets no accessor. That is
+/// the same rule the classifier applies to `c ? 'a' : 7`, and for the same
+/// reason: an accessor's type is a claim about what the document declares,
+/// and a document that declares two things has not made one.
+fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
+    const TYPED: [&str; 3] = ["int", "string", "bool"];
+
+    let declarations = model
+        .variables
+        .iter()
+        .chain(model.states.values().flat_map(|s| s.datamodel.iter()));
+
+    // Insertion order is the emission order, and it is deterministic:
+    // document-level declarations in source order, then state-scoped ones in
+    // the `BTreeMap`'s key order. A generated file whose accessor order moved
+    // with a hash seed would fail `regen-reproduces` on every second run.
+    let mut order: Vec<&Variable> = Vec::new();
+    let mut disagreed: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+
+    for var in declarations {
+        if !TYPED.contains(&var.var_type.as_str()) {
+            // An untyped declaration of a name declared typed elsewhere is
+            // not a disagreement: `runtime` is the absence of a claim, not a
+            // competing one.
+            continue;
+        }
+        match order.iter().find(|seen| seen.id == var.id) {
+            Some(seen) if seen.var_type == var.var_type => {}
+            Some(_) => {
+                disagreed.insert(var.id.as_str());
+            }
+            None => order.push(var),
+        }
+    }
+
+    order
+        .into_iter()
+        .filter(|var| !disagreed.contains(var.id.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// The typed accessor an initializer declares, or `"runtime"` for none.
