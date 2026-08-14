@@ -214,6 +214,115 @@ fn a_sound_case_passes_and_leaves_its_subject_where_it_found_it() {
     );
 }
 
+/// The harness's artifact hash, for a file on disk.
+///
+/// Sourced the way `scripts/mutate` sources it, so what these tests measure
+/// is the function the harness actually calls.
+fn artifact_hash(path: &Path) -> String {
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "MUTATION_OBJCOPY=\"$(command -v objcopy)\"; \
+             source scripts/lib/mutation_artifact_hash.sh; \
+             mutation_artifact_hash {}",
+            path.display()
+        ))
+        .current_dir(repo_root())
+        .output()
+        .expect("run the artifact hash");
+    assert!(
+        out.status.success(),
+        "hashing {} failed: {}",
+        path.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// This test binary, which is an ELF carrying debug info and a build-id.
+fn own_executable() -> PathBuf {
+    std::env::current_exe().expect("a test binary has a path")
+}
+
+fn objcopy(args: &[&str]) -> bool {
+    Command::new("objcopy")
+        .args(args)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn the_artifact_hash_ignores_the_build_id_note() {
+    // Measured on this repository's C++ build: two builds of one unchanged
+    // source differ in the DWARF 5 skeleton's `DWO ID` — eight bytes the
+    // compiler picks anew per invocation — and in `.note.gnu.build-id`,
+    // which is a hash of the content and therefore follows. A harness that
+    // hashed the whole file read that as "the restore did not reproduce the
+    // baseline", which is a verdict about a mutation drawn from a nonce.
+    let dir = tempdir().expect("temp dir");
+    let stripped = dir.path().join("no-build-id");
+    if !objcopy(&[
+        "--remove-section=.note.gnu.build-id",
+        own_executable().to_str().expect("utf-8 path"),
+        stripped.to_str().expect("utf-8 path"),
+    ]) {
+        eprintln!("SKIP: objcopy unavailable");
+        return;
+    }
+    assert_eq!(
+        artifact_hash(&own_executable()),
+        artifact_hash(&stripped),
+        "two ELFs that differ only in their build-id note must hash alike"
+    );
+}
+
+#[test]
+fn the_artifact_hash_ignores_the_debug_sections() {
+    let dir = tempdir().expect("temp dir");
+    let stripped = dir.path().join("no-debug");
+    if !objcopy(&[
+        "--strip-debug",
+        own_executable().to_str().expect("utf-8 path"),
+        stripped.to_str().expect("utf-8 path"),
+    ]) {
+        eprintln!("SKIP: objcopy unavailable");
+        return;
+    }
+    assert_eq!(
+        artifact_hash(&own_executable()),
+        artifact_hash(&stripped),
+        "debugging sections must not reach the hash a verdict is drawn from"
+    );
+}
+
+#[test]
+fn the_artifact_hash_still_separates_two_different_programs() {
+    // The direction that matters more: normalisation must not flatten the
+    // question. Two different executables have to hash differently, or
+    // "the mutation reached the binary" would be answerable by nothing.
+    let dir = tempdir().expect("temp dir");
+    let altered = dir.path().join("altered");
+    // `--add-section` changes allocated content rather than debug metadata,
+    // so the normalised hash is required to notice it.
+    let payload = dir.path().join("payload.bin");
+    fs::write(&payload, b"a section the original does not carry").expect("write payload");
+    if !objcopy(&[
+        "--add-section",
+        &format!(".sce_probe={}", payload.display()),
+        own_executable().to_str().expect("utf-8 path"),
+        altered.to_str().expect("utf-8 path"),
+    ]) {
+        eprintln!("SKIP: objcopy unavailable");
+        return;
+    }
+    assert_ne!(
+        artifact_hash(&own_executable()),
+        artifact_hash(&altered),
+        "a binary carrying content the other does not must hash differently"
+    );
+}
+
 /// Feed captured runner output to one of the failure-name parsers.
 fn failure_names(function: &str, captured: &str) -> Vec<String> {
     let dir = tempdir().expect("temp dir");
