@@ -39,5 +39,6 @@ pub mod nested_final_not_terminal;
 pub mod parallel_completion_raises_done_state;
 pub mod parallel_done_state_is_delivered;
 pub mod parallel_regions_take_own_transitions;
+pub mod parallel_self_transition_keeps_its_leaf;
 pub mod send_param_payload;
 pub mod session_ids_are_distinct;

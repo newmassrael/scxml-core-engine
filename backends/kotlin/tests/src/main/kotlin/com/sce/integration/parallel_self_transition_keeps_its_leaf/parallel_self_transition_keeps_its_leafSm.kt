@@ -1,0 +1,511 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// generated-at: 0
+
+// GENERATED CODE — DO NOT EDIT
+// Source: integration_resources/parallel_self_transition_keeps_its_leaf/parallel_self_transition_keeps_its_leaf.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:53 :: _machine
+
+package com.sce.integration.parallel_self_transition_keeps_its_leaf
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface ParallelSelfTransitionKeepsItsLeafState : State {
+    data object Budget : ParallelSelfTransitionKeepsItsLeafState
+    data object Drive : ParallelSelfTransitionKeepsItsLeafState
+    data object Judging : ParallelSelfTransitionKeepsItsLeafState
+    data object Run : ParallelSelfTransitionKeepsItsLeafState
+    data object Running : ParallelSelfTransitionKeepsItsLeafState
+    data object Settled : ParallelSelfTransitionKeepsItsLeafState
+    data object Within : ParallelSelfTransitionKeepsItsLeafState
+    data object Working : ParallelSelfTransitionKeepsItsLeafState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface ParallelSelfTransitionKeepsItsLeafEvent : Event {
+    data object Check : ParallelSelfTransitionKeepsItsLeafEvent
+    data object E : ParallelSelfTransitionKeepsItsLeafEvent
+    sealed interface Error : ParallelSelfTransitionKeepsItsLeafEvent {
+        data object Execution : Error
+    }
+}
+// --- State Machine (W3C SCXML) ---
+
+class ParallelSelfTransitionKeepsItsLeafStateMachine(
+    scriptEngine: ScxmlScriptEngine,
+) : StateMachineEngine<ParallelSelfTransitionKeepsItsLeafState, ParallelSelfTransitionKeepsItsLeafEvent>(scriptEngine) {
+
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+
+    /**
+     * §scxml-5.3: what the `n` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `n` was assigned a value of another type, or the engine refused.
+     */
+    fun n(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "n")
+
+    /**
+     * §scxml-5.3: what the `m` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `m` was assigned a value of another type, or the engine refused.
+     */
+    fun m(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "m")
+
+    override val initialState: ParallelSelfTransitionKeepsItsLeafState = ParallelSelfTransitionKeepsItsLeafState.Within
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        super.enterInitialConfiguration()
+    }
+
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: ParallelSelfTransitionKeepsItsLeafState): ParallelSelfTransitionKeepsItsLeafState? = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Budget -> ParallelSelfTransitionKeepsItsLeafState.Run
+        is ParallelSelfTransitionKeepsItsLeafState.Drive -> ParallelSelfTransitionKeepsItsLeafState.Run
+        is ParallelSelfTransitionKeepsItsLeafState.Judging -> ParallelSelfTransitionKeepsItsLeafState.Running
+        is ParallelSelfTransitionKeepsItsLeafState.Running -> ParallelSelfTransitionKeepsItsLeafState.Drive
+        is ParallelSelfTransitionKeepsItsLeafState.Within -> ParallelSelfTransitionKeepsItsLeafState.Budget
+        is ParallelSelfTransitionKeepsItsLeafState.Working -> ParallelSelfTransitionKeepsItsLeafState.Running
+        else -> null
+    }
+
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: ParallelSelfTransitionKeepsItsLeafState): ParallelSelfTransitionKeepsItsLeafState = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Budget -> ParallelSelfTransitionKeepsItsLeafState.Within
+        is ParallelSelfTransitionKeepsItsLeafState.Drive -> ParallelSelfTransitionKeepsItsLeafState.Working
+        is ParallelSelfTransitionKeepsItsLeafState.Run -> ParallelSelfTransitionKeepsItsLeafState.Within
+        is ParallelSelfTransitionKeepsItsLeafState.Running -> ParallelSelfTransitionKeepsItsLeafState.Working
+        else -> state
+    }
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): ParallelSelfTransitionKeepsItsLeafState? = when (stateId) {
+        "budget" -> ParallelSelfTransitionKeepsItsLeafState.Budget
+        "drive" -> ParallelSelfTransitionKeepsItsLeafState.Drive
+        "judging" -> ParallelSelfTransitionKeepsItsLeafState.Judging
+        "run" -> ParallelSelfTransitionKeepsItsLeafState.Run
+        "running" -> ParallelSelfTransitionKeepsItsLeafState.Running
+        "settled" -> ParallelSelfTransitionKeepsItsLeafState.Settled
+        "within" -> ParallelSelfTransitionKeepsItsLeafState.Within
+        "working" -> ParallelSelfTransitionKeepsItsLeafState.Working
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: ParallelSelfTransitionKeepsItsLeafState): String = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Budget -> "budget"
+        is ParallelSelfTransitionKeepsItsLeafState.Drive -> "drive"
+        is ParallelSelfTransitionKeepsItsLeafState.Judging -> "judging"
+        is ParallelSelfTransitionKeepsItsLeafState.Run -> "run"
+        is ParallelSelfTransitionKeepsItsLeafState.Running -> "running"
+        is ParallelSelfTransitionKeepsItsLeafState.Settled -> "settled"
+        is ParallelSelfTransitionKeepsItsLeafState.Within -> "within"
+        is ParallelSelfTransitionKeepsItsLeafState.Working -> "working"
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: ParallelSelfTransitionKeepsItsLeafState): Boolean = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Budget -> false
+        is ParallelSelfTransitionKeepsItsLeafState.Drive -> false
+        is ParallelSelfTransitionKeepsItsLeafState.Run -> false
+        is ParallelSelfTransitionKeepsItsLeafState.Running -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: ParallelSelfTransitionKeepsItsLeafState): Boolean = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Run -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: ParallelSelfTransitionKeepsItsLeafState): List<ParallelSelfTransitionKeepsItsLeafState> = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Run -> listOf(ParallelSelfTransitionKeepsItsLeafState.Budget, ParallelSelfTransitionKeepsItsLeafState.Drive)
+        else -> emptyList()
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: ParallelSelfTransitionKeepsItsLeafState): Int = when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Budget -> 1
+        is ParallelSelfTransitionKeepsItsLeafState.Drive -> 3
+        is ParallelSelfTransitionKeepsItsLeafState.Judging -> 6
+        is ParallelSelfTransitionKeepsItsLeafState.Run -> 0
+        is ParallelSelfTransitionKeepsItsLeafState.Running -> 4
+        is ParallelSelfTransitionKeepsItsLeafState.Settled -> 7
+        is ParallelSelfTransitionKeepsItsLeafState.Within -> 2
+        is ParallelSelfTransitionKeepsItsLeafState.Working -> 5
+    }
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): ParallelSelfTransitionKeepsItsLeafEvent? = when (name) {
+        "check" -> ParallelSelfTransitionKeepsItsLeafEvent.Check
+        "e" -> ParallelSelfTransitionKeepsItsLeafEvent.E
+        "error.execution" -> ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: ParallelSelfTransitionKeepsItsLeafEvent): String? = when (event) {
+        is ParallelSelfTransitionKeepsItsLeafEvent.Check -> "check"
+        is ParallelSelfTransitionKeepsItsLeafEvent.E -> "e"
+        is ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution -> "error.execution"
+    }
+
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "parallel_self_transition_keeps_its_leaf",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
+
+        // W3C SCXML 5.3: Initialize variable 'n' with expr
+        try {
+            val initResult_n = engine.evaluateExpr(sid, "0")
+            engine.setVariable(sid, "n", initResult_n)
+        } catch (e: Exception) {
+            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+        }
+        // W3C SCXML 5.3: Initialize variable 'm' with expr
+        try {
+            val initResult_m = engine.evaluateExpr(sid, "0")
+            engine.setVariable(sid, "m", initResult_m)
+        } catch (e: Exception) {
+            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+        }
+
+
+
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.8: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: ParallelSelfTransitionKeepsItsLeafEvent) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
+        // Internal events (<raise>) have empty origin; external events (<send>) have session ID
+        // W3C SCXML C.1: `_event.origin` is the sender's published
+        // `_ioprocessors` location, not its bare session id — and this is the
+        // one place that publishes `_event` to the document, so this is where
+        // the id becomes a location. The engine keeps the bare id in
+        // `EventMetadata.origin` because its session-keyed lookups (`<finalize>`
+        // dispatch, cancelled-invoke filtering) match on it; converting at the
+        // raise would make one value serve two consumers that need different
+        // spellings. The conversion itself lives in
+        // `com.sce.runtime.IoProcessors.publishedOrigin`, the port of the
+        // `IOProcessorHelper::publishedOrigin` the C++ engines share: a second
+        // spelling of the rule is how the backends would stop agreeing.
+        val effectiveOrigin = com.sce.runtime.IoProcessors.publishedOrigin(
+            if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        )
+        val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
+        engine.setCurrentEvent(
+            sid,
+            com.sce.runtime.SetCurrentEventArgs(
+                name = eventName,
+                data = meta.data,
+                type = effectiveType,
+                sendId = meta.sendId,
+                origin = effectiveOrigin,
+                originType = effectiveOriginType,
+                invokeId = meta.invokeId
+            )
+        )
+    }
+
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: ParallelSelfTransitionKeepsItsLeafState,
+        event: ParallelSelfTransitionKeepsItsLeafEvent
+    ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+        is ParallelSelfTransitionKeepsItsLeafState.Judging -> processJudging(event)
+        is ParallelSelfTransitionKeepsItsLeafState.Within -> processWithin(event)
+        is ParallelSelfTransitionKeepsItsLeafState.Working -> processWorking(event)
+        else -> TransitionResult.Ignored
+    }
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processJudging(
+        event: ParallelSelfTransitionKeepsItsLeafEvent
+    ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
+        event is ParallelSelfTransitionKeepsItsLeafEvent.Check && safeEvaluateGuard("n == 1 && m == 2") -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Settled, ParallelSelfTransitionKeepsItsLeafState.Judging)
+
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processWithin(
+        event: ParallelSelfTransitionKeepsItsLeafEvent
+    ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
+        event is ParallelSelfTransitionKeepsItsLeafEvent.E -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Within, ParallelSelfTransitionKeepsItsLeafState.Within)
+
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processWorking(
+        event: ParallelSelfTransitionKeepsItsLeafEvent
+    ): TransitionResult<ParallelSelfTransitionKeepsItsLeafState> = when {
+        event is ParallelSelfTransitionKeepsItsLeafEvent.E -> TransitionResult.External(ParallelSelfTransitionKeepsItsLeafState.Judging, ParallelSelfTransitionKeepsItsLeafState.Working)
+
+        else -> TransitionResult.Ignored
+    }
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:53 :: _machine
+    override fun onEntry(state: ParallelSelfTransitionKeepsItsLeafState) {
+        when (state) {
+            is ParallelSelfTransitionKeepsItsLeafState.Budget -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:71 :: budget :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("budget")) return
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(ParallelSelfTransitionKeepsItsLeafState.Within)
+                }
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Drive -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:83 :: drive :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("drive")) return
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(ParallelSelfTransitionKeepsItsLeafState.Running)
+                }
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Judging -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:90 :: judging :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("judging")) return
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Run -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:62 :: run :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("run")) return
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
+                onEntry(ParallelSelfTransitionKeepsItsLeafState.Budget)
+                onEntry(ParallelSelfTransitionKeepsItsLeafState.Drive)
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Running -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:84 :: running :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("running")) return
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(ParallelSelfTransitionKeepsItsLeafState.Working)
+                }
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Settled -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:103 :: settled :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("settled")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Within -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:72 :: within :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("within")) return
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Working -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:85 :: working :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("working")) return
+            }
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:53 :: _machine
+    override fun onExit(state: ParallelSelfTransitionKeepsItsLeafState) {
+        when (state) {
+            is ParallelSelfTransitionKeepsItsLeafState.Budget -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:71 :: budget :: _state_body
+                activeStateIds.remove("budget")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Drive -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:83 :: drive :: _state_body
+                activeStateIds.remove("drive")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Judging -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:90 :: judging :: _state_body
+                activeStateIds.remove("judging")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Run -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:62 :: run :: _state_body
+                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
+                // in reverse document order (deepest states exit first).
+                // Defensive: when called from exitHierarchy, descendants are already
+                // exited and removed from activeStateIds — the contains() checks below
+                // prevent double-exit. This code is needed for direct onExit() calls.
+                val toExit = mutableListOf<Pair<ParallelSelfTransitionKeepsItsLeafState, Int>>()
+                if (activeStateIds.contains("budget")) {
+                    toExit.add(ParallelSelfTransitionKeepsItsLeafState.Budget to 1)
+                }
+                if (activeStateIds.contains("within")) {
+                    toExit.add(ParallelSelfTransitionKeepsItsLeafState.Within to 2)
+                }
+                if (activeStateIds.contains("drive")) {
+                    toExit.add(ParallelSelfTransitionKeepsItsLeafState.Drive to 3)
+                }
+                if (activeStateIds.contains("running")) {
+                    toExit.add(ParallelSelfTransitionKeepsItsLeafState.Running to 4)
+                }
+                if (activeStateIds.contains("judging")) {
+                    toExit.add(ParallelSelfTransitionKeepsItsLeafState.Judging to 6)
+                }
+                if (activeStateIds.contains("working")) {
+                    toExit.add(ParallelSelfTransitionKeepsItsLeafState.Working to 5)
+                }
+                toExit.sortByDescending { it.second }
+                for ((desc, _) in toExit) {
+                    onExit(desc)
+                }
+                activeStateIds.remove("run")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Running -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:84 :: running :: _state_body
+                activeStateIds.remove("running")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Settled -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:103 :: settled :: _state_body
+                activeStateIds.remove("settled")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Within -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:72 :: within :: _state_body
+                activeStateIds.remove("within")
+            }
+            is ParallelSelfTransitionKeepsItsLeafState.Working -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:85 :: working :: _state_body
+                activeStateIds.remove("working")
+            }
+        }
+    }
+
+
+    // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:53 :: _machine
+    override fun executeTransitionActions(
+        source: ParallelSelfTransitionKeepsItsLeafState,
+        event: ParallelSelfTransitionKeepsItsLeafEvent?
+    ) {
+        when (source) {
+        is ParallelSelfTransitionKeepsItsLeafState.Within -> when {
+            event is ParallelSelfTransitionKeepsItsLeafEvent.E -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:73 :: within :: _transition_0
+
+
+            executeAssign("m", "m + 1")
+            }
+            else -> {}
+        }
+        is ParallelSelfTransitionKeepsItsLeafState.Working -> when {
+            event is ParallelSelfTransitionKeepsItsLeafEvent.E -> {
+                // SCE-MAP: parallel_self_transition_keeps_its_leaf.scxml:86 :: working :: _transition_0
+
+
+            executeAssign("n", "n + 1")
+            }
+            else -> {}
+        }
+        else -> {}
+        }
+    }
+}

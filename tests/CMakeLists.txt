@@ -527,6 +527,8 @@ add_executable(integration_tests
     integration/NestedFinalNotTerminalAotTest.cpp
     integration/ParallelRegionsTakeOwnTransitionsTest.cpp
     integration/ParallelRegionsTakeOwnTransitionsAotTest.cpp
+    integration/ParallelSelfTransitionKeepsItsLeafTest.cpp
+    integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
     integration/AiLoopAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
@@ -904,6 +906,18 @@ sce_generate_static_integration_test(nested_final_not_terminal ${STATIC_INTEGRAT
 # other region. The fixture's own guard, not the harness, decides the verdict:
 # `settled` is reachable only once both regions' assignments have run.
 sce_generate_static_integration_test(parallel_regions_take_own_transitions ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.4, the axis after the one above: a region that took an external
+# self-transition still holds an atomic state, so it answers the NEXT event.
+# The two are separate fixtures because the sibling's question can be answered
+# correctly by a configuration that is already broken — measured 2026-08-14,
+# the sibling's whole driver stays green under the defect
+# `parallel_microstep_owns_exit_and_entry.cases` restores. What differs is
+# which region the engine's current-state pointer rests in: re-exiting a leaf
+# the microstep has already moved OUT of is harmless, and re-exiting one it
+# just RE-ENTERED is the loss. So the self-transitioning region is first in
+# document order here, and second there.
+sce_generate_static_integration_test(parallel_self_transition_keeps_its_leaf ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.4 + 3.7: a `<parallel>` completes when every region has reached a
 # `<final>`, and that raises `done.state.<parallel>`. A parallel owns no

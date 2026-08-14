@@ -42,18 +42,25 @@ mutation_targets sce/include/static/StaticExecutionEngine.h
 # regions, one of those being a self-transition, and the two regions resting at
 # different depths. Drop any one and the configuration survives — which is why
 # the symmetric, equal-depth fixtures in the W3C corpus never sampled it.
+#
+# ⚠ The edit inserts INTO the existing parallel branch rather than creating one.
+# An earlier revision appended `} else { ... }` to the `if constexpr` above,
+# which compiled when it was written and stopped compiling the moment
+# `e819e013e8` gave that `if` an `else` of its own — two `else` clauses on one
+# `if`. The harness reported INCONCLUSIVE rather than SURVIVED, which is the
+# whole reason it distinguishes them, but nothing ran this file between the two
+# commits, so the guard sat unproven for a day. A mutation edit that anchors on
+# the shape of neighbouring code is a claim about that shape, and this one now
+# anchors on the branch it is actually restoring the defect into.
 
 mutation_case "a parallel transition exits and enters a second time" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                         [this] { policy_.executeTransitionActions(*this); });
+     """        else {
+            resolveCurrentStateToLeaf();
         }""",
-     """        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                         [this] { policy_.executeTransitionActions(*this); });
-        } else {
+     """        else {
             executeOnExit(oldState, preTransitionStates);
             executeOnEntry(currentState_);
+            resolveCurrentStateToLeaf();
         }""")
 PY
