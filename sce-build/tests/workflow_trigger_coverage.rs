@@ -52,6 +52,12 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // answer it already knows and miss the case it exists for.
     "datamodel_read_accessor",
     "diagnostic_corpus_schema",
+    // Compiles every `cond` / `expr` / `<script>` in every committed
+    // document through the ECMAScript frontend, so a document added
+    // anywhere changes what it reads — and it is the gate that says a
+    // rejection cannot fire on a document that used to build, which is
+    // exactly the claim a stale `paths:` filter would stop checking.
+    "ecmascript_semantics",
     // Runs the CLI over every committed *.scxml and performs the repair
     // each rejection proposes, so a document added anywhere changes both
     // what it reads and what it replays.

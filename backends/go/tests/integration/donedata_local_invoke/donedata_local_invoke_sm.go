@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 
@@ -824,7 +824,7 @@ func (p *DonedataLocalInvokePolicy) tryTransitionInState(checkState DonedataLoca
 	case DonedataLocalInvokeStatePhaseContent:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == DonedataLocalInvokeEventDoneInvokeInvContent {
-			if p.evaluateGuard(`param_ok  and  _event.data == 'hello_content'`, engine) {
+			if p.evaluateGuard(`(_scxml_truthy(param_ok) and (_event.data == "hello_content"))`, engine) {
 			*currentState = DonedataLocalInvokeStatePass
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
@@ -857,7 +857,7 @@ func (p *DonedataLocalInvokePolicy) tryTransitionInState(checkState DonedataLoca
 	case DonedataLocalInvokeStatePhaseParam:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == DonedataLocalInvokeEventDoneInvokeInvParam {
-			if p.evaluateGuard(`_event.data  and  _event.data.result == 42`, engine) {
+			if p.evaluateGuard(`(_scxml_truthy(_event.data) and (_event.data.result == 42))`, engine) {
 			*currentState = DonedataLocalInvokeStatePhaseContent
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false

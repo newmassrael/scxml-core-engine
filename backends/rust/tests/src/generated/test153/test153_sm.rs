@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -286,7 +286,11 @@ impl Test153Policy {
 
         // W3C SCXML B.2: Inline content for 'Var3' (global, eval with string fallback)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
-            se, &sid, "Var3", "{1,2,3}", "[1,2,3]",
+            se,
+            &sid,
+            "Var3",
+            "{1, 2, 3}",
+            "[1,2,3]",
         ) {
             ::sce_rust_runtime::sce_log_error!("Failed to init 'Var3' in global: {}", e);
         }
@@ -338,7 +342,11 @@ impl Test153Policy {
 
         // W3C SCXML B.2: Inline content for 'Var3' (global, eval with string fallback)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
-            se, &sid, "Var3", "{1,2,3}", "[1,2,3]",
+            se,
+            &sid,
+            "Var3",
+            "{1, 2, 3}",
+            "[1,2,3]",
         ) {
             ::sce_rust_runtime::sce_log_error!("Failed to init 'Var3' in global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -703,7 +711,7 @@ impl StatePolicy for Test153Policy {
                                         let mut iteration_success = true;
                                         'foreach_body: {
                                             // W3C SCXML 5.9: Script engine guard (Var1 < Var2)
-                                            if self.safe_evaluate_guard("Var1 < Var2", engine) {
+                                            if self.safe_evaluate_guard("(Var1 < Var2)", engine) {
                                                 {
                                                     // W3C SCXML 5.3: <assign location="Var1">
                                                     self.ensure_script_engine();
@@ -903,7 +911,7 @@ impl Test153Policy {
             Test153State::S0 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test153Event::Null {
-                    if self.safe_evaluate_guard("Var4 == 0", engine) {
+                    if self.safe_evaluate_guard("_scxml_eq(Var4, 0)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;

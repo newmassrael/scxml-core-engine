@@ -321,6 +321,25 @@ if(SCE_HAS_SCRIPTING)
     add_custom_target(json_builtins_header DEPENDS "${_JSON_LUA_HDR}")
     add_dependencies(sce_scripting json_builtins_header)
 
+    # W3C SCXML B.2: the ECMAScript operators Lua does not share, from the
+    # same shared source every other backend loads. The generated code calls
+    # these by name (`_scxml_add`, `_scxml_eq`, the bitwise family), so an
+    # engine that does not load this file runs generated Lua that references
+    # undefined globals.
+    set(_ECMA_LUA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/include/scripting/ecma_semantics.lua")
+    set(_ECMA_LUA_HDR "${CMAKE_CURRENT_BINARY_DIR}/generated/ecma_semantics_lua.h")
+    add_custom_command(
+        OUTPUT "${_ECMA_LUA_HDR}"
+        COMMAND ${CMAKE_COMMAND}
+            -D "LUA_SRC=${_ECMA_LUA_SRC}"
+            -D "HDR_OUT=${_ECMA_LUA_HDR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedLuaScript.cmake"
+        DEPENDS "${_ECMA_LUA_SRC}"
+        COMMENT "Embedding ecma_semantics.lua as C++ string literal"
+    )
+    add_custom_target(ecma_semantics_header DEPENDS "${_ECMA_LUA_HDR}")
+    add_dependencies(sce_scripting ecma_semantics_header)
+
     target_include_directories(sce_scripting
         PUBLIC
             # Scripting flat path — moved here from sce_base so only the

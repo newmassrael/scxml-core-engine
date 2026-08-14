@@ -87,6 +87,14 @@ cli = ["clap", "object"]
 # `conformance.rs` generates the schema from the types and fails if the
 # checked-in `tests/forge/conformance/fixtures.schema.json` diverges.
 [dev-dependencies]
+# The Lua engine a generated Rust state machine runs on. The ECMAScript
+# frontend's gate evaluates the Lua it emits *in this engine* rather than in
+# a test-local interpreter, so the natives (`_scxml_truthy`, `_typeof`,
+# `_isArray`) and the shared `ecma_semantics.lua` under test are the
+# production ones and cannot drift from what the assertions describe.
+# Dev-only, and no cycle: the engine depends on the runtime, not on codegen.
+sce-rust-lua = { path = "../backends/rust/lua" }
+sce-rust-runtime = { path = "../backends/rust/runtime" }
 schemars = "0.8"
 # Full JSON Schema validator. Drives the AST export drift guard's
 # round-trip assertions through the same code path a real consumer

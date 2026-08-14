@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -250,7 +250,7 @@ impl Test175Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "'0s'",
+            se, &sid, "Var1", "\"0s\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -282,7 +282,7 @@ impl Test175Policy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var1", "'0s'",
+            se, &sid, "Var1", "\"0s\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -603,7 +603,7 @@ impl StatePolicy for Test175Policy {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let expr = "'1s'";
+                        let expr = "\"1s\"";
                         // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                         // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                         // through evaluate_expression + set_variable would round-trip through ScriptValue

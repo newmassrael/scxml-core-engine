@@ -505,6 +505,12 @@ class LuaScriptEngine : ScxmlScriptEngine {
             end
         """.trimIndent())
 
+        // W3C SCXML B.2: the ECMAScript operators Lua does not share — `+`,
+        // `==` and the bitwise family. Single Source of Truth at
+        // sce/include/scripting/ecma_semantics.lua; the code sce-build emits
+        // calls these by name on every backend.
+        LuaNative.doString(L, loadEcmaSemantics())
+
         // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
         // Shared with C++ LuaEngine (CMake header) and Rust sce-rust-lua (include_str!)
         // via sce/include/scripting/json_builtins.lua — see ARCHITECTURE.md
@@ -776,6 +782,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
         }
 
         private fun loadJsonBuiltins(): String = JSON_BUILTINS
+
+        // W3C SCXML B.2 operator semantics, copied into resources by the
+        // Gradle `copyEcmaSemantics` task from the one shared source.
+        private val ECMA_SEMANTICS: String by lazy {
+            LuaScriptEngine::class.java.getResourceAsStream("/scripting/ecma_semantics.lua")
+                ?.bufferedReader()?.readText()
+                ?: error("ecma_semantics.lua not found in resources — check Gradle copyEcmaSemantics task")
+        }
+
+        private fun loadEcmaSemantics(): String = ECMA_SEMANTICS
 
         private val BUILTINS = setOf(
             "true", "false", "nil", "math", "string", "table", "type",

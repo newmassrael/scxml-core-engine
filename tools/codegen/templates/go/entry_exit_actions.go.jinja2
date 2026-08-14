@@ -116,7 +116,12 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			p.ensureScriptEngine()
 			se := p.ScriptEngine
 			if se != nil {
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content.text | to_lua_expr | escape_go }}`); err == nil {
+				{# A Go raw string needs no escaping, and applying the
+				   quoted-string escape here corrupts it: `escape_go` turns a
+				   `"` into `\"`, which a raw string passes to Lua verbatim.
+				   The bug was invisible while the emitted Lua quoted its
+				   strings with `'`. #}
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content.text | to_lua_expr }}`); err == nil {
 					doneEventData = sce.ToLuaLiteral(val)
 				} else {
 {% if 'error.execution' in model.events %}

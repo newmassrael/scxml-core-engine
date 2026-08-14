@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -289,7 +289,10 @@ impl Test459Policy {
 
         // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var4", "{1,2,3}",
+            se,
+            &sid,
+            "Var4",
+            "{1, 2, 3}",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -344,7 +347,10 @@ impl Test459Policy {
 
         // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "Var4", "{1,2,3}",
+            se,
+            &sid,
+            "Var4",
+            "{1, 2, 3}",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -669,7 +675,7 @@ impl StatePolicy for Test459Policy {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        match se.evaluate_expression(&sid, "'fail'") {
+                        match se.evaluate_expression(&sid, "\"fail\"") {
                             Ok(val) => ::sce_rust_runtime::sce_log_info!("Outcome: {:?}", val),
                             Err(e) => ::sce_rust_runtime::sce_log_error!(
                                 "Log expression eval failed: {}",
@@ -690,7 +696,7 @@ impl StatePolicy for Test459Policy {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        match se.evaluate_expression(&sid, "'pass'") {
+                        match se.evaluate_expression(&sid, "\"pass\"") {
                             Ok(val) => ::sce_rust_runtime::sce_log_info!("Outcome: {:?}", val),
                             Err(e) => ::sce_rust_runtime::sce_log_error!(
                                 "Log expression eval failed: {}",
@@ -764,7 +770,7 @@ impl StatePolicy for Test459Policy {
                                         let mut iteration_success = true;
                                         'foreach_body: {
                                             // W3C SCXML 5.9: Script engine guard (Var1<Var2)
-                                            if self.safe_evaluate_guard("Var1<Var2", engine) {
+                                            if self.safe_evaluate_guard("(Var1 < Var2)", engine) {
                                                 {
                                                     // W3C SCXML 5.3: <assign location="Var1">
                                                     self.ensure_script_engine();
@@ -964,7 +970,10 @@ impl Test459Policy {
             Test459State::S0 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test459Event::Null {
-                    if self.safe_evaluate_guard("(Var4==0) | (Var3 ~= 2)", engine) {
+                    if self.safe_evaluate_guard(
+                        "_scxml_truthy(_scxml_bitor(_scxml_eq(Var4, 0), (not _scxml_eq(Var3, 2))))",
+                        engine,
+                    ) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9559f7034cb0e413a2c5aa2055ca23d5b6d7fecbb68ab13dd3b257c7755faaca
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -276,7 +276,7 @@ impl SessionIdsAreDistinctPolicy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
         // W3C SCXML 5.2/5.3: Initialize 'firstSid' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "firstSid", "''",
+            se, &sid, "firstSid", "\"\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -309,7 +309,7 @@ impl SessionIdsAreDistinctPolicy {
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'firstSid' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "firstSid", "''",
+            se, &sid, "firstSid", "\"\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -1184,7 +1184,9 @@ impl SessionIdsAreDistinctPolicy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == SessionIdsAreDistinctEvent::FromChild {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("_event.data.sid ~= firstSid", engine) {
+                    if self
+                        .safe_evaluate_guard("(not _scxml_eq(_event.data.sid, firstSid))", engine)
+                    {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;

@@ -20,6 +20,10 @@ pub mod analyzer;
 pub mod cli_error;
 pub mod cli_language;
 pub mod conformance;
+/// The W3C SCXML ECMAScript datamodel — parsed, then emitted as Lua. It replaces the
+/// string-rewriting transformer whose entry point could not fail; see the
+/// module docs for what that signature cost.
+pub mod ecmascript;
 pub mod filters;
 pub mod forge;
 #[cfg(not(target_arch = "wasm32"))]
@@ -85,7 +89,6 @@ pub mod generator;
 /// hash would carry.
 pub mod generator_witness;
 pub mod kotlin;
-pub mod lua_transformer;
 /// The stdout manifest wire surface — the single JSON line
 /// `sce-codegen` writes on success. Shape, schema-file lockstep, and
 /// instance validation live together here; `SCE_ERROR_CONTRACT.md` §10

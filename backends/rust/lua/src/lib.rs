@@ -357,6 +357,17 @@ impl LuaEngine {
         )
         .exec()?;
 
+        // W3C SCXML B.2: the ECMAScript operators Lua does not share —
+        // `+`, `==`, and the bitwise family, which coerce their operands
+        // where Lua either refuses or answers differently. Single Source of
+        // Truth at sce/include/scripting/ecma_semantics.lua: the generated
+        // code calls these by name on every backend, so one definition is
+        // what keeps the six engines from disagreeing about what `==` means.
+        lua.load(include_str!(
+            "../../../../sce/include/scripting/ecma_semantics.lua"
+        ))
+        .exec()?;
+
         // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
         // Shared with C++ LuaEngine via sce/include/scripting/json_builtins.lua
         lua.load(include_str!(

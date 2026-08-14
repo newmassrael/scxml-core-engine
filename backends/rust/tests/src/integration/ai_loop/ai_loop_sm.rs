@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 195556f7381b7d98e015a576c984a3d37618cbcc845bd17300f1f7caca179032
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -491,7 +491,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "north_star",
-            "'(edit me) the outcome this loop exists to reach'",
+            "\"(edit me) the outcome this loop exists to reach\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -501,7 +501,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "milestone",
-            "'(edit me) the next checkpoint on the way there'",
+            "\"(edit me) the next checkpoint on the way there\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -511,20 +511,20 @@ impl AiLoopPolicy {
             se,
             &sid,
             "reference",
-            "'(edit me) paths, URLs or repos to consult'",
+            "\"(edit me) paths, URLs or repos to consult\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'start_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "start_prompt", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'") {
+            se, &sid, "start_prompt", "(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turn_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "turn_prompt", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'") {
+            se, &sid, "turn_prompt", "(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
@@ -533,7 +533,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "end_prompt",
-            "'Summarise what changed, what was verified, and what is left open.'",
+            "\"Summarise what changed, what was verified, and what is left open.\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -543,14 +543,14 @@ impl AiLoopPolicy {
             se,
             &sid,
             "done_marker",
-            "'MILESTONE REACHED'",
+            "\"MILESTONE REACHED\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'screen_rules' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "screen_rules", "{             { when = 'design-decision', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'design-proposal', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'multiple-choice', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' }           }") {
+            se, &sid, "screen_rules", "{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
@@ -671,7 +671,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "north_star",
-            "'(edit me) the outcome this loop exists to reach'",
+            "\"(edit me) the outcome this loop exists to reach\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -684,7 +684,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "milestone",
-            "'(edit me) the next checkpoint on the way there'",
+            "\"(edit me) the next checkpoint on the way there\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -697,7 +697,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "reference",
-            "'(edit me) paths, URLs or repos to consult'",
+            "\"(edit me) paths, URLs or repos to consult\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -707,14 +707,14 @@ impl AiLoopPolicy {
 
         // W3C SCXML 5.2/5.3: Initialize 'start_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "start_prompt", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'") {
+            se, &sid, "start_prompt", "(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turn_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "turn_prompt", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'") {
+            se, &sid, "turn_prompt", "(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
         }
@@ -724,7 +724,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "end_prompt",
-            "'Summarise what changed, what was verified, and what is left open.'",
+            "\"Summarise what changed, what was verified, and what is left open.\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -737,7 +737,7 @@ impl AiLoopPolicy {
             se,
             &sid,
             "done_marker",
-            "'MILESTONE REACHED'",
+            "\"MILESTONE REACHED\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -747,7 +747,7 @@ impl AiLoopPolicy {
 
         // W3C SCXML 5.2/5.3: Initialize 'screen_rules' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "screen_rules", "{             { when = 'design-decision', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'design-proposal', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when = 'multiple-choice', keys = 'Escape',               text = 'Ignore cost. Rethink for the most durable answer, then proceed.' }           }") {
+            se, &sid, "screen_rules", "{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
         }
@@ -1543,7 +1543,7 @@ impl StatePolicy for AiLoopPolicy {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let expr = "restarts + 1";
+                        let expr = "_scxml_add(restarts, 1)";
                         // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                         // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                         // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -1597,7 +1597,7 @@ impl StatePolicy for AiLoopPolicy {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let expr = "screened + 1";
+                        let expr = "_scxml_add(screened, 1)";
                         // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                         // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                         // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -1983,7 +1983,7 @@ impl StatePolicy for AiLoopPolicy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "turns_since_reflect + 1";
+                            let expr = "_scxml_add(turns_since_reflect, 1)";
                             // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                             // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                             // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -2120,7 +2120,7 @@ impl StatePolicy for AiLoopPolicy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "turns + 1";
+                            let expr = "_scxml_add(turns, 1)";
                             // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                             // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                             // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -2147,7 +2147,7 @@ impl StatePolicy for AiLoopPolicy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "turns + 1";
+                            let expr = "_scxml_add(turns, 1)";
                             // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                             // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                             // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -2179,7 +2179,7 @@ impl StatePolicy for AiLoopPolicy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "turns_since_reflect + 1";
+                            let expr = "_scxml_add(turns_since_reflect, 1)";
                             // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                             // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                             // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -2423,7 +2423,7 @@ impl AiLoopPolicy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == AiLoopEvent::Judge {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("turns_since_reflect >= reflect_every", engine) {
+                    if self.safe_evaluate_guard("(turns_since_reflect >= reflect_every)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 1;
@@ -2690,7 +2690,7 @@ impl AiLoopPolicy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == AiLoopEvent::SessionReady {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("restarts > max_restarts", engine) {
+                    if self.safe_evaluate_guard("(restarts > max_restarts)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;
@@ -2925,7 +2925,7 @@ impl AiLoopPolicy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == AiLoopEvent::TurnDone {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("turns + 1 >= max_turns", engine) {
+                    if self.safe_evaluate_guard("(_scxml_add(turns, 1) >= max_turns)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;

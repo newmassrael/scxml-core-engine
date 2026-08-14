@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 
@@ -826,7 +826,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) tryCollectTransition(checkSta
 	case ParallelSelfTransitionKeepsItsLeafStateJudging:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelSelfTransitionKeepsItsLeafEventCheck {
-			if p.evaluateGuard(`n == 1  and  m == 2`, engine) {
+			if p.evaluateGuard(`(_scxml_eq(n, 1) and _scxml_eq(m, 2))`, engine) {
 			return &transitionInfo{
 				source:          ParallelSelfTransitionKeepsItsLeafStateJudging,
 				target:          ParallelSelfTransitionKeepsItsLeafStateSettled,
@@ -872,7 +872,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) tryTransitionInState(checkSta
 	case ParallelSelfTransitionKeepsItsLeafStateJudging:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelSelfTransitionKeepsItsLeafEventCheck {
-			if p.evaluateGuard(`n == 1  and  m == 2`, engine) {
+			if p.evaluateGuard(`(_scxml_eq(n, 1) and _scxml_eq(m, 2))`, engine) {
 			*currentState = ParallelSelfTransitionKeepsItsLeafStateSettled
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
@@ -921,7 +921,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteTransitionActions(engi
 		//line parallel_self_transition_keeps_its_leaf.scxml:73
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
-	if err := p.assignVariable(`m`, `m + 1`); err != nil {
+	if err := p.assignVariable(`m`, `_scxml_add(m, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformEvent(ParallelSelfTransitionKeepsItsLeafEventErrorExecution))
 	}
 
@@ -931,7 +931,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteTransitionActions(engi
 		//line parallel_self_transition_keeps_its_leaf.scxml:86
 
 	// W3C SCXML 5.3: <assign location="n" expr="n + 1">
-	if err := p.assignVariable(`n`, `n + 1`); err != nil {
+	if err := p.assignVariable(`n`, `_scxml_add(n, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformEvent(ParallelSelfTransitionKeepsItsLeafEventErrorExecution))
 	}
 

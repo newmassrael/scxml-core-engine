@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 
@@ -826,7 +826,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) tryCollectTransition(checkStat
 	case ParallelRegionsTakeOwnTransitionsStateJudging:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelRegionsTakeOwnTransitionsEventCheck {
-			if p.evaluateGuard(`n == 1  and  m == 1`, engine) {
+			if p.evaluateGuard(`(_scxml_eq(n, 1) and _scxml_eq(m, 1))`, engine) {
 			return &transitionInfo{
 				source:          ParallelRegionsTakeOwnTransitionsStateJudging,
 				target:          ParallelRegionsTakeOwnTransitionsStateSettled,
@@ -872,7 +872,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) tryTransitionInState(checkStat
 	case ParallelRegionsTakeOwnTransitionsStateJudging:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelRegionsTakeOwnTransitionsEventCheck {
-			if p.evaluateGuard(`n == 1  and  m == 1`, engine) {
+			if p.evaluateGuard(`(_scxml_eq(n, 1) and _scxml_eq(m, 1))`, engine) {
 			*currentState = ParallelRegionsTakeOwnTransitionsStateSettled
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
@@ -921,7 +921,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionActions(engin
 		//line parallel_regions_take_own_transitions.scxml:62
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
-	if err := p.assignVariable(`m`, `m + 1`); err != nil {
+	if err := p.assignVariable(`m`, `_scxml_add(m, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
 	}
 
@@ -931,7 +931,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionActions(engin
 		//line parallel_regions_take_own_transitions.scxml:38
 
 	// W3C SCXML 5.3: <assign location="n" expr="n + 1">
-	if err := p.assignVariable(`n`, `n + 1`); err != nil {
+	if err := p.assignVariable(`n`, `_scxml_add(n, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
 	}
 

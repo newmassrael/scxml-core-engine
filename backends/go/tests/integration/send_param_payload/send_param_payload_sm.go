@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8c4a7d84a6ea23ea88829e171f3ef6f30c77da38dc5a67c7f0b53b8d9b23526b
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 
@@ -728,7 +728,7 @@ func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloa
 	case SendParamPayloadStateAwaitChild:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventFromChild {
-			if p.evaluateGuard(`_event.data  and  _event.data.value == '42'`, engine) {
+			if p.evaluateGuard(`(_scxml_truthy(_event.data) and (_event.data.value == "42"))`, engine) {
 			*currentState = SendParamPayloadStateInternalPhase
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
@@ -747,7 +747,7 @@ func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloa
 	case SendParamPayloadStateInternalPhase:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventLoopback {
-			if p.evaluateGuard(`_event.data  and  _event.data.carried == 'kept'`, engine) {
+			if p.evaluateGuard(`(_scxml_truthy(_event.data) and (_event.data.carried == "kept"))`, engine) {
 			*currentState = SendParamPayloadStatePass
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false

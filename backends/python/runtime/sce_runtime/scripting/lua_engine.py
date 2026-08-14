@@ -291,12 +291,36 @@ def _install_ecmascript_builtins(runtime: Any) -> None:
     object_table = runtime.table_from({"keys": _object_keys})
     globals_["Object"] = object_table
 
+    import os
+    # …/backends/python/runtime/sce_runtime/scripting/lua_engine.py → repo root
+    # is six directories up. It used to be four, which named
+    # `backends/python/sce/include/scripting/` — a path that has never
+    # existed, so the JSON load below silently did nothing on every run. The
+    # `os.path.exists` guard is what kept that invisible; it stays, because a
+    # packaged deployment really can lack the file, but it now guards a path
+    # that resolves in this repository.
+    here = os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+        )
+    )
+
+    # §scxml-B-2: the ECMAScript operators Lua does not share — `+`,
+    # `==` and the bitwise family. Single source of truth at
+    # sce/include/scripting/ecma_semantics.lua, shared with every other
+    # backend. Unlike the JSON helpers below this one is required: the
+    # generated code calls `_scxml_add` and `_scxml_eq` by name, so a
+    # deployment without the file would fail at the first `+`.
+    ecma_lua = os.path.join(here, "sce", "include", "scripting", "ecma_semantics.lua")
+    with open(ecma_lua, "r", encoding="utf-8") as fh:
+        runtime.execute(fh.read())
+
     # JSON builtins shared with every other backend (single source of
     # truth at sce/include/scripting/json_builtins.lua). Loaded
     # opportunistically; absent from non-monorepo deployments is
     # acceptable — the helpers are tested by JSON-using fixtures only.
-    import os
-    here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     json_lua = os.path.join(here, "sce", "include", "scripting", "json_builtins.lua")
     if os.path.exists(json_lua):
         with open(json_lua, "r", encoding="utf-8") as fh:

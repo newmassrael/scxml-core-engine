@@ -161,12 +161,12 @@ pub fn transpile_typed(
     }
 
     match target {
-        ExprTarget::Cpp => Ok(emit_cpp(&ast, expected)),
-        ExprTarget::Kotlin => Ok(emit_kotlin(&ast, expected)),
+        ExprTarget::Cpp => emit_cpp(&ast, expected),
+        ExprTarget::Kotlin => emit_kotlin(&ast, expected),
         ExprTarget::Rust => emit_rust(&ast, expected),
         ExprTarget::Go => emit_go(&ast, expected),
-        ExprTarget::Python => Ok(emit_python(&ast, expected)),
-        ExprTarget::C => Ok(emit_c(&ast, expected)),
+        ExprTarget::Python => emit_python(&ast, expected),
+        ExprTarget::C => emit_c(&ast, expected),
     }
 }
 
@@ -267,7 +267,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     if !renames.is_empty() {
         rename_identifiers(&mut ast, renames);
     }
-    Ok(emit_c(&ast, expected))
+    emit_c(&ast, expected)
 }
 
 /// Walk a TypedExpr in place and rewrite every `Call{Member{Ident(alias),
@@ -421,12 +421,12 @@ pub fn transpile_lvalue(
     // value being shoved into an expected type. Pass `Unknown` so the
     // per-language emitter emits the identifier/member path verbatim.
     let emitted = match target {
-        ExprTarget::Cpp => emit_cpp(&ast, InferredType::Unknown),
-        ExprTarget::Kotlin => emit_kotlin(&ast, InferredType::Unknown),
+        ExprTarget::Cpp => emit_cpp(&ast, InferredType::Unknown)?,
+        ExprTarget::Kotlin => emit_kotlin(&ast, InferredType::Unknown)?,
         ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?,
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
-        ExprTarget::Python => emit_python(&ast, InferredType::Unknown),
-        ExprTarget::C => emit_c(&ast, InferredType::Unknown),
+        ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?,
+        ExprTarget::C => emit_c(&ast, InferredType::Unknown)?,
     };
     Ok((emitted, ty))
 }
@@ -785,7 +785,7 @@ pub fn strip_string_literals(expr: &str) -> String {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[derive(Debug, Clone, PartialEq)]
-enum Token {
+pub(crate) enum Token {
     Number(String),
     String {
         value: String,
@@ -843,7 +843,42 @@ enum Token {
     RParen,
     LBracket,
     RBracket,
+    /// Statement and object-literal punctuation, plus the assignment and
+    /// update operators. Produced only under [`LexMode::EcmaScript`] — the
+    /// Forge subset is a single expression with no statements, no object
+    /// literals and no assignment, so under [`LexMode::Forge`] these
+    /// characters stay the lexical error they have always been rather than
+    /// becoming a token the Forge parser would have to reject one layer
+    /// later with a worse message.
+    LBrace,
+    RBrace,
+    Semi,
+    Assign,
+    PlusPlus,
+    MinusMinus,
+    /// Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`), carrying the
+    /// arithmetic operator it folds in.
+    OpAssign(BinOp),
     Eof,
+}
+
+/// Which language the token stream is being read as.
+///
+/// The two dialects SCE accepts share this lexer and nothing else: Forge's
+/// Extended SCXML is a typed single expression, and the W3C ECMAScript
+/// datamodel (§B.2) is untyped and admits statements. Sharing the lexer is
+/// what keeps the two from disagreeing about the things that are purely
+/// lexical — string escapes, numeric forms, where an identifier ends — which
+/// is where the string-rewriting transformer this replaced kept its bugs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum LexMode {
+    /// Extended SCXML. Reserved words that have no typed meaning (`new`,
+    /// `typeof`, `function`, …) are rejected at the point they are read.
+    Forge,
+    /// The W3C SCXML ECMAScript datamodel. Every reserved word tokenizes as an
+    /// identifier for the parser to interpret, comments are skipped, and
+    /// the statement/assignment punctuation above is produced.
+    EcmaScript,
 }
 
 impl fmt::Display for Token {
@@ -884,7 +919,32 @@ impl fmt::Display for Token {
             Token::RParen => write!(f, ")"),
             Token::LBracket => write!(f, "["),
             Token::RBracket => write!(f, "]"),
+            Token::LBrace => write!(f, "{{"),
+            Token::RBrace => write!(f, "}}"),
+            Token::Semi => write!(f, ";"),
+            Token::Assign => write!(f, "="),
+            Token::PlusPlus => write!(f, "++"),
+            Token::MinusMinus => write!(f, "--"),
+            Token::OpAssign(op) => write!(f, "{}=", ecma_arith_text(*op)),
             Token::Eof => write!(f, "EOF"),
+        }
+    }
+}
+
+/// The ECMAScript spelling of the arithmetic operators a compound
+/// assignment can fold in. Used by [`Token`]'s `Display` and by the
+/// ECMAScript-to-Lua emitter, which needs the source spelling rather than
+/// any one backend's rendering of it.
+pub(crate) fn ecma_arith_text(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        other => {
+            debug_assert!(false, "not a compound-assignment operator: {other:?}");
+            "+"
         }
     }
 }
@@ -894,15 +954,41 @@ impl fmt::Display for Token {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
+    tokenize_as(input, LexMode::Forge)
+}
+
+pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, ExprError> {
     let mut tokens = Vec::new();
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut i = 0;
+    let ecma = mode == LexMode::EcmaScript;
 
     while i < len {
         if bytes[i].is_ascii_whitespace() {
             i += 1;
             continue;
+        }
+
+        // Comments. Only ECMAScript source carries them: a Forge expression
+        // is one expression written in an XML attribute, and treating `//`
+        // there as a comment would silently swallow the rest of a `cond`
+        // instead of reporting the division-by-division the author wrote.
+        if ecma && bytes[i] == b'/' && i + 1 < len {
+            if bytes[i + 1] == b'/' {
+                while i < len && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            if bytes[i + 1] == b'*' {
+                let close = input[i + 2..].find("*/");
+                i = match close {
+                    Some(offset) => i + 2 + offset + 2,
+                    None => len,
+                };
+                continue;
+            }
         }
 
         // String literals
@@ -993,7 +1079,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
                 i += 1;
             }
             let word = &input[start..i];
-            validate_keyword(word)?;
+            if !ecma {
+                validate_keyword(word)?;
+            }
             tokens.push(Token::Ident(word.to_string()));
             continue;
         }
@@ -1071,6 +1159,13 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
                 ">>" => Some(Token::Shr),
                 "<=" => Some(Token::LtEq),
                 ">=" => Some(Token::GtEq),
+                "++" if ecma => Some(Token::PlusPlus),
+                "--" if ecma => Some(Token::MinusMinus),
+                "+=" if ecma => Some(Token::OpAssign(BinOp::Add)),
+                "-=" if ecma => Some(Token::OpAssign(BinOp::Sub)),
+                "*=" if ecma => Some(Token::OpAssign(BinOp::Mul)),
+                "/=" if ecma => Some(Token::OpAssign(BinOp::Div)),
+                "%=" if ecma => Some(Token::OpAssign(BinOp::Mod)),
                 _ => None,
             };
             if let Some(t) = tok {
@@ -1102,6 +1197,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
             b')' => Token::RParen,
             b'[' => Token::LBracket,
             b']' => Token::RBracket,
+            b'{' if ecma => Token::LBrace,
+            b'}' if ecma => Token::RBrace,
+            b';' if ecma => Token::Semi,
+            b'=' if ecma => Token::Assign,
             ch => {
                 return Err(ExprError::Lex {
                     position: i,
@@ -2146,14 +2245,14 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
 }
 
-fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
+fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Push-down: propagate Float expectation into arithmetic sub-trees so
     // cpp_coerce appends `.0` to integer literals, preventing C++ integer
     // division (e.g. `9 / 5` → `9.0 / 5.0`).
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
-            let l_raw = emit_cpp(left, expected);
-            let r_raw = emit_cpp(right, expected);
+            let l_raw = emit_cpp(left, expected)?;
+            let r_raw = emit_cpp(right, expected)?;
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
             } else {
@@ -2164,7 +2263,7 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
             } else {
                 r_raw
             };
-            return format!("{l} {} {r}", cpp_binop(*op));
+            return Ok(format!("{l} {} {r}", cpp_binop(*op)));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — without this, `-40` in a
@@ -2179,24 +2278,24 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_cpp(operand, expected);
+            let inner = emit_cpp(operand, expected)?;
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            return if wrap {
+            return Ok(if wrap {
                 format!("{}({inner})", cpp_unary(*op))
             } else {
                 format!("{}{inner}", cpp_unary(*op))
-            };
+            });
         }
     }
-    let raw = cpp_emit_node(expr);
-    cpp_coerce(raw, expr.ty, expected, expr)
+    let raw = cpp_emit_node(expr)?;
+    Ok(cpp_coerce(raw, expr.ty, expected, expr))
 }
 
-fn cpp_emit_node(expr: &TypedExpr) -> String {
-    match &expr.kind {
+fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+    Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `std::vector<uint8_t>` has `operator==`, so the default
@@ -2212,8 +2311,8 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_cpp(left, operand_ty);
-            let r_raw = emit_cpp(right, operand_ty);
+            let l_raw = emit_cpp(left, operand_ty)?;
+            let r_raw = emit_cpp(right, operand_ty)?;
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
             } else {
@@ -2227,7 +2326,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
             format!("{l} {} {r}", cpp_binop(*op))
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_cpp(operand, expr.ty);
+            let inner = emit_cpp(operand, expr.ty)?;
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
@@ -2245,35 +2344,38 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
         } => {
             format!(
                 "{} ? {} : {}",
-                emit_cpp(condition, InferredType::Bool),
-                emit_cpp(consequent, expr.ty),
-                emit_cpp(alternate, expr.ty),
+                emit_cpp(condition, InferredType::Bool)?,
+                emit_cpp(consequent, expr.ty)?,
+                emit_cpp(alternate, expr.ty)?,
             )
         }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
-                wrap_postfix(object, emit_cpp(object, InferredType::Unknown))
+                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)?)
             )
         }
         ExprKind::Index { object, index } => {
             format!(
                 "{}[{}]",
-                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)),
-                emit_cpp(index, InferredType::Unknown),
+                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)?),
+                emit_cpp(index, InferredType::Unknown)?,
             )
         }
         ExprKind::Call { callee, args } => {
             if is_len_builtin(callee, args) {
-                return format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown));
+                return Ok(format!(
+                    "({}).size()",
+                    emit_cpp(&args[0], InferredType::Unknown)?
+                ));
             }
-            let a: Vec<_> = args
-                .iter()
-                .map(|a| emit_cpp(a, InferredType::Unknown))
-                .collect();
+            let mut a = Vec::with_capacity(args.len());
+            for arg in args {
+                a.push(emit_cpp(arg, InferredType::Unknown)?);
+            }
             format!(
                 "{}({})",
-                wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)),
+                wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)?),
                 a.join(", "),
             )
         }
@@ -2281,12 +2383,12 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
             // RFC c7-wildcard W-project: a bounded-string field projected to
             // the algorithm `bytes` param type — `std::span<const
             // std::uint8_t>` over the string's data()/size().
-            let s = emit_cpp(source, InferredType::Unknown);
+            let s = emit_cpp(source, InferredType::Unknown)?;
             format!(
                 "std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
-    }
+    })
 }
 
 fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
@@ -2356,12 +2458,12 @@ fn cpp_unary(op: UnaryOp) -> &'static str {
 //   in signed domain to satisfy Kotlin arithmetic) is wrapped with
 //   `.toUByte()` / `.toUShort()` / `.toUInt()` / `.toULong()`.
 
-fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
+fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
-            let l_raw = emit_kotlin(left, expected);
-            let r_raw = emit_kotlin(right, expected);
+            let l_raw = emit_kotlin(left, expected)?;
+            let r_raw = emit_kotlin(right, expected)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -2372,7 +2474,7 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
             } else {
                 r_raw
             };
-            return format!("{l} {} {r}", kotlin_binop(*op));
+            return Ok(format!("{l} {} {r}", kotlin_binop(*op)));
         }
         // Kotlin's narrow unsigned types (UByte/UShort) do not support
         // bitwise/shift operations directly — `UByte shr Int` does not
@@ -2385,8 +2487,8 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
                 signed: true,
                 bits: 32,
             };
-            let l_raw = emit_kotlin(left, widened);
-            let r_raw = emit_kotlin(right, widened);
+            let l_raw = emit_kotlin(left, widened)?;
+            let r_raw = emit_kotlin(right, widened)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -2398,7 +2500,7 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
                 r_raw
             };
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
-            return kotlin_coerce(inner, widened, expected, expr);
+            return Ok(kotlin_coerce(inner, widened, expected, expr));
         }
         // Arithmetic on narrow unsigned in Kotlin: `UByte + UByte` is
         // defined as `this.toUInt() + other.toUInt(): UInt`, so storing
@@ -2412,8 +2514,8 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
                 signed: false,
                 bits: 32,
             };
-            let l_raw = emit_kotlin(left, widened);
-            let r_raw = emit_kotlin(right, widened);
+            let l_raw = emit_kotlin(left, widened)?;
+            let r_raw = emit_kotlin(right, widened)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -2425,7 +2527,7 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
                 r_raw
             };
             let inner = format!("{l} {} {r}", kotlin_binop(*op));
-            return kotlin_coerce(inner, widened, expected, expr);
+            return Ok(kotlin_coerce(inner, widened, expected, expr));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — without this the inner
@@ -2438,7 +2540,7 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_kotlin(operand, expected);
+            let inner = emit_kotlin(operand, expected)?;
             let prefix = match op {
                 UnaryOp::Neg => "-",
                 UnaryOp::Pos => "+",
@@ -2448,15 +2550,15 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            return if wrap {
+            return Ok(if wrap {
                 format!("{prefix}({inner})")
             } else {
                 format!("{prefix}{inner}")
-            };
+            });
         }
     }
-    let raw = kotlin_emit_node(expr);
-    kotlin_coerce(raw, expr.ty, expected, expr)
+    let raw = kotlin_emit_node(expr)?;
+    Ok(kotlin_coerce(raw, expr.ty, expected, expr))
 }
 
 /// A narrow unsigned integer — UByte (8) or UShort (16). Kotlin stdlib does
@@ -2471,8 +2573,8 @@ fn is_narrow_unsigned(ty: InferredType) -> bool {
     )
 }
 
-fn kotlin_emit_node(expr: &TypedExpr) -> String {
-    match &expr.kind {
+fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+    Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
@@ -2493,18 +2595,18 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
             {
-                let l = emit_kotlin(left, InferredType::Unknown);
-                let r = emit_kotlin(right, InferredType::Unknown);
+                let l = emit_kotlin(left, InferredType::Unknown)?;
+                let r = emit_kotlin(right, InferredType::Unknown)?;
                 let call = format!("{}.contentEquals({r})", wrap_postfix(left, l));
-                return if matches!(op, BinOp::StrictNeq) {
+                return Ok(if matches!(op, BinOp::StrictNeq) {
                     format!("!{call}")
                 } else {
                     call
-                };
+                });
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_kotlin(left, operand_ty);
-            let r_raw = emit_kotlin(right, operand_ty);
+            let l_raw = emit_kotlin(left, operand_ty)?;
+            let r_raw = emit_kotlin(right, operand_ty)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -2523,11 +2625,11 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
         } => {
             format!(
                 "{}.inv()",
-                wrap_postfix(operand, emit_kotlin(operand, expr.ty))
+                wrap_postfix(operand, emit_kotlin(operand, expr.ty)?)
             )
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_kotlin(operand, expr.ty);
+            let inner = emit_kotlin(operand, expr.ty)?;
             let prefix = match op {
                 UnaryOp::Neg => "-",
                 UnaryOp::Pos => "+",
@@ -2551,15 +2653,15 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
         } => {
             format!(
                 "if ({}) {} else {}",
-                emit_kotlin(condition, InferredType::Bool),
-                emit_kotlin(consequent, expr.ty),
-                emit_kotlin(alternate, expr.ty),
+                emit_kotlin(condition, InferredType::Bool)?,
+                emit_kotlin(consequent, expr.ty)?,
+                emit_kotlin(alternate, expr.ty)?,
             )
         }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
-                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown))
+                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?)
             )
         }
         ExprKind::Index { object, index } => {
@@ -2569,7 +2671,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             // need explicit `.toInt()` or kotlinc rejects with
             // "argument type mismatch". Mirrors the Rust emitter's
             // `as usize` insertion for non-`UntypedInt` indices.
-            let idx_raw = emit_kotlin(index, InferredType::Unknown);
+            let idx_raw = emit_kotlin(index, InferredType::Unknown)?;
             let idx_emit = match index.ty {
                 InferredType::Int {
                     signed: true,
@@ -2593,20 +2695,23 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             };
             format!(
                 "{}[{idx_emit}]{norm}",
-                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)),
+                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?),
             )
         }
         ExprKind::Call { callee, args } => {
             if is_len_builtin(callee, args) {
-                return format!("({}).size", emit_kotlin(&args[0], InferredType::Unknown));
+                return Ok(format!(
+                    "({}).size",
+                    emit_kotlin(&args[0], InferredType::Unknown)?
+                ));
             }
-            let a: Vec<_> = args
-                .iter()
-                .map(|a| emit_kotlin(a, InferredType::Unknown))
-                .collect();
+            let mut a = Vec::with_capacity(args.len());
+            for arg in args {
+                a.push(emit_kotlin(arg, InferredType::Unknown)?);
+            }
             format!(
                 "{}({})",
-                wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)),
+                wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)?),
                 a.join(", "),
             )
         }
@@ -2615,10 +2720,10 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             // (the algorithm `bytes` param type), UTF-8 encoded.
             format!(
                 "{}.toByteArray(Charsets.UTF_8)",
-                emit_kotlin(source, InferredType::Unknown)
+                emit_kotlin(source, InferredType::Unknown)?
             )
         }
-    }
+    })
 }
 
 fn kotlin_binop(op: BinOp) -> &'static str {
@@ -3373,15 +3478,15 @@ fn has_ternary(expr: &TypedExpr) -> bool {
 // * No float-literal promotion needed: Python's `/` is always true division
 //   (PEP 238), so `9 / 5` yields 1.8 without an explicit `.0` suffix.
 
-fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
+fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Push-down: propagate Float expectation into arithmetic sub-trees.
     // Python's `/` is true division so literal promotion is not required,
     // but the push-down is kept for structural symmetry with the other four
     // emitters (and python_coerce is a no-op for UntypedInt→Float).
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
-            let l_raw = emit_python(left, expected);
-            let r_raw = emit_python(right, expected);
+            let l_raw = emit_python(left, expected)?;
+            let r_raw = emit_python(right, expected)?;
             let l = if child_needs_parens(left, *op, true, python_precedence) {
                 format!("({l_raw})")
             } else {
@@ -3392,7 +3497,7 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
             } else {
                 r_raw
             };
-            return format!("{l} {} {r}", python_binop(*op));
+            return Ok(format!("{l} {} {r}", python_binop(*op)));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — structural symmetry
@@ -3405,7 +3510,7 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_python(operand, expected);
+            let inner = emit_python(operand, expected)?;
             let prefix = match op {
                 UnaryOp::Neg => "-",
                 UnaryOp::Pos => "+",
@@ -3415,19 +3520,19 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            return if wrap {
+            return Ok(if wrap {
                 format!("{prefix}({inner})")
             } else {
                 format!("{prefix}{inner}")
-            };
+            });
         }
     }
-    let raw = python_emit_node(expr);
-    python_coerce(raw, expr.ty, expected)
+    let raw = python_emit_node(expr)?;
+    Ok(python_coerce(raw, expr.ty, expected))
 }
 
-fn python_emit_node(expr: &TypedExpr) -> String {
-    match &expr.kind {
+fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+    Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("'{value}'"),
         // `bytes == bytes` compares content, so the default `==`/`!=`
@@ -3441,8 +3546,8 @@ fn python_emit_node(expr: &TypedExpr) -> String {
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_python(left, operand_ty);
-            let r_raw = emit_python(right, operand_ty);
+            let l_raw = emit_python(left, operand_ty)?;
+            let r_raw = emit_python(right, operand_ty)?;
             let l = if child_needs_parens(left, *op, true, python_precedence) {
                 format!("({l_raw})")
             } else {
@@ -3478,14 +3583,14 @@ fn python_emit_node(expr: &TypedExpr) -> String {
                 {
                     if bits <= 32 {
                         let mask: u64 = (1u64 << bits) - 1;
-                        return format!("({raw}) & 0x{mask:X}");
+                        return Ok(format!("({raw}) & 0x{mask:X}"));
                     }
                 }
             }
             raw
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_python(operand, expr.ty);
+            let inner = emit_python(operand, expr.ty)?;
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
@@ -3507,7 +3612,7 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             consequent,
             alternate,
         } => {
-            let cons = emit_python(consequent, expr.ty);
+            let cons = emit_python(consequent, expr.ty)?;
             let cons = if matches!(&consequent.kind, ExprKind::Conditional { .. }) {
                 format!("({cons})")
             } else {
@@ -3515,34 +3620,37 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             };
             format!(
                 "{cons} if {} else {}",
-                emit_python(condition, InferredType::Bool),
-                emit_python(alternate, expr.ty),
+                emit_python(condition, InferredType::Bool)?,
+                emit_python(alternate, expr.ty)?,
             )
         }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
-                wrap_postfix(object, emit_python(object, InferredType::Unknown))
+                wrap_postfix(object, emit_python(object, InferredType::Unknown)?)
             )
         }
         ExprKind::Index { object, index } => {
             format!(
                 "{}[{}]",
-                wrap_postfix(object, emit_python(object, InferredType::Unknown)),
-                emit_python(index, InferredType::Unknown),
+                wrap_postfix(object, emit_python(object, InferredType::Unknown)?),
+                emit_python(index, InferredType::Unknown)?,
             )
         }
         ExprKind::Call { callee, args } => {
             if is_len_builtin(callee, args) {
-                return format!("len({})", emit_python(&args[0], InferredType::Unknown));
+                return Ok(format!(
+                    "len({})",
+                    emit_python(&args[0], InferredType::Unknown)?
+                ));
             }
-            let a: Vec<_> = args
-                .iter()
-                .map(|a| emit_python(a, InferredType::Unknown))
-                .collect();
+            let mut a = Vec::with_capacity(args.len());
+            for arg in args {
+                a.push(emit_python(arg, InferredType::Unknown)?);
+            }
             format!(
                 "{}({})",
-                wrap_postfix(callee, emit_python(callee, InferredType::Unknown)),
+                wrap_postfix(callee, emit_python(callee, InferredType::Unknown)?),
                 a.join(", "),
             )
         }
@@ -3551,10 +3659,10 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             // algorithm `bytes` param type (`bytes`), UTF-8 encoded.
             format!(
                 "{}.encode(\"utf-8\")",
-                emit_python(source, InferredType::Unknown)
+                emit_python(source, InferredType::Unknown)?
             )
         }
-    }
+    })
 }
 
 fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
@@ -3609,13 +3717,13 @@ fn python_binop(op: BinOp) -> &'static str {
 //   set; broader operator and type coverage waits until a consumer
 //   needs it.
 
-fn emit_c(expr: &TypedExpr, expected: InferredType) -> String {
+fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
     // Push-down: arithmetic + Float expectation propagates into operands so
     // decimal-integer literals pick up `.0` and avoid integer division.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
-            let l_raw = emit_c(left, expected);
-            let r_raw = emit_c(right, expected);
+            let l_raw = emit_c(left, expected)?;
+            let r_raw = emit_c(right, expected)?;
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
             } else {
@@ -3626,7 +3734,7 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> String {
             } else {
                 r_raw
             };
-            return format!("{l} {} {r}", cpp_binop(*op));
+            return Ok(format!("{l} {} {r}", cpp_binop(*op)));
         }
     }
     // Push-down: Unary{Neg|Pos} in float context — same rationale as emit_cpp.
@@ -3636,24 +3744,24 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> String {
     } = &expr.kind
     {
         if matches!(expected, InferredType::Float { .. }) {
-            let inner = emit_c(operand, expected);
+            let inner = emit_c(operand, expected)?;
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
             );
-            return if wrap {
+            return Ok(if wrap {
                 format!("{}({inner})", cpp_unary(*op))
             } else {
                 format!("{}{inner}", cpp_unary(*op))
-            };
+            });
         }
     }
-    let raw = c_emit_node(expr);
-    c_coerce(raw, expr.ty, expected, expr)
+    let raw = c_emit_node(expr)?;
+    Ok(c_coerce(raw, expr.ty, expected, expr))
 }
 
-fn c_emit_node(expr: &TypedExpr) -> String {
-    match &expr.kind {
+fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+    Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback — the bytes-equality Binary branch renders
@@ -3677,27 +3785,28 @@ fn c_emit_node(expr: &TypedExpr) -> String {
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
             {
-                let render = |operand: &TypedExpr| -> (String, String, Option<usize>) {
-                    if let ExprKind::BytesLit { bytes } = &operand.kind {
-                        let v = format!("\"{}\"", bytes_as_quoted_ascii(bytes));
-                        (v, bytes.len().to_string(), Some(bytes.len()))
-                    } else {
-                        let v = emit_c(operand, InferredType::Unknown);
-                        let len = format!("{v}_len");
-                        (v, len, None)
-                    }
-                };
-                let (lv, ll, l_lit) = render(left);
-                let (rv, rl, r_lit) = render(right);
+                let render =
+                    |operand: &TypedExpr| -> Result<(String, String, Option<usize>), ExprError> {
+                        if let ExprKind::BytesLit { bytes } = &operand.kind {
+                            let v = format!("\"{}\"", bytes_as_quoted_ascii(bytes));
+                            Ok((v, bytes.len().to_string(), Some(bytes.len())))
+                        } else {
+                            let v = emit_c(operand, InferredType::Unknown)?;
+                            let len = format!("{v}_len");
+                            Ok((v, len, None))
+                        }
+                    };
+                let (lv, ll, l_lit) = render(left)?;
+                let (rv, rl, r_lit) = render(right)?;
                 let cmp_len = l_lit
                     .or(r_lit)
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| ll.clone());
-                return if matches!(op, BinOp::StrictEq) {
+                return Ok(if matches!(op, BinOp::StrictEq) {
                     format!("{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0")
                 } else {
                     format!("{ll} != {rl} || memcmp({lv}, {rv}, {cmp_len}) != 0")
-                };
+                });
             }
             // String comparison lowering. C lacks operator
             // overloading; `a == b` on `const char *` is pointer equality, not
@@ -3713,13 +3822,13 @@ fn c_emit_node(expr: &TypedExpr) -> String {
                 && matches!(left.ty, InferredType::Str)
                 && matches!(right.ty, InferredType::Str)
             {
-                let l_raw = emit_c(left, InferredType::Str);
-                let r_raw = emit_c(right, InferredType::Str);
-                return format!("strcmp({l_raw}, {r_raw}) {} 0", cpp_binop(*op));
+                let l_raw = emit_c(left, InferredType::Str)?;
+                let r_raw = emit_c(right, InferredType::Str)?;
+                return Ok(format!("strcmp({l_raw}, {r_raw}) {} 0", cpp_binop(*op)));
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_c(left, operand_ty);
-            let r_raw = emit_c(right, operand_ty);
+            let l_raw = emit_c(left, operand_ty)?;
+            let r_raw = emit_c(right, operand_ty)?;
             let l = if child_needs_parens(left, *op, true, ecma_precedence) {
                 format!("({l_raw})")
             } else {
@@ -3733,7 +3842,7 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             format!("{l} {} {r}", cpp_binop(*op))
         }
         ExprKind::Unary { op, operand } => {
-            let inner = emit_c(operand, expr.ty);
+            let inner = emit_c(operand, expr.ty)?;
             let wrap = matches!(
                 &operand.kind,
                 ExprKind::Binary { .. } | ExprKind::Conditional { .. }
@@ -3751,15 +3860,15 @@ fn c_emit_node(expr: &TypedExpr) -> String {
         } => {
             format!(
                 "{} ? {} : {}",
-                emit_c(condition, InferredType::Bool),
-                emit_c(consequent, expr.ty),
-                emit_c(alternate, expr.ty),
+                emit_c(condition, InferredType::Bool)?,
+                emit_c(consequent, expr.ty)?,
+                emit_c(alternate, expr.ty)?,
             )
         }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
-                wrap_postfix(object, emit_c(object, InferredType::Unknown))
+                wrap_postfix(object, emit_c(object, InferredType::Unknown)?)
             )
         }
         ExprKind::Index { object, index } => {
@@ -3774,21 +3883,24 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             };
             format!(
                 "{}{accessor}[{}]",
-                wrap_postfix(object, emit_c(object, InferredType::Unknown)),
-                emit_c(index, InferredType::Unknown),
+                wrap_postfix(object, emit_c(object, InferredType::Unknown)?),
+                emit_c(index, InferredType::Unknown)?,
             )
         }
         ExprKind::Call { callee, args } => {
             if is_len_builtin(callee, args) {
-                return format!("({}).len", emit_c(&args[0], InferredType::Unknown));
+                return Ok(format!(
+                    "({}).len",
+                    emit_c(&args[0], InferredType::Unknown)?
+                ));
             }
-            let a: Vec<_> = args
-                .iter()
-                .map(|a| emit_c(a, InferredType::Unknown))
-                .collect();
+            let mut a = Vec::with_capacity(args.len());
+            for arg in args {
+                a.push(emit_c(arg, InferredType::Unknown)?);
+            }
             format!(
                 "{}({})",
-                wrap_postfix(callee, emit_c(callee, InferredType::Unknown)),
+                wrap_postfix(callee, emit_c(callee, InferredType::Unknown)?),
                 a.join(", "),
             )
         }
@@ -3802,14 +3914,14 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             // `{ (const uint8_t *)<f>, <len> }`. `len` is `None` only for an
             // unrecognised source shape, where the `<f>_len` sibling
             // convention is the faithful fallback.
-            let s = emit_c(source, InferredType::Unknown);
+            let s = emit_c(source, InferredType::Unknown)?;
             let len_expr = match len {
-                Some(l) => emit_c(l, InferredType::Unknown),
+                Some(l) => emit_c(l, InferredType::Unknown)?,
                 None => format!("{s}_len"),
             };
             format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
         }
-    }
+    })
 }
 
 fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {

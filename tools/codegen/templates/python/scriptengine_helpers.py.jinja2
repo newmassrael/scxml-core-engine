@@ -560,14 +560,14 @@
         self._init_data_with_content(
             engine,
             {{ var.id | py_string_literal }},
-            {{ _src_content | to_lua_expr | py_string_literal }},
+            {{ _src_content | to_lua_data_content | py_string_literal }},
             {{ _src_content | normalize_ws | py_string_literal }},
         )
 {% elif var.content %}
         self._init_data_with_content(
             engine,
             {{ var.id | py_string_literal }},
-            {{ var.content | to_lua_expr | py_string_literal }},
+            {{ var.content | to_lua_data_content | py_string_literal }},
             {{ var.content | normalize_ws | py_string_literal }},
         )
 {% else %}
@@ -604,7 +604,7 @@
         self._init_data_with_content(
             engine,
             {{ var.id | py_string_literal }},
-            {{ var.content | to_lua_expr | py_string_literal }},
+            {{ var.content | to_lua_data_content | py_string_literal }},
             {{ var.content | normalize_ws | py_string_literal }},
         )
 {% else %}
@@ -680,7 +680,7 @@
             self._init_data_with_content(
                 engine,
                 {{ var.id | py_string_literal }},
-                {{ var.content | to_lua_expr | py_string_literal }},
+                {{ var.content | to_lua_data_content | py_string_literal }},
                 {{ var.content | normalize_ws | py_string_literal }},
             )
 {% else %}
