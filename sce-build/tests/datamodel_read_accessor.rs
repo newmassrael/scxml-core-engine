@@ -143,58 +143,62 @@ fn a_data_without_an_initialiser_is_untyped_and_needs_no_engine() {
 /// The implication again, this time over every document the repository
 /// commits, so a corpus shape no hand-written probe thought of is covered too.
 ///
-/// The lower bound is not decoration. This test walks a directory tree; a
-/// filter that stopped matching, a tree that moved, or a parser that started
-/// refusing the corpus would all leave it green over an empty set, reporting
-/// "no violations" for a sweep that inspected nothing.
+/// The scan set comes from `git ls-files` rather than from a list of
+/// directories, and that is a correction rather than a preference: the first
+/// version of this test named four trees, one of which (`tests/w3c/resources`)
+/// does not exist. It reached 75 of the corpus's documents and would have
+/// reported "no violations" over the fifth of it that it saw.
+///
+/// The lower bounds are the guard against exactly that. A tree that moved, a
+/// filter that stopped matching, or a parser that started refusing the corpus
+/// would all leave this green over a set too small to mean anything.
 #[test]
 fn no_committed_document_declares_a_typed_variable_without_an_engine() {
-    let roots = [
-        "tests/w3c/resources",
-        "integration_resources",
-        "examples",
-        "sce-build/tests/fixtures",
-    ];
-
     let mut typed_seen = 0usize;
     let mut docs_parsed = 0usize;
     let mut violations: BTreeSet<String> = BTreeSet::new();
 
-    for root in roots {
-        let dir = repo_root().join(root);
-        if !dir.is_dir() {
+    for entry in committed_scxml() {
+        let Ok(content) = std::fs::read_to_string(&entry) else {
             continue;
-        }
-        for entry in walk_scxml(&dir) {
-            let Ok(content) = std::fs::read_to_string(&entry) else {
-                continue;
-            };
-            let label = entry.display().to_string();
-            let mut parser = SCXMLParser::new();
-            // A document this sweep cannot parse is not this test's finding —
-            // the parser suites own that — so it is skipped rather than
-            // counted. The lower bound below is what keeps the skip honest.
-            let Ok(mut model) = parser.parse_string(&content, &label) else {
-                continue;
-            };
-            sce_build::analyzer::analyze(&mut model, "");
-            docs_parsed += 1;
-            let typed = typed_var_ids(&model);
-            typed_seen += typed.len();
-            if !typed.is_empty() && !model.needs_script_engine {
-                violations.insert(format!("{label}: {typed:?}"));
-            }
+        };
+        let label = entry.display().to_string();
+        let mut parser = SCXMLParser::new();
+        // A document this sweep cannot parse is not this test's finding — the
+        // parser suites own that — so it is skipped rather than counted. The
+        // lower bound below is what keeps the skip honest.
+        let Ok(mut model) = parser.parse_string(&content, &label) else {
+            continue;
+        };
+        sce_build::analyzer::analyze(&mut model, "");
+        docs_parsed += 1;
+        let typed = typed_var_ids(&model);
+        typed_seen += typed.len();
+        if !typed.is_empty() && !model.needs_script_engine {
+            violations.insert(format!("{label}: {typed:?}"));
         }
     }
 
+    // What the sweep actually reached, printed rather than only asserted: a
+    // reader setting the floors below needs the current numbers, and a run
+    // whose scan set shrank without crossing a floor is visible here first.
+    eprintln!("datamodel sweep: {docs_parsed} document(s), {typed_seen} typed variable(s)");
+
+    // Measured 2026-08-14: 705 committed `.scxml`, of which this sweep parses
+    // 443 and finds 96 typed datamodel variables. The gap is the documents
+    // `parse_string` declines without filesystem context — preprocessor
+    // templates, `<data src>`, forge kinds — and it is stated rather than
+    // hidden: this test speaks for the 443 it reads, and the floors below sit
+    // under those numbers so a fixture can be retired without a false alarm
+    // while a silently emptied sweep still cannot report success.
     assert!(
-        docs_parsed >= 200,
-        "the sweep parsed only {docs_parsed} documents, so it is not measuring \
-         the corpus it claims to — check the roots and the parser before \
-         reading its verdict"
+        docs_parsed >= 400,
+        "the sweep parsed only {docs_parsed} committed documents, so it is not \
+         measuring the corpus it claims to — check the scan set and the parser \
+         before reading its verdict"
     );
     assert!(
-        typed_seen >= 20,
+        typed_seen >= 80,
         "the sweep found only {typed_seen} typed datamodel variables across \
          {docs_parsed} documents. A classifier change that stopped typing \
          anything would make this test pass while asserting nothing"
@@ -204,6 +208,25 @@ fn no_committed_document_declares_a_typed_variable_without_an_engine() {
         "these committed documents declare a typed datamodel variable with no \
          script engine, which the accessor emission cannot express: {violations:#?}"
     );
+}
+
+/// Every `.scxml` the repository tracks, asked of git rather than of the
+/// filesystem so build output and scratch trees cannot join the scan set.
+fn committed_scxml() -> Vec<PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root())
+        .args(["ls-files", "*.scxml"])
+        .output()
+        .expect("git ls-files");
+    assert!(
+        out.status.success(),
+        "git ls-files failed, so this sweep has no scan set to measure"
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|rel| repo_root().join(rel))
+        .collect()
 }
 
 /// Every backend emits the accessor, and none of them keeps the shadow.
@@ -290,24 +313,4 @@ fn every_backend_reads_the_datamodel_and_none_shadows_it() {
             );
         }
     }
-}
-
-fn walk_scxml(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(current) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&current) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|e| e == "scxml") {
-                out.push(path);
-            }
-        }
-    }
-    out.sort();
-    out
 }
