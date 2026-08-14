@@ -495,6 +495,21 @@ fn lua_values_equal(a: &LuaValue, b: &LuaValue) -> bool {
 
 /// W3C SCXML B.2 test 578: Convert JSON object/array notation to Lua table syntax.
 /// Transforms `"key" : value` → `["key"] = value` and handles nested structures.
+///
+/// The scan is over bytes and the output is over **slices of the input**, and
+/// the split matters. Every delimiter this rewrite decides on — `"`, `\`, `:`,
+/// whitespace — is ASCII, and a UTF-8 continuation byte is always `0x80..=0xBF`,
+/// so no multi-byte character can ever be mistaken for one: scanning bytes is
+/// exact. Producing output byte-by-byte is not. Widening each byte with
+/// `as char` — which this did at four sites — decodes the input as Latin-1, so
+/// `북` (`EB B6 81`) came out as three characters and re-encoded to six bytes.
+/// Nothing failed: the rewrite succeeded, the Lua parsed, and only the value
+/// was different. A non-ASCII *key* fared worse still — mangled, it no longer
+/// matched the lookup, and the field read back as nil.
+///
+/// Copying `&json[..]` ranges keeps the bytes the caller sent. The indices are
+/// always on character boundaries because they only ever advance past an ASCII
+/// delimiter or run to the end.
 fn json_to_lua_table(json: &str) -> String {
     let mut result = String::with_capacity(json.len());
     let bytes = json.as_bytes();
@@ -502,43 +517,54 @@ fn json_to_lua_table(json: &str) -> String {
     let mut i = 0;
     while i < len {
         if bytes[i] == b'"' {
-            // Capture the full quoted string
-            let mut key = String::from('"');
+            // Capture the full quoted string, closing quote included.
+            let string_start = i;
             i += 1;
             while i < len {
-                let c = bytes[i] as char;
-                key.push(c);
+                let b = bytes[i];
                 i += 1;
-                if c == '"' {
+                if b == b'"' {
                     break;
                 }
-                if c == '\\' && i < len {
-                    key.push(bytes[i] as char);
+                // An escape consumes the next byte without inspecting it. If
+                // that byte begins a multi-byte character the loop simply walks
+                // its continuation bytes, none of which can close the string.
+                if b == b'\\' && i < len {
                     i += 1;
                 }
             }
-            // Skip whitespace after string
-            let mut spaces = String::new();
-            while i < len && (bytes[i] as char).is_whitespace() {
-                spaces.push(bytes[i] as char);
+            let quoted = &json[string_start..i];
+
+            // Skip whitespace after the string. `is_ascii()` guards the widen:
+            // `char::is_whitespace` is true for U+00A0, so a bare `as char`
+            // would treat the byte 0xA0 — a legal UTF-8 continuation byte — as
+            // a separator and cut a character in half.
+            let spaces_start = i;
+            while i < len && bytes[i].is_ascii() && (bytes[i] as char).is_whitespace() {
                 i += 1;
             }
+            let spaces = &json[spaces_start..i];
+
             if i < len && bytes[i] == b':' {
                 i += 1; // consume ':'
                         // JSON key → Lua: ["key"] =
                 result.push('[');
-                result.push_str(&key);
+                result.push_str(quoted);
                 result.push(']');
-                result.push_str(&spaces);
+                result.push_str(spaces);
                 result.push('=');
             } else {
                 // Just a string value
-                result.push_str(&key);
-                result.push_str(&spaces);
+                result.push_str(quoted);
+                result.push_str(spaces);
             }
         } else {
-            result.push(bytes[i] as char);
-            i += 1;
+            // Everything up to the next quote is carried across verbatim.
+            let run_start = i;
+            while i < len && bytes[i] != b'"' {
+                i += 1;
+            }
+            result.push_str(&json[run_start..i]);
         }
     }
     result
