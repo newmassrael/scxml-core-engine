@@ -46,6 +46,11 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "cmake_option_guard_scope",
     "codegen_binary_resolution",
     "committed_sourcemap_drift",
+    // Sweeps every committed *.scxml for a typed `<data>` that arrived
+    // without a script engine, so a document added anywhere changes what it
+    // reads. A `paths:` filter over today's fixture trees would cover the
+    // answer it already knows and miss the case it exists for.
+    "datamodel_read_accessor",
     "diagnostic_corpus_schema",
     // Runs the CLI over every committed *.scxml and performs the repair
     // each rejection proposes, so a document added anywhere changes both
