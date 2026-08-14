@@ -291,6 +291,111 @@ pub struct AiLoopPolicy {
 }
 
 impl AiLoopPolicy {
+    /// §scxml-5.3: what the `north_star` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `north_star` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn north_star(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "north_star",
+        )
+    }
+
+    /// §scxml-5.3: what the `milestone` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `milestone` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn milestone(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "milestone",
+        )
+    }
+
+    /// §scxml-5.3: what the `reference` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `reference` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn reference(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "reference",
+        )
+    }
+
+    /// §scxml-5.3: what the `start_prompt` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `start_prompt` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn start_prompt(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "start_prompt",
+        )
+    }
+
+    /// §scxml-5.3: what the `turn_prompt` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `turn_prompt` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn turn_prompt(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "turn_prompt",
+        )
+    }
+
+    /// §scxml-5.3: what the `end_prompt` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `end_prompt` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn end_prompt(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "end_prompt",
+        )
+    }
+
+    /// §scxml-5.3: what the `done_marker` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `done_marker` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn done_marker(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "done_marker",
+        )
+    }
+
     /// §scxml-5.3: what the `screen_permissions` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the

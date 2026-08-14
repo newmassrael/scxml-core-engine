@@ -116,6 +116,174 @@ fn a_typed_datamodel_variable_always_comes_with_a_script_engine() {
     }
 }
 
+/// The type of a `<data>` initialiser is read off the value it denotes, not
+/// off the characters it is spelled with.
+///
+/// The classifier this replaced tested the first and last character for `"`,
+/// which is a question about quoting rather than about type. ECMAScript has
+/// two spellings for one string literal, and the AI-loop example uses the
+/// other one for every string it declares — so its whole editable strategy
+/// block, the part of the document a host is meant to edit and read back,
+/// reached consumers with no accessor at all. Nothing failed; the accessors
+/// were simply absent, which is the shape of gap this file exists to refuse.
+///
+/// The pairs below are the cases where a character test and a parse disagree.
+/// Each is asserted with its counterpart so a repair that merely added `'` to
+/// the character test would still fail here: `'42'` and `42` are spelled
+/// almost alike and are not the same type, and `1e3` and `1.5` are spelled
+/// almost alike and are not either.
+#[test]
+fn an_initialiser_is_typed_by_what_it_denotes_not_by_how_it_is_spelled() {
+    // (label, the `expr` attribute's text, the type it declares)
+    let cases: [(&str, &str, &str); 16] = [
+        ("double-quoted string", r#"&quot;hello&quot;"#, "string"),
+        ("single-quoted string", "'hello'", "string"),
+        ("empty string", "''", "string"),
+        // A string of digits is a string. A character test that accepted
+        // `'…'` by its quotes gets this one right; one that stripped quotes
+        // and re-sniffed would not.
+        ("digits inside quotes", "'42'", "string"),
+        // An escape makes the literal's interior look like anything at all,
+        // including a quote. The parse decodes it; a scan over the raw text
+        // is reading the escape as content.
+        ("string with an escaped quote", r#"'it\'s'"#, "string"),
+        ("string with a newline escape", r#"'a\nb'"#, "string"),
+        ("integer", "40", "int"),
+        ("zero", "0", "int"),
+        ("negation", "-7", "int"),
+        ("unary plus", "+7", "int"),
+        ("hexadecimal", "0x1f", "int"),
+        ("exponent denoting a whole number", "1e3", "int"),
+        ("boolean", "false", "bool"),
+        // Not integers: ECMAScript has one number type, but the accessor set
+        // has no reader for a fractional value, so these declare no type
+        // rather than an accessor that would answer `None` for ever.
+        ("fraction", "1.5", "runtime"),
+        ("exponent beyond i64", "1e400", "runtime"),
+        // Not a literal at all.
+        ("array", "[1,2,3]", "runtime"),
+    ];
+
+    for (label, expr, expected) in cases {
+        let model = model_of(
+            &doc_with_data(&format!(r#"<data id="v" expr="{expr}"/>"#)),
+            label,
+        );
+        let actual = &model.variables[0].var_type;
+        assert_eq!(
+            actual,
+            expected,
+            "⚠ `<data expr=\"{expr}\"/>` ({label}) was classified `{actual}`, so the \
+             emitted accessor set is {}. The classifier must answer from the \
+             parsed initialiser, not from its punctuation.",
+            if expected == "runtime" {
+                "wider than the types it can honour"
+            } else {
+                "missing a reader a consumer needs"
+            }
+        );
+    }
+}
+
+/// An expression whose result type ECMA-262 fixes is typed; one that would
+/// need its value computed is not.
+///
+/// `+` is the operator the AI-loop example builds its prompts with, and it is
+/// also the only one whose result type a single operand decides: ECMA-262 3rd
+/// ed. §11.6.1 concatenates whenever either side is a String, whatever the
+/// other side holds. That is why `'Milestone: ' + milestone` can be typed
+/// without knowing what `milestone` is, while `1 + 2` is deliberately left
+/// alone — folding arithmetic here would make the classifier a second
+/// evaluator, and the two would disagree at the edges the first one owns.
+#[test]
+fn a_computed_initialiser_is_typed_only_where_the_language_settles_it() {
+    let cases: [(&str, &str, &str); 9] = [
+        ("string on the left", "'a: ' + other", "string"),
+        ("string on the right", "other + ' :b'", "string"),
+        (
+            "string reached through a chain",
+            "'a' + b + c + d",
+            "string",
+        ),
+        // Both arms agree, so which one wins never has to be decided.
+        ("conditional agreeing on string", "c ? 'a' : 'b'", "string"),
+        ("either-or agreeing on string", "'' || 'fallback'", "string"),
+        ("conditional disagreeing", "c ? 'a' : 7", "runtime"),
+        // The defaulting idiom as it is actually written: `a` decides the
+        // result whenever it is truthy, and nothing here says what `a` holds.
+        // Typing this `string` from the visible operand would be a promise
+        // about the invisible one.
+        (
+            "either-or over an unknown operand",
+            "a || 'fallback'",
+            "runtime",
+        ),
+        // Not settled without computing a value.
+        ("integer addition", "1 + 2", "runtime"),
+        ("subtraction of strings", "'a' - 'b'", "runtime"),
+    ];
+
+    for (label, expr, expected) in cases {
+        let model = model_of(
+            &doc_with_data(&format!(r#"<data id="v" expr="{expr}"/>"#)),
+            label,
+        );
+        let actual = &model.variables[0].var_type;
+        assert_eq!(
+            actual, expected,
+            "⚠ `<data expr=\"{expr}\"/>` ({label}) was classified `{actual}`, not \
+             `{expected}`. A type claimed here is a promise the runtime accessor \
+             has to keep, and a type withheld here is an accessor a consumer does \
+             not get."
+        );
+    }
+}
+
+/// The example the AI-loop axis ships is readable in the half that is meant
+/// to be edited.
+///
+/// This asserts over the committed document rather than over a fixture,
+/// because the gap was never visible in a fixture: every hand-written probe
+/// in this file used the double-quoted spelling, so the classifier's blind
+/// spot sat under a green suite while the document the axis exists to
+/// demonstrate had eight unreadable variables — every string it declares.
+///
+/// `screen_rules` is the one declaration named as an exclusion here rather
+/// than left to be noticed: it is an array, and the typed accessor set has no
+/// reader for one. If a later change gives it one, this list is where that
+/// shows up.
+#[test]
+fn the_ai_loop_examples_editable_strategy_is_readable() {
+    let doc = repo_root().join("examples/ai_loop/ai_loop.scxml");
+    let content = std::fs::read_to_string(&doc).expect("the AI-loop example is committed");
+    let model = model_of(&content, "examples/ai_loop/ai_loop.scxml");
+
+    let typed: BTreeSet<String> = typed_var_ids(&model).into_iter().collect();
+    let declared: BTreeSet<String> = model.variables.iter().map(|v| v.id.clone()).collect();
+    let untyped: Vec<&String> = declared.difference(&typed).collect();
+
+    assert_eq!(
+        untyped,
+        vec![&"screen_rules".to_string()],
+        "⚠ the example's datamodel declares {} variables and {} of them carry a \
+         typed accessor. Everything but `screen_rules` — an array, which no \
+         accessor reads — must be answerable, because the strategy strings are \
+         exactly what a supervising host edits and then needs to read back.",
+        declared.len(),
+        typed.len()
+    );
+
+    // The floor keeps the assertion above from passing over a document that
+    // shrank: `untyped` is also a one-element vector when the datamodel holds
+    // nothing but `screen_rules`.
+    assert!(
+        declared.len() >= 16,
+        "the example declares only {} datamodel variables, so this test is no \
+         longer measuring the block it names",
+        declared.len()
+    );
+}
+
 /// The complement, so the implication above is not vacuously easy to keep: a
 /// `<data>` with no initialiser is the one shape that stays untyped, and it is
 /// also the only one that can appear without a script engine.

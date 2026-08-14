@@ -202,6 +202,21 @@ pub struct SessionIdsAreDistinctPolicy {
 }
 
 impl SessionIdsAreDistinctPolicy {
+    /// §scxml-5.3: what the `firstSid` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `firstSid` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn first_sid(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "firstSid",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
