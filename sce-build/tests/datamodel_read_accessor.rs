@@ -404,8 +404,15 @@ fn committed_scxml() -> Vec<PathBuf> {
 /// and only add a third way to read one of them, and the removal without the
 /// accessor is the gap this whole file exists to close.
 ///
-/// C11 is asserted for the removal half only, and says so below rather than
-/// being quietly dropped from the list.
+/// C11 has no shadow half — it never lowered a `<data>` into a struct member
+/// at all — and for a while that was read as meaning it could have no
+/// accessor either. It does not follow: the accessor's source is the session
+/// that owns the variable, not a member beside it, and C11 owns that session
+/// as a `lua_State` on the machine. Its reader is inlined into the generated
+/// translation unit rather than called out to a runtime library, which is the
+/// contract that backend declares for every algorithm body it carries
+/// (`backends/c/runtime/CMakeLists.txt`), so the string matched below is its
+/// own emitted signature rather than a helper call.
 #[test]
 fn every_backend_reads_the_datamodel_and_none_shadows_it() {
     use sce_build::generator::Language;
@@ -447,11 +454,12 @@ fn every_backend_reads_the_datamodel_and_none_shadows_it() {
             "_datamodel_read.read_int",
             Some("self.max_turns"),
         ),
-        // C11 never lowered a `<data>` into a struct member at all, so it has
-        // no shadow to remove and no typed member an accessor could read
-        // back. Named here so the omission is a recorded measurement rather
-        // than a backend someone forgot.
-        (Language::C11, "", None),
+        // Reads out of the machine's own `lua_State`; nothing to un-shadow.
+        (
+            Language::C11,
+            "bool probe_max_turns(const probe_t *sm, int64_t *out)",
+            None,
+        ),
     ];
 
     for (language, accessor_call, shadow) in expectations {
