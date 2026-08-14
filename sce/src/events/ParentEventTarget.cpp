@@ -9,7 +9,6 @@
 #include "events/IEventDispatcher.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
-#include "runtime/JsonUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <sstream>
 #include <thread>
@@ -119,21 +118,16 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
 
         // W3C SCXML: Format params as JSON object to match ECMAScript data model
         // This enables _event.data.paramName access in finalize handlers (Test 233, 178)
-        if (!event.params.empty()) {
-            json eventDataJson = json::object();
-
-            // Add all params to the JSON object (W3C SCXML: Support duplicate param names - Test 178)
-            for (const auto &param : event.params) {
-                if (param.second.size() == 1) {
-                    // Single value: store as string
-                    eventDataJson[param.first] = param.second[0];
-                } else if (param.second.size() > 1) {
-                    // Multiple values: store as array (duplicate param names)
-                    eventDataJson[param.first] = param.second;
-                }
-            }
-
-            eventData = JsonUtils::toCompactString(eventDataJson);
+        //
+        // Through EventDataHelper rather than inline: this block used to
+        // rebuild the string-only serializer the helper already owns, and in
+        // rebuilding it dropped `event.typedParams` — so `<param expr="42"/>`
+        // crossed to the parent as `{"value":"42"}` and an ECMAScript receiver
+        // read `_event.data.value === 42` as false. The AOT send path has
+        // always called the helper, so the two engines answered differently
+        // for the same document.
+        if (!event.params.empty() || !event.typedParams.empty()) {
+            eventData = EventDataHelper::buildEventDataJson(event.params, event.typedParams);
         }
 
         // §scxml-5.10 test 338: Get invoke ID for this child session

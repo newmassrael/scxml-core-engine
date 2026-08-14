@@ -7,7 +7,6 @@
 #include "core/LogMacros.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
-#include "runtime/JsonUtils.h"
 #include <future>
 #include <sstream>
 
@@ -162,7 +161,7 @@ std::string InternalEventTarget::buildEventData(const EventDescriptor &event) co
         return event.content;
     }
 
-    if (event.data.empty() && event.params.empty()) {
+    if (event.data.empty() && event.params.empty() && event.typedParams.empty()) {
         return "";
     }
 
@@ -170,37 +169,24 @@ std::string InternalEventTarget::buildEventData(const EventDescriptor &event) co
     // but MUST NOT otherwise modify it"
 
     // For simple data without parameters, return data directly (SCXML compliant)
-    if (!event.data.empty() && event.params.empty()) {
+    if (!event.data.empty() && event.params.empty() && event.typedParams.empty()) {
         return event.data;
     }
 
     // §scxml-5.10: Build event data from params (Single Source of Truth)
     // Use EventDataHelper for consistent JSON construction (Interpreter + AOT)
-    if (event.data.empty() && !event.params.empty()) {
-        return EventDataHelper::buildJsonFromParams(event.params);
+    //
+    // `buildEventDataJson`, not `buildJsonFromParams`: the latter stringifies
+    // every value, which is how `<param expr="42"/>` reached a receiver as
+    // `"42"`. The typed map is what carries the number.
+    if (event.data.empty()) {
+        return EventDataHelper::buildEventDataJson(event.params, event.typedParams);
     }
 
-    // For complex data with both data and parameters, build structured JSON object
-    json eventDataJson = json::object();
-
-    // Add main data if provided
-    if (!event.data.empty()) {
-        eventDataJson["data"] = event.data;
-    }
-
-    // Add parameters using EventDataHelper logic (W3C Test 178: duplicate param names)
-    for (const auto &param : event.params) {
-        if (param.second.size() == 1) {
-            // Single value: store as string
-            eventDataJson[param.first] = param.second[0];
-        } else if (param.second.size() > 1) {
-            // Multiple values: store as array (duplicate param names)
-            eventDataJson[param.first] = param.second;
-        }
-        // Empty vector: skip (should not happen in normal operation)
-    }
-
-    return JsonUtils::toCompactString(eventDataJson);
+    // For complex data with both data and parameters, the same helper composes
+    // both halves, so the presence of a `data` attribute cannot change a
+    // param's type.
+    return EventDataHelper::buildEventDataJson(event.data, event.params, event.typedParams);
 }
 
 }  // namespace SCE
