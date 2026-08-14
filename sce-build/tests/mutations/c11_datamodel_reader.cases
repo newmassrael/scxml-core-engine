@@ -1,0 +1,56 @@
+# Mutation cases for §scxml-5.3 on the C11 backend — a generated machine
+# answers what its own datamodel holds.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/c11_datamodel_reader.cases`.
+#
+# The target is the TEMPLATE rather than a generated file, and that is forced
+# rather than chosen: the C11 backend commits no generated tree. Every fixture
+# is regenerated at CMake time, so the template is what the built binaries
+# actually carry, and check 1 of the harness — did the artifact move — is
+# answerable against it.
+#
+# What this asks is whether the reader is asserted by anything. It was emitted
+# by no backend until this round, and the reason it went unnoticed for so long
+# is that nothing in the C11 suite ever asked a machine about its datamodel:
+# every fixture reads the CONFIGURATION, which was right the whole time.
+
+mutation_ctest --test-dir build -R '^c11_integration_session_ids_are_distinct$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+
+# ── The reader answers the wrong variable's value ───────────────────
+#
+# `lua_getglobal` is the whole read. Fetching a name the document never
+# declared pushes nil, so every reader reports "cannot answer" — the shape a
+# machine in a legitimate state also has, which is why a test that only
+# checked "did it return false somewhere" could not tell them apart.
+
+mutation_case "the reader looks up a name the document never declared" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     'lua_getglobal(sm->L, "{{ var.id }}");\n    bool _ok = false;\n    if (lua_type(sm->L, -1) == LUA_TSTRING) {',
+     'lua_getglobal(sm->L, "{{ var.id }}_absent");\n    bool _ok = false;\n    if (lua_type(sm->L, -1) == LUA_TSTRING) {')
+PY
+
+# ── The full length is not reported ─────────────────────────────────
+#
+# `len` is what lets a caller recover from a buffer that was too small.
+# Reporting the copied length instead reads as "it fitted" for every answer,
+# so a caller that resizes on `*len >= cap` never resizes and silently keeps a
+# truncated value.
+
+mutation_case "the string reader reports the copied length, not the full one" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if (len != NULL) {\n                *len = _full;\n            }",
+     "            if (len != NULL) {\n                *len = _copied;\n            }")
+PY
+
+# ── A machine with no session answers anyway ────────────────────────
+#
+# `sm->L` is NULL before `_init` and after `_destroy`. Dropping the guard
+# turns a read on an unbooted machine from an honest refusal into a call into
+# the Lua C API with a NULL state.
+
+mutation_case "the string reader does not check that a session exists" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {",
+     "    if (sm == NULL || out == NULL || cap == 0u) {")
+PY

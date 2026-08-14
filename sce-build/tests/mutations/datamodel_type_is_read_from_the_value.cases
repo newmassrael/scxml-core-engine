@@ -36,7 +36,7 @@ PY
 #
 # ECMA-262 3rd ed. §11.6.1 concatenates when EITHER operand is a String. A rule
 # that reads only one side types `'Milestone: ' + milestone` and not
-# `agent + ' reported'`, which is the same expression written the other way
+# `milestone + ' reached'`, which is the same expression written the other way
 # round.
 
 mutation_case "a concatenation is a string only when the string is on the left" <<'PY'

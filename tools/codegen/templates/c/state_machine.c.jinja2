@@ -4185,6 +4185,94 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? NULL : sm->scxml_location;
 }
+{% set typed_vars = model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
+{% for var in typed_vars %}
+
+/* W3C SCXML 5.3: what `{{ var.id }}` is holding now.
+
+   The three type checks below are `lua_type` comparisons rather than the
+   `lua_is*` coercing family, deliberately and for the reason the reader
+   exists: `lua_isstring` answers true for a number, and a consumer asking
+   what a declared string holds wants to be told when it is holding
+   something else instead of being handed a rendering of it.
+{% if var.type == 'int' %}
+   The integer read is the one that is lenient, and about engines rather
+   than about types: lua 5.4 has an integer subtype but arithmetic on a
+   declared `40` can hand back a float, so a whole-valued number counts.
+   A fractional one is a different number and is refused. Cpp / Rust / Go
+   / Kotlin / Python draw the line at exactly this place. */
+{% else %}
+*/
+{% endif %}
+{% if var.type == 'string' %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                              char *out, size_t cap, size_t *len) {
+    if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {
+        return false;
+    }
+    lua_getglobal(sm->L, "{{ var.id }}");
+    bool _ok = false;
+    if (lua_type(sm->L, -1) == LUA_TSTRING) {
+        size_t _full = 0u;
+        const char *_s = lua_tolstring(sm->L, -1, &_full);
+        if (_s != NULL) {
+            size_t _copied = (_full >= cap) ? (cap - 1u) : _full;
+            memcpy(out, _s, _copied);
+            out[_copied] = '\0';
+            if (len != NULL) {
+                *len = _full;
+            }
+            _ok = true;
+        }
+    }
+    lua_pop(sm->L, 1);
+    return _ok;
+}
+{% elif var.type == 'int' %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t *out) {
+    if (sm == NULL || sm->L == NULL || out == NULL) {
+        return false;
+    }
+    lua_getglobal(sm->L, "{{ var.id }}");
+    bool _ok = false;
+    if (lua_isinteger(sm->L, -1)) {
+        *out = (int64_t)lua_tointeger(sm->L, -1);
+        _ok = true;
+    } else if (lua_type(sm->L, -1) == LUA_TNUMBER) {
+        /* Wholeness is decided by a round trip rather than by `modf`, so
+           this reader costs no libm on a target that links none: the cast
+           truncates toward zero, and converting back compares equal only
+           when nothing was truncated. The range guard runs first because
+           casting an out-of-range double to int64_t is undefined; both
+           bounds are powers of two and therefore exact as doubles. */
+        lua_Number _d = lua_tonumber(sm->L, -1);
+        if (_d >= -9223372036854775808.0 && _d < 9223372036854775808.0) {
+            int64_t _whole = (int64_t)_d;
+            if ((lua_Number)_whole == _d) {
+                *out = _whole;
+                _ok = true;
+            }
+        }
+    }
+    lua_pop(sm->L, 1);
+    return _ok;
+}
+{% else %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm, bool *out) {
+    if (sm == NULL || sm->L == NULL || out == NULL) {
+        return false;
+    }
+    lua_getglobal(sm->L, "{{ var.id }}");
+    bool _ok = false;
+    if (lua_type(sm->L, -1) == LUA_TBOOLEAN) {
+        *out = (lua_toboolean(sm->L, -1) != 0);
+        _ok = true;
+    }
+    lua_pop(sm->L, 1);
+    return _ok;
+}
+{% endif %}
+{% endfor %}
 {% if model.needs_script_engine %}
 
 /* W3C SCXML C.2.3: `_init` variant taking the deployment's inbound BasicHTTP
