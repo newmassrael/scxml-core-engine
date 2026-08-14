@@ -27,10 +27,10 @@
              forward — both happen. -->
         <transition event="trigger"/>
         <transition event="done.invoke"
-                    cond="_event.data ~= nil and _event.data.verdict == 'preserved'"
+                    cond="_event.data != null &amp;&amp; _event.data.verdict === 'preserved'"
                     target="pass"/>
         <transition event="done.invoke.remote_inv"
-                    cond="_event.data ~= nil and _event.data.verdict == 'preserved'"
+                    cond="_event.data != null &amp;&amp; _event.data.verdict === 'preserved'"
                     target="pass"/>
         <transition event="done.invoke" target="fail"/>
         <transition event="done.invoke.remote_inv" target="fail"/>

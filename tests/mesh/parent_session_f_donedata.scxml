@@ -5,16 +5,16 @@
      the wire-18 round-trip for THREE donedata flavors:
 
        phase_param   — worker returns `<param name="result" expr="42"/>`;
-                        parent cond `_event.data.result == 42` asserts
+                        parent cond `_event.data.result === 42` asserts
                         that the name survived and the expression value
-                        re-hydrated as the expected Lua number.
+                        re-hydrated as a number of the same type.
        phase_content — worker returns `<content expr="'hello_content'"/>`;
-                        parent cond `_event.data == 'hello_content'`
+                        parent cond `_event.data === 'hello_content'`
                         asserts that the content-expression branch
                         serialises as a JSON string and re-parses into
-                        a Lua string on the parent side.
-       phase_nested  — worker returns `<content expr="{result =
-                        {status = 'ok', codes = {200, 201}}}"/>`; parent
+                        a string on the parent side.
+       phase_nested  — worker returns `<content expr="({result:
+                        {status: 'ok', codes: [200, 201]}})"/>`; parent
                         cond exercises nested object access, nested
                         array access, and integer type preservation
                         after the canonical-JSON round-trip through
@@ -24,8 +24,8 @@
      Failure modes:
        - `_event.data` empty → the stash / getDonedata / emitWire18 /
          onInvokeDone chain dropped the payload somewhere;
-       - name missing (`result == nil`) → JSON param envelope broken;
-       - wrong type (`_event.data.result == "42"` as string) →
+       - name missing (`result` undefined) → JSON param envelope broken;
+       - wrong type (`_event.data.result === "42"` as string) →
          typedData hydration regressed;
        - nested object/array flattened or stringified → canonical-JSON
          contract broke in `DoneDataHelper::evaluateContent`.
@@ -42,7 +42,7 @@
     <state id="phase_param">
         <invoke type="scxml" src="#worker_session_f_donedata_param" id="inv_param"/>
         <transition event="done.invoke.inv_param"
-                    cond="_event.data ~= nil and _event.data.result == 42"
+                    cond="_event.data != null &amp;&amp; _event.data.result === 42"
                     target="phase_content">
             <assign location="param_ok" expr="true"/>
         </transition>
@@ -52,7 +52,7 @@
     <state id="phase_content">
         <invoke type="scxml" src="#worker_session_f_donedata_content" id="inv_content"/>
         <transition event="done.invoke.inv_content"
-                    cond="param_ok and _event.data == 'hello_content'"
+                    cond="param_ok &amp;&amp; _event.data === 'hello_content'"
                     target="phase_nested">
             <assign location="content_ok" expr="true"/>
         </transition>
@@ -66,7 +66,7 @@
              lua_transformer.rs shifts integer-literal subscripts by +1
              when emitting Lua, so `[0]`/`[1]` here become Lua `[1]`/`[2]`. -->
         <transition event="done.invoke.inv_nested"
-                    cond="content_ok and _event.data ~= nil and _event.data.result ~= nil and _event.data.result.status == 'ok' and _event.data.result.codes ~= nil and _event.data.result.codes[0] == 200 and _event.data.result.codes[1] == 201"
+                    cond="content_ok &amp;&amp; _event.data != null &amp;&amp; _event.data.result != null &amp;&amp; _event.data.result.status === 'ok' &amp;&amp; _event.data.result.codes != null &amp;&amp; _event.data.result.codes[0] === 200 &amp;&amp; _event.data.result.codes[1] === 201"
                     target="pass"/>
         <transition event="done.invoke.inv_nested" target="fail"/>
         <transition event="error.execution" target="fail"/>

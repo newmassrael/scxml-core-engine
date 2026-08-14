@@ -21,7 +21,7 @@
        version="1.0" datamodel="ecmascript" initial="await" name="worker_session_f_autoforward">
     <state id="await">
         <transition event="trigger"
-                    cond="_event.data ~= nil and _event.data.value == 42 and _event.sendid == 'trigger_send_1'"
+                    cond="_event.data != null &amp;&amp; _event.data.value === 42 &amp;&amp; _event.sendid === 'trigger_send_1'"
                     target="done"/>
         <transition event="trigger" target="stripped"/>
     </state>
