@@ -75,9 +75,21 @@ public:
 
     // === Lifecycle Management ===
 
-    bool initialize() override {
-        return true;
-    }
+    /**
+     * @brief Bring the engine to a state where a request will be serviced
+     *
+     * The constructor already initializes, so on a live engine this only
+     * reports that. It is the post-`shutdown()` case that makes the method
+     * load-bearing: `shutdown()` joins the worker thread and drops the
+     * runtime, and a request enqueued after that is never serviced — the
+     * caller's future waits forever. Returning `true` unconditionally, as
+     * this did, reported a usable engine and produced exactly that hang
+     * (measured: `DonedataLocalInvokeAotTest` passed alone and deadlocked
+     * when the interpreter test ran first and shut the singleton down).
+     *
+     * @return true if the engine is initialized when this returns
+     */
+    bool initialize() override;
 
     /**
      * @brief Check if engine is properly initialized
