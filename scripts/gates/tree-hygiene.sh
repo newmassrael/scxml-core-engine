@@ -51,4 +51,5 @@ cargo test -p sce-build --features cli \
     --test test_result_gating \
     --test ledger_symbol_axis_reach \
     --test integration_stem_registration \
+    --test datamodel_read_accessor \
     || sce_gate_fail "tree-wide hygiene gates"
