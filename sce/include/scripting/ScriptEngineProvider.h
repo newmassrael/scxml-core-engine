@@ -15,17 +15,21 @@ namespace SCE {
  * All engine-specific dispatch is consolidated in ScriptEngineProvider.cpp.
  *
  * Build configuration:
- *   cmake -DSCE_SCRIPT_ENGINE=lua      (default; requires SCE_ENABLE_LUA=ON)
- *   cmake -DSCE_SCRIPT_ENGINE=quickjs  (requires SCE_ENABLE_QUICKJS=ON)
+ *   cmake -DSCE_SCRIPT_ENGINE=quickjs  (default; requires SCE_ENABLE_QUICKJS=ON)
+ *   cmake -DSCE_SCRIPT_ENGINE=lua      (requires SCE_ENABLE_LUA=ON)
  *
- * The default is the one `sce/CMakeLists.txt` sets, and it is `lua`. This
- * comment claimed `quickjs` while the cache entry said `lua`, and the two
- * choices are not interchangeable: they run different languages. A document
- * declaring `datamodel="ecmascript"` is evaluated by QuickJS as ECMAScript
- * and by LuaEngine as Lua-after-rewriting, so which engine a build selects
- * decides what an expression MEANS. Naming the wrong default here is how a
- * reader concludes an expression was checked against ECMAScript when it
- * was not.
+ * The two choices are not interchangeable: they run different languages. A
+ * document declaring `datamodel="ecmascript"` is evaluated by QuickJS as
+ * ECMAScript and by LuaEngine as Lua-after-rewriting, so which engine a build
+ * selects decides what an expression MEANS. That is why the default is
+ * QuickJS: measured against `tests/ecmascript/ecma262_semantics.json`, the
+ * lua selection answers 26 of 58 ECMA-262 expressions wrong. Selecting it is
+ * still allowed and still builds — `ecmascript_semantics_test` is what stops
+ * the wrong answers from being silent.
+ *
+ * Keep this comment and the cache entry in `sce/CMakeLists.txt` in step. They
+ * disagreed once, and a reader then concluded an expression had been checked
+ * against ECMAScript when it had not.
  *
  * Adding a new engine:
  *   1. Implement IScriptEngine + ISessionManager

@@ -245,6 +245,44 @@ endif()
 apply_sce_test_policies(js_engine_tests)
 
 # ============================================================================
+# 2.5. ECMA-262 Semantics (the engine THIS build selected)
+#
+# Separate from js_engine_tests on purpose. Those name an engine
+# (`JSEngine::instance()`), so they keep passing on a build that never runs
+# it; this one goes through ScriptEngineProvider, so the answer changes with
+# SCE_SCRIPT_ENGINE and a wrong selection cannot hide behind a green suite.
+# The expectations are the shared table sce-build's Rust test reads.
+# ============================================================================
+add_executable(ecmascript_semantics_test
+    engine/EcmaScriptSemanticsTest.cpp
+)
+
+target_include_directories(ecmascript_semantics_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(ecmascript_semantics_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# Injected rather than resolved from the working directory, so the test reads
+# the same table under ctest, CI and an IDE run.
+target_compile_definitions(ecmascript_semantics_test
+    PRIVATE
+        SCE_ECMA262_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json"
+)
+
+apply_sce_test_policies(ecmascript_semantics_test)
+
+add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
+
+# ============================================================================
 # 3. StateMachine Tests
 # ============================================================================
 add_executable(state_machine_tests
