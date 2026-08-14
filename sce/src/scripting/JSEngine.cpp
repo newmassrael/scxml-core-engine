@@ -101,6 +101,24 @@ void JSEngine::shutdown() {
     SCE_LOG_DEBUG("JSEngine: Shutdown complete");
 }
 
+bool JSEngine::initialize() {
+    if (initialized_.load()) {
+        return true;
+    }
+
+    // Only `shutdown()` clears `initialized_`, and it leaves a joined worker
+    // thread and a null runtime behind. `reset()` is the documented path back
+    // from that state, and it is safe to call here: `shutdown()` already
+    // destroyed every session, so `reset()`'s session-teardown loop is empty
+    // and the executor shutdown it performs is idempotent. Rebuilding through
+    // `reset()` rather than through a second copy of the sequence keeps one
+    // description of what "initialized" means — the registries and the DOM
+    // class id are part of it, and `initializeInternal()` alone restores
+    // neither.
+    reset();
+    return initialized_.load();
+}
+
 void JSEngine::reset() {
     SCE_LOG_DEBUG("JSEngine: reset() called");
 
