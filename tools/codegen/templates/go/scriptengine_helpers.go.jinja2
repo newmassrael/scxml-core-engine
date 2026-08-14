@@ -82,7 +82,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 {% set is_function_expr = (var.expr | trim) is startingwith('function') %}
 {% if is_function_expr %}
 	// W3C SCXML B.2: Function expression for {{ var.id }}
-	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_script }}`); err != nil {
+	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
 		eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}
@@ -108,7 +108,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 {% else %}
 	// W3C SCXML B.2: Inline content for {{ var.id }} (eval with string fallback)
 	{
-		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_expr }}`)
+		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_data_content }}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
 		} else {
@@ -130,7 +130,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 {% if var.expr %}
 {% set is_function_expr = (var.expr | trim) is startingwith('function') %}
 {% if is_function_expr %}
-	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_script }}`); err != nil {
+	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
 		eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}
@@ -153,7 +153,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 	_ = engine.SetVariable(sessionID, "{{ var.id }}", `{{ var.content }}`)
 {% else %}
 	{
-		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_expr }}`)
+		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_data_content }}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
 		} else {

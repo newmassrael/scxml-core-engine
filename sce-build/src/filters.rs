@@ -97,6 +97,7 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_machine_name", to_pascal_case);
     // ECMAScript→Lua transformation filters
     env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_data_content", to_lua_data_content);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("escape_lua", escape_lua);
@@ -327,31 +328,122 @@ fn read_data_src(src: String, base_path: String) -> Result<String, minijinja::Er
 
 // ── ECMAScript→Lua transformation filters ─────────────────────────
 
-fn to_lua_expr(expr: String) -> String {
+/// The three seams between a template and [`crate::ecmascript`].
+///
+/// # What a rejection becomes
+///
+/// Source the frontend cannot parse does **not** stop code generation. W3C
+/// SCXML §5.9.1 says an unevaluable `cond` raises `error.execution` and
+/// reads as false, and §5.4 says the same of an `<assign expr>`; test 344
+/// (`cond="return"`, a reserved word) is in the conformance suite precisely
+/// to check it. Refusing at codegen would make that document ungeneratable
+/// rather than conformant.
+///
+/// So a rejection is emitted as Lua that raises when evaluated, carrying the
+/// parser's message. That is the same outcome the transformer this replaced
+/// reached — its output for `return` was `_scxml_truthy(return)`, which Lua
+/// refuses to compile — except by design rather than by accident, and with a
+/// message naming the expression instead of a Lua parse position.
+///
+/// The message travels in the raised error, which is where a reader of the
+/// generated source finds it. It is deliberately *not* written to stderr:
+/// under `--error-format=json` every stderr line is one diagnostic object
+/// (`SCE_ERROR_CONTRACT.md` §4), and a bare warning line there is a
+/// malformed record — `diagnostic_corpus_schema` fails on it. Surfacing a
+/// refusal as a real `DiagnosticCode` is the follow-up that belongs to the
+/// error-contract checklist, not to this seam.
+fn to_lua_expr(expr: String) -> Result<String, minijinja::Error> {
+    // §scxml-B-2: a value expression — `<data expr>`, `<assign expr>`,
+    // `<param expr>`, `<log expr>` — evaluated for what it yields.
     if expr.is_empty() {
-        return String::new();
+        return Ok(String::new());
     }
-    crate::lua_transformer::transform_expression(
-        expr.trim_end_matches(';'),
-        crate::lua_transformer::ExpressionContext::General,
-    )
+    Ok(match crate::ecmascript::to_lua_value(&expr) {
+        Ok(lua) => lua,
+        Err(err) => lua_that_raises("expr", &expr, err),
+    })
 }
 
-fn to_lua_guard(expr: String) -> String {
+fn to_lua_guard(expr: String) -> Result<String, minijinja::Error> {
+    // §scxml-B-2: a condition — `transition/@cond`, `<if>`, `<elseif>` —
+    // evaluated under ECMAScript truthiness, which counts `0` and `""` as
+    // false where Lua counts them as true.
     if expr.is_empty() {
-        return "true".to_string();
+        return Ok("true".to_string());
     }
-    crate::lua_transformer::transform_expression(
-        expr.trim_end_matches(';'),
-        crate::lua_transformer::ExpressionContext::Guard,
-    )
+    Ok(match crate::ecmascript::to_lua_condition(&expr) {
+        Ok(lua) => lua,
+        Err(err) => lua_that_raises("cond", &expr, err),
+    })
 }
 
-fn to_lua_script(script: String) -> String {
+fn to_lua_script(script: String) -> Result<String, minijinja::Error> {
+    // §scxml-B-2: a `<script>` body — the one place the datamodel admits
+    // statements rather than a single expression.
     if script.is_empty() {
-        return String::new();
+        return Ok(String::new());
     }
-    crate::lua_transformer::transform_script(&script)
+    Ok(match crate::ecmascript::to_lua_script(&script) {
+        Ok(lua) => lua,
+        Err(err) => lua_that_raises("script", &script, err),
+    })
+}
+
+/// Lua that raises the parser's message when the engine evaluates it.
+fn lua_that_raises(what: &str, source: &str, err: crate::ecmascript::ExprError) -> String {
+    // §scxml-5.9.1: a condition the processor cannot evaluate is treated as
+    // false, with `error.execution` placed on the internal queue. Every
+    // backend's guard path already turns an evaluation error into exactly
+    // that, so raising is how a codegen-time verdict reaches the runtime the
+    // clause describes.
+    let message = format!("SCXML {what} is not valid ECMAScript: {source}: {err}");
+    format!(
+        "error({})",
+        crate::ecmascript::lua::string_literal(&message)
+    )
+}
+
+/// Inline `<data>` / `<content>` text, lowered to Lua.
+///
+/// §scxml-B-2 makes this the one place where "not an expression" is an
+/// answer rather than an error: content that is neither XML nor JSON *is a
+/// string*, whitespace-normalized. Every other seam raises on what it
+/// cannot parse; this one chooses among the readings the spec gives it —
+/// and hands XML on untouched, because building a DOM node is the
+/// initializer's job, not this filter's.
+///
+/// Deciding here rather than at runtime is the change. The generated code
+/// used to hand the engine whatever the string rewriter produced and let
+/// evaluation *fail* to discover that the text was not an expression — so
+/// `<data>this  is \na string</data>` reached Lua as three bare identifiers,
+/// and the string only appeared because the parse error triggered a
+/// fallback. The reading is decidable without running anything, so it is
+/// made where it can be seen.
+fn to_lua_data_content(content: String) -> Result<String, minijinja::Error> {
+    if content.is_empty() {
+        return Ok(String::new());
+    }
+    if let Ok(lua) = crate::ecmascript::to_lua_value(&content) {
+        return Ok(lua);
+    }
+    // XML is the reading this filter must *not* make. §scxml-B-2 orders the
+    // three: XML becomes a DOM value, JSON an object, anything else a
+    // string — and only the initializer at the other end of this seam can
+    // build a DOM node. Handing the source text back is what lets its XML
+    // branch see the `<`; deciding "string" here would bind test557's
+    // `<books>` as text and make `var1:getElementsByTagName(…)` fail on a
+    // value that is no longer a document.
+    if content.trim_start().starts_with('<') {
+        return Ok(content);
+    }
+    Ok(lua_string_literal(&normalize_ws(content)))
+}
+
+/// Render text as a Lua string literal. Shares the emitter's escaping rules
+/// by going through it, so a quote or a newline in `<data>` content cannot
+/// be escaped one way here and another way there.
+fn lua_string_literal(text: &str) -> String {
+    crate::ecmascript::lua::string_literal(text)
 }
 
 // ── Cross-engine compatibility filters ────────────────────────────
@@ -608,6 +700,7 @@ pub fn register_go_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_machine_name", to_pascal_case);
     // ECMAScript→Lua transformation filters (shared with Rust)
     env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_data_content", to_lua_data_content);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("escape_lua", escape_lua);
@@ -737,11 +830,22 @@ fn escape_cpp(text: String) -> String {
 /// ECMAScript expressions to Lua at codegen time and embeds the result
 /// as a C string literal passed through `luaL_dostring`.
 pub fn register_c11_filters(env: &mut minijinja::Environment) {
+    // §scxml-B-2: the C11 backend has no file to load at runtime — RFC
+    // §synth-5-J-1 forbids a runtime `fopen` in `sce-c-runtime` — so the
+    // shared semantics travel into the generated source as a C string
+    // literal. Same bytes as every other engine loads; `include_str!` binds
+    // it at compile time so there is no path to resolve and no copy to keep
+    // in step.
+    env.add_global(
+        "ecma_semantics_lua_c",
+        c_lua_dostring_chunks(ECMA_SEMANTICS_LUA),
+    );
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("escape_c", escape_c);
     env.add_filter("escape_json_string", escape_json_string);
     env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_data_content", to_lua_data_content);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("escape_lua", escape_lua);
@@ -762,6 +866,58 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
 /// Escape C string literals (identical escaping rules to Rust/C++).
 fn escape_c(text: String) -> String {
     escape_rust(text)
+}
+
+/// The shared §scxml-B-2 operator semantics, bound at compile time.
+///
+/// Same file the C++, Rust, Go, Kotlin and Python engines load; the C11
+/// backend cannot read it at runtime, so codegen carries it instead.
+pub const ECMA_SEMANTICS_LUA: &str = include_str!("../../sce/include/scripting/ecma_semantics.lua");
+
+/// Render a Lua source file as a sequence of `luaL_dostring` calls, each
+/// carrying a string literal short enough for a conforming C compiler.
+///
+/// ISO C99 §5.2.4.1 guarantees only 4095 characters in a string literal,
+/// and GCC's `-Woverlength-strings` (which `-pedantic -Werror` turns fatal
+/// in the C11 test build) measures the length *after* adjacent literals are
+/// concatenated — so splitting one literal per source line does not help.
+/// Several `luaL_dostring` calls do, because each is a complete Lua chunk.
+///
+/// The split points are blank lines, which in this file separate top-level
+/// definitions. That is what obliges the file to have no file-local
+/// helpers: a `local function` would not be visible to the chunk that came
+/// after it. `ecma_semantics.lua` says so at the definition that used to be
+/// one.
+fn c_lua_dostring_chunks(text: &str) -> String {
+    // Well under the 4095 floor, leaving room for the escaping expansion of
+    // whatever a maintainer adds to a paragraph.
+    const MAX_CHUNK: usize = 2500;
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for paragraph in text.split("\n\n") {
+        if !current.is_empty() && current.len() + paragraph.len() > MAX_CHUNK {
+            chunks.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push_str("\n\n");
+        }
+        current.push_str(paragraph);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+        .iter()
+        .map(|chunk| {
+            let literal = chunk
+                .lines()
+                .map(|line| format!("\"{}\\n\"", escape_rust(line.to_string())))
+                .collect::<Vec<_>>()
+                .join("\n            ");
+            format!("        (void)luaL_dostring(sm->L,\n            {literal});")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Escape characters for embedding inside a Lua short string literal
@@ -975,6 +1131,7 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     // through `| to_lua_expr | py_string_literal` so the generated
     // module hands Lua text (not Python) to the script engine.
     env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_data_content", to_lua_data_content);
     env.add_filter("to_lua_guard", to_lua_guard);
     env.add_filter("to_lua_script", to_lua_script);
     env.add_filter("to_event_variant", to_event_variant);

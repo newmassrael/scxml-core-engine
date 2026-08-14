@@ -3732,10 +3732,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/lua_transformer.rs",
-          "kind": "references"
-        },
-        {
           "file": "tests/w3c/aot_tests/Test150.h",
           "symbol": "Test150",
           "kind": "verifies"
@@ -3788,6 +3784,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
           "symbol": "executeForeach",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/ecmascript/lua.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6591,6 +6591,10 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::registerBuiltins",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9860,10 +9864,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/lua_transformer.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/model.rs",
           "kind": "references"
         },
@@ -10032,6 +10032,19 @@
           "file": "sce-build/src/model.rs",
           "symbol": "SCXMLModel",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/ecmascript/lua.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/ecmascript/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "_install_ecmascript_builtins",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -13804,6 +13817,18 @@
       "target_kind": "section",
       "target_id": "scxml-B-1-7",
       "reason": "sce-build/src/parser.rs::enforce_datamodel_languages now refuses the constructs this sub-section withholds; the section was exempt only while the datamodel attribute reached no decision"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2",
+      "reason": "the string-rewriting transformer is deleted; the ECMAScript frontend under sce-build/src/ecmascript/ carries the citation now"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-4.6",
+      "reason": "the string-rewriting transformer is deleted; the ECMAScript frontend under sce-build/src/ecmascript/ carries the citation now"
     }
   ],
   "frames": {},

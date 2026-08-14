@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -1033,7 +1033,7 @@ impl Test448Policy {
             Test448State::S0 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test448Event::Null {
-                    if self.safe_evaluate_guard("var1==1", engine) {
+                    if self.safe_evaluate_guard("_scxml_eq(var1, 1)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;
@@ -1080,7 +1080,7 @@ impl Test448Policy {
             Test448State::S01p1 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test448Event::Null {
-                    if self.safe_evaluate_guard("var2==1", engine) {
+                    if self.safe_evaluate_guard("_scxml_eq(var2, 1)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;

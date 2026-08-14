@@ -4272,8 +4272,9 @@ fn id_to_camel_case(name: &str) -> String {
 }
 
 /// Protect string literals in Named Context code transforms.
-/// Distinct from lua_transformer::protect_string_literals which handles JS comments
-/// and uses \x01-delimited placeholders for ECMAScript-to-Lua conversion.
+/// Distinct from the ECMAScript path, which no longer protects literals at
+/// all: `crate::ecmascript` tokenizes the source, so a string is a token
+/// rather than a region a later textual pass has to be kept out of.
 fn protect_context_strings(code: &str) -> (String, Vec<String>) {
     static RE_STRING: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r#""(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'"#).unwrap());

@@ -1658,6 +1658,8 @@ dependencies = [
  "object",
  "regex",
  "roxmltree",
+ "sce-rust-lua",
+ "sce-rust-runtime",
  "schemars",
  "serde",
  "serde_json",

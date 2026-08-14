@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -800,7 +800,7 @@ impl AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ChildToParent {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("_event.data  and  _event.data.value == 42                                            and  _event.origin ~= ''                                            and  _event.invokeid ~= ''", engine) {
+                    if self.safe_evaluate_guard("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;

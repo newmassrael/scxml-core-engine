@@ -133,15 +133,48 @@ extension elements are governed by §2 below, not by Appendix B.
 
 **What `ecmascript` currently means.** §B.2 obliges an implementation
 that accepts this value to support the third edition of ECMAScript. SCE
-does not yet ship an ECMAScript engine: expressions are rewritten to Lua
-at generation time and evaluated by the injected `IScriptEngine`
-(`sce-rust-lua` today). The rewrite covers the constructs the W3C IRP
-suite and the fixtures in this repository exercise; it is a translation,
-not an ECMAScript implementation, and the boundary of what it translates
-is not yet declared. Until it is, a construct outside that boundary is
-passed through rather than rejected. Closing that gap — a declared
-subset with a diagnostic per construct outside it — is tracked as the
-successor to this section.
+does not ship an ECMAScript engine: an expression is **parsed** at
+generation time and emitted as Lua, which the injected `IScriptEngine`
+evaluates. It is a translation, not an ECMAScript implementation — but
+the boundary of what it translates is now declared, which is what this
+paragraph used to record as open.
+
+The frontend is `sce-build/src/ecmascript/`: a recursive-descent reader
+of the ECMAScript expression grammar (and, for `<script>` bodies and
+function literals, the statement grammar), sharing its lexer with the
+Forge dialect so the two cannot disagree about what a literal or an
+identifier is.
+
+*Accepted*: the operators and literals of ECMA-262 expressions —
+including `==`/`!=`, which the Forge dialect forbids — plus array and
+object literals, `typeof`, `instanceof Array`, `new`, function
+expressions, `++`/`--`, assignment and compound assignment; and as
+statements, `var`, `if`, `while`, `for`, `for…in`, `return`, `break`,
+`continue`, function declarations and blocks.
+
+*Refused, by name*: a reserved word used as a value; `instanceof`
+against anything but `Array`; a `Math` member outside the mapped set;
+arrow functions, template literals, `??`, `?.` and spread (refused at
+the lexer, as in the Forge dialect); `switch`, `do…while`, `try`/
+`throw`, `with` and labelled statements; a parameter or local named
+after a Lua keyword.
+
+**A refusal is not a build failure.** §5.9.1 requires that a `cond`
+which cannot be evaluated raise `error.execution` and read as false, and
+§5.4 says the same of `<assign expr>`; W3C tests 309 and 344 write
+`cond="return"` for exactly that. Refusing at generation time would make
+those documents ungeneratable rather than conformant, so a refused
+expression is emitted as Lua that raises when evaluated, carrying the
+parser's message.
+
+**Operators Lua does not share** — `+` (concatenation or addition
+depending on the operands), `==` (coercing), `%` (truncating), the
+bitwise family (over ToInt32), and computed indexing (zero-based over a
+one-based store) — are emitted as calls into
+`sce/include/scripting/ecma_semantics.lua`, one definition that every
+backend's engine loads. `sce-build/tests/ecmascript_semantics.rs` pins
+each against the ECMA-262 clause it comes from, by evaluating the
+emitted Lua in the production engine rather than in a test-local one.
 
 ---
 

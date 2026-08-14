@@ -11,6 +11,6 @@
 {% if action.expr -%}
 {{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
 {% else -%}
-{{ indent }}self._assign_content(engine, {{ action.location | py_string_literal }}, {{ action.content | to_lua_expr | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
+{{ indent }}self._assign_content(engine, {{ action.location | py_string_literal }}, {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
 {% endif -%}
 {% endmacro -%}

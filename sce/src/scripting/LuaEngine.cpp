@@ -621,6 +621,15 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         end
     )LUA");
 
+// §scxml-B-2: the ECMAScript operators Lua does not share — `+`, `==` and
+// the bitwise family, which coerce their operands where Lua either refuses
+// or answers differently. Single Source of Truth at
+// sce/include/scripting/ecma_semantics.lua: the code sce-build emits calls
+// these by name on every backend, so one definition is what keeps the
+// engines from disagreeing about what `==` means.
+#include "ecma_semantics_lua.h"
+    luaL_dostring(L, ECMA_SEMANTICS_LUA);
+
 // §scxml-B-2: JSON.stringify / JSON.parse (Single Source of Truth)
 // Shared with Rust sce-rust-lua via sce/include/scripting/json_builtins.lua
 // CMake generates json_builtins_lua.h with the Lua source as a C++ raw string literal
