@@ -125,6 +125,24 @@ its transition content still fails — and a top-level final is the one
 observable every backend exposes, including the ones that report a single
 current leaf rather than a configuration.
 
+`parallel_self_transition_keeps_its_leaf` owns the axis immediately after that
+one: a region that took an external self-transition still holds an atomic
+state, so it answers the NEXT event. The two are separate fixtures because the
+sibling's question can be answered correctly by a configuration that is already
+broken — a region can take its transition and run its content exactly as
+required and still be left holding no leaf, which is present by every ancestor
+test while nothing inside it can ever fire again. Measured 2026-08-14 with the
+defect `sce-build/tests/mutations/parallel_microstep_owns_exit_and_entry.cases`
+restores: the sibling's whole C++ AOT driver stays green (SURVIVED, 0/2 red)
+and this one's goes red (CAUGHT, 1/2). What differs is which region the
+engine's single current-state pointer is resting in when the event arrives —
+re-exiting a leaf the microstep has already moved out of is harmless, and
+re-exiting one it just re-entered is the loss — so the self-transitioning
+region is first in document order here and second in the sibling. The deeper
+region answers `e` once and then goes quiet, which leaves the second `e`
+addressed to the self-transitioning region alone, and `settled` is guarded on
+`n == 1 && m == 2`.
+
 `parallel_completion_raises_done_state` covers W3C SCXML 3.4 + 3.7: a
 `<parallel>` is done once every region has reached a `<final>`, and that raises
 `done.state.<parallel>`. A parallel owns no `<final>` of its own — the regions
