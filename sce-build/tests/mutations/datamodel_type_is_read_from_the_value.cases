@@ -1,0 +1,83 @@
+# Mutation cases for §scxml-5.3 — a `<data>` initializer is typed by the value
+# it denotes, so the typed read accessors reach every declaration that has one.
+#
+# Run with
+#   scripts/mutate sce-build/tests/mutations/datamodel_type_is_read_from_the_value.cases
+#
+# Why this file exists rather than only the assertions it guards: the defect it
+# is about was a silence. `classify_variables` tested an initializer's first and
+# last character for `"`, so `'…'` — the other spelling of the same ECMAScript
+# string literal, and the one the AI-loop example uses throughout — declared no
+# type and got no accessor. Nothing failed. Every hand-written probe in
+# `datamodel_read_accessor.rs` happened to use double quotes, so the suite was
+# green over a document with eight unreadable variables. A classifier that
+# quietly narrows is exactly the shape a mutation round is for: the question
+# below is whether anything would notice it narrowing again.
+#
+# `sce-build`'s library is compiled into this test binary, so a mutation here
+# moves the artifact hash and the round's first check is answerable.
+
+mutation_tests -p sce-build --test datamodel_read_accessor
+mutation_targets sce-build/src/analyzer.rs
+
+# ── Strings stop being typed at all ────────────────────────────────
+#
+# The whole regression, restated at the arm that fixes it. Every string
+# declaration falls back to `runtime` — which is the state the AI-loop example
+# shipped in, and which no assertion about the numeric half can see.
+
+mutation_case "a string literal declares no type" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     'Expr::Str(_) => Some("string"),',
+     "Expr::Str(_) => None,")
+PY
+
+# ── Only the left operand of `+` settles a concatenation ───────────
+#
+# ECMA-262 3rd ed. §11.6.1 concatenates when EITHER operand is a String. A rule
+# that reads only one side types `'Milestone: ' + milestone` and not
+# `agent + ' reported'`, which is the same expression written the other way
+# round.
+
+mutation_case "a concatenation is a string only when the string is on the left" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     'literal_type(right) == Some("string")',
+     'literal_type(right) == Some("bool")')
+PY
+
+# ── Negation is no longer a number ─────────────────────────────────
+#
+# `-7` is negation applied to `7`, not a numeric literal, so the arm that
+# admits it is separate from the one that admits `7`. Dropping it loses every
+# negative budget or offset a document declares.
+
+mutation_case "a negated number declares no type" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "op: UnaryOp::Neg | UnaryOp::Pos,",
+     "op: UnaryOp::Pos,")
+PY
+
+# ── A fractional number claims an integer accessor ─────────────────
+#
+# The opposite failure to the ones above: typing too much. `read_int` refuses a
+# fractional value at run time, so `<data expr="1.5"/>` classified `int` emits
+# an accessor that answers `None` for the whole run — a reader that exists and
+# never works, which is worse than the honest absence.
+
+mutation_case "a fractional number is offered an integer accessor" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "d.fract() == 0.0 && d >= i64::MIN as f64",
+     "d >= i64::MIN as f64")
+PY
+
+# ── Two arms no longer have to agree ───────────────────────────────
+#
+# `c ? 'a' : 7` yields whichever arm the condition picks, so it has a type only
+# when both arms have the same one. Taking the first arm's answer regardless
+# promises a string for an expression that returns a number half the time.
+
+mutation_case "a conditional takes its first arm's type without agreement" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "(a == literal_type(b)?).then_some(a)",
+     "literal_type(b).map(|_| a)")
+PY

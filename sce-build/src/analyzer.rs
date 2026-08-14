@@ -67,14 +67,6 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     model.scxml_base_path = compute_scxml_base_path(scxml_path);
 }
 
-/// §scxml-5.3: Classify datamodel variables by type.
-///
-/// `needs_script_engine` is not set here — it is derived for the whole
-/// model by [`crate::script_engine_analyzer`] at the end of parse.
-/// Every variable with a non-empty initializer contributes a
-/// [`crate::script_engine_analyzer::NeedsScriptEngineCause::DatamodelVariableInit`]
-/// cause, which is a superset of the non-literal case this function used
-/// to flag individually.
 /// First non-whitespace character of `s`, or `None` if `s` is empty or
 /// contains only whitespace. Mirrors cpp's
 /// `content.find_first_not_of(" \t\r\n")` pattern in
@@ -83,30 +75,141 @@ fn first_non_ws(s: &str) -> Option<char> {
     s.chars().find(|c| !matches!(c, ' ' | '\t' | '\r' | '\n'))
 }
 
+/// §scxml-5.3: Classify datamodel variables by type.
+///
+/// `needs_script_engine` is not set here — it is derived for the whole
+/// model by [`crate::script_engine_analyzer`] at the end of parse.
+/// Every variable with a non-empty initializer contributes a
+/// [`crate::script_engine_analyzer::NeedsScriptEngineCause::DatamodelVariableInit`]
+/// cause, which is a superset of the non-literal case this function used
+/// to flag individually.
+///
+/// The answer decides one thing only — which typed read accessor the
+/// backends emit for this variable (`read_int` / `read_string` /
+/// `read_bool`, or none for `runtime`). It does not reach initialization:
+/// a `<data>` that carries `expr` or `content` is initialized by
+/// evaluating that text whatever the type says, and `runtime` names the
+/// remaining case, the declaration with nothing to evaluate.
 fn classify_variables(model: &mut SCXMLModel) {
     for var in &mut model.variables {
-        let expr = &var.expr;
-        let content = &var.content;
-        if expr.is_empty() && content.is_empty() {
-            var.var_type = "runtime".to_string();
-        } else if expr == "0"
-            || (!expr.is_empty()
-                && expr
-                    .strip_prefix('-')
-                    .unwrap_or(expr)
-                    .chars()
-                    .all(|c| c.is_ascii_digit())
-                && !expr.strip_prefix('-').unwrap_or(expr).is_empty())
-        {
-            var.var_type = "int".to_string();
-        } else if expr.starts_with('"') && expr.ends_with('"') {
-            var.var_type = "string".to_string();
-        } else if expr == "true" || expr == "false" {
-            var.var_type = "bool".to_string();
-        } else {
-            var.var_type = "runtime".to_string();
+        var.var_type = declared_type(&var.expr).to_string();
+    }
+}
+
+/// The typed accessor an initializer declares, or `"runtime"` for none.
+///
+/// This asks the ECMAScript front end what the initializer *is* instead of
+/// deciding from the source text's first and last character. The
+/// difference is not stylistic: the datamodel this classifies is
+/// ECMAScript, where `'a'` and `"a"` are the same string literal, so a
+/// check for a leading `"` answers a question about quoting rather than
+/// about type. Under it, `<data id="north_star" expr="'…'"/>` — the shape
+/// the AI-loop example uses for every one of its editable strategy strings
+/// — declared no type, and so reached consumers with no accessor at all.
+///
+/// Reading the AST also settles the cases a character test can only get
+/// wrong by accident: `'42'` is a string and not an integer, `0x1f` and
+/// `1e3` are integers and not opaque text, and a string carrying an escape
+/// is one literal rather than a shape with a suspicious interior.
+fn declared_type(expr: &str) -> &'static str {
+    const RUNTIME: &str = "runtime";
+    if expr.trim().is_empty() {
+        return RUNTIME;
+    }
+    // A parse failure is not this function's finding. The emitter parses
+    // the same text and raises `ExprError` against the document, naming
+    // the construct; classifying loudly here would report it twice and
+    // from the place least able to say where it came from.
+    let Ok(parsed) = crate::ecmascript::parser::parse_expression(expr) else {
+        return RUNTIME;
+    };
+    literal_type(&parsed).unwrap_or(RUNTIME)
+}
+
+/// The host type of an expression, or `None` when it does not have one.
+///
+/// A literal answers for itself. Beyond literals this admits exactly the
+/// forms whose result type ECMA-262 fixes without computing a value — an
+/// initializer whose type would need constant folding to know is left to
+/// the engine, because a classifier that folded arithmetic would be a
+/// second evaluator disagreeing with the first one at the margins.
+fn literal_type(expr: &crate::ecmascript::Expr) -> Option<&'static str> {
+    use crate::ecmascript::{BinOp, Expr, UnaryOp};
+
+    match expr {
+        Expr::Str(_) => Some("string"),
+        Expr::Bool(_) => Some("bool"),
+        Expr::Number(spelling) => whole_number(spelling).map(|_| "int"),
+        // `-7` is not a numeric literal in ECMAScript — it is negation
+        // applied to `7` — and the previous classifier's `strip_prefix('-')`
+        // was that fact spelled as string surgery. `+7` reaches the same
+        // value by the same shape and is admitted with it.
+        Expr::Unary {
+            op: UnaryOp::Neg | UnaryOp::Pos,
+            operand,
+        } => match operand.as_ref() {
+            Expr::Number(spelling) => whole_number(spelling).map(|_| "int"),
+            _ => None,
+        },
+        // ECMA-262 3rd ed. §11.6.1: if either operand of `+` is a String
+        // after ToPrimitive, the result is the concatenation. So a string
+        // on one side settles the type no matter what the other side turns
+        // out to hold at run time — which is why this arm can admit
+        // `'Milestone: ' + milestone` while no arm folds `1 + 2`. The
+        // asymmetry is ECMAScript's, not a shortcut: `+` is the one
+        // operator whose result type a single operand can decide.
+        Expr::Binary {
+            op: BinOp::Add,
+            left,
+            right,
+        } => (literal_type(left) == Some("string") || literal_type(right) == Some("string"))
+            .then_some("string"),
+        // `c ? a : b` and `a || b` both yield one of two operands, so they
+        // have a type exactly when the two agree on one. Which operand wins
+        // never has to be decided.
+        Expr::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => agreed_type(consequent, alternate),
+        Expr::Logical { left, right, .. } => agreed_type(left, right),
+        _ => None,
+    }
+}
+
+/// The type both expressions have, when that is one type.
+fn agreed_type(a: &crate::ecmascript::Expr, b: &crate::ecmascript::Expr) -> Option<&'static str> {
+    let a = literal_type(a)?;
+    (a == literal_type(b)?).then_some(a)
+}
+
+/// The value of an ECMAScript numeric literal when it is a whole number an
+/// `i64` can hold, otherwise `None`.
+///
+/// ECMAScript has one number type, so `1.5` and `40` are the same kind of
+/// literal to the grammar and only their values differ. The typed accessor
+/// set is what draws the line here: `read_int` refuses a fractional value
+/// at run time, so declaring one `int` would emit an accessor that answers
+/// `None` forever. Such a variable stays `runtime` — visible through the
+/// engine like any other, just without a typed reader of its own.
+fn whole_number(spelling: &str) -> Option<i64> {
+    let radix_body =
+        |prefix_len: usize, radix: u32| i64::from_str_radix(&spelling[prefix_len..], radix).ok();
+    if let Some(rest) = spelling.get(..2) {
+        match rest {
+            "0x" | "0X" => return radix_body(2, 16),
+            "0b" | "0B" => return radix_body(2, 2),
+            "0o" | "0O" => return radix_body(2, 8),
+            _ => {}
         }
     }
+    if let Ok(i) = spelling.parse::<i64>() {
+        return Some(i);
+    }
+    // `1e3` and `40.0` denote whole numbers by a spelling `i64` will not
+    // read directly; `1.5` and `1e400` do not denote one at all.
+    let d = spelling.parse::<f64>().ok()?;
+    (d.fract() == 0.0 && d >= i64::MIN as f64 && d <= i64::MAX as f64).then_some(d as i64)
 }
 
 /// Analyze model and set feature flags.

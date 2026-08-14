@@ -352,6 +352,51 @@ TEST_F(AiLoopAotTest, TheMachineAnswersWhatItsOwnDatamodelHolds) {
            "assigned in the consumer's own copy of this loop";
 }
 
+// The strategy a host edits is the strategy it can read back.
+//
+// The budget above is the numeric half of the datamodel. This is the other
+// half, and it is the half the example's own comment calls editable: the north
+// star, the milestone, the prompts built from them, the marker that ends the
+// run. A supervisor that is going to send `start_prompt` has to be able to see
+// what it is about to send, and a UI over this loop has nothing to display
+// without these.
+//
+// They were unreadable for the same reason none of them looked unusual: the
+// document spells its strings with `'...'`, and the classifier deciding which
+// variables get an accessor tested for `"`. Eight of the sixteen declarations
+// were silently untyped, so this file could assert the budget and pass while
+// the strategy was not reachable at all.
+//
+// `start_prompt` is asserted through its parts rather than as one literal,
+// because it is a concatenation: it exists to prove that a value the document
+// COMPUTES from its strings is readable too, not only the ones it spells out.
+//
+// The Rust channel asserts the same clause on the same document
+// (`the_strategy_a_host_edits_is_the_strategy_it_can_read_back`).
+TEST_F(AiLoopAotTest, TheStrategyAHostEditsIsTheStrategyItCanReadBack) {
+    Machine sm;
+    start(sm);
+
+    EXPECT_EQ(sm.getPolicy().done_marker(), std::optional<std::string>("MILESTONE REACHED"))
+        << "the marker that decides when the run has converged must be readable off the machine - a "
+           "host matching the session's report against it cannot ask the document";
+    EXPECT_EQ(sm.getPolicy().north_star(),
+              std::optional<std::string>("(edit me) the outcome this loop exists to reach"))
+        << "the goal the author edits is the first thing a supervisor displays";
+    EXPECT_EQ(sm.getPolicy().milestone(), std::optional<std::string>("(edit me) the next checkpoint on the way there"))
+        << "so is the checkpoint it is working toward";
+
+    const auto start_prompt = sm.getPolicy().start_prompt();
+    ASSERT_TRUE(start_prompt.has_value())
+        << "the prompt the loop sends into a fresh session must be readable before it is sent";
+    EXPECT_NE(start_prompt->find("(edit me) the outcome this loop exists to reach"), std::string::npos)
+        << "the composed prompt must carry the authored strings it was built from, so a host "
+           "reading it sees what the session will receive: "
+        << *start_prompt;
+    EXPECT_NE(start_prompt->find("Report what you did"), std::string::npos)
+        << "including the instruction half: " << *start_prompt;
+}
+
 // A machine that has not been booted cannot answer, and says so.
 //
 // The failure this refuses is the one a default-valued member would produce:
