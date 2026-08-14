@@ -175,7 +175,20 @@ sce_main_build_dir() {
         sce_gate_step "configuring $SCE_MAIN_BUILD_DIR (RelWithDebInfo, mirroring the lane)"
         local GENERATOR=()
         command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
+        # `SCE_ENABLE_MESH=ON` because `cpp-suite` asserts a floor of 140
+        # registered non-c11 cases and the mesh tests are most of them. The
+        # option defaults OFF, so the configure written here could not reach
+        # the floor the gate it serves demands: the gate only ever passed by
+        # INHERITING a `build/` somebody had configured by hand, and reported
+        # 59-of-287 the first time it had to make its own.
+        # Measured 2026-08-14, after this tree's `build/` was deleted. The
+        # same shape explains a build machine that had never been hand-
+        # configured registering the same 59.
+        # A gate whose verdict depends on how a directory was once configured
+        # by a person is not a gate; the configure and the floor have to be
+        # written next to each other.
         cmake -B "$SCE_MAIN_BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DBUILD_TESTS=ON -DSCE_ENABLE_MESH=ON \
               ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null \
             || sce_gate_fail "cmake configure"
     fi
