@@ -15,6 +15,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -229,13 +230,12 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 				sess.l.SetField(-2, "data")
 			} else {
 				sess.l.SetTop(top)
-				// W3C SCXML B.2 test 562/578: Try JSON-to-Lua conversion
-				luaSyntax := jsonToLuaTable(args.Data)
-				if err := lua.DoString(sess.l, "return "+luaSyntax); err == nil {
+				// W3C SCXML B.2 test 578: the payload is JSON, so decode it.
+				if jsonVal, ok := decodeJSON(args.Data); ok {
+					pushJSONValue(sess.l, jsonVal)
 					sess.l.SetField(-2, "data")
 				} else {
-					sess.l.SetTop(top)
-					// W3C SCXML B.2: Fall back to whitespace-normalized string
+					// W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
 					normalized := strings.Join(strings.Fields(args.Data), " ")
 					sess.l.PushString(normalized)
 					sess.l.SetField(-2, "data")
@@ -266,59 +266,6 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 
 	sess.l.SetGlobal("_event")
 	return nil
-}
-
-// jsonToLuaTable converts JSON syntax ("key": val) to Lua table syntax (["key"] = val).
-// Port of Rust sce-rust-lua json_to_lua_table().
-func jsonToLuaTable(json string) string {
-	var result strings.Builder
-	result.Grow(len(json))
-	bytes := []byte(json)
-	n := len(bytes)
-	i := 0
-	for i < n {
-		if bytes[i] == '"' {
-			// Capture the full quoted string
-			var key strings.Builder
-			key.WriteByte('"')
-			i++
-			for i < n {
-				c := bytes[i]
-				key.WriteByte(c)
-				i++
-				if c == '"' {
-					break
-				}
-				if c == '\\' && i < n {
-					key.WriteByte(bytes[i])
-					i++
-				}
-			}
-			// Skip whitespace after string
-			var spaces strings.Builder
-			for i < n && (bytes[i] == ' ' || bytes[i] == '\t' || bytes[i] == '\n' || bytes[i] == '\r') {
-				spaces.WriteByte(bytes[i])
-				i++
-			}
-			if i < n && bytes[i] == ':' {
-				i++ // consume ':'
-				// JSON key -> Lua: ["key"] =
-				result.WriteByte('[')
-				result.WriteString(key.String())
-				result.WriteByte(']')
-				result.WriteString(spaces.String())
-				result.WriteByte('=')
-			} else {
-				// Just a string value
-				result.WriteString(key.String())
-				result.WriteString(spaces.String())
-			}
-		} else {
-			result.WriteByte(bytes[i])
-			i++
-		}
-	}
-	return result.String()
 }
 
 // pushDOMTable parses xml into a full DOM tree and pushes a Lua table
@@ -728,9 +675,8 @@ func (e *LuaEngine) registerNativeJSONParse(sess *session) {
 			return 1
 		}
 
-		// Use Go's encoding/json to parse the JSON string
-		var jsonVal interface{}
-		if err := json.Unmarshal([]byte(s), &jsonVal); err != nil {
+		jsonVal, ok := decodeJSON(s)
+		if !ok {
 			l.PushNil()
 			return 1
 		}
@@ -740,6 +686,26 @@ func (e *LuaEngine) registerNativeJSONParse(sess *session) {
 	})
 	l.SetField(-2, "parse")
 	l.Pop(1) // pop JSON table
+}
+
+// decodeJSON parses a JSON document, reporting `false` when the text is not
+// one. Both JSON entry points — the author-facing `JSON.parse` and the
+// `_event.data` payload path — go through here so a document means the same
+// thing whichever of the two reads it.
+//
+// The trailing-token check makes the accepted set a whole document rather than
+// a prefix of one: `Decode` alone stops at the end of the first value, so
+// `{"a":1} garbage` would otherwise parse.
+func decodeJSON(s string) (interface{}, bool) {
+	dec := json.NewDecoder(strings.NewReader(s))
+	var val interface{}
+	if err := dec.Decode(&val); err != nil {
+		return nil, false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, false
+	}
+	return val, true
 }
 
 // pushJSONValue pushes a parsed JSON value onto the Lua stack.
@@ -752,6 +718,12 @@ func pushJSONValue(l *lua.State, val interface{}) {
 	case bool:
 		l.PushBoolean(v)
 	case float64:
+		// Every JSON number lands here. This engine is go-lua, whose
+		// `PushInteger` is `apiPush(float64(n))` — it has no integer subtype
+		// to reach for, unlike the cpp and Rust engines' Lua 5.4. Splitting
+		// integral values out would therefore be a distinction with no
+		// observable difference; `tostring` already renders a whole float
+		// without a fractional part.
 		l.PushNumber(v)
 	case string:
 		l.PushString(v)
