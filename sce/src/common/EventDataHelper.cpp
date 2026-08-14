@@ -82,9 +82,55 @@ std::string EventDataHelper::buildJsonFromTypedParams(const std::map<std::string
     return JsonUtils::toCompactString(eventDataJson);
 }
 
+// Merged rather than "typed wins": the two maps do not carry the same shape.
+// `stringParams` holds a VECTOR per name, because a document may write
+// `<param name="x">` more than once and W3C test 178 requires every value to
+// arrive. `typedParams` holds ONE value per name, so choosing it wholesale
+// publishes the last `<param>` and silently drops the earlier ones — while
+// choosing the string map wholesale turns `expr="42"` into `"42"`, which is
+// what an ECMAScript receiver compares against 42 and finds unequal (measured
+// 2026-08-14: the autoforward fixture's `_event.data.value === 42` read false
+// end to end).
+static json mergeParams(const std::map<std::string, std::vector<std::string>> &stringParams,
+                        const std::map<std::string, ScriptValue> &typedParams) {
+    json eventDataJson = json::object();
+    for (const auto &[name, values] : stringParams) {
+        if (values.empty()) {
+            continue;
+        }
+        if (values.size() > 1) {
+            eventDataJson[name] = values;
+            continue;
+        }
+        auto typed = typedParams.find(name);
+        eventDataJson[name] = typed != typedParams.end() ? scriptValueToJson(typed->second) : json(values[0]);
+    }
+
+    // A name that produced a typed value without a stringified one still
+    // belongs in the payload; dropping it would make the presence of a sibling
+    // param decide whether this one is delivered.
+    for (const auto &[name, value] : typedParams) {
+        if (stringParams.find(name) == stringParams.end()) {
+            eventDataJson[name] = scriptValueToJson(value);
+        }
+    }
+    return eventDataJson;
+}
+
 std::string EventDataHelper::buildEventDataJson(const std::map<std::string, std::vector<std::string>> &stringParams,
                                                 const std::map<std::string, ScriptValue> &typedParams) {
-    return !typedParams.empty() ? buildJsonFromTypedParams(typedParams) : buildJsonFromParams(stringParams);
+    return JsonUtils::toCompactString(mergeParams(stringParams, typedParams));
+}
+
+std::string EventDataHelper::buildEventDataJson(const std::string &data,
+                                                const std::map<std::string, std::vector<std::string>> &stringParams,
+                                                const std::map<std::string, ScriptValue> &typedParams) {
+    // Composed here rather than by re-parsing the params JSON at the call
+    // site: `json::parse` throws, and the send path that needs this runs
+    // inside an event target whose caller does not expect an exception.
+    json eventDataJson = mergeParams(stringParams, typedParams);
+    eventDataJson["data"] = data;
+    return JsonUtils::toCompactString(eventDataJson);
 }
 
 std::string EventDataHelper::scriptValueToJsonString(const ScriptValue &value) {

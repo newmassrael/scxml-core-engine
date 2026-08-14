@@ -100,11 +100,36 @@ public:
      * `data` is the only channel and must encode int/double/bool natively for the
      * receiver to compare values without coercion.
      *
+     * The two maps are merged per name rather than one being chosen wholesale.
+     * `stringParams` carries a vector per name because a document may write
+     * `<param name="x">` more than once (test 178) and every value has to
+     * arrive; `typedParams` carries one value per name. So a name written once
+     * is published with its type, and a name written more than once keeps the
+     * string array — `typedParams` holds only the last of those and cannot
+     * serve them.
+     *
      * @param stringParams Map of param names to stringified values
-     * @param typedParams  Map of param names to typed ScriptValues (preferred)
-     * @return Type-preserving JSON when typedParams non-empty; string-only JSON otherwise
+     * @param typedParams  Map of param names to typed ScriptValues
+     * @return JSON carrying each param's type where the shape allows it
      */
     static std::string buildEventDataJson(const std::map<std::string, std::vector<std::string>> &stringParams,
+                                          const std::map<std::string, ScriptValue> &typedParams);
+
+    /**
+     * @brief Build event data JSON that carries a `data` payload alongside params.
+     *
+     * The params half is built exactly as the two-argument overload builds it,
+     * so whether a document also wrote `data` cannot change a param's type.
+     * Composing here rather than at the call site keeps `json::parse` — which
+     * throws — out of the event targets, whose callers do not expect one.
+     *
+     * @param data         The send's own data payload, published under "data"
+     * @param stringParams Map of param names to stringified values
+     * @param typedParams  Map of param names to typed ScriptValues
+     * @return JSON carrying the payload and each param's type
+     */
+    static std::string buildEventDataJson(const std::string &data,
+                                          const std::map<std::string, std::vector<std::string>> &stringParams,
                                           const std::map<std::string, ScriptValue> &typedParams);
 
     /**

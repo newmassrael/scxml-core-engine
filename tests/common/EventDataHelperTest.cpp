@@ -155,5 +155,56 @@ TEST_F(EventDataHelperTest, BuildEventDataJson_FallsBackToStringOnly) {
     EXPECT_EQ(parsed["force"], "42");
 }
 
+// buildEventDataJson: a name written twice keeps both values, and its
+// neighbour still arrives typed.
+//
+// The two maps disagree in shape — `stringParams` holds a vector per name
+// because a document may repeat `<param name="x">` (W3C test 178),
+// `typedParams` holds one value per name because that is all the send path
+// records. Choosing one map wholesale is wrong in both directions:
+// taking the typed map published `tag` as "b" and lost "a", and taking the
+// string map turned `force` into "42", which an ECMAScript receiver compares
+// against 42 and finds unequal.
+TEST_F(EventDataHelperTest, BuildEventDataJson_KeepsDuplicateValuesAndTypesTheRest) {
+    std::map<std::string, std::vector<std::string>> stringParams;
+    stringParams["tag"].push_back("a");
+    stringParams["tag"].push_back("b");
+    stringParams["force"].push_back("42");
+
+    std::map<std::string, ScriptValue> typedParams;
+    typedParams["force"] = static_cast<int64_t>(42);
+    // What the send path actually records for a repeated name: the last one.
+    typedParams["tag"] = std::string("b");
+
+    std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
+
+    json parsed;
+    ASSERT_NO_THROW(parsed = json::parse(result)) << "Invalid JSON: " << result;
+    ASSERT_TRUE(parsed["tag"].is_array()) << "the repeated param collapsed to one value: " << result;
+    ASSERT_EQ(parsed["tag"].size(), 2);
+    EXPECT_EQ(parsed["tag"][0], "a");
+    EXPECT_EQ(parsed["tag"][1], "b");
+    EXPECT_TRUE(parsed["force"].is_number_integer()) << "the neighbour lost its type: " << result;
+    EXPECT_EQ(parsed["force"], 42);
+}
+
+// buildEventDataJson: a typed value with no stringified twin still arrives.
+TEST_F(EventDataHelperTest, BuildEventDataJson_KeepsTypedOnlyNames) {
+    std::map<std::string, std::vector<std::string>> stringParams;
+    stringParams["named"].push_back("x");
+
+    std::map<std::string, ScriptValue> typedParams;
+    typedParams["only"] = true;
+
+    std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
+
+    json parsed;
+    ASSERT_NO_THROW(parsed = json::parse(result)) << "Invalid JSON: " << result;
+    EXPECT_EQ(parsed["named"], "x");
+    ASSERT_TRUE(parsed.contains("only")) << "a typed-only name was dropped because a sibling had a string: " << result;
+    EXPECT_TRUE(parsed["only"].is_boolean());
+    EXPECT_EQ(parsed["only"], true);
+}
+
 }  // namespace Test
 }  // namespace SCE
