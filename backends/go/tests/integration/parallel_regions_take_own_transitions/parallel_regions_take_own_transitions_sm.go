@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 
@@ -133,9 +133,6 @@ type ParallelRegionsTakeOwnTransitionsPolicy struct {
 	pendingEventOrigin string
 	pendingEventOrigintype string
 	pendingEventInvokeid string
-	// W3C SCXML 5.3: Datamodel variables
-	n int64
-	m int64
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
@@ -161,9 +158,31 @@ func NewParallelRegionsTakeOwnTransitionsPolicy() ParallelRegionsTakeOwnTransiti
 	return ParallelRegionsTakeOwnTransitionsPolicy{
 		lastTransitionSourceState: ParallelRegionsTakeOwnTransitionsStateWorking,
 		activeStates: make([]ParallelRegionsTakeOwnTransitionsState, 0),
-		n: 0,
-		m: 0,
 	}
+}
+
+// N reports what the `n` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `n` was assigned a value of another type, or the engine refused.
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) N() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "n")
+}
+
+// M reports what the `m` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `m` was assigned a value of another type, or the engine refused.
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) M() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "m")
 }
 
 
@@ -211,8 +230,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ensureScriptEngine() {
 	engine.SetStateQueryCallback(sessionID, func(stateID string) bool {
 		return p.IsStateActive(stateID)
 	})
-	_ = engine.SetVariable(sessionID, "n", p.n)
-	_ = engine.SetVariable(sessionID, "m", p.m)
 	p.scriptEngineInitialized = true
 }
 

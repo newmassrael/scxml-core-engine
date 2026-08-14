@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -157,8 +157,6 @@ pub struct DonedataLocalInvokePolicy {
     pending_event_origintype: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.3: Datamodel variables
-    param_ok: bool,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -203,6 +201,21 @@ pub struct DonedataLocalInvokePolicy {
 }
 
 impl DonedataLocalInvokePolicy {
+    /// §scxml-5.3: what the `param_ok` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `param_ok` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn param_ok(&self) -> Option<bool> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_bool(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "param_ok",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -227,7 +240,6 @@ impl DonedataLocalInvokePolicy {
             pending_event_origin: ::sce_rust_runtime::SceString::new(),
             pending_event_origintype: ::sce_rust_runtime::SceString::new(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
-            param_ok: false,
             session_id: None,
             script_engine_initialized: false,
             basic_http_access_uri: String::new(),

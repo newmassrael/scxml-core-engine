@@ -315,4 +315,55 @@ TEST_F(AiLoopAotTest, OneCancelReachesEveryRegion) {
         << describe(sm);
 }
 
+// §scxml-5.3: the machine answers what its own datamodel holds.
+//
+// A host supervising this loop has to size its own work against the budget the
+// document declares. Without an accessor the only readable copy is the script
+// engine's, reached with an engine handle, a session id and the variable's
+// name spelled as a string — three things a consumer should not need, none of
+// them checked by a compiler.
+//
+// The half that decides the shape is `turns`: it is authored 0 and assigned on
+// every completed turn, so an accessor answering the AUTHORED literal would
+// keep saying 0 for the whole run. What a consumer asks for is the value the
+// machine is holding now, which is why the read goes to whoever owns the
+// datamodel rather than to a copy taken at generation time.
+//
+// The Rust channel asserts the same clause on the same document
+// (`the_machine_answers_what_its_own_datamodel_holds`), so an accessor that
+// only one backend emits fails on the other.
+TEST_F(AiLoopAotTest, TheMachineAnswersWhatItsOwnDatamodelHolds) {
+    Machine sm;
+    start(sm);
+
+    EXPECT_EQ(sm.getPolicy().max_turns(), std::optional<int64_t>(40))
+        << "the authored budget must be readable off the machine itself, in the host's own type";
+    EXPECT_EQ(sm.getPolicy().reflect_every(), std::optional<int64_t>(8)) << "so must the reflection cadence";
+    EXPECT_EQ(sm.getPolicy().screen_permissions(), std::optional<bool>(false))
+        << "a standing answer to permission dialogs is a promise about what the loop may do "
+           "unattended, and a host must be able to inspect it";
+
+    ASSERT_EQ(sm.getPolicy().turns(), std::optional<int64_t>(0))
+        << "no turn has completed yet, so the bookkeeping still reads its authored value";
+    turn(sm);
+    EXPECT_EQ(sm.getPolicy().turns(), std::optional<int64_t>(1))
+        << "the accessor must report what the datamodel HOLDS, not what the document authored - a "
+           "value frozen at generation time would still say 0 here, and `max_turns` itself is "
+           "assigned in the consumer's own copy of this loop";
+}
+
+// A machine that has not been booted cannot answer, and says so.
+//
+// The failure this refuses is the one a default-valued member would produce:
+// a freshly constructed machine reporting the document's literal as though a
+// session had been created and initialised it. Nothing has read the document
+// at this point, so `nullopt` is the only honest answer.
+TEST_F(AiLoopAotTest, AnUninitialisedMachineSaysItCannotAnswer) {
+    Machine sm;
+
+    EXPECT_EQ(sm.getPolicy().max_turns(), std::nullopt)
+        << "before initialize() there is no session holding a datamodel, and answering 40 would be "
+           "a claim about a run that has not started";
+}
+
 }  // namespace SCE::Tests

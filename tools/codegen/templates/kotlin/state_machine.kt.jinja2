@@ -53,12 +53,35 @@ class {{ machine_name }}StateMachine(
 {% else %}
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
 {% endif %}
+{# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
+
+   A `<data>` that carries an initialiser is owned by the script engine for the
+   life of the session: `<assign>` writes there and every guard reads from
+   there. A property here holding the same variable would be a second
+   representation that stops agreeing with the first `<assign>` and never
+   agrees again. This template drew that line first — by gating the property on
+   `not needs_script_engine` — and the gate turned out to close it entirely: a
+   `<data>` is only typed when it carries an initialiser, and an initialiser is
+   itself what makes a document need a script engine, so the property was
+   unreachable. What a consumer actually wanted is below: a read of the value
+   the session is holding. #}
 {% if model.variables %}
 
-    // Datamodel (W3C SCXML 5.3)
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
 {% for var in model.variables %}
-{% if var.type != 'runtime' and not model.needs_script_engine %}
-    var {{ var.id | to_camel_case }}: {{ var.type | to_kotlin_type }} = {{ kotlin_default(var) }}
+{% if var.type in ['int', 'string', 'bool'] %}
+
+    /**
+     * §scxml-5.3: what the `{{ var.id }}` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `{{ var.id }}` was assigned a value of another type, or the engine refused.
+     */
+    fun {{ var.id | to_camel_case }}(): {{ 'Long' if var.type == 'int' else ('String' if var.type == 'string' else 'Boolean') }}? =
+        com.sce.runtime.DatamodelRead.read{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(scriptEngine, scriptSessionId, "{{ var.id }}")
 {% endif %}
 {% endfor %}
 {% endif %}

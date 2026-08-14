@@ -118,6 +118,12 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `LuaEngine` (Lua 5.4) — Lua evaluation engine with ECMAScript compatibility layer
 - `ScriptEngineProvider` — Compile-time engine selection (`SCE_SCRIPT_ENGINE=lua|quickjs`)
 - `DataModelInitHelper` — W3C SCXML 5.3 datamodel initialization
+- `DataModelReadHelper` — W3C SCXML 5.3 typed reads back out of the session. A
+  `<data>` with an initializer is owned by the script engine for the life of
+  the session, so a generated machine reads it here rather than shadowing it in
+  a member that `<assign>` would leave stale. Rust `helpers::datamodel_read`,
+  Go `ReadDatamodel*`, Kotlin `DatamodelRead` and Python `datamodel_read` are
+  the same three coercions, so every backend's accessor answers alike.
 - `DOMBinding` / `LuaDOMBinding` — DOM access for script engines
 - `PlatformExecutionHelper` — Platform abstraction (Native pthread vs WASM synchronous)
 
@@ -525,7 +531,7 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 |----------|---------|------------|
 | Pure validators | AssignHelper, ForeachValidator, DatamodelValidationHelper | stdlib only |
 | Shared computation | StringUtils, SCXMLConstants, EventTypeHelper, InPredicateHelper, EventMetadataHelper, SendHelper, SendSchedulingHelper, NamelistHelper, LogicalTimeScheduler | stdlib + LogMacros |
-| JSEngine-dependent | GuardHelper, DoneDataHelper, AssignmentExecutionHelper, FinalizeHelper, DataModelInitHelper | `scripting/IJSExecutionEngine` |
+| JSEngine-dependent | GuardHelper, DoneDataHelper, AssignmentExecutionHelper, FinalizeHelper, DataModelInitHelper, DataModelReadHelper | `scripting/IJSExecutionEngine` |
 | Runtime infrastructure | UniqueIdGenerator, UrlEncodingHelper, EventDataHelper, FileLoadingHelper | compiled (.cpp in sce_base/sce_runtime) |
 | Logging | Logger, ILoggerBackend, DisableStdOut | compiled (.cpp in sce_base) |
 

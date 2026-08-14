@@ -860,7 +860,6 @@ pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
-    env.add_filter("to_kotlin_type", to_kotlin_type);
     env.add_filter("escape_kotlin", escape_kotlin);
     env.add_filter("to_kotlin_string_expr", to_kotlin_string_expr);
     env.add_filter("to_event_class_name", to_event_class_name);
@@ -889,16 +888,6 @@ pub fn to_camel_case(name: String) -> String {
         }
     }
     result
-}
-
-/// Map SCXML variable type to Kotlin type.
-fn to_kotlin_type(var_type: String) -> String {
-    match var_type.as_str() {
-        "int" => "Int".to_string(),
-        "string" => "String".to_string(),
-        "bool" => "Boolean".to_string(),
-        _ => "Any".to_string(),
-    }
 }
 
 /// Escape Kotlin string literals.

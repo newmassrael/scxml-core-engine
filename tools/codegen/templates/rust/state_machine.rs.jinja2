@@ -269,18 +269,16 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // subset of the active configuration, so it cannot exceed the depth bound.
     history_{{ history_id }}: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>>,
 {% endfor %}
-{% if model.variables %}
-    // W3C SCXML 5.3: Datamodel variables
-{% for var in model.variables %}
-{% if var.type == 'int' %}
-    {{ var.id | to_snake_case }}: i64,
-{% elif var.type == 'string' %}
-    {{ var.id | to_snake_case }}: ::sce_rust_runtime::SceString,
-{% elif var.type == 'bool' %}
-    {{ var.id | to_snake_case }}: bool,
-{% endif %}
-{% endfor %}
-{% endif %}
+{# W3C SCXML 5.3: the datamodel has ONE home, and it is not this struct.
+
+   A `<data>` that carries an initializer is owned by the script engine for
+   the life of the session: `<assign>` writes there and every guard reads
+   from there. A field here holding the same variable would be a second
+   representation that stops agreeing with the first `<assign>` and never
+   agrees again — so the machine reads the datamodel back out through
+   `helpers::datamodel_read` (see the accessors below) instead of shadowing
+   it. Kotlin's template already drew this line; the other backends now do
+   too. #}
 {% if not no_std %}
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
@@ -344,6 +342,25 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 
 impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
 {% if model.needs_script_engine %}
+{% for var in model.variables %}
+{% if var.type in ['int', 'string', 'bool'] %}
+    /// §scxml-5.3: what the `{{ var.id }}` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `{{ var.id }}` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn {{ var.id | to_snake_case }}(&self) -> Option<{{ 'i64' if var.type == 'int' else ('String' if var.type == 'string' else 'bool') }}> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_{{ var.type }}(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "{{ var.id }}",
+        )
+    }
+
+{% endif %}
+{% endfor %}
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -406,21 +423,6 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% for history_id, _ in model.history_states | dictsort %}
             history_{{ history_id }}: None,
 {% endfor %}
-{% if model.variables %}
-{% for var in model.variables %}
-{% if var.type == 'int' %}
-            {{ var.id | to_snake_case }}: {{ var.expr if var.expr else '0' }},
-{% elif var.type == 'string' %}
-{% if var.expr %}
-            {{ var.id | to_snake_case }}: ::sce_rust_runtime::sce_string_from_str({{ var.expr | to_rust_string_expr }}),
-{% else %}
-            {{ var.id | to_snake_case }}: ::sce_rust_runtime::SceString::new(),
-{% endif %}
-{% elif var.type == 'bool' %}
-            {{ var.id | to_snake_case }}: {{ 'true' if var.expr and var.expr.lower() == 'true' else 'false' }},
-{% endif %}
-{% endfor %}
-{% endif %}
 {% if not no_std %}
             session_id: None,
 {% endif %}

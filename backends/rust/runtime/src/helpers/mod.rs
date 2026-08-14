@@ -19,6 +19,7 @@
 //! ## Module index
 //!
 //! - [`datamodel_init`]: Datamodel initialization helpers
+//! - `datamodel_read` (std-only): Typed reads of a live datamodel variable
 //! - [`done_data`]: Donedata processing
 //! - [`entry_exit`]: Entry/exit action block execution with error isolation
 //! - `event_data` (std-only): Event data JSON construction
@@ -46,6 +47,12 @@
 // gating instead.
 
 pub mod datamodel_init;
+// Typed reads of a live datamodel variable. Gated for the same reason
+// `io_processors` is — a typed accessor is emitted only for a `<data>` that
+// carries an initializer, and such a document needs a script engine, which no
+// no_std machine has.
+#[cfg(not(feature = "no_std"))]
+pub mod datamodel_read;
 pub mod done_data;
 pub mod entry_exit;
 // SCE Protocol-Synthesis RFC §synth-5-J-2: event-data JSON construction is alloc-coupled
