@@ -16,6 +16,16 @@ sce-rust-runtime = { path = "../runtime", default-features = false }
 mlua = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
+# W3C SCXML B.2: an event payload arriving as JSON is DECODED, never rewritten
+# into Lua source and evaluated. The rewrite this replaced had to make JSON's
+# grammar coincide with Lua's, and it does not: `\uXXXX` and `\/` are legal
+# JSON escapes that Lua's lexer rejects, and `[1,2]` is Lua's index syntax
+# rather than a table. Each of those made `load()` fail, which silently
+# demoted `_event.data` from a table to a string. Decoding with the same
+# parser everything else in the ecosystem uses is what keeps the accepted
+# input set equal to "JSON" instead of "JSON that happens to also be Lua" —
+# the Python backend already takes this route via `json.loads`.
+serde_json = "1"
 
 [lints]
 workspace = true
