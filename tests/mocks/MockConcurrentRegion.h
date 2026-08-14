@@ -7,12 +7,26 @@
 #include "states/IConcurrentRegion.h"
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace SCE {
 
 /**
  * @brief Mock concurrent region for testing event broadcasting and parallel state components
+ *
+ * `processEvent` is called from the broadcaster's worker threads — that is the
+ * whole point of `ParallelStateEventBroadcastingTest.ConcurrentBroadcasting`,
+ * which fires ten broadcasts at two registered regions at once. So the mock's
+ * own recording has to be thread-safe, or the test that exists to prove the
+ * broadcaster is safe corrupts the heap on its own bookkeeping instead.
+ *
+ * It did: `lastEvent_` was a plain `std::string` assigned from every worker,
+ * and a full `ctest -j 8` run aborted with `double free or corruption
+ * (fasttop)` inside this test on 2026-08-14. The race is narrow — the event
+ * names here are short enough to live in the small-string buffer most of the
+ * time — so it surfaced only under load, and a green suite was not evidence
+ * of its absence.
  */
 class MockConcurrentRegion : public IConcurrentRegion {
 public:
@@ -55,7 +69,10 @@ public:
     }
 
     ConcurrentOperationResult processEvent(const EventDescriptor &event) override {
-        lastEvent_ = event.eventName;
+        {
+            std::lock_guard<std::mutex> lock(lastEventMutex_);
+            lastEvent_ = event.eventName;
+        }
         eventCount_.fetch_add(1);
         return ConcurrentOperationResult::success(id_);
     }
@@ -107,13 +124,20 @@ public:
     }
 
     std::string getLastEvent() const {
+        std::lock_guard<std::mutex> lock(lastEventMutex_);
         return lastEvent_;
     }
 
 private:
     std::string id_;
-    bool active_;
+    /// Read by `isActive`/`getStatus`/`getActiveStates` from every broadcasting
+    /// thread while `activate()` may still be running on another.
+    std::atomic<bool> active_;
     std::atomic<size_t> eventCount_;
+    /// `currentState_` needs no lock and could not usefully have one:
+    /// `getCurrentState()` returns a reference by interface, so a caller holds
+    /// it after any lock would be released. Nothing writes it concurrently.
+    mutable std::mutex lastEventMutex_;
     std::string lastEvent_;
     std::string currentState_;
 };
