@@ -141,9 +141,17 @@ cd "$SCE_REPO_ROOT"
 # `sce-build/tests/mutation_case_liveness.rs`.
 # shellcheck source=scripts/lib/mutation_failures.sh
 source "$SCE_REPO_ROOT/scripts/lib/mutation_failures.sh"
+# And the artifact hash, which has to leave out what the compiler picks anew
+# on every invocation. Its header carries the measurement.
+# shellcheck source=scripts/lib/mutation_artifact_hash.sh
+source "$SCE_REPO_ROOT/scripts/lib/mutation_artifact_hash.sh"
+MUTATION_OBJCOPY="$(command -v objcopy || true)"
 
 WORK="$(mktemp -d)"
 trap 'mutation_restore_quiet; rm -rf "$WORK"' EXIT
+# Where the artifact hash writes its normalised copy, so the temporary lands
+# beside the round's other scratch rather than in the caller's TMPDIR.
+MUTATION_HASH_SCRATCH="$WORK"
 
 MUTATION_RUNNER=""
 MUTATION_RUNNER_ARGS=()
@@ -383,7 +391,7 @@ mutation_cargo_build_and_hash() {
 mutation_hash_artifacts() {
     local artifact
     for artifact in "${MUTATION_ARTIFACTS[@]}"; do
-        printf '%s %s\n' "$(sha256sum "$artifact" | cut -d' ' -f1)" "$artifact"
+        printf '%s %s\n' "$(mutation_artifact_hash "$artifact")" "$artifact"
     done
 }
 
