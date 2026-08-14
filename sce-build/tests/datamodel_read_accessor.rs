@@ -64,12 +64,6 @@ fn doc_with_data(data: &str) -> String {
 /// The typed set, spelled once. `runtime` is the classifier's fourth answer
 /// and the one that carries no host type, so it is the complement rather than
 /// a fifth name.
-///
-/// Scope, measured rather than assumed: `classify_variables` walks
-/// `model.variables`, which is the document-level `<datamodel>` only. A
-/// state-scoped `<data>` never carried a type, so it never had a shadow field
-/// and gets no accessor — the emission follows the typed set exactly rather
-/// than drawing a second, narrower line of its own.
 const TYPED: [&str; 3] = ["int", "string", "bool"];
 
 fn typed_var_ids(model: &sce_build::model::SCXMLModel) -> Vec<String> {
@@ -77,6 +71,16 @@ fn typed_var_ids(model: &sce_build::model::SCXMLModel) -> Vec<String> {
         .variables
         .iter()
         .filter(|v| TYPED.contains(&v.var_type.as_str()))
+        .map(|v| v.id.clone())
+        .collect()
+}
+
+/// The names the backends actually emit an accessor for — the reconciled
+/// set across both declaration depths, which is what a consumer sees.
+fn readable_ids(model: &sce_build::model::SCXMLModel) -> Vec<String> {
+    model
+        .readable_variables
+        .iter()
         .map(|v| v.id.clone())
         .collect()
 }
@@ -281,6 +285,109 @@ fn the_ai_loop_examples_editable_strategy_is_readable() {
         "the example declares only {} datamodel variables, so this test is no \
          longer measuring the block it names",
         declared.len()
+    );
+}
+
+/// Where a `<data>` is declared does not decide whether it can be read.
+///
+/// §scxml-5.3's data model is one flat set of names for the whole document: a
+/// `<datamodel>` under a `<state>` populates that set rather than a scope of
+/// its own, and the generated initialisation has always written it into the
+/// session under its bare id. So the only thing a state-scoped declaration
+/// used to lack was a reader, and "it is declared deeper in the document" is
+/// not a reason a consumer can act on.
+///
+/// Binding mode is what the reader's optional answer already covers, and it
+/// needs no branch of its own: under `binding="late"` the variable does not
+/// exist until its state is entered, which is the session-not-holding-it case
+/// the accessor reports as "cannot answer".
+#[test]
+fn a_state_scoped_data_is_readable_like_any_other() {
+    let doc = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="probe" datamodel="ecmascript" initial="a" binding="late">
+  <datamodel><data id="top" expr="1"/></datamodel>
+  <state id="a">
+    <datamodel>
+      <data id="inner" expr="'hello'"/>
+      <data id="flag" expr="true"/>
+      <data id="opaque" expr="somewhere.else"/>
+    </datamodel>
+  </state>
+</scxml>"#;
+    let model = model_of(doc, "state-scoped");
+
+    assert_eq!(
+        readable_ids(&model),
+        vec!["top".to_string(), "inner".to_string(), "flag".to_string()],
+        "⚠ a state-scoped `<data>` with a typed initialiser must get the same \
+         reader a document-level one gets. `opaque` is correctly absent — it \
+         declares no type — and the order is asserted because the emitted file \
+         has to be byte-stable across runs: document-level declarations in \
+         source order, then each state's in source order, the states \
+         themselves in the model map's key order."
+    );
+}
+
+/// One name declared at both depths is one variable, and gets one accessor.
+///
+/// This is not a hypothetical shape: W3C tests 240 and 241 declare `Var1` at
+/// the document level and again inside a state, because that pairing is the
+/// point they make about binding. Emitting a reader per declaration would
+/// define the same function twice, which is a compile failure in generated
+/// code — loud, but far from its cause, and only in the backends whose corpus
+/// happens to include those documents.
+#[test]
+fn a_name_declared_at_both_depths_yields_one_accessor() {
+    let doc = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="probe" datamodel="ecmascript" initial="a" binding="late">
+  <datamodel><data id="Var1" expr="0"/></datamodel>
+  <state id="a">
+    <datamodel><data id="Var1" expr="0"/></datamodel>
+  </state>
+</scxml>"#;
+    let model = model_of(doc, "both depths");
+
+    assert_eq!(
+        readable_ids(&model),
+        vec!["Var1".to_string()],
+        "⚠ `Var1` is declared twice and is one variable, so it must yield one \
+         reader. Two would not compile."
+    );
+}
+
+/// Declarations that disagree about type yield no accessor at all.
+///
+/// The reader's type is a claim about what the document declares, and a
+/// document that declares two different things has not made one. Answering
+/// from whichever declaration the walk reached first would make the accessor's
+/// type depend on where in the file someone put a `<state>`.
+#[test]
+fn declarations_that_disagree_about_type_yield_no_accessor() {
+    let doc = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="probe" datamodel="ecmascript" initial="a" binding="late">
+  <datamodel>
+    <data id="agrees" expr="1"/>
+    <data id="disagrees" expr="1"/>
+  </datamodel>
+  <state id="a">
+    <datamodel>
+      <data id="agrees" expr="2"/>
+      <data id="disagrees" expr="'two'"/>
+    </datamodel>
+  </state>
+</scxml>"#;
+    let model = model_of(doc, "disagreeing");
+
+    assert_eq!(
+        readable_ids(&model),
+        vec!["agrees".to_string()],
+        "⚠ two declarations of one name that disagree about type leave the \
+         document without a single answer, so no reader is emitted. The name \
+         whose declarations agree is unaffected, which is what keeps this from \
+         being a blanket refusal."
     );
 }
 

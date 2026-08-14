@@ -47,7 +47,7 @@ from sce_runtime.scripting import (
     ScriptValue as _ScriptValue,
     SetCurrentEventArgs as _SetCurrentEventArgs,
 )
-{% if model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
+{% if model.readable_variables %}
 # §scxml-5.3: the typed read accessors below take the datamodel back out of the
 # session the script engine owns, rather than shadowing it on the policy.
 from sce_runtime import datamodel_read as _datamodel_read
@@ -231,8 +231,7 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # for untyped events.
 {{ event_payload_init }}
 {% endif %}
-{% for var in model.variables %}
-{% if var.type in ['int', 'string', 'bool'] %}
+{% for var in model.readable_variables %}
 
     def {{ var.id | to_snake_case }}(self) -> Optional[{{ 'int' if var.type == 'int' else ('str' if var.type == 'string' else 'bool') }}]:
         """§scxml-5.3 — what the `{{ var.id }}` datamodel variable is holding now.
@@ -250,7 +249,6 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
             getattr(self, "_session_id", None),
             "{{ var.id }}",
         )
-{% endif %}
 {% endfor %}
 
     # ── Structural metadata ────────────────────────────────────────
