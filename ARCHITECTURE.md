@@ -134,7 +134,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 **CMake options**:
 - `SCE_ENABLE_QUICKJS` (default: ON)
 - `SCE_ENABLE_LUA` (default: ON)
-- `SCE_SCRIPT_ENGINE` (default: `lua`) — Selects default engine for `ScriptEngineProvider`
+- `SCE_SCRIPT_ENGINE` (default: `quickjs`) — Selects default engine for `ScriptEngineProvider`
 
 ### Tier 4: sce_runtime (Full Interpreter)
 
@@ -455,16 +455,37 @@ Invoke lifecycle methods are extracted into dedicated templates in C++, Rust, an
 
 ### Dual Engine Support
 
-Both QuickJS (ECMAScript) and Lua 5.4 engines are supported at 100% W3C parity.
+The C++ backend emits the author's ECMAScript verbatim — a generated state
+machine calls `safeEvaluateGuard(engine, session, "turns + 1 >= max_turns")`
+— and the Interpreter does the same. So for C++, the selected engine *is* the
+semantics of `datamodel="ecmascript"`, and the two selections are not
+interchangeable.
 
-| Engine | Standard | Selection | Status |
-|--------|----------|-----------|--------|
-| QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` | 202/202 (100%) |
-| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` (default) | 202/202 (100%) |
+| Engine | Standard | Selection | W3C IRP | ECMA-262 (`tests/ecmascript/ecma262_semantics.json`) |
+|--------|----------|-----------|---------|------|
+| QuickJS | ECMAScript 2020 | `SCE_SCRIPT_ENGINE=quickjs` (default) | 202/202 | **58/58** |
+| Lua 5.4 | Lua 5.4 + ECMAScript compat | `SCE_SCRIPT_ENGINE=lua` | 202/202 | **32/58** |
+
+The W3C column and the ECMA-262 column measure different things, and the gap
+between them is why the second column exists. The IRP suite never writes
+`0 && x`, `-7 % 3`, `1 == '1'` or a computed array index, so a full green
+there says nothing about whether expressions mean what the language says they
+mean. Measured 2026-08-14: selecting `lua` answers 26 of 58 wrong — silently,
+with the whole IRP suite passing. `ecmascript_semantics_test` runs that table
+through whichever engine the build selected, so the wrong answers now fail a
+test instead of a document.
 
 **ScriptEngineProvider**: Compile-time engine selection via `SCE_SCRIPT_ENGINE` CMake option. Provides `IScriptEngine` interface for engine-agnostic consumers.
 
 ### EcmaScriptToLuaTransformer
+
+Reached only by `SCE_SCRIPT_ENGINE=lua`, and the reason that is no longer the
+default: it rewrites expression *text* rather than parsing it, so the answers
+it gets wrong (26 of the 58 ECMA-262 cases) are wrong by construction rather
+than by omission — `0 && x` reads as Lua truthiness, `-7 % 3` as Lua's
+flooring remainder, `5 ^ 3` as Lua's exponentiation. The build-time frontend
+in `sce-build/src/ecmascript` is the parsing counterpart that the other five
+backends use, and this one has no equivalent.
 
 Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluation:
 - Operator translation: `===`→`==`, `!==`→`~=`, `!`→`not`, `&&`→`and`, `||`→`or`
@@ -701,7 +722,7 @@ backends/kotlin/android-app         Android real-device benchmark (Compose UI)
 **Engine selection per platform**:
 - **JVM/Spring** (default: Rhino): Zero JNI overhead, JIT-optimized, pure Java
 - **Android/AAOS** (default: Lua 5.4): Native C via JNI outperforms Rhino on ART (3-8x faster for guard evaluation)
-- **C++** (default: Lua 5.4): `SCE_SCRIPT_ENGINE=lua` in CMake
+- **C++** (default: QuickJS): `SCE_SCRIPT_ENGINE=quickjs` in CMake
 
 **Kotlin code generator**: `sce-codegen generate -l kotlin` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
 

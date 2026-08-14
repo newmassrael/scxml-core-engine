@@ -1,0 +1,515 @@
+{
+  "about": [
+    "What ECMA-262 says an expression answers, written out by hand.",
+    "",
+    "Every engine that claims to run a `datamodel=\"ecmascript\"` document reads",
+    "THIS file and is measured against it. A golden captured from one of our own",
+    "engines would agree with whatever that engine currently does, including the",
+    "answers that are wrong, so each case is a claim about the LANGUAGE and the",
+    "`clause` names where a reader can check the claim against the spec rather",
+    "than against us.",
+    "",
+    "Why the table is shared rather than copied: the same document answered",
+    "differently depending on which engine ran it, and no fixture in the",
+    "repository could tell — a W3C suite that is green end to end never asked",
+    "`0 && x`. A per-engine copy of the expectations reproduces exactly that",
+    "blindness, because a copy drifts toward the engine that reads it.",
+    "",
+    "Readers:",
+    "  sce-build/tests/ecmascript_semantics.rs  the build-time frontend, then Lua",
+    "  tests/engine/EcmaScriptSemanticsTest.cpp the engine this C++ build selected"
+  ],
+  "form": {
+    "condition": "evaluated the way a `cond=` attribute is: the answer is ToBoolean of the value",
+    "value": "evaluated the way an `expr=` attribute is: the value itself"
+  },
+  "expect": {
+    "bool": "a boolean",
+    "number": "a number; an engine may hold it as an integer or a double",
+    "string": "a string",
+    "empty": "null or undefined — the two are one answer here, since ECMAScript's `==` equates them and SCXML's datamodel has no way to tell an absent property from a null one"
+  },
+  "cases": [
+    {
+      "group": "truthiness",
+      "note": "Lua counts only `nil` and `false` as false, so ECMAScript's wider falsy set is where a Lua-shaped rewriter answers the opposite of the language.",
+      "setup": "var a = 0;",
+      "source": "a",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "7.1.2 ToBoolean(0) = false"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = '';",
+      "source": "a",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "7.1.2 ToBoolean('') = false"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = 0;",
+      "source": "!a",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "12.5.9 logical NOT"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = 0; var b = 5;",
+      "source": "a && b",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "13.13.1 the AND yields its left operand when it is falsy"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = 0; var b = 5;",
+      "source": "a || b",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "13.13.1 the OR yields its right operand when the left is falsy"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = 0; var b = 5;",
+      "source": "a && b",
+      "form": "value",
+      "expect": {"number": 0},
+      "clause": "13.13.1 the value is an operand, not a boolean"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = 0; var b = 5;",
+      "source": "a || b",
+      "form": "value",
+      "expect": {"number": 5},
+      "clause": "13.13.1 the value is an operand, not a boolean"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = '';",
+      "source": "a ? 'yes' : 'no'",
+      "form": "value",
+      "expect": {"string": "no"},
+      "clause": "13.14 conditional uses ToBoolean"
+    },
+    {
+      "group": "truthiness",
+      "setup": "var a = false;",
+      "source": "true ? a : 'other'",
+      "form": "value",
+      "expect": {"bool": false},
+      "clause": "13.14 a false consequent is still the result"
+    },
+
+    {
+      "group": "addition-or-concatenation",
+      "note": "`+` is addition or concatenation depending on the operands, decided at runtime.",
+      "setup": "",
+      "source": "1 + 2",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "13.15.3 numeric addition"
+    },
+    {
+      "group": "addition-or-concatenation",
+      "setup": "",
+      "source": "'a' + 'b'",
+      "form": "value",
+      "expect": {"string": "ab"},
+      "clause": "13.15.3 string concatenation"
+    },
+    {
+      "group": "addition-or-concatenation",
+      "setup": "",
+      "source": "1 + ''",
+      "form": "value",
+      "expect": {"string": "1"},
+      "clause": "7.1.17 ToString(1) is '1', not '1.0'"
+    },
+    {
+      "group": "addition-or-concatenation",
+      "setup": "",
+      "source": "'n' + 2",
+      "form": "value",
+      "expect": {"string": "n2"},
+      "clause": "13.15.3 either side a string makes it concatenation"
+    },
+    {
+      "group": "addition-or-concatenation",
+      "setup": "var a = [1,2];",
+      "source": "a + ''",
+      "form": "value",
+      "expect": {"string": "1,2"},
+      "clause": "7.1.1 ToPrimitive of an Array joins with commas"
+    },
+
+    {
+      "group": "equality",
+      "note": "`==` coerces where `===` does not.",
+      "setup": "",
+      "source": "1 == '1'",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "7.2.15 number vs string coerces"
+    },
+    {
+      "group": "equality",
+      "setup": "",
+      "source": "1 === '1'",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "7.2.16 strict equality does not"
+    },
+    {
+      "group": "equality",
+      "setup": "",
+      "source": "0 == false",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "7.2.15 boolean is ToNumber'd"
+    },
+    {
+      "group": "equality",
+      "setup": "",
+      "source": "'' == 0",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "7.2.15 empty string is ToNumber 0"
+    },
+    {
+      "group": "equality",
+      "setup": "",
+      "source": "1 != '1'",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "7.2.15 negation of the above"
+    },
+    {
+      "group": "equality",
+      "setup": "var a = [1,2,3];",
+      "source": "a == 0",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "7.2.15 array vs number: ToPrimitive gives '1,2,3', ToNumber gives NaN"
+    },
+    {
+      "group": "equality",
+      "setup": "var a = null;",
+      "source": "a == null",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "7.2.15 null and undefined equal each other"
+    },
+
+    {
+      "group": "remainder",
+      "note": "ECMAScript's `%` truncates toward zero; Lua's floors, so the two disagree on a negative left operand.",
+      "setup": "",
+      "source": "-7 % 3",
+      "form": "value",
+      "expect": {"number": -1},
+      "clause": "13.7 remainder truncates"
+    },
+    {
+      "group": "remainder",
+      "setup": "",
+      "source": "7 % 3",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "13.7 remainder"
+    },
+
+    {
+      "group": "typeof-and-instanceof",
+      "setup": "var a = 1;",
+      "source": "typeof a !== 'undefined'",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "13.5.3 typeof of a bound variable"
+    },
+    {
+      "group": "typeof-and-instanceof",
+      "setup": "",
+      "source": "typeof missingVariable !== 'undefined'",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "13.5.3 typeof of an unresolvable reference is 'undefined'"
+    },
+    {
+      "group": "typeof-and-instanceof",
+      "setup": "var a = 'x';",
+      "source": "typeof a",
+      "form": "value",
+      "expect": {"string": "string"},
+      "clause": "13.5.3 typeof table"
+    },
+    {
+      "group": "typeof-and-instanceof",
+      "setup": "var a = [1,2,3];",
+      "source": "a instanceof Array",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "13.10.2 instanceof Array"
+    },
+    {
+      "group": "typeof-and-instanceof",
+      "setup": "var a = 3;",
+      "source": "a instanceof Array",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "13.10.2 a number is not an Array"
+    },
+
+    {
+      "group": "arrays-and-objects",
+      "note": "An Array held as a 1-based Lua sequence moves every numeric index by one, and a string key must not move at all.",
+      "setup": "var a = [1,2,3];",
+      "source": "a.length",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "23.1.3 Array length"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "",
+      "source": "'abc'.length",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "22.1.3 String length"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var a = [1,2,3];",
+      "source": "[].concat(a, [4]).length",
+      "form": "value",
+      "expect": {"number": 4},
+      "clause": "23.1.3.1 concat appends every argument, not just the first"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var a = [1,2,3];",
+      "source": "a.indexOf(2)",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "23.1.3.14 indexOf is zero-based"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var o = {k: 'v'};",
+      "source": "o.k",
+      "form": "value",
+      "expect": {"string": "v"},
+      "clause": "13.3.2 member access on an object literal"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var o = {'a b': 7};",
+      "source": "o['a b']",
+      "form": "value",
+      "expect": {"number": 7},
+      "clause": "13.3.3 computed member access with a non-identifier key"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var o = {k: 1};",
+      "source": "o.missing",
+      "form": "value",
+      "expect": {"empty": true},
+      "clause": "13.3.2 a property that is not there reads as undefined"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var a = [10,20,30];",
+      "source": "a[0]",
+      "form": "value",
+      "expect": {"number": 10},
+      "clause": "23.1 array indices are zero-based"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var a = [10,20,30]; var i = 2;",
+      "source": "a[i]",
+      "form": "value",
+      "expect": {"number": 30},
+      "clause": "13.3.3 a computed index is still zero-based"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var o = {k: 7}; var s = 'k';",
+      "source": "o[s]",
+      "form": "value",
+      "expect": {"number": 7},
+      "clause": "13.3.3 a computed string key addresses a property, unshifted"
+    },
+
+    {
+      "group": "side-effecting",
+      "setup": "var v = 1;",
+      "source": "++v == 2",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "13.4.4 prefix increment yields the new value"
+    },
+    {
+      "group": "side-effecting",
+      "setup": "var v = 1;",
+      "source": "v++",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "13.4.2 postfix increment yields the old value"
+    },
+    {
+      "group": "side-effecting",
+      "setup": "var v = '1';",
+      "source": "++v",
+      "form": "value",
+      "expect": {"number": 2},
+      "clause": "13.4.4 the operand is ToNumber'd, so this is not concatenation"
+    },
+
+    {
+      "group": "functions-and-statements",
+      "note": "The `setup` of these cases is what a `<script>` body has to survive: statements, not expressions.",
+      "setup": "var f = function(x) { return x + 1; };",
+      "source": "f(2)",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "15.2 a function expression is a value"
+    },
+    {
+      "group": "functions-and-statements",
+      "setup": "function ctor() { this.bar = 0; } var o = new ctor();",
+      "source": "o.bar",
+      "form": "value",
+      "expect": {"number": 0},
+      "clause": "13.3.5 new binds `this` to a fresh object and yields it"
+    },
+    {
+      "group": "functions-and-statements",
+      "setup": "var Var1 = 1; Var1 += 1;",
+      "source": "Var1",
+      "form": "value",
+      "expect": {"number": 2},
+      "clause": "13.15.2 compound assignment"
+    },
+    {
+      "group": "functions-and-statements",
+      "setup": "var total = 0; for (var i = 0; i < 4; i++) { total += i; }",
+      "source": "total",
+      "form": "value",
+      "expect": {"number": 6},
+      "clause": "14.7.4 the for statement"
+    },
+    {
+      "group": "functions-and-statements",
+      "setup": "var n = 0; var i = 0; while (i < 3) { i++; if (i === 2) { continue; } n += i; }",
+      "source": "n",
+      "form": "value",
+      "expect": {"number": 4},
+      "clause": "14.7.3 while, with continue skipping one iteration"
+    },
+
+    {
+      "group": "bitwise",
+      "note": "Bitwise operators run on ToInt32 of their operands and yield a number, which is not what an engine with native integers does by default.",
+      "setup": "",
+      "source": "5 & 3",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "13.12 bitwise AND over ToInt32"
+    },
+    {
+      "group": "bitwise",
+      "setup": "",
+      "source": "5 | 3",
+      "form": "value",
+      "expect": {"number": 7},
+      "clause": "13.12 bitwise OR"
+    },
+    {
+      "group": "bitwise",
+      "setup": "",
+      "source": "5 ^ 3",
+      "form": "value",
+      "expect": {"number": 6},
+      "clause": "13.12 bitwise XOR"
+    },
+    {
+      "group": "bitwise",
+      "setup": "",
+      "source": "~5",
+      "form": "value",
+      "expect": {"number": -6},
+      "clause": "13.5.6 bitwise NOT"
+    },
+    {
+      "group": "bitwise",
+      "setup": "",
+      "source": "1 << 3",
+      "form": "value",
+      "expect": {"number": 8},
+      "clause": "13.9.1 left shift"
+    },
+    {
+      "group": "bitwise",
+      "setup": "",
+      "source": "-8 >> 1",
+      "form": "value",
+      "expect": {"number": -4},
+      "clause": "13.9.2 signed right shift"
+    },
+    {
+      "group": "bitwise",
+      "setup": "",
+      "source": "-8 >>> 28",
+      "form": "value",
+      "expect": {"number": 15},
+      "clause": "13.9.3 unsigned right shift"
+    },
+    {
+      "group": "bitwise",
+      "setup": "var a = 1; var b = 2;",
+      "source": "(a == 1) | (b != 2)",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "13.12 booleans are ToInt32'd, so the result is a number"
+    },
+
+    {
+      "group": "literals",
+      "setup": "",
+      "source": "'it\\'s'",
+      "form": "value",
+      "expect": {"string": "it's"},
+      "clause": "12.9.4 escaped quote"
+    },
+    {
+      "group": "literals",
+      "setup": "",
+      "source": "'\\u00e9'",
+      "form": "value",
+      "expect": {"string": "é"},
+      "clause": "12.9.4 unicode escape decodes to the character"
+    },
+    {
+      "group": "literals",
+      "note": "Reading an UNDECLARED identifier is a ReferenceError in ECMAScript, and SCE's engines raise one too, so the null case is asked of a declared variable — which is what `<data id=\"a\"/>` produces.",
+      "setup": "var a = null;",
+      "source": "!a",
+      "form": "condition",
+      "expect": {"bool": true},
+      "clause": "7.1.2 ToBoolean(null) = false"
+    },
+    {
+      "group": "literals",
+      "setup": "",
+      "source": "+'3'",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "13.5.4 unary plus is ToNumber"
+    }
+  ]
+}

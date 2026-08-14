@@ -11,353 +11,99 @@
 //! reimplemented here, so a divergence between this file and production is
 //! not expressible.
 //!
-//! The expected values are ECMA-262's, written out by hand. That is the
-//! point: a golden captured from our own emitter would agree with whatever
-//! we currently do, including the answers that are wrong. Each case is a
-//! claim about the language, and the table is where a reader can check the
-//! claim against the spec rather than against us.
+//! The expected values are ECMA-262's, written out by hand in
+//! `tests/ecmascript/ecma262_semantics.json`. That is the point: a golden
+//! captured from our own emitter would agree with whatever we currently do,
+//! including the answers that are wrong. Each case is a claim about the
+//! language, and the table is where a reader can check the claim against the
+//! spec rather than against us.
+//!
+//! The table is on disk rather than in this file because it is shared. The
+//! C++ engine reads the same cases (`tests/engine/EcmaScriptSemanticsTest.cpp`)
+//! — it has to, because the C++ backend emits the author's ECMAScript verbatim
+//! and leaves the whole of the semantics to the engine the build selected.
 //!
 //! Why this exists: the transformer this replaced answered `true` for
 //! `Var1 && Var2` when `Var1` was `0`, because Lua's only falsy values are
 //! `nil` and `false`. Nothing failed — the guard just took the other
-//! branch. Cases in the "falsy" group below are that defect, pinned.
+//! branch. The table's "truthiness" group is that defect, pinned.
 
 use sce_build::ecmascript::{to_lua_condition, to_lua_script, to_lua_value};
 use sce_rust_lua::LuaEngine;
 use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
+use serde::Deserialize;
 
 /// What ECMA-262 says the expression evaluates to.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Externally tagged, so the shared table spells the answer's type and a
+/// case cannot name two answers at once.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum Answer {
     Bool(bool),
-    Num(f64),
-    Text(&'static str),
-    Empty,
+    Number(f64),
+    String(String),
+    /// `null` or `undefined`. ECMAScript's `==` equates the two and the SCXML
+    /// datamodel has no way to tell an absent property from a null one, so
+    /// they are one answer here.
+    Empty(bool),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Form {
+    /// Evaluated the way a `cond=` attribute is.
+    Condition,
+    /// Evaluated the way an `expr=` attribute is.
+    Value,
+}
+
+#[derive(Debug, Deserialize)]
 struct Case {
+    /// Which family of the language the case belongs to, so a failure names
+    /// the area rather than only the expression.
+    group: String,
     /// ECMAScript statements establishing the datamodel, run through the
     /// same `<script>` path a document would use.
-    setup: &'static str,
+    setup: String,
     /// The ECMAScript expression under test.
-    source: &'static str,
-    /// Emitted as a condition (`cond=`) rather than for its value.
-    as_condition: bool,
-    expected: Answer,
+    source: String,
+    form: Form,
+    expect: Answer,
     /// The ECMA-262 clause the expectation comes from, so a reader can
     /// check the claim without trusting this file.
-    clause: &'static str,
+    clause: String,
 }
 
-const fn value_case(
-    setup: &'static str,
-    source: &'static str,
-    expected: Answer,
-    clause: &'static str,
-) -> Case {
-    Case {
-        setup,
-        source,
-        as_condition: false,
-        expected,
-        clause,
-    }
+#[derive(Debug, Deserialize)]
+struct Table {
+    cases: Vec<Case>,
 }
 
-const fn cond_case(
-    setup: &'static str,
-    source: &'static str,
-    expected: bool,
-    clause: &'static str,
-) -> Case {
-    Case {
-        setup,
-        source,
-        as_condition: true,
-        expected: Answer::Bool(expected),
-        clause,
-    }
-}
-
+/// The shared table, read from disk rather than compiled in.
+///
+/// On disk because the C++ engine reads the same file
+/// (`tests/engine/EcmaScriptSemanticsTest.cpp`). Two copies of these
+/// expectations would each drift toward the engine that reads them, which is
+/// the exact failure this repository already had: the Rust path was measured
+/// against ECMA-262 and answered correctly, the C++ path was measured against
+/// nothing and answered `true` for `0 && x`, and every W3C fixture was green
+/// throughout.
 fn cases() -> Vec<Case> {
-    vec![
-        // ── Truthiness: ECMAScript's falsy set is wider than Lua's ──────
-        // Lua counts only `nil` and `false` as false, so every case here is
-        // one the string-rewriting transformer got wrong.
-        cond_case("var a = 0;", "a", false, "7.1.2 ToBoolean(0) = false"),
-        cond_case("var a = '';", "a", false, "7.1.2 ToBoolean('') = false"),
-        cond_case("var a = 0;", "!a", true, "12.5.9 logical NOT"),
-        cond_case(
-            "var a = 0; var b = 5;",
-            "a && b",
-            false,
-            "13.13.1 the AND yields its left operand when it is falsy",
-        ),
-        cond_case(
-            "var a = 0; var b = 5;",
-            "a || b",
-            true,
-            "13.13.1 the OR yields its right operand when the left is falsy",
-        ),
-        value_case(
-            "var a = 0; var b = 5;",
-            "a && b",
-            Answer::Num(0.0),
-            "13.13.1 the value is an operand, not a boolean",
-        ),
-        value_case(
-            "var a = 0; var b = 5;",
-            "a || b",
-            Answer::Num(5.0),
-            "13.13.1 the value is an operand, not a boolean",
-        ),
-        value_case(
-            "var a = '';",
-            "a ? 'yes' : 'no'",
-            Answer::Text("no"),
-            "13.14 conditional uses ToBoolean",
-        ),
-        value_case(
-            "var a = false;",
-            "true ? a : 'other'",
-            Answer::Bool(false),
-            "13.14 a false consequent is still the result",
-        ),
-        // ── `+` is concatenation or addition depending on the operands ──
-        value_case("", "1 + 2", Answer::Num(3.0), "13.15.3 numeric addition"),
-        value_case(
-            "",
-            "'a' + 'b'",
-            Answer::Text("ab"),
-            "13.15.3 string concatenation",
-        ),
-        value_case(
-            "",
-            "1 + ''",
-            Answer::Text("1"),
-            "7.1.17 ToString(1) is '1', not '1.0'",
-        ),
-        value_case(
-            "",
-            "'n' + 2",
-            Answer::Text("n2"),
-            "13.15.3 either side a string makes it concatenation",
-        ),
-        value_case(
-            "var a = [1,2];",
-            "a + ''",
-            Answer::Text("1,2"),
-            "7.1.1 ToPrimitive of an Array joins with commas",
-        ),
-        // ── `==` coerces where `===` does not ───────────────────────────
-        cond_case("", "1 == '1'", true, "7.2.15 number vs string coerces"),
-        cond_case("", "1 === '1'", false, "7.2.16 strict equality does not"),
-        cond_case("", "0 == false", true, "7.2.15 boolean is ToNumber'd"),
-        cond_case("", "'' == 0", true, "7.2.15 empty string is ToNumber 0"),
-        cond_case("", "1 != '1'", false, "7.2.15 negation of the above"),
-        cond_case(
-            "var a = [1,2,3];",
-            "a == 0",
-            false,
-            "7.2.15 array vs number: ToPrimitive gives '1,2,3', ToNumber gives NaN",
-        ),
-        cond_case(
-            "var a = null;",
-            "a == null",
-            true,
-            "7.2.15 null and undefined equal each other",
-        ),
-        // ── `%` truncates toward zero; Lua's `%` floors ─────────────────
-        value_case("", "-7 % 3", Answer::Num(-1.0), "13.7 remainder truncates"),
-        value_case("", "7 % 3", Answer::Num(1.0), "13.7 remainder"),
-        // ── typeof / instanceof ─────────────────────────────────────────
-        cond_case(
-            "var a = 1;",
-            "typeof a !== 'undefined'",
-            true,
-            "13.5.3 typeof of a bound variable",
-        ),
-        cond_case(
-            "",
-            "typeof missingVariable !== 'undefined'",
-            false,
-            "13.5.3 typeof of an unresolvable reference is 'undefined'",
-        ),
-        value_case(
-            "var a = 'x';",
-            "typeof a",
-            Answer::Text("string"),
-            "13.5.3 typeof table",
-        ),
-        cond_case(
-            "var a = [1,2,3];",
-            "a instanceof Array",
-            true,
-            "13.10.2 instanceof Array",
-        ),
-        cond_case(
-            "var a = 3;",
-            "a instanceof Array",
-            false,
-            "13.10.2 a number is not an Array",
-        ),
-        // ── Arrays and objects ──────────────────────────────────────────
-        value_case(
-            "var a = [1,2,3];",
-            "a.length",
-            Answer::Num(3.0),
-            "23.1.3 Array length",
-        ),
-        value_case("", "'abc'.length", Answer::Num(3.0), "22.1.3 String length"),
-        value_case(
-            "var a = [1,2,3];",
-            "[].concat(a, [4]).length",
-            Answer::Num(4.0),
-            "23.1.3.1 concat appends every argument, not just the first",
-        ),
-        value_case(
-            "var a = [1,2,3];",
-            "a.indexOf(2)",
-            Answer::Num(1.0),
-            "23.1.3.14 indexOf is zero-based",
-        ),
-        value_case(
-            "var o = {k: 'v'};",
-            "o.k",
-            Answer::Text("v"),
-            "13.3.2 member access on an object literal",
-        ),
-        value_case(
-            "var o = {'a b': 7};",
-            "o['a b']",
-            Answer::Num(7.0),
-            "13.3.3 computed member access with a non-identifier key",
-        ),
-        value_case(
-            "var o = {k: 1};",
-            "o.missing",
-            Answer::Empty,
-            "13.3.2 a property that is not there reads as undefined",
-        ),
-        // An Array is stored as a 1-based Lua sequence, so every numeric
-        // index moves by one — and a string key must not.
-        value_case(
-            "var a = [10,20,30];",
-            "a[0]",
-            Answer::Num(10.0),
-            "23.1 array indices are zero-based",
-        ),
-        value_case(
-            "var a = [10,20,30]; var i = 2;",
-            "a[i]",
-            Answer::Num(30.0),
-            "13.3.3 a computed index is still zero-based",
-        ),
-        value_case(
-            "var o = {k: 7}; var s = 'k';",
-            "o[s]",
-            Answer::Num(7.0),
-            "13.3.3 a computed string key addresses a property, unshifted",
-        ),
-        // ── Side-effecting expressions ──────────────────────────────────
-        cond_case(
-            "var v = 1;",
-            "++v == 2",
-            true,
-            "13.4.4 prefix increment yields the new value",
-        ),
-        value_case(
-            "var v = 1;",
-            "v++",
-            Answer::Num(1.0),
-            "13.4.2 postfix increment yields the old value",
-        ),
-        value_case(
-            "var v = '1';",
-            "++v",
-            Answer::Num(2.0),
-            "13.4.4 the operand is ToNumber'd, so this is not concatenation",
-        ),
-        // ── Functions, `new`, and scripts ───────────────────────────────
-        value_case(
-            "var f = function(x) { return x + 1; };",
-            "f(2)",
-            Answer::Num(3.0),
-            "15.2 a function expression is a value",
-        ),
-        value_case(
-            "function ctor() { this.bar = 0; } var o = new ctor();",
-            "o.bar",
-            Answer::Num(0.0),
-            "13.3.5 new binds `this` to a fresh object and yields it",
-        ),
-        value_case(
-            "var Var1 = 1; Var1 += 1;",
-            "Var1",
-            Answer::Num(2.0),
-            "13.15.2 compound assignment",
-        ),
-        value_case(
-            "var total = 0; for (var i = 0; i < 4; i++) { total += i; }",
-            "total",
-            Answer::Num(6.0),
-            "14.7.4 the for statement",
-        ),
-        value_case(
-            "var n = 0; var i = 0; while (i < 3) { i++; if (i === 2) { continue; } n += i; }",
-            "n",
-            Answer::Num(4.0),
-            "14.7.3 while, with continue skipping one iteration",
-        ),
-        // ── Bitwise operates on ToInt32, not on Lua integers ────────────
-        value_case(
-            "",
-            "5 & 3",
-            Answer::Num(1.0),
-            "13.12 bitwise AND over ToInt32",
-        ),
-        value_case("", "5 | 3", Answer::Num(7.0), "13.12 bitwise OR"),
-        value_case("", "5 ^ 3", Answer::Num(6.0), "13.12 bitwise XOR"),
-        value_case("", "~5", Answer::Num(-6.0), "13.5.6 bitwise NOT"),
-        value_case("", "1 << 3", Answer::Num(8.0), "13.9.1 left shift"),
-        value_case(
-            "",
-            "-8 >> 1",
-            Answer::Num(-4.0),
-            "13.9.2 signed right shift",
-        ),
-        value_case(
-            "",
-            "-8 >>> 28",
-            Answer::Num(15.0),
-            "13.9.3 unsigned right shift",
-        ),
-        value_case(
-            "var a = 1; var b = 2;",
-            "(a == 1) | (b != 2)",
-            Answer::Num(1.0),
-            "13.12 booleans are ToInt32'd, so the result is a number",
-        ),
-        // ── Values that stay themselves ─────────────────────────────────
-        value_case("", "'it\\'s'", Answer::Text("it's"), "12.9.4 escaped quote"),
-        value_case(
-            "",
-            "'\\u00e9'",
-            Answer::Text("é"),
-            "12.9.4 unicode escape decodes to the character",
-        ),
-        // Reading an *undeclared* identifier is a ReferenceError in
-        // ECMAScript, and SCE's engine raises one too, so the null case is
-        // asked of a declared variable — which is what `<data id="a"/>`
-        // produces.
-        cond_case("var a = null;", "!a", true, "7.1.2 ToBoolean(null) = false"),
-        value_case(
-            "",
-            "+'3'",
-            Answer::Num(3.0),
-            "13.5.4 unary plus is ToNumber",
-        ),
-    ]
+    let path = repo_root().join("tests/ecmascript/ecma262_semantics.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("cannot read the shared table at {}: {err}", path.display()));
+    let table: Table = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("{} is not a readable case table: {err}", path.display()));
+    // A floor, not an equality: adding a case must not have to touch this
+    // number, but a table that stopped being read must not pass either.
+    assert!(
+        table.cases.len() >= 55,
+        "the shared ECMA-262 table produced only {} case(s), so this is not \
+         measuring the corpus it claims to",
+        table.cases.len()
+    );
+    table.cases
 }
 
 /// Every case, run through the emitter and then through the engine that
@@ -373,10 +119,13 @@ fn emitted_lua_answers_what_ecmascript_answers() {
         engine.create_session(&session);
 
         if !case.setup.is_empty() {
-            let script = match to_lua_script(case.setup) {
+            let script = match to_lua_script(&case.setup) {
                 Ok(script) => script,
                 Err(err) => {
-                    failures.push(format!("[{}] setup did not parse: {err}", case.source));
+                    failures.push(format!(
+                        "[{}] setup did not parse: {err} ({})",
+                        case.source, case.group
+                    ));
                     continue;
                 }
             };
@@ -389,25 +138,27 @@ fn emitted_lua_answers_what_ecmascript_answers() {
             }
         }
 
-        let emitted = if case.as_condition {
-            to_lua_condition(case.source)
-        } else {
-            to_lua_value(case.source)
+        let emitted = match case.form {
+            Form::Condition => to_lua_condition(&case.source),
+            Form::Value => to_lua_value(&case.source),
         };
         let emitted = match emitted {
             Ok(emitted) => emitted,
             Err(err) => {
-                failures.push(format!("[{}] did not compile: {err}", case.source));
+                failures.push(format!(
+                    "[{}] did not compile: {err} ({})",
+                    case.source, case.group
+                ));
                 continue;
             }
         };
 
         match engine.evaluate_expression(&session, &emitted) {
             Ok(actual) => {
-                if !matches(&actual, &case.expected) {
+                if !matches(&actual, &case.expect) {
                     failures.push(format!(
                         "[{}] answered {actual:?}, ECMAScript says {:?} ({})\n  emitted: {emitted}",
-                        case.source, case.expected, case.clause
+                        case.source, case.expect, case.clause
                     ));
                 }
             }
@@ -699,13 +450,15 @@ fn unescape_xml(value: &str) -> String {
         .replace("&amp;", "&")
 }
 
+/// An engine may hold a whole number as an integer or as a double, and
+/// ECMA-262 has one Number type — so both spellings answer a `number` case.
 fn matches(actual: &ScriptValue, expected: &Answer) -> bool {
     match (actual, expected) {
         (ScriptValue::Bool(a), Answer::Bool(b)) => a == b,
-        (ScriptValue::Int(a), Answer::Num(b)) => (*a as f64 - b).abs() < f64::EPSILON,
-        (ScriptValue::Double(a), Answer::Num(b)) => (a - b).abs() < 1e-9,
-        (ScriptValue::String(a), Answer::Text(b)) => a == b,
-        (ScriptValue::Null | ScriptValue::Undefined, Answer::Empty) => true,
+        (ScriptValue::Int(a), Answer::Number(b)) => (*a as f64 - b).abs() < f64::EPSILON,
+        (ScriptValue::Double(a), Answer::Number(b)) => (a - b).abs() < 1e-9,
+        (ScriptValue::String(a), Answer::String(b)) => a == b,
+        (ScriptValue::Null | ScriptValue::Undefined, Answer::Empty(_)) => true,
         _ => false,
     }
 }
