@@ -454,38 +454,37 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     # codegen-able. The pattern matches `test${N}__sce_synth_invoke__*.scxml`;
     # `file(GLOB)` runs at configure time, so the parent's add_executable
     # below sees all child sources without a re-glob trigger.
+    # Synth-invoke children are the PARENT's own output, so they are named as
+    # its byproducts and given no rules of their own.
+    #
+    # They used to have two: a staging copy of the committed `.scxml` and a
+    # generate rule for the SM. Measured 2026-08-14 by running the generator
+    # on `resources/247/test247.scxml` into an empty directory — one parent
+    # invocation writes `test247__sce_synth_invoke__invoke_0.scxml`,
+    # `_sm.h` AND `_sm.c`. Every one of those three was also the OUTPUT of a
+    # rule here, and because the parent DEPENDS on the child headers it runs
+    # LAST and rewrites them after ninja has recorded the child rule's deps.
+    # The result was 41 generated headers reporting `stored deps info out of
+    # date` on every build, forever — the same shape
+    # `build_writes_and_undeclared_outputs` removed from the C++ tree, left
+    # behind on this one. The cpp path above already carries the fix; this is
+    # it in C11's alphabet, where the difference is that a child here is a
+    # `.c` to compile rather than a header to include.
     file(GLOB _SYNTH_INVOKE_FILES
         "${RESOURCE_DIR}/test${TEST_NUM}__sce_synth_invoke__*.scxml")
     set(_CHILD_GENERATED_SOURCES "")
+    set(_C_PARENT_BYPRODUCTS "")
     foreach(_SYNTH_FILE ${_SYNTH_INVOKE_FILES})
         get_filename_component(_CHILD_NAME "${_SYNTH_FILE}" NAME_WE)
-        set(_CHILD_SCXML "${OUTPUT_DIR}/${_CHILD_NAME}.scxml")
-        set(_CHILD_HEADER "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h")
-        set(_CHILD_SOURCE "${OUTPUT_DIR}/${_CHILD_NAME}_sm.c")
-
-        add_custom_command(
-            OUTPUT "${_CHILD_SCXML}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy "${_SYNTH_FILE}" "${_CHILD_SCXML}"
-            DEPENDS "${_SYNTH_FILE}"
-            COMMENT "Staging synth-invoke child SCXML: ${_CHILD_NAME}.scxml (C11)"
-            VERBATIM
-        )
-        # `--write-deps` + DEPFILE, as the cpp generator above already
-        # does: generated source depends on every jinja2 template that
-        # rendered it. Without it a template edit leaves the artefact
-        # stale and the build silently reuses it — measured on this
-        # backend, where a template fix needed a manual `rm` to compile.
-        add_custom_command(
-            OUTPUT "${_CHILD_HEADER}" "${_CHILD_SOURCE}"
-            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_CHILD_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_CHILD_SOURCE}.d"
-            DEPENDS "${_CHILD_SCXML}" "${SCE_CODEGEN}"
-            DEPFILE "${_CHILD_SOURCE}.d"
-            COMMENT "Generating C11 code: ${_CHILD_NAME}_sm.{h,c}"
-            VERBATIM
-        )
-
-        list(APPEND _CHILD_GENERATED_SOURCES "${_CHILD_SOURCE}")
+        list(APPEND _C_PARENT_BYPRODUCTS
+            "${OUTPUT_DIR}/${_CHILD_NAME}.scxml"
+            "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h"
+            "${OUTPUT_DIR}/${_CHILD_NAME}_sm.c")
+        # Still compiled into the test binary. A byproduct is marked
+        # GENERATED and carries the producing edge, and the executable
+        # already lists the parent's `_sm.c` — the one invocation that makes
+        # both — so the ordering is the build graph's rather than a comment's.
+        list(APPEND _CHILD_GENERATED_SOURCES "${OUTPUT_DIR}/${_CHILD_NAME}_sm.c")
     endforeach()
 
     # W3C SCXML 6.4 (test226/276): discover author-supplied sibling sub-fixture
@@ -620,11 +619,9 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     # Both synth-invoke (inline) and sibling-sub (test226/276 author-
     # supplied) shapes are tracked here so neither shape silently regens
     # the parent against a stale or absent child model.
+    # Synth children are deliberately absent from this list: the parent makes
+    # them, so depending on them would be the parent waiting for itself.
     set(_CHILD_HEADER_DEPS "")
-    foreach(_SYNTH_FILE ${_SYNTH_INVOKE_FILES})
-        get_filename_component(_CHILD_NAME "${_SYNTH_FILE}" NAME_WE)
-        list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_CHILD_NAME}_sm.h")
-    endforeach()
     foreach(_SUB_TXML ${_SUB_TXML_FILES})
         get_filename_component(_SUB_NAME "${_SUB_TXML}" NAME_WE)
         list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_SUB_NAME}_sm.h")
@@ -634,11 +631,19 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         list(APPEND _CHILD_HEADER_DEPS "${OUTPUT_DIR}/${_HYBRID_NAME}_sm.h")
     endforeach()
 
+    # The keyword only when there is something to name: a bare `BYPRODUCTS`
+    # with no values is a configure error, and most fixtures carry no
+    # synth-invoke child at all.
+    set(_C_PARENT_BYPRODUCTS_ARG "")
+    if(_C_PARENT_BYPRODUCTS)
+        set(_C_PARENT_BYPRODUCTS_ARG BYPRODUCTS ${_C_PARENT_BYPRODUCTS})
+    endif()
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
         COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
         DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
         DEPFILE "${GENERATED_SOURCE}.d"
+        ${_C_PARENT_BYPRODUCTS_ARG}
         COMMENT "Generating C11 code: test${TEST_NUM}_sm.{h,c}"
         VERBATIM
     )
