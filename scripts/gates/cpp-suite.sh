@@ -111,8 +111,27 @@ ctest_status="${PIPESTATUS[0]}"
 (( ctest_status == 0 )) || sce_gate_fail "C++ ctest suite failed"
 
 executed="$(grep -oE 'out of [0-9]+' "$LOG/ctest.log" | tail -1 | grep -oE '[0-9]+')"
-if [[ "$executed" != "$registered" ]]; then
-    sce_gate_fail "ran ${executed:-0} of $registered registered non-c11 test(s)"
+
+# A DISABLED test is registered and deliberately not run — `ctest -N` counts it,
+# the run's "out of N" does not. Comparing those two numbers directly therefore
+# fails on a tree that merely has a disabled case, which is what the long-form
+# `benchmark_*_full` cases are: registered so they can be asked for by name,
+# disabled so a routine run does not spend minutes on them.
+#
+# Measured 2026-08-14: 178 registered, 171 run, 7 disabled, every one of the
+# 171 green — reported as a failure. The check's intent is that nothing goes
+# missing SILENTLY, so the partition, not the equality, is what to assert: run
+# + disabled must account for every registered case, and the disabled ones are
+# named rather than merely subtracted.
+disabled_names="$(sed -n '/The following tests did not run:/,$p' "$LOG/ctest.log" \
+    | grep -E '\(Disabled\)' || true)"
+disabled="$(printf '%s' "$disabled_names" | grep -c . || true)"
+if (( executed + disabled != registered )); then
+    sce_gate_fail "ran ${executed:-0} and skipped $disabled disabled of $registered registered non-c11 test(s) — $((registered - executed - disabled)) neither ran nor declared themselves disabled"
 fi
 
+if (( disabled > 0 )); then
+    sce_gate_step "$disabled disabled test(s) not run:"
+    printf '      %s\n' $disabled_names >&2
+fi
 sce_gate_step "$executed C++ test(s) passed"
