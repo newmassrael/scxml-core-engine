@@ -48,6 +48,16 @@ object QuickJSNative {
     @JvmStatic external fun setGlobalInt(handle: Long, name: String, value: Long)
     @JvmStatic external fun setGlobalDouble(handle: Long, name: String, value: Double)
     @JvmStatic external fun setGlobalBoolean(handle: Long, name: String, value: Boolean)
+    /**
+     * Whether the global object carries [name].
+     *
+     * The engine owns the variables, so it is the one asked. The adapter kept
+     * its own set of declared names for this and could not see the ones a
+     * `<script>` block created, which made a document's own variable
+     * unreadable through `expr=`.
+     */
+    @JvmStatic external fun hasGlobal(handle: Long, name: String): Boolean
+
     @JvmStatic external fun setGlobalNull(handle: Long, name: String)
     @JvmStatic external fun setGlobalUndefined(handle: Long, name: String)
 

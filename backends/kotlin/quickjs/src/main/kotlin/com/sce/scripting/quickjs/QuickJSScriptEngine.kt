@@ -43,10 +43,15 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
      */
     private data class QuickJSRef(val refId: Int, val originHandle: Long)
 
+    // No list of declared names here on purpose. One lived here, written by
+    // four call sites and read by two, and `executeScript` was not among the
+    // four — so a variable a `<script>` block declared was absent from it
+    // while present in the engine. The engine owns the variables; asking it
+    // (`QuickJSNative.hasGlobal`) is the only answer that cannot be
+    // incomplete, and it is what both readers now do.
     private data class Session(
         val handle: Long,  // QJSSession pointer
         var stateQueryCallback: ((String) -> Boolean)? = null,
-        val declaredVars: MutableSet<String> = mutableSetOf()
     )
 
     private val sessions = mutableMapOf<String, Session>()
@@ -87,8 +92,6 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             "[${jsStringLiteral(processor.name)}]: { location: ${jsStringLiteral(processor.location)} }"
         }
         QuickJSNative.eval(handle, "_ioprocessors = { $entries }")
-
-        session.declaredVars.addAll(listOf("_sessionid", "_name", "_ioprocessors", "_event"))
     }
 
     override fun evaluateCondition(sessionId: String, expr: String): Boolean {
@@ -189,7 +192,6 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             }
             else -> QuickJSNative.setGlobalString(handle, name, value.toString())
         }
-        session.declaredVars.add(name)
     }
 
     override fun getVariable(sessionId: String, name: String): Any? {
@@ -201,7 +203,7 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
 
     override fun hasVariable(sessionId: String, name: String): Boolean {
         val session = sessions[sessionId] ?: return false
-        return name in session.declaredVars
+        return QuickJSNative.hasGlobal(session.handle, name)
     }
 
     override fun assign(sessionId: String, location: String, expr: String) {
@@ -225,7 +227,6 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         if (err != null) {
             throw ScriptEngineException("Assignment failed: $location = $expr ($err)")
         }
-        session.declaredVars.add(rootVar)
     }
 
     override fun setCurrentEvent(sessionId: String, args: SetCurrentEventArgs) {
@@ -299,9 +300,20 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
                 throw ScriptEngineException("Foreach array has no valid length: $array")
             }
 
-        // W3C SCXML 4.6: foreach auto-declares item/index variables
-        session.declaredVars.add(item)
-        if (index.isNotEmpty()) session.declaredVars.add(index)
+        // W3C SCXML 4.6: foreach declares its item and index variables, and it
+        // declares them whether or not the array has anything in it. So they
+        // are declared HERE rather than by the assignments below, which a
+        // zero-length array never reaches.
+        //
+        // Declared in the engine, not recorded beside it. This used to add the
+        // two names to a set the adapter kept, which made `hasVariable` answer
+        // yes for a variable the engine did not have — true enough for that
+        // one question and false for every other reader, including the
+        // document's own `expr=`.
+        QuickJSNative.eval(handle, "var $item;")
+        if (index.isNotEmpty()) {
+            QuickJSNative.eval(handle, "var $index;")
+        }
 
         for (i in 0 until length) {
             QuickJSNative.eval(handle, "$item = __sce_foreach[$i]")
@@ -542,11 +554,21 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         return name.all { it.isLetterOrDigit() || it == '_' || it == '$' }
     }
 
+    /**
+     * §scxml-B-2: reading a name the datamodel never declared is an error,
+     * not `undefined`.
+     *
+     * Asked of the engine, which owns the variables. This used to consult a
+     * set of names the adapter maintained, and that set was written by four
+     * call sites — none of them `executeScript`. So a variable a `<script>`
+     * block declared was absent from it while present in the engine, and this
+     * raised a ReferenceError for a name the document had defined itself.
+     */
     private fun isUndeclaredSimpleVariable(expr: String, session: Session): Boolean {
         if (expr.isEmpty()) return false
         if (!isSimpleVariableName(expr)) return false
         if (expr.startsWith("_") || expr in BUILTINS) return false
-        return expr !in session.declaredVars
+        return !QuickJSNative.hasGlobal(session.handle, expr)
     }
 
     private fun normalizeWhitespace(data: String): String {
