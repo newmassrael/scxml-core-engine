@@ -12,6 +12,9 @@ build_conformance_cpp/
 build_round_trip_cpp/
 build_round_trip_c/
 build_mesh_test/
+# `SCE_SCRIPT_ENGINE=quickjs` is a supported configuration and needs its own
+# tree: the option is compile-time, so the two engines cannot share one.
+build_quickjs/
 /bin/
 lib/
 # ...but scripts/lib/ is source, not build output. The rule above is

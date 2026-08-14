@@ -376,7 +376,21 @@ if(SCE_HAS_SCRIPTING)
     endif()
 
     # Compile-time script engine selection for ScriptEngineProvider
-    set(SCE_SCRIPT_ENGINE "lua" CACHE STRING "Script engine for ScriptEngineProvider")
+    #
+    # QuickJS, because the C++ backend does not translate expressions. A
+    # generated state machine carries the author's ECMAScript verbatim and so
+    # does the Interpreter, so the selected engine IS the semantics of
+    # `datamodel="ecmascript"` — which W3C SCXML B.2 requires to be ECMAScript.
+    #
+    # This defaulted to `lua`, which reaches ECMAScript through a
+    # string-rewriting transformer. Measured 2026-08-14 against the shared
+    # ECMA-262 table (`tests/ecmascript/ecma262_semantics.json`): the lua
+    # selection answers 26 of 58 expressions wrong and the quickjs selection
+    # answers all 58 right. `0 && x` was true, `-7 % 3` was 2, `5 ^ 3` was
+    # 125, and a computed array index was off by one — all silently, with the
+    # whole W3C suite green, because no fixture in the corpus asked.
+    # `ecmascript_semantics_test` asks, on whichever engine is selected here.
+    set(SCE_SCRIPT_ENGINE "quickjs" CACHE STRING "Script engine for ScriptEngineProvider")
     set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
 
     # Normalize and validate engine id
