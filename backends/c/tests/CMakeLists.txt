@@ -733,6 +733,40 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.4, the axis after the one above: a region that took an
+    # external self-transition still holds an atomic state, so it answers the
+    # NEXT event. The two are separate fixtures because the sibling's question
+    # can be answered correctly by a configuration that is already broken —
+    # measured 2026-08-14, the sibling's whole driver stays green under the
+    # defect `parallel_microstep_owns_exit_and_entry.cases` restores while this
+    # one goes red. What differs is which region the engine's current-state
+    # pointer rests in, so the self-transitioning region is first in document
+    # order here and second there.
+    sce_generate_static_integration_c_test(parallel_self_transition_keeps_its_leaf "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_parallel_self_transition_keeps_its_leaf
+        integration/test_parallel_self_transition_keeps_its_leaf.c
+        ${INTEGRATION_C_TEST_parallel_self_transition_keeps_its_leaf_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_parallel_self_transition_keeps_its_leaf PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_parallel_self_transition_keeps_its_leaf PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_parallel_self_transition_keeps_its_leaf PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_parallel_self_transition_keeps_its_leaf
+        COMMAND sce_c_integration_parallel_self_transition_keeps_its_leaf
+    )
+    set_tests_properties(c11_integration_parallel_self_transition_keeps_its_leaf PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
     # implements is valid SCXML that must raise error.execution — not a document to
     # reject at build time. C11 reaches that raise through three gates the other

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 3.4: a region that took an external self-transition still holds an
+  atomic state, so it answers the NEXT event too.
+
+  Its sibling `parallel_regions_take_own_transitions` owns the microstep axis —
+  did every region enabled by one event take its own transition, and run its
+  content. This fixture owns the axis after that one: a region can satisfy the
+  sibling's question in full and still have been left holding no leaf, and the
+  difference between the two is one more event.
+
+  ## Why one more event is a different question
+
+  A `<parallel>` region that keeps its root and loses its leaf is present in
+  the configuration by every structural test — `run` is active, `budget` is
+  active — while nothing inside it can ever fire again. There is no error, no
+  warning, and no failed assertion at the moment it happens. It is found later,
+  by an event that the region was supposed to answer and did not.
+
+  Measured 2026-08-14 against the defect
+  `sce-build/tests/mutations/parallel_microstep_owns_exit_and_entry.cases`
+  restores: with the defect in place, the sibling fixture's whole driver stays
+  green (SURVIVED, 0/2 red). The two fixtures differ in exactly one thing that
+  matters here — which region the engine's `currentState_` is resting in when
+  the event arrives.
+
+  ## Why the self-transitioning region comes FIRST
+
+  The double application is `exit(oldState)` then `enter(currentState_)`, where
+  `oldState` is where the engine's single current-state pointer was before the
+  event. When `oldState` belongs to a region the microstep has already moved
+  OUT of, re-exiting it removes a state that is no longer active and nothing
+  breaks. The damage needs `oldState` to be a leaf the microstep RE-ENTERED,
+  which is what an external self-transition does — and that requires the
+  pointer to be resting in the self-transitioning region.
+
+  So the ordering below is load-bearing rather than stylistic: `budget`, the
+  shallower region whose transition is an external self-transition, is first in
+  document order, and `drive` is second. Reversing them is the sibling
+  fixture's shape, and the sibling fixture cannot see this defect.
+
+  ## The verdict
+
+  `drive` answers `e` once and then goes quiet — `judging` has no `e`
+  transition — so the SECOND `e` is a question only `budget` can answer. Its
+  `<assign>` is the answer: `m` reaches 2 only if the region still had a leaf
+  to transition from. The top-level `<final id="settled">` is guarded on
+  `n == 1 && m == 2`, so a region that moved without running its content fails
+  the same way one that could not move at all does, and a top-level final is
+  the one observable every backend exposes — including the ones that report a
+  single current leaf rather than a configuration.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="parallel_self_transition_keeps_its_leaf" datamodel="ecmascript"
+       initial="run">
+
+  <datamodel>
+    <data id="n" expr="0"/>
+    <data id="m" expr="0"/>
+  </datamodel>
+
+  <parallel id="run">
+
+    <!--
+      The shallower region, FIRST in document order. Its transition on `e` is
+      an external self-transition: Appendix D resolves the domain through
+      `findLCCA` over the proper ancestors, so the exit set is `{within}` and
+      the microstep exits and re-enters it. That re-entry is what a second,
+      caller-supplied exit then undoes.
+    -->
+    <state id="budget" initial="within">
+      <state id="within">
+        <transition event="e" target="within">
+          <assign location="m" expr="m + 1"/>
+        </transition>
+      </state>
+    </state>
+
+    <!--
+      The deeper region, SECOND. It answers the first `e` and then has nothing
+      to say, which is what leaves the second `e` addressed to `budget` alone.
+    -->
+    <state id="drive" initial="running">
+      <state id="running" initial="working">
+        <state id="working">
+          <transition event="e" target="judging">
+            <assign location="n" expr="n + 1"/>
+          </transition>
+        </state>
+        <state id="judging">
+          <!--
+            The document decides its own verdict rather than leaving it to the
+            host: `m == 2` is reachable only if `budget` was still holding
+            `within` when the second `e` arrived.
+          -->
+          <transition event="check" cond="n == 1 &amp;&amp; m == 2" target="settled"/>
+        </state>
+      </state>
+    </state>
+
+  </parallel>
+
+  <final id="settled"/>
+</scxml>
