@@ -17,7 +17,15 @@
     "",
     "Readers:",
     "  sce-build/tests/ecmascript_semantics.rs  the build-time frontend, then Lua",
-    "  tests/engine/EcmaScriptSemanticsTest.cpp the engine this C++ build selected"
+    "  tests/engine/EcmaScriptSemanticsTest.cpp the engine this C++ build selected",
+    "  backends/kotlin/.../EcmaScriptSemanticsTest.kt  all three Kotlin engines",
+    "",
+    "The Kotlin reader measures every engine that backend offers rather than",
+    "one, because a generated Kotlin machine takes its engine as a constructor",
+    "argument: there is no build-wide choice to check, only three options handed",
+    "to a consumer. Asking all of them is what found the third defect this table",
+    "has now caught — QuickJS answered three of these cases with a ReferenceError",
+    "its Kotlin adapter invented, for variables a `<script>` block had declared."
   ],
   "form": {
     "condition": "evaluated the way a `cond=` attribute is: the answer is ToBoolean of the value",
