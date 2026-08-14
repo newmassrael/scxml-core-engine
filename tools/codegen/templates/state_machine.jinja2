@@ -77,6 +77,12 @@
 {% if model.needs_script_engine %}
 #include "common/FinalizeHelper.h"
 {% endif %}
+{% if model.variables | selectattr('type', 'in', ['int', 'string', 'bool']) | list %}
+// §scxml-5.3: the typed read accessors below take the datamodel back out of
+// the session the script engine owns, rather than shadowing it in a member.
+#include "common/DataModelReadHelper.h"
+#include <optional>
+{% endif %}
 {% if model.needs_event_scheduler %}
 #include "common/SendSchedulingHelper.h"
 {% endif %}
@@ -315,17 +321,36 @@ struct {{ model.name }}Policy {
     {% endfor %}
     {% endif %}
 
+    {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
+
+       A <data> that carries an initializer is owned by the script engine for
+       the life of the session: <assign> writes there and every guard reads
+       from there. A member here holding the same variable would be a second
+       representation that stops agreeing with the first <assign> and never
+       agrees again — so the machine reads the datamodel back out through
+       DataModelReadHelper (see the accessors below) instead of shadowing it.
+       Kotlin's template already drew this line; the other backends now do
+       too. #}
     {% if model.variables %}
-    // Datamodel variables
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
     {% for var in model.variables %}
-    {% if var.type == 'int' %}
-    int {{ var.id }} = {{ var.expr if var.expr else '0' }};
-    {% elif var.type == 'string' %}
-    ::std::string {{ var.id }}{{ ' = ' + var.expr if var.expr else '' }};
-    {% elif var.type == 'bool' %}
-    bool {{ var.id }} = {{ var.expr if var.expr else 'false' }};
-    {% elif var.type == 'runtime' %}
-    // Runtime-evaluated variable (handled by JSEngine): {{ var.id }}
+    {% if var.type in ['int', 'string', 'bool'] %}
+    /**
+     * @brief §scxml-5.3: what the `{{ var.id }}` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: <assign> writes into the session,
+     * so a reader frozen at generation time would answer the document's
+     * literal for the whole run. `nullopt` means the machine cannot answer —
+     * no script engine is set, the session is not initialized yet,
+     * `{{ var.id }}` was assigned a value of another type, or the engine refused.
+     */
+    ::std::optional<{{ 'int64_t' if var.type == 'int' else ('::std::string' if var.type == 'string' else 'bool') }}> {{ var.id }}() const {
+        if (!scriptEngine_ || !sessionId_.has_value()) {
+            return ::std::nullopt;
+        }
+        return ::SCE::DataModelReadHelper::read{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(
+            *scriptEngine_, sessionId_.value(), "{{ var.id }}");
+    }
     {% endif %}
     {% endfor %}
     {% endif %}

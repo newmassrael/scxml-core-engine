@@ -2770,6 +2770,10 @@
         {
           "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
+          "kind": "references"
         }
       ]
     },

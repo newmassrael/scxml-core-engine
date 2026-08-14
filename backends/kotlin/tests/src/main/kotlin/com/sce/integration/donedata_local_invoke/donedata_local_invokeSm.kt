@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -45,7 +45,19 @@ class DonedataLocalInvokeStateMachine(
     scriptEngine: ScxmlScriptEngine,
 ) : StateMachineEngine<DonedataLocalInvokeState, DonedataLocalInvokeEvent>(scriptEngine) {
 
-    // Datamodel (W3C SCXML 5.3)
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+
+    /**
+     * §scxml-5.3: what the `param_ok` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `param_ok` was assigned a value of another type, or the engine refused.
+     */
+    fun paramOk(): Boolean? =
+        com.sce.runtime.DatamodelRead.readBool(scriptEngine, scriptSessionId, "param_ok")
 
     override val initialState: DonedataLocalInvokeState = DonedataLocalInvokeState.PhaseParam
 

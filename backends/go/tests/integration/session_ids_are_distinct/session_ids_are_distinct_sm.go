@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9559f7034cb0e413a2c5aa2055ca23d5b6d7fecbb68ab13dd3b257c7755faaca
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 
@@ -123,7 +123,6 @@ type SessionIdsAreDistinctPolicy struct {
 	pendingEventOrigin string
 	pendingEventOrigintype string
 	pendingEventInvokeid string
-	// W3C SCXML 5.3: Datamodel variables
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)

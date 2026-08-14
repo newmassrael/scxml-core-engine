@@ -43,15 +43,15 @@ func (p *{{ machine_name }}Policy) ensureScriptEngine() {
 		return p.IsStateActive(stateID)
 	})
 {% endif %}
-{% for var in model.variables %}
-{% if var.type == 'int' %}
-	_ = engine.SetVariable(sessionID, "{{ var.id }}", p.{{ var.id | to_camel_case | escape_go_keyword }})
-{% elif var.type == 'string' %}
-	_ = engine.SetVariable(sessionID, "{{ var.id }}", p.{{ var.id | to_camel_case | escape_go_keyword }})
-{% elif var.type == 'bool' %}
-	_ = engine.SetVariable(sessionID, "{{ var.id }}", p.{{ var.id | to_camel_case | escape_go_keyword }})
-{% endif %}
-{% endfor %}
+{# W3C SCXML 5.3: no pre-seed here. This function used to write each
+   constant-folded `<data>` literal into the fresh session from a struct
+   field, and then `InitializeDataModel` — whose first statement is a call to
+   this one — evaluated the same `<data>`'s `expr` and overwrote it. A typed
+   literal exists only for a `<data>` that carries an initialiser, and such a
+   document always reports `NeedsDataModelInit`, so the seeded value was
+   replaced before any state could be entered. Every other backend
+   initialises a variable in exactly one place; Go now does too, and the
+   field the seed read from is gone with it. #}
 	p.scriptEngineInitialized = true
 }
 

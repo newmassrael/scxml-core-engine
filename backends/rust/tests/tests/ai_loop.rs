@@ -319,3 +319,74 @@ fn one_cancel_reaches_every_region() {
         active(&e)
     );
 }
+
+/// §scxml-5.3: the machine answers what its own datamodel holds.
+///
+/// A host supervising this loop has to size its own work against the budget
+/// the document declares. Without an accessor the only readable copy is the
+/// script engine's, reached with an engine handle, a session id and the
+/// variable's name spelled as a string — three things a consumer should not
+/// need, none of them checked by a compiler.
+///
+/// The half that decides the shape is `turns`: it is authored `0` and
+/// assigned on every completed turn, so an accessor that answered the
+/// AUTHORED literal would keep saying `0` for the whole run. What a consumer
+/// asks for is the value the machine is holding now, which is why the read
+/// goes to whoever owns the datamodel rather than to a copy taken at
+/// generation time.
+#[test]
+fn the_machine_answers_what_its_own_datamodel_holds() {
+    let mut e = started();
+
+    assert_eq!(
+        e.policy().max_turns(),
+        Some(40),
+        "the authored budget must be readable off the machine itself, in the \
+         host's own type"
+    );
+    assert_eq!(
+        e.policy().reflect_every(),
+        Some(8),
+        "so must the reflection cadence"
+    );
+    assert_eq!(
+        e.policy().screen_permissions(),
+        Some(false),
+        "a standing answer to permission dialogs is a promise about what the loop \
+         may do unattended, and a host must be able to inspect it"
+    );
+
+    assert_eq!(
+        e.policy().turns(),
+        Some(0),
+        "no turn has completed yet, so the bookkeeping still reads its authored value"
+    );
+    turn(&mut e);
+    assert_eq!(
+        e.policy().turns(),
+        Some(1),
+        "⚠ the accessor must report what the datamodel HOLDS, not what the document \
+         authored — a value frozen at generation time would still say 0 here, and \
+         `max_turns` itself is assigned in the consumer's own copy of this loop"
+    );
+}
+
+/// A machine that has not been booted cannot answer, and says so.
+///
+/// The failure this refuses is the one a default-valued field would produce: a
+/// freshly constructed machine reporting the document's literal as though a
+/// session had been created and initialised it. Nothing has read the document
+/// at this point, so `None` is the only honest answer.
+#[test]
+fn an_uninitialised_machine_says_it_cannot_answer() {
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let policy = AiLoopPolicy::new(script_engine);
+
+    assert_eq!(
+        policy.max_turns(),
+        None,
+        "before initialize() there is no session holding a datamodel, and answering \
+         40 would be a claim about a run that has not started"
+    );
+}

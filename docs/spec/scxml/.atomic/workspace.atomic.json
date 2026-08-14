@@ -5392,6 +5392,81 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "initialize",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
+          "symbol": "read_int",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
+          "symbol": "read_string",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
+          "symbol": "read_bool",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DataModelReadHelper.h",
+          "symbol": "readInt",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DataModelReadHelper.h",
+          "symbol": "readString",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DataModelReadHelper.h",
+          "symbol": "readBool",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/datamodel_read.go",
+          "symbol": "ReadDatamodelInt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/datamodel_read.go",
+          "symbol": "ReadDatamodelString",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/datamodel_read.go",
+          "symbol": "ReadDatamodelBool",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DatamodelRead.kt",
+          "symbol": "readInt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DatamodelRead.kt",
+          "symbol": "readString",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DatamodelRead.kt",
+          "symbol": "readBool",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/datamodel_read.py",
+          "symbol": "read_int",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/datamodel_read.py",
+          "symbol": "read_string",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/datamodel_read.py",
+          "symbol": "read_bool",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 
@@ -123,8 +123,6 @@ type DonedataLocalInvokePolicy struct {
 	pendingEventOrigin string
 	pendingEventOrigintype string
 	pendingEventInvokeid string
-	// W3C SCXML 5.3: Datamodel variables
-	paramOk bool
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
@@ -154,10 +152,21 @@ type DonedataLocalInvokePolicy struct {
 func NewDonedataLocalInvokePolicy() DonedataLocalInvokePolicy {
 	return DonedataLocalInvokePolicy{
 		lastTransitionSourceState: DonedataLocalInvokeStatePhaseParam,
-		paramOk: false,
 		pendingInvokes: make([]sce.PendingInvoke[DonedataLocalInvokeState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
+}
+
+// ParamOk reports what the `param_ok` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `param_ok` was assigned a value of another type, or the engine refused.
+func (p *DonedataLocalInvokePolicy) ParamOk() (bool, bool) {
+	return sce.ReadDatamodelBool(p.ScriptEngine, p.SessionID, "param_ok")
 }
 
 
@@ -191,7 +200,6 @@ func (p *DonedataLocalInvokePolicy) ensureScriptEngine() {
 	// and the same addresses whichever one runs it.
 	_ = engine.SetupSystemVariables(sessionID, "donedata_local_invoke",
 		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
-	_ = engine.SetVariable(sessionID, "param_ok", p.paramOk)
 	p.scriptEngineInitialized = true
 }
 

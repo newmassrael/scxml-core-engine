@@ -160,18 +160,16 @@ type {{ machine_name }}Policy struct {
 	// W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
 	history{{ history_id | to_pascal_case }} []{{ machine_name }}State
 {% endfor %}
-{% if model.variables %}
-	// W3C SCXML 5.3: Datamodel variables
-{% for var in model.variables %}
-{% if var.type == 'int' %}
-	{{ var.id | to_camel_case | escape_go_keyword }} int64
-{% elif var.type == 'string' %}
-	{{ var.id | to_camel_case | escape_go_keyword }} string
-{% elif var.type == 'bool' %}
-	{{ var.id | to_camel_case | escape_go_keyword }} bool
-{% endif %}
-{% endfor %}
-{% endif %}
+{# W3C SCXML 5.3: the datamodel has ONE home, and it is not this struct.
+
+   A `<data>` that carries an initialiser is owned by the script engine for
+   the life of the session: `<assign>` writes there and every guard reads from
+   there. A field here holding the same variable would be a second
+   representation that stops agreeing with the first `<assign>` and never
+   agrees again — so the machine reads the datamodel back out through
+   `sce.ReadDatamodel*` (see the accessors after the constructor) instead of
+   shadowing it. Kotlin's template already drew this line; the other backends
+   now do too. #}
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 {% if model.needs_script_engine %}
@@ -218,27 +216,28 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 {% for history_id, _ in model.history_states | dictsort %}
 		history{{ history_id | to_pascal_case }}: nil,
 {% endfor %}
-{% if model.variables %}
-{% for var in model.variables %}
-{% if var.type == 'int' %}
-		{{ var.id | to_camel_case | escape_go_keyword }}: {{ var.expr if var.expr else '0' }},
-{% elif var.type == 'string' %}
-{% if var.expr %}
-		{{ var.id | to_camel_case | escape_go_keyword }}: {{ var.expr | to_go_string_expr }},
-{% else %}
-		{{ var.id | to_camel_case | escape_go_keyword }}: "",
-{% endif %}
-{% elif var.type == 'bool' %}
-		{{ var.id | to_camel_case | escape_go_keyword }}: {{ 'true' if var.expr and var.expr.lower() == 'true' else 'false' }},
-{% endif %}
-{% endfor %}
-{% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid or model.invokes | unsupported %}
 		pendingInvokes: make([]sce.PendingInvoke[{{ machine_name }}State], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 {% endif %}
 	}
 }
+{% for var in model.variables %}
+{% if var.type in ['int', 'string', 'bool'] %}
+
+// {{ var.id | to_pascal_case }} reports what the `{{ var.id }}` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `{{ var.id }}` was assigned a value of another type, or the engine refused.
+func (p *{{ machine_name }}Policy) {{ var.id | to_pascal_case }}() ({{ 'int64' if var.type == 'int' else var.type }}, bool) {
+	return sce.ReadDatamodel{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(p.ScriptEngine, p.SessionID, "{{ var.id }}")
+}
+{% endif %}
+{% endfor %}
 
 {% include 'utility_methods.go.jinja2' %}
 {% include 'scriptengine_helpers.go.jinja2' %}

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b82119528bc210fbc6e453d658ae079f31e3529ce331b1d6045090bb79eaa2ff
+// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -39,7 +39,31 @@ class Test457StateMachine(
     scriptEngine: ScxmlScriptEngine,
 ) : StateMachineEngine<Test457State, Test457Event>(scriptEngine) {
 
-    // Datamodel (W3C SCXML 5.3)
+    // ── §scxml-5.3: read the datamodel this machine is holding ──────────
+
+    /**
+     * §scxml-5.3: what the `Var1` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `Var1` was assigned a value of another type, or the engine refused.
+     */
+    fun Var1(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "Var1")
+
+    /**
+     * §scxml-5.3: what the `Var4` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `Var4` was assigned a value of another type, or the engine refused.
+     */
+    fun Var4(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "Var4")
 
     override val initialState: Test457State = Test457State.S0
 
