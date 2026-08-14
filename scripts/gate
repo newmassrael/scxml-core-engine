@@ -67,6 +67,19 @@ PYEOF
     changed)
         mapfile -t ORDER < <(python3 "$REGISTRY" --repo-root "$REPO_ROOT" \
             --changed-from "$CHANGED_FILE" --explain)
+        # The change set decides WHICH gates run, and until now that was all
+        # it decided — a gate could not see it, so a gate whose work is
+        # per-path had to do all of it or none. `mutation-rounds` is the
+        # first that needs the set itself: it runs a full mutation round per
+        # casefile whose declared target moved, and without the set the only
+        # honest alternatives are the whole corpus or nothing.
+        #
+        # Exported rather than passed as an argument so that a gate which
+        # does not narrow needs no signature change, and absent rather than
+        # empty when there is no set: a gate must be able to tell "nothing
+        # changed" from "no range was resolved", because those call for
+        # opposite behaviour.
+        export SCE_GATE_CHANGED_FILE="$CHANGED_FILE"
         ;;
     named)
         # Named gates still get their dependency closure and the derived

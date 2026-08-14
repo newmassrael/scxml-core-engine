@@ -348,6 +348,23 @@ mutation_resolve_artifacts() { "mutation_${MUTATION_RUNNER}_resolve"; }
 mutation_build_and_hash() { "mutation_${MUTATION_RUNNER}_build_and_hash"; }
 mutation_run_artifacts() { "mutation_${MUTATION_RUNNER}_run"; }
 
+# The same build again, this time with its output, for the one place a build
+# failure is terminal rather than a verdict.
+#
+# Both `_build_and_hash` implementations silence the build, and during a case
+# that is right: a mutated tree that does not compile is INCONCLUSIVE, the
+# harness says so in those words, and the compiler's complaint about
+# deliberately broken code is noise. At the BASELINE it is the opposite. The
+# round stops, and "baseline build failed" on its own names no file, no
+# target and no reason — which is how a sweep of this corpus reported two
+# casefiles as failing to build with nothing to act on, and left the cause
+# unattributable after the fact.
+#
+# `mutation_cargo_resolve` already did this for the resolve step; the build
+# step had the same shape and not the same treatment, which is the kind of
+# gap a sibling block is supposed to make visible.
+mutation_build_diagnostics() { "mutation_${MUTATION_RUNNER}_build_verbose"; }
+
 # Resolve the test executables the selector names. Doing this once, and
 # then running the binaries directly, is what removes the shared-filter
 # hazard: there is no argument left that could narrow one binary's run.
@@ -384,6 +401,10 @@ for line in sys.stdin:
 mutation_cargo_build_and_hash() {
     cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" >/dev/null 2>&1 || return 1
     mutation_hash_artifacts
+}
+
+mutation_cargo_build_verbose() {
+    cargo test --no-run "${MUTATION_RUNNER_ARGS[@]}" 2>&1 | tail -40 || true
 }
 
 # "<sha> <path>" per resolved artifact, in resolution order. Shared by the
@@ -474,6 +495,10 @@ for path in sorted(seen):
 mutation_ctest_build_and_hash() {
     cmake --build "$MUTATION_BUILD_DIR" --parallel "$(nproc)" >/dev/null 2>&1 || return 1
     mutation_hash_artifacts
+}
+
+mutation_ctest_build_verbose() {
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(nproc)" 2>&1 | tail -40 || true
 }
 
 # One ctest run over the declared selector; "<tests_run> <failed>" read from
@@ -673,6 +698,32 @@ mutation_init() {
         red "the casefile declared no mutation_targets or mutation_runtime_targets"
         exit 2
     fi
+
+    # `--declares` answers a question about the DECLARATION, so it returns
+    # before anything touches the tree: no snapshot, no selector resolution,
+    # no build. A caller deciding whether this casefile is worth a round
+    # must not pay for the round to find out.
+    #
+    # It exists so that the decision is made from the casefile's own
+    # declaration rather than from a list beside it. These names are read by
+    # exactly one program in this repository, and that is on purpose: the
+    # first pass used to be a grep for them, which went stale the day
+    # `mutation_runtime_targets` was added — the casefile that used it was
+    # rejected as declaring no targets at all.
+    #
+    # Runner and targets come out of one mode rather than two, because a
+    # caller needs both to decide anything useful and two modes would be two
+    # invocations of the same parse. The runner kind matters to a caller that
+    # has to know whether a round needs a configured CMake tree: absent one,
+    # a ctest round has nothing to select from, and the honest report for
+    # that is "this check could not run" rather than a verdict.
+    if [[ "$MUTATION_MODE" == "declares" ]]; then
+        printf 'runner\t%s\n' "$MUTATION_RUNNER"
+        while IFS= read -r _target; do
+            [[ -n "$_target" ]] && printf 'target\t%s\n' "$_target"
+        done < <(mutation_all_targets)
+        exit 0
+    fi
     # Before the snapshot, which reads every declared file and would other-
     # wise die on the missing one with `cp`'s message instead of this one.
     mutation_check_targets_exist || exit 2
@@ -693,7 +744,11 @@ mutation_init() {
 
     BASELINE_FILE_HASHES="$(mutation_all_target_hashes)"
     BASELINE_COMPILED_HASHES="$(mutation_compiled_target_hashes)"
-    BASELINE_HASHES="$(mutation_build_and_hash)" || { red "baseline build failed"; exit 2; }
+    BASELINE_HASHES="$(mutation_build_and_hash)" || {
+        red "baseline build failed — the round cannot start. The build's own output:"
+        mutation_build_diagnostics >&2
+        exit 2
+    }
     read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_artifacts)"
     if [[ "$BASELINE_FAILED" != "0" ]]; then
         red "baseline is not green ($BASELINE_FAILED failing) — fix that before mutating,"
@@ -929,13 +984,15 @@ MUTATION_ARGV=()
 while (( $# )); do
     case "$1" in
         --check) MUTATION_MODE=check ;;
+        --declares) MUTATION_MODE=declares ;;
         # Spelled out rather than sliced out of the header with a line
         # range: a range silently prints the wrong block the first time
         # anything above it grows, and this file's header has grown twice.
         -h|--help)
-            printf 'usage: scripts/mutate [--check] <casefile>\n\n'
-            printf '  (default)  full round — build, run, require every case CAUGHT\n'
-            printf '  --check    apply and restore only; no build, no test run\n\n'
+            printf 'usage: scripts/mutate [--check|--declares] <casefile>\n\n'
+            printf '  (default)   full round — build, run, require every case CAUGHT\n'
+            printf '  --check     apply and restore only; no build, no test run\n'
+            printf '  --declares  print the declared runner and targets, then exit\n\n'
             printf 'The casefile vocabulary is documented in this file'\''s header.\n'
             exit 0 ;;
         -*) red "mutate: unknown option $1"; exit 2 ;;

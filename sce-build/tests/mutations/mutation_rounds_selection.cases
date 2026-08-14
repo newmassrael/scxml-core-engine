@@ -1,0 +1,62 @@
+# Mutation cases for "a mutation round runs where a change reached, and only
+# there".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/mutation_rounds_selection.cases`.
+#
+# The gate script is read by the tests at run time, not compiled into them, so
+# it is a `mutation_runtime_targets`; the harness header explains what that
+# changes about the evidence.
+#
+# What these guard is the one decision `mutation-rounds` makes. Everything
+# expensive about the gate follows from it, and both ways of getting it wrong
+# are quiet. Selecting too much turns every push into a corpus sweep, which is
+# the version of this gate that gets switched off. Selecting too little leaves
+# the case guarding a file unverified on the one push that could have broken
+# it — and that failure looks exactly like the common, correct case of
+# selecting nothing.
+#
+# `mutation-cases` cannot cover this gate for the reason this gate exists:
+# whether the choosing still chooses is not a question about anchors.
+
+mutation_tests -p sce-build --test mutation_rounds_selection
+mutation_runtime_targets scripts/gates/mutation-rounds.sh
+
+# ── The match stops being exact ────────────────────────────────────
+#
+# Both sides are repository-relative paths written by the same tooling, so
+# equality is the whole comparison. A prefix test instead pulls in every
+# casefile declaring a file under any directory somebody touched, and a
+# change-scoped gate becomes an unconditional one without anything failing.
+
+mutation_case "a changed path matches a declared target by prefix" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     'if [[ "$changed" == "$target" ]]; then',
+     'if [[ "$target" == "$changed"* ]]; then')
+PY
+
+# ── Everything is selected regardless of the change set ────────────
+#
+# The shape the gate had before its change set reached it: correct, and
+# unaffordable. It passes every round it runs, so nothing turns red — the
+# cost is the only signal, and cost is not something a suite measures.
+
+mutation_case "the change set is ignored and the corpus always runs" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     '    if (( ${#SELECTED[@]} == 0 )); then\n        # The change set is paths',
+     '    SELECTED=("${CASEFILES[@]}")\n    if (( 0 )); then\n        # The change set is paths')
+PY
+
+# ── The count stops being reported ─────────────────────────────────
+#
+# Choosing nothing is the common and correct outcome, so it must pass — which
+# is exactly why it has to be said out loud. A gate that passes silently for
+# having examined nothing is indistinguishable from one that examined
+# everything, and this repository has already been misled by that once, over a
+# casefile recorded as CAUGHT while it was INCONCLUSIVE.
+
+mutation_case "the gate stops saying how many casefiles it chose" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     'sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reason"',
+     'true')
+PY
