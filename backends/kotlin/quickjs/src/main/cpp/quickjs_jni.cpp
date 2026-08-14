@@ -301,6 +301,43 @@ JNIEXPORT void JNICALL JNI_METHOD(setGlobalBoolean)(JNIEnv *env, jclass, jlong h
     JS_FreeValue(session->ctx, global);
 }
 
+// Does the global object carry this name?
+//
+// The adapter used to answer that from a Kotlin-side set of names it
+// maintained itself, and the set could only ever list what the adapter had
+// been told about. A `<script>` block reaches the engine through `eval` and
+// tells the adapter nothing, so a variable a document declared in a script
+// was invisible: reading it back through `expr=` raised a ReferenceError the
+// adapter invented while the engine held the value all along. Measured
+// 2026-08-14 against `tests/ecmascript/ecma262_semantics.json` — three of 58
+// cases, every one of them a bare name declared in its setup script.
+//
+// A property lookup rather than `typeof x !== 'undefined'`: the two differ
+// for a variable declared and left undefined, and the question here is
+// whether the name EXISTS.
+JNIEXPORT jboolean JNICALL JNI_METHOD(hasGlobal)(JNIEnv *env, jclass, jlong handle, jstring name) {
+    auto *session = toSession(handle);
+    if (!session) {
+        return JNI_FALSE;
+    }
+
+    std::string n = jstringToString(env, name);
+
+    JSValue global = JS_GetGlobalObject(session->ctx);
+    JSAtom atom = JS_NewAtom(session->ctx, n.c_str());
+    int has = JS_HasProperty(session->ctx, global, atom);
+    JS_FreeAtom(session->ctx, atom);
+    JS_FreeValue(session->ctx, global);
+
+    if (has < 0) {
+        // A lookup that threw leaves the exception pending, and the next
+        // evaluation in this context would report it as its own.
+        JS_FreeValue(session->ctx, JS_GetException(session->ctx));
+        return JNI_FALSE;
+    }
+    return has > 0 ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL JNI_METHOD(setGlobalNull)(JNIEnv *env, jclass, jlong handle, jstring name) {
     auto *session = toSession(handle);
     if (!session) {

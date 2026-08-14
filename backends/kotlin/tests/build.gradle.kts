@@ -15,6 +15,12 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.jupiter)
+    // `EcmaScriptSemanticsTest` reads the shared ECMA-262 table that the C++
+    // engine test and the Rust frontend test also read. A parser rather than
+    // a hand-rolled reader, and deliberately not one of the engines under
+    // test: an engine that answers the language wrong must not also be the
+    // thing that reads what the language is supposed to answer.
+    testImplementation(libs.kotlinx.serialization.json)
 }
 
 // ---------------------------------------------------------------------------
