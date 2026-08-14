@@ -477,6 +477,38 @@ Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluatio
   - **Layer 2**: LuaSessionContext caches compiled Lua bytecode (registry refs)
   - **Layer 3**: Per-session direct expression→chunk ref mapping (skips Layer 1+2 on repeat)
 
+### ECMAScript Semantics (Single Source of Truth)
+
+`sce/include/scripting/ecma_semantics.lua` — the ECMAScript operators Lua
+does not share, defined once and loaded by every engine:
+
+| Operator | Why Lua's own is not it |
+|----------|------------------------|
+| `+` | concatenates when either operand is a string, adds otherwise |
+| `==` / `!=` | compare across types after coercion; Lua's `==` is `===` |
+| `%` | ECMAScript truncates toward zero, Lua floors |
+| `& \| ^ ~ << >> >>>` | operate on ToInt32 of the operands, not on integers |
+| `obj[k]` | an Array is stored one-based, an ECMAScript index is zero-based |
+
+| Backend | Embedding Mechanism | When |
+|---------|-------------------|------|
+| C++ | CMake `EmbedLuaScript.cmake` → `ecma_semantics_lua.h` | Compile-time |
+| Rust | `include_str!` in `sce-rust-lua` | Compile-time |
+| Kotlin | Gradle `copyEcmaSemantics` → `/scripting/ecma_semantics.lua` | Runtime (lazy) |
+| Go | `//go:embed ecma_semantics.lua` in `backends/go/lua/` | Compile-time |
+| Python | read from the repository path | Runtime |
+| C11 | emitted into the generated engine bootstrap by codegen | Generation-time |
+
+The file is written to Lua 5.2 rules — go-lua has no bitwise operators and
+no `string.match`/`string.gsub` — and carries no file-local functions,
+because the C11 embed splits it across several `luaL_dostring` calls to stay
+under the C99 string-literal limit. `sce-build/tests/shared_lua_assets.rs`
+fails if the Go copy drifts or an engine stops loading it.
+
+The producer is `sce-build/src/ecmascript/` — the ECMAScript parser and Lua
+emitter that replaced a 25-pass string rewriter whose entry point could not
+fail. Do NOT reintroduce per-engine copies of these operators.
+
 ### JSON Builtins (Single Source of Truth)
 
 `sce/include/scripting/json_builtins.lua` — canonical `JSON.stringify()` / `JSON.parse()` implementation shared across all three backends:

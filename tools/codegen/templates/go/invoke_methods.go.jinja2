@@ -93,7 +93,8 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				p.ensureScriptEngine()
 				se := p.ScriptEngine
 {% for param in invoke_info.params %}
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr | escape_go }}`); err == nil {
+				{# Raw string: no escaping. See entry_exit_actions.go.jinja2. #}
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); err == nil {
 					childPolicy.SetParamInScriptEngine("{{ param.name | escape_go }}", sce.ToLuaLiteral(val))
 				}
 {% endfor %}
@@ -159,7 +160,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			p.ensureScriptEngine()
 			{
 				se := p.ScriptEngine
-				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr | escape_go }}`); err != nil {
+				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}
@@ -171,7 +172,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			p.ensureScriptEngine()
 			{
 				se := p.ScriptEngine
-				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr | escape_go }}`); err != nil {
+				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}

@@ -82,8 +82,16 @@ val copyJsonBuiltins by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("resources/main/scripting"))
 }
 
+// W3C SCXML B.2: the ECMAScript operators Lua does not share. Copied from
+// the same shared source rather than reimplemented in Kotlin, so `==` and
+// `+` cannot mean one thing here and another in the C++ or Rust engine.
+val copyEcmaSemantics by tasks.registering(Copy::class) {
+    from(rootProject.file("sce/include/scripting/ecma_semantics.lua"))
+    into(layout.buildDirectory.dir("resources/main/scripting"))
+}
+
 tasks.named("processResources") {
-    dependsOn(buildNativeLib, copyJsonBuiltins)
+    dependsOn(buildNativeLib, copyJsonBuiltins, copyEcmaSemantics)
 }
 
 // Add native lib directory to java.library.path for tests

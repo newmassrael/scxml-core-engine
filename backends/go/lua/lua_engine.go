@@ -27,6 +27,14 @@ import (
 //go:embed json_builtins.lua
 var jsonBuiltinsLua string
 
+// W3C SCXML B.2 ECMAScript operator semantics. Byte copy of
+// sce/include/scripting/ecma_semantics.lua — `go:embed` cannot reach
+// outside the module, the same reason json_builtins.lua is copied here.
+// `shared_lua_assets_are_byte_identical` fails if the copies drift.
+//
+//go:embed ecma_semantics.lua
+var ecmaSemanticsLua string
+
 // session holds per-state-machine Lua state.
 type session struct {
 	l              *lua.State
@@ -75,6 +83,14 @@ func (e *LuaEngine) CreateSession(sessionID string) error {
 
 	// Register builtins
 	e.setupBuiltins(sess)
+
+	// W3C SCXML B.2: the ECMAScript operators Lua does not share, from the
+	// same shared source every other backend loads. Written to be Lua 5.2
+	// compatible precisely because go-lua is: it has no bitwise operators
+	// at all, so the bit helpers there are arithmetic.
+	if err := lua.DoString(l, ecmaSemanticsLua); err != nil {
+		return fmt.Errorf("failed to load ECMAScript semantics: %w", err)
+	}
 
 	// Load JSON builtins from shared source (JSON.stringify works in go-lua)
 	if err := lua.DoString(l, jsonBuiltinsLua); err != nil {

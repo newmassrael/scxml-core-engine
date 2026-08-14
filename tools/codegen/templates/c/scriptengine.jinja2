@@ -68,6 +68,26 @@
             "  if type(v) == 'string' then return #v > 0 end\n"
             "  return true\n"
             "end");
+        /* W3C SCXML B.2 (test150 and 11 others): the ECMAScript `typeof`
+           operator. Every other engine installs `_typeof` natively
+           (`LuaEngine.cpp:438`, `sce-rust-lua`, go-lua, Kotlin, Python);
+           C11 had no definition at all, and nothing noticed because the
+           string transformer this replaced pattern-matched the one shape
+           the corpus writes — `typeof X !== 'undefined'` — into `X ~= nil`
+           and never emitted a call. A parser lowers the operator rather
+           than the idiom, so the operator has to exist.
+
+           Lua's own `type` names different things: it has no `undefined`,
+           and it calls a table a table where ECMAScript calls it an
+           object. */
+        (void)luaL_dostring(sm->L,
+            "function _typeof(v)\n"
+            "  if v == nil then return 'undefined' end\n"
+            "  local t = type(v)\n"
+            "  if t == 'number' or t == 'string' or t == 'boolean' then return t end\n"
+            "  if t == 'function' then return 'function' end\n"
+            "  return 'object'\n"
+            "end");
         /* W3C SCXML 5.4 / 4.6 (test457): ECMAScript `instanceof Array`
            predicate for `<foreach array=...>` validation. Mirrors cpp
            `LuaEngine.cpp:463-483` lua_pushcfunction — strict array check
@@ -130,6 +150,21 @@
             "  end\n"
             "  return -1\n"
             "end");
+        /* W3C SCXML B.2: the ECMAScript operators Lua does not share — `+`
+           (concatenation or addition depending on the operands), `==` (which
+           coerces where Lua's does not), and the bitwise family (which acts
+           on ToInt32 of its operands). Emitted from the one shared source,
+           sce/include/scripting/ecma_semantics.lua, that the C++, Rust, Go,
+           Kotlin and Python engines load at startup; C11 cannot read a file
+           at runtime (RFC §synth-5-J-1 forbids a runtime fopen in
+           sce-c-runtime), so the same bytes travel in the generated source.
+           The helpers above are this backend's own copies of the engine
+           vocabulary; these are not copied at all.
+
+           Several calls rather than one because ISO C99 guarantees a string
+           literal of only 4095 characters and `-pedantic -Werror` holds the
+           C11 test build to it. Each call carries a complete Lua chunk. */
+{{ ecma_semantics_lua_c }}
         /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
            on startup to the system-generated id for the CURRENT SESSION.
            The value comes from `sm->session_id`, issued once in `_init`
@@ -400,7 +435,7 @@
            eval as expression; on Lua syntax/runtime failure, fall back
            to a whitespace-normalized string. */
         if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
+            "{{ var.id }} = ({{ var.content | to_lua_data_content | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
             /* W3C SCXML B.2: eval failure → whitespace-normalized literal.
                cpp `DataModelInitHelper.cpp:142-155` (normalizeWhitespace +
@@ -428,7 +463,7 @@
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ _src_content | to_lua_expr | escape_c }})") != 0) {
+            "{{ var.id }} = ({{ _src_content | to_lua_data_content | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
             lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
             lua_setglobal(sm->L, "{{ var.id }}");
@@ -476,7 +511,7 @@
         {% else %}
         /* W3C SCXML 5.3/B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch above. */
         if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
+            "{{ var.id }} = ({{ var.content | to_lua_data_content | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
             lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
             lua_setglobal(sm->L, "{{ var.id }}");
@@ -490,7 +525,7 @@
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ _src_content | to_lua_expr | escape_c }})") != 0) {
+            "{{ var.id }} = ({{ _src_content | to_lua_data_content | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
             lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
             lua_setglobal(sm->L, "{{ var.id }}");
@@ -576,7 +611,7 @@
     {% else %}
     /* W3C SCXML 5.3/B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch in the early-binding macro above. */
     if (luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ var.content | to_lua_expr | escape_c }})") != 0) {
+        "{{ var.id }} = ({{ var.content | to_lua_data_content | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
@@ -590,7 +625,7 @@
     lua_setglobal(sm->L, "{{ var.id }}");
     {% else %}
     if (luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ _src_content | to_lua_expr | escape_c }})") != 0) {
+        "{{ var.id }} = ({{ _src_content | to_lua_data_content | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");

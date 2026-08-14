@@ -25,7 +25,15 @@
 						break
 					}
 {% if action.index %}
-					if err := p.ScriptEngine.SetVariable(p.SessionID, "{{ action.index }}", int64(foreachIdx+1)); err != nil {
+					{# W3C SCXML B.2: iteration over an array runs from 0 to
+					   length-1, so the index starts at 0. `foreachIdx` is
+					   already zero-based; the `+1` that used to be here made
+					   the Go backend the only one that answered 1 for the
+					   first item — Rust, Kotlin, Python and C11 all emit the
+					   raw index. W3C test 459 asserts the final index is 2
+					   over a three-element array, and it passed only because
+					   the `cond` reading the index could not be evaluated. #}
+					if err := p.ScriptEngine.SetVariable(p.SessionID, "{{ action.index }}", int64(foreachIdx)); err != nil {
 						foreachSuccess = false
 						break
 					}

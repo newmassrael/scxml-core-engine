@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -610,7 +610,7 @@ impl StatePolicy for Test534Policy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             match se
-                                .evaluate_expression(&sid, "_ioprocessors['basichttp'].location")
+                                .evaluate_expression(&sid, "_ioprocessors[\"basichttp\"].location")
                             {
                                 Ok(ref val)
                                     if matches!(
@@ -791,9 +791,10 @@ impl Test534Policy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test534Event::Test {
                     // W3C SCXML 5.9: Script engine guard
-                    if self
-                        .safe_evaluate_guard("_event.data[\"_scxmleventname\"] == \"test\"", engine)
-                    {
+                    if self.safe_evaluate_guard(
+                        "_scxml_eq(_event.data[\"_scxmleventname\"], \"test\")",
+                        engine,
+                    ) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 084a969fb5abb3571d5265141500a73eb8505542dc564e6df26ed5160df0909f
+// template-hash: b90187ddc6ef966a857dd727ee00a2afc70a676ffdaa3e71c82f25c4e9c20678
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -604,7 +604,8 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             let mut parts: Vec<String> = Vec::new();
-                            match se.evaluate_expression(&sid, "_ioprocessors['scxml'].location") {
+                            match se.evaluate_expression(&sid, "_ioprocessors[\"scxml\"].location")
+                            {
                                 Ok(val) => {
                                     parts.push(format!(
                                         "[{:?}]={}",
