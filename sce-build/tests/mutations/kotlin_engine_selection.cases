@@ -1,0 +1,60 @@
+# Mutation cases for "the Kotlin suite runs the engine it was asked for".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/kotlin_engine_selection.cases`.
+#
+# The harness is read by the tests at run time in the sense that matters here —
+# it is Kotlin source compiled into the suite the selector names, so it is a
+# `mutation_targets`.
+#
+# What these guard is the sentence a CI lane says about itself. The Kotlin arm
+# runs the 226 generated machines twice, once per JVM script engine, and the
+# second run is worth its minutes only while `-Psce.script.engine=quickjs` and
+# "QuickJS evaluated the expressions" are the same statement.
+#
+# They were not, and the failure was silent in both directions. The selection
+# ended in `else -> RhinoScriptEngine()`, so a misspelt engine was a green run
+# of the default: measured, `-Psce.script.engine=nonexistent-engine` passed all
+# 226 cases. Nothing in the suite could notice, because no generated case can
+# see which engine it reached Pass on.
+
+mutation_tests -p sce-build --features cli --test gate_registry_contract
+mutation_runtime_targets scripts/gates/w3c-kotlin.sh
+
+# ── The gate stops running the second engine ───────────────────────
+#
+# The shape this gate had before: a lane named for one engine, covering one
+# engine, with the other reachable only by hand. It passes — it always passed
+# — so the only signal that anything narrowed is the summary naming one engine
+# where it used to name two.
+
+mutation_case "the Kotlin gate covers only the default engine again" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "KOTLIN_ENGINES=(rhino quickjs)",
+     "KOTLIN_ENGINES=(rhino)")
+PY
+
+# ── The per-engine floor stops being a floor ───────────────────────
+#
+# Gradle reports BUILD SUCCESSFUL for a test task it decided was UP-TO-DATE,
+# so the count read from the JUnit XML is what separates a conformance result
+# from a build that ran nothing. Dropping the floor for one engine leaves that
+# engine's arm able to report green over an empty run.
+
+mutation_case "an engine may report green over an empty run" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     "    if (( cases < 200 )); then",
+     "    if (( cases < 0 )); then")
+PY
+
+# ── A failing engine stops failing the gate ────────────────────────
+#
+# Every engine's verdict has to reach the gate's. A loop that reported each
+# result and returned the last one would pass whenever the final engine passed,
+# which is the engine that was already covered.
+
+mutation_case "a failing engine is reported and then forgiven" <<'PY'
+edit("scripts/gates/w3c-kotlin.sh",
+     'sce_gate_fail "Kotlin conformance on $engine: $failures failure(s), $errors error(s) across $cases case(s)"',
+     'sce_gate_step "Kotlin conformance on $engine: $failures failure(s), $errors error(s) across $cases case(s)"')
+PY

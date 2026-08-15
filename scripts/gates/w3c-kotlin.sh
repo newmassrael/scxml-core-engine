@@ -4,8 +4,9 @@
 #
 # Mirrors: w3c-tests.yml
 #
-# The Kotlin/JVM (Rhino) AOT conformance arm: 202 W3C cases plus the suite's
-# own fixtures.
+# The Kotlin/JVM AOT conformance arm: 202 W3C cases plus the suite's own
+# fixtures, run on every script engine SCE offers for the ECMAScript
+# datamodel on the JVM.
 #
 # This lane was CI-only until now, and the reason was mechanical rather than
 # principled: `generateScxml` invoked the generator without SOURCE_DATE_EPOCH,
@@ -44,26 +45,47 @@ kotlin_tree_hashes() {
 }
 TREE_BEFORE="$(kotlin_tree_hashes)"
 
-sce_gate_step "generating and running the Kotlin W3C suite"
-status=0
-./gradlew --console=plain :sce-kotlin-tests:test >"$LOG/kotlin.log" 2>&1 || status=$?
-cat "$LOG/kotlin.log"
-
-if (( status != 0 )); then
-    grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin.log" | head -n 20 >&2
-    sce_gate_fail "Kotlin conformance suite failed"
-fi
-
-# Gradle reports BUILD SUCCESSFUL for a `test` task it decided was UP-TO-DATE,
-# and for one that compiled and ran nothing. Neither is a conformance result,
-# so the verdict is read from the JUnit XML the run produced rather than from
-# the build's exit status. The floor is 200 against a current 218.
+# Both script engines SCE offers for the ECMAScript datamodel on the JVM, not
+# just the default.
+#
+# `EcmaScriptSemanticsTest` already measures all three engines against the
+# shared 58-case ECMA-262 table on every run, so expression semantics are not
+# what is missing here — that was measured, and it corrects a debt entry that
+# said QuickJS had no lane at all. What only the default engine ever saw is
+# the other half: the 226 generated machines, and everything an engine does
+# for them that an expression table never asks for — session lifecycle,
+# `setCurrentEvent`, `executeForeach`, the `In()` state-query callback. A
+# defect there is invisible to both the table and a Rhino-only suite.
+#
+# Lua is deliberately absent. It passes this suite (measured: 230 cases), and
+# running it here anyway would assert that SCE offers it for the ECMAScript
+# datamodel, which is the opposite of what
+# `luaIsNotAnEcmaScriptEngineAndSaysSo` establishes.
+KOTLIN_ENGINES=(rhino quickjs)
 REPORTS="backends/kotlin/tests/build/test-results/test"
-[ -d "$REPORTS" ] \
-    || sce_gate_fail "no JUnit results under $REPORTS — the suite reported success without producing a result file"
 
-read -r cases failures errors < <(
-    python3 - "$REPORTS" <<'PY'
+for engine in "${KOTLIN_ENGINES[@]}"; do
+    sce_gate_step "generating and running the Kotlin W3C suite on $engine"
+    status=0
+    ./gradlew --console=plain :sce-kotlin-tests:test "-Psce.script.engine=$engine" \
+        >"$LOG/kotlin-$engine.log" 2>&1 || status=$?
+    cat "$LOG/kotlin-$engine.log"
+
+    if (( status != 0 )); then
+        grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin-$engine.log" | head -n 20 >&2
+        sce_gate_fail "Kotlin conformance suite failed on $engine"
+    fi
+
+    # Gradle reports BUILD SUCCESSFUL for a `test` task it decided was
+    # UP-TO-DATE, and for one that compiled and ran nothing. Neither is a
+    # conformance result, so the verdict is read from the JUnit XML the run
+    # produced rather than from the build's exit status. The floor is 200
+    # against a current 226.
+    [ -d "$REPORTS" ] \
+        || sce_gate_fail "no JUnit results under $REPORTS — the $engine suite reported success without producing a result file"
+
+    read -r cases failures errors < <(
+        python3 - "$REPORTS" <<'PY'
 import glob, re, sys, xml.etree.ElementTree as ET
 t = f = e = 0
 for p in glob.glob(sys.argv[1] + "/*.xml"):
@@ -71,15 +93,18 @@ for p in glob.glob(sys.argv[1] + "/*.xml"):
     t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0))
 print(t, f, e)
 PY
-)
+    )
 
-if (( failures != 0 || errors != 0 )); then
-    sce_gate_fail "Kotlin conformance: $failures failure(s), $errors error(s) across $cases case(s)"
-fi
+    if (( failures != 0 || errors != 0 )); then
+        sce_gate_fail "Kotlin conformance on $engine: $failures failure(s), $errors error(s) across $cases case(s)"
+    fi
 
-if (( cases < 200 )); then
-    sce_gate_fail "only $cases Kotlin case(s) ran (expected at least 200) — the suite covered less than its name claims"
-fi
+    if (( cases < 200 )); then
+        sce_gate_fail "only $cases Kotlin case(s) ran on $engine (expected at least 200) — the suite covered less than its name claims"
+    fi
+
+    sce_gate_step "$cases Kotlin case(s) passed on $engine"
+done
 
 # The pin is the reason this gate can exist locally at all, so it is checked
 # rather than assumed: a run that rewrites the tree it was handed has
@@ -90,7 +115,7 @@ if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
     sce_gate_fail "the suite rewrote the Kotlin tree it was handed — SOURCE_DATE_EPOCH is not reaching the generator"
 fi
 
-sce_gate_step "$cases Kotlin case(s) passed, committed tree unchanged"
+sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINES[@]} engine(s)"
 
 # The same generator, asked for a project of the caller's own.
 #
