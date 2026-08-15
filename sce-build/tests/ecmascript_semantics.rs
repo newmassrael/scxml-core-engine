@@ -106,6 +106,31 @@ fn cases() -> Vec<Case> {
     table.cases
 }
 
+/// One row of the committed emission: the Lua a generated machine runs.
+#[derive(Debug, Deserialize)]
+struct Emission {
+    /// The case's ECMAScript source, carried so a reader can prove the two
+    /// files are still in step rather than assuming it from the ordering.
+    source: String,
+    setup: String,
+    expression: String,
+}
+
+/// The emission the other Lua backends read, loaded here to be measured
+/// against the frontend that produced it.
+fn emitted_lua() -> Vec<Emission> {
+    #[derive(Debug, Deserialize)]
+    struct Sidecar {
+        cases: Vec<Emission>,
+    }
+    let path = repo_root().join("tests/ecmascript/ecma262_emitted_lua.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("cannot read the emission at {}: {err}", path.display()));
+    let sidecar: Sidecar = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("{} is not a readable emission: {err}", path.display()));
+    sidecar.cases
+}
+
 /// Every case, run through the emitter and then through the engine that
 /// runs generated Rust.
 #[test]
@@ -176,6 +201,174 @@ fn emitted_lua_answers_what_ecmascript_answers() {
         failures.len(),
         cases().len(),
         failures.join("\n")
+    );
+}
+
+/// The same cases, answered by the shared library the way C11 receives it.
+///
+/// C11 cannot open a file at runtime, so codegen carries `ecma_semantics.lua`
+/// as a sequence of `luaL_dostring` calls — and the generated code discards
+/// every result, so a chunk that failed to compile leaves its definitions
+/// simply absent rather than loudly missing. `shared_lua_assets.rs` asserts
+/// the split loads; this asserts what it loads ANSWERS, which is the half
+/// that moved when the engine vocabulary stopped being seven natives per
+/// backend and became part of that file.
+///
+/// What this does not measure is C11's C-side value conversion. The
+/// interpreter is the same Lua 5.4 the C11 build links, the chunks are the
+/// ones it embeds, and the table is the shared one — the residue is the glue
+/// between `lua_State` and the generated struct, which is where the C11
+/// suite's own fixtures look.
+#[test]
+fn the_chunked_embed_answers_what_ecmascript_answers() {
+    use sce_build::filters::c11_lua_chunks;
+
+    let engine = LuaEngine::new();
+    assert!(engine.initialize(), "the Lua engine must start");
+    let session = "c11-embed-ecma262";
+    engine.create_session(session);
+    for source in [
+        sce_build::filters::ECMA_SEMANTICS_LUA,
+        sce_build::filters::JSON_BUILTINS_LUA,
+    ] {
+        for chunk in c11_lua_chunks(source) {
+            engine
+                .execute_script(session, &chunk)
+                .expect("a chunk the C11 bootstrap emits must load");
+        }
+    }
+
+    let mut failures: Vec<String> = Vec::new();
+    for (case, emission) in cases().iter().zip(emitted_lua()) {
+        assert_eq!(
+            case.source, emission.source,
+            "the table and the emission are out of step"
+        );
+        // One session for the whole sweep, unlike the reader above: the point
+        // here is the chunked load, and re-running it per case would measure
+        // the same thing eighty-four times.
+        if !emission.setup.is_empty() {
+            if let Err(err) = engine.execute_script(session, &emission.setup) {
+                failures.push(format!("[{}] setup did not run: {err}", case.source));
+                continue;
+            }
+        }
+        match engine.evaluate_expression(session, &emission.expression) {
+            Ok(actual) => {
+                if !matches(&actual, &case.expect) {
+                    failures.push(format!(
+                        "[{}] answered {actual:?}, ECMAScript says {:?} ({})",
+                        case.source, case.expect, case.clause
+                    ));
+                }
+            }
+            Err(err) => failures.push(format!("[{}] failed to evaluate: {err}", case.source)),
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "{} of the shared table's cases are answered differently by the library \
+         C11 embeds than by the language it claims to implement:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// The Lua this frontend emits for every case, written out for the backends
+/// that cannot run the frontend.
+///
+/// Go, Python and C11 evaluate Lua, not ECMAScript: the translation happened
+/// here, at build time, and by the time those runtimes see an expression it
+/// is already `_scxml_truthy(a)`. So they cannot read the shared table the
+/// way the C++ and Kotlin readers do — those hand the author's source to an
+/// engine that speaks the language — and until this file existed they read
+/// nothing at all, which is why `ecma_semantics.lua` grew a standard library
+/// that three of the six backends loaded and none of the three measured.
+///
+/// What the sidecar is NOT is a second set of expectations. The answers stay
+/// in `ecma262_semantics.json`, one copy, checked against ECMA-262 clauses;
+/// this file carries only the emission, so a reader on another backend is
+/// measuring its own runtime library and its own Lua interpreter against the
+/// same claims. The emission is derived, so it is regenerated rather than
+/// edited:
+///
+/// ```text
+/// UPDATE_EXPECT=1 cargo test -p sce-build --test ecmascript_semantics
+/// ```
+///
+/// and the assertion below is what keeps a stale copy from reporting green on
+/// the other three backends after the frontend changes.
+#[test]
+fn the_emitted_lua_every_backend_reads_is_what_this_frontend_emits() {
+    let cases = cases();
+    let mut rows = Vec::new();
+    for case in &cases {
+        let setup = if case.setup.is_empty() {
+            String::new()
+        } else {
+            to_lua_script(&case.setup)
+                .unwrap_or_else(|err| panic!("[{}] setup did not compile: {err}", case.source))
+        };
+        let expression = match case.form {
+            Form::Condition => to_lua_condition(&case.source),
+            Form::Value => to_lua_value(&case.source),
+        }
+        .unwrap_or_else(|err| panic!("[{}] did not compile: {err}", case.source));
+        rows.push(serde_json::json!({
+            "source": case.source,
+            "setup": setup,
+            "expression": expression,
+        }));
+    }
+
+    let document = serde_json::json!({
+        "about": [
+            "The Lua `sce-build`'s ECMAScript frontend emits for every case in",
+            "ecma262_semantics.json, in the same order, cross-checked by `source`.",
+            "",
+            "GENERATED. Regenerate with:",
+            "  UPDATE_EXPECT=1 cargo test -p sce-build --test ecmascript_semantics",
+            "",
+            "It exists because a backend that runs Lua never sees the ECMAScript:",
+            "the translation happens at build time, so Go, Python and C11 cannot",
+            "evaluate `a === b` the way the C++ and Kotlin engines do. They read",
+            "this beside the table and measure their own runtime library and Lua",
+            "interpreter against the table's ECMA-262 answers.",
+            "",
+            "The answers are NOT here. One copy of those, in ecma262_semantics.json,",
+            "with the clause each comes from — a per-backend copy would drift",
+            "toward the backend that reads it.",
+        ],
+        "cases": rows,
+    });
+    let rendered = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&document).expect("the sidecar serialises")
+    );
+
+    let path = repo_root().join("tests/ecmascript/ecma262_emitted_lua.json");
+    if std::env::var_os("UPDATE_EXPECT").is_some() {
+        std::fs::write(&path, &rendered)
+            .unwrap_or_else(|err| panic!("cannot write {}: {err}", path.display()));
+        return;
+    }
+
+    let committed = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!(
+            "cannot read {}: {err}\nRegenerate it with \
+             `UPDATE_EXPECT=1 cargo test -p sce-build --test ecmascript_semantics`",
+            path.display()
+        )
+    });
+    assert_eq!(
+        committed, rendered,
+        "the committed emission at tests/ecmascript/ecma262_emitted_lua.json is not \
+         what this frontend emits any more. Go, Python and C11 read that file to \
+         measure their runtimes, so a stale copy does not fail here — it reports \
+         green on three backends while they evaluate Lua the frontend stopped \
+         emitting. Regenerate with \
+         `UPDATE_EXPECT=1 cargo test -p sce-build --test ecmascript_semantics`."
     );
 }
 

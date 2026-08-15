@@ -60,8 +60,15 @@ sce_gate_step "running the Python conformance suite"
 # `-v` matches the lane, whose summary step counts the per-case ` PASSED`
 # lines out of this log.
 status=0
+# `ecmascript/` is the third directory: it holds the reader that measures this
+# backend's Lua runtime against `tests/ecmascript/ecma262_semantics.json`,
+# which is a different question from conformance — the W3C suite is green on a
+# backend that answers `[1,2,3].indexOf(2)` with -1, because no fixture in it
+# asks. Named here rather than left to collection so a directory that stops
+# being collected shows up as a count, not as silence.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
+        backends/python/tests/ecmascript/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 

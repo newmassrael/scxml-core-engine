@@ -409,93 +409,14 @@ class LuaScriptEngine : ScxmlScriptEngine {
             _UNDEFINED = setmetatable({}, {__tostring = function() return "undefined" end})
         """.trimIndent())
 
-        // _scxml_truthy: ECMAScript truthiness — C++ parity: includes sentinel checks
-        LuaNative.doString(L, """
-            function _scxml_truthy(v)
-                if v == nil then return false end
-                if v == false then return false end
-                if rawequal(v, _NULL) then return false end
-                if rawequal(v, _UNDEFINED) then return false end
-                if v == 0 then return false end
-                if v == "" then return false end
-                return true
-            end
-        """.trimIndent())
-
-        // _typeof: ECMAScript typeof operator — C++ parity: null -> "object"
-        LuaNative.doString(L, """
-            function _typeof(v)
-                if v == nil then return "undefined" end
-                if rawequal(v, _NULL) then return "object" end
-                if rawequal(v, _UNDEFINED) then return "undefined" end
-                local t = type(v)
-                if t == "table" then return "object" end
-                return t
-            end
-        """.trimIndent())
-
-        // _isArray: instanceof Array — C++ parity: check for sequential integer keys
-        LuaNative.doString(L, """
-            function _isArray(v)
-                if type(v) ~= "table" then return false end
-                local n = #v
-                if n == 0 then
-                    return next(v) == nil
-                end
-                return true
-            end
-        """.trimIndent())
-
-        // _indexOf: Array/String indexOf
-        LuaNative.doString(L, """
-            function _indexOf(obj, value)
-                if type(obj) == "string" then
-                    if type(value) ~= "string" then return -1 end
-                    local pos = string.find(obj, value, 1, true)
-                    if pos then return pos - 1 else return -1 end
-                end
-                if type(obj) == "table" then
-                    for i = 1, #obj do
-                        if obj[i] == value then return i - 1 end
-                    end
-                    return -1
-                end
-                return -1
-            end
-        """.trimIndent())
-
-        // _concat: Array.concat
-        LuaNative.doString(L, """
-            function _concat(arr, ...)
-                local result = {}
-                if type(arr) == "table" then
-                    for i = 1, #arr do result[#result + 1] = arr[i] end
-                end
-                for _, v in ipairs({...}) do
-                    if type(v) == "table" then
-                        for i = 1, #v do result[#result + 1] = v[i] end
-                    else
-                        result[#result + 1] = v
-                    end
-                end
-                return result
-            end
-        """.trimIndent())
-
-        // parseInt / parseFloat
-        LuaNative.doString(L, """
-            function parseInt(str, base)
-                if str == nil then return 0 end
-                str = tostring(str)
-                str = str:match("^%s*(.-)%s*$")
-                if base then return tonumber(str, base) or 0 end
-                return math.floor(tonumber(str) or 0)
-            end
-            function parseFloat(str)
-                if str == nil then return 0.0 end
-                return tonumber(tostring(str)) or 0.0
-            end
-        """.trimIndent())
+        // `_scxml_truthy`, `_typeof`, `_isArray`, `_indexOf`, `_concat`,
+        // `parseInt` and `parseFloat` were written out here too, one of six
+        // implementations of one meaning. They come from
+        // `loadEcmaSemantics()` below now — the shared file every backend
+        // loads — because the six drifted: measured 2026-08-16 against
+        // `tests/ecmascript/ecma262_semantics.json`, this copy's `_indexOf`
+        // ignored its `from` argument and refused a non-string needle, and
+        // its `parseInt` answered 0 where the clause says NaN.
 
         // String metatable __add for + operator coercion
         LuaNative.doString(L, """
@@ -535,20 +456,10 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // via sce/include/scripting/json_builtins.lua — see ARCHITECTURE.md
         LuaNative.doString(L, loadJsonBuiltins())
 
-        // Object.keys (ECMAScript standard) — C++ parity
-        LuaNative.doString(L, """
-            Object = {}
-            function Object.keys(t)
-                if type(t) ~= "table" then return {} end
-                local keys = {}
-                for k, _ in pairs(t) do keys[#keys+1] = k end
-                table.sort(keys, function(a,b)
-                    if type(a) == type(b) then return tostring(a) < tostring(b) end
-                    return type(a) < type(b)
-                end)
-                return keys
-            end
-        """.trimIndent())
+        // `Object.keys` comes from `loadEcmaSemantics()` above with the rest
+        // of the engine vocabulary. Defining it HERE also put it after that
+        // load, so this copy is what a document reached — which is the shape
+        // that lets a per-engine copy outlive the shared definition silently.
 
         // W3C DOM: Register metatable once at session init, not per-element
         LuaNative.doString(L, DOM_METATABLE_SETUP)

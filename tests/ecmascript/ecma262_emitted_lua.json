@@ -1,0 +1,446 @@
+{
+  "about": [
+    "The Lua `sce-build`'s ECMAScript frontend emits for every case in",
+    "ecma262_semantics.json, in the same order, cross-checked by `source`.",
+    "",
+    "GENERATED. Regenerate with:",
+    "  UPDATE_EXPECT=1 cargo test -p sce-build --test ecmascript_semantics",
+    "",
+    "It exists because a backend that runs Lua never sees the ECMAScript:",
+    "the translation happens at build time, so Go, Python and C11 cannot",
+    "evaluate `a === b` the way the C++ and Kotlin engines do. They read",
+    "this beside the table and measure their own runtime library and Lua",
+    "interpreter against the table's ECMA-262 answers.",
+    "",
+    "The answers are NOT here. One copy of those, in ecma262_semantics.json,",
+    "with the clause each comes from — a per-backend copy would drift",
+    "toward the backend that reads it."
+  ],
+  "cases": [
+    {
+      "expression": "_scxml_truthy(a)",
+      "setup": "a = 0",
+      "source": "a"
+    },
+    {
+      "expression": "_scxml_truthy(a)",
+      "setup": "a = \"\"",
+      "source": "a"
+    },
+    {
+      "expression": "(not _scxml_truthy(a))",
+      "setup": "a = 0",
+      "source": "!a"
+    },
+    {
+      "expression": "(_scxml_truthy(a) and _scxml_truthy(b))",
+      "setup": "a = 0\nb = 5",
+      "source": "a && b"
+    },
+    {
+      "expression": "(_scxml_truthy(a) or _scxml_truthy(b))",
+      "setup": "a = 0\nb = 5",
+      "source": "a || b"
+    },
+    {
+      "expression": "(function() local __l = a if _scxml_truthy(__l) then return b end return __l end)()",
+      "setup": "a = 0\nb = 5",
+      "source": "a && b"
+    },
+    {
+      "expression": "(function() local __l = a if _scxml_truthy(__l) then return __l end return b end)()",
+      "setup": "a = 0\nb = 5",
+      "source": "a || b"
+    },
+    {
+      "expression": "(function() if _scxml_truthy(a) then return \"yes\" end return \"no\" end)()",
+      "setup": "a = \"\"",
+      "source": "a ? 'yes' : 'no'"
+    },
+    {
+      "expression": "(function() if true then return a end return \"other\" end)()",
+      "setup": "a = false",
+      "source": "true ? a : 'other'"
+    },
+    {
+      "expression": "(1 + 2)",
+      "setup": "",
+      "source": "1 + 2"
+    },
+    {
+      "expression": "(\"a\" .. \"b\")",
+      "setup": "",
+      "source": "'a' + 'b'"
+    },
+    {
+      "expression": "(_scxml_tostring(1) .. \"\")",
+      "setup": "",
+      "source": "1 + ''"
+    },
+    {
+      "expression": "(\"n\" .. _scxml_tostring(2))",
+      "setup": "",
+      "source": "'n' + 2"
+    },
+    {
+      "expression": "(_scxml_tostring(a) .. \"\")",
+      "setup": "a = {1, 2}",
+      "source": "a + ''"
+    },
+    {
+      "expression": "_scxml_eq(1, \"1\")",
+      "setup": "",
+      "source": "1 == '1'"
+    },
+    {
+      "expression": "(1 == \"1\")",
+      "setup": "",
+      "source": "1 === '1'"
+    },
+    {
+      "expression": "_scxml_eq(0, false)",
+      "setup": "",
+      "source": "0 == false"
+    },
+    {
+      "expression": "_scxml_eq(\"\", 0)",
+      "setup": "",
+      "source": "'' == 0"
+    },
+    {
+      "expression": "(not _scxml_eq(1, \"1\"))",
+      "setup": "",
+      "source": "1 != '1'"
+    },
+    {
+      "expression": "_scxml_eq(a, 0)",
+      "setup": "a = {1, 2, 3}",
+      "source": "a == 0"
+    },
+    {
+      "expression": "_scxml_eq(a, nil)",
+      "setup": "a = nil",
+      "source": "a == null"
+    },
+    {
+      "expression": "math.fmod((-7), 3)",
+      "setup": "",
+      "source": "-7 % 3"
+    },
+    {
+      "expression": "math.fmod(7, 3)",
+      "setup": "",
+      "source": "7 % 3"
+    },
+    {
+      "expression": "_scxml_truthy(a)",
+      "setup": "a = (0 / 0)",
+      "source": "a"
+    },
+    {
+      "expression": "(_typeof(a) ~= \"undefined\")",
+      "setup": "a = 1",
+      "source": "typeof a !== 'undefined'"
+    },
+    {
+      "expression": "(_typeof(missingVariable) ~= \"undefined\")",
+      "setup": "",
+      "source": "typeof missingVariable !== 'undefined'"
+    },
+    {
+      "expression": "_typeof(a)",
+      "setup": "a = \"x\"",
+      "source": "typeof a"
+    },
+    {
+      "expression": "_typeof(a)",
+      "setup": "a = \"42\"",
+      "source": "typeof a"
+    },
+    {
+      "expression": "_typeof(a)",
+      "setup": "a = {1, 2, 3}",
+      "source": "typeof a"
+    },
+    {
+      "expression": "_isArray(a)",
+      "setup": "a = {1, 2, 3}",
+      "source": "a instanceof Array"
+    },
+    {
+      "expression": "_isArray(a)",
+      "setup": "a = 3",
+      "source": "a instanceof Array"
+    },
+    {
+      "expression": "#a",
+      "setup": "a = {1, 2, 3}",
+      "source": "a.length"
+    },
+    {
+      "expression": "#\"abc\"",
+      "setup": "",
+      "source": "'abc'.length"
+    },
+    {
+      "expression": "#_concat(_concat({}, a), {4})",
+      "setup": "a = {1, 2, 3}",
+      "source": "[].concat(a, [4]).length"
+    },
+    {
+      "expression": "_indexOf(a, 2)",
+      "setup": "a = {1, 2, 3}",
+      "source": "a.indexOf(2)"
+    },
+    {
+      "expression": "_indexOf(a, \"2\")",
+      "setup": "a = {1, 2, 3}",
+      "source": "a.indexOf('2')"
+    },
+    {
+      "expression": "#_concat(_concat({}, xs), 3)",
+      "setup": "xs = {1, 2}",
+      "source": "[].concat(xs, 3).length"
+    },
+    {
+      "expression": "o.k",
+      "setup": "o = {[\"k\"] = \"v\"}",
+      "source": "o.k"
+    },
+    {
+      "expression": "o[\"a b\"]",
+      "setup": "o = {[\"a b\"] = 7}",
+      "source": "o['a b']"
+    },
+    {
+      "expression": "o.missing",
+      "setup": "o = {[\"k\"] = 1}",
+      "source": "o.missing"
+    },
+    {
+      "expression": "a[1]",
+      "setup": "a = {10, 20, 30}",
+      "source": "a[0]"
+    },
+    {
+      "expression": "_scxml_index(a, i)",
+      "setup": "a = {10, 20, 30}\ni = 2",
+      "source": "a[i]"
+    },
+    {
+      "expression": "_scxml_index(o, s)",
+      "setup": "o = {[\"k\"] = 7}\ns = \"k\"",
+      "source": "o[s]"
+    },
+    {
+      "expression": "_scxml_eq((function() v = _scxml_tonumber(v) + 1 return v end)(), 2)",
+      "setup": "v = 1",
+      "source": "++v == 2"
+    },
+    {
+      "expression": "(function() local __v = _scxml_tonumber(v) v = __v + 1 return __v end)()",
+      "setup": "v = 1",
+      "source": "v++"
+    },
+    {
+      "expression": "(function() v = _scxml_tonumber(v) + 1 return v end)()",
+      "setup": "v = \"1\"",
+      "source": "++v"
+    },
+    {
+      "expression": "f(2)",
+      "setup": "f = function(x) return _scxml_add(x, 1) end",
+      "source": "f(2)"
+    },
+    {
+      "expression": "o.bar",
+      "setup": "ctor = function() local self = {} self.bar = 0 return self end\no = ctor()",
+      "source": "o.bar"
+    },
+    {
+      "expression": "Var1",
+      "setup": "Var1 = 1\nVar1 = _scxml_add(Var1, 1)",
+      "source": "Var1"
+    },
+    {
+      "expression": "total",
+      "setup": "total = 0\ndo\n  i = 0\n  while (i < 4) do\n    total = _scxml_add(total, i)\n    i = _scxml_tonumber(i) + 1\n  end\nend",
+      "source": "total"
+    },
+    {
+      "expression": "n",
+      "setup": "n = 0\ni = 0\nwhile (i < 3) do\n  i = _scxml_tonumber(i) + 1\n  if (i == 2) then\n    goto __sce_continue\n  end\n  n = _scxml_add(n, i)\n  ::__sce_continue::\nend",
+      "source": "n"
+    },
+    {
+      "expression": "_scxml_bitand(5, 3)",
+      "setup": "",
+      "source": "5 & 3"
+    },
+    {
+      "expression": "_scxml_bitor(5, 3)",
+      "setup": "",
+      "source": "5 | 3"
+    },
+    {
+      "expression": "_scxml_bitxor(5, 3)",
+      "setup": "",
+      "source": "5 ^ 3"
+    },
+    {
+      "expression": "_scxml_bitnot(5)",
+      "setup": "",
+      "source": "~5"
+    },
+    {
+      "expression": "_scxml_shl(1, 3)",
+      "setup": "",
+      "source": "1 << 3"
+    },
+    {
+      "expression": "_scxml_shr((-8), 1)",
+      "setup": "",
+      "source": "-8 >> 1"
+    },
+    {
+      "expression": "_scxml_ushr((-8), 28)",
+      "setup": "",
+      "source": "-8 >>> 28"
+    },
+    {
+      "expression": "_scxml_bitor(_scxml_eq(a, 1), (not _scxml_eq(b, 2)))",
+      "setup": "a = 1\nb = 2",
+      "source": "(a == 1) | (b != 2)"
+    },
+    {
+      "expression": "\"it's\"",
+      "setup": "",
+      "source": "'it\\'s'"
+    },
+    {
+      "expression": "\"é\"",
+      "setup": "",
+      "source": "'\\u00e9'"
+    },
+    {
+      "expression": "(not _scxml_truthy(a))",
+      "setup": "a = nil",
+      "source": "!a"
+    },
+    {
+      "expression": "_scxml_tonumber(\"3\")",
+      "setup": "",
+      "source": "+'3'"
+    },
+    {
+      "expression": "math.floor(3.7)",
+      "setup": "",
+      "source": "Math.floor(3.7)"
+    },
+    {
+      "expression": "math.max(1, 2)",
+      "setup": "",
+      "source": "Math.max(1, 2)"
+    },
+    {
+      "expression": "math.abs((-5))",
+      "setup": "",
+      "source": "Math.abs(-5)"
+    },
+    {
+      "expression": "#\"abc\"",
+      "setup": "",
+      "source": "'abc'.length"
+    },
+    {
+      "expression": "_scxml_substring(\"abcdef\", 1, 3)",
+      "setup": "",
+      "source": "'abcdef'.substring(1, 3)"
+    },
+    {
+      "expression": "_indexOf(\"abc\", \"b\")",
+      "setup": "",
+      "source": "'abc'.indexOf('b')"
+    },
+    {
+      "expression": "_indexOf(\"abc\", \"z\")",
+      "setup": "",
+      "source": "'abc'.indexOf('z')"
+    },
+    {
+      "expression": "_indexOf(\"abcabc\", \"b\", 2)",
+      "setup": "",
+      "source": "'abcabc'.indexOf('b', 2)"
+    },
+    {
+      "expression": "_scxml_charat(\"abc\", 1)",
+      "setup": "",
+      "source": "'abc'.charAt(1)"
+    },
+    {
+      "expression": "_scxml_tolowercase(\"AbC\")",
+      "setup": "",
+      "source": "'AbC'.toLowerCase()"
+    },
+    {
+      "expression": "#_scxml_split(\"a,b\", \",\")",
+      "setup": "",
+      "source": "'a,b'.split(',').length"
+    },
+    {
+      "expression": "#xs",
+      "setup": "xs = {1, 2}",
+      "source": "xs.length"
+    },
+    {
+      "expression": "table.concat(xs, \"-\")",
+      "setup": "xs = {1, 2}",
+      "source": "xs.join('-')"
+    },
+    {
+      "expression": "(function() local __t = xs table.insert(__t, 3) return #__t end)()",
+      "setup": "xs = {1, 2}",
+      "source": "xs.push(3)"
+    },
+    {
+      "expression": "parseInt(\"42\")",
+      "setup": "",
+      "source": "parseInt('42')"
+    },
+    {
+      "expression": "parseFloat(\"1.5\")",
+      "setup": "",
+      "source": "parseFloat('1.5')"
+    },
+    {
+      "expression": "parseInt(\"42abc\")",
+      "setup": "",
+      "source": "parseInt('42abc')"
+    },
+    {
+      "expression": "parseFloat(\"3.5xyz\")",
+      "setup": "",
+      "source": "parseFloat('3.5xyz')"
+    },
+    {
+      "expression": "#Object.keys(o)",
+      "setup": "o = {[\"b\"] = 1, [\"a\"] = 2}",
+      "source": "Object.keys(o).length"
+    },
+    {
+      "expression": "String(42)",
+      "setup": "",
+      "source": "String(42)"
+    },
+    {
+      "expression": "Number(\"42\")",
+      "setup": "",
+      "source": "Number('42')"
+    },
+    {
+      "expression": "Boolean(0)",
+      "setup": "",
+      "source": "Boolean(0)"
+    }
+  ]
+}
