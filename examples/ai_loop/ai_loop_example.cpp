@@ -28,10 +28,13 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "ai_loop_sm.h"
+#include "common/EventDataHelper.h"
 #include "scripting/JSEngine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -134,28 +137,26 @@ private:
 
 // ── the host ──────────────────────────────────────────────────────────
 
+/// Hand the machine a script engine and boot it.
+///
+/// W3C SCXML B.1: the machine's datamodel is ECMAScript, so it needs an
+/// engine before it starts. Aliasing constructor with a no-op deleter — the
+/// provider owns the engine's lifetime and this shared_ptr is a non-owning
+/// view, the same idiom the W3C AOT harness uses.
+void boot(Machine &machine) {
+    machine.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                [](SCE::IScriptEngine *) {}));
+    machine.initialize();
+}
+
 class LoopHost {
 public:
     LoopHost(Machine &machine, AgentSession &session) : m_(machine), s_(session) {}
 
-    /// A standing instruction: the host's side of the document's
-    /// `screen_rules`. The machine decides THAT a dialog is screened; this
-    /// decides WHICH reply a given question gets.
-    void addRule(std::string question, std::string keys, std::string text) {
-        rules_.push_back({std::move(question), std::move(keys), std::move(text)});
-    }
-
     /// Run until the machine reaches one of the outcomes the document
     /// enumerates. Returns its name.
     std::string run(int max_steps = 400) {
-        // W3C SCXML B.1: the machine's datamodel is ECMAScript, so it needs a
-        // script engine handed to it before it starts. Aliasing constructor
-        // with a no-op deleter — the provider owns the engine's lifetime and
-        // this shared_ptr is a non-owning view, the same idiom the W3C AOT
-        // harness uses.
-        m_.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
-                                                               [](SCE::IScriptEngine *) {}));
-        m_.initialize();
+        boot(m_);
         s_.start();
         for (int i = 0; i < max_steps; ++i) {
             if (const char *outcome = terminal()) {
@@ -171,41 +172,78 @@ public:
         return "step budget exhausted in " + describe();
     }
 
-private:
+    /// A standing instruction, as the document declares it.
     struct Rule {
         std::string question, keys, text;
     };
 
+    /// The standing instructions, as the DOCUMENT declares them.
+    ///
+    /// The host used to keep its own table and `main()` filled it in, which
+    /// left the document's `screen_rules` block read by nobody: the part of
+    /// the file whose own comment says the loop is "carrying out a decision
+    /// made in advance and written down" was written down and then never
+    /// consulted. Two tables of standing instructions is one too many, and it
+    /// is the wrong one that decided.
+    ///
+    /// It reads as JSON because that is the encoding the engine's own
+    /// `JSON.stringify` produces (W3C SCXML B.2) — the same text every
+    /// backend's reader hands over, so a host ported to another language
+    /// parses the same bytes. A real deployment uses its JSON library; this
+    /// one uses the runtime's, to keep the example free of dependencies.
+    std::vector<Rule> standingInstructions() const {
+        std::vector<Rule> rules;
+        const auto json = m_.getPolicy().screen_rules();
+        if (!json.has_value()) {
+            return rules;
+        }
+        const auto parsed = SCE::EventDataHelper::jsonStringToScriptValue(*json);
+        if (!parsed.has_value() || !std::holds_alternative<std::shared_ptr<ScriptArray>>(*parsed)) {
+            return rules;
+        }
+        for (const ScriptValue &entry : std::get<std::shared_ptr<ScriptArray>>(*parsed)->elements) {
+            if (!std::holds_alternative<std::shared_ptr<ScriptObject>>(entry)) {
+                continue;
+            }
+            const auto &fields = std::get<std::shared_ptr<ScriptObject>>(entry)->properties;
+            const auto field = [&fields](const char *key) -> std::string {
+                const auto it = fields.find(key);
+                return (it != fields.end() && std::holds_alternative<std::string>(it->second))
+                           ? std::get<std::string>(it->second)
+                           : std::string{};
+            };
+            rules.push_back({field("when"), field("keys"), field("text")});
+        }
+        return rules;
+    }
+
+private:
     bool active(State s) const {
         const auto states = m_.getPolicy().getActiveStates();
         return std::find(states.begin(), states.end(), s) != states.end();
     }
 
-    /// The script-engine session the machine's datamodel lives in. Created
-    /// lazily by the machine on first use, so this is read after
-    /// `initialize()`.
-    std::string sessionId() const {
-        const auto &id = m_.getPolicy().sessionId_;
-        return id.has_value() ? *id : std::string{};
-    }
-
-    /// Read a datamodel string out of the document. The prompts belong to
-    /// whoever edited the SCXML, so the host never hard-codes one.
-    std::string data(const std::string &name) {
-        const std::string session = sessionId();
-        if (session.empty()) {
-            // Silence here would look like an empty prompt rather than a
-            // missing datamodel, so say which it is.
-            return "<no script session; datamodel unreadable>";
-        }
-        // The SAME engine the machine was handed. Reading from a different
-        // instance finds a session that exists but holds none of this
-        // document's variables.
-        auto result = SCE::ScriptEngineProvider::getScriptEngine().getVariable(session, name).get();
-        if (!result.isSuccess()) {
-            return "<" + name + " unreadable>";
-        }
-        return result.template getValue<std::string>();
+    /// A value the document owns, or a phrase saying it could not be read.
+    ///
+    /// The prompts belong to whoever edited the SCXML, so the host never
+    /// hard-codes one — and it never reaches past the machine for one either.
+    /// The generated policy carries a typed accessor per declared `<data>`
+    /// (W3C SCXML 5.3), which is the whole of what a host needs: the live
+    /// value, in the host's own type, with `nullopt` for the cases a consumer
+    /// acts on identically — no session yet, or the variable is holding
+    /// something else now.
+    ///
+    /// This used to be a hand-written `getVariable` against the process-wide
+    /// engine provider, spelling the variable's name as a string and casting
+    /// the result to `std::string` unchecked. Every part of that was a way to
+    /// be wrong: the provider is not necessarily the engine this machine was
+    /// handed, a mistyped name reads as "unreadable" rather than as a
+    /// mistake, and a variable holding a number came back as whatever the
+    /// cast made of it.
+    static std::string readable(const std::optional<std::string> &value, const char *name) {
+        // Silence here would look like an empty prompt rather than a missing
+        // datamodel, so say which it is.
+        return value.has_value() ? *value : "<" + std::string(name) + " unreadable>";
     }
 
     /// One turn of the host's own loop: look at where the machine is, do the
@@ -217,17 +255,17 @@ private:
             // is the machine in `working`, where a turn result means anything.
             // Reporting the turn first would deliver it to a state that does
             // not handle it, and the run would sit in `priming` forever.
-            const TurnResult r = s_.prompt(data("start_prompt"));
+            const TurnResult r = s_.prompt(readable(m_.getPolicy().start_prompt(), "start_prompt"));
             fire(Event::Prompt_sent, "prompt.sent");
             report(r);
             return true;
         }
         if (active(State::Working)) {
-            report(s_.prompt(data("turn_prompt")));
+            report(s_.prompt(readable(m_.getPolicy().turn_prompt(), "turn_prompt")));
             return true;
         }
         if (active(State::Closing)) {
-            report(s_.prompt(data("end_prompt")));
+            report(s_.prompt(readable(m_.getPolicy().end_prompt(), "end_prompt")));
             return true;
         }
         if (active(State::Screening)) {
@@ -298,8 +336,23 @@ private:
     }
 
     /// Does a standing instruction cover the question that is up?
+    ///
+    /// Both halves of the answer come off the machine, because both are the
+    /// author's decision written down in advance: `screen_rules` says which
+    /// questions were decided, and `screen_permissions` says whether that
+    /// covers a permission dialog at all. The document explains why the flag
+    /// is separate — redirecting a design question costs a turn, approving a
+    /// permission grants an agent the ability to act — and a host that
+    /// consulted only the rules would hand out the second along with the
+    /// first.
     void screen() {
-        for (const auto &rule : rules_) {
+        if (isPermission(last_question_) && !m_.getPolicy().screen_permissions().value_or(false)) {
+            std::cout << "        [rule]    '" << last_question_
+                      << "' asks for permission to act, and the document does not screen those\n";
+            fire(Event::Screen_none, "screen.none");
+            return;
+        }
+        for (const auto &rule : standingInstructions()) {
             if (rule.question == last_question_) {
                 std::cout << "        [rule]    '" << rule.question << "' was decided in advance\n";
                 const TurnResult r = s_.answer(rule.keys, rule.text);
@@ -314,10 +367,17 @@ private:
         fire(Event::Screen_none, "screen.none");
     }
 
+    /// Whether a raised dialog is asking for permission to act rather than
+    /// for a decision. The environment names its own dialogs; this example
+    /// scripts them, so one prefix is enough to tell the two kinds apart.
+    static bool isPermission(const std::string &question) {
+        return question.rfind("permission", 0) == 0;
+    }
+
     /// Did the agent say it is finished? The marker comes out of the document,
     /// so the host never hard-codes a phrase.
     void judge() {
-        const std::string marker = data("done_marker");
+        const std::string marker = m_.getPolicy().done_marker().value_or(std::string{});
         const bool done = !marker.empty() && last_text_.find(marker) != std::string::npos;
         // `judging` branches on `_event.data.done`, so the verdict rides the
         // event rather than a host-side flag the document cannot see.
@@ -385,7 +445,6 @@ private:
 
     Machine &m_;
     AgentSession &s_;
-    std::vector<Rule> rules_;
     std::string last_text_, last_question_;
     int reflections_ = 0;
 };
@@ -404,14 +463,67 @@ TurnResult lost() {
 
 int failures = 0;
 
-void scenario(const std::string &title, std::vector<TurnResult> script, bool with_rules, const std::string &expected) {
+void expect(const char *what, bool held) {
+    if (!held) {
+        ++failures;
+    }
+    std::cout << "   " << (held ? "ok   " : "FAIL ") << what << "\n";
+}
+
+/// The document a host edits is the document it can read back.
+///
+/// This is the C++ half of a claim its Rust sibling also makes — see
+/// `the_strategy_a_host_edits_is_the_strategy_it_can_read_back` and
+/// `the_standing_instructions_can_be_read_back_off_the_machine` in
+/// `backends/rust/tests/tests/ai_loop.rs`. Asserting it on both engines is
+/// what `scripts/regen_ai_loop.sh` says this pair is for: a clause only one
+/// engine honours has to fail on the other. The topology clauses were paired
+/// that way from the start; the datamodel ones were not, and for a while the
+/// Rust side asserted a readable document while this side reached around the
+/// machine for the same values by hand.
+void readback() {
+    std::cout << "\n-- the document a host edits is the document it can read back\n";
+    Machine machine;
+    boot(machine);
+    ScriptedSession idle({});
+    const LoopHost host(machine, idle);
+    const auto &p = machine.getPolicy();
+
+    // The marker a host matches the agent's report against, and the budget it
+    // reports progress out of. Neither can be hard-coded by a supervisor that
+    // did not write the document.
+    expect("done_marker reads back", p.done_marker() == std::optional<std::string>("MILESTONE REACHED"));
+    expect("max_turns reads back", p.max_turns() == std::optional<int64_t>(40));
+    expect("north_star reads back", p.north_star().value_or("").find("(edit me)") != std::string::npos);
+
+    // The standing instructions: the block that decides when a person is NOT
+    // woken. A host that cannot list it cannot show anyone which decisions are
+    // standing, which is the difference between carrying out a decision and
+    // making one.
+    const auto rules = host.standingInstructions();
+    expect("screen_rules lists every standing instruction", rules.size() == 3);
+    const bool named = std::all_of(rules.begin(), rules.end(), [](const LoopHost::Rule &r) {
+        return !r.question.empty() && !r.keys.empty() && !r.text.empty();
+    });
+    expect("each standing instruction carries its question, keys and reply", named);
+
+    // Separate from the rules on purpose, and read separately for the same
+    // reason: a standing yes to acting is a different promise.
+    expect("screen_permissions reads back", p.screen_permissions() == std::optional<bool>(false));
+}
+
+/// Run one scripted transcript against a fresh machine.
+///
+/// There is no "with rules" switch any more, and its absence is the point:
+/// the standing instructions are the document's, so which questions get
+/// answered without waking anybody is decided by editing `ai_loop.scxml` and
+/// nowhere else. A scenario picks the question the agent raises; the document
+/// decides what happens to it.
+void scenario(const std::string &title, std::vector<TurnResult> script, const std::string &expected) {
     std::cout << "\n-- " << title << "\n";
     ScriptedSession session(std::move(script));
     Machine machine;
     LoopHost host(machine, session);
-    if (with_rules) {
-        host.addRule("design-decision", "Escape", "Ignore cost. Rethink for the most durable answer, then proceed.");
-    }
     if (std::getenv("AI_LOOP_TRACE") != nullptr) {
         host.setTrace(true);
     }
@@ -432,6 +544,8 @@ int main() {
     std::cout << "ai_loop - a statechart supervising an agent\n"
               << "The host below performs; the document decides.\n";
 
+    readback();
+
     // 1. Nine turns of work. The eighth trips `reflect_every`, so the loop
     //    reflects and restarts; the tenth reports the milestone.
     {
@@ -441,28 +555,30 @@ int main() {
         }
         script.push_back(done("MILESTONE REACHED"));
         script.push_back(done("final report"));
-        scenario("works, reflects on schedule, restarts into the improved prompts", std::move(script), false,
-                 "converged");
+        scenario("works, reflects on schedule, restarts into the improved prompts", std::move(script), "converged");
     }
 
-    // 2. The agent asks something the author already decided. Nobody is woken.
+    // 2. The agent asks something the author already decided — `screen_rules`
+    //    names this question — so nobody is woken.
     scenario("a question a standing instruction already answers",
-             {done("working"), blocked("design-decision"), done("MILESTONE REACHED"), done("final report")}, true,
+             {done("working"), blocked("design-decision"), done("MILESTONE REACHED"), done("final report")},
              "converged");
 
-    // 3. The same question with no rule for it. A person is woken and answers.
-    scenario("a question nothing covers - a person is woken",
-             {done("working"), blocked("design-decision"), done("MILESTONE REACHED"), done("final report")}, false,
+    // 3. A dialog the document does NOT screen. `screen_permissions` is false,
+    //    and the document says why: a standing "yes" to acting is a different
+    //    promise from a standing "think about it again". A person is woken.
+    scenario("a permission dialog the document refuses to answer for anyone",
+             {done("working"), blocked("permission.write_files"), done("MILESTONE REACHED"), done("final report")},
              "converged");
 
     // 4. The session dies mid-turn. `watch` sees it even though the cycle was
     //    waiting on a turn that will never arrive.
     scenario("a session that dies mid-turn is rebuilt",
-             {done("working"), lost(), done("MILESTONE REACHED"), done("final report")}, false, "converged");
+             {done("working"), lost(), done("MILESTONE REACHED"), done("final report")}, "converged");
 
     std::cout << "\n"
-              << (failures == 0 ? "Every run ended in an outcome the document enumerates."
-                                : "SOME RUNS ENDED SOMEWHERE THE DOCUMENT DID NOT EXPECT.")
+              << (failures == 0 ? "The document is readable, and every run ended in an outcome it enumerates."
+                                : "SOMETHING THE DOCUMENT DECLARES DID NOT HOLD.")
               << "\n";
 
     SCE::JSEngine::instance().shutdown();
