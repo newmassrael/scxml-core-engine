@@ -21,7 +21,31 @@ function JSON.stringify(v, indent)
         if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
         return tostring(v)
     elseif t == "string" then
-        return '"' .. v:gsub('[\\"]', '\\%0'):gsub('\n','\\n'):gsub('\r','\\r'):gsub('\t','\\t') .. '"'
+        -- Escaped character by character rather than with `gsub`, because the
+        -- Lua behind the six backends is not one Lua: go-lua ships no `gsub`
+        -- at all -- its string library comments the whole pattern family out
+        -- -- so a pattern-based escape worked on four engines and raised on
+        -- the fifth. It surfaced as a structured `<data>` that could not be
+        -- read there at all, since a table of strings recurses through here.
+        -- Only `sub`, `byte`, `format` and `table.concat` are used below, and
+        -- every Lua this file is loaded into has those.
+        --
+        -- C0 controls are escaped as `\uXXXX` rather than passed through:
+        -- RFC 8259 forbids them raw, so emitting one produced JSON that no
+        -- parser had to accept -- including this file's own.
+        local out = {'"'}
+        for i = 1, #v do
+            local c = string.sub(v, i, i)
+            if c == '\\' then out[#out+1] = '\\\\'
+            elseif c == '"' then out[#out+1] = '\\"'
+            elseif c == '\n' then out[#out+1] = '\\n'
+            elseif c == '\r' then out[#out+1] = '\\r'
+            elseif c == '\t' then out[#out+1] = '\\t'
+            elseif string.byte(c) < 32 then out[#out+1] = string.format('\\u%04x', string.byte(c))
+            else out[#out+1] = c end
+        end
+        out[#out+1] = '"'
+        return table.concat(out)
     elseif t == "table" then
         -- Detect arrays: all keys must be positive integers.
         -- Handles sparse tables (gaps emit "null") by iterating to max index.
