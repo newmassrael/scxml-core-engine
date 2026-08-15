@@ -1,0 +1,192 @@
+name: Mutation Rounds
+
+# Does a mutation case still turn its suite red?
+#
+# `mutation-cases` (tree-hygiene.yml) asks the half that costs nothing: does
+# every case still find an unambiguous anchor. It says in its own header that
+# it answers no more than that — it does not build and does not run a test, so
+# it reports "applies" and never "CAUGHT". Two ways a case stops being evidence
+# need a build, and this is where they get one:
+#
+#   * the mutated tree no longer COMPILES, so the round is INCONCLUSIVE and the
+#     case proves nothing while reading as present; and
+#   * the suite no longer turns red, so the mutation SURVIVES and the clause it
+#     defends is defended by nothing.
+#
+# ## Why here and not in the push hook
+#
+# It was in the hook first, and the number is why it moved. Measured on the
+# first push whose change set reached its casefiles: 877s, eight rounds,
+# against 4s on a push that reached none. A push whose length swings by a
+# quarter of an hour on what the author happened to edit is one that gets
+# bypassed, and a gate somebody turns off protects nothing. `ci_only` in
+# `gate_registry.py` records the trade: a red arrives one round later, and the
+# push stays a length somebody keeps paying.
+#
+# ## No `paths:` filter
+#
+# Same arrangement as tree-hygiene.yml, same reason in a different alphabet.
+# What decides whether a round is owed is the union of every
+# `mutation_targets` declaration inside `sce-build/tests/mutations/*.cases` —
+# today that spans `sce/`, `sce-build/`, `backends/`, generator templates, a
+# CMakeLists, two workflows and two gate scripts. A filter restating that union
+# would be a second copy of a declaration the casefiles already carry, stale
+# the first time a case names a new file. So the workflow starts on every push
+# and the gate narrows inside itself.
+#
+# That narrowing is what keeps this affordable: the job below asks for the
+# selection before it installs anything, and most pushes select nothing and
+# stop there.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-rounds:
+    name: Mutation rounds for changed targets
+    runs-on: ubuntu-latest
+
+    steps:
+    # `fetch-depth: 0` because the change set is a range: the gate is handed
+    # the paths this push actually changed, and a shallow clone cannot name
+    # the commit to diff against.
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        submodules: recursive
+
+    # The range, written to the file the gate reads. `SCE_GATE_CHANGED_FILE`
+    # is the same channel `scripts/gate --changed-from` fills from the push
+    # hook, so CI and a developer's machine hand the gate the same kind of
+    # answer.
+    #
+    # A push event carries `before`, a pull_request carries its base. Neither
+    # is present for `workflow_dispatch`, and there the honest range is the
+    # whole corpus — which is what the gate does when handed no file, and the
+    # reason that mode exists.
+    - name: Resolve the change set
+      id: changed
+      run: |
+        set -euo pipefail
+        base=""
+        case "${{ github.event_name }}" in
+          push)         base='${{ github.event.before }}' ;;
+          pull_request) base='${{ github.event.pull_request.base.sha }}' ;;
+        esac
+        # A new branch's `before` is all-zeroes, and a force-push can name a
+        # commit this clone does not have. Both mean "no range resolved", and
+        # the gate answers that by running the corpus rather than nothing.
+        if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] \
+           && git cat-file -e "$base^{commit}" 2>/dev/null; then
+          git diff --name-only "$base" "${{ github.sha }}" > changed.txt
+          echo "changed=$(wc -l < changed.txt)" >> "$GITHUB_OUTPUT"
+          echo "file=changed.txt" >> "$GITHUB_OUTPUT"
+        else
+          echo "no resolvable range — the gate will run the whole corpus"
+          echo "changed=-1" >> "$GITHUB_OUTPUT"
+          echo "file=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    # Before anything is installed or built: which casefiles does this change
+    # reach, and do any of them select through ctest? A push that reaches none
+    # ends here, which is most of them.
+    - name: Which casefiles does this change reach
+      id: select
+      env:
+        SCE_GATE_CHANGED_FILE: ${{ steps.changed.outputs.file }}
+      run: |
+        set -euo pipefail
+        # Through the runner, like the run step below: one spelling for the
+        # selection and for the rounds means the probe cannot answer for a
+        # different set than the one that executes.
+        SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > selected.txt
+        cat selected.txt
+        echo "count=$(grep -c . selected.txt || true)" >> "$GITHUB_OUTPUT"
+        needs_ctest=no
+        while read -r casefile; do
+          [ -n "$casefile" ] || continue
+          if scripts/mutate --declares "$casefile" | grep -qx "runner	ctest"; then
+            needs_ctest=yes
+          fi
+        done < selected.txt
+        echo "needs_ctest=$needs_ctest" >> "$GITHUB_OUTPUT"
+        echo "ctest tree required: $needs_ctest"
+
+    # Only what the selection actually needs. A cargo-only round wants no
+    # CMake, and paying for one on every push is what would make an
+    # unfiltered workflow expensive.
+    - name: Install Dependencies
+      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential cmake g++ meson ninja-build lld ccache \
+          pkg-config libxml2-dev libspdlog-dev libfmt-dev libboost-dev
+
+    - name: Install libxml2 for sce-build
+      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest != 'yes'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libxml2-dev
+
+    - name: Cache Cargo
+      if: steps.select.outputs.count != '0'
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-mutation-rounds-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-mutation-rounds-
+
+    - name: Cache CMake Build
+      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
+      uses: actions/cache@v5
+      with:
+        path: |
+          build/CMakeCache.txt
+          build/CMakeFiles
+          build/_deps
+        key: ${{ runner.os }}-cmake-mutation-rounds-${{ hashFiles('**/CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-mutation-rounds-
+
+    # A ctest round selects from a configured tree; without one the gate
+    # refuses (exit 3) rather than reporting green over what it cannot run.
+    # This is the step that makes sure it never has to.
+    - name: Configure and build the CMake tree
+      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
+      run: |
+        set -euo pipefail
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --parallel "$(nproc)"
+
+    # Delegated rather than restated: the selection, the per-round verdict and
+    # the floors all live in the gate, so this lane and a developer running
+    # `scripts/gate mutation-rounds` by hand judge the corpus by one set of
+    # rules.
+    - name: Run the rounds
+      if: steps.select.outputs.count != '0'
+      env:
+        SCE_GATE_CHANGED_FILE: ${{ steps.changed.outputs.file }}
+      run: scripts/gate mutation-rounds
+
+    - name: Nothing to run
+      if: steps.select.outputs.count == '0'
+      run: echo "No declared mutation target changed; mutation-cases checked every anchor."

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Mirrors: none
+# Mirrors: mutation-rounds.yml
 #
 # The half of a mutation round that `mutation-cases` cannot answer.
 #
@@ -68,12 +68,17 @@
 # a test selector, not the sources behind it — so such a case keeps its last
 # verdict until the corpus is run whole.
 #
-# And it has no CI counterpart yet, which `--no-verify` can therefore skip.
-# The reason is cost rather than principle: four casefiles select through
-# ctest, so a CI job that ran them has to configure and build the CMake tree
-# before the first round starts. Until that job exists this gate refuses,
-# rather than passes, on a machine with no build tree — see the exit-3 branch
-# below.
+# This gate runs in CI, not in the push hook (`ci_only` in
+# `gate_registry.py`). It was in the hook first, and the number is why it
+# moved: 877s on the first push whose change set reached its casefiles,
+# against 4s on a push that reached none. A push whose length swings by a
+# quarter of an hour on what the author happened to edit is one that gets
+# bypassed. The cost of that trade, stated rather than discovered: a red
+# arrives one round later, and `--no-verify` no longer has anything to skip
+# here because there is nothing here to skip.
+#
+# `scripts/gate mutation-rounds` still runs it by hand, and the lane calls
+# exactly that, so both judge the corpus by one set of rules.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
