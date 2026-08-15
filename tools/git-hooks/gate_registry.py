@@ -141,37 +141,58 @@ GATES: dict[str, dict] = {
         "cost_s": 7,
         "summary": "every mutation casefile still applies",
     },
-    # The other half of the same corpus: whether a case still turns its
-    # suite red, which only a build can answer. Trigger is unconditional for
-    # the reason above — the union it reads is the casefiles' own — and the
-    # narrowing happens inside the gate, which runs a round only for a
-    # casefile whose declared target is in the change set. Most pushes select
-    # none and it costs a read of 25 declarations.
+    # The other half of the same corpus: whether a case still turns its suite
+    # red, which only a build can answer.
+    #
+    # `ci_only`, and the number is the reason. Measured on the first push
+    # whose change set reached its casefiles: 877s, eight rounds, against 4s
+    # on a push that reached none. No value of `cost_s` describes both, and a
+    # push length that swings by a quarter of an hour on what the author
+    # happened to edit is one somebody eventually bypasses. The trade is
+    # stated rather than hidden: a red now arrives one round later.
+    #
+    # Its workflow declares no `paths:` filter, and the gate narrows inside
+    # itself — the same arrangement `mutation-cases` has, for the same reason.
+    # What decides a round is the union of every `mutation_targets`
+    # declaration in the casefiles, and a filter restating that union would be
+    # a second copy of it. The first draft got this wrong in a way worth
+    # recording: it triggered on `sce-build/tests/mutations/**`, so a change
+    # to a declared TARGET — the case the gate exists for — selected nothing,
+    # while a change to a casefile selected a gate with no round to run. The
+    # two conditions were nearly exclusive and the session that landed it
+    # happened to satisfy both.
     #
     # No `deps`, though the first draft named `workspace-tests` and
-    # `cpp-suite`: a round's cost is dominated by its baseline build and
-    # those two have already paid it, which is a reason to want them first
-    # and not a dependency. `deps` here means a gate whose OUTPUT this one
-    # executes, and a round builds whatever it needs itself. Declaring the
-    # preference as a dependency put a 4-second gate behind the two most
-    # expensive in the table and the order self-test rejected it — correctly,
-    # and that is what the self-test is for.
-    #
-    # `cost_s` is the common case, which is the one that decides order: most
-    # pushes touch no declared target and the gate costs one read of 25
-    # declarations. A push that does touch one pays a round on top — measured
-    # warm, 139s for a 5-case cargo casefile and 237s for a 3-case ctest one.
+    # `cpp-suite`: a round's cost is dominated by its baseline build and those
+    # two have already paid it, which is a reason to want them first and not a
+    # dependency. `deps` here means a gate whose OUTPUT this one executes, and
+    # a round builds whatever it needs itself.
     "mutation-rounds": {
-        "local": ["sce-build/tests/mutations/**"],
-        "no_ci_reason": "no counterpart yet, and the reason is cost rather "
-                        "than principle: four casefiles select through "
-                        "ctest, so a CI job running them must configure and "
-                        "build the CMake tree before the first round. Until "
-                        "that job exists the gate refuses (exit 3) on a "
-                        "machine with no build tree rather than passing "
-                        "over what it cannot run, so a bypass loses "
-                        "coverage visibly instead of silently.",
-        "cost_s": 4,
+        "workflows": ["mutation-rounds.yml"],
+        "runner_workflow": True,
+        "narrows": "the workflow is unfiltered so CI starts it on every push; "
+                   "what actually decides a round is the casefiles' own "
+                   "`mutation_targets`, which the gate reads at run time. "
+                   "There is no glob list that is both correct and narrower "
+                   "than the tree.",
+        # No `local: ["**"]`, and the first draft's is why the note above the
+        # `narrows` branch in `gate_triggers` exists. A catch-all makes a gate
+        # always-on, and rule 3 then holds it out of the classifiers so it
+        # cannot mark any path as understood. The one path that needed marking
+        # was this lane's own workflow file: with the catch-all it matched
+        # nothing, so editing it was unclassified and bought the full suite —
+        # measured on the commit that introduced it, 30 gates for a 3-file
+        # change. Without the catch-all, `narrows` leaves the gate exactly one
+        # trigger, its workflow file, which is what classifies the edit. CI is
+        # unaffected either way: the workflow declares no `paths:` and CI does
+        # not read this table.
+        "ci_only": "measured 877s when the change set reached its casefiles "
+                   "and 4s when it did not; a push that swings by a quarter "
+                   "of an hour on what the author edited is one that gets "
+                   "bypassed. Runs in CI, where the cost is not the "
+                   "developer's wait, at the price of a red arriving one "
+                   "round later.",
+        "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
     },
     "clippy": {
@@ -458,11 +479,12 @@ GATES: dict[str, dict] = {
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        # Measured 34s for the whole gate after it started running the suite on
-        # both JVM engines rather than the default one. The second engine is a
-        # re-run of the test task against an already-generated tree, which is
-        # why covering it costs a fraction of the first.
-        "cost_s": 30,
+        # 10s in a push where the generated tree was already current; the 34s
+        # first measurement included the generation this gate no longer has to
+        # do when an earlier gate already did it. The second JVM engine is a
+        # re-run of the test task against that tree, which is why covering it
+        # costs a fraction of the first.
+        "cost_s": 10,
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
     },
     "w3c-python": {
@@ -861,7 +883,7 @@ def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
         if any(p.match(path) for p in inert):
             continue
         # Rule 1: an unclassified path buys the full run rather than silence.
-        return (run_order(GATES.keys()),
+        return (run_order(drop_ci_only(set(GATES))),
                 f"unclassified path '{path}' — running every gate")
 
     # Dependency closure, applied until it stops growing: a dep may itself
@@ -875,7 +897,30 @@ def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
                     selected.add(dep)
                     changed_set = True
 
-    return (run_order(selected), "path-scoped selection")
+    return (run_order(drop_ci_only(selected)), "path-scoped selection")
+
+
+def drop_ci_only(selected) -> set[str]:
+    """Remove the gates a push does not run, keeping their deps.
+
+    The hook mirrors CI for every other gate, and that symmetry is worth
+    stating before breaking it: a check that runs in both places can be
+    verified before pushing, which is the property the runner's toolchain pin
+    exists to protect.
+
+    `ci_only` buys one thing back — a gate whose cost is unbounded by anything
+    the developer chose. `mutation-rounds` measured 877s on the first push
+    whose change set reached its casefiles, against 4s on a push that reached
+    none, and there is no value of `cost_s` that is honest about both. The
+    trade recorded here is the owner's: a red arrives one round later, and the
+    push stays a length somebody will keep paying.
+
+    Applied at the end so it covers the full-run path too. Rule 1 hands back
+    every gate for an unclassified path, and a gate excluded from the hook has
+    to be excluded there as well or the exclusion holds only while the paths
+    are understood — which is the one case it would matter least.
+    """
+    return {slug for slug in selected if not GATES[slug].get("ci_only")}
 
 
 def self_test(repo_root: Path) -> int:
@@ -887,7 +932,10 @@ def self_test(repo_root: Path) -> int:
         nonlocal cases
         cases += 1
         keys, reason = select(repo_root, changed)
-        full = len(keys) == len(GATES)
+        # "Full" is every gate a PUSH can run. `select` is what the hook
+        # calls, so a `ci_only` gate is not missing from its answer — it was
+        # never on offer, and counting it would make rule 1 unprovable here.
+        full = len(keys) == len(drop_ci_only(set(GATES)))
         if want_full is not None and full != want_full:
             failures.append(f"{label}: full={full}, wanted {want_full} ({reason})")
         for k in want_has:
@@ -899,6 +947,16 @@ def self_test(repo_root: Path) -> int:
 
     # Rule 1 — the safety property. A path nobody classified runs everything.
     check("unclassified", ["some_new_top_level_dir/thing.txt"], want_full=True)
+    # A `ci_only` gate is not on offer to the hook, including on the path
+    # that hands back everything. Rule 1 is the case where an exclusion is
+    # easiest to forget and least visible: it returns the whole table, so a
+    # filter applied only to the narrow path would put the expensive gate
+    # back into exactly the pushes that are already the longest.
+    check("ci-only-stays-out-of-the-full-run",
+          ["some_new_top_level_dir/thing.txt"], want_lacks=["mutation-rounds"])
+    check("ci-only-stays-out-of-a-scoped-run",
+          ["sce-build/tests/mutations/ai_loop_history_rust.cases"],
+          want_lacks=["mutation-rounds"], want_has=["mutation-cases"])
     # Rule 3 — an always-on gate must not classify. Were the catch-all
     # allowed to count, this path would read as known and rule 1 would never
     # fire again for anything.
@@ -1048,11 +1106,22 @@ def self_test(repo_root: Path) -> int:
                 f"narrows: {slug} declares a narrowing and none of "
                 f"{spec.get('workflows')} is unfiltered — there is nothing "
                 f"to narrow, so the field is dead config")
-        if not (spec.get("local") or spec.get("extra")):
+        # A `ci_only` gate is not selected by this table at all, so "left
+        # with a trigger" cannot be what keeps it running — the unfiltered
+        # workflow above is, and that is checked rather than assumed. The
+        # requirement is replaced, not waived: for a hook-run gate the
+        # trigger is what makes it run, and for this one the lane is, so each
+        # is held to the thing that actually runs it.
+        if not (spec.get("local") or spec.get("extra") or spec.get("ci_only")):
             failures.append(
                 f"narrows: {slug} narrows its workflow's catch-all away and "
                 f"declares no local/extra trigger — the gate can never be "
                 f"selected")
+        if spec.get("ci_only") and not unfiltered:
+            failures.append(
+                f"narrows: {slug} is ci_only and narrows away the catch-all "
+                f"of a filtered workflow — nothing selects it locally and "
+                f"nothing starts it in CI either")
         if not str(spec["narrows"]).strip():
             failures.append(
                 f"narrows: {slug} declares an empty narrowing reason — the "
