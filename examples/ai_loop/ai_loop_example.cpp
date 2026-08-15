@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -97,7 +98,18 @@ public:
 
     TurnResult prompt(const std::string &text) override {
         std::cout << "        [prompt]  " << firstLine(text) << "\n";
+        prompts_.push_back(text);
         return next();
+    }
+
+    /// Every prompt this session was sent, in order.
+    ///
+    /// Recorded because a prompt is the one thing the loop produces that
+    /// nothing else can check: the machine's outcome is the same whether the
+    /// text it sent was the author's, a reflection's, or empty. `main()`
+    /// asserts on this after the reflection scenario for exactly that reason.
+    const std::vector<std::string> &prompts() const {
+        return prompts_;
     }
 
     TurnResult answer(const std::string &keys, const std::string &text) override {
@@ -131,6 +143,7 @@ private:
     }
 
     std::vector<TurnResult> script_;
+    std::vector<std::string> prompts_;
     size_t cursor_ = 0;
     int starts_ = 0;
 };
@@ -387,14 +400,53 @@ private:
     /// Improve the run's own setup, then let the machine restart into it.
     ///
     /// A real host reads the transcript so far and rewrites the prompts, the
-    /// agent's instruction file, its memory, its tool set. All of those are
+    /// session's instruction file, its memory, its tool set. All of those are
     /// read at session start, which is why the machine's only forward exit
     /// from here is a restart.
+    ///
+    /// The prompts sent here are COMPOSED from the refined milestone rather
+    /// than left blank, and that is not cosmetic. This host used to write
+    /// `{"start_prompt":"","turn_prompt":"","milestone":"refined"}`, so the
+    /// document that says a restart exists to pick up the improvements came
+    /// back holding two empty strings — and the fresh session was primed with
+    /// nothing at all while the scenario title claimed it restarted into the
+    /// improved prompts. Every run still converged, because an outcome cannot
+    /// tell an empty prompt from an authored one. `main()` now reads what was
+    /// actually sent.
     void reflect() {
         ++reflections_;
+        const std::string milestone =
+            "the smallest verifiable step toward " + readable(m_.getPolicy().north_star(), "north_star");
         std::cout << "        [reflect] rewriting the milestone from the record\n";
         fire(Event::Reflect_applied, "reflect.applied",
-             R"({"start_prompt":"","turn_prompt":"","milestone":"refined"})");
+             R"({"start_prompt":")" +
+                 jsonEscape("Resuming. Milestone: " + milestone + "\nReport what you did and what is left.") +
+                 R"(","turn_prompt":")" +
+                 jsonEscape("Continue toward: " + milestone +
+                            "\nDo the next smallest thing that is verifiable, then report.") +
+                 R"(","milestone":")" + jsonEscape(milestone) + R"("})");
+    }
+
+    /// The two characters a prompt can carry that JSON cannot hold raw.
+    ///
+    /// The event payload is JSON because that is what the machine parses into
+    /// `_event.data`; a prompt is prose, and prose has newlines. Escaping only
+    /// what this example can produce keeps the seam readable — a real host
+    /// hands the job to its JSON library.
+    static std::string jsonEscape(const std::string &text) {
+        std::string out;
+        out.reserve(text.size());
+        for (const char c : text) {
+            if (c == '"' || c == '\\') {
+                out += '\\';
+                out += c;
+            } else if (c == '\n') {
+                out += "\\n";
+            } else {
+                out += c;
+            }
+        }
+        return out;
     }
 
     const char *terminal() const {
@@ -519,7 +571,13 @@ void readback() {
 /// answered without waking anybody is decided by editing `ai_loop.scxml` and
 /// nowhere else. A scenario picks the question the agent raises; the document
 /// decides what happens to it.
-void scenario(const std::string &title, std::vector<TurnResult> script, const std::string &expected) {
+/// `after` runs once the machine has stopped, on the session it drove.
+///
+/// An outcome is a weak observable: `converged` says the document reached the
+/// final it enumerates, not that anything sensible was sent on the way. A
+/// scenario with something to say about the transcript says it here.
+void scenario(const std::string &title, std::vector<TurnResult> script, const std::string &expected,
+              const std::function<void(const ScriptedSession &)> &after = nullptr) {
     std::cout << "\n-- " << title << "\n";
     ScriptedSession session(std::move(script));
     Machine machine;
@@ -534,6 +592,9 @@ void scenario(const std::string &title, std::vector<TurnResult> script, const st
     }
     std::cout << "   => " << outcome << (ok ? "   OK" : "   UNEXPECTED, wanted " + expected)
               << "   (sessions started: " << session.starts() << ")\n";
+    if (after) {
+        after(session);
+    }
 }
 
 }  // namespace
@@ -555,7 +616,25 @@ int main() {
         }
         script.push_back(done("MILESTONE REACHED"));
         script.push_back(done("final report"));
-        scenario("works, reflects on schedule, restarts into the improved prompts", std::move(script), "converged");
+        scenario("works, reflects on schedule, restarts into the improved prompts", std::move(script), "converged",
+                 [](const ScriptedSession &session) {
+                     // The claim in this scenario's own title, checked. The
+                     // reflection rewrote the machine's prompts; the restart
+                     // exists so a fresh session reads them. What proves it is
+                     // the text that went out AFTER the restart — nine turns of
+                     // work, then the reflection, so the tenth prompt is the
+                     // first one a restarted session received.
+                     const auto &sent = session.prompts();
+                     const bool enough = sent.size() > 9;
+                     expect("the restarted session was prompted", enough);
+                     if (!enough) {
+                         return;
+                     }
+                     const std::string &primed = sent[9];
+                     expect("the restarted session was not primed with an empty prompt", !primed.empty());
+                     expect("the prompt it was primed with carries the refined milestone",
+                            primed.find("the smallest verifiable step toward") != std::string::npos);
+                 });
     }
 
     // 2. The agent asks something the author already decided — `screen_rules`
@@ -577,7 +656,8 @@ int main() {
              {done("working"), lost(), done("MILESTONE REACHED"), done("final report")}, "converged");
 
     std::cout << "\n"
-              << (failures == 0 ? "The document is readable, and every run ended in an outcome it enumerates."
+              << (failures == 0 ? "The document is readable, every run ended in an outcome it enumerates, and the\n"
+                                  "restart was primed with what reflection wrote."
                                 : "SOMETHING THE DOCUMENT DECLARES DID NOT HOLD.")
               << "\n";
 
