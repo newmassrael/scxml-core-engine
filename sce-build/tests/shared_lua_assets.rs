@@ -99,3 +99,97 @@ fn every_lua_engine_loads_the_shared_semantics() {
         missing.join("\n")
     );
 }
+
+/// The C11 embed loads the shared assets in pieces — and the pieces work.
+///
+/// C11 cannot open a file at runtime, so codegen carries the same Lua as a
+/// sequence of `luaL_dostring` calls, one per chunk, because ISO C99
+/// guarantees only 4095 characters in a string literal. Two things could go
+/// wrong there and neither is loud: a boundary could fall inside a function
+/// body, and the generated code discards every `luaL_dostring` result, so a
+/// chunk that failed to compile would leave its definitions simply absent.
+/// The C11 suite would stay green — no W3C fixture calls `'a'.substring(0,1)`
+/// — and a consumer's document would fail at runtime instead.
+///
+/// So the split is executed here rather than reviewed: the chunks go into one
+/// interpreter one at a time, in order, and then the definitions are called.
+#[test]
+fn the_c11_embed_chunks_load_and_define_what_they_claim() {
+    use sce_build::filters::c11_lua_chunks;
+    use sce_rust_lua::LuaEngine;
+    use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
+
+    let engine = LuaEngine::new();
+    let session = "c11-embed-probe";
+    engine.create_session(session);
+
+    // Loaded the way the generated C11 bootstrap loads them: separately, in
+    // order, into the one state. `_scxml_truthy` is a per-engine native that
+    // `Boolean` calls, and this engine installs it with the session.
+    for (name, source) in [
+        ("ecma_semantics.lua", sce_build::filters::ECMA_SEMANTICS_LUA),
+        ("json_builtins.lua", sce_build::filters::JSON_BUILTINS_LUA),
+    ] {
+        // Every PARAGRAPH first, one `execute_script` each. This is the worst
+        // split the budget can ever produce, and asserting it is what keeps
+        // the test from depending on where the boundaries happen to fall
+        // today: measured while writing this, a blank line inserted into a
+        // function body did not break the shipped chunking, because the
+        // budget put the boundary somewhere else. It would break as soon as
+        // the file grew. Asked this way, it breaks now.
+        for (i, paragraph) in source.split("\n\n").enumerate() {
+            if paragraph.trim().is_empty() {
+                continue;
+            }
+            engine
+                .execute_script(session, paragraph)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{name} paragraph {i} is not a complete Lua chunk: {e}\n\
+                     The C11 embed splits this file on blank lines and hands each \
+                     piece to a separate luaL_dostring, discarding the result — so \
+                     a blank line inside a definition costs that definition, \
+                     silently, on that backend only, as soon as the budget puts a \
+                     boundary there."
+                    )
+                });
+        }
+
+        // Then the split that actually ships, so a change to the budget or the
+        // joining is measured too rather than inferred from the paragraphs.
+        for (i, chunk) in c11_lua_chunks(source).iter().enumerate() {
+            engine
+                .execute_script(session, chunk)
+                .unwrap_or_else(|e| panic!("{name} chunk {i} does not load on its own: {e}"));
+        }
+    }
+
+    // Named one by one rather than by counting definitions: what matters is
+    // that the call works, and a count would pass against a chunk that
+    // defined a function whose body had been cut in half.
+    for (expression, expected) in [
+        (
+            "_scxml_substring('abcdef', 1, 3)",
+            ScriptValue::String("bc".into()),
+        ),
+        ("_scxml_charat('abc', 1)", ScriptValue::String("b".into())),
+        (
+            "_scxml_tolowercase('AbC')",
+            ScriptValue::String("abc".into()),
+        ),
+        ("#_scxml_split('a,b', ',')", ScriptValue::Int(2)),
+        ("String(42)", ScriptValue::String("42".into())),
+        ("Number('42')", ScriptValue::Int(42)),
+        ("Boolean(0)", ScriptValue::Bool(false)),
+        ("JSON.stringify(1)", ScriptValue::String("1".into())),
+    ] {
+        let answered = engine
+            .evaluate_expression(session, expression)
+            .unwrap_or_else(|e| panic!("`{expression}` after the chunked load: {e}"));
+        assert_eq!(
+            answered, expected,
+            "`{expression}` answered {answered:?} after the chunks were loaded the \
+             way C11 loads them"
+        );
+    }
+}
