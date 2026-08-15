@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8703a490654d6980486f0b9dbfaf924b4fcfbd6505e2242f771b46a183bf9e7a
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -150,7 +150,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
-    override fun onEntry(state: InvokePrecedesDequeueMidrunState) {
+    override fun onEntry(state: InvokePrecedesDequeueMidrunState, pathChild: InvokePrecedesDequeueMidrunState?) {
         when (state) {
             is InvokePrecedesDequeueMidrunState.Arm -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body

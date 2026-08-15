@@ -773,7 +773,19 @@ private:
     bool setupAndActivateParallelState(ConcurrentStateNode *parallelState, const std::string &stateId);
 
     bool evaluateCondition(const std::string &condition);
-    bool enterState(const std::string &stateId);
+
+    /**
+     * @brief Enter a state.
+     *
+     * @param stateId State to enter.
+     * @param pathChild The child of @p stateId the entry set already holds,
+     *        when @p stateId is only an ANCESTOR of the entry target. Such a
+     *        state is entered without its default initial child; a `<parallel>`
+     *        still gives its OTHER regions theirs. Empty means @p stateId is
+     *        the target and takes its defaults. The definition carries the
+     *        citation; see `StateHierarchyManager::enterState`.
+     */
+    bool enterState(const std::string &stateId, const std::string &pathChild = "");
     bool exitState(const std::string &stateId);
 
     /**

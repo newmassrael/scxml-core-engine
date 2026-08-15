@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -416,6 +416,7 @@ impl StatePolicy for Test451Policy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
+        path_child: Option<Self::State>,
     ) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
@@ -429,24 +430,37 @@ impl StatePolicy for Test451Policy {
             return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
 
-        // W3C SCXML 3.4: If entering parallel state, enter all child regions
+        // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: entering a
+        // `<parallel>` enters every region — including when it is only an
+        // ancestor, which is the one case where an ancestor still hands out
+        // defaults. The exception is the region the entry set is already
+        // descending into: `path_child` names it, and giving that one its
+        // default too is what leaves two children of it active at once.
         if Self::is_parallel_state(state) {
             let regions = Self::get_parallel_regions(state);
             for &region in regions {
-                self.execute_entry_actions(region, engine);
+                if path_child == Some(region) {
+                    continue;
+                }
+                self.execute_entry_actions(region, engine, None);
 
                 // W3C SCXML 3.3: If region is compound, enter initial child
                 if Self::is_compound_state(region) {
                     let initial_child = self.get_initial_or_history_child(region);
                     if initial_child != region {
-                        self.execute_entry_actions(initial_child, engine);
+                        self.execute_entry_actions(initial_child, engine, None);
                     }
                 }
             }
         }
 
         // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-        if Self::is_compound_state(state) && !Self::is_parallel_state(state) {
+        //
+        // §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the
+        // way to a deeper target. The entry set already holds `path_child`, and
+        // a compound state holds one child at a time.
+        if Self::is_compound_state(state) && !Self::is_parallel_state(state) && path_child.is_none()
+        {
             // W3C SCXML 3.6: Deep initial targets support
             let initial_children = Self::get_initial_children(state);
             if !initial_children.is_empty() {
@@ -463,15 +477,18 @@ impl StatePolicy for Test451Policy {
                         }
                     }
                     chain.reverse();
-                    // Enter intermediate states (skip state itself, already entered)
-                    for &intermediate in &chain {
-                        self.execute_entry_actions(intermediate, engine);
+                    // Enter intermediate states (skip state itself, already
+                    // entered). Each is an ancestor of the initial target, so
+                    // it takes no default of its own — the chain already names
+                    // the child that is entering.
+                    for (i, &intermediate) in chain.iter().enumerate() {
+                        self.execute_entry_actions(intermediate, engine, chain.get(i + 1).copied());
                     }
                 }
             } else {
                 let initial_child = self.get_initial_or_history_child(state);
                 if initial_child != state {
-                    self.execute_entry_actions(initial_child, engine);
+                    self.execute_entry_actions(initial_child, engine, None);
                 }
             }
         }
@@ -971,18 +988,30 @@ impl Test451Policy {
             let entry_chain =
                 sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
 
-            for state in &entry_chain {
+            // §scxml-D: every link but the last is an ANCESTOR of the target,
+            // and `addAncestorStatesToEnter` adds an ancestor without its
+            // default initial child — the entry set already holds the next
+            // link. Only the target itself goes through
+            // `addDescendantStatesToEnter`. Passing the next link as
+            // `path_child` is what expresses that, and it is also what stops a
+            // `<parallel>` ancestor from handing a default to the very region
+            // the chain is descending into.
+            for (i, state) in entry_chain.iter().enumerate() {
+                let path_child = entry_chain.get(i + 1).copied();
                 if self.active_states.contains(state) {
                     // W3C SCXML 3.13: Already active - handle parallel region re-entry
                     if Self::is_parallel_state(*state) {
                         let regions = Self::get_parallel_regions(*state);
                         for &region in regions {
+                            if path_child == Some(region) {
+                                continue;
+                            }
                             if !self.active_states.contains(&region) {
-                                self.execute_entry_actions(region, engine);
+                                self.execute_entry_actions(region, engine, None);
                                 if Self::is_compound_state(region) {
                                     let initial_child = self.get_initial_or_history_child(region);
                                     if initial_child != region {
-                                        self.execute_entry_actions(initial_child, engine);
+                                        self.execute_entry_actions(initial_child, engine, None);
                                     }
                                 }
                             }
@@ -990,7 +1019,7 @@ impl Test451Policy {
                     }
                     continue;
                 }
-                self.execute_entry_actions(*state, engine);
+                self.execute_entry_actions(*state, engine, path_child);
             }
 
             // W3C SCXML 3.4: For parallel states, maintain currentState at parallel level

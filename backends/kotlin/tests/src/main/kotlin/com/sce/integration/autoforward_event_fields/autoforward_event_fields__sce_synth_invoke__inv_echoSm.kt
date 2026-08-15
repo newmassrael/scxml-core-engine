@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -237,7 +237,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
-    override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
+    override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState, pathChild: AutoforwardEventFieldsSceSynthInvokeInvEchoState?) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body

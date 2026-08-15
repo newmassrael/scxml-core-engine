@@ -93,9 +93,7 @@ func (e *Engine[S, E]) Initialize() {
 
 	// §scxml-3.3: Entry chain from root to initial leaf
 	entryChain := BuildEntryChain[S, E](e.policy, e.currentState)
-	for _, state := range entryChain {
-		e.policy.ExecuteEntryActions(state, e)
-	}
+	e.executeEntryChain(entryChain)
 
 	// §scxml-3.3: Resolve currentState to the deepest initial leaf
 	e.resolveCurrentStateToLeaf()
@@ -779,10 +777,7 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 			entryChain = BuildEntryChainFromAncestor[S, E](e.policy, newState, lcaState)
 		}
 
-		for _, state := range entryChain {
-			log.Printf("[sce] handleHierarchicalTransition: enter %v", state)
-			e.policy.ExecuteEntryActions(state, e)
-		}
+		e.executeEntryChain(entryChain)
 
 		if len(entryChain) > 0 {
 			e.currentState = entryChain[len(entryChain)-1]
@@ -810,16 +805,30 @@ func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTra
 		e.policy.ExecuteTransitionActions(e)
 
 		entryChain := BuildEntryChain[S, E](e.policy, newState)
-		for _, state := range entryChain {
-			log.Printf("[sce] handleHierarchicalTransition: enter from root: %v", state)
-			e.policy.ExecuteEntryActions(state, e)
-		}
+		e.executeEntryChain(entryChain)
 
 		if len(entryChain) > 0 {
 			e.currentState = entryChain[len(entryChain)-1]
 		}
 
 		e.resolveCurrentStateToLeaf()
+	}
+}
+
+// executeEntryChain enters a whole root-to-target chain, giving every link but
+// the last the next one as its pathChild (§scxml-D-addAncestorStatesToEnter).
+//
+// One place, because all three entry-chain walks in this engine owe the same
+// rule and a chain walked with nil throughout puts two children of one compound
+// state in the configuration.
+func (e *Engine[S, E]) executeEntryChain(entryChain []S) {
+	for i := range entryChain {
+		var pathChild *S
+		if i+1 < len(entryChain) {
+			pathChild = &entryChain[i+1]
+		}
+		log.Printf("[sce] executeEntryChain: enter %v", entryChain[i])
+		e.policy.ExecuteEntryActions(entryChain[i], e, pathChild)
 	}
 }
 
@@ -845,8 +854,10 @@ func (e *Engine[S, E]) resolveCurrentStateToLeaf() {
 		}
 		e.currentState = child
 		if !e.policy.HasParallelStates() {
-			// Non-parallel: template doesn't recurse, so we enter here.
-			e.policy.ExecuteEntryActions(child, e)
+			// Non-parallel: template doesn't recurse, so we enter here. This
+			// child IS the entry target of its own descent, so it takes its
+			// defaults — nil, not a pathChild.
+			e.policy.ExecuteEntryActions(child, e, nil)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -384,7 +384,12 @@ impl StatePolicy for InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
+        path_child: Option<Self::State>,
     ) {
+        // Only a `<parallel>` machine descends into defaults here — see the
+        // blocks at the end of this function — so a machine without one has
+        // nothing to tell an ancestor entry from a target entry.
+        let _ = path_child;
         match state {
             InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState::Waiting => {
                 // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body

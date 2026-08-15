@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -257,7 +257,7 @@ class DonedataLateCompletionStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
-    override fun onEntry(state: DonedataLateCompletionState) {
+    override fun onEntry(state: DonedataLateCompletionState, pathChild: DonedataLateCompletionState?) {
         when (state) {
             is DonedataLateCompletionState.Fail -> {
                 // SCE-MAP: donedata_late_completion.scxml:77 :: fail :: _state_body

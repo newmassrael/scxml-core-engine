@@ -19,7 +19,7 @@ StateHierarchyManager::StateHierarchyManager(std::shared_ptr<SCXMLModel> model)
     SCE_LOG_DEBUG("StateHierarchyManager: Initialized with SCXML model");
 }
 
-bool StateHierarchyManager::enterState(const std::string &stateId) {
+bool StateHierarchyManager::enterState(const std::string &stateId, const std::string &pathChild) {
     if (!model_ || stateId.empty()) {
         SCE_LOG_WARN("Invalid parameters");
         return false;
@@ -123,7 +123,9 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
         // W3C SCXML 403c: Set execution context for all regions BEFORE activation (DRY refactoring)
         updateRegionExecutionContexts(parallelState);
 
-        auto result = parallelState->enterParallelState();
+        // §scxml-D-addAncestorStatesToEnter: `pathChild` is the region the entry
+        // set is already descending into, and it must not also take its default.
+        auto result = parallelState->enterParallelState(pathChild);
         if (!result.isSuccess) {
             SCE_LOG_ERROR("enterState - Failed to enter parallel state '{}': {}", stateId, result.errorMessage);
             return false;
@@ -221,12 +223,28 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                     // region's own view had it: two bookkeepers, one of them
                     // wrong, for a configuration the specification defines
                     // once.
+                    // WITHOUT the onentry callback, because the region has
+                    // already run these states' `<onentry>` through the
+                    // execution context this manager handed it. Routing them
+                    // through `addStateToConfiguration` fires the callback too,
+                    // and every one of them ran twice — measured 2026-08-15, a
+                    // counter incremented by 2 for one entry. No W3C IRP
+                    // fixture and no earlier integration fixture counts entries
+                    // inside a region, which is why a doubled `<onentry>` was
+                    // invisible to every suite.
+                    //
+                    // The region-state sync that `addStateToConfiguration`
+                    // performs is NOT part of what is being skipped: it is
+                    // called explicitly below, because dropping it reds seven
+                    // parallel drivers that have nothing to do with onentry.
                     const auto entered = region->getActiveStates();
                     if (entered.empty()) {
-                        addStateToConfiguration(initialChild);
+                        addStateToConfigurationWithoutOnEntry(initialChild);
+                        synchronizeParallelRegionState(initialChild);
                     } else {
                         for (const auto &enteredState : entered) {
-                            addStateToConfiguration(enteredState);
+                            addStateToConfigurationWithoutOnEntry(enteredState);
+                            synchronizeParallelRegionState(enteredState);
                         }
                     }
                 }
@@ -248,6 +266,16 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
             SCE_LOG_DEBUG("StateHierarchyManager: Deferring {} invokes for compound state: {}", invokes.size(),
                           stateId);
             invokeDeferCallback_(stateId, invokes);
+        }
+
+        // §scxml-D-addAncestorStatesToEnter: a compound state reached only
+        // because the target lies inside it takes NO default initial child —
+        // the entry set already holds `pathChild`, and a compound state holds
+        // one child at a time. Its `<initial>` executable content belongs to the
+        // default entry it is not doing, so that stays behind too.
+        if (!pathChild.empty()) {
+            SCE_LOG_DEBUG("enterState - '{}' is an ancestor of '{}', no default child", stateId, pathChild);
+            return true;
         }
 
         // §scxml-3.3: Enter initial child state(s) - supports space-separated list for deep targets

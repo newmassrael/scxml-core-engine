@@ -23,7 +23,7 @@
        above the `onEntry` / `onExit` overrides. Kotlin's macro form is
        a plain `// SCE-MAP:` comment — non-syntactic, no compile cost. #}
     {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
-    override fun onEntry(state: {{ machine_name }}State) {
+    override fun onEntry(state: {{ machine_name }}State, pathChild: {{ machine_name }}State?) {
         when (state) {
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
@@ -292,18 +292,24 @@
                     raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ parallel_grandparent_id) | to_event_ref }})
                 }
 {% endif %}
-{# C++ executeEntryActions vs buildEntryChain separation:
-   When suppressChildEntry is true, only entry actions execute (no child entry).
-   This matches C++ where ancestors use executeEntryActions() and only
-   the target gets full child entry via buildEntryChain. #}
+{# §scxml-D: `pathChild` tells addDescendantStatesToEnter (null — this state is
+   the entry TARGET and takes its defaults) from addAncestorStatesToEnter (the
+   child the entry set already holds, so this state takes none). See the
+   runtime's `StateMachineEngine.onEntry`. #}
 {% if has_parallel_children %}
-                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
-                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
+                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
+                // `<parallel>` hands out defaults even when it is only an
+                // ancestor — Appendix D's one exception to the ancestor rule.
+                // The exception has its own exception: not the region the entry
+                // set is already descending into, which `pathChild` names and
+                // which the caller enters with the target's own path.
 {% for region_id in model.parallel_regions[state_id] %}
-                onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
+                if (pathChild != {{ machine_name }}State.{{ region_id | to_state_class_name }}) {
+                    onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
+                }
 {% endfor %}
 {% elif has_initial_history %}
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
 {% if state.initial_transition_actions %}
                     // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
 {% for action in state.initial_transition_actions %}
@@ -334,7 +340,7 @@
                     }
                 }
 {% elif model.parallel_regions and has_deep_initial %}
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
 {% if state.initial_transition_actions %}
                     // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}
@@ -347,7 +353,7 @@
 {% endfor %}
                 }
 {% elif model.parallel_regions and has_initial_child %}
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
 {% if state.initial_transition_actions %}
                     // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}

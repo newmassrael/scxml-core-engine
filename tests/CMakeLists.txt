@@ -567,6 +567,8 @@ add_executable(integration_tests
     integration/ParallelRegionsTakeOwnTransitionsAotTest.cpp
     integration/ParallelSelfTransitionKeepsItsLeafTest.cpp
     integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
+    integration/AncestorEntryIsNotDefaultEntryTest.cpp
+    integration/AncestorEntryIsNotDefaultEntryAotTest.cpp
     integration/AiLoopAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
@@ -956,6 +958,17 @@ sce_generate_static_integration_test(parallel_regions_take_own_transitions ${STA
 # just RE-ENTERED is the loss. So the self-transitioning region is first in
 # document order here, and second there.
 sce_generate_static_integration_test(parallel_self_transition_keeps_its_leaf ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.3 + Appendix D: a compound state entered only because the target
+# lies inside it takes no default initial child. Appendix D asks that as two
+# functions — `addDescendantStatesToEnter` for the target,
+# `addAncestorStatesToEnter` for the states between it and the LCCA — and an
+# engine with one entry function answers both with the first, leaving two
+# children of one compound state active. The fixture carries a `<parallel>` it
+# never uses because that block is emitted only for machines that have one;
+# measured 2026-08-15, the same document without it passes while the defect is
+# still in the templates.
+sce_generate_static_integration_test(ancestor_entry_is_not_default_entry ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.4 + 3.7: a `<parallel>` completes when every region has reached a
 # `<final>`, and that raises `done.state.<parallel>`. A parallel owns no

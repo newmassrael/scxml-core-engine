@@ -461,7 +461,33 @@ private:
                 // This ensures parallel parents are re-entered with all their regions
                 auto entryChain = ::SCE::Core::HierarchicalStateHelper<{{ model.name }}Policy>::buildEntryChain(target);
                 
-                for (State state : entryChain) {
+                // §scxml-D: every link BEFORE the target is an ANCESTOR of it,
+                // and `addAncestorStatesToEnter` adds an ancestor WITHOUT its
+                // default initial child — the entry set already holds the next
+                // link. The target itself, and everything after it, goes
+                // through `addDescendantStatesToEnter`. Passing the next link
+                // as `pathChild` is what expresses that, and it is also what
+                // stops a `<parallel>` ancestor from handing a default to the
+                // very region the chain is descending into.
+                //
+                // `reachedTarget` is load-bearing rather than defensive:
+                // `buildEntryChain` does not stop at the target — it appends
+                // the target's own default initial descendants, and it names
+                // only `getInitialChild`, leaving the intermediate levels of a
+                // DEEP `initial` to `executeEntryActions`. Treating that tail
+                // as an ancestor chain suppresses exactly the descent it was
+                // appended to trigger; measured 2026-08-15, W3C test364 (deep
+                // `initial="s11p112 s11p122"`) failed on the AOT engine.
+                bool reachedTarget = false;
+                for (::std::size_t chainIdx = 0; chainIdx < entryChain.size(); ++chainIdx) {
+                    const State state = entryChain[chainIdx];
+                    if (state == target) {
+                        reachedTarget = true;
+                    }
+                    const ::std::optional<State> pathChild =
+                        (!reachedTarget && chainIdx + 1 < entryChain.size())
+                            ? ::std::optional<State>(entryChain[chainIdx + 1])
+                            : ::std::nullopt;
                     // Skip if already active (parallel states may have entered this via recursive entry)
                     bool alreadyActive = false;
                     for (State s : activeStates_) {
@@ -477,6 +503,12 @@ private:
                             AOT_DEBUG("AOT executeMicrostep: Parallel state {} already active, re-entering regions", static_cast<int>(state));
                             auto regions = getParallelRegions(state);
                             for (const auto& region : regions) {
+                                // §scxml-D: the region the chain descends into
+                                // is entered by the next loop iteration, with
+                                // the target's own path — not with a default.
+                                if (pathChild.has_value() && pathChild.value() == region) {
+                                    continue;
+                                }
                                 // Check if region needs re-entry (may have been exited by transition)
                                 bool regionActive = false;
                                 for (State s : activeStates_) {
@@ -507,7 +539,7 @@ private:
                     }
                     
                     AOT_DEBUG("AOT executeMicrostep: Hierarchical entry for state {}", static_cast<int>(state));
-                    executeEntryActions(state, engine);
+                    executeEntryActions(state, engine, pathChild);
                 }
 
                 // W3C SCXML 3.4: For transitions within parallel states, maintain currentState at parallel level

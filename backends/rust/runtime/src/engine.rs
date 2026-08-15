@@ -511,12 +511,26 @@ impl<P: StatePolicy> Engine<P> {
     /// not alias the engine's policy field through `engine.policy` — but this
     /// is a non-issue because the Engine does not expose `policy` publicly.
     pub(crate) fn execute_on_entry(&mut self, state: P::State) {
+        self.execute_on_entry_with_path(state, None);
+    }
+
+    /// [`Self::execute_on_entry`] for a state that is only an ANCESTOR of the
+    /// entry target.
+    ///
+    /// `path_child` names the child of `state` the entry set already holds —
+    /// §scxml-D-addAncestorStatesToEnter, which adds such a state without its
+    /// default initial child. See `StatePolicy::execute_entry_actions`.
+    pub(crate) fn execute_on_entry_as_ancestor(&mut self, state: P::State, path_child: P::State) {
+        self.execute_on_entry_with_path(state, Some(path_child));
+    }
+
+    fn execute_on_entry_with_path(&mut self, state: P::State, path_child: Option<P::State>) {
         let policy_ptr: *mut P = &mut self.policy as *mut P;
         // SAFETY: see doc comment above. The policy field and the rest of
         // Engine's fields are disjoint; the split borrow lasts only for the
         // duration of the method call.
         unsafe {
-            (*policy_ptr).execute_entry_actions(state, self);
+            (*policy_ptr).execute_entry_actions(state, self, path_child);
         }
     }
 
@@ -1475,9 +1489,16 @@ impl<P: StatePolicy> Engine<P> {
                 hierarchy::build_entry_chain_from_ancestor::<P>(new_state, lca_state)
             };
 
-            for state in &entry_chain {
+            // §scxml-D-addAncestorStatesToEnter: everything but the last link
+            // is an ancestor of the target, and an ancestor is entered WITHOUT
+            // its default initial child — the entry set already holds the next
+            // link. Only the target itself takes defaults.
+            for (i, state) in entry_chain.iter().enumerate() {
                 sce_log_debug!("handle_hierarchical_transition: enter {:?}", state);
-                self.execute_on_entry(*state);
+                match entry_chain.get(i + 1) {
+                    Some(&next) => self.execute_on_entry_as_ancestor(*state, next),
+                    None => self.execute_on_entry(*state),
+                }
             }
 
             if let Some(&last) = entry_chain.last() {
@@ -1503,12 +1524,17 @@ impl<P: StatePolicy> Engine<P> {
             self.execute_transition_actions_dispatch();
 
             let entry_chain = hierarchy::build_entry_chain::<P>(new_state);
-            for state in &entry_chain {
+            // §scxml-D-addAncestorStatesToEnter, as above: only the last link
+            // is the target, and only the target takes defaults.
+            for (i, state) in entry_chain.iter().enumerate() {
                 sce_log_debug!(
                     "handle_hierarchical_transition: enter from root: {:?}",
                     state
                 );
-                self.execute_on_entry(*state);
+                match entry_chain.get(i + 1) {
+                    Some(&next) => self.execute_on_entry_as_ancestor(*state, next),
+                    None => self.execute_on_entry(*state),
+                }
             }
 
             if let Some(&last) = entry_chain.last() {

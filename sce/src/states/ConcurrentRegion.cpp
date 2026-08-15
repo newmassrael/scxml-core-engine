@@ -71,7 +71,7 @@ const std::string &ConcurrentRegion::getId() const {
     return id_;
 }
 
-ConcurrentOperationResult ConcurrentRegion::activate() {
+ConcurrentOperationResult ConcurrentRegion::activate(bool enterDefaultChild) {
     if (status_ == ConcurrentRegionStatus::ACTIVE) {
         SCE_LOG_DEBUG("Region {} already active", id_);
         return ConcurrentOperationResult::success(id_);
@@ -101,7 +101,7 @@ ConcurrentOperationResult ConcurrentRegion::activate() {
     status_ = ConcurrentRegionStatus::ACTIVE;
 
     // Enter initial state according to SCXML semantics
-    auto result = enterInitialState();
+    auto result = enterInitialState(enterDefaultChild);
     if (!result.isSuccess) {
         SCE_LOG_ERROR("Failed to enter initial state: {}", result.errorMessage);
         status_ = ConcurrentRegionStatus::ERROR;  // Rollback on failure
@@ -800,7 +800,7 @@ bool ConcurrentRegion::determineIfInFinalState() const {
     return false;
 }
 
-ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
+ConcurrentOperationResult ConcurrentRegion::enterInitialState(bool enterDefaultChild) {
     if (!rootState_) {
         std::string error = std::format("Cannot enter initial state: no root state in region {}", id_);
         return ConcurrentOperationResult::failure(id_, error);
@@ -808,7 +808,21 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
 
     SCE_LOG_DEBUG("Entering initial state for region: {}", id_);
 
-    // SCXML W3C specification section 3.4: Execute entry actions for the region state
+    // §scxml-3.8: this region executes the `<onentry>` of every state it
+    // enters, and it is the ONLY executor of them.
+    //
+    // `StateHierarchyManager` reflects this region's `getActiveStates()` into
+    // the machine's configuration afterwards, and it does so through
+    // `addStateToConfigurationWithoutOnEntry` precisely because these have
+    // already run here. Routing them through the onentry callback as well ran
+    // every one of them twice — measured 2026-08-15, a counter incremented by
+    // 2 for one entry, which neither W3C IRP nor any earlier integration
+    // fixture could see because none of them counts entries inside a region.
+    //
+    // This site is the survivor rather than the callback because it is this
+    // class's own contract: `ConcurrentRegionTest` constructs a region with an
+    // execution context and no manager at all, and asserts that activation
+    // runs the root state's entry actions.
     if (executionContext_) {
         SCE_LOG_DEBUG("Executing entry actions for: {}", rootState_->getId());
 
@@ -845,6 +859,18 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
         SCE_LOG_INFO("ConcurrentRegion: Delegating {} invokes for root state: {} to callback", rootInvokes.size(),
                      currentState_);
         invokeCallback_(currentState_, rootInvokes);
+    }
+
+    // §scxml-D-addAncestorStatesToEnter: the caller is descending into this
+    // region toward a state it named, so the root's default child is not on that
+    // path and entering it here would leave two children of the root active at
+    // once. The region is ACTIVE and holds its root; the caller supplies the
+    // rest, and `StateHierarchyManager::updateParallelRegionCurrentStates` syncs
+    // this bookkeeping from the configuration afterwards.
+    if (!enterDefaultChild) {
+        SCE_LOG_DEBUG("ConcurrentRegion: Region '{}' entered as an ancestor — root only, no default child", id_);
+        isInFinalState_ = determineIfInFinalState();
+        return ConcurrentOperationResult::success(id_);
     }
 
     // Check if we need to enter child states

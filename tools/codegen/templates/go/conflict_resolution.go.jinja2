@@ -278,7 +278,19 @@ func (p *{{ machine_name }}Policy) executeMicrostep(transitions []transitionInfo
 			}
 		}
 
-		for _, state := range entryChain {
+		// §scxml-D: every link but the last is an ANCESTOR of the target, and
+		// addAncestorStatesToEnter adds an ancestor WITHOUT its default initial
+		// child — the entry set already holds the next link. Only the target
+		// itself goes through addDescendantStatesToEnter. Passing the next link
+		// as pathChild is what expresses that, and it is also what stops a
+		// <parallel> ancestor from handing a default to the very region the
+		// chain is descending into.
+		for chainIdx := range entryChain {
+			state := entryChain[chainIdx]
+			var pathChild *{{ machine_name }}State
+			if chainIdx+1 < len(entryChain) {
+				pathChild = &entryChain[chainIdx+1]
+			}
 			alreadyActive := false
 			for _, as := range p.activeStates {
 				if as == state {
@@ -291,6 +303,9 @@ func (p *{{ machine_name }}Policy) executeMicrostep(transitions []transitionInfo
 				if p.IsParallelState(state) {
 					regions := p.GetParallelRegions(state)
 					for _, region := range regions {
+						if pathChild != nil && *pathChild == region {
+							continue
+						}
 						regionActive := false
 						for _, as := range p.activeStates {
 							if as == region {
@@ -299,11 +314,11 @@ func (p *{{ machine_name }}Policy) executeMicrostep(transitions []transitionInfo
 							}
 						}
 						if !regionActive {
-							p.ExecuteEntryActions(region, engine)
+							p.ExecuteEntryActions(region, engine, nil)
 							if p.IsCompoundState(region) {
 								initialChild := p.GetInitialOrHistoryChild(region)
 								if initialChild != region {
-									p.ExecuteEntryActions(initialChild, engine)
+									p.ExecuteEntryActions(initialChild, engine, nil)
 								}
 							}
 						}
@@ -311,7 +326,7 @@ func (p *{{ machine_name }}Policy) executeMicrostep(transitions []transitionInfo
 				}
 				continue
 			}
-			p.ExecuteEntryActions(state, engine)
+			p.ExecuteEntryActions(state, engine, pathChild)
 		}
 
 		// W3C SCXML 3.4: For parallel states, maintain currentState at parallel level

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 8c4a7d84a6ea23ea88829e171f3ef6f30c77da38dc5a67c7f0b53b8d9b23526b
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -108,7 +108,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
-    override fun onEntry(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
+    override fun onEntry(state: SendParamPayloadSceSynthInvokeInvEmitterState, pathChild: SendParamPayloadSceSynthInvokeInvEmitterState?) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> {
                 // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body

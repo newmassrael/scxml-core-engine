@@ -159,18 +159,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected val historyStore: MutableMap<String, List<String>> = mutableMapOf()
 
     /**
-     * C++ executeEntryActions vs onEntry separation flag.
-     *
-     * When true, [onEntry] executes entry actions only (adds to activeStateIds,
-     * runs onentry content) WITHOUT entering initial/history children.
-     * Matches C++ buildEntryChain pattern where ancestors are entered with
-     * executeEntryActions() and only the target gets full child entry.
-     *
-     * Set by [applyTransitionFrom] during ancestor entry phase.
-     */
-    protected var suppressChildEntry: Boolean = false
-
-    /**
      * §scxml-3.11: Pre-transition active states snapshot.
      * Captured before exit phase so history recording sees the full configuration.
      * Matches C++ activeStatesBeforeTransition pattern.
@@ -454,11 +442,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected open fun processNullEvent(state: S): TransitionResult<S> = TransitionResult.Ignored
 
     /**
-     * Execute entry actions for a state.
+     * Execute entry actions for a state, and give it the descendants Appendix D
+     * says it is owed.
      *
      * §scxml-3.8: `<onentry>` executable content + initial child entry.
+     *
+     * [pathChild] is what tells Appendix D's two entry functions apart, and it
+     * is the whole of the difference between them:
+     *
+     * - `null` — [state] is the entry TARGET, so `addDescendantStatesToEnter`
+     *   applies: a compound state takes its default initial child and a
+     *   `<parallel>` takes every region.
+     * - non-null — [state] is merely an ANCESTOR on the way to a deeper target,
+     *   and [pathChild] is the one of its children the entry set already holds.
+     *   `addAncestorStatesToEnter` adds it WITHOUT its default; the single
+     *   exception is a `<parallel>`, whose OTHER regions still take theirs
+     *   because nothing is entering inside them.
+     *
+     * This replaced a `suppressChildEntry` flag that could only say "no
+     * defaults at all". Measured 2026-08-15: with the flag set for a parallel
+     * ancestor, its sibling regions were entered without descending, so a
+     * region nothing was targeting inside never reached its initial child —
+     * pinned by `integration_resources/ancestor_entry_is_not_default_entry/`.
      */
-    abstract fun onEntry(state: S)
+    abstract fun onEntry(state: S, pathChild: S? = null)
 
 
     /**
@@ -618,6 +625,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
             cur = parentOf(cur)
         }
         chain.reverse()
+        // Every link here takes its defaults — `pathChild` stays null on
+        // purpose. §scxml-D-addAncestorStatesToEnter is about a state on the way
+        // to a target somebody NAMED; this chain is the opposite, a default
+        // descent that codegen has already resolved (`initialState` is the leaf,
+        // not the document's `initial`). Measured 2026-08-15: passing the next
+        // link here suppressed `s0`'s `<initial>` transition content and W3C
+        // test579 reached `fail` — the `<initial>`/history branch is exactly
+        // what a default entry owes. The duplicate guard in `onEntry` makes the
+        // later links no-ops.
         for (state in chain) {
             onEntry(state)
         }
@@ -630,10 +646,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * child regions were exited during the microstep, re-enter those regions with their
      * initial states.
      *
+     * The region the entry set is descending into needs no exclusion here: the
+     * ancestor walk that precedes every call enters the inactive ancestors
+     * first, so by the time this runs that region is active and the loop below
+     * skips it. §scxml-D-addDescendantStatesToEnter is then exactly what is
+     * left — the regions with nothing entering inside them.
+     *
      * @param parallelState the parallel state to check
-     * @param allTargets set of all transition targets (skip regions that are explicit targets)
      */
-    private fun reenterParallelRegions(parallelState: S, allTargets: Set<S>) {
+    private fun reenterParallelRegions(parallelState: S) {
         // C++ executeMicrostep pattern (lines 456-482):
         // Use getParallelRegions() to find child regions, re-enter only inactive ones.
         val regions = getParallelRegions(parallelState)
@@ -668,6 +689,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             cur = parentOf(cur)
         }
         intermediates.reverse()
+        // Default descent, so every link takes its defaults — see
+        // `enterInitialConfiguration` for why `pathChild` stays null on a chain
+        // nobody targeted.
         for (state in intermediates) {
             onEntry(state)
         }
@@ -1912,7 +1936,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
             // Step 3: Enter all targets in document order
             // C++ executeMicrostep pattern: buildEntryChain + parallel region re-entry
-            val allTargets = sorted.map { it.second.target }.toSet()
             for ((_, result) in sorted) {
                 val target = result.target
                 val ancestorsToEnter = mutableListOf<S>()
@@ -1933,16 +1956,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
                 ancestorsToEnter.reverse()
 
-                // C++ buildEntryChain + executeEntryActions: ancestors with actions only
-                suppressChildEntry = true
-                for (ancestor in ancestorsToEnter) {
-                    onEntry(ancestor)
+                // §scxml-D-addAncestorStatesToEnter: an ancestor is entered
+                // WITHOUT its default initial child — the entry set already
+                // holds the next link, which is the following ancestor or, for
+                // the last one, the target itself.
+                for ((i, ancestor) in ancestorsToEnter.withIndex()) {
+                    onEntry(ancestor, ancestorsToEnter.getOrNull(i + 1) ?: target)
                 }
-                suppressChildEntry = false
 
                 // C++ executeMicrostep: re-enter parallel sibling regions
                 if (parallelAncToReenter != null) {
-                    reenterParallelRegions(parallelAncToReenter!!, allTargets)
+                    reenterParallelRegions(parallelAncToReenter!!)
                     parallelAncToReenter = null
                 }
 
@@ -2039,17 +2063,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
                 ancestorsToEnter.reverse()
 
-                // C++ buildEntryChain + executeEntryActions pattern:
-                // Enter ancestors with actions only (no child entry)
-                suppressChildEntry = true
-                for (ancestor in ancestorsToEnter) {
-                    onEntry(ancestor)
+                // §scxml-D-addAncestorStatesToEnter: an ancestor is entered
+                // WITHOUT its default initial child — the entry set already
+                // holds the next link, which is the following ancestor or, for
+                // the last one, the target itself.
+                for ((i, ancestor) in ancestorsToEnter.withIndex()) {
+                    onEntry(ancestor, ancestorsToEnter.getOrNull(i + 1) ?: target)
                 }
-                suppressChildEntry = false
 
                 // C++ executeMicrostep: re-enter parallel sibling regions (full entry)
                 if (parallelAncestorToReenter != null) {
-                    reenterParallelRegions(parallelAncestorToReenter, setOf(target))
+                    reenterParallelRegions(parallelAncestorToReenter)
                 }
 
                 // Enter target with full entry (C++ executeEntryActions + initial child)

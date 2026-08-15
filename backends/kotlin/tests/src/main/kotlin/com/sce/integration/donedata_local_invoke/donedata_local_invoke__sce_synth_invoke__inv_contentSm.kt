@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -213,7 +213,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
-    override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvContentState) {
+    override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvContentState, pathChild: DonedataLocalInvokeSceSynthInvokeInvContentState?) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> {
                 // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5 :: done :: _state_body

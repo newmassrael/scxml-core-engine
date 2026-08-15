@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -235,7 +235,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
-    override fun onEntry(state: EventOriginIsALocationSceSynthInvokeInvPeerState) {
+    override fun onEntry(state: EventOriginIsALocationSceSynthInvokeInvPeerState, pathChild: EventOriginIsALocationSceSynthInvokeInvPeerState?) {
         when (state) {
             is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> {
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:16 :: acked :: _state_body

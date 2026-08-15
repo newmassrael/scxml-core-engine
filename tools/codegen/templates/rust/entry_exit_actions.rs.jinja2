@@ -7,8 +7,14 @@
     W3C SCXML 3.7/3.8/3.9: Entry and exit action execution.
 
     Generates:
-    - execute_entry_actions(&mut self, state, engine)
+    - execute_entry_actions(&mut self, state, engine, path_child)
     - execute_exit_actions(&mut self, state, engine, pre_transition_active)
+
+    `path_child` carries Appendix D's split between addDescendantStatesToEnter
+    (None — `state` is the target, so it takes its defaults) and
+    addAncestorStatesToEnter (Some(child) — `state` is on the way to a deeper
+    target, so it takes none, except that a `<parallel>` still gives its OTHER
+    regions theirs). See `StatePolicy::execute_entry_actions`.
 
     Ports from C++ entry_exit_actions.jinja2.
     Uses datamodel_macros.rs.jinja2 for Zero Duplication in late binding init.
@@ -22,7 +28,13 @@
        above `execute_entry_actions`. `#[doc]` attaches to the function
        item; the `//` comment-form survives stable as a grep target. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>, path_child: Option<Self::State>) {
+{% if not model.has_parallel_states %}
+        // Only a `<parallel>` machine descends into defaults here — see the
+        // blocks at the end of this function — so a machine without one has
+        // nothing to tell an ancestor entry from a target entry.
+        let _ = path_child;
+{% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
@@ -286,17 +298,25 @@
 {% endif %}
 {% if model.has_parallel_states %}
 
-        // W3C SCXML 3.4: If entering parallel state, enter all child regions
+        // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: entering a
+        // `<parallel>` enters every region — including when it is only an
+        // ancestor, which is the one case where an ancestor still hands out
+        // defaults. The exception is the region the entry set is already
+        // descending into: `path_child` names it, and giving that one its
+        // default too is what leaves two children of it active at once.
         if Self::is_parallel_state(state) {
             let regions = Self::get_parallel_regions(state);
             for &region in regions {
-                self.execute_entry_actions(region, engine);
+                if path_child == Some(region) {
+                    continue;
+                }
+                self.execute_entry_actions(region, engine, None);
 
                 // W3C SCXML 3.3: If region is compound, enter initial child
                 if Self::is_compound_state(region) {
                     let initial_child = self.get_initial_or_history_child(region);
                     if initial_child != region {
-                        self.execute_entry_actions(initial_child, engine);
+                        self.execute_entry_actions(initial_child, engine, None);
                     }
                 }
             }
@@ -305,7 +325,11 @@
 
 {% if model.has_parallel_states %}
         // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-        if Self::is_compound_state(state) && !Self::is_parallel_state(state) {
+        //
+        // §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the
+        // way to a deeper target. The entry set already holds `path_child`, and
+        // a compound state holds one child at a time.
+        if Self::is_compound_state(state) && !Self::is_parallel_state(state) && path_child.is_none() {
             // W3C SCXML 3.6: Deep initial targets support
             let initial_children = Self::get_initial_children(state);
             if !initial_children.is_empty() {
@@ -322,15 +346,18 @@
                         }
                     }
                     chain.reverse();
-                    // Enter intermediate states (skip state itself, already entered)
-                    for &intermediate in &chain {
-                        self.execute_entry_actions(intermediate, engine);
+                    // Enter intermediate states (skip state itself, already
+                    // entered). Each is an ancestor of the initial target, so
+                    // it takes no default of its own — the chain already names
+                    // the child that is entering.
+                    for (i, &intermediate) in chain.iter().enumerate() {
+                        self.execute_entry_actions(intermediate, engine, chain.get(i + 1).copied());
                     }
                 }
             } else {
                 let initial_child = self.get_initial_or_history_child(state);
                 if initial_child != state {
-                    self.execute_entry_actions(initial_child, engine);
+                    self.execute_entry_actions(initial_child, engine, None);
                 }
             }
         }

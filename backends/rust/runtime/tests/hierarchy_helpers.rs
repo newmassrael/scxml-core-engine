@@ -147,7 +147,15 @@ impl StatePolicy for FakePolicy {
     }
     fn set_last_transition_source_state(&mut self, _s: Self::State) {}
 
-    fn execute_entry_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {}
+    // `_path_child` (§scxml-D) is unused: this policy runs no entry actions at
+    // all — the helpers under test are the chain builders, not the entry walk.
+    fn execute_entry_actions(
+        &mut self,
+        _state: Self::State,
+        _engine: &mut Engine<Self>,
+        _path_child: Option<Self::State>,
+    ) {
+    }
     fn execute_exit_actions(
         &mut self,
         _state: Self::State,

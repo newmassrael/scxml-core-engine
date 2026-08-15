@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 
@@ -326,7 +326,10 @@ func (p *NestedFinalNotTerminalPolicy) ClearEventMetadata() {
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 //line nested_final_not_terminal.scxml:41
-func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {
+func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], pathChild *NestedFinalNotTerminalState) {
+	// Only a `<parallel>` machine descends into defaults here, so a machine
+	// without one has nothing to tell an ancestor entry from a target entry.
+	_ = pathChild
 	switch state {
 	case NestedFinalNotTerminalStatePhaseDone:
 		//line nested_final_not_terminal.scxml:48

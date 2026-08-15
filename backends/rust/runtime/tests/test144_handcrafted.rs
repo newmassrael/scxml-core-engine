@@ -169,7 +169,14 @@ impl StatePolicy for Test144Policy {
     // Entry actions (1:1 port of C++ executeEntryActions)
     // ──────────────────────────────────────────────
 
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut Engine<Self>) {
+    // `_path_child` (§scxml-D) is unused: this hand-written mirror of test144
+    // has no compound state whose default child could be at stake.
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut Engine<Self>,
+        _path_child: Option<Self::State>,
+    ) {
         match state {
             Test144State::S0 => {
                 // C++ onentry: raise(Foo); raise(Bar)
