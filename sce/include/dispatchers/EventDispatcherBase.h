@@ -51,9 +51,32 @@ public:
      *
      * Signals the event loop to stop. Derived classes should call this
      * and then perform platform-specific cleanup.
+     *
+     * The flag is set while holding `mutex_`, and that is what makes the
+     * signal arrive. `run()` waits on `cv_` with a predicate that reads this
+     * flag, and a waiter evaluates its predicate BEFORE `wait()` releases the
+     * mutex and blocks. Setting the flag outside the mutex admits the window
+     * between those two steps: the predicate reads false, `stop()` stores true
+     * and notifies into it, and then the waiter blocks on a condition that has
+     * already happened and will not be signalled again. `run()` never returns
+     * and whoever joins that thread waits forever.
+     *
+     * `std::condition_variable` says as much — the shared state a predicate
+     * reads must be modified under the wait's mutex — and an atomic does not
+     * exempt it, because the race is about ORDERING against the wait, not
+     * about tearing.
+     *
+     * Measured 2026-08-16: 10 of 300 runs of `benchmark_timer_accuracy` hung
+     * under load, and the captured stacks are exactly this pair — one thread
+     * in `StdThreadDispatcher::run`'s `cv_.wait`, the other in
+     * `std::thread::join` past its `stop()` call. It is a 300 s ctest timeout
+     * when it happens, and it blocked a push.
      */
     void stop() override {
-        stopRequested_.store(true);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopRequested_.store(true);
+        }
         cv_.notify_all();  // Wake up run() if waiting
     }
 
