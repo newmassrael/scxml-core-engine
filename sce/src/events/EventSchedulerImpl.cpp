@@ -445,6 +445,35 @@ void EventSchedulerImpl::timerThreadMain() {
     while (!shutdownRequested_) {
         std::unique_lock<std::shared_mutex> lock(mutex_);
 
+        // §scxml-6.2: MANUAL mode means an explicit `forcePoll()` owns when a
+        // delayed event fires, so this thread has nothing to do — a wall-clock
+        // deadline is not what decides readiness here, the logical clock is.
+        //
+        // Parking is not an optimisation. Left running, this loop does two
+        // things that break the mode:
+        //
+        //   - it SPINS. `processReadyEvents()` returns 0 while the logical
+        //     clock is behind, and the wait above is skipped once the wall
+        //     clock has passed the deadline, so the loop turns as fast as the
+        //     CPU allows. Measured 2026-08-15: 233,661 iterations in the 200 ms
+        //     one queued event sat there, on one core, for every stepped
+        //     document with a `<send delay>`.
+        //   - it RACES. The instant `forcePoll()` advances the logical clock,
+        //     this thread's next turn finds the event ready too and can take it
+        //     first — leaving `forcePoll()` to report that it polled nothing
+        //     while the event has in fact just executed, on another thread, in
+        //     no step. That is what made `ComprehensiveInteractiveTests` red
+        //     only under load and on a different case each run.
+        if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
+            timerCondition_.wait(lock, [&] {
+                return shutdownRequested_.load() || mode_.load(std::memory_order_acquire) != SchedulerMode::MANUAL;
+            });
+            if (shutdownRequested_) {
+                break;
+            }
+            continue;
+        }
+
         // Update cached next event time from ordered map
         if (!executionQueue_.empty()) {
             nextEventTime_ = executionQueue_.begin()->first.executeAt;
@@ -581,6 +610,13 @@ void EventSchedulerImpl::setMode(SchedulerMode mode) {
     mode_.store(mode, std::memory_order_release);
     SCE_LOG_INFO("EventSchedulerImpl: Scheduler mode set to {}",
                  mode == SchedulerMode::AUTOMATIC ? "AUTOMATIC" : "MANUAL");
+#ifndef __EMSCRIPTEN__
+    // The timer thread parks itself while the mode is MANUAL (see
+    // `timerThreadMain`). Waking it is what lets a switch back to AUTOMATIC
+    // take effect on events that are already queued, rather than at whatever
+    // moment the next `scheduleEvent` happens to notify.
+    timerCondition_.notify_all();
+#endif
 }
 
 SchedulerMode EventSchedulerImpl::getMode() const {

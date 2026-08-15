@@ -406,6 +406,34 @@ target_link_libraries(session_target_routing_tests
 )
 
 # ============================================================================
+# 4.4.2. Scheduler MANUAL-mode Tests (W3C SCXML 6.2 delayed send, stepped)
+#
+# `SchedulerMode::MANUAL` is what makes the interactive suite's replay
+# comparisons mean anything: a stepper owns when a delayed event lands. These
+# pin that the wall clock does not also own it. `sce/src` is on the include path
+# because `EventSchedulerImpl.h` lives beside its implementation.
+# ============================================================================
+
+add_executable(scheduler_manual_mode_tests
+    events/SchedulerManualModeTest.cpp
+)
+
+target_include_directories(scheduler_manual_mode_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(scheduler_manual_mode_tests
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# ============================================================================
 # 4.5. History Manager Tests (SOLID SCXML W3C Compliance)
 # ============================================================================
 
@@ -8134,6 +8162,7 @@ add_test(NAME StatesTests COMMAND states_tests)
 add_test(NAME HistoryTests COMMAND history_tests)
 add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
 add_test(NAME SessionTargetRoutingTests COMMAND session_target_routing_tests)
+add_test(NAME SchedulerManualModeTests COMMAND scheduler_manual_mode_tests)
 
 # Priority Level 2: Core component tests (basic functionality validation, ~1-5s)
 add_test(NAME StateMachineTests COMMAND state_machine_tests)
