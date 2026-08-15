@@ -905,7 +905,20 @@ pub const JSON_BUILTINS_LUA: &str = include_str!("../../sce/include/scripting/js
 /// helpers: a `local function` would not be visible to the chunk that came
 /// after it. `ecma_semantics.lua` says so at the definition that used to be
 /// one.
-fn c_lua_dostring_chunks(text: &str) -> String {
+/// Split shared Lua source into the pieces the C11 embed loads separately.
+///
+/// The split is on BLANK LINES, which is what keeps a chunk a complete Lua
+/// chunk: every definition in the shared assets is a top-level `function`
+/// separated from its neighbours by one, so a boundary never falls inside a
+/// body. That property is load-bearing rather than tidy — the generated code
+/// discards each `luaL_dostring` result, so a chunk that failed to compile
+/// would leave its definitions simply absent, and the first document to call
+/// one would fail at runtime with no reference back to here.
+///
+/// Public so the split can be exercised against a real interpreter rather
+/// than reviewed: `sce-build/tests/shared_lua_assets.rs` loads these chunks
+/// one at a time into one state and then calls what they define.
+pub fn c11_lua_chunks(text: &str) -> Vec<String> {
     // Well under the 4095 floor, leaving room for the escaping expansion of
     // whatever a maintainer adds to a paragraph.
     const MAX_CHUNK: usize = 2500;
@@ -924,6 +937,10 @@ fn c_lua_dostring_chunks(text: &str) -> String {
         chunks.push(current);
     }
     chunks
+}
+
+fn c_lua_dostring_chunks(text: &str) -> String {
+    c11_lua_chunks(text)
         .iter()
         .map(|chunk| {
             let literal = chunk
