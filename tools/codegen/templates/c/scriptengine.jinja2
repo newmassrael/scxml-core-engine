@@ -50,116 +50,26 @@
            link against it. */
         sce_lua_dom_register_metatable(sm->L);
         {% endif %}
-        /* W3C SCXML 5.9 / 4.6: ECMAScript truthiness for transition cond
-           and <if cond>. Lua's native truthiness only treats nil/false as
-           falsy, but ECMAScript additionally treats 0, NaN, empty string,
-           null, and undefined as falsy — `lua_transformer::wrap_truthiness`
-           wraps cond expressions in `_scxml_truthy(...)` whenever the
-           expression is not already a Lua-comparable boolean (no
-           ==/~=/</>/etc), and that helper must exist in the lua state
-           before any cond is evaluated. Mirrors the C++ `LuaEngine.cpp`
-           lua_pushcfunction registration; we use a Lua-script definition
-           via luaL_dostring instead so the C11 backend stays free of
-           lua_CFunction trampolines (jinja2-inline only). */
-        (void)luaL_dostring(sm->L,
-            "function _scxml_truthy(v)\n"
-            "  if v == nil or v == false then return false end\n"
-            "  if type(v) == 'number' then return v ~= 0 and v == v end\n"
-            "  if type(v) == 'string' then return #v > 0 end\n"
-            "  return true\n"
-            "end");
-        /* W3C SCXML B.2 (test150 and 11 others): the ECMAScript `typeof`
-           operator. Every other engine installs `_typeof` natively
-           (`LuaEngine.cpp:438`, `sce-rust-lua`, go-lua, Kotlin, Python);
-           C11 had no definition at all, and nothing noticed because the
-           string transformer this replaced pattern-matched the one shape
-           the corpus writes — `typeof X !== 'undefined'` — into `X ~= nil`
-           and never emitted a call. A parser lowers the operator rather
-           than the idiom, so the operator has to exist.
-
-           Lua's own `type` names different things: it has no `undefined`,
-           and it calls a table a table where ECMAScript calls it an
-           object. */
-        (void)luaL_dostring(sm->L,
-            "function _typeof(v)\n"
-            "  if v == nil then return 'undefined' end\n"
-            "  local t = type(v)\n"
-            "  if t == 'number' or t == 'string' or t == 'boolean' then return t end\n"
-            "  if t == 'function' then return 'function' end\n"
-            "  return 'object'\n"
-            "end");
-        /* W3C SCXML 5.4 / 4.6 (test457): ECMAScript `instanceof Array`
-           predicate for `<foreach array=...>` validation. Mirrors cpp
-           `LuaEngine.cpp:463-483` lua_pushcfunction — strict array check
-           (table with `__is_array` metatable, OR table with rawlen > 0).
-           Empty tables return false here; the foreach prologue separately
-           treats any table as a (possibly empty) array per cpp
-           `ForeachHelper.h:173-191` empty-table fallback. C11 lowers the
-           cfunction to a Lua-script via dostring (no
-           lua_CFunction trampolines). */
-        (void)luaL_dostring(sm->L,
-            "function _isArray(v)\n"
-            "  if type(v) ~= 'table' then return false end\n"
-            "  local mt = getmetatable(v)\n"
-            "  if mt and mt.__is_array ~= nil then return true end\n"
-            "  return #v > 0\n"
-            "end");
-        /* W3C SCXML B.2 (test460): ECMAScript `Array.concat` — produces a
-           new table (no mutation of inputs), so a foreach body's
-           `Var1 = [].concat(Var1, [4])` rebinds Var1 while the foreach
-           prologue's `_sce_foreach_arr` keeps referencing the original
-           array (shallow-copy iteration semantic per W3C 4.6). Mirrors
-           cpp `LuaEngine.cpp:519-539` lua_pushcfunction; C11 lowers via
-           Lua-script (jinja2-inline, no lua_CFunction trampolines). */
-        (void)luaL_dostring(sm->L,
-            "function _concat(...)\n"
-            "  local result = {}\n"
-            "  local n = 0\n"
-            "  for _, arg in ipairs({...}) do\n"
-            "    if type(arg) == 'table' then\n"
-            "      for _, v in ipairs(arg) do\n"
-            "        n = n + 1\n"
-            "        result[n] = v\n"
-            "      end\n"
-            "    else\n"
-            "      n = n + 1\n"
-            "      result[n] = arg\n"
-            "    end\n"
-            "  end\n"
-            "  return result\n"
-            "end");
-        /* W3C SCXML B.2 (test224): ECMAScript `String.prototype.indexOf` /
-           `Array.prototype.indexOf` — returns the 0-based position of the
-           needle or `-1` when absent. `lua_transformer::wrap_method_calls`
-           rewrites `<obj>.indexOf(<arg>)` into `_indexOf(<obj>, <arg>)`,
-           so the helper must exist before any cond reaches the Lua state.
-           Mirrors cpp `LuaEngine.cpp:485-517` lua_pushcfunction (string
-           branch via `strstr`, array branch via raw-iter equality);
-           C11 lowers to `string.find(.., plain=true)` for strings and a
-           1-based ipairs walk for arrays (no lua_CFunction
-           trampolines). */
-        (void)luaL_dostring(sm->L,
-            "function _indexOf(obj, value)\n"
-            "  if type(obj) == 'string' and type(value) == 'string' then\n"
-            "    local s = string.find(obj, value, 1, true)\n"
-            "    if s then return s - 1 else return -1 end\n"
-            "  end\n"
-            "  if type(obj) ~= 'table' then return -1 end\n"
-            "  for i, v in ipairs(obj) do\n"
-            "    if v == value then return i - 1 end\n"
-            "  end\n"
-            "  return -1\n"
-            "end");
-        /* W3C SCXML B.2: the ECMAScript operators Lua does not share — `+`
-           (concatenation or addition depending on the operands), `==` (which
-           coerces where Lua's does not), and the bitwise family (which acts
-           on ToInt32 of its operands). Emitted from the one shared source,
+        /* W3C SCXML B.2: the ECMAScript operators and library Lua does not
+           share — `+` (concatenation or addition depending on the operands),
+           `==` (which coerces where Lua's does not), the bitwise family
+           (which acts on ToInt32 of its operands), and the vocabulary the
+           emitted code calls by name: `_scxml_truthy`, `_typeof`,
+           `_isArray`, `_indexOf`, `_concat`, `parseInt`, `parseFloat`.
+           Emitted from the one shared source,
            sce/include/scripting/ecma_semantics.lua, that the C++, Rust, Go,
            Kotlin and Python engines load at startup; C11 cannot read a file
            at runtime (RFC §synth-5-J-1 forbids a runtime fopen in
            sce-c-runtime), so the same bytes travel in the generated source.
-           The helpers above are this backend's own copies of the engine
-           vocabulary; these are not copied at all.
+
+           This template used to carry its own Lua definitions of those seven
+           above this line, as did four other engines in four other
+           languages. Measured 2026-08-16 against
+           tests/ecmascript/ecma262_semantics.json, once every Lua backend
+           had a reader: the six copies disagreed on Arrays, on `indexOf`'s
+           second argument, and on what `parseInt` answers for "42abc". They
+           are in the shared file now, and this backend gets them the same
+           way it gets `==`.
 
            Several calls rather than one because ISO C99 guarantees a string
            literal of only 4095 characters and `-pedantic -Werror` holds the

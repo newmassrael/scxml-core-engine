@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -81,13 +80,18 @@ func (e *LuaEngine) CreateSession(sessionID string) error {
 		declaredVars: make(map[string]bool),
 	}
 
-	// Register builtins
-	e.setupBuiltins(sess)
-
-	// W3C SCXML B.2: the ECMAScript operators Lua does not share, from the
-	// same shared source every other backend loads. Written to be Lua 5.2
-	// compatible precisely because go-lua is: it has no bitwise operators
-	// at all, so the bit helpers there are arithmetic.
+	// W3C SCXML B.2: the ECMAScript operators and library Lua does not
+	// share, from the same shared source every other backend loads. Written
+	// to be Lua 5.2 compatible precisely because go-lua is: it has no
+	// bitwise operators at all, so the bit helpers there are arithmetic.
+	//
+	// This engine used to define `_scxml_truthy`, `_typeof`, `_isArray`,
+	// `_indexOf`, `_concat`, `parseInt` and `parseFloat` here in Go, one
+	// implementation among six. Measured 2026-08-16 against the shared
+	// ECMA-262 table: two of them had no Array branch at all, so
+	// `[1,2,3].indexOf(2)` answered -1 and `[].concat(a, [4])` answered ""
+	// on this backend and nowhere else — with the W3C suite green, because
+	// no fixture in it asks. They are in ecma_semantics.lua now.
 	if err := lua.DoString(l, ecmaSemanticsLua); err != nil {
 		return fmt.Errorf("failed to load ECMAScript semantics: %w", err)
 	}
@@ -96,9 +100,6 @@ func (e *LuaEngine) CreateSession(sessionID string) error {
 	if err := lua.DoString(l, jsonBuiltinsLua); err != nil {
 		return fmt.Errorf("failed to load JSON builtins: %w", err)
 	}
-
-	// Register ECMAScript compatibility helpers
-	e.setupECMAScriptCompat(sess)
 
 	// Override JSON.parse with Go-native implementation (go-lua lacks string.gsub
 	// which the Lua-based JSON.parse needs).
@@ -390,168 +391,37 @@ func (e *LuaEngine) SetStateQueryCallback(sessionID string, cb func(stateID stri
 
 // ── Internal helpers ───────────────────────────────────────────────
 
-func (e *LuaEngine) setupBuiltins(sess *session) {
-	l := sess.l
-
-	// _scxml_truthy: ECMAScript truthiness semantics
-	l.PushGoFunction(func(l *lua.State) int {
-		if l.IsNoneOrNil(1) {
-			l.PushBoolean(false)
-			return 1
-		}
-		if l.IsBoolean(1) {
-			l.PushBoolean(l.ToBoolean(1))
-			return 1
-		}
-		if l.IsNumber(1) {
-			n, _ := l.ToNumber(1)
-			l.PushBoolean(n != 0)
-			return 1
-		}
-		if l.IsString(1) {
-			s, _ := l.ToString(1)
-			l.PushBoolean(s != "")
-			return 1
-		}
-		l.PushBoolean(true)
-		return 1
-	})
-	l.SetGlobal("_scxml_truthy")
-
-	// _typeof: ECMAScript typeof operator
-	l.PushGoFunction(func(l *lua.State) int {
-		if l.IsNoneOrNil(1) {
-			l.PushString("undefined")
-		} else if l.IsBoolean(1) {
-			l.PushString("boolean")
-		} else if l.IsNumber(1) {
-			l.PushString("number")
-		} else if l.IsString(1) {
-			l.PushString("string")
-		} else if l.IsTable(1) {
-			l.PushString("object")
-		} else if l.IsFunction(1) {
-			l.PushString("function")
-		} else {
-			l.PushString("undefined")
-		}
-		return 1
-	})
-	l.SetGlobal("_typeof")
-
-	// parseInt: ECMAScript parseInt
-	l.PushGoFunction(func(l *lua.State) int {
-		s, ok := l.ToString(1)
-		if !ok {
-			l.PushNumber(0)
-			return 1
-		}
-		s = strings.TrimSpace(s)
-		radix := 10
-		if l.IsNumber(2) {
-			n, _ := l.ToNumber(2)
-			radix = int(n)
-		}
-		if radix == 0 {
-			radix = 10
-		}
-		val, err := strconv.ParseInt(s, radix, 64)
-		if err != nil {
-			l.PushNumber(0)
-		} else {
-			l.PushNumber(float64(val))
-		}
-		return 1
-	})
-	l.SetGlobal("parseInt")
-
-	// parseFloat: ECMAScript parseFloat
-	l.PushGoFunction(func(l *lua.State) int {
-		s, ok := l.ToString(1)
-		if !ok {
-			l.PushNumber(0)
-			return 1
-		}
-		val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-		if err != nil {
-			l.PushNumber(0)
-		} else {
-			l.PushNumber(val)
-		}
-		return 1
-	})
-	l.SetGlobal("parseFloat")
-}
-
-func (e *LuaEngine) setupECMAScriptCompat(sess *session) {
-	l := sess.l
-
-	// _isArray: Check if a table is an array (sequential integer keys)
-	l.PushGoFunction(func(l *lua.State) int {
-		if !l.IsTable(1) {
-			l.PushBoolean(false)
-			return 1
-		}
-		l.Length(1)
-		n, _ := l.ToNumber(-1)
-		l.Pop(1)
-		l.PushBoolean(int(n) > 0)
-		return 1
-	})
-	l.SetGlobal("_isArray")
-
-	// _indexOf: String/array indexOf
-	l.PushGoFunction(func(l *lua.State) int {
-		if l.IsString(1) {
-			haystack, _ := l.ToString(1)
-			needle, _ := l.ToString(2)
-			idx := strings.Index(haystack, needle)
-			l.PushNumber(float64(idx))
-		} else {
-			l.PushNumber(-1)
-		}
-		return 1
-	})
-	l.SetGlobal("_indexOf")
-
-	// _concat: Array concatenation
-	l.PushGoFunction(func(l *lua.State) int {
-		if l.IsString(1) && l.IsString(2) {
-			s1, _ := l.ToString(1)
-			s2, _ := l.ToString(2)
-			l.PushString(s1 + s2)
-		} else {
-			l.PushString("")
-		}
-		return 1
-	})
-	l.SetGlobal("_concat")
-}
-
 // luaToGo converts a Lua stack value to a Go interface{}.
+//
+// The value's TYPE is what decides, not what it could be converted to.
+// `IsNumber` answers true for a string that parses as one — that is Lua's
+// `lua_isnumber`, and it is the same coercion `tonumber` performs — so asking
+// it first handed every numeric string back to the host as an integer. W3C
+// SCXML B.2 makes that a datamodel defect rather than a formatting one:
+// `1 + ''` is the string "1" in ECMAScript, and a host that receives 1 cannot
+// tell it from arithmetic. Measured 2026-08-16 against
+// `tests/ecmascript/ecma262_semantics.json`, which is also where it is pinned.
 func (e *LuaEngine) luaToGo(l *lua.State, idx int) interface{} {
-	if l.IsNoneOrNil(idx) {
-		return nil
-	}
-	if l.IsBoolean(idx) {
+	switch l.TypeOf(idx) {
+	case lua.TypeBoolean:
 		return l.ToBoolean(idx)
-	}
-	if l.IsNumber(idx) {
+	case lua.TypeNumber:
 		n, _ := l.ToNumber(idx)
-		// Return as int64 if it's a whole number
+		// ECMA-262 has one Number type; an integral value is handed over as
+		// an integer so a host printing it does not render "3" as "3.0".
 		if n == float64(int64(n)) {
 			return int64(n)
 		}
 		return n
-	}
-	if l.IsString(idx) {
+	case lua.TypeString:
 		s, _ := l.ToString(idx)
 		return s
-	}
-	if l.IsTable(idx) {
+	case lua.TypeTable:
 		return e.luaTableToGo(l, idx)
+	default:
+		// Nil, none, and the value kinds the datamodel cannot carry.
+		return nil
 	}
-	return nil
 }
 
 // luaTableToGo converts a Lua table to a Go map or slice.

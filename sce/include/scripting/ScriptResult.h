@@ -231,9 +231,17 @@ public:
      * Converts the result value to boolean using JavaScript truthiness rules:
      * - bool: direct value
      * - int64_t: true if non-zero
-     * - double: true if non-zero
+     * - double: true if non-zero AND not NaN
      * - string: true if non-empty
      * - undefined/null/error: false
+     *
+     * NaN is the arm that has to be written out: `NaN != 0.0` is true, so the
+     * comparison every other numeric type uses answers the opposite of the
+     * clause here. This is the guard path both engines share
+     * (`GuardHelper::evaluateGuard`), so a `cond=` whose expression evaluated
+     * to NaN — `Var1 * 2` on an unassigned `<data>`, a `parseInt` that found
+     * no digits — took the transition on every C++ build until
+     * `tests/ecmascript/ecma262_semantics.json` gained the case that asks.
      *
      * @return false if result is an error or value is falsy
      */
@@ -246,7 +254,8 @@ public:
         } else if (std::holds_alternative<int64_t>(value_internal)) {
             return std::get<int64_t>(value_internal) != 0;
         } else if (std::holds_alternative<double>(value_internal)) {
-            return std::get<double>(value_internal) != 0.0;
+            const double number = std::get<double>(value_internal);
+            return !std::isnan(number) && number != 0.0;
         } else if (std::holds_alternative<std::string>(value_internal)) {
             return !std::get<std::string>(value_internal).empty();
         }

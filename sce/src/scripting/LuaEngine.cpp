@@ -383,166 +383,20 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
     lua_setglobal(L, "_UNDEFINED");
 
-    // _scxml_truthy(v): ECMAScript truthiness semantics
-    // In JS: 0, "", null, undefined, NaN are falsy. In Lua only nil/false are falsy.
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        if (lua_isnil(Ls, 1) || (lua_isboolean(Ls, 1) && !lua_toboolean(Ls, 1))) {
-            lua_pushboolean(Ls, 0);
-            return 1;
-        }
-        // §scxml-B-2: null/undefined sentinels are falsy
-        if (lua_islightuserdata(Ls, 1)) {
-            void *p = lua_touserdata(Ls, 1);
-            if (p == &NULL_SENTINEL_TAG || p == &UNDEFINED_SENTINEL_TAG) {
-                lua_pushboolean(Ls, 0);
-                return 1;
-            }
-        }
-        if (lua_isnumber(Ls, 1)) {
-            lua_pushboolean(Ls, lua_tonumber(Ls, 1) != 0.0 ? 1 : 0);
-            return 1;
-        }
-        if (lua_isstring(Ls, 1)) {
-            size_t len = 0;
-            lua_tolstring(Ls, 1, &len);
-            lua_pushboolean(Ls, len > 0 ? 1 : 0);
-            return 1;
-        }
-        // Tables, functions, userdata are truthy
-        lua_pushboolean(Ls, 1);
-        return 1;
-    });
-    lua_setglobal(L, "_scxml_truthy");
-
-    // _typeof(v): ECMAScript typeof semantics
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        if (lua_isnil(Ls, 1)) {
-            lua_pushstring(Ls, "undefined");
-        } else if (lua_islightuserdata(Ls, 1)) {
-            // §scxml-B-2: typeof null === "object", typeof undefined === "undefined"
-            void *p = lua_touserdata(Ls, 1);
-            lua_pushstring(Ls, (p == &NULL_SENTINEL_TAG) ? "object" : "undefined");
-        } else if (lua_isboolean(Ls, 1)) {
-            lua_pushstring(Ls, "boolean");
-        } else if (lua_isnumber(Ls, 1)) {
-            lua_pushstring(Ls, "number");
-        } else if (lua_isstring(Ls, 1)) {
-            lua_pushstring(Ls, "string");
-        } else if (lua_isfunction(Ls, 1)) {
-            lua_pushstring(Ls, "function");
-        } else {
-            lua_pushstring(Ls, "object");
-        }
-        return 1;
-    });
-    lua_setglobal(L, "_typeof");
-
-    // _isArray(v): ECMAScript instanceof Array check
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        if (!lua_istable(Ls, 1)) {
-            lua_pushboolean(Ls, 0);
-            return 1;
-        }
-        // Check for __is_array marker in metatable
-        if (lua_getmetatable(Ls, 1)) {
-            lua_pushstring(Ls, "__is_array");
-            lua_rawget(Ls, -2);
-            if (!lua_isnil(Ls, -1)) {
-                lua_pushboolean(Ls, 1);
-                return 1;
-            }
-            lua_pop(Ls, 2);  // pop nil + metatable
-        }
-        // Heuristic: table with consecutive integer keys starting at 0 or 1
-        lua_pushboolean(Ls, lua_rawlen(Ls, 1) > 0 ? 1 : 0);
-        return 1;
-    });
-    lua_setglobal(L, "_isArray");
-
-    // _indexOf(obj, value): ECMAScript Array.indexOf / String.indexOf (0-based, returns -1 if not found)
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        // §scxml-B-2: String.prototype.indexOf(searchString)
-        if (lua_isstring(Ls, 1) && lua_isstring(Ls, 2)) {
-            const char *haystack = lua_tostring(Ls, 1);
-            const char *needle = lua_tostring(Ls, 2);
-            const char *found = strstr(haystack, needle);
-            if (found) {
-                lua_pushinteger(Ls, static_cast<lua_Integer>(found - haystack));  // 0-based
-            } else {
-                lua_pushinteger(Ls, -1);
-            }
-            return 1;
-        }
-        // Array.prototype.indexOf(searchElement)
-        if (!lua_istable(Ls, 1)) {
-            lua_pushinteger(Ls, -1);
-            return 1;
-        }
-        int len = static_cast<int>(lua_rawlen(Ls, 1));
-        for (int i = 1; i <= len; ++i) {
-            lua_rawgeti(Ls, 1, i);
-            if (lua_compare(Ls, -1, 2, LUA_OPEQ)) {
-                lua_pop(Ls, 1);
-                lua_pushinteger(Ls, i - 1);  // 0-based return
-                return 1;
-            }
-            lua_pop(Ls, 1);
-        }
-        lua_pushinteger(Ls, -1);
-        return 1;
-    });
-    lua_setglobal(L, "_indexOf");
-
-    // _concat(arr, ...): ECMAScript Array.concat
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        lua_newtable(Ls);
-        int outIdx = 1;
-        int nargs = lua_gettop(Ls) - 1;  // -1 for result table
-
-        for (int arg = 1; arg <= nargs; ++arg) {
-            if (lua_istable(Ls, arg)) {
-                int len = static_cast<int>(lua_rawlen(Ls, arg));
-                for (int i = 1; i <= len; ++i) {
-                    lua_rawgeti(Ls, arg, i);
-                    lua_rawseti(Ls, -2, outIdx++);
-                }
-            } else {
-                lua_pushvalue(Ls, arg);
-                lua_rawseti(Ls, -2, outIdx++);
-            }
-        }
-        return 1;
-    });
-    lua_setglobal(L, "_concat");
-
-    // parseInt(str, base): ECMAScript parseInt equivalent
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        const char *str = luaL_checkstring(Ls, 1);
-        int base = static_cast<int>(luaL_optinteger(Ls, 2, 10));
-        char *endptr = nullptr;
-        long long val = strtoll(str, &endptr, base);
-        if (endptr == str) {
-            lua_pushnil(Ls);  // NaN equivalent
-        } else {
-            lua_pushinteger(Ls, static_cast<lua_Integer>(val));
-        }
-        return 1;
-    });
-    lua_setglobal(L, "parseInt");
-
-    // parseFloat(str): ECMAScript parseFloat equivalent
-    lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        const char *str = luaL_checkstring(Ls, 1);
-        char *endptr = nullptr;
-        double val = strtod(str, &endptr);
-        if (endptr == str) {
-            lua_pushnil(Ls);
-        } else {
-            lua_pushnumber(Ls, val);
-        }
-        return 1;
-    });
-    lua_setglobal(L, "parseFloat");
+    // §scxml-B-2: `_scxml_truthy`, `_typeof`, `_isArray`, `_indexOf`,
+    // `_concat`, `parseInt` and `parseFloat` used to be seven lambdas here,
+    // one of six implementations of the same seven meanings. They are in the
+    // shared sce/include/scripting/ecma_semantics.lua now, loaded at the end
+    // of this function, and the sentinel arms two of them carried moved with
+    // them (that file compares against the `_NULL` / `_UNDEFINED` globals set
+    // above, which is the same test one lightuserdata address at a time).
+    //
+    // The drift they were predicted to accumulate had arrived: measured
+    // 2026-08-16 against tests/ecmascript/ecma262_semantics.json, Go's
+    // `_indexOf` and `_concat` had no Array branch at all, Python called
+    // `typeof [1,2,3]` "function", and this copy's `_indexOf` compared with
+    // `lua_compare(LUA_OPEQ)` — the coercing comparison — where the clause
+    // says `===`.
 
     // In(stateId): §scxml-5.9.1 In() predicate
     // Uses C++ state query callbacks
@@ -607,18 +461,9 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         debug.setmetatable(0, {__index = function() return nil end})
         debug.setmetatable(true, {__index = function() return nil end})
 
-        -- Object.keys (ECMAScript standard)
-        Object = {}
-        function Object.keys(t)
-            if type(t) ~= "table" then return {} end
-            local keys = {}
-            for k, _ in pairs(t) do keys[#keys+1] = k end
-            table.sort(keys, function(a,b)
-                if type(a) == type(b) then return tostring(a) < tostring(b) end
-                return type(a) < type(b)
-            end)
-            return keys
-        end
+        -- `Object.keys` is in the shared semantics file with the rest of the
+        -- engine vocabulary, and sorts there for the same reason it sorted
+        -- here: a Lua table has no enumeration order to hand back.
     )LUA");
 
 // §scxml-B-2: the ECMAScript operators Lua does not share — `+`, `==` and

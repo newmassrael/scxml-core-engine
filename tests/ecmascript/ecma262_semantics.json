@@ -19,6 +19,18 @@
     "  sce-build/tests/ecmascript_semantics.rs  the build-time frontend, then Lua",
     "  tests/engine/EcmaScriptSemanticsTest.cpp the engine this C++ build selected",
     "  backends/kotlin/.../EcmaScriptSemanticsTest.kt  all three Kotlin engines",
+    "  backends/go/lua/ecma262_semantics_test.go       go-lua and its runtime library",
+    "  backends/python/tests/ecmascript/...py          lupa and its runtime library",
+    "  ecmascript_semantics.rs, again                  the library as C11 embeds it,",
+    "                                                  loaded chunk by chunk",
+    "",
+    "The last three read the Lua the frontend emits, from",
+    "ecma262_emitted_lua.json beside this file, because those backends never",
+    "see the ECMAScript: it was translated at build time, and what remains to",
+    "measure is their runtime library and their Lua interpreter. Go answered",
+    "four of these cases differently on the day that reader was written -- two",
+    "of its natives had no Array implementation at all -- while its W3C suite",
+    "was green, which is the same blindness described above one layer down.",
     "",
     "The Kotlin reader measures every engine that backend offers rather than",
     "one, because a generated Kotlin machine takes its engine as a constructor",
@@ -231,6 +243,16 @@
     },
 
     {
+      "group": "truthiness",
+      "note": "An engine that answers truthiness with `n ~= 0` calls NaN true, because NaN is not equal to anything including zero. Every backend that implements this natively has to get the comparison the other way round.",
+      "setup": "var a = 0/0;",
+      "source": "a",
+      "form": "condition",
+      "expect": {"bool": false},
+      "clause": "7.1.2 ToBoolean(NaN) = false"
+    },
+
+    {
       "group": "typeof-and-instanceof",
       "setup": "var a = 1;",
       "source": "typeof a !== 'undefined'",
@@ -253,6 +275,23 @@
       "form": "value",
       "expect": {"string": "string"},
       "clause": "13.5.3 typeof table"
+    },
+    {
+      "group": "typeof-and-instanceof",
+      "note": "Lua's own `lua_isnumber` answers true for a string that parses as one, so an engine that asks it before asking about strings reports a payload that arrived as text as a number — and `typeof` is exactly how a document tells the two apart.",
+      "setup": "var a = '42';",
+      "source": "typeof a",
+      "form": "value",
+      "expect": {"string": "string"},
+      "clause": "13.5.3 typeof of a numeric string is 'string'"
+    },
+    {
+      "group": "typeof-and-instanceof",
+      "setup": "var a = [1,2,3];",
+      "source": "typeof a",
+      "form": "value",
+      "expect": {"string": "object"},
+      "clause": "13.5.3 typeof of an Array is 'object'"
     },
     {
       "group": "typeof-and-instanceof",
@@ -303,6 +342,23 @@
       "form": "value",
       "expect": {"number": 1},
       "clause": "23.1.3.14 indexOf is zero-based"
+    },
+    {
+      "group": "arrays-and-objects",
+      "note": "Strict equality, so the coercion that `==` would perform must not happen here — a lookup that coerces finds a match a document is asking whether it has.",
+      "setup": "var a = [1,2,3];",
+      "source": "a.indexOf('2')",
+      "form": "value",
+      "expect": {"number": -1},
+      "clause": "23.1.3.14 indexOf compares with ===, so '2' does not find 2"
+    },
+    {
+      "group": "arrays-and-objects",
+      "setup": "var xs = [1,2];",
+      "source": "[].concat(xs, 3).length",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "23.1.3.1 concat spreads an Array argument and appends any other value as one element"
     },
     {
       "group": "arrays-and-objects",
@@ -580,6 +636,15 @@
     },
     {
       "group": "builtins",
+      "note": "The second argument is where the search starts. An engine that drops it answers the position of the FIRST occurrence, which is the one the caller has already ruled out.",
+      "setup": "",
+      "source": "'abcabc'.indexOf('b', 2)",
+      "form": "value",
+      "expect": {"number": 4},
+      "clause": "15.5.4.7 String.prototype.indexOf starts at the given position"
+    },
+    {
+      "group": "builtins",
       "setup": "",
       "source": "'abc'.charAt(1)",
       "form": "value",
@@ -641,6 +706,32 @@
       "form": "value",
       "expect": {"number": 1.5},
       "clause": "15.1.2.3 parseFloat"
+    },
+    {
+      "group": "builtins",
+      "note": "This is the difference between parseInt and Number: a whole-string conversion refuses the trailing text, and parseInt is specified to read the prefix and stop. An engine that delegates to a strict host parser answers 0, which is a number a document cannot tell from a real one.",
+      "setup": "",
+      "source": "parseInt('42abc')",
+      "form": "value",
+      "expect": {"number": 42},
+      "clause": "15.1.2.2 parseInt reads the longest prefix that parses and ignores the rest"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "parseFloat('3.5xyz')",
+      "form": "value",
+      "expect": {"number": 3.5},
+      "clause": "15.1.2.3 parseFloat likewise reads a prefix"
+    },
+    {
+      "group": "builtins",
+      "note": "The count, not the order: ECMAScript gives the order of a for-in enumeration and a Lua table has none to give, so the order is a normal form the shared library picks rather than a claim this table can make.",
+      "setup": "var o = {b: 1, a: 2};",
+      "source": "Object.keys(o).length",
+      "form": "value",
+      "expect": {"number": 2},
+      "clause": "15.2.3.14 Object.keys names every own enumerable property"
     },
     {
       "group": "builtins",
