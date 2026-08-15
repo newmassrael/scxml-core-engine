@@ -1897,6 +1897,8 @@ SCE_SM_FN static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ cs
    compound/leaf). The body switches on the parallel state and emits one
    enter_state_recursive call per region child in document order. */
 SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+SCE_SM_FN static void enter_state_recursive_ex({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
+                                               bool expand_parent_parallel);
 SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
 {% if model.has_history_states %}
 /* enter_state_recursive's compound-with-history dispatch routes to
@@ -1907,15 +1909,37 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
 SCE_SM_FN static void enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid);
 {% endif %}
 
-SCE_SM_FN static void enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
+/* §scxml-D-addAncestorStatesToEnter: a `<parallel>` reached only as an ANCESTOR
+   of the entry target still gives its regions their defaults — that is Appendix
+   D's one exception to the ancestor rule. The exception has its own exception:
+   NOT the region the entry chain is already descending into. `path_child` names
+   it (with `has_path_child` false when this parallel is the target itself), and
+   entering that region here would descend it to its own default initial child
+   while the chain is on its way to a different descendant — two children of one
+   compound state, active at once.
+
+   Measured 2026-08-15 by `integration_resources/ancestor_entry_is_not_default_entry/`,
+   whose `lobbied == 1` clause is exactly this. */
+SCE_SM_FN static void enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
+                                             {{ csym_prefix }}{{ model.name }}_state_t path_child, bool has_path_child) {
     (void)sm;
+    (void)path_child;
+    (void)has_path_child;
     switch (s) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.is_parallel %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
         {% for child_id, child_state in model.states | dictsort %}
         {% if child_state.parent == state_id %}
-        enter_state_recursive(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ child_id | upper | replace('-', '_') | replace('.', '_') }});
+        if (!has_path_child || path_child != {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ child_id | upper | replace('-', '_') | replace('.', '_') }}) {
+            /* `false`: this region is being entered BY the expansion of its own
+               parent, so it must not turn around and expand that parent again.
+               Doing so re-enters the sibling regions with THIS region as the
+               path child, which hands a default to the region the outer chain
+               is descending into — the `lobbied == 2` failure, measured
+               2026-08-15. */
+            enter_state_recursive_ex(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ child_id | upper | replace('-', '_') | replace('.', '_') }}, false);
+        }
         {% endif %}
         {% endfor %}
         break;
@@ -1945,7 +1969,14 @@ SCE_SM_FN static void enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t
 
    Mirrors cpp HierarchicalStateHelper::buildEntryChain followed by the
    StaticExecutionEngine::executeMicrostep parallel re-entry pass. */
+/* The ordinary entry: a state somebody targeted, whose parent `<parallel>` may
+   have lost cousin regions to the exit set and needs them back. */
 SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
+    enter_state_recursive_ex(sm, s, true);
+}
+
+SCE_SM_FN static void enter_state_recursive_ex({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
+                                               bool expand_parent_parallel) {
     if (config_in(sm->active, s)) {
         return;
     }
@@ -2005,15 +2036,22 @@ SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t 
         }
         {% endif %}
         if (state_is_parallel(e)) {
-            enter_parallel_regions(sm, e);
+            /* §scxml-D: chain[i - 2] is the region this chain descends into,
+               and it is entered by the next iteration with the target's own
+               path rather than with a default. When `e` IS the target (i == 1)
+               there is no such region and every one of them takes its default. */
+            enter_parallel_regions(sm, e, (i >= 2u) ? chain[i - 2u] : e, i >= 2u);
         }
     }
-    {
+    if (expand_parent_parallel) {
         bool has_parent;
         {{ csym_prefix }}{{ model.name }}_state_t parent = state_get_parent(s, &has_parent);
         if (has_parent && state_is_parallel(parent)
             && config_in(sm->active, parent)) {
-            enter_parallel_regions(sm, parent);
+            /* `s` is the target and is already active by now, so it needs no
+               exclusion — but naming it keeps this call honest about which
+               region the chain owns. */
+            enter_parallel_regions(sm, parent, s, true);
         }
     }
     if (state_is_compound(s) && !state_is_parallel(s)) {

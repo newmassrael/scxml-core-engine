@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 
@@ -628,7 +628,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ClearEventMetadata() {
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 //line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent], pathChild *ParallelRegionsTakeOwnTransitionsState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
 	for _, s := range p.activeStates {
@@ -643,23 +643,36 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state Para
 	}
 
 	// W3C SCXML 3.4: If entering parallel state, enter all child regions
+	//
+	// §scxml-D-addDescendantStatesToEnter: a <parallel> hands out defaults even
+	// when it is only an ancestor — Appendix D's one exception to the ancestor
+	// rule. The exception has its own exception: not the region the entry set is
+	// already descending into. pathChild names it, and giving that one its
+	// default too is what leaves two children of it active at once.
 	if p.IsParallelState(state) {
 		regions := p.GetParallelRegions(state)
 		for _, region := range regions {
-			p.ExecuteEntryActions(region, engine)
+			if pathChild != nil && *pathChild == region {
+				continue
+			}
+			p.ExecuteEntryActions(region, engine, nil)
 
 			// W3C SCXML 3.3: If region is compound, enter initial child
 			if p.IsCompoundState(region) {
 				initialChild := p.GetInitialOrHistoryChild(region)
 				if initialChild != region {
-					p.ExecuteEntryActions(initialChild, engine)
+					p.ExecuteEntryActions(initialChild, engine, nil)
 				}
 			}
 		}
 	}
 
 	// W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-	if p.IsCompoundState(state) && !p.IsParallelState(state) {
+	//
+	// §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the way
+	// to a deeper target. The entry set already holds pathChild, and a compound
+	// state holds one child at a time.
+	if p.IsCompoundState(state) && !p.IsParallelState(state) && pathChild == nil {
 		initialChildren := p.GetInitialChildren(state)
 		if len(initialChildren) > 0 {
 			// W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
@@ -674,14 +687,21 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state Para
 					}
 					current = parent
 				}
-				for _, intermediate := range chain {
-					p.ExecuteEntryActions(intermediate, engine)
+				// Each link but the last is an ancestor of the initial target,
+				// so it takes no default of its own — the chain already names
+				// the child that is entering.
+				for i := range chain {
+					var next *ParallelRegionsTakeOwnTransitionsState
+					if i+1 < len(chain) {
+						next = &chain[i+1]
+					}
+					p.ExecuteEntryActions(chain[i], engine, next)
 				}
 			}
 		} else {
 			initialChild := p.GetInitialOrHistoryChild(state)
 			if initialChild != state {
-				p.ExecuteEntryActions(initialChild, engine)
+				p.ExecuteEntryActions(initialChild, engine, nil)
 			}
 		}
 	}
@@ -1202,7 +1222,19 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) executeMicrostep(transitions [
 			}
 		}
 
-		for _, state := range entryChain {
+		// §scxml-D: every link but the last is an ANCESTOR of the target, and
+		// addAncestorStatesToEnter adds an ancestor WITHOUT its default initial
+		// child — the entry set already holds the next link. Only the target
+		// itself goes through addDescendantStatesToEnter. Passing the next link
+		// as pathChild is what expresses that, and it is also what stops a
+		// <parallel> ancestor from handing a default to the very region the
+		// chain is descending into.
+		for chainIdx := range entryChain {
+			state := entryChain[chainIdx]
+			var pathChild *ParallelRegionsTakeOwnTransitionsState
+			if chainIdx+1 < len(entryChain) {
+				pathChild = &entryChain[chainIdx+1]
+			}
 			alreadyActive := false
 			for _, as := range p.activeStates {
 				if as == state {
@@ -1215,6 +1247,9 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) executeMicrostep(transitions [
 				if p.IsParallelState(state) {
 					regions := p.GetParallelRegions(state)
 					for _, region := range regions {
+						if pathChild != nil && *pathChild == region {
+							continue
+						}
 						regionActive := false
 						for _, as := range p.activeStates {
 							if as == region {
@@ -1223,11 +1258,11 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) executeMicrostep(transitions [
 							}
 						}
 						if !regionActive {
-							p.ExecuteEntryActions(region, engine)
+							p.ExecuteEntryActions(region, engine, nil)
 							if p.IsCompoundState(region) {
 								initialChild := p.GetInitialOrHistoryChild(region)
 								if initialChild != region {
-									p.ExecuteEntryActions(initialChild, engine)
+									p.ExecuteEntryActions(initialChild, engine, nil)
 								}
 							}
 						}
@@ -1235,7 +1270,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) executeMicrostep(transitions [
 				}
 				continue
 			}
-			p.ExecuteEntryActions(state, engine)
+			p.ExecuteEntryActions(state, engine, pathChild)
 		}
 
 		// W3C SCXML 3.4: For parallel states, maintain currentState at parallel level

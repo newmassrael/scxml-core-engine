@@ -1076,6 +1076,26 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                             // §scxml-3.13: Update hierarchy manager for parallel region transitions
                                             // (Test 570 fix) Must keep hierarchy manager in sync with region's internal
                                             // state
+                                            // Exactly one execution of this
+                                            // state's `<onentry>`.
+                                            //
+                                            // `enterState` fires the onentry
+                                            // callback when the state was NOT
+                                            // already in the configuration, and
+                                            // returns early when it was. This
+                                            // site used to run the entry blocks
+                                            // unconditionally on top of that, so
+                                            // a state the manager had just
+                                            // entered ran its `<onentry>` twice
+                                            // — measured 2026-08-15, a counter
+                                            // incremented by 2 for one entry.
+                                            // Dropping the block outright is
+                                            // equally wrong: when the state was
+                                            // already active it is the only
+                                            // executor, and seven parallel
+                                            // drivers say so.
+                                            const bool alreadyInConfiguration =
+                                                hierarchyManager_ && hierarchyManager_->isStateActive(desc.target);
                                             if (hierarchyManager_) {
                                                 hierarchyManager_->enterState(desc.target);
                                                 SCE_LOG_DEBUG(
@@ -1083,9 +1103,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                                     desc.target);
                                             }
 
-                                            // Execute entry actions
+                                            // Execute entry actions, only where
+                                            // the callback above could not.
                                             const auto &entryBlocks = targetStateNode->getEntryActionBlocks();
-                                            if (!entryBlocks.empty() && executionContext_) {
+                                            if (alreadyInConfiguration && !entryBlocks.empty() && executionContext_) {
                                                 for (const auto &actionBlock : entryBlocks) {
                                                     for (const auto &actionNode : actionBlock) {
                                                         if (actionNode) {
@@ -1662,8 +1683,19 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             SCE_LOG_DEBUG("W3C SCXML 3.13: Event transition executed: {} -> {}", fromState, targetState);
 
             // Enter all states in enter set (shallowest first)
-            for (const std::string &stateToEnter : enterSet) {
-                if (!enterState(stateToEnter)) {
+            //
+            // §scxml-D-addAncestorStatesToEnter: every link but the last is an
+            // ANCESTOR of the target, and an ancestor is added WITHOUT its
+            // default initial child — the entry set already holds the next
+            // link. Only the target itself goes through
+            // `addDescendantStatesToEnter`. Passing the next link as
+            // `pathChild` is what expresses that, and it is also what stops a
+            // `<parallel>` ancestor from handing a default to the very region
+            // the chain is descending into.
+            for (size_t entryIdx = 0; entryIdx < enterSet.size(); ++entryIdx) {
+                const std::string &stateToEnter = enterSet[entryIdx];
+                const std::string pathChild = (entryIdx + 1 < enterSet.size()) ? enterSet[entryIdx + 1] : std::string();
+                if (!enterState(stateToEnter, pathChild)) {
                     SCE_LOG_ERROR("Failed to enter state: {}", stateToEnter);
                     // TransitionGuard will automatically clear inTransition_ flag on return
                     TransitionResult result;
@@ -1674,6 +1706,15 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
                     result.errorMessage = "Failed to enter state: " + stateToEnter;
                     return result;
                 }
+            }
+
+            // A `<parallel>` keeps a second copy of its regions'
+            // configurations. The entry set above may have descended into a
+            // region past the point that region entered itself, so sync it —
+            // otherwise the region answers events from a leaf the machine has
+            // already moved off.
+            if (hierarchyManager_ && !enterSet.empty()) {
+                hierarchyManager_->syncParallelRegionStates();
             }
 
             // §scxml-3.10: History states handle ancestors automatically via enterStateWithAncestors()
@@ -2209,7 +2250,7 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
     }
 }
 
-bool StateMachine::enterState(const std::string &stateId) {
+bool StateMachine::enterState(const std::string &stateId, const std::string &pathChild) {
     SCE_LOG_DEBUG("[ENTER STATE CALLED] State: {}, isRunning: {}", stateId, isRunning_.load());
     SCE_LOG_DEBUG("Entering state: {}", stateId);
 
@@ -2296,7 +2337,7 @@ bool StateMachine::enterState(const std::string &stateId) {
     // Hot path: per-state-entry (~600 hits per W3C harness run). Trace-only
     // so Debug keeps enterState summaries, not the hierarchyManager round-trip.
     SCE_LOG_TRACE("[ENTER STATE DEBUG] About to call hierarchyManager_->enterState('{}') (Test 570 debug)", stateId);
-    bool hierarchyResult = hierarchyManager_->enterState(stateId);
+    bool hierarchyResult = hierarchyManager_->enterState(stateId, pathChild);
     SCE_LOG_TRACE("[ENTER STATE DEBUG] hierarchyManager_->enterState('{}') returned {} (Test 570 debug)", stateId,
                   hierarchyResult);
     assert(hierarchyResult && "SCXML violation: state entry must succeed");
@@ -2317,7 +2358,10 @@ bool StateMachine::enterState(const std::string &stateId) {
                 }
 
                 // §scxml-3.4: Activate all regions AFTER parallel state entered
-                auto activationResults = parallelState->activateAllRegions();
+                // §scxml-D-addAncestorStatesToEnter: not the region the entry
+                // set is already descending into — the caller enters that one
+                // with the target's own path.
+                auto activationResults = parallelState->activateAllRegions(pathChild);
                 for (const auto &result : activationResults) {
                     if (!result.isSuccess) {
                         SCE_LOG_ERROR("Failed to activate region '{}': {}", result.regionId, result.errorMessage);

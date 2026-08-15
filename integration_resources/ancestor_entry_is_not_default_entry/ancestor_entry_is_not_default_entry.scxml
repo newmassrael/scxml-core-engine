@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 3.3 + Appendix D: the entry set of a transition is the target, its
+  ancestors up to the LCCA, and the DEFAULTS OF NOTHING ELSE except the regions
+  of a parallel that no entering state is inside.
+
+  Appendix D splits entry into two functions and the split is the whole rule.
+  `addDescendantStatesToEnter(s)` is what gives a compound state its default
+  child, and it is called for the transition's TARGET.
+  `addAncestorStatesToEnter(s, ancestor)` is called for everything between the
+  target and the LCCA and adds those states WITHOUT their defaults — the entry
+  set already holds a descendant of each. Its one exception is a parallel
+  ancestor, whose regions are all entered, and which therefore has to tell the
+  region the target is inside apart from the ones it is not.
+
+  An engine that answers all of that with one entry function puts two children
+  of one compound state in the configuration at the same time.
+
+  ## Two shapes, because they are two code paths
+
+  The document is driven through the same defect twice, and the second pass is
+  not a repeat:
+
+    `cross`  away → chosen, with the `<parallel>` NOT yet active. The chain is
+             run → drive → outer → chosen, so `run` is entered as a PARALLEL
+             ancestor and `drive` and `outer` as compound ones.
+    `again`  lobby → chosen, with the `<parallel>` already active. `run` and
+             `drive` are skipped as already-active and only `outer` is entered,
+             which is the path a running machine takes and the one the worked
+             example in `examples/ai_loop/ai_loop.scxml` hits every time a
+             person answers a dialog.
+
+  Measured 2026-08-15: those two reach the default-child code through different
+  branches of the generated entry walk, so a fixture with only one of them
+  cannot see a regression in the other.
+
+  ## Why this fixture contains a `<parallel>` at all
+
+  `watch` answers nothing, and it is load-bearing twice over. It is what makes
+  this a parallel machine — the default-child descent is emitted inside
+  `{% if model.has_parallel_states %}` in every backend's entry-action
+  template, and measured 2026-08-15 the same document without a `<parallel>`
+  PASSES on the Rust channel while the defect is still in the templates. And it
+  is the region no entering state is inside, so `idled == 1` is what stops a
+  fix from over-correcting into "an ancestor gives no defaults to anything".
+
+  ## Why the counters, and why one final each
+
+  The spurious child is a SIBLING of the target, not an ancestor of it, so
+  every structural check still holds: `outer` is active, `chosen` is active,
+  and an engine reporting a single current leaf reports the right one. Worse,
+  an engine that holds one child per compound state will have REPLACED the
+  spurious entry by the time anyone looks — measured on the C++ Interpreter,
+  where `by_default` reads as inactive and its `<onentry>` had already run.
+  What survives is the effect, so the effect is what is counted.
+
+  Each clause lands in a `<final>` of its own rather than sharing one, so a
+  failure names which clause broke instead of reporting "did not reach
+  settled". They are checked in document order:
+
+    defaulted == 0   nothing entered the child `initial` names but nobody
+                     targeted — the defect this fixture is named for
+    lobbied  == 1    `lobby` was entered by `back` and NOT as `drive`'s default
+                     while `drive` was merely an ancestor on the way to `chosen`
+    idled    == 1    `watch` — the region the entry set never descends into —
+                     still got its default, exactly once
+    targeted == 2    both passes actually reached the target
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="ancestor_entry_is_not_default_entry" datamodel="ecmascript"
+       initial="away">
+
+  <datamodel>
+    <!-- Written only by the child `initial` names, which nothing targets. -->
+    <data id="defaulted" expr="0"/>
+    <!-- Written by `drive`'s default child, which `back` targets on purpose. -->
+    <data id="lobbied" expr="0"/>
+    <!-- Written by the region no entering state is inside. -->
+    <data id="idled" expr="0"/>
+    <!-- Written by the state the transitions actually name. -->
+    <data id="targeted" expr="0"/>
+  </datamodel>
+
+  <!--
+    Outside the `<parallel>`, so `cross` ENTERS it. A source already inside
+    cannot see the parallel-ancestor half: the ancestor stays active, the
+    entry chain skips it, and no default is taken there.
+  -->
+  <state id="away">
+    <transition event="cross" target="chosen"/>
+  </state>
+
+  <parallel id="run">
+
+    <state id="drive" initial="lobby">
+
+      <!--
+        `drive`'s default child. `cross` passes THROUGH `drive` on its way to
+        `chosen`, so this must not be entered then; `back` names it, so it must
+        be entered exactly once, by that.
+      -->
+      <state id="lobby">
+        <onentry>
+          <assign location="lobbied" expr="lobbied + 1"/>
+        </onentry>
+        <transition event="again" target="chosen"/>
+      </state>
+
+      <state id="outer" initial="by_default">
+
+        <!--
+          The state this fixture is named for. It is first in document order
+          and it is what `initial` names, which is exactly what makes it the
+          wrong answer: every transition here named its sibling.
+        -->
+        <state id="by_default">
+          <onentry>
+            <assign location="defaulted" expr="defaulted + 1"/>
+          </onentry>
+        </state>
+
+        <!--
+          The state the transitions actually name. Counting its entries is what
+          distinguishes "entered nothing" from "entered both", so a run that
+          cannot reach the target does not read as a pass.
+        -->
+        <state id="chosen">
+          <onentry>
+            <assign location="targeted" expr="targeted + 1"/>
+          </onentry>
+          <transition event="back" target="lobby"/>
+
+          <!-- Document order decides, so each clause gets the first final it
+               fails. -->
+          <transition event="check" cond="defaulted != 0" target="failDefaulted"/>
+          <transition event="check" cond="lobbied != 1" target="failLobbied"/>
+          <transition event="check" cond="idled != 1" target="failIdled"/>
+          <transition event="check" cond="targeted != 2" target="failTargeted"/>
+          <transition event="check" target="settled"/>
+        </state>
+      </state>
+    </state>
+
+    <!--
+      The region no entering state is ever inside. Appendix D enters it with
+      its default when the `<parallel>` is entered, and never again, which is
+      the half a suppression that reached too far would break.
+    -->
+    <state id="watch" initial="idle">
+      <state id="idle">
+        <onentry>
+          <assign location="idled" expr="idled + 1"/>
+        </onentry>
+      </state>
+    </state>
+
+  </parallel>
+
+  <final id="settled"/>
+  <final id="failDefaulted"/>
+  <final id="failLobbied"/>
+  <final id="failIdled"/>
+  <final id="failTargeted"/>
+</scxml>

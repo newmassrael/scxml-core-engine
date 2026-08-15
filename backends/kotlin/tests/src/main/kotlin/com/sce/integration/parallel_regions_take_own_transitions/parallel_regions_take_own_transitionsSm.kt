@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -349,13 +349,13 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_regions_take_own_transitions.scxml:24 :: _machine
-    override fun onEntry(state: ParallelRegionsTakeOwnTransitionsState) {
+    override fun onEntry(state: ParallelRegionsTakeOwnTransitionsState, pathChild: ParallelRegionsTakeOwnTransitionsState?) {
         when (state) {
             is ParallelRegionsTakeOwnTransitionsState.Budget -> {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:60 :: budget :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("budget")) return
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(ParallelRegionsTakeOwnTransitionsState.Within)
                 }
@@ -364,7 +364,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:35 :: drive :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("drive")) return
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(ParallelRegionsTakeOwnTransitionsState.Running)
                 }
@@ -378,16 +378,24 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:32 :: run :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("run")) return
-                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
-                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
-                onEntry(ParallelRegionsTakeOwnTransitionsState.Budget)
-                onEntry(ParallelRegionsTakeOwnTransitionsState.Drive)
+                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
+                // `<parallel>` hands out defaults even when it is only an
+                // ancestor — Appendix D's one exception to the ancestor rule.
+                // The exception has its own exception: not the region the entry
+                // set is already descending into, which `pathChild` names and
+                // which the caller enters with the target's own path.
+                if (pathChild != ParallelRegionsTakeOwnTransitionsState.Budget) {
+                    onEntry(ParallelRegionsTakeOwnTransitionsState.Budget)
+                }
+                if (pathChild != ParallelRegionsTakeOwnTransitionsState.Drive) {
+                    onEntry(ParallelRegionsTakeOwnTransitionsState.Drive)
+                }
             }
             is ParallelRegionsTakeOwnTransitionsState.Running -> {
                 // SCE-MAP: parallel_regions_take_own_transitions.scxml:36 :: running :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("running")) return
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(ParallelRegionsTakeOwnTransitionsState.Working)
                 }

@@ -23,6 +23,7 @@
 //! and its regen script says why.
 
 pub mod ai_loop;
+pub mod ancestor_entry_is_not_default_entry;
 pub mod autoforward_dequeue_point;
 pub mod autoforward_done_invoke;
 pub mod autoforward_event_fields;

@@ -118,9 +118,27 @@ type StatePolicy[S comparable, E comparable] interface {
 	// through the engine parameter.
 	// ================================================================
 
-	// ExecuteEntryActions executes <onentry> actions for state (§scxml-3.7).
+	// ExecuteEntryActions executes <onentry> actions for state (§scxml-3.7)
+	// and gives state the descendants Appendix D says it is owed.
+	//
+	// pathChild is what tells Appendix D's two entry functions apart, and it is
+	// the whole of the difference between them:
+	//
+	//   nil          state is the entry TARGET, so addDescendantStatesToEnter
+	//                applies: a compound state takes its default initial child
+	//                and a <parallel> takes every region.
+	//   non-nil      state is merely an ANCESTOR on the way to a deeper target,
+	//                and *pathChild is the one of its children the entry set
+	//                already holds. addAncestorStatesToEnter adds it WITHOUT
+	//                its default; the single exception is a <parallel>, whose
+	//                OTHER regions still take theirs because nothing is
+	//                entering inside them.
+	//
+	// Answering both with the nil behaviour is what leaves two children of one
+	// compound state active at once — measured 2026-08-15 across five backends,
+	// and pinned by integration_resources/ancestor_entry_is_not_default_entry/.
 	// May raise internal events via engine.Raise(), schedule delayed sends, etc.
-	ExecuteEntryActions(state S, engine *Engine[S, E])
+	ExecuteEntryActions(state S, engine *Engine[S, E], pathChild *S)
 
 	// ExecuteExitActions executes <onexit> actions for state (§scxml-3.8).
 	// The preTransitionActive slice captures the active configuration before the

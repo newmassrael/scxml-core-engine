@@ -36,7 +36,9 @@ public:
         return id_;
     }
 
-    ConcurrentOperationResult activate() override {
+    /// This mock holds no states, so `enterDefaultChild` (§scxml-D) has nothing
+    /// to select: activation here is only the active flag.
+    ConcurrentOperationResult activate(bool = true) override {
         active_ = true;
         return ConcurrentOperationResult::success(id_);
     }

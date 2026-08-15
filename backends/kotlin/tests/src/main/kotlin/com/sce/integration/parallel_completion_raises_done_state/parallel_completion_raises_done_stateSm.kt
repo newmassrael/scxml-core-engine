@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 280975c88158c1a2612c8726a71e4ae581a1e42f8ef6d030924e99800aff8d10
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -209,13 +209,13 @@ class ParallelCompletionRaisesDoneStateStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
-    override fun onEntry(state: ParallelCompletionRaisesDoneStateState) {
+    override fun onEntry(state: ParallelCompletionRaisesDoneStateState, pathChild: ParallelCompletionRaisesDoneStateState?) {
         when (state) {
             is ParallelCompletionRaisesDoneStateState.A -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:26 :: a :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("a")) return
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(ParallelCompletionRaisesDoneStateState.A1)
                 }
@@ -240,7 +240,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:33 :: b :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("b")) return
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(ParallelCompletionRaisesDoneStateState.B1)
                 }
@@ -265,10 +265,18 @@ class ParallelCompletionRaisesDoneStateStateMachine(
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:24 :: run :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("run")) return
-                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
-                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
-                onEntry(ParallelCompletionRaisesDoneStateState.A)
-                onEntry(ParallelCompletionRaisesDoneStateState.B)
+                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
+                // `<parallel>` hands out defaults even when it is only an
+                // ancestor — Appendix D's one exception to the ancestor rule.
+                // The exception has its own exception: not the region the entry
+                // set is already descending into, which `pathChild` names and
+                // which the caller enters with the target's own path.
+                if (pathChild != ParallelCompletionRaisesDoneStateState.A) {
+                    onEntry(ParallelCompletionRaisesDoneStateState.A)
+                }
+                if (pathChild != ParallelCompletionRaisesDoneStateState.B) {
+                    onEntry(ParallelCompletionRaisesDoneStateState.B)
+                }
             }
             is ParallelCompletionRaisesDoneStateState.Stopped -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:54 :: stopped :: _state_body

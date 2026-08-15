@@ -256,18 +256,30 @@
             // W3C SCXML 3.13: Build hierarchical entry chain from root to target
             let entry_chain = sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
 
-            for state in &entry_chain {
+            // §scxml-D: every link but the last is an ANCESTOR of the target,
+            // and `addAncestorStatesToEnter` adds an ancestor without its
+            // default initial child — the entry set already holds the next
+            // link. Only the target itself goes through
+            // `addDescendantStatesToEnter`. Passing the next link as
+            // `path_child` is what expresses that, and it is also what stops a
+            // `<parallel>` ancestor from handing a default to the very region
+            // the chain is descending into.
+            for (i, state) in entry_chain.iter().enumerate() {
+                let path_child = entry_chain.get(i + 1).copied();
                 if self.active_states.contains(state) {
                     // W3C SCXML 3.13: Already active - handle parallel region re-entry
                     if Self::is_parallel_state(*state) {
                         let regions = Self::get_parallel_regions(*state);
                         for &region in regions {
+                            if path_child == Some(region) {
+                                continue;
+                            }
                             if !self.active_states.contains(&region) {
-                                self.execute_entry_actions(region, engine);
+                                self.execute_entry_actions(region, engine, None);
                                 if Self::is_compound_state(region) {
                                     let initial_child = self.get_initial_or_history_child(region);
                                     if initial_child != region {
-                                        self.execute_entry_actions(initial_child, engine);
+                                        self.execute_entry_actions(initial_child, engine, None);
                                     }
                                 }
                             }
@@ -275,7 +287,7 @@
                     }
                     continue;
                 }
-                self.execute_entry_actions(*state, engine);
+                self.execute_entry_actions(*state, engine, path_child);
             }
 
             // W3C SCXML 3.4: For parallel states, maintain currentState at parallel level

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -455,7 +455,7 @@ class Test504StateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test504.scxml:5 :: _machine
-    override fun onEntry(state: Test504State) {
+    override fun onEntry(state: Test504State, pathChild: Test504State?) {
         when (state) {
             is Test504State.Fail -> {
                 // SCE-MAP: test504.scxml:77 :: fail :: _state_body
@@ -468,10 +468,18 @@ class Test504StateMachine(
                 // SCE-MAP: test504.scxml:27 :: p :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p")) return
-                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
-                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
-                onEntry(Test504State.Ps1)
-                onEntry(Test504State.Ps2)
+                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
+                // `<parallel>` hands out defaults even when it is only an
+                // ancestor — Appendix D's one exception to the ancestor rule.
+                // The exception has its own exception: not the region the entry
+                // set is already descending into, which `pathChild` names and
+                // which the caller enters with the target's own path.
+                if (pathChild != Test504State.Ps1) {
+                    onEntry(Test504State.Ps1)
+                }
+                if (pathChild != Test504State.Ps2) {
+                    onEntry(Test504State.Ps2)
+                }
             }
             is Test504State.Pass -> {
                 // SCE-MAP: test504.scxml:76 :: pass :: _state_body
@@ -503,7 +511,7 @@ class Test504StateMachine(
                 // SCE-MAP: test504.scxml:22 :: s2 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(Test504State.P)
                 }

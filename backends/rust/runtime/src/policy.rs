@@ -320,14 +320,38 @@ pub trait StatePolicy: Sized + 'static {
     // methods through the `engine` parameter.
     // ──────────────────────────────────────────────
 
-    /// Execute `<onentry>` actions for `state` (§scxml-3.8).
+    /// Execute `<onentry>` actions for `state` (§scxml-3.8), and give `state`
+    /// the descendants Appendix D says it is owed.
     ///
     /// Ports C++ `executeEntryActions(State, Engine&)`. May:
     /// - raise internal events via `engine.raise(...)`
     /// - schedule delayed sends via `engine.schedule_event(...)`
     /// - mutate datamodel variables on `self`
     /// - defer `<invoke>` starts until the configuration is stable (§scxml-6.4)
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut Engine<Self>);
+    ///
+    /// `path_child` is what tells Appendix D's two entry functions apart, and
+    /// it is the whole of the difference between them:
+    ///
+    /// - `None` — `state` is the entry TARGET, so
+    ///   `addDescendantStatesToEnter` applies: a compound state takes its
+    ///   default initial child and a `<parallel>` takes every region.
+    /// - `Some(child)` — `state` is merely an ANCESTOR on the way to a deeper
+    ///   target, and `child` is the one of its children the entry set already
+    ///   holds. `addAncestorStatesToEnter` adds it WITHOUT its default, since
+    ///   a descendant is already entering; the single exception is a
+    ///   `<parallel>`, whose OTHER regions still take their defaults because
+    ///   nothing is entering inside them.
+    ///
+    /// Answering both with the `None` behaviour is what leaves two children of
+    /// one compound state active at once — measured 2026-08-15 across five
+    /// backends, and pinned by
+    /// `integration_resources/ancestor_entry_is_not_default_entry/`.
+    fn execute_entry_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut Engine<Self>,
+        path_child: Option<Self::State>,
+    );
 
     /// Execute `<onexit>` actions for `state` (§scxml-3.9).
     ///

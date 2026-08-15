@@ -189,6 +189,43 @@ fn an_unmatched_dialog_wakes_the_person_who_answers() {
     );
 }
 
+/// A person answering does not re-introduce the session to itself.
+///
+/// `paused` is a sibling of `running`, so answering targets `judging` and
+/// enters `running` on the way — as an ANCESTOR. §scxml-D-addAncestorStatesToEnter
+/// adds such a state without its default initial child, and here the default
+/// is `priming`, whose `<onentry>` sends the opening prompt. An engine that
+/// gives every entered compound state its default leaves the cycle in two
+/// states at once and the host, reading the configuration, sends the start
+/// prompt again — measured 2026-08-15 on both AOT engines, with every W3C
+/// fixture green and this file's other seventeen tests green with it.
+///
+/// The clause itself is pinned across all seven channels by
+/// `integration_resources/ancestor_entry_is_not_default_entry/`. This test is
+/// the worked example's own stake in it: the document that made the defect
+/// visible asserts the shape it was found in, so a regression here fails as a
+/// supervision bug rather than as an abstract entry-set one.
+#[test]
+fn answering_a_question_does_not_re_prime_the_session() {
+    let mut e = started();
+    step(&mut e, AiLoopEvent::TurnBlocked);
+    step(&mut e, AiLoopEvent::ScreenNone);
+    step(&mut e, AiLoopEvent::TurnDone);
+
+    assert!(
+        holds(&e, AiLoopState::Judging),
+        "the answered turn has to land in `judging`; active: {:?}",
+        active(&e)
+    );
+    assert!(
+        !holds(&e, AiLoopState::Priming),
+        "⚠ `running` has two children active at once: {:?}. `priming` sends `prompt.start`, \
+         so a host driving this configuration re-sends the opening prompt every time a \
+         person answers a dialog",
+        active(&e)
+    );
+}
+
 #[test]
 fn hold_and_resume_return_to_exactly_where_the_cycle_was() {
     let mut e = started();

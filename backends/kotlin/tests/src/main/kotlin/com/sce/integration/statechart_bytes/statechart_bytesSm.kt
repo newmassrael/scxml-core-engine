@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -130,7 +130,7 @@ class StatechartBytesStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_bytes.scxml:13 :: _machine
-    override fun onEntry(state: StatechartBytesState) {
+    override fun onEntry(state: StatechartBytesState, pathChild: StatechartBytesState?) {
         when (state) {
             is StatechartBytesState.Done -> {
                 // SCE-MAP: statechart_bytes.scxml:23 :: done :: _state_body

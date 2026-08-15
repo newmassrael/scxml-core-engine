@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -113,7 +113,7 @@ class Test192SceSynthInvokeInvokedChildStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test192__sce_synth_invoke__invokedChild.scxml:3 :: _machine
-    override fun onEntry(state: Test192SceSynthInvokeInvokedChildState) {
+    override fun onEntry(state: Test192SceSynthInvokeInvokedChildState, pathChild: Test192SceSynthInvokeInvokedChildState?) {
         when (state) {
             is Test192SceSynthInvokeInvokedChildState.Sub0 -> {
                 // SCE-MAP: test192__sce_synth_invoke__invokedChild.scxml:5 :: sub0 :: _state_body

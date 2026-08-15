@@ -36,7 +36,7 @@ State getInitialOrHistoryChild(State state) const {
 
 #line 3 "inline_codec.scxml"
 template <typename Engine>
-[[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+[[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] ::std::optional<State> pathChild = ::std::nullopt) {
 }
 
 #line 3 "inline_codec.scxml"

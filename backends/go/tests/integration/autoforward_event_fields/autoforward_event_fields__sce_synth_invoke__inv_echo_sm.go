@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 
@@ -488,7 +488,10 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ClearEventMetadata()
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 //line autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3
-func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(state AutoforwardEventFieldsSceSynthInvokeInvEchoState, engine *sce.Engine[AutoforwardEventFieldsSceSynthInvokeInvEchoState, AutoforwardEventFieldsSceSynthInvokeInvEchoEvent]) {
+func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(state AutoforwardEventFieldsSceSynthInvokeInvEchoState, engine *sce.Engine[AutoforwardEventFieldsSceSynthInvokeInvEchoState, AutoforwardEventFieldsSceSynthInvokeInvEchoEvent], pathChild *AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
+	// Only a `<parallel>` machine descends into defaults here, so a machine
+	// without one has nothing to tell an ancestor entry from a target entry.
+	_ = pathChild
 	p.ensureScriptEngine()
 	switch state {
 	case AutoforwardEventFieldsSceSynthInvokeInvEchoStateEmit:

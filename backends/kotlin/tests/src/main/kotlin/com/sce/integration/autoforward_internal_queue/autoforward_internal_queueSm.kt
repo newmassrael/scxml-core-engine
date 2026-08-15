@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -134,7 +134,7 @@ class AutoforwardInternalQueueStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
-    override fun onEntry(state: AutoforwardInternalQueueState) {
+    override fun onEntry(state: AutoforwardInternalQueueState, pathChild: AutoforwardInternalQueueState?) {
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:85 :: fail :: _state_body

@@ -60,9 +60,12 @@ public:
 
     /**
      * @brief Activate region according to SCXML semantics
+     * @param enterDefaultChild See IConcurrentRegion::activate — false leaves
+     *        the default initial child to a caller that is entering a deeper
+     *        descendant of this region.
      * @return Operation result with SCXML compliance validation
      */
-    ConcurrentOperationResult activate() override;
+    ConcurrentOperationResult activate(bool enterDefaultChild = true) override;
 
     /**
      * @brief Deactivate region with proper SCXML cleanup
@@ -306,9 +309,13 @@ private:
 
     /**
      * @brief Enter initial state according to SCXML semantics
+     * @param enterDefaultChild False enters the region's ROOT state only and
+     *        stops: the caller is descending into this region toward a state it
+     *        named, and the root's default child is not on that path. The
+     *        definition carries the citation.
      * @return Operation result for initial state entry
      */
-    ConcurrentOperationResult enterInitialState();
+    ConcurrentOperationResult enterInitialState(bool enterDefaultChild = true);
 
     /**
      * @brief Exit all active states during deactivation

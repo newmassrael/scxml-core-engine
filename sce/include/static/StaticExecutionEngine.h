@@ -365,10 +365,7 @@ private:
                     SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
             }
 
-            for (const auto &state : entryChain) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical entry state {}", static_cast<int>(state));
-                executeOnEntry(state);
-            }
+            executeOnEntryChain(entryChain, newState);
 
             // §scxml-3.11: Update currentState to deepest entered state
             if (!entryChain.empty()) {
@@ -398,10 +395,7 @@ private:
 
             // Enter full hierarchy from root to newState
             auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
-            for (const auto &state : entryChain) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Entry state {} (from root)", static_cast<int>(state));
-                executeOnEntry(state);
-            }
+            executeOnEntryChain(entryChain, newState);
 
             // §scxml-3.11: Update currentState to deepest entered state
             if (!entryChain.empty()) {
@@ -865,10 +859,39 @@ protected:
      * Static methods can also be called through an instance in C++.
      *
      * @param state State being entered
+     * @param pathChild The child of @p state the entry set already holds, when
+     *        @p state is merely an ANCESTOR of the entry target. Such a state
+     *        is entered without its default initial child; `nullopt` means
+     *        @p state is the target itself and takes its defaults. See
+     *        `integration_resources/ancestor_entry_is_not_default_entry/`.
      */
-    void executeOnEntry(State state) {
+    void executeOnEntry(State state, std::optional<State> pathChild = std::nullopt) {
         // Call through policy instance (works for both static and non-static)
-        policy_.executeEntryActions(state, *this);
+        policy_.executeEntryActions(state, *this, pathChild);
+    }
+
+    /// Enter a whole root-to-target chain, giving every link BEFORE the target
+    /// the next one as its `pathChild`. One place, because the entry-chain
+    /// walks in this engine owe the same rule and a chain walked with `nullopt`
+    /// throughout puts two children of one compound state in the configuration.
+    ///
+    /// The chain does not stop at @p target: `buildEntryChain` appends the
+    /// target's own default initial descendants, and names only
+    /// `getInitialChild`, leaving the intermediate levels of a DEEP `initial`
+    /// to `executeEntryActions`. Everything from the target onwards therefore
+    /// takes its defaults — treating that tail as an ancestor chain suppresses
+    /// exactly the descent it was appended to trigger.
+    template <typename Chain> void executeOnEntryChain(const Chain &entryChain, State target) {
+        bool reachedTarget = false;
+        for (std::size_t i = 0; i < entryChain.size(); ++i) {
+            if (entryChain[i] == target) {
+                reachedTarget = true;
+            }
+            const std::optional<State> pathChild =
+                (!reachedTarget && i + 1 < entryChain.size()) ? std::optional<State>(entryChain[i + 1]) : std::nullopt;
+            SCE_LOG_DEBUG("AOT executeOnEntryChain: entering {}", static_cast<int>(entryChain[i]));
+            executeOnEntry(entryChain[i], pathChild);
+        }
     }
 
     /**
@@ -1188,7 +1211,14 @@ public:
         // §scxml-3.3: Use HierarchicalStateHelper for correct entry order
         auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
 
-        // Execute entry actions from root to leaf (ancestor first)
+        // Execute entry actions from root to leaf (ancestor first).
+        //
+        // Every link here takes its defaults — this is deliberately NOT
+        // `executeOnEntryChain`. §scxml-D-addAncestorStatesToEnter is about a
+        // state on the way to a target somebody NAMED; this chain is the
+        // opposite, a default descent whose leaf the policy has already
+        // resolved. Measured 2026-08-15: passing the next link here suppressed
+        // `s1`'s deep `initial="s11p112 s11p122"` and W3C test364 failed.
         for (const auto &state : entryChain) {
             executeOnEntry(state);
         }

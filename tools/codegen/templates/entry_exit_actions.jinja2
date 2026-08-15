@@ -56,8 +56,14 @@
    directive's effect for the rest of the translation unit. #}
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
-{% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
-{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+{# §scxml-D: `pathChild` is what tells addDescendantStatesToEnter (nullopt —
+   `state` is the entry TARGET and takes its defaults) from
+   addAncestorStatesToEnter (the child of `state` the entry set already holds,
+   so `state` takes none — except that a `<parallel>` still gives its OTHER
+   regions theirs). Defaulted so the target-entry call sites, which are every
+   other one, read exactly as they did. #}
+{% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] ::std::optional<State> pathChild = ::std::nullopt) {
+{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] ::std::optional<State> pathChild = ::std::nullopt) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
@@ -556,10 +562,21 @@
 
         // W3C SCXML 3.4: If entering parallel state, enter all child regions and their initial children
         // This ensures parallel states behave like Interpreter (auto-enter all regions)
+        //
+        // §scxml-D-addDescendantStatesToEnter: a `<parallel>` hands out defaults
+        // even when it is only an ancestor — that is Appendix D's one exception
+        // to the ancestor rule. The exception has its own exception: not the
+        // region the entry set is already descending into. `pathChild` names it,
+        // and giving that one its default too is what leaves two children of it
+        // active at once.
         if (isParallelState(state)) {
             AOT_DEBUG("AOT executeEntryActions: State {} is parallel, entering child regions", static_cast<int>(state));
             auto regions = getParallelRegions(state);
             for (const auto& region : regions) {
+                if (pathChild.has_value() && pathChild.value() == region) {
+                    AOT_DEBUG("AOT executeEntryActions: Region {} is on the entry path, no default", static_cast<int>(region));
+                    continue;
+                }
                 AOT_DEBUG("AOT executeEntryActions: Entering parallel region {}", static_cast<int>(region));
                 executeEntryActions(region, engine);
 
@@ -577,7 +594,11 @@
 
         // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
         // W3C SCXML 3.6: Support deep initial targets (space-separated descendant state IDs)
-        if (isCompoundState(state) && !isParallelState(state)) {
+        //
+        // §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the
+        // way to a deeper target. The entry set already holds `pathChild`, and a
+        // compound state holds one child at a time.
+        if (isCompoundState(state) && !isParallelState(state) && !pathChild.has_value()) {
             // W3C SCXML 3.6: Check if state has multiple or deep initial targets
             switch (state) {
             {% for state_id, state in model.states | dictsort %}
