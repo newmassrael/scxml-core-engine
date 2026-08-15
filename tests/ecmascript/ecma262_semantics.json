@@ -518,6 +518,154 @@
       "form": "value",
       "expect": {"number": 3},
       "clause": "13.5.4 unary plus is ToNumber"
+    },
+
+    {
+      "group": "builtins",
+      "note": "§scxml-B-2 binds a `datamodel=\"ecmascript\"` document to ECMAScript 3rd edition, and 3rd edition is a language AND a standard library. Every case in this group is a call an ordinary SCXML document makes — a bound on a counter, a substring of an event's payload, the length of a list — and none of them is an SCE extension. The groups above measure operators, which an emitter can compile; these measure the global object, which it cannot.",
+      "setup": "",
+      "source": "Math.floor(3.7)",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "15.8.2.9 Math.floor"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "Math.max(1, 2)",
+      "form": "value",
+      "expect": {"number": 2},
+      "clause": "15.8.2.11 Math.max"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "Math.abs(-5)",
+      "form": "value",
+      "expect": {"number": 5},
+      "clause": "15.8.2.1 Math.abs"
+    },
+    {
+      "group": "builtins",
+      "note": "`length` is a property, not a method, so this also asks whether member access on a primitive string works at all.",
+      "setup": "",
+      "source": "'abc'.length",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "15.5.5.1 String.prototype.length"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'abcdef'.substring(1, 3)",
+      "form": "value",
+      "expect": {"string": "bc"},
+      "clause": "15.5.4.15 String.prototype.substring"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'abc'.indexOf('b')",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "15.5.4.7 String.prototype.indexOf — 0-based, and -1 when absent"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'abc'.indexOf('z')",
+      "form": "value",
+      "expect": {"number": -1},
+      "clause": "15.5.4.7 String.prototype.indexOf returns -1, not nil, when absent"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'abc'.charAt(1)",
+      "form": "value",
+      "expect": {"string": "b"},
+      "clause": "15.5.4.4 String.prototype.charAt"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'AbC'.toLowerCase()",
+      "form": "value",
+      "expect": {"string": "abc"},
+      "clause": "15.5.4.16 String.prototype.toLowerCase"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'a,b'.split(',').length",
+      "form": "value",
+      "expect": {"number": 2},
+      "clause": "15.5.4.14 String.prototype.split yields an Array"
+    },
+    {
+      "group": "builtins",
+      "setup": "var xs = [1, 2];",
+      "source": "xs.length",
+      "form": "value",
+      "expect": {"number": 2},
+      "clause": "15.4.5.2 Array length"
+    },
+    {
+      "group": "builtins",
+      "setup": "var xs = [1, 2];",
+      "source": "xs.join('-')",
+      "form": "value",
+      "expect": {"string": "1-2"},
+      "clause": "15.4.4.5 Array.prototype.join"
+    },
+    {
+      "group": "builtins",
+      "setup": "var xs = [1, 2];",
+      "source": "xs.push(3)",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "15.4.4.7 Array.prototype.push returns the new length"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "parseInt('42')",
+      "form": "value",
+      "expect": {"number": 42},
+      "clause": "15.1.2.2 parseInt"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "parseFloat('1.5')",
+      "form": "value",
+      "expect": {"number": 1.5},
+      "clause": "15.1.2.3 parseFloat"
+    },
+    {
+      "group": "builtins",
+      "note": "The constructors called as functions — the conversion an SCXML author reaches for when a payload arrives as text.",
+      "setup": "",
+      "source": "String(42)",
+      "form": "value",
+      "expect": {"string": "42"},
+      "clause": "15.5.1.1 String(value) is ToString"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "Number('42')",
+      "form": "value",
+      "expect": {"number": 42},
+      "clause": "15.7.1.1 Number(value) is ToNumber"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "Boolean(0)",
+      "form": "value",
+      "expect": {"bool": false},
+      "clause": "15.6.1.1 Boolean(value) is ToBoolean"
     }
   ]
 }

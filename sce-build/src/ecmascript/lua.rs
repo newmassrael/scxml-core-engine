@@ -465,6 +465,23 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
                 return Ok(format!("table.concat({receiver}, {separator})"));
             }
             "toString" => return Ok(format!("_scxml_tostring({receiver})")),
+            // ECMA-262 15.5.4 String.prototype, in the shared
+            // `ecma_semantics.lua` rather than as another native per engine.
+            // Emitted receiver-first for the same reason `_indexOf` is: Lua's
+            // own string library has neither these names nor these index
+            // conventions, and `"abc".charAt(1)` is not valid Lua at all.
+            "substring" | "charAt" | "toLowerCase" | "toUpperCase" | "split" => {
+                let helper = match property.as_str() {
+                    "substring" => "_scxml_substring",
+                    "charAt" => "_scxml_charat",
+                    "toLowerCase" => "_scxml_tolowercase",
+                    "toUpperCase" => "_scxml_touppercase",
+                    _ => "_scxml_split",
+                };
+                let mut all = vec![receiver];
+                all.extend(emitted);
+                return Ok(format!("{helper}({})", all.join(", ")));
+            }
             method if DOM_METHODS.contains(&method) => {
                 return Ok(format!("{receiver}:{method}({})", emitted.join(", ")));
             }

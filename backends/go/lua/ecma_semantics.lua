@@ -218,3 +218,120 @@ end
 function _scxml_ushr(a, b)
     return math.floor(_scxml_touint32(a) / (2 ^ (_scxml_touint32(b) % 32)))
 end
+
+-- W3C SCXML B.2 binds `datamodel="ecmascript"` to ECMAScript 3rd edition, and
+-- 3rd edition is a language AND a standard library. Everything above this line
+-- is the language; everything below is the part of the library an ordinary
+-- SCXML document reaches for — a bound on a counter, a slice of an event's
+-- payload, the pieces of a delimited string.
+--
+-- Lua's own string library is not a substitute for it. The names differ
+-- (`sub` vs `substring`), the indices are 1-based and inclusive where
+-- ECMAScript's are 0-based and half-open, and `"abc".charAt(1)` is not even
+-- valid Lua syntax. So the frontend emits these as plain calls with the
+-- receiver first, the way `_indexOf` already works, and they live HERE rather
+-- than as another native per engine: `_typeof` and `_isArray` are six
+-- implementations of one meaning, and that is the shape this file exists to
+-- avoid.
+--
+-- `string.find` is called with an explicit `true` for plain matching
+-- everywhere below, and the explicitness is load-bearing: go-lua reads a
+-- MISSING fourth argument as plain and a present-but-false one as a pattern it
+-- does not implement — where it asserts rather than returns — which is the
+-- reverse of Lua 5.4's default. Naming it is what makes the two agree. The
+-- pattern-matching functions are not available at all there (`gsub`, `gmatch`
+-- and `match` are commented out of go-lua's string library), so nothing below
+-- may use them.
+
+-- ECMA-262 15.5.4.15 String.prototype.substring.
+--
+-- Both indices are clamped to the string, and a start after the end is
+-- SWAPPED rather than empty — that is the clause, not a convenience.
+function _scxml_substring(s, from, to)
+    s = _scxml_tostring(s)
+    local len = #s
+    local a = (from == nil) and 0 or _scxml_tonumber(from)
+    local b = (to == nil) and len or _scxml_tonumber(to)
+    if a ~= a then a = 0 end
+    if b ~= b then b = 0 end
+    a = math.floor(a)
+    b = math.floor(b)
+    if a < 0 then a = 0 elseif a > len then a = len end
+    if b < 0 then b = 0 elseif b > len then b = len end
+    if a > b then a, b = b, a end
+    return string.sub(s, a + 1, b)
+end
+
+-- ECMA-262 15.5.4.4 String.prototype.charAt: the empty string when the
+-- position is outside the string, never nil.
+function _scxml_charat(s, position)
+    s = _scxml_tostring(s)
+    local i = (position == nil) and 0 or _scxml_tonumber(position)
+    if i ~= i then i = 0 end
+    i = math.floor(i)
+    if i < 0 or i >= #s then return "" end
+    return string.sub(s, i + 1, i + 1)
+end
+
+-- ECMA-262 15.5.4.16 / 15.5.4.17.
+function _scxml_tolowercase(s)
+    return string.lower(_scxml_tostring(s))
+end
+
+function _scxml_touppercase(s)
+    return string.upper(_scxml_tostring(s))
+end
+
+-- ECMA-262 15.5.4.14 String.prototype.split, for the separators this
+-- datamodel can express.
+--
+-- A RegExp separator is not among them: the accepted subset has no regular
+-- expression literal and no `RegExp`, so a separator here is a string or
+-- absent. The three clause behaviours that are reachable are all implemented —
+-- an absent separator yields the whole string as one element, an empty one
+-- yields the characters, and `limit` truncates.
+function _scxml_split(s, separator, limit)
+    s = _scxml_tostring(s)
+    local out = {}
+    local lim = (limit == nil) and -1 or math.floor(_scxml_tonumber(limit))
+    if lim == 0 then return out end
+    if separator == nil then
+        out[1] = s
+        return out
+    end
+    separator = _scxml_tostring(separator)
+    if separator == "" then
+        for i = 1, #s do
+            if lim >= 0 and #out >= lim then return out end
+            out[#out + 1] = string.sub(s, i, i)
+        end
+        return out
+    end
+    local pos = 1
+    while true do
+        local a, b = string.find(s, separator, pos, true)
+        if a == nil then break end
+        if lim >= 0 and #out >= lim then return out end
+        out[#out + 1] = string.sub(s, pos, a - 1)
+        pos = b + 1
+    end
+    if lim >= 0 and #out >= lim then return out end
+    out[#out + 1] = string.sub(s, pos)
+    return out
+end
+
+-- ECMA-262 15.5.1.1 / 15.7.1.1 / 15.6.1.1: the three constructors CALLED AS
+-- FUNCTIONS, which is how an SCXML author converts a payload that arrived as
+-- text. Each is exactly the corresponding abstract operation, so they are the
+-- conversions this file already defines rather than new ones.
+function String(value)
+    return _scxml_tostring(value)
+end
+
+function Number(value)
+    return _scxml_tonumber(value)
+end
+
+function Boolean(value)
+    return _scxml_truthy(value)
+end
