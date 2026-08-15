@@ -7346,6 +7346,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "advance_time",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/events/EventSchedulerImpl.cpp",
+          "symbol": "EventSchedulerImpl::timerThreadMain",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
