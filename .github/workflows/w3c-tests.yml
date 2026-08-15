@@ -377,7 +377,7 @@ jobs:
         if-no-files-found: ignore
 
   # ============================================================
-  # Kotlin/JVM (Rhino) — 202 tests
+  # Kotlin/JVM (Rhino + QuickJS) — 202 tests per engine
   # ============================================================
   test-kotlin:
     name: Kotlin W3C Tests
@@ -442,10 +442,10 @@ jobs:
     # rather than from Gradle's exit status, and the check that the run left
     # the committed tree unchanged all live there, so this lane and a
     # developer's machine judge the Kotlin surface by the same rules.
-    - name: Run W3C Tests (Rhino Engine)
+    - name: Run W3C Tests (Rhino + QuickJS engines)
       run: |
         set -o pipefail
-        echo "=== Kotlin W3C SCXML Conformance Tests (Rhino) ==="
+        echo "=== Kotlin W3C SCXML Conformance Tests (Rhino + QuickJS) ==="
         scripts/gate w3c-kotlin 2>&1 | tee kotlin_test_output.log
 
     - name: Upload Test Results
@@ -469,7 +469,11 @@ jobs:
     - name: Generate Test Summary
       if: always()
       run: |
-        echo "## W3C SCXML Test Results (Kotlin/JVM - Rhino)" >> $GITHUB_STEP_SUMMARY
+        # The report directory holds the LAST engine the gate ran, so this
+        # summary is that engine's numbers rather than both. The verdict for
+        # every engine is the gate's, which fails on any of them; this line is
+        # a summary and says which run it is summarising.
+        echo "## W3C SCXML Test Results (Kotlin/JVM - last engine run)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
 
         REPORT_DIR="backends/kotlin/tests/build/test-results/test"

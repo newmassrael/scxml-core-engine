@@ -442,6 +442,100 @@ fn a_gate_that_regenerates_a_tree_pins_the_timestamp() {
     );
 }
 
+/// The Kotlin arm covers every engine its name claims, and each one's verdict
+/// reaches the gate's.
+///
+/// A generated conformance case cannot see which script engine it reached Pass
+/// on — every one of the 226 asserts the same thing about a document. So the
+/// only place "this lane covered QuickJS" can be checked is where the lane is
+/// written, and until it was, the arm ran the default engine and said so in a
+/// step name nobody diffs.
+///
+/// What makes the loop worth asserting rather than trusting is that narrowing
+/// it back is invisible: a gate covering one engine passes exactly as a gate
+/// covering two does. So does one whose per-engine floor stopped being a floor
+/// — Gradle reports BUILD SUCCESSFUL for a test task it decided was UP-TO-DATE
+/// — and so does one that prints an engine's failures and carries on.
+///
+/// Comments are stripped first. The reasons for each of these live in prose
+/// directly above the lines they explain, and a scan that counted those would
+/// pass on a gate that had deleted the code and kept the paragraph.
+#[test]
+fn the_kotlin_gate_runs_every_engine_it_claims() {
+    let body = std::fs::read_to_string(repo_root().join("scripts/gates/w3c-kotlin.sh"))
+        .expect("the Kotlin gate is readable");
+    let code: String = body
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let engines = code
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("KOTLIN_ENGINES=(")?
+                .strip_suffix(')')
+                .map(|inner| {
+                    inner
+                        .split_whitespace()
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+        })
+        .expect(
+            "the Kotlin gate must declare the engines it runs in one place, as \
+             `KOTLIN_ENGINES=(…)`, so this check and the loop cannot disagree",
+        );
+
+    for required in ["rhino", "quickjs"] {
+        assert!(
+            engines.iter().any(|e| e == required),
+            "⚠ the Kotlin gate runs {engines:?}, without `{required}`. The W3C \
+             suite is the only place an engine is exercised against the \
+             GENERATED machines — session lifecycle, setCurrentEvent, \
+             executeForeach, the In() callback — and the shared ECMA-262 table \
+             asks none of that. Dropping an engine here leaves that surface \
+             covered on no lane."
+        );
+    }
+
+    // The registry's one-line summary is what a reader sees in `scripts/gate
+    // --list`, so it must not name a coverage the script stopped providing.
+    let registry = std::fs::read_to_string(repo_root().join("tools/git-hooks/gate_registry.py"))
+        .expect("the registry is readable");
+    let summary = registry
+        .lines()
+        .skip_while(|line| !line.contains("\"w3c-kotlin\": {"))
+        .find_map(|line| line.trim().strip_prefix("\"summary\": "))
+        .expect("the w3c-kotlin entry carries a summary")
+        .to_lowercase();
+    for engine in &engines {
+        assert!(
+            summary.contains(engine.as_str()),
+            "the registry summarises w3c-kotlin as {summary}, which does not \
+             name `{engine}` — the gate runs it and the one-line description a \
+             reader gets does not say so"
+        );
+    }
+
+    // Per-engine, not once at the end: the reports directory holds whichever
+    // engine ran last, so a floor or a verdict read outside the loop describes
+    // one engine and vouches for all of them.
+    assert!(
+        code.contains("if (( cases < 200 )); then"),
+        "⚠ the per-engine floor on case count is gone. Gradle reports BUILD \
+         SUCCESSFUL for a test task that ran nothing, so without the floor an \
+         engine's arm can report green over an empty run."
+    );
+    assert!(
+        code.contains(r#"sce_gate_fail "Kotlin conformance on $engine"#),
+        "⚠ an engine's failures must fail the gate rather than be printed. A \
+         loop that reports each result and returns the last one passes whenever \
+         the final engine passes — and that is the engine already covered."
+    );
+}
+
 #[test]
 fn the_push_hook_delegates_rather_than_carrying_gates() {
     // The property the split exists to hold: verification commands live in
