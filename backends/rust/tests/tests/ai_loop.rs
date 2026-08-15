@@ -567,6 +567,73 @@ fn a_structured_read_follows_the_assignment_and_refuses_another_type() {
     );
 }
 
+/// What a reflection writes is what the restarted session is primed with.
+///
+/// This is the loop's whole reason for having a restart state: `reflecting`
+/// rewrites the prompts and `restarting` replaces the session so a fresh one
+/// reads them. Both halves are invisible to an outcome — a run converges just
+/// the same whether the text it sent afterwards was the reflection's, the
+/// author's, or empty — so the C++ sibling reads the prompts it actually sent
+/// (`the restarted session was not primed with an empty prompt`) and this side
+/// reads what the machine holds.
+///
+/// It is asserted because the example was wrong here: its host wrote
+/// `{"start_prompt":"","turn_prompt":"","milestone":"refined"}`, so the
+/// document came back holding two empty strings and the fresh session was
+/// primed with nothing at all, under a scenario titled "restarts into the
+/// improved prompts". Measured 2026-08-15 in the example's own output.
+#[test]
+fn what_a_reflection_writes_is_what_the_machine_then_holds() {
+    let mut e = started();
+
+    let authored = e
+        .policy()
+        .start_prompt()
+        .expect("a started loop can read its opening prompt");
+
+    for _ in 1..=8 {
+        turn(&mut e);
+    }
+    assert!(
+        holds(&e, AiLoopState::Reflecting),
+        "the document sets `reflect_every` to 8, so the eighth completed turn reflects; \
+         active: {:?}",
+        active(&e)
+    );
+
+    e.raise_external(
+        AiLoopEvent::ReflectApplied,
+        r#"{"start_prompt":"Resuming. Milestone: refined","turn_prompt":"Continue toward: refined","milestone":"refined"}"#,
+        "",
+    );
+    e.step();
+
+    assert_eq!(
+        e.policy().milestone(),
+        Some("refined".to_string()),
+        "⚠ the reflection's milestone did not reach the datamodel, so the restart it is \
+         about to pay for improves nothing"
+    );
+    let after = e
+        .policy()
+        .start_prompt()
+        .expect("⚠ the prompt a restarted session is primed with must still be readable");
+    assert_eq!(
+        after, "Resuming. Milestone: refined",
+        "⚠ the machine is not holding what the reflection wrote"
+    );
+    assert_ne!(
+        after, authored,
+        "the reflection has to have changed something, or this test would pass against a \
+         machine that ignored it"
+    );
+    assert!(
+        !after.is_empty(),
+        "⚠ an empty prompt is what a host sends when reflection erased it, and the run \
+         still converges — which is why this is asserted rather than watched"
+    );
+}
+
 /// A machine that has not been booted cannot answer, and says so.
 ///
 /// The failure this refuses is the one a default-valued field would produce: a
