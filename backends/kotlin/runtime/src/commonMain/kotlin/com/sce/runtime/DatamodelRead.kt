@@ -12,9 +12,12 @@ package com.sce.runtime
  * holding a script engine, a session id and the variable's name spelled as a
  * string.
  *
- * ARCHITECTURE.md: Zero Duplication — the same three coercions back the C++
- * `DataModelReadHelper`, the Rust `helpers::datamodel_read` and the Go
- * `ReadDatamodel*` surface, so every backend's accessor answers alike.
+ * ARCHITECTURE.md: Zero Duplication — the same four readers back the C++
+ * `DataModelReadHelper`, the Rust `helpers::datamodel_read`, the Go
+ * `ReadDatamodel*` and the Python `datamodel_read` surface, and the C11
+ * template inlines the same rules, so every backend's accessor answers alike.
+ * Three hand a value back in a host type; the fourth hands a structured one
+ * over as JSON, because there is no host type six languages share for it.
  *
  * Why the read goes to the engine rather than to a copy: a `<data>` variable
  * with an initialiser is owned by the script engine for the life of the
@@ -90,5 +93,52 @@ object DatamodelRead {
         // §scxml-5.3: the value a `<data>` declaration populated into the
         // session, read back out in the host's own type.
         return current(engine, sessionId, name) as? Boolean
+    }
+
+    /**
+     * Read an array- or object-declared datamodel variable, as JSON text.
+     *
+     * Why the engine serializes it rather than this function: every engine
+     * SCE can be given carries `JSON.stringify` — the clause cited in the
+     * body is what requires it — and that one serializer is the answer.
+     * Reflecting over whatever object the engine
+     * handed back would be a second serializer disagreeing with the first,
+     * and it would have to be written three times over here — a Rhino
+     * `NativeArray`, a QuickJS value and a Lua table are three different
+     * shapes for one document. What each engine produces is stable for that
+     * engine (the Lua builtin sorts object keys; Rhino and QuickJS emit
+     * property order), and stability is what a consumer diffing two reads
+     * needs. It is the engine's encoding, not a normal form across engines,
+     * which is the same shape of promise [readInt] makes about numeric
+     * width.
+     *
+     * Why this expression survives either engine family: [evaluateExpr] takes
+     * the ENGINE's language, not the document's — a Lua-backed session is
+     * handed Lua. `JSON.stringify(x)` is spelled the same in both, member
+     * access and a call, in a language the datamodel clause requires that
+     * exact name to exist in. `DatamodelReadJsonTest` puts it to all three
+     * engines.
+     *
+     * Why the answer is strict: the scalar readers refuse a value of another
+     * type and so does this one. A variable declared `[…]` and later assigned
+     * `5` answers null, not `"5"`. The test is the first character of the
+     * serializer's output, where JSON's grammar puts the type — `[` opens an
+     * array and `{` an object, and nothing else stringifies to either.
+     */
+    fun readJson(engine: ScxmlScriptEngine?, sessionId: String?, name: String): String? {
+        // §scxml-5.3: the value a `<data>` declaration populated into the
+        // session, handed over in the encoding §scxml-B-2 already requires the
+        // engine to produce. `name` reaches here only for a name the
+        // classifier confirmed is a bare identifier — see
+        // `analyzer::reachable_as_an_expression`.
+        if (engine == null || sessionId == null) {
+            return null
+        }
+        val json = try {
+            engine.evaluateExpr(sessionId, "JSON.stringify($name)") as? String
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        return if (json.startsWith("[") || json.startsWith("{")) json else null
     }
 }

@@ -51,6 +51,34 @@ PY
 
 mutation_case "the string reader does not check that a session exists" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "    if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {",
-     "    if (sm == NULL || out == NULL || cap == 0u) {")
+     '    if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {\n        return false;\n    }\n    lua_getglobal(sm->L, "{{ var.id }}");',
+     '    if (sm == NULL || out == NULL || cap == 0u) {\n        return false;\n    }\n    lua_getglobal(sm->L, "{{ var.id }}");')
+PY
+
+# ── The structured reader answers about the wrong variable ──────────
+#
+# The array/object reader hands the value to the session's own
+# `JSON.stringify` rather than walking the table, so what it pushes as the
+# argument is the whole of what it reads. A name the document never declared
+# pushes nil, and nil stringifies to `null` — well-formed JSON about nothing,
+# which is the shape a check for "did it return something" cannot tell from
+# an answer.
+
+mutation_case "the structured reader stringifies a name the document never declared" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     '            lua_getglobal(sm->L, "{{ var.id }}");\n            if (lua_pcall(sm->L, 1, 1, 0) == LUA_OK) {',
+     '            lua_getglobal(sm->L, "{{ var.id }}_absent");\n            if (lua_pcall(sm->L, 1, 1, 0) == LUA_OK) {')
+PY
+
+# ── An array is no longer one of the shapes it answers for ──────────
+#
+# The first character of JSON is its type, and that is the whole of the
+# reader's strictness: `[` for an array and `{` for an object. Admitting only
+# objects refuses every array the corpus declares — and it is the half a
+# fixture declaring an object would never notice was gone.
+
+mutation_case "the structured reader answers only for objects" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "(_s[0] == '[' || _s[0] == '{')",
+     "(_s[0] == '{')")
 PY

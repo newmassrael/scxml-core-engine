@@ -5467,6 +5467,31 @@
           "file": "backends/python/runtime/sce_runtime/datamodel_read.py",
           "symbol": "read_bool",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/datamodel_read.go",
+          "symbol": "ReadDatamodelJSON",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DatamodelRead.kt",
+          "symbol": "readJson",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/datamodel_read.py",
+          "symbol": "read_json",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
+          "symbol": "read_json",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DataModelReadHelper.h",
+          "symbol": "readJson",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -10045,6 +10070,31 @@
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "_install_ecmascript_builtins",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/datamodel_read.go",
+          "symbol": "ReadDatamodelJSON",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/datamodel_read.py",
+          "symbol": "read_json",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
+          "symbol": "read_json",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/DataModelReadHelper.h",
+          "symbol": "readJson",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DatamodelRead.kt",
+          "symbol": "readJson",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

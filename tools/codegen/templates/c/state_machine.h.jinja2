@@ -440,9 +440,9 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
 /* ── Datamodel readers (W3C SCXML 5.3) ────────────────────────────── */
 
 /* What a declared `<data>` is holding NOW, in the host's own type.
-   Cpp / Rust / Go / Kotlin / Python return the same three types through
-   their own read helpers; this is the C11 member of that set, shaped to
-   C's conventions rather than to theirs.
+   Cpp / Rust / Go / Kotlin / Python answer the same four declarations
+   through their own read helpers; this is the C11 member of that set,
+   shaped to C's conventions rather than to theirs.
 
    The read goes to the datamodel's one home — the lua_State this machine
    owns. There is no copy on the struct to read instead, and there could
@@ -469,9 +469,15 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    length, so `*len >= cap` says the copy in `out` is a truncated prefix
    and names the buffer that would hold it. Pass NULL for `len` when the
    buffer is known to be large enough. `out` is always NUL-terminated
-   when the call returns true. */
+   when the call returns true.
+
+   A `<data>` declared as an array or an object reads through the same
+   buffer shape, carrying the value as the JSON text the session's own
+   `JSON.stringify` produces (W3C SCXML B.2). That is the encoder the
+   other five backends ask for too, so one document does not describe
+   itself differently depending on which backend was generated. */
 {% for var in model.readable_variables %}
-{% if var.type == 'string' %}
+{% if var.type == 'string' or var.type == 'json' %}
 bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
 {{ ' ' * (csym_prefix | length + model.name | length + (var.id | to_snake_case | length) + 11) }}char *out, size_t cap, size_t *len);
 {% elif var.type == 'int' %}
