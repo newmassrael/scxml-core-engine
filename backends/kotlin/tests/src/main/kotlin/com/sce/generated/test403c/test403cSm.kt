@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -407,7 +407,7 @@ class Test403cStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test403c.scxml:5 :: _machine
-    override fun onEntry(state: Test403cState) {
+    override fun onEntry(state: Test403cState, pathChild: Test403cState?) {
         when (state) {
             is Test403cState.Fail -> {
                 // SCE-MAP: test403c.scxml:57 :: fail :: _state_body
@@ -420,12 +420,24 @@ class Test403cStateMachine(
                 // SCE-MAP: test403c.scxml:18 :: p0 :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
-                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
-                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
-                onEntry(Test403cState.P0s1)
-                onEntry(Test403cState.P0s2)
-                onEntry(Test403cState.P0s3)
-                onEntry(Test403cState.P0s4)
+                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
+                // `<parallel>` hands out defaults even when it is only an
+                // ancestor — Appendix D's one exception to the ancestor rule.
+                // The exception has its own exception: not the region the entry
+                // set is already descending into, which `pathChild` names and
+                // which the caller enters with the target's own path.
+                if (pathChild != Test403cState.P0s1) {
+                    onEntry(Test403cState.P0s1)
+                }
+                if (pathChild != Test403cState.P0s2) {
+                    onEntry(Test403cState.P0s2)
+                }
+                if (pathChild != Test403cState.P0s3) {
+                    onEntry(Test403cState.P0s3)
+                }
+                if (pathChild != Test403cState.P0s4) {
+                    onEntry(Test403cState.P0s4)
+                }
             }
             is Test403cState.P0s1 -> {
                 // SCE-MAP: test403c.scxml:20 :: p0s1 :: _state_body
@@ -463,7 +475,7 @@ class Test403cStateMachine(
 
 
             scheduleSend("__send_0", 1000L, Test403cEvent.Timeout)
-                if (!suppressChildEntry) {
+                if (pathChild == null) {
                     // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
                     onEntry(Test403cState.P0)
                 }

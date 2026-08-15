@@ -40,9 +40,16 @@ public:
 
     /**
      * @brief Activate this region
+     * @param enterDefaultChild False when the entry set is already descending
+     *        INTO this region on its way to a deeper target. The region still
+     *        becomes active and its root state is entered, but the default
+     *        initial child is the caller's to skip: entering it here would
+     *        leave two children of the root active at once. True (the default)
+     *        is the full default entry every region of a parallel entered as a
+     *        target gets. The implementation carries the citation.
      * @return Operation result indicating success or failure
      */
-    virtual ConcurrentOperationResult activate() = 0;
+    virtual ConcurrentOperationResult activate(bool enterDefaultChild = true) = 0;
 
     /**
      * @brief Deactivate this region

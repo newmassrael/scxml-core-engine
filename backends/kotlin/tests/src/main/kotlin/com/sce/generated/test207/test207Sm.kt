@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -158,7 +158,7 @@ class Test207StateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test207.scxml:8 :: _machine
-    override fun onEntry(state: Test207State) {
+    override fun onEntry(state: Test207State, pathChild: Test207State?) {
         when (state) {
             is Test207State.Fail -> {
                 // SCE-MAP: test207.scxml:58 :: fail :: _state_body

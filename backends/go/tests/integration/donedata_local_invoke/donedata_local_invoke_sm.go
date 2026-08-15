@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 
@@ -742,7 +742,10 @@ func (p *DonedataLocalInvokePolicy) ClearEventMetadata() {
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 //line donedata_local_invoke.scxml:28
-func (p *DonedataLocalInvokePolicy) ExecuteEntryActions(state DonedataLocalInvokeState, engine *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent]) {
+func (p *DonedataLocalInvokePolicy) ExecuteEntryActions(state DonedataLocalInvokeState, engine *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent], pathChild *DonedataLocalInvokeState) {
+	// Only a `<parallel>` machine descends into defaults here, so a machine
+	// without one has nothing to tell an ancestor entry from a target entry.
+	_ = pathChild
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLocalInvokeStatePhaseContent:

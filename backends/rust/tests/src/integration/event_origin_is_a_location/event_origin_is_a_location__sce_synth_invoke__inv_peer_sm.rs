@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -587,7 +587,12 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
+        path_child: Option<Self::State>,
     ) {
+        // Only a `<parallel>` machine descends into defaults here — see the
+        // blocks at the end of this function — so a machine without one has
+        // nothing to tell an ancestor entry from a target entry.
+        let _ = path_child;
         match state {
             EventOriginIsALocationSceSynthInvokeInvPeerState::Emit => {
                 // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body

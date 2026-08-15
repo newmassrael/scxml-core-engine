@@ -11761,6 +11761,61 @@
           "file": "sce/include/core/HistoryHelper.h",
           "symbol": "getAncestorsToEnter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "executeEntryChain",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "handle_hierarchical_transition",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateHierarchyManager.cpp",
+          "symbol": "StateHierarchyManager::enterState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::enterInitialState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::activateAllRegions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applyTransitionFrom",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "applySimultaneousTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "enterInitialConfiguration",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "initialize",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processStateTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11803,6 +11858,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_fanout_parallel_siblings",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "reenterParallelRegions",
           "kind": "implements"
         }
       ],

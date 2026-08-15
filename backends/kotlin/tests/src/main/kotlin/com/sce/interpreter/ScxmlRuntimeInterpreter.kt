@@ -191,7 +191,10 @@ class ScxmlRuntimeInterpreter private constructor(
         return TransitionResult.Ignored
     }
 
-    override fun onEntry(state: DynState) {
+    // `pathChild` (§scxml-D) is unused here: this interpreter enters exactly the
+    // states it is handed and never descends into defaults of its own, so it has
+    // nothing to tell an ancestor entry from a target entry.
+    override fun onEntry(state: DynState, pathChild: DynState?) {
         if (!activeStateIds.add(state.id)) return
         if (stateInfos[state.id]?.isFinal == true) {
             markFinalStateReached()

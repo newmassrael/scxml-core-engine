@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -88,7 +88,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
-    override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState) {
+    override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState, pathChild: AutoforwardDoneInvokeSceSynthInvokeInvShortState?) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body

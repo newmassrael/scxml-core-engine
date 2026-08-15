@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -137,7 +137,7 @@ class AutoforwardDequeuePointStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_dequeue_point.scxml:67 :: _machine
-    override fun onEntry(state: AutoforwardDequeuePointState) {
+    override fun onEntry(state: AutoforwardDequeuePointState, pathChild: AutoforwardDequeuePointState?) {
         when (state) {
             is AutoforwardDequeuePointState.Fail -> {
                 // SCE-MAP: autoforward_dequeue_point.scxml:108 :: fail :: _state_body

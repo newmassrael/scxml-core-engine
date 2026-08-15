@@ -293,7 +293,7 @@ std::shared_ptr<IConcurrentRegion> ConcurrentStateNode::getRegion(const std::str
     return (it != regions_.end()) ? *it : nullptr;
 }
 
-ConcurrentOperationResult ConcurrentStateNode::enterParallelState() {
+ConcurrentOperationResult ConcurrentStateNode::enterParallelState(const std::string &skipRegionRootId) {
     SCE_LOG_DEBUG("Entering parallel state: {}", id_);
 
     // SCXML W3C specification section 3.4: parallel states MUST have regions
@@ -311,7 +311,7 @@ ConcurrentOperationResult ConcurrentStateNode::enterParallelState() {
     // SCXML W3C specification section 3.4: ALL child regions MUST be activated simultaneously
     SCE_LOG_DEBUG("Activating {} regions simultaneously", regions_.size());
 
-    auto results = activateAllRegions();
+    auto results = activateAllRegions(skipRegionRootId);
 
     // Check if any region failed to activate
     for (const auto &result : results) {
@@ -376,15 +376,23 @@ ConcurrentOperationResult ConcurrentStateNode::exitParallelState(std::shared_ptr
     return ConcurrentOperationResult::success(id_);
 }
 
-std::vector<ConcurrentOperationResult> ConcurrentStateNode::activateAllRegions() {
+std::vector<ConcurrentOperationResult> ConcurrentStateNode::activateAllRegions(const std::string &skipRegionRootId) {
     std::vector<ConcurrentOperationResult> results;
     results.reserve(regions_.size());
 
     SCE_LOG_DEBUG("Activating {} regions in parallel state: {}", regions_.size(), id_);
 
     for (auto &region : regions_) {
-        SCE_LOG_DEBUG("ConcurrentStateNode: Parallel state '{}' activating region '{}'", id_, region->getId());
-        auto result = region->activate();
+        // §scxml-D-addAncestorStatesToEnter: the region the entry set is already
+        // descending into still has to become ACTIVE — a region that is not
+        // active answers no event — but its DEFAULT child is the caller's to
+        // skip. Activating it whole would give it a default child alongside the
+        // one that is arriving.
+        const bool onEntryPath =
+            !skipRegionRootId.empty() && region->getRootState() && region->getRootState()->getId() == skipRegionRootId;
+        SCE_LOG_DEBUG("ConcurrentStateNode: Parallel state '{}' activating region '{}'{}", id_, region->getId(),
+                      onEntryPath ? " (on the entry path: root only)" : "");
+        auto result = region->activate(!onEntryPath);
         results.push_back(result);
 
         if (!result.isSuccess) {

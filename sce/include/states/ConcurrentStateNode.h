@@ -147,9 +147,16 @@ public:
     /**
      * @brief Enter this parallel state according to SCXML semantics
      * Automatically activates all child regions as required by SCXML W3C spec
+     * @param skipRegionRootId The id of the region root the entry set is
+     *        ALREADY descending into, when this parallel is entered merely as
+     *        an ancestor of a deeper target. An entered parallel's regions take
+     *        their defaults, but not the one a descendant is entering inside:
+     *        doing so leaves two children of that region active at once. Empty
+     *        means this parallel is the entry target and every region takes its
+     *        default. The definition carries the citation.
      * @return Operation result indicating success/failure of entry
      */
-    ConcurrentOperationResult enterParallelState();
+    ConcurrentOperationResult enterParallelState(const std::string &skipRegionRootId = "");
 
     /**
      * @brief Exit this parallel state according to SCXML semantics
@@ -161,9 +168,11 @@ public:
 
     /**
      * @brief Activate all regions in this concurrent state
+     * @param skipRegionRootId See enterParallelState — the region the entry set
+     *        is already descending into, which must not take its default.
      * @return Vector of operation results for each region
      */
-    std::vector<ConcurrentOperationResult> activateAllRegions();
+    std::vector<ConcurrentOperationResult> activateAllRegions(const std::string &skipRegionRootId = "");
 
     /**
      * @brief Deactivate all regions in this concurrent state

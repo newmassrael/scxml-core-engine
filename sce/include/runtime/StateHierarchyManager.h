@@ -47,9 +47,34 @@ public:
      * Tracks all activated states internally.
      *
      * @param stateId State ID to enter
+     * @param pathChild The child of @p stateId the entry set already holds,
+     *        when @p stateId is merely an ANCESTOR on the way to a deeper
+     *        target. Such a state is entered WITHOUT its default initial child;
+     *        a `<parallel>` still gives its OTHER regions theirs, but not the
+     *        one named here. Empty means @p stateId is the entry target and
+     *        takes its defaults. The definition carries the citation.
+     *
+     *        Answering both with the empty behaviour is what leaves two children
+     *        of one compound state active at once — measured 2026-08-15, pinned
+     *        by `integration_resources/ancestor_entry_is_not_default_entry/`.
      * @return Success status
      */
-    bool enterState(const std::string &stateId);
+    bool enterState(const std::string &stateId, const std::string &pathChild = "");
+
+    /**
+     * @brief Re-sync every active `<parallel>` region's own view of its
+     *        configuration from the machine's.
+     *
+     * A region keeps a second copy of which of its states are active, and an
+     * entry set that descends into a region past the point the region entered
+     * itself leaves the two disagreeing — the region then answers events from a
+     * leaf the machine has already moved off, or reports itself inactive.
+     * Public because the entry set is computed in `StateMachine`, which is where
+     * that descent happens.
+     */
+    void syncParallelRegionStates() {
+        updateParallelRegionCurrentStates();
+    }
 
     /**
      * @brief Return current deepest active state

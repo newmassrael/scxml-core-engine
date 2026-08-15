@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 
@@ -490,7 +490,10 @@ func (p *AutoforwardInternalQueuePolicy) ClearEventMetadata() {
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 //line autoforward_internal_queue.scxml:51
-func (p *AutoforwardInternalQueuePolicy) ExecuteEntryActions(state AutoforwardInternalQueueState, engine *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent]) {
+func (p *AutoforwardInternalQueuePolicy) ExecuteEntryActions(state AutoforwardInternalQueueState, engine *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent], pathChild *AutoforwardInternalQueueState) {
+	// Only a `<parallel>` machine descends into defaults here, so a machine
+	// without one has nothing to tell an ancestor entry from a target entry.
+	_ = pathChild
 	switch state {
 	case AutoforwardInternalQueueStatePhase:
 		//line autoforward_internal_queue.scxml:54

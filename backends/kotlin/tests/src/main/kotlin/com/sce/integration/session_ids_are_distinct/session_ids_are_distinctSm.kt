@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -317,7 +317,7 @@ class SessionIdsAreDistinctStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: session_ids_are_distinct.scxml:38 :: _machine
-    override fun onEntry(state: SessionIdsAreDistinctState) {
+    override fun onEntry(state: SessionIdsAreDistinctState, pathChild: SessionIdsAreDistinctState?) {
         when (state) {
             is SessionIdsAreDistinctState.Fail -> {
                 // SCE-MAP: session_ids_are_distinct.scxml:116 :: fail :: _state_body

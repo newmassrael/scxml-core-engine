@@ -767,6 +767,40 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.3 + Appendix D: a compound state entered only because the
+    # target lies inside it takes no default initial child. Appendix D asks that
+    # as two functions — `addDescendantStatesToEnter` for the target,
+    # `addAncestorStatesToEnter` for the states between it and the LCCA — and an
+    # engine with one entry function answers both with the first, leaving two
+    # children of one compound state active. The fixture carries a `<parallel>`
+    # it never uses because that block is emitted only for machines that have
+    # one; measured 2026-08-15, the same document without it passes while the
+    # defect is still in the templates.
+    sce_generate_static_integration_c_test(ancestor_entry_is_not_default_entry "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_ancestor_entry_is_not_default_entry
+        integration/test_ancestor_entry_is_not_default_entry.c
+        ${INTEGRATION_C_TEST_ancestor_entry_is_not_default_entry_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_ancestor_entry_is_not_default_entry PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_ancestor_entry_is_not_default_entry PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_ancestor_entry_is_not_default_entry PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_ancestor_entry_is_not_default_entry
+        COMMAND sce_c_integration_ancestor_entry_is_not_default_entry
+    )
+    set_tests_properties(c11_integration_ancestor_entry_is_not_default_entry PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
     # implements is valid SCXML that must raise error.execution — not a document to
     # reject at build time. C11 reaches that raise through three gates the other

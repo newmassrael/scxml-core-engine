@@ -166,7 +166,15 @@ impl StatePolicy for MockPolicy {
         self.last_source = s;
     }
 
-    fn execute_entry_actions(&mut self, _s: Self::State, _eng: &mut Engine<Self>) {}
+    // `_path_child` (§scxml-D) is unused: this policy has no compound states,
+    // so nothing distinguishes an ancestor entry from a target entry.
+    fn execute_entry_actions(
+        &mut self,
+        _s: Self::State,
+        _eng: &mut Engine<Self>,
+        _path_child: Option<Self::State>,
+    ) {
+    }
     fn execute_exit_actions(
         &mut self,
         _s: Self::State,

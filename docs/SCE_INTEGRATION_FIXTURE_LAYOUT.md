@@ -143,6 +143,34 @@ region answers `e` once and then goes quiet, which leaves the second `e`
 addressed to the self-transitioning region alone, and `settled` is guarded on
 `n == 1 && m == 2`.
 
+`ancestor_entry_is_not_default_entry` covers W3C SCXML 3.3 + Appendix D: a
+compound state entered only because the transition's target lies inside it does
+not take its default initial child. Appendix D asks that as two functions —
+`addDescendantStatesToEnter` for the target, `addAncestorStatesToEnter` for
+everything between the target and the LCCA — and an engine with one entry
+function answers both with the first, leaving two children of one compound
+state in the configuration.
+
+Two things had to be true at once for that to survive the W3C IRP suite, and
+the fixture is shaped by both. The first is that the block computing the
+default child is emitted inside `{% if model.has_parallel_states %}` in every
+backend's entry-action template, so a machine with no `<parallel>` never grows
+the code that has the defect — measured 2026-08-15, this same document with
+`drive` promoted to the root passes on the Rust channel while the defect is
+still in the templates, which is why the second region `idle` is load-bearing
+and answers nothing. The second is that the extra child is a *sibling* of the
+target rather than an ancestor of it, so every structural check still holds and
+the engine's current-leaf pointer is right; a document only notices when the
+spurious state DOES something. The verdict is therefore a counter written by
+that state's `<onentry>`, and `settled` is guarded on
+`targeted == 1 && defaulted == 0` so a run that never reached the target fails
+the same way one that entered both does.
+
+It was found by running `examples/ai_loop/ai_loop.scxml`, not by reading: there
+the wrongly-entered state's `<onentry>` sends the opening prompt, so the
+supervised session was re-introduced to itself every time a person answered a
+dialog — on both AOT engines, with every W3C fixture green.
+
 `parallel_completion_raises_done_state` covers W3C SCXML 3.4 + 3.7: a
 `<parallel>` is done once every region has reached a `<final>`, and that raises
 `done.state.<parallel>`. A parallel owns no `<final>` of its own — the regions

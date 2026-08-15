@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 
@@ -332,7 +332,10 @@ func (p *InvokeUnsupportedTypePolicy) ClearEventMetadata() {
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
 //line invoke_unsupported_type.scxml:35
-func (p *InvokeUnsupportedTypePolicy) ExecuteEntryActions(state InvokeUnsupportedTypeState, engine *sce.Engine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent]) {
+func (p *InvokeUnsupportedTypePolicy) ExecuteEntryActions(state InvokeUnsupportedTypeState, engine *sce.Engine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent], pathChild *InvokeUnsupportedTypeState) {
+	// Only a `<parallel>` machine descends into defaults here, so a machine
+	// without one has nothing to tell an ancestor entry from a target entry.
+	_ = pathChild
 	switch state {
 	case InvokeUnsupportedTypeStateProbe:
 		//line invoke_unsupported_type.scxml:38

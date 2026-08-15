@@ -132,7 +132,14 @@ impl StatePolicy for HwPolicy {
         self.last_transition_source_state = s;
     }
 
-    fn execute_entry_actions(&mut self, _state: Self::State, _engine: &mut Engine<Self>) {
+    // `_path_child` (§scxml-D) is unused: this policy has no compound states,
+    // so nothing distinguishes an ancestor entry from a target entry.
+    fn execute_entry_actions(
+        &mut self,
+        _state: Self::State,
+        _engine: &mut Engine<Self>,
+        _path_child: Option<Self::State>,
+    ) {
         // No entry actions in this minimal test
     }
 

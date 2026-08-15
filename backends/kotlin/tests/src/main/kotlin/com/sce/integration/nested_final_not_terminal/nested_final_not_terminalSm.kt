@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -139,7 +139,7 @@ class NestedFinalNotTerminalStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
-    override fun onEntry(state: NestedFinalNotTerminalState) {
+    override fun onEntry(state: NestedFinalNotTerminalState, pathChild: NestedFinalNotTerminalState?) {
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:51 :: pass :: _state_body

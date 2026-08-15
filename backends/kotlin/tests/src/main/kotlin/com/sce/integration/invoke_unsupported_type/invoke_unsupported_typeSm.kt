@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
+// template-hash: 2d53d2f6482bd48bbe534a774432c7132f924eed253d3c01ee5b53a731642f97
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -99,7 +99,7 @@ class InvokeUnsupportedTypeStateMachine(
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_unsupported_type.scxml:35 :: _machine
-    override fun onEntry(state: InvokeUnsupportedTypeState) {
+    override fun onEntry(state: InvokeUnsupportedTypeState, pathChild: InvokeUnsupportedTypeState?) {
         when (state) {
             is InvokeUnsupportedTypeState.Pass -> {
                 // SCE-MAP: invoke_unsupported_type.scxml:42 :: pass :: _state_body
