@@ -4189,7 +4189,7 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ 
 
 /* W3C SCXML 5.3: what `{{ var.id }}` is holding now.
 
-   The three type checks below are `lua_type` comparisons rather than the
+   The type check below is a `lua_type` comparison rather than the
    `lua_is*` coercing family, deliberately and for the reason the reader
    exists: `lua_isstring` answers true for a number, and a consumer asking
    what a declared string holds wants to be told when it is holding
@@ -4251,6 +4251,58 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
                 *out = _whole;
                 _ok = true;
             }
+        }
+    }
+    lua_pop(sm->L, 1);
+    return _ok;
+}
+{% elif var.type == 'json' %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                              char *out, size_t cap, size_t *len) {
+    if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {
+        return false;
+    }
+    /* W3C SCXML B.2: the session's own `JSON.stringify`, not a serialiser
+       written here. Walking the table in C would be a second encoder for the
+       one thing six backends have to agree about, and this backend has no
+       allocator to build a result in — while the shared builtin is already
+       loaded into this state and is the same file the other five engines
+       load. Called through pcall because a document is free to have assigned
+       something the encoder raises on, and a reader must answer "cannot"
+       rather than longjmp out of the host's call. */
+    lua_getglobal(sm->L, "JSON");
+    bool _ok = false;
+    if (lua_type(sm->L, -1) == LUA_TTABLE) {
+        lua_getfield(sm->L, -1, "stringify");
+        if (lua_type(sm->L, -1) == LUA_TFUNCTION) {
+            lua_getglobal(sm->L, "{{ var.id }}");
+            if (lua_pcall(sm->L, 1, 1, 0) == LUA_OK) {
+                size_t _full = 0u;
+                const char *_s = (lua_type(sm->L, -1) == LUA_TSTRING)
+                                     ? lua_tolstring(sm->L, -1, &_full)
+                                     : NULL;
+                /* The first character of JSON is the type: `[` opens an
+                   array and `{` an object, and nothing else stringifies to
+                   either. So a variable declared structured and now holding
+                   a number reports that the machine cannot answer, the way
+                   the scalar readers refuse a value of another type — rather
+                   than handing back `5`, which is valid JSON for a shape the
+                   document no longer has. */
+                if (_s != NULL && _full > 0u && (_s[0] == '[' || _s[0] == '{')) {
+                    size_t _copied = (_full >= cap) ? (cap - 1u) : _full;
+                    memcpy(out, _s, _copied);
+                    out[_copied] = '\0';
+                    if (len != NULL) {
+                        *len = _full;
+                    }
+                    _ok = true;
+                }
+            }
+            /* One value either way: pcall replaced the function and its
+               argument with the result, or with the error it raised. */
+            lua_pop(sm->L, 1);
+        } else {
+            lua_pop(sm->L, 1);
         }
     }
     lua_pop(sm->L, 1);

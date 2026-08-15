@@ -61,10 +61,10 @@ fn doc_with_data(data: &str) -> String {
     )
 }
 
-/// The typed set, spelled once. `runtime` is the classifier's fourth answer
-/// and the one that carries no host type, so it is the complement rather than
-/// a fifth name.
-const TYPED: [&str; 3] = ["int", "string", "bool"];
+/// The typed set, spelled once. `runtime` is the classifier's remaining
+/// answer and the one that carries no host type, so it is the complement
+/// rather than another name in this list.
+const TYPED: [&str; 4] = ["int", "string", "bool", "json"];
 
 fn typed_var_ids(model: &sce_build::model::SCXMLModel) -> Vec<String> {
     model
@@ -164,8 +164,11 @@ fn an_initialiser_is_typed_by_what_it_denotes_not_by_how_it_is_spelled() {
         // rather than an accessor that would answer `None` for ever.
         ("fraction", "1.5", "runtime"),
         ("exponent beyond i64", "1e400", "runtime"),
-        // Not a literal at all.
-        ("array", "[1,2,3]", "runtime"),
+        // A literal too, and the one whose reader hands the value over as
+        // JSON text. `a_structured_initialiser_is_typed_by_its_literal`
+        // carries that case; it is repeated here so this table stays the
+        // full spelling-to-type map rather than the scalar half of one.
+        ("array", "[1,2,3]", "json"),
     ];
 
     for (label, expr, expected) in cases {
@@ -243,6 +246,120 @@ fn a_computed_initialiser_is_typed_only_where_the_language_settles_it() {
     }
 }
 
+/// A structured initialiser is typed by being a literal, not by what it
+/// holds.
+///
+/// The three scalar types are settled by the value a literal denotes. An
+/// array or object literal denotes an array or an object no matter what its
+/// elements evaluate to, so `[a, b]` is as settled as `[1, 2]` — the
+/// constructor IS the literal. This is the line between this arm and the
+/// arithmetic the classifier deliberately refuses to fold: `1 + 2` needs a
+/// value computed before its type is known; `[x]` is an Array before anything
+/// runs.
+///
+/// Both spellings answer `json` rather than `array` and `object` separately.
+/// One reader serves them and every backend returns the same string from it,
+/// so a split here would name a difference no host signature could express —
+/// and the distinction is not lost, it is the first character of the answer.
+#[test]
+fn a_structured_initialiser_is_typed_by_its_literal() {
+    let cases: [(&str, &str, &str); 8] = [
+        ("empty array", "[]", "json"),
+        ("array of scalars", "[1, 2, 3]", "json"),
+        ("array of unknowns", "[a, b]", "json"),
+        ("empty object", "{}", "json"),
+        ("object with unquoted keys", "{ a: 1, b: 'two' }", "json"),
+        ("object holding an unknown", "{ a: somewhere.else }", "json"),
+        (
+            "array of objects, as the example writes it",
+            "[{ when: 'x', text: 'y' }]",
+            "json",
+        ),
+        // Not a literal: what `Array(3)` constructs is settled by calling it.
+        ("constructed rather than written", "new Array(3)", "runtime"),
+    ];
+
+    for (label, expr, expected) in cases {
+        let model = model_of(
+            &doc_with_data(&format!(r#"<data id="v" expr="{expr}"/>"#)),
+            label,
+        );
+        let actual = &model.variables[0].var_type;
+        assert_eq!(
+            actual, expected,
+            "⚠ `<data expr=\"{expr}\"/>` ({label}) was classified `{actual}`, not \
+             `{expected}`. A structured `<data>` with no reader is a block of the \
+             document a host can write and never read back, which is how the \
+             AI-loop example shipped its standing-instruction table."
+        );
+    }
+}
+
+/// A `json` declaration whose name cannot be written into an expression gets
+/// no accessor.
+///
+/// This is the one place the four readers differ in what they need from a
+/// name. The scalar three fetch by key through the engine's variable API,
+/// where any text does. `json` asks the engine to serialize with its own
+/// `JSON.stringify`, which means naming the variable inside an expression —
+/// and `<data id>` is an XML id, so `screen-rules` is a legal declaration
+/// whose reader would evaluate a subtraction and answer with something the
+/// document never held.
+///
+/// The refusal is in the classifier rather than in each emitter so that the
+/// six backends agree. C11 reads by name straight off the `lua_State` and
+/// could pronounce a hyphen perfectly well; if the refusal lived in the
+/// emitters, whether an accessor existed would depend on which backend a
+/// deployment generated.
+#[test]
+fn a_json_name_that_is_not_an_identifier_gets_no_accessor() {
+    let readable_and_not = [
+        ("plain", "screen_rules", true),
+        ("leading underscore", "_rules", true),
+        ("digits inside", "rules2", true),
+        // Legal XML ids, and all three are something else as expressions:
+        // a subtraction, a member access, and a numeric literal followed by
+        // a name.
+        ("hyphen", "screen-rules", false),
+        ("dot", "screen.rules", false),
+        ("leading digit", "2rules", false),
+    ];
+
+    for (label, id, expect_readable) in readable_and_not {
+        let model = model_of(
+            &doc_with_data(&format!(r#"<data id="{id}" expr="[1]"/>"#)),
+            label,
+        );
+        assert_eq!(
+            model.variables[0].var_type, "json",
+            "the {label} case must classify `json`, or it is asserting nothing \
+             about the reader that needs the name"
+        );
+        assert_eq!(
+            readable_ids(&model).contains(&id.to_string()),
+            expect_readable,
+            "⚠ `<data id=\"{id}\"/>` ({label}): expected an accessor to be \
+             emitted = {expect_readable}. A json reader is emitted around \
+             `JSON.stringify({id})`, so a name that means something else there \
+             must get no reader at all rather than one that answers wrongly."
+        );
+    }
+
+    // A name an expression cannot reach still reads through the scalar path,
+    // which fetches by key. Withholding those too would be a regression
+    // dressed as consistency.
+    let scalar = model_of(
+        &doc_with_data(r#"<data id="screen-rules" expr="'plain'"/>"#),
+        "hyphen, scalar",
+    );
+    assert_eq!(
+        readable_ids(&scalar),
+        vec!["screen-rules".to_string()],
+        "⚠ the identifier rule belongs to the json reader alone — the scalar \
+         readers fetch by key and never write the name into an expression."
+    );
+}
+
 /// The example the AI-loop axis ships is readable in the half that is meant
 /// to be edited.
 ///
@@ -252,10 +369,13 @@ fn a_computed_initialiser_is_typed_only_where_the_language_settles_it() {
 /// spot sat under a green suite while the document the axis exists to
 /// demonstrate had eight unreadable variables — every string it declares.
 ///
-/// `screen_rules` is the one declaration named as an exclusion here rather
-/// than left to be noticed: it is an array, and the typed accessor set has no
-/// reader for one. If a later change gives it one, this list is where that
-/// shows up.
+/// `screen_rules` was the one declaration this test named as an exclusion,
+/// and it was the wrong one to leave out: it is the standing-instruction
+/// table, the block that decides when a person is NOT woken, and a host that
+/// cannot read it cannot show anyone which decisions are standing. The `json`
+/// reader closed it, and the exclusion list is empty rather than shorter —
+/// an empty list is the assertion that nothing in the example is unreadable,
+/// which a list of names can only approximate.
 #[test]
 fn the_ai_loop_examples_editable_strategy_is_readable() {
     let doc = repo_root().join("examples/ai_loop/ai_loop.scxml");
@@ -266,15 +386,26 @@ fn the_ai_loop_examples_editable_strategy_is_readable() {
     let declared: BTreeSet<String> = model.variables.iter().map(|v| v.id.clone()).collect();
     let untyped: Vec<&String> = declared.difference(&typed).collect();
 
-    assert_eq!(
-        untyped,
-        vec![&"screen_rules".to_string()],
+    assert!(
+        untyped.is_empty(),
         "⚠ the example's datamodel declares {} variables and {} of them carry a \
-         typed accessor. Everything but `screen_rules` — an array, which no \
-         accessor reads — must be answerable, because the strategy strings are \
-         exactly what a supervising host edits and then needs to read back.",
+         typed accessor. {untyped:?} cannot be read back. Every one of them must \
+         be answerable: the strategy block is what a supervising host edits and \
+         then needs to read back, and `screen_rules` is the part of it that \
+         decides when nobody is woken.",
         declared.len(),
         typed.len()
+    );
+
+    // The reconciled set is asserted too, because `typed` is a classifier
+    // answer and `readable_variables` is what the backends emit from. A json
+    // declaration passes the first and can still fall out of the second —
+    // that is exactly what `reachable_as_an_expression` does — so a repair
+    // that classified `screen_rules` without giving it an accessor would sit
+    // under the assertion above.
+    assert!(
+        readable_ids(&model).contains(&"screen_rules".to_string()),
+        "⚠ `screen_rules` classifies as typed but no accessor is emitted for it"
     );
 
     // The floor keeps the assertion above from passing over a document that

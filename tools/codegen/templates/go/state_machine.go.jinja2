@@ -222,6 +222,13 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 {% endif %}
 	}
 }
+{# Looked up rather than spelled as a ternary chain: a chain's last arm is a
+   fallback, so a host type added to the classifier and not to these maps would
+   be emitted as whatever the chain ended in. A missing key renders nothing and
+   the generated file fails to compile, which says the same thing in the place
+   that can act on it. #}
+{% set GO_READ_TYPE = {'int': 'int64', 'string': 'string', 'bool': 'bool', 'json': 'string'} %}
+{% set GO_READ_FN = {'int': 'Int', 'string': 'String', 'bool': 'Bool', 'json': 'JSON'} %}
 {% for var in model.readable_variables %}
 
 // {{ var.id | to_pascal_case }} reports what the `{{ var.id }}` datamodel variable is holding now
@@ -232,8 +239,13 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 // the whole run. The second return value is false when the machine cannot
 // answer — no script engine is set, the session is not initialised yet,
 // `{{ var.id }}` was assigned a value of another type, or the engine refused.
-func (p *{{ machine_name }}Policy) {{ var.id | to_pascal_case }}() ({{ 'int64' if var.type == 'int' else var.type }}, bool) {
-	return sce.ReadDatamodel{{ 'Int' if var.type == 'int' else ('String' if var.type == 'string' else 'Bool') }}(p.ScriptEngine, p.SessionID, "{{ var.id }}")
+{% if var.type == 'json' %}
+//
+// The value as JSON text, serialised by the engine's own JSON.stringify
+// (§scxml-B-2) so the key order is the document's.
+{% endif %}
+func (p *{{ machine_name }}Policy) {{ var.id | to_pascal_case }}() ({{ GO_READ_TYPE[var.type] }}, bool) {
+	return sce.ReadDatamodel{{ GO_READ_FN[var.type] }}(p.ScriptEngine, p.SessionID, "{{ var.id }}")
 }
 {% endfor %}
 

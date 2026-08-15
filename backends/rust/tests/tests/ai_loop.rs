@@ -423,6 +423,113 @@ fn the_strategy_a_host_edits_is_the_strategy_it_can_read_back() {
     );
 }
 
+/// The standing instructions are readable, which is what makes them
+/// standing.
+///
+/// `screen_rules` is the block that decides when a person is NOT woken. The
+/// document keeps it in the authored half deliberately — its own comment says
+/// the loop is carrying out a decision made in advance and written down — and
+/// a decision written down where nobody can read it back is indistinguishable
+/// from the loop deciding on its own authority. A supervisor showing a human
+/// "these three questions are being answered for you" has to get the list from
+/// the machine.
+///
+/// It was the one declaration in the example with no reader, because the
+/// accessor set stopped at the three scalar types. The parts asserted here are
+/// the ones a reader acts on — which question is matched and what answer it
+/// gets — rather than the whole text, so that reformatting the block inside
+/// the document does not fail this.
+#[test]
+fn the_standing_instructions_can_be_read_back_off_the_machine() {
+    let e = started();
+
+    let rules = e.policy().screen_rules().expect(
+        "⚠ the standing-instruction table must be readable off the machine — a \
+         host that cannot list it cannot show anyone which questions are being \
+         answered without them",
+    );
+
+    assert!(
+        rules.starts_with('['),
+        "the block is authored as an array and must come back as one: {rules:?}"
+    );
+    for question in ["design-decision", "design-proposal", "multiple-choice"] {
+        assert!(
+            rules.contains(question),
+            "⚠ `{question}` is screened by the document but absent from what the \
+             machine reports: {rules:?}"
+        );
+    }
+    assert!(
+        rules.contains("Rethink for the most durable answer"),
+        "the reply a screened question receives is the half a person most needs \
+         to see, and it is what distinguishes carrying out a decision from \
+         making one: {rules:?}"
+    );
+}
+
+/// A structured variable answers with what it is holding, not with what it
+/// was declared as.
+///
+/// The scalar readers refuse a value of another type, and this asserts the
+/// json one does too — from both directions. A write into the session must be
+/// visible, because a reader frozen at generation time would answer the
+/// document's literal for the whole run; and a scalar written into a variable
+/// declared structured must read as "cannot answer" rather than as the
+/// scalar's own JSON.
+///
+/// The writes go through `set_variable`, which takes a value rather than
+/// source text. That is the half of the engine interface that is the same
+/// whichever engine a deployment injected — `evaluate_expression` takes the
+/// ENGINE's language, and this runtime is given a Lua one — so a test written
+/// in either language would be asserting about the injection rather than
+/// about the reader.
+#[test]
+fn a_structured_read_follows_the_assignment_and_refuses_another_type() {
+    use sce_rust_runtime::scripting::ScriptValue;
+
+    let e = started();
+
+    let engine = e.policy().script_engine.clone();
+    let sid = e
+        .policy()
+        .session_id
+        .clone()
+        .expect("a started machine holds a session");
+
+    let mut later = std::collections::HashMap::new();
+    later.insert("when".to_string(), ScriptValue::String("later".to_string()));
+    engine
+        .set_variable(
+            &sid,
+            "screen_rules",
+            ScriptValue::Array(vec![ScriptValue::Object(later)]),
+        )
+        .expect("the session takes a structured value");
+
+    let after = e
+        .policy()
+        .screen_rules()
+        .expect("a reassigned structured variable is still readable");
+    assert!(
+        after.contains("later") && !after.contains("design-decision"),
+        "⚠ the reader answered with the authored table after the session was \
+         assigned another one: {after:?}"
+    );
+
+    engine
+        .set_variable(&sid, "screen_rules", ScriptValue::Int(5))
+        .expect("the session takes a scalar too");
+    assert_eq!(
+        e.policy().screen_rules(),
+        None,
+        "⚠ a variable declared structured and now holding a number must report \
+         that the machine cannot answer. `5` is valid JSON, so a reader that \
+         forwarded whatever the serializer produced would hand a consumer a \
+         document shape that no longer exists."
+    );
+}
+
 /// A machine that has not been booted cannot answer, and says so.
 ///
 /// The failure this refuses is the one a default-valued field would produce: a

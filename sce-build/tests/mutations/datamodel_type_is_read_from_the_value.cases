@@ -81,3 +81,63 @@ edit("sce-build/src/analyzer.rs",
      "(a == literal_type(b)?).then_some(a)",
      "literal_type(b).map(|_| a)")
 PY
+
+# ── A structured literal stops being typed ─────────────────────────
+#
+# The same silence as the string case, one type later. An array or object
+# literal declaring no type takes the accessor away from every structured
+# `<data>` — and the one the AI-loop example declares is `screen_rules`, the
+# block that decides when a person is NOT woken. A host that cannot read it
+# cannot show anyone which decisions are standing, and nothing about the run
+# looks different.
+
+mutation_case "an array or object literal declares no type" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     'Expr::Array(_) | Expr::Object(_) => Some("json"),',
+     "Expr::Array(_) | Expr::Object(_) => None,")
+PY
+
+# ── Only arrays are structured ─────────────────────────────────────
+#
+# Half of the arm above. An object literal is as settled as an array literal —
+# both construct what they are before anything is evaluated — and a rule that
+# admits one is a rule someone stopped writing halfway.
+
+mutation_case "an object literal is not structured" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     'Expr::Array(_) | Expr::Object(_) => Some("json"),',
+     'Expr::Array(_) => Some("json"),')
+PY
+
+# ── A name only has to parse, not to be a name ─────────────────────
+#
+# The json reader is the only one that writes the variable's name into an
+# expression, so it is the only one that needs the name to mean that variable
+# there. `<data id="screen-rules" expr="[…]"/>` is a legal declaration whose
+# reader would evaluate a subtraction — not a refusal, an answer about
+# something the document never held — and `screen.rules` a member access.
+# Both of those parse. Accepting anything that parses is the weakening that
+# looks like a guard and is not one, and it is silent on every document that
+# does not use such a name, which is all of them until one does.
+#
+# The guard is not deleted outright here: dropping the call leaves
+# `reachable_as_an_expression` unused, `warnings = deny` refuses the tree, and
+# an INCONCLUSIVE round proves nothing about the assertion.
+
+mutation_case "a json name only has to parse as some expression" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "Ok(crate::ecmascript::Expr::Ident(parsed)) if parsed == id",
+     "Ok(_)")
+PY
+
+# ── The identifier guard swallows the scalar readers too ───────────
+#
+# The opposite over-reach. The scalar readers fetch by key through the
+# engine's variable API, where any text does, so applying the json rule to all
+# four withdraws accessors that work — a regression dressed as consistency.
+
+mutation_case "the identifier rule is applied to every type" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     'if var.var_type == "json" && !reachable_as_an_expression(&var.id) {',
+     "if !reachable_as_an_expression(&var.id) {")
+PY

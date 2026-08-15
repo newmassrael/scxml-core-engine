@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9559f7034cb0e413a2c5aa2055ca23d5b6d7fecbb68ab13dd3b257c7755faaca
-// template-hash: c2d2b5edda626e72c9c29ff30cd9779ac6a5e5bd714354f582d478b8c23cb559
+// source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
+// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -217,6 +217,24 @@ impl SessionIdsAreDistinctPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `readBackProbe` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `readBackProbe` was
+    /// assigned a value of another type, or the engine refused.
+    ///
+    /// The value as JSON text, serialized by the engine's own
+    /// `JSON.stringify` (§scxml-B-2) so the key order is the document's.
+    pub fn read_back_probe(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_json(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "readBackProbe",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -296,6 +314,16 @@ impl SessionIdsAreDistinctPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'readBackProbe' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "readBackProbe",
+            "{{[\"name\"] = \"first\", [\"keys\"] = \"Escape\"}, {[\"name\"] = \"second\"}}",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         self.script_engine_initialized = true;
     }
 
@@ -325,6 +353,19 @@ impl SessionIdsAreDistinctPolicy {
         // W3C SCXML 5.2/5.3: Initialize 'firstSid' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "firstSid", "\"\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                SessionIdsAreDistinctEvent::ErrorExecution,
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'readBackProbe' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "readBackProbe",
+            "{{[\"name\"] = \"first\", [\"keys\"] = \"Escape\"}, {[\"name\"] = \"second\"}}",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(
@@ -960,7 +1001,7 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
     ) {
         match state {
             SessionIdsAreDistinctState::Phase => {
-                // SCE-MAP: session_ids_are_distinct.scxml:56 :: phase :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -1126,7 +1167,7 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
             SessionIdsAreDistinctState::Waiting => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: session_ids_are_distinct.scxml:87 :: waiting :: _transition_0
+                        // SCE-MAP: session_ids_are_distinct.scxml:101 :: waiting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {

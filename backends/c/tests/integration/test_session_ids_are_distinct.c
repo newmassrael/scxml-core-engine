@@ -93,6 +93,52 @@ static int check_datamodel_reader(const session_ids_are_distinct_t *sm) {
     return 0;
 }
 
+// W3C SCXML 5.3 + B.2: a declaration whose initializer is an array or an
+// object is readable too, as the text the session's own `JSON.stringify`
+// produces.
+//
+// The reader here is the one written by hand against the `lua_State` — a
+// table lookup, a field fetch, a pcall and a stack unwind — where the other
+// five backends call a helper over an engine API. So this is the backend
+// whose structured reader most needs an assertion of its own rather than a
+// compile.
+static int check_structured_reader(const session_ids_are_distinct_t *sm) {
+    char json[256];
+    size_t len = (size_t)-1;
+
+    if (!session_ids_are_distinct_read_back_probe(sm, json, sizeof(json), &len)) {
+        fprintf(stderr, "session_ids_are_distinct: FAIL - `readBackProbe` could not be read. A "
+                        "`<data>` the document declares as an array must be readable off the "
+                        "machine, as the JSON its own session serialises it to.\n");
+        return 1;
+    }
+    if (json[0] != '[') {
+        fprintf(stderr,
+                "session_ids_are_distinct: FAIL - an authored array came back as `%s`. The first "
+                "character of JSON is its type, and this reader answers only for the shape the "
+                "document declared.\n",
+                json);
+        return 1;
+    }
+    if (strstr(json, "first") == NULL || strstr(json, "Escape") == NULL) {
+        fprintf(stderr,
+                "session_ids_are_distinct: FAIL - the answer `%s` is missing what the document "
+                "wrote into `readBackProbe`. A reader that produced well-formed JSON of the wrong "
+                "value would pass the check above and fail here.\n",
+                json);
+        return 1;
+    }
+    if (len != strlen(json)) {
+        fprintf(stderr,
+                "session_ids_are_distinct: FAIL - the structured reader reported length %zu for a "
+                "%zu-byte answer. `len` carries the FULL length, the same convention the string "
+                "reader follows.\n",
+                len, strlen(json));
+        return 1;
+    }
+    return 0;
+}
+
 int main(void) {
     // Zero-initialised rather than left indeterminate: the check below reads
     // the machine BEFORE `_init` has run, and an indeterminate `L` would make
@@ -125,6 +171,11 @@ int main(void) {
     session_ids_are_distinct_run(&sm);
 
     if (check_datamodel_reader(&sm)) {
+        session_ids_are_distinct_destroy(&sm);
+        return 1;
+    }
+
+    if (check_structured_reader(&sm)) {
         session_ids_are_distinct_destroy(&sm);
         return 1;
     }

@@ -9,10 +9,12 @@ machine can answer a question about its own datamodel without the caller
 holding a script engine, a session id and the variable's name spelled as a
 string.
 
-ARCHITECTURE.md: Zero Duplication -- the same three coercions back the C++
+ARCHITECTURE.md: Zero Duplication -- the same four readers back the C++
 ``DataModelReadHelper``, the Rust ``helpers::datamodel_read``, the Go
-``ReadDatamodel*`` and the Kotlin ``DatamodelRead`` surface, so every backend's
-accessor answers alike.
+``ReadDatamodel*`` and the Kotlin ``DatamodelRead`` surface, and the C11
+template inlines the same rules, so every backend's accessor answers alike.
+Three hand a value back in a host type; the fourth hands a structured one over
+as JSON, because there is no host type six languages share for it.
 
 Why the read goes to the engine rather than to a copy: a ``<data>`` variable
 with an initialiser is owned by the script engine for the life of the session
@@ -30,7 +32,7 @@ from typing import Any, Optional
 
 from .scripting.i_script_engine import ScriptValue, ScriptValueKind
 
-__all__ = ["read_int", "read_string", "read_bool"]
+__all__ = ["read_int", "read_string", "read_bool", "read_json"]
 
 
 def _current(engine: Any, session_id: Optional[str], name: str) -> Optional[ScriptValue]:
@@ -91,3 +93,48 @@ def read_bool(engine: Any, session_id: Optional[str], name: str) -> Optional[boo
     if value is None or value.kind is not ScriptValueKind.BOOL:
         return None
     return value.bool_val
+
+
+def read_json(engine: Any, session_id: Optional[str], name: str) -> Optional[str]:
+    """Read an array- or object-declared datamodel variable, as JSON text.
+
+    Why the engine serialises it rather than this function: every engine SCE
+    can be given carries ``JSON.stringify`` -- the clause cited in the body is
+    what requires it -- and that one serialiser is the answer. Walking the
+    ``ScriptValue`` tree here would be a
+    second serialiser disagreeing with the first, and it would have to agree
+    with five other backends' walkers besides. What the engine produces is
+    stable for that engine (the shared Lua builtin sorts object keys; an
+    ECMAScript engine emits property order), and stability is what a consumer
+    diffing two reads needs. It is the engine's encoding, not a normal form
+    across engines, which is the same shape of promise ``read_int`` makes
+    about numeric width.
+
+    Why this expression survives either engine family: ``evaluate_expression``
+    takes the ENGINE's language, not the document's -- a Lua-backed session is
+    handed Lua. ``JSON.stringify(x)`` is spelled the same in both, member
+    access and a call, in a language the datamodel clause requires that exact
+    name to exist in.
+
+    Why the answer is strict: the scalar readers refuse a value of another type
+    and so does this one. A variable declared ``[...]`` and later assigned
+    ``5`` answers ``None``, not ``"5"``. The test is the first character of the
+    serialiser's output, where JSON's grammar puts the type -- ``[`` opens an
+    array and ``{`` an object, and nothing else stringifies to either.
+    """
+    # §scxml-5.3: the declared variable's value, in the encoding §scxml-B-2
+    # already requires the engine to produce. `name` reaches here only for a
+    # name the classifier confirmed is a bare identifier -- see
+    # `analyzer::reachable_as_an_expression`.
+    if engine is None or not session_id:
+        return None
+    try:
+        value = engine.evaluate_expression(session_id, f"JSON.stringify({name})")
+    except Exception:
+        return None
+    if value is None or value.kind is not ScriptValueKind.STRING:
+        return None
+    json = value.string_val
+    if not json or json[0] not in "[{":
+        return None
+    return json

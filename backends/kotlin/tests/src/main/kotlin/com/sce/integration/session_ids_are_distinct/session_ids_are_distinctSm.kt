@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9559f7034cb0e413a2c5aa2055ca23d5b6d7fecbb68ab13dd3b257c7755faaca
-// template-hash: c2d2b5edda626e72c9c29ff30cd9779ac6a5e5bd714354f582d478b8c23cb559
+// source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
+// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -56,6 +56,21 @@ class SessionIdsAreDistinctStateMachine(
      */
     fun firstSid(): String? =
         com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "firstSid")
+
+    /**
+     * §scxml-5.3: what the `readBackProbe` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `readBackProbe` was assigned a value of another type, or the engine refused.
+     *
+     * The value as JSON text, serialised by the engine's own `JSON.stringify`
+     * (§scxml-B-2) so the key order is the document's.
+     */
+    fun readBackProbe(): String? =
+        com.sce.runtime.DatamodelRead.readJson(scriptEngine, scriptSessionId, "readBackProbe")
 
     override val initialState: SessionIdsAreDistinctState = SessionIdsAreDistinctState.Waiting
 
@@ -154,6 +169,13 @@ class SessionIdsAreDistinctStateMachine(
         try {
             val initResult_firstSid = engine.evaluateExpr(sid, "''")
             engine.setVariable(sid, "firstSid", initResult_firstSid)
+        } catch (e: Exception) {
+            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+        }
+        // W3C SCXML 5.3: Initialize variable 'readBackProbe' with expr
+        try {
+            val initResult_readBackProbe = engine.evaluateExpr(sid, "[{ name: 'first', keys: 'Escape' }, { name: 'second' }]")
+            engine.setVariable(sid, "readBackProbe", initResult_readBackProbe)
         } catch (e: Exception) {
             raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
         }
@@ -298,26 +320,26 @@ class SessionIdsAreDistinctStateMachine(
     override fun onEntry(state: SessionIdsAreDistinctState) {
         when (state) {
             is SessionIdsAreDistinctState.Fail -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:102 :: fail :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:116 :: fail :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SessionIdsAreDistinctState.OneSeen -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:95 :: one_seen :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:109 :: one_seen :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("one_seen")) return
             }
             is SessionIdsAreDistinctState.Pass -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:101 :: pass :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:115 :: pass :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SessionIdsAreDistinctState.Phase -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:56 :: phase :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:70 :: phase :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
@@ -342,7 +364,7 @@ class SessionIdsAreDistinctStateMachine(
                 }
             }
             is SessionIdsAreDistinctState.Waiting -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:86 :: waiting :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:100 :: waiting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
             }
@@ -354,19 +376,19 @@ class SessionIdsAreDistinctStateMachine(
     override fun onExit(state: SessionIdsAreDistinctState) {
         when (state) {
             is SessionIdsAreDistinctState.Fail -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:102 :: fail :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:116 :: fail :: _state_body
                 activeStateIds.remove("fail")
             }
             is SessionIdsAreDistinctState.OneSeen -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:95 :: one_seen :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:109 :: one_seen :: _state_body
                 activeStateIds.remove("one_seen")
             }
             is SessionIdsAreDistinctState.Pass -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:101 :: pass :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:115 :: pass :: _state_body
                 activeStateIds.remove("pass")
             }
             is SessionIdsAreDistinctState.Phase -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:56 :: phase :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:70 :: phase :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -376,7 +398,7 @@ class SessionIdsAreDistinctStateMachine(
                 activeStateIds.remove("phase")
             }
             is SessionIdsAreDistinctState.Waiting -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:86 :: waiting :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:100 :: waiting :: _state_body
                 activeStateIds.remove("waiting")
             }
         }
@@ -392,7 +414,7 @@ class SessionIdsAreDistinctStateMachine(
         when (source) {
         is SessionIdsAreDistinctState.Waiting -> when {
             event is SessionIdsAreDistinctEvent.FromChild -> {
-                // SCE-MAP: session_ids_are_distinct.scxml:87 :: waiting :: _transition_0
+                // SCE-MAP: session_ids_are_distinct.scxml:101 :: waiting :: _transition_0
 
 
             executeAssign("firstSid", "_event.data.sid")
