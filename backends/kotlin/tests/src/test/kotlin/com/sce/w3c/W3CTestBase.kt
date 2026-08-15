@@ -29,7 +29,15 @@ import org.junit.jupiter.api.Test
  *
  * Script engine selection via system property "sce.script.engine":
  *   - "rhino" (default): RhinoScriptEngine (JVM, pure Java)
+ *   - "quickjs": QuickJSScriptEngine (ECMA-262 via JNI)
  *   - "lua": LuaScriptEngine (Lua 5.4 via JNI)
+ *
+ * A name outside that set is refused rather than defaulted. The set used to
+ * end in `else -> RhinoScriptEngine()`, which made a misspelt engine a green
+ * run of the default one — so a CI lane declaring an engine it never got
+ * would report that engine passing 226 cases. Measured: `-Psce.script.engine=
+ * nonexistent-engine` passed. What a lane claims to cover and what it covers
+ * have to be the same thing, and the only place that can be checked is here.
  *
  * @param S State sealed interface type
  * @param E Event sealed interface type
@@ -47,14 +55,44 @@ abstract class W3CTestBase<S : State, E : Event> {
          * Generated test code calls this:
          *   override fun createStateMachine() = XxxStateMachine(createEngine())
          */
-        fun createEngine(): ScxmlScriptEngine {
-            val engineType = System.getProperty("sce.script.engine", "rhino").lowercase()
-            return when (engineType) {
-                "lua" -> LuaScriptEngine()
-                "quickjs" -> QuickJSScriptEngine()
-                else -> RhinoScriptEngine()
-            }
+        /** The engine this run was asked for, defaulted but never guessed. */
+        fun requestedEngine(): String =
+            System.getProperty("sce.script.engine", DEFAULT_ENGINE).lowercase()
+
+        fun createEngine(): ScxmlScriptEngine = engineFor(requestedEngine())
+
+        /**
+         * The engine a name selects.
+         *
+         * Split from [createEngine] so the mapping can be asserted without
+         * writing the system property: this suite runs JUnit in parallel, and
+         * a test that set `sce.script.engine` to observe the result was read
+         * by whichever sibling looked at it next. That was measured, not
+         * feared — the first version of `ScriptEngineSelectionTest` failed
+         * with `expected: <rhino> but was: <nonexistent-engine>`, one test
+         * seeing another's write.
+         */
+        fun engineFor(engineType: String): ScxmlScriptEngine = when (engineType) {
+            "rhino" -> RhinoScriptEngine()
+            "lua" -> LuaScriptEngine()
+            "quickjs" -> QuickJSScriptEngine()
+            else -> throw IllegalArgumentException(
+                "sce.script.engine=\"$engineType\" names no engine this suite can build. " +
+                    "Known: ${KNOWN_ENGINES.joinToString(", ")}. Refused rather than " +
+                    "defaulted, because a run that quietly substituted another engine " +
+                    "would report that engine's result under this one's name."
+            )
         }
+
+        /** Default when nothing asks for one. */
+        const val DEFAULT_ENGINE: String = "rhino"
+
+        /**
+         * Spelled once, and read by [createEngine]'s refusal and by the test
+         * that pins it. A second list would be free to disagree with the
+         * `when` above, which is the drift this whole change is about.
+         */
+        val KNOWN_ENGINES: List<String> = listOf("rhino", "quickjs", "lua")
     }
 
     /**

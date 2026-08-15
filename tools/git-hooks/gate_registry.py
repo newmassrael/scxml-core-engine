@@ -458,8 +458,12 @@ GATES: dict[str, dict] = {
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**"],
         "deps": ["codegen-build"],
-        "cost_s": 9,
-        "summary": "W3C conformance, Kotlin/JVM AOT (Rhino)",
+        # Measured 34s for the whole gate after it started running the suite on
+        # both JVM engines rather than the default one. The second engine is a
+        # re-run of the test task against an already-generated tree, which is
+        # why covering it costs a fraction of the first.
+        "cost_s": 30,
+        "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS)",
     },
     "w3c-python": {
         "workflows": ["w3c-tests.yml"],
