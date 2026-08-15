@@ -51,3 +51,42 @@ def test_session_ids_are_distinct_aot() -> None:
         f"session_ids_are_distinct reached <final id={actual!r}>; expected 'pass'. "
         "two live sessions reported the same `_sessionid`. W3C SCXML 5.10 binds it to the id of the current session, and C.1.1 publishes an address derived from it, so one id for two sessions is one address for two sessions."
     )
+
+
+def test_a_structured_declaration_reads_back_as_json() -> None:
+    """W3C SCXML 5.3 + B.2: an array-declared ``<data>`` is readable as JSON.
+
+    The document declares ``readBackProbe`` for the channels rather than for
+    itself, because reading the DATAMODEL is a different question from reading
+    the configuration and every other fixture asks the second one. That is how
+    a whole class of declaration reached consumers with no reader at all: the
+    suites were green over documents nobody could ask anything about.
+    """
+    engine = _sm.create_engine()
+    policy = engine._policy
+
+    # Before the machine is initialised there is no session holding a
+    # datamodel, so the only honest answer is that it cannot say. A reader
+    # backed by a value captured at generation time would answer the
+    # document's literal here and for the rest of the run.
+    assert policy.read_back_probe() is None, (
+        "an uninitialised machine answered a datamodel read"
+    )
+
+    engine.initialize()
+
+    answer = policy.read_back_probe()
+    assert answer is not None, (
+        "`readBackProbe` could not be read. A structured `<data>` must be "
+        "readable off the machine, as the JSON its own session serialises it to."
+    )
+    assert answer.startswith("["), (
+        f"an authored array came back as {answer!r}. The first character of JSON "
+        "is its type, and this reader answers only for the shape the document "
+        "declared."
+    )
+    assert "first" in answer and "Escape" in answer, (
+        f"the answer {answer!r} is missing what the document wrote into "
+        "`readBackProbe`. A reader producing well-formed JSON of the wrong value "
+        "would pass the check above and fail here."
+    )

@@ -46,6 +46,20 @@
              reads as a false condition and reports a violation that is not
              there. -->
         <data id="firstSid" expr="''"/>
+        <!-- Read back by the channels, not by the document. `firstSid` above
+             covers the scalar half of §scxml-5.3's reader set; this covers
+             the other half, a declaration whose initializer is an array or
+             an object. It crosses to a host as the text the session's own
+             `JSON.stringify` produces (§scxml-B-2), which is the one
+             encoding all six backends share — so each channel asserts the
+             same bytes name the same things.
+
+             It is declared here rather than in a fixture of its own because
+             this is the stem whose channel tests ask a machine what its
+             DATAMODEL holds. Every other one reads the configuration, which
+             is a different question and was the reason a whole backend
+             shipped with no reader at all without anything noticing. -->
+        <data id="readBackProbe" expr="[{ name: 'first', keys: 'Escape' }, { name: 'second' }]"/>
     </datamodel>
 
     <!-- Both invokes live on `phase` so both children are running when the

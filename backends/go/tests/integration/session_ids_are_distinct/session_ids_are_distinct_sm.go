@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9559f7034cb0e413a2c5aa2055ca23d5b6d7fecbb68ab13dd3b257c7755faaca
-// template-hash: c2d2b5edda626e72c9c29ff30cd9779ac6a5e5bd714354f582d478b8c23cb559
+// source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
+// template-hash: e136547eba5b1b26d444df3b244f86733d75a97e370ef305f7a135f66e51e2c8
 // generated-at: 0
 
 
@@ -169,6 +169,21 @@ func (p *SessionIdsAreDistinctPolicy) FirstSid() (string, bool) {
 	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "firstSid")
 }
 
+// ReadBackProbe reports what the `readBackProbe` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `readBackProbe` was assigned a value of another type, or the engine refused.
+//
+// The value as JSON text, serialised by the engine's own JSON.stringify
+// (§scxml-B-2) so the key order is the document's.
+func (p *SessionIdsAreDistinctPolicy) ReadBackProbe() (string, bool) {
+	return sce.ReadDatamodelJSON(p.ScriptEngine, p.SessionID, "readBackProbe")
+}
+
 
 
 
@@ -224,6 +239,16 @@ func (p *SessionIdsAreDistinctPolicy) InitializeDataModel(eng *sce.Engine[Sessio
 		} else {
 			eng.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctEventErrorExecution))
 			_ = engine.SetVariable(sessionID, "firstSid", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize readBackProbe from expr="[{ name: 'first', keys: 'Escape' }, { name: 'second' }]"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{{["name"] = "first", ["keys"] = "Escape"}, {["name"] = "second"}}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "readBackProbe", result)
+		} else {
+			eng.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctEventErrorExecution))
+			_ = engine.SetVariable(sessionID, "readBackProbe", nil)
 		}
 	}
 
@@ -756,7 +781,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteEntryActions(state SessionIdsAreDis
 	p.ensureScriptEngine()
 	switch state {
 	case SessionIdsAreDistinctStatePhase:
-		//line session_ids_are_distinct.scxml:56
+		//line session_ids_are_distinct.scxml:70
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_a", "phase", sce.NextInvokeCounter())
@@ -891,7 +916,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteTransitionActions(engine *sce.Engin
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == SessionIdsAreDistinctStateWaiting && idx == 0 {
-		//line session_ids_are_distinct.scxml:87
+		//line session_ids_are_distinct.scxml:101
 
 	// W3C SCXML 5.3: <assign location="firstSid" expr="_event.data.sid">
 	if err := p.assignVariable(`firstSid`, `_event.data.sid`); err != nil {

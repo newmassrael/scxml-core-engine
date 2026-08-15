@@ -11,9 +11,12 @@ package sce
 // datamodel without the caller holding a script engine, a session id and the
 // variable's name spelled as a string.
 //
-// ARCHITECTURE.md: Zero Duplication — the same three coercions back the C++
-// `DataModelReadHelper`, the Rust `helpers::datamodel_read` and the Kotlin
-// `DatamodelRead` surface, so every backend's accessor answers alike.
+// ARCHITECTURE.md: Zero Duplication — the same four readers back the C++
+// `DataModelReadHelper`, the Rust `helpers::datamodel_read`, the Kotlin
+// `DatamodelRead` and the Python `datamodel_read` surface, and the C11
+// template inlines the same rules, so every backend's accessor answers alike.
+// Three hand a value back in a host type; the fourth hands a structured one
+// over as JSON, because there is no host type six languages share for it.
 //
 // Why the read goes to the engine rather than to a copy: a `<data>` variable
 // with an initialiser is owned by the script engine for the life of the
@@ -109,4 +112,53 @@ func ReadDatamodelBool(engine IScriptEngine, sessionID, name string) (bool, bool
 		return b, true
 	}
 	return false, false
+}
+
+// ReadDatamodelJSON reads an array- or object-declared datamodel variable, as
+// JSON text.
+//
+// Why the engine serialises it rather than this function: every engine SCE
+// can be given carries JSON.stringify — the clause cited in the body is what
+// requires it — and that one serialiser is the answer. Walking whatever
+// go-lua handed back would be a second serialiser
+// disagreeing with the first, and it would not even agree with itself — a Lua
+// table arrives as a map, whose range order Go deliberately randomises, so two
+// reads of an unchanged variable would hand a consumer the keys in different
+// orders. What the engine produces is stable for that engine (the shared Lua
+// builtin sorts object keys; an ECMAScript engine emits property order), and
+// stability is what a consumer diffing two reads needs. It is the engine's
+// encoding, not a normal form across engines, which is the same shape of
+// promise ReadDatamodelInt makes about numeric width.
+//
+// Why this expression survives either engine family: EvaluateExpression takes
+// the ENGINE's language, not the document's — a Lua-backed session is handed
+// Lua. `JSON.stringify(x)` is spelled the same in both, member access and a
+// call, in a language the datamodel clause requires that exact name to exist
+// in.
+//
+// Why the answer is strict: the scalar readers refuse a value of another type
+// and so does this one. A variable declared [...] and later assigned 5 reports
+// false, not "5". The test is the first character of the serialiser's output,
+// where JSON's grammar puts the type — [ opens an array and { an object, and
+// nothing else stringifies to either.
+func ReadDatamodelJSON(engine IScriptEngine, sessionID, name string) (string, bool) {
+	// §scxml-5.3: the value a <data> declaration populated into the session,
+	// handed over in the encoding §scxml-B-2 already requires the engine to
+	// produce. `name` reaches here only for a name the classifier confirmed is
+	// a bare identifier — see `analyzer::reachable_as_an_expression`.
+	if engine == nil || sessionID == "" {
+		return "", false
+	}
+	value, err := engine.EvaluateExpression(sessionID, "JSON.stringify("+name+")")
+	if err != nil {
+		return "", false
+	}
+	json, isString := value.(string)
+	if !isString || json == "" {
+		return "", false
+	}
+	if json[0] != '[' && json[0] != '{' {
+		return "", false
+	}
+	return json, true
 }

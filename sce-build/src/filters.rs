@@ -840,6 +840,14 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
         "ecma_semantics_lua_c",
         c_lua_dostring_chunks(ECMA_SEMANTICS_LUA),
     );
+    // §scxml-B-2 requires `JSON` in an ECMAScript datamodel, and C11 was the
+    // one backend whose session did not have it — the other five load this
+    // same file at engine startup. It travels the same way the operator
+    // semantics do, for the same reason: there is no file to open at runtime.
+    env.add_global(
+        "json_builtins_lua_c",
+        c_lua_dostring_chunks(JSON_BUILTINS_LUA),
+    );
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("escape_c", escape_c);
@@ -873,6 +881,15 @@ fn escape_c(text: String) -> String {
 /// Same file the C++, Rust, Go, Kotlin and Python engines load; the C11
 /// backend cannot read it at runtime, so codegen carries it instead.
 pub const ECMA_SEMANTICS_LUA: &str = include_str!("../../sce/include/scripting/ecma_semantics.lua");
+
+/// The shared §scxml-B-2 `JSON` builtins, bound at compile time.
+///
+/// Same file the C++, Rust, Go and Kotlin Lua engines load; the C11 backend
+/// cannot read it at runtime, so codegen carries it instead. `JSON.stringify`
+/// is what every backend's structured `<data>` reader asks the engine for,
+/// and a C11 session without it would be the one backend that could not
+/// answer.
+pub const JSON_BUILTINS_LUA: &str = include_str!("../../sce/include/scripting/json_builtins.lua");
 
 /// Render a Lua source file as a sequence of `luaL_dostring` calls, each
 /// carrying a string literal short enough for a conforming C compiler.

@@ -86,8 +86,8 @@ fn first_non_ws(s: &str) -> Option<char> {
 ///
 /// The answer decides one thing only — which typed read accessor the
 /// backends emit for this variable (`read_int` / `read_string` /
-/// `read_bool`, or none for `runtime`). It does not reach initialization:
-/// a `<data>` that carries `expr` or `content` is initialized by
+/// `read_bool` / `read_json`, or none for `runtime`). It does not reach
+/// initialization: a `<data>` that carries `expr` or `content` is initialized by
 /// evaluating that text whatever the type says, and `runtime` names the
 /// remaining case, the declaration with nothing to evaluate.
 fn classify_variables(model: &mut SCXMLModel) {
@@ -124,8 +124,11 @@ fn classify_variables(model: &mut SCXMLModel) {
 /// the same rule the classifier applies to `c ? 'a' : 7`, and for the same
 /// reason: an accessor's type is a claim about what the document declares,
 /// and a document that declares two things has not made one.
+///
+/// A `json` declaration additionally needs a name the reader can pronounce —
+/// see [`reachable_as_an_expression`].
 fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
-    const TYPED: [&str; 3] = ["int", "string", "bool"];
+    const TYPED: [&str; 4] = ["int", "string", "bool", "json"];
 
     let declarations = model
         .variables
@@ -146,6 +149,9 @@ fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
             // competing one.
             continue;
         }
+        if var.var_type == "json" && !reachable_as_an_expression(&var.id) {
+            continue;
+        }
         match order.iter().find(|seen| seen.id == var.id) {
             Some(seen) if seen.var_type == var.var_type => {}
             Some(_) => {
@@ -160,6 +166,35 @@ fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
         .filter(|var| !disagreed.contains(var.id.as_str()))
         .cloned()
         .collect()
+}
+
+/// Whether a `<data>` name can be written into an ECMAScript expression and
+/// still denote that variable.
+///
+/// Only the `json` reader needs this, and it needs it because of how it
+/// reads. The other three fetch the variable by name through the engine's
+/// variable API, where the name is a key and any text does; `json` asks the
+/// engine to serialize the value with its own `JSON.stringify`, which means
+/// naming the variable inside an expression. `<data id>` is an XML id, so
+/// `screen-rules` is a legal declaration — and `JSON.stringify(screen-rules)`
+/// is a subtraction. A reader emitted for that name would answer with
+/// something the document never held rather than refuse.
+///
+/// The question is put to the same front end that classifies the initializer,
+/// which is the point: a hand-rolled character test for "does this look like
+/// an identifier" is the exact mistake this axis already made once with
+/// quotes, one layer up.
+///
+/// Refusing here rather than in the emitters is what keeps the six backends
+/// answering alike. C11 reads its datamodel straight off the `lua_State` by
+/// name and could pronounce `screen-rules` perfectly well; letting it do so
+/// would make an accessor's existence depend on which backend a deployment
+/// generated.
+fn reachable_as_an_expression(id: &str) -> bool {
+    matches!(
+        crate::ecmascript::parser::parse_expression(id),
+        Ok(crate::ecmascript::Expr::Ident(parsed)) if parsed == id
+    )
 }
 
 /// The typed accessor an initializer declares, or `"runtime"` for none.
@@ -206,6 +241,22 @@ fn literal_type(expr: &crate::ecmascript::Expr) -> Option<&'static str> {
         Expr::Str(_) => Some("string"),
         Expr::Bool(_) => Some("bool"),
         Expr::Number(spelling) => whole_number(spelling).map(|_| "int"),
+        // An array or object literal denotes an array or an object whatever
+        // its elements turn out to hold, so this arm admits `[a, b]` on the
+        // same grounds as `[1, 2]` — the constructor is the literal, and
+        // ECMA-262 fixes what it constructs. That is the same test the
+        // arithmetic arms fail: `1 + 2` needs its value computed before its
+        // type is known, while `[x]` is an Array before anything is
+        // evaluated.
+        //
+        // Both spellings answer `json` rather than `array` and `object`
+        // separately, because the reader they select is one reader. It hands
+        // the value over as the text the engine's own `JSON.stringify`
+        // produces, and that serializer is where the array/object
+        // distinction is already carried — in the first character of the
+        // answer. Splitting the type here would name a difference no host
+        // signature could express: every backend returns the same string.
+        Expr::Array(_) | Expr::Object(_) => Some("json"),
         // `-7` is not a numeric literal in ECMAScript — it is negation
         // applied to `7` — and the previous classifier's `strip_prefix('-')`
         // was that fact spelled as string surgery. `+7` reaches the same

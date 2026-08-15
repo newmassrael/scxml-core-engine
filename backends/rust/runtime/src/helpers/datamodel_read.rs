@@ -91,3 +91,62 @@ pub fn read_bool(se: &dyn IScriptEngine, sid: Option<&str>, var_id: &str) -> Opt
         _ => None,
     }
 }
+
+/// Read an array- or object-declared datamodel variable, as JSON text.
+///
+/// ## Why the engine serializes it rather than this function
+///
+/// Every engine SCE can be given carries `JSON.stringify` — the clause cited
+/// in the body is what requires it — and that one serializer is the answer
+/// here. Walking the [`ScriptValue`] tree instead
+/// would be a second serializer disagreeing with the first, and it
+/// would not even agree with itself: this runtime's object arrives as a
+/// `HashMap`, so two reads of an unchanged variable could hand a consumer
+/// the keys in different orders. What the engine produces is stable for that
+/// engine — the Lua family's shared builtin sorts object keys, an ECMAScript
+/// engine emits property order — and a stable answer is what a consumer
+/// diffing two reads needs. It is the engine's encoding, not a normal form
+/// across engines, which is the same shape of promise the integer reader
+/// makes about numeric width.
+///
+/// It also keeps the six backends to one implementation each. C11 has no
+/// allocator to build a JSON tree in, and there is no shared JSON writer for
+/// six languages to agree through — but every one of them can ask the engine
+/// it already holds.
+///
+/// ## Why this expression survives either engine family
+///
+/// [`IScriptEngine::evaluate_expression`] takes the ENGINE's language, not
+/// the document's: a Lua-backed session is handed Lua, which is why generated
+/// initializers carry Lua table syntax. `JSON.stringify(x)` is spelled the
+/// same in both families — member access and a call, in a language the
+/// datamodel clause requires that exact name to exist in. It is the one form
+/// this helper can emit without knowing which engine was injected. The Kotlin
+/// lane holds every backend to that: `DatamodelReadJsonTest` puts this same
+/// expression to all three engines SCE can be given (Rhino, QuickJS, Lua),
+/// which is more engines than any single runtime can reach.
+///
+/// ## Why the answer is strict
+///
+/// The scalar readers refuse a value of another type, and this one refuses
+/// too: a variable declared `[…]` and later assigned `5` answers `None`, not
+/// `"5"`. The test is the first character of the serializer's output, where
+/// JSON's grammar puts the type — `[` opens an array and `{` an object, and
+/// nothing else stringifies to either. Reading the *result* this way is not
+/// the mistake this axis made with quotes one layer up: there, a character
+/// test stood in for parsing the author's source text; here the text is a
+/// canonical encoding whose first byte is defined to be the type tag.
+pub fn read_json(se: &dyn IScriptEngine, sid: Option<&str>, var_id: &str) -> Option<String> {
+    // §scxml-5.3: the value a `<data>` declaration populated into the session,
+    // handed over in the encoding §scxml-B-2 already requires the engine to
+    // produce. `var_id` reaches here only for a name the classifier confirmed
+    // is a bare identifier — see `analyzer::reachable_as_an_expression`.
+    let json = match se
+        .evaluate_expression(sid?, &format!("JSON.stringify({var_id})"))
+        .ok()?
+    {
+        ScriptValue::String(s) => s,
+        _ => return None,
+    };
+    (json.starts_with('[') || json.starts_with('{')).then_some(json)
+}

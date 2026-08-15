@@ -24,6 +24,7 @@
 package session_ids_are_distinct
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -52,5 +53,42 @@ func TestTwoLiveSessionsAreIssuedDifferentIds(t *testing.T) {
 		t.Fatalf("two live sessions reported the same `_sessionid`. W3C SCXML 5.10 binds it to the id of the current session, and C.1.1 publishes an address derived from it, so one id for two sessions is one address for two sessions.")
 	default:
 		t.Fatalf("session_ids_are_distinct settled in %v, which is not a verdict state", got)
+	}
+}
+
+// W3C SCXML 5.3 + B.2: a `<data>` declared as an array or an object is
+// readable off the machine, as the text the session's own JSON.stringify
+// produces.
+//
+// The document declares `readBackProbe` for the channels rather than for
+// itself, because reading the datamodel is a different question from reading
+// the configuration and every other fixture asks the second one. That is how
+// a whole class of declaration reached consumers with no reader at all: the
+// suites were green over documents nobody could ask anything about.
+func TestAStructuredDeclarationReadsBackAsJSON(t *testing.T) {
+	policy := NewSessionIdsAreDistinctPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	policy.ScriptEngine = scegotest.NewLuaEngine()
+	engine := sce.NewEngine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent](&policy)
+
+	// Before the machine is initialised there is no session holding a
+	// datamodel, so the only honest answer is that it cannot say. A reader
+	// backed by a value captured at generation time would answer the
+	// document's literal here and for the rest of the run.
+	if _, ok := policy.ReadBackProbe(); ok {
+		t.Fatalf("an uninitialised machine answered a datamodel read")
+	}
+
+	engine.Initialize()
+
+	json, ok := policy.ReadBackProbe()
+	if !ok {
+		t.Fatalf("`readBackProbe` could not be read. A structured `<data>` must be readable off the machine, as the JSON its own session serialises it to.")
+	}
+	if !strings.HasPrefix(json, "[") {
+		t.Fatalf("an authored array came back as %q. The first character of JSON is its type, and this reader answers only for the shape the document declared.", json)
+	}
+	if !strings.Contains(json, "first") || !strings.Contains(json, "Escape") {
+		t.Fatalf("the answer %q is missing what the document wrote into `readBackProbe`. A reader producing well-formed JSON of the wrong value would pass the check above and fail here.", json)
 	}
 }

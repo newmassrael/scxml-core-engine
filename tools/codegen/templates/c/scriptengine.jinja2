@@ -165,6 +165,18 @@
            literal of only 4095 characters and `-pedantic -Werror` holds the
            C11 test build to it. Each call carries a complete Lua chunk. */
 {{ ecma_semantics_lua_c }}
+        /* W3C SCXML B.2: `JSON.stringify` / `JSON.parse`, from the same
+           shared source the C++, Rust, Go and Kotlin Lua engines load —
+           sce/include/scripting/json_builtins.lua. The clause puts `JSON` in
+           an ECMAScript datamodel, and this session was the one that did not
+           have it, so a `<script>` calling `JSON.stringify` reached a nil
+           here while reaching the builtin everywhere else.
+
+           It is also what the structured `<data>` readers below ask for:
+           they hand the value over as the text this serialiser produces
+           rather than walking the table themselves, so that six backends
+           share one encoder instead of six that drift. */
+{{ json_builtins_lua_c }}
         /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
            on startup to the system-generated id for the CURRENT SESSION.
            The value comes from `sm->session_id`, issued once in `_init`
