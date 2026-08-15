@@ -69,11 +69,14 @@ mutation_case "the configuration recomputes one level of the region's descent" <
 edit("sce/src/runtime/StateHierarchyManager.cpp",
      """                    const auto entered = region->getActiveStates();
                     if (entered.empty()) {
-                        addStateToConfiguration(initialChild);
+                        addStateToConfigurationWithoutOnEntry(initialChild);
+                        synchronizeParallelRegionState(initialChild);
                     } else {
                         for (const auto &enteredState : entered) {
-                            addStateToConfiguration(enteredState);
+                            addStateToConfigurationWithoutOnEntry(enteredState);
+                            synchronizeParallelRegionState(enteredState);
                         }
                     }""",
-     "                    addStateToConfiguration(initialChild);")
+     """                    addStateToConfigurationWithoutOnEntry(initialChild);
+                    synchronizeParallelRegionState(initialChild);""")
 PY
