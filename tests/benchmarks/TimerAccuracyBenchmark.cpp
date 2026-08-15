@@ -164,7 +164,25 @@ static void BM_Timer_StartOverhead(benchmark::State &state) {
     eventLoop.join();
 }
 
-BENCHMARK(BM_Timer_StartOverhead)->Unit(benchmark::kNanosecond);
+// A FIXED iteration count, like every timing case above, because this one is
+// also a ctest case (`benchmark_timer_accuracy_quick`) and a ctest case has a
+// wall-clock TIMEOUT.
+//
+// Left adaptive, google-benchmark calibrates from a short sample and then
+// commits to however many iterations fill `--benchmark_min_time` — measured
+// 2026-08-16 on a quiet machine, 431,461 of them at 436 ns. The count is fixed
+// before the run; the per-iteration cost is not. A busy machine multiplies the
+// second and the total is unbounded, which is how a case that takes 0.21 s
+// alone hit the 300 s timeout and blocked a push twice.
+//
+// Not an accumulation bug: at 4,000,000 iterations the cost per operation
+// measures 243 ns, LOWER than at 431k, so `stopTimer` is releasing what
+// `startTimer` took. Only the schedule is unbounded.
+//
+// 100,000 keeps the sample large enough for a nanosecond figure while bounding
+// the work: ~40 ms nominal, and still seconds rather than minutes if the
+// machine is a hundred times slower.
+BENCHMARK(BM_Timer_StartOverhead)->Unit(benchmark::kNanosecond)->Iterations(100000);
 
 /**
  * @brief Timer stop overhead
@@ -187,7 +205,9 @@ static void BM_Timer_StopOverhead(benchmark::State &state) {
     eventLoop.join();
 }
 
-BENCHMARK(BM_Timer_StopOverhead)->Unit(benchmark::kNanosecond);
+// Fixed for the same reason as `BM_Timer_StartOverhead` above, and it is the
+// worse of the two: adaptive, this one committed to 1,026,222 iterations.
+BENCHMARK(BM_Timer_StopOverhead)->Unit(benchmark::kNanosecond)->Iterations(100000);
 
 /**
  * @brief Timer query overhead
