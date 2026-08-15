@@ -14,9 +14,22 @@
 --   `<< >> >>>` likewise, and `>>>` is unsigned where `>>` is not
 --
 -- Single Source of Truth: every backend loads THIS file. The alternative --
--- one native implementation per engine, as `_scxml_truthy` and `_typeof`
--- have -- is six chances for the semantics to drift, and the semantics are
--- the whole point. Do NOT reimplement these in an engine.
+-- one native implementation per engine -- is six chances for the semantics to
+-- drift, and the semantics are the whole point. Do NOT reimplement these in an
+-- engine.
+--
+-- That sentence used to carry an exception: `_scxml_truthy`, `_typeof`,
+-- `_isArray`, `_indexOf`, `_concat`, `parseInt` and `parseFloat` were written
+-- once per engine, in the engine's own language. The drift arrived exactly
+-- where it was predicted to. Measured 2026-08-16, the day the shared table
+-- gained a reader on every Lua backend: Go answered ten of eighty-four cases
+-- differently -- its `_indexOf` and `_concat` had no Array implementation at
+-- all, returning -1 and "" for every array a document passed them -- Python
+-- called `typeof [1,2,3]` "function", and Rust dropped `indexOf`'s second
+-- argument. Every one of those backends was green on the W3C suite
+-- throughout, because no fixture in it asks `[1,2,3].indexOf(2)`.
+--
+-- So they live here now, and an engine's remaining job is to load this file.
 --
 -- Lua 5.2 compatible on purpose: the Go backend embeds go-lua (5.2), which
 -- has no `//` operator, no integer subtype and no bitwise operators at all.
@@ -29,6 +42,68 @@
 -- Kotlin: resource copied by the Gradle build
 -- Python: read from the repository path
 -- C11:    emitted into the generated engine bootstrap
+
+-- ECMA-262 7.1.2 ToBoolean -- the `!` operator, every `cond=` attribute, and
+-- the guard the emitter wraps around `&&` and `||`.
+--
+-- Lua's only falsy values are `nil` and `false`, so this is the whole reason
+-- `cond="Var1"` cannot be emitted as `if Var1 then`. NaN is the case a native
+-- implementation keeps getting wrong: `n ~= 0` calls NaN true, because NaN
+-- compares equal to nothing, including zero.
+function _scxml_truthy(v)
+    if v == nil or v == false then return false end
+    -- An engine that has to keep `null` distinct from absence INSIDE an array
+    -- binds it to a sentinel (C++ a lightuserdata, Kotlin a table), because
+    -- a Lua sequence with a nil in it has no length. Both sentinels are
+    -- falsy. Where an engine defines neither, `_NULL` is itself nil and these
+    -- compare false against every value that reaches here.
+    if rawequal(v, _NULL) or rawequal(v, _UNDEFINED) then return false end
+    local t = type(v)
+    if t == "number" then return v == v and v ~= 0 end
+    if t == "string" then return v ~= "" end
+    return true
+end
+
+-- ECMA-262 13.5.3 the `typeof` operator.
+--
+-- Every value this datamodel can hold, named the way ECMAScript names it.
+-- `nil` answers "undefined" rather than "object": SCE binds both `null` and
+-- `undefined` to Lua's one empty value, and an unassigned `<data>` is the
+-- reachable case, so "undefined" is the answer a document is asking for.
+--
+-- `type(v)` is what makes this correct where a native was not: Lua's C-level
+-- `lua_isnumber` answers true for a STRING that parses as a number, so an
+-- engine that asks it before asking about strings calls a text payload a
+-- number -- and `typeof` is precisely how a document tells those apart.
+function _typeof(v)
+    if v == nil then return "undefined" end
+    -- The sentinels `_scxml_truthy` describes: `typeof null` is "object" and
+    -- `typeof undefined` is "undefined", which is the one place the two
+    -- values SCE otherwise collapses can still be told apart.
+    if rawequal(v, _NULL) then return "object" end
+    if rawequal(v, _UNDEFINED) then return "undefined" end
+    local t = type(v)
+    if t == "boolean" then return "boolean" end
+    if t == "number" then return "number" end
+    if t == "string" then return "string" end
+    if t == "function" then return "function" end
+    return "object"
+end
+
+-- ECMA-262 13.10.2 `x instanceof Array`, and the array/object question every
+-- helper below has to answer.
+--
+-- SCE stores an ECMAScript Array as a 1-based Lua sequence and an Object as a
+-- keyed table, so the two differ only in their keys -- and an EMPTY array and
+-- an EMPTY object have no keys at all. A table with no keys answers true,
+-- because `[]` is the value a document constructs and `{}` is the one it does
+-- not ask this question about; the ambiguity itself is a limit of the
+-- representation rather than a choice.
+function _isArray(v)
+    if type(v) ~= "table" then return false end
+    if #v > 0 then return true end
+    return next(v) == nil
+end
 
 -- ECMA-262 7.1.4 ToNumber, over the value domain the SCXML datamodel
 -- carries. `nil` is ECMAScript `undefined` here: SCE binds both `_NULL` and
@@ -318,6 +393,230 @@ function _scxml_split(s, separator, limit)
     if lim >= 0 and #out >= lim then return out end
     out[#out + 1] = string.sub(s, pos)
     return out
+end
+
+-- ECMA-262 15.4.4.14 Array.prototype.indexOf / 15.5.4.7
+-- String.prototype.indexOf, which the emitter spells as one receiver-first
+-- call because it cannot always know which of the two it is looking at.
+--
+-- Two clauses do the work a native version kept dropping. The search starts
+-- at `from`, so a caller walking occurrences is not handed the one it has
+-- already seen; and an Array compares with `===`, so `[1,2,3].indexOf('2')`
+-- is -1 rather than the coercion `==` would have performed. Lua's `==` is
+-- strict across types, which is what makes the second one a one-liner.
+function _indexOf(subject, search, from)
+    local start = (from == nil) and 0 or _scxml_tonumber(from)
+    if start ~= start then start = 0 end
+    start = (start >= 0) and math.floor(start) or -math.floor(-start)
+    if type(subject) == "string" then
+        local needle = _scxml_tostring(search)
+        local len = #subject
+        if start < 0 then start = 0 elseif start > len then start = len end
+        -- Plain search, named explicitly: go-lua reads a MISSING fourth
+        -- argument as plain and a present-but-false one as a pattern it does
+        -- not implement, the reverse of Lua 5.4's default.
+        local at = string.find(subject, needle, start + 1, true)
+        if at == nil then return -1 end
+        return at - 1
+    end
+    if type(subject) == "table" then
+        local len = #subject
+        -- A negative `from` counts back from the end (15.4.4.14 step 5).
+        if start < 0 then
+            start = len + start
+            if start < 0 then start = 0 end
+        end
+        for i = start + 1, len do
+            if subject[i] == search then return i - 1 end
+        end
+        return -1
+    end
+    return -1
+end
+
+-- ECMA-262 15.4.4.4 Array.prototype.concat / 15.5.4.6 String.prototype.concat.
+--
+-- Binary, because the emitter folds `[].concat(a, b)` into
+-- `_concat(_concat({}, a), b)` -- spelling the fold out there is what keeps a
+-- third argument from being silently dropped, which is what the rewriter this
+-- replaced did.
+--
+-- The receiver is always spread and an argument is spread only when it is an
+-- Array, which is the clause: `[1].concat([2,3])` is three elements and
+-- `[1].concat(2)` is two. An empty table is an Array by `_isArray`, so an
+-- empty Object argument spreads to nothing instead of appending itself --
+-- the same representational limit documented there, at the same one value.
+function _concat(subject, other)
+    if type(subject) == "string" then
+        return subject .. _scxml_tostring(other)
+    end
+    local out = {}
+    if type(subject) == "table" then
+        for i = 1, #subject do out[#out + 1] = subject[i] end
+    elseif subject ~= nil then
+        out[#out + 1] = subject
+    end
+    if _isArray(other) then
+        for i = 1, #other do out[#out + 1] = other[i] end
+    elseif other ~= nil then
+        out[#out + 1] = other
+    end
+    return out
+end
+
+-- ECMA-262 15.1.2.2 parseInt / 15.1.2.3 parseFloat: the two global functions
+-- that read a PREFIX.
+--
+-- That is the whole difference between `parseInt(s)` and `Number(s)`, and it
+-- is what an engine delegating to its host's string-to-number routine loses:
+-- a strict parser refuses "42abc" and answers 0, a number the document cannot
+-- tell from a real one. Written out here rather than delegated for that
+-- reason.
+-- The value of one digit in `base`, or nil for anything that is not one --
+-- including the empty string a scan past the end returns.
+--
+-- Global for the same reason everything else here is: the C11 backend loads
+-- this file as several independent chunks, and a file-local would not survive
+-- the split.
+function _scxml_digit(c, base)
+    if c == "" then return nil end
+    local b = string.byte(c)
+    local v
+    if b >= 48 and b <= 57 then
+        v = b - 48
+    elseif b >= 97 and b <= 122 then
+        v = b - 87
+    elseif b >= 65 and b <= 90 then
+        v = b - 55
+    else
+        return nil
+    end
+    if v >= base then return nil end
+    return v
+end
+
+-- Leading whitespace, per 15.1.2.2 step 2 (StrWhiteSpaceChar).
+function _scxml_skip_space(s, i)
+    while i <= #s do
+        local c = string.sub(s, i, i)
+        if c ~= " " and c ~= "\t" and c ~= "\n" and c ~= "\r" and c ~= "\f" and c ~= "\v" then
+            break
+        end
+        i = i + 1
+    end
+    return i
+end
+
+function parseInt(value, radix)
+    local s = _scxml_tostring(value)
+    local i = _scxml_skip_space(s, 1)
+    local sign = 1
+    local c = string.sub(s, i, i)
+    if c == "-" then
+        sign = -1
+        i = i + 1
+    elseif c == "+" then
+        i = i + 1
+    end
+    local base = (radix == nil) and 0 or _scxml_tonumber(radix)
+    if base ~= base then base = 0 end
+    base = math.floor(base)
+    -- `0x` picks hexadecimal when no radix was named, and is accepted (not
+    -- required) when 16 was.
+    if base == 0 or base == 16 then
+        if string.lower(string.sub(s, i, i + 1)) == "0x" then
+            base = 16
+            i = i + 2
+        elseif base == 0 then
+            base = 10
+        end
+    end
+    if base < 2 or base > 36 then return 0 / 0 end
+    local n, digits = 0, 0
+    while i <= #s do
+        local v = _scxml_digit(string.sub(s, i, i), base)
+        if v == nil then break end
+        n = n * base + v
+        digits = digits + 1
+        i = i + 1
+    end
+    -- No digit at all is NaN, not zero: "the string is not a number" and "the
+    -- string is zero" are different answers and a document can branch on it.
+    if digits == 0 then return 0 / 0 end
+    return sign * n
+end
+
+function parseFloat(value)
+    local s = _scxml_tostring(value)
+    local i = _scxml_skip_space(s, 1)
+    local sign = 1
+    local c = string.sub(s, i, i)
+    if c == "-" then
+        sign = -1
+        i = i + 1
+    elseif c == "+" then
+        i = i + 1
+    end
+    -- StrDecimalLiteral admits `Infinity`, and it is the one member of the
+    -- grammar that is a word rather than digits.
+    if string.sub(s, i, i + 7) == "Infinity" then
+        return sign * math.huge
+    end
+    local from = i
+    local digits = 0
+    while _scxml_digit(string.sub(s, i, i), 10) ~= nil do
+        i = i + 1
+        digits = digits + 1
+    end
+    if string.sub(s, i, i) == "." then
+        i = i + 1
+        while _scxml_digit(string.sub(s, i, i), 10) ~= nil do
+            i = i + 1
+            digits = digits + 1
+        end
+    end
+    if digits == 0 then return 0 / 0 end
+    -- An exponent counts only when it is complete: "1e" is the number 1
+    -- followed by text, not a malformed number (15.1.2.3 reads the longest
+    -- prefix that satisfies StrDecimalLiteral).
+    local mantissa = i
+    if string.lower(string.sub(s, i, i)) == "e" then
+        i = i + 1
+        local c2 = string.sub(s, i, i)
+        if c2 == "-" or c2 == "+" then i = i + 1 end
+        local exponent = 0
+        while _scxml_digit(string.sub(s, i, i), 10) ~= nil do
+            i = i + 1
+            exponent = exponent + 1
+        end
+        if exponent == 0 then i = mantissa end
+    end
+    -- The sign is applied here rather than handed to `tonumber`: whether a
+    -- leading `+` is accepted is an interpreter detail, and go-lua and Lua 5.4
+    -- do not have to agree on it.
+    local n = tonumber(string.sub(s, from, i - 1))
+    if n == nil then return 0 / 0 end
+    return sign * n
+end
+
+-- ECMA-262 15.2.3.14 Object.keys, the one way this datamodel can walk an
+-- object whose shape arrived with the payload.
+--
+-- Sorted, which the clause does not ask for and this file has to decide
+-- anyway: ECMAScript gives the order of a `for-in` enumeration, and a Lua
+-- table has no such order to give -- `pairs` returns whatever the hash layout
+-- produces, which differs between interpreters and between two runs of one.
+-- So the choice is a normal form or an answer that cannot be relied on, and
+-- five backends previously made it five ways. The sixth, Go, did not define
+-- `Object` at all: a document calling `Object.keys` reached a nil there and
+-- nowhere else.
+Object = Object or {}
+function Object.keys(t)
+    if type(t) ~= "table" then return {} end
+    local keys = {}
+    for k in pairs(t) do keys[#keys + 1] = _scxml_tostring(k) end
+    table.sort(keys)
+    return keys
 end
 
 -- ECMA-262 15.5.1.1 / 15.7.1.1 / 15.6.1.1: the three constructors CALLED AS

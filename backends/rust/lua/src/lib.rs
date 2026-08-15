@@ -147,198 +147,18 @@ impl LuaEngine {
     fn setup_builtins(lua: &Lua) -> LuaResult<()> {
         let globals = lua.globals();
 
-        // W3C SCXML B.2: ECMAScript truthiness semantics
-        // _scxml_truthy(val): nil/false -> false, 0/0.0/"" -> false, else true
-        let truthy_fn = lua.create_function(|_, val: LuaValue| {
-            Ok(match val {
-                LuaValue::Nil => false,
-                LuaValue::Boolean(b) => b,
-                LuaValue::Integer(i) => i != 0,
-                LuaValue::Number(f) => f != 0.0 && !f.is_nan(),
-                LuaValue::String(s) => !s.to_string_lossy().is_empty(),
-                _ => true,
-            })
-        })?;
-        globals.set("_scxml_truthy", truthy_fn)?;
-
-        // _typeof(val): Lua type -> JS typeof string
-        let typeof_fn = lua.create_function(|_, val: LuaValue| {
-            Ok(match val {
-                LuaValue::Nil => "undefined".to_string(),
-                LuaValue::Boolean(_) => "boolean".to_string(),
-                LuaValue::Integer(_) | LuaValue::Number(_) => "number".to_string(),
-                LuaValue::String(_) => "string".to_string(),
-                LuaValue::Function(_) => "function".to_string(),
-                LuaValue::Table(_) => "object".to_string(),
-                _ => "object".to_string(),
-            })
-        })?;
-        globals.set("_typeof", typeof_fn)?;
-
-        // _isArray(val): Check if value is a Lua sequence table (array)
-        let is_array_fn = lua.create_function(|_, val: LuaValue| {
-            Ok(match val {
-                LuaValue::Table(t) => {
-                    t.raw_len() > 0 || {
-                        // Empty table or pure sequence check
-                        let mut count = 0;
-                        for pair in t.pairs::<LuaValue, LuaValue>() {
-                            if pair.is_err() {
-                                break;
-                            }
-                            count += 1;
-                        }
-                        count == 0 // Empty table is array-like
-                    }
-                }
-                _ => false,
-            })
-        })?;
-        globals.set("_isArray", is_array_fn)?;
-
-        // _indexOf(arr_or_str, search, from): ECMAScript indexOf (returns -1 on not found)
-        let index_of_fn = lua.create_function(|_, args: LuaMultiValue| {
-            let values: Vec<LuaValue> = args.into_vec();
-            if values.is_empty() {
-                return Ok(LuaValue::Integer(-1));
-            }
-            match &values[0] {
-                LuaValue::Table(t) => {
-                    let search = values.get(1).cloned().unwrap_or(LuaValue::Nil);
-                    let from = match values.get(2) {
-                        Some(LuaValue::Integer(n)) => *n as usize,
-                        Some(LuaValue::Number(n)) => *n as usize,
-                        _ => 0,
-                    };
-                    let len = t.raw_len();
-                    for i in (from + 1)..=len {
-                        if let Ok(val) = t.raw_get::<LuaValue>(i) {
-                            if lua_values_equal(&val, &search) {
-                                return Ok(LuaValue::Integer((i as i64) - 1)); // 0-based
-                            }
-                        }
-                    }
-                    Ok(LuaValue::Integer(-1))
-                }
-                LuaValue::String(s) => {
-                    let haystack = &s.to_string_lossy();
-                    let needle = match values.get(1) {
-                        Some(LuaValue::String(s)) => s.to_string_lossy().to_string(),
-                        Some(LuaValue::Integer(n)) => n.to_string(),
-                        Some(LuaValue::Number(n)) => n.to_string(),
-                        _ => return Ok(LuaValue::Integer(-1)),
-                    };
-                    match haystack.find(&needle) {
-                        Some(pos) => Ok(LuaValue::Integer(pos as i64)),
-                        None => Ok(LuaValue::Integer(-1)),
-                    }
-                }
-                _ => Ok(LuaValue::Integer(-1)),
-            }
-        })?;
-        globals.set("_indexOf", index_of_fn)?;
-
-        // _concat(arr1, arr2): ECMAScript Array.concat
-        let concat_fn = lua.create_function(|lua, (arr1, arr2): (LuaTable, LuaValue)| {
-            let result = lua.create_table()?;
-            let mut idx = 1;
-            // Copy arr1 elements
-            for i in 1..=arr1.raw_len() {
-                if let Ok(v) = arr1.raw_get::<LuaValue>(i) {
-                    result.raw_set(idx, v)?;
-                    idx += 1;
-                }
-            }
-            // Append arr2 (table or single value)
-            match arr2 {
-                LuaValue::Table(t2) => {
-                    for i in 1..=t2.raw_len() {
-                        if let Ok(v) = t2.raw_get::<LuaValue>(i) {
-                            result.raw_set(idx, v)?;
-                            idx += 1;
-                        }
-                    }
-                }
-                other => {
-                    result.raw_set(idx, other)?;
-                }
-            }
-            Ok(result)
-        })?;
-        globals.set("_concat", concat_fn)?;
-
-        // parseInt(str, radix?): 1:1 with C++ LuaEngine which uses strtoll()
-        let parse_int_fn = lua.create_function(|_, args: LuaMultiValue| {
-            let values: Vec<LuaValue> = args.into_vec();
-            let s = match values.first() {
-                Some(LuaValue::String(s)) => s.to_string_lossy().trim().to_string(),
-                Some(LuaValue::Integer(n)) => return Ok(LuaValue::Integer(*n)),
-                Some(LuaValue::Number(n)) => return Ok(LuaValue::Integer(*n as i64)),
-                _ => return Ok(LuaValue::Nil),
-            };
-            let radix = match values.get(1) {
-                Some(LuaValue::Integer(r)) => *r as u32,
-                Some(LuaValue::Number(r)) => *r as u32,
-                _ => 10,
-            };
-            // 1:1 with C++ strtoll(str, &endptr, base): parse leading valid digits
-            let trimmed = s.trim();
-            // Determine effective string and radix (auto-detect hex for radix 16 or 0)
-            let (parse_str, effective_radix) = if (radix == 16 || radix == 0)
-                && (trimmed.starts_with("0x") || trimmed.starts_with("0X"))
-            {
-                (&trimmed[2..], 16u32)
-            } else if radix == 0 {
-                (trimmed, 10u32)
-            } else {
-                (trimmed, radix)
-            };
-            // Parse leading digits in the given radix (strtoll semantics)
-            let valid_prefix: String = parse_str
-                .chars()
-                .take_while(|c| c.is_digit(effective_radix))
-                .collect();
-            if valid_prefix.is_empty() {
-                // Handle leading sign
-                if parse_str.starts_with('-') || parse_str.starts_with('+') {
-                    let sign = if parse_str.starts_with('-') { "-" } else { "" };
-                    let digits: String = parse_str[1..]
-                        .chars()
-                        .take_while(|c| c.is_digit(effective_radix))
-                        .collect();
-                    if digits.is_empty() {
-                        return Ok(LuaValue::Number(f64::NAN));
-                    }
-                    let full = format!("{}{}", sign, digits);
-                    match i64::from_str_radix(&full, effective_radix) {
-                        Ok(n) => return Ok(LuaValue::Integer(n)),
-                        Err(_) => return Ok(LuaValue::Number(f64::NAN)),
-                    }
-                }
-                Ok(LuaValue::Number(f64::NAN))
-            } else {
-                match i64::from_str_radix(&valid_prefix, effective_radix) {
-                    Ok(n) => Ok(LuaValue::Integer(n)),
-                    Err(_) => Ok(LuaValue::Number(f64::NAN)),
-                }
-            }
-        })?;
-        globals.set("parseInt", parse_int_fn)?;
-
-        // parseFloat(str): ECMAScript parseFloat (1:1 with C++ strtod pattern)
-        let parse_float_fn = lua.create_function(|_, s: LuaValue| {
-            let text = match s {
-                LuaValue::String(s) => s.to_string_lossy().trim().to_string(),
-                LuaValue::Integer(n) => return Ok(LuaValue::Number(n as f64)),
-                LuaValue::Number(n) => return Ok(LuaValue::Number(n)),
-                _ => return Ok(LuaValue::Number(f64::NAN)),
-            };
-            match text.parse::<f64>() {
-                Ok(f) => Ok(LuaValue::Number(f)),
-                Err(_) => Ok(LuaValue::Number(f64::NAN)),
-            }
-        })?;
-        globals.set("parseFloat", parse_float_fn)?;
+        // W3C SCXML B.2: `_scxml_truthy`, `_typeof`, `_isArray`, `_indexOf`,
+        // `_concat`, `parseInt` and `parseFloat` were seven Rust closures
+        // here, one of six implementations of the same seven meanings. They
+        // are in the shared sce/include/scripting/ecma_semantics.lua now,
+        // loaded at the end of this function.
+        //
+        // The drift they were predicted to accumulate had arrived. Measured
+        // 2026-08-16 against tests/ecmascript/ecma262_semantics.json, once
+        // every Lua backend had a reader: Go's `_indexOf` and `_concat` had
+        // no Array branch at all, Python called `typeof [1,2,3]` "function",
+        // and this copy read `indexOf`'s second argument as the search
+        // START on a table while ignoring it entirely on a string.
 
         // _NULL / _UNDEFINED sentinel values for array literal null/undefined preservation
         globals.set("_NULL", LuaValue::Nil)?;
@@ -402,26 +222,10 @@ impl LuaEngine {
             json_table.set("parse", parse_fn)?;
         }
 
-        // Object.keys(tbl): returns array of string keys
-        let object_table = lua.create_table()?;
-        let keys_fn = lua.create_function(|lua, tbl: LuaValue| {
-            let result = lua.create_table()?;
-            if let LuaValue::Table(t) = tbl {
-                let mut idx = 1;
-                for (k, _) in t.pairs::<LuaValue, LuaValue>().flatten() {
-                    let key_str = match k {
-                        LuaValue::String(s) => s.to_string_lossy().to_string(),
-                        LuaValue::Integer(n) => n.to_string(),
-                        _ => continue,
-                    };
-                    result.raw_set(idx, key_str)?;
-                    idx += 1;
-                }
-            }
-            Ok(result)
-        })?;
-        object_table.set("keys", keys_fn)?;
-        globals.set("Object", object_table)?;
+        // `Object.keys` moved to the shared semantics file with the rest of
+        // the engine vocabulary. This copy enumerated in `pairs` order, which
+        // is the hash layout rather than an order at all; the shared one
+        // sorts, so the six backends answer the same array.
 
         Ok(())
     }
@@ -515,19 +319,6 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
         }
         LuaValue::Function(_) => ScriptValue::String("[function]".to_string()),
         _ => ScriptValue::Null,
-    }
-}
-
-fn lua_values_equal(a: &LuaValue, b: &LuaValue) -> bool {
-    match (a, b) {
-        (LuaValue::Nil, LuaValue::Nil) => true,
-        (LuaValue::Boolean(a), LuaValue::Boolean(b)) => a == b,
-        (LuaValue::Integer(a), LuaValue::Integer(b)) => a == b,
-        (LuaValue::Integer(a), LuaValue::Number(b)) => (*a as f64) == *b,
-        (LuaValue::Number(a), LuaValue::Integer(b)) => *a == (*b as f64),
-        (LuaValue::Number(a), LuaValue::Number(b)) => a == b,
-        (LuaValue::String(a), LuaValue::String(b)) => a.as_bytes() == b.as_bytes(),
-        _ => false,
     }
 }
 

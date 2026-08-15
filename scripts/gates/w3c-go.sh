@@ -69,6 +69,34 @@ fi
 
 sce_gate_step "$cases Go case(s) passed"
 
+# The engine's own tests, which no gate and no CI lane ran.
+#
+# `backends/go/tests` is a module of its own, so `./...` above never reached
+# the two modules underneath it: the DOM parser's tests, the JSON payload
+# tests, and — the reason this was noticed — the reader that measures this
+# backend against `tests/ecmascript/ecma262_semantics.json`. That reader found
+# ten of eighty-four ECMA-262 cases answered differently here on the day it was
+# written, with the conformance suite above green throughout, so a gate that
+# stops at the suite is a gate that reports on the wrong layer.
+for module in lua runtime; do
+    sce_gate_step "running the Go $module module's own tests"
+    module_status=0
+    ( cd "backends/go/$module" && go test ./... -v -count=1 ) \
+        >"$LOG/go-$module.log" 2>&1 || module_status=$?
+    if (( module_status != 0 )); then
+        grep -E '^(--- FAIL|FAIL|\s+.*_test\.go:)' "$LOG/go-$module.log" | head -n 40 >&2
+        sce_gate_fail "the Go $module module's tests failed"
+    fi
+    # Same floor logic as the suite: a package that compiled nothing exits 0
+    # with no case lines at all, which reads as a pass in the status alone.
+    module_cases="$(grep -cE '^--- (PASS|FAIL):' "$LOG/go-$module.log" || true)"
+    if (( module_cases < 1 )); then
+        tail -n 20 "$LOG/go-$module.log" >&2
+        sce_gate_fail "the Go $module module ran no tests — it compiled without collecting any"
+    fi
+    sce_gate_step "$module_cases Go $module case(s) passed"
+done
+
 # The same generator, asked for a module of the caller's own.
 #
 # `--output-dir` used to emit a fragment: the generated tests imported
