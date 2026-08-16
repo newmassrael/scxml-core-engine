@@ -428,6 +428,41 @@
       "source": "Object.keys(o).length"
     },
     {
+      "expression": "_scxml_replace(\"a,b,c\", \",\", \"-\")",
+      "setup": "",
+      "source": "'a,b,c'.replace(',', '-')"
+    },
+    {
+      "expression": "_scxml_slice(\"abcdef\", 2, 4)",
+      "setup": "",
+      "source": "'abcdef'.slice(2, 4)"
+    },
+    {
+      "expression": "table.concat(_scxml_sort(xs), \",\")",
+      "setup": "xs = {10, 9, 1}",
+      "source": "xs.sort().join(',')"
+    },
+    {
+      "expression": "table.concat(_scxml_slice(xs, 1), \",\")",
+      "setup": "xs = {1, 2, 3}",
+      "source": "xs.slice(1).join(',')"
+    },
+    {
+      "expression": "table.concat(_scxml_reverse(xs), \",\")",
+      "setup": "xs = {1, 2, 3}",
+      "source": "xs.reverse().join(',')"
+    },
+    {
+      "expression": "_scxml_round(2.5)",
+      "setup": "",
+      "source": "Math.round(2.5)"
+    },
+    {
+      "expression": "_scxml_round((-2.5))",
+      "setup": "",
+      "source": "Math.round(-2.5)"
+    },
+    {
       "expression": "JSON.parse(\"{\\\"a\\\":1}\").a",
       "setup": "",
       "source": "JSON.parse('{\"a\":1}').a"
