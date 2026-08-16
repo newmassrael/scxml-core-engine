@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: f21fa6fe20b06255f5ff03ff01c6dbc9228fed62e399d58a912b19b086193a03
+// template-hash: 6b3d1716c5fe7bf441783d277357c458e7e14d8fc3f1d3e67e7f0181f437b229
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -612,7 +612,7 @@ impl StatePolicy for Test531Policy {
                         // carries it — so each is escaped once per boundary
                         // (`escape_lua | escape_rust`). Applying only the host filter produces
                         // Rust source that compiles and Lua source that does not parse.
-                        let event_data: &str = "{ [\"_scxmleventname\"]=\"test\" }";
+                        let event_data: &str = "_scxml_params({\"_scxmleventname\", \"test\"})";
 
                         // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
                         let _resolved_target: Option<String> = {

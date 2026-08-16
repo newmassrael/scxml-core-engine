@@ -830,7 +830,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // child — and the interpreter forwards it to the target without altering it.
         // W3C SCXML: Supports duplicate param names - all values must be included (Test 178)
         std::map<std::string, std::vector<std::string>> evaluatedParams;
-        std::map<std::string, ScriptValue> typedParams;
+        std::map<std::string, std::vector<ScriptValue>> typedParams;
 
         // Step 1: Evaluate namelist variables using NamelistHelper (Zero Duplication Principle)
         const std::string &namelist = action.getNamelist();
@@ -879,7 +879,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                         paramValue);  // W3C SCXML: Support duplicate param names (Test 178)
                     // Preserve ScriptValue for engine-agnostic typed data pipeline
                     if (evalResult.isSuccess()) {
-                        typedParams[param.name] = evalResult.getInternalValue();
+                        typedParams[param.name].push_back(evalResult.getInternalValue());
                     }
                     SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name,
                                   paramValue, paramValueExpr);

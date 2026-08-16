@@ -37,9 +37,27 @@
      literal params are), and W3C SCXML B.1.4 gives the Null data model
      no value expression language for the `expr` attributes it carries.
 
-     Values are strings on both paths: `<param>` payload marshalling is not
-     the axis here, and a numeric literal would additionally assert how each
-     backend maps number types across the boundary.
+     Values are strings on the first two paths: `<param>` payload marshalling
+     is not the axis there, and a numeric literal would additionally assert how
+     each backend maps number types across the boundary.
+
+     A third phase asks exactly that, because nothing else did. Two claims,
+     both about what a `<param>` VALUE is when it arrives:
+
+       a number stays a number
+         `expr="7"` is the Number 7, and `_event.data.n === 7` is how a
+         document reads it. A backend that stringifies on the way through
+         delivers "7", which `===` finds unequal — a guard that silently takes
+         the other branch, which is the failure mode this axis keeps producing.
+
+       two params of one name keep both values AND their type
+         W3C SCXML 6.2 lets a name repeat, and test178 in the IRP corpus is
+         MANUAL: the tester reads the log to confirm both pairs are there, so
+         no automated channel has ever checked it. C++ folds duplicates into an
+         array — measured 2026-08-16 in `EventDataHelper::mergeParams`, whose
+         `values.size() > 1` branch publishes the STRING vector and drops the
+         typed values it is holding at the same moment. The claim is the array
+         AND its element types: `d.length === 2 && d[0] === 1`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" initial="awaitChild"
@@ -78,11 +96,32 @@
         </onentry>
         <transition event="loopback"
                     cond="_event.data &amp;&amp; _event.data.carried === 'kept'"
-                    target="pass"/>
+                    target="typedPhase"/>
         <transition event="loopback" target="failInternalPayload"/>
+    </state>
+
+    <!-- W3C SCXML 6.2: what a `<param>` value IS on arrival. The two claims
+         are separated into two transitions so a failure names which one broke:
+         a number that arrived stringified is a different defect from a
+         duplicate name that lost one of its values. -->
+    <state id="typedPhase">
+        <onentry>
+            <send target="#_internal" event="typed">
+                <param name="n" expr="7"/>
+                <param name="d" expr="1"/>
+                <param name="d" expr="2"/>
+            </send>
+        </onentry>
+        <transition event="typed" cond="_event.data.n !== 7" target="failNumberType"/>
+        <transition event="typed"
+                    cond="_event.data.d.length === 2 &amp;&amp; _event.data.d[0] === 1 &amp;&amp; _event.data.d[1] === 2"
+                    target="pass"/>
+        <transition event="typed" target="failDuplicateParams"/>
     </state>
 
     <final id="pass"/>
     <final id="failChildPayload"/>
     <final id="failInternalPayload"/>
+    <final id="failNumberType"/>
+    <final id="failDuplicateParams"/>
 </scxml>

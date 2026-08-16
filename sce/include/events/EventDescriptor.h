@@ -27,8 +27,14 @@ struct EventDescriptor {
     std::string type = "scxml";                              // Event type (scxml, platform, etc.)
     std::chrono::milliseconds delay{0};                      // Delivery delay
     std::map<std::string, std::vector<std::string>> params;  // Additional parameters (W3C: supports duplicate names)
-    std::map<std::string, ScriptValue> typedParams;          // Typed params preserving ScriptValue (engine-agnostic)
-    std::string content;                                     // Content for HTTP body
+    // Typed params preserving ScriptValue (engine-agnostic). A VECTOR per
+    // name, like `params` beside it and for the same reason: the `<send>`
+    // clause lets a name repeat, and holding one value per name meant the second
+    // `<param name="d"/>` erased the first's type — the payload then fell back
+    // to the stringified pair, so `_event.data.d[0] === 1` read false for a
+    // document that had sent the Number 1 (measured 2026-08-16).
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
+    std::string content;  // Content for HTTP body
 
     // Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)
     std::chrono::milliseconds logicalExecuteTime{0};  // Scheduled logical time (0 = not set, use current time)

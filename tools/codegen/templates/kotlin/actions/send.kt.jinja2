@@ -108,9 +108,9 @@
                 val paramsI = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
-                paramsI["{{ param.name | escape_kotlin }}"] = "{{ param.static_value | escape_kotlin }}"
+                putParam(paramsI, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { paramsI["{{ param.name | escape_kotlin }}"] = engineI.evaluateExpr(sidI, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsI["{{ param.name | escape_kotlin }}"] = "" }
+                try { putParam(paramsI, "{{ param.name | escape_kotlin }}", engineI.evaluateExpr(sidI, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsI, "{{ param.name | escape_kotlin }}", "") }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -154,9 +154,9 @@
                 val paramsP = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
-                paramsP["{{ param.name | escape_kotlin }}"] = "{{ param.static_value | escape_kotlin }}"
+                putParam(paramsP, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { paramsP["{{ param.name | escape_kotlin }}"] = engineP.evaluateExpr(sidP, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsP["{{ param.name | escape_kotlin }}"] = "" }
+                try { putParam(paramsP, "{{ param.name | escape_kotlin }}", engineP.evaluateExpr(sidP, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsP, "{{ param.name | escape_kotlin }}", "") }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -224,9 +224,9 @@
                 val paramsT = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
-                paramsT["{{ param.name | escape_kotlin }}"] = "{{ param.static_value | escape_kotlin }}"
+                putParam(paramsT, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { paramsT["{{ param.name | escape_kotlin }}"] = engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsT["{{ param.name | escape_kotlin }}"] = "" }
+                try { putParam(paramsT, "{{ param.name | escape_kotlin }}", engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsT, "{{ param.name | escape_kotlin }}", "") }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -336,9 +336,9 @@
                 val paramsE = mutableMapOf<String, Any?>()
 {% for param in action.params %}
 {% if param.is_static_literal %}
-                paramsE["{{ param.name | escape_kotlin }}"] = "{{ param.static_value | escape_kotlin }}"
+                putParam(paramsE, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.expr %}
-                try { paramsE["{{ param.name | escape_kotlin }}"] = engineE.evaluateExpr(sidE, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsE["{{ param.name | escape_kotlin }}"] = "" }
+                try { putParam(paramsE, "{{ param.name | escape_kotlin }}", engineE.evaluateExpr(sidE, "{{ param.expr | escape_kotlin }}")) } catch (_: Exception) { putParam(paramsE, "{{ param.name | escape_kotlin }}", "") }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}

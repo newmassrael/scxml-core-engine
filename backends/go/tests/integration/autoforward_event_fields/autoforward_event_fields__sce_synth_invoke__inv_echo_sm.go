@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: f21fa6fe20b06255f5ff03ff01c6dbc9228fed62e399d58a912b19b086193a03
+// template-hash: 6b3d1716c5fe7bf441783d277357c458e7e14d8fc3f1d3e67e7f0181f437b229
 // generated-at: 0
 
 
@@ -507,11 +507,11 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 		se := p.ScriptEngine
 		parts := make([]string, 0)
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `42`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("[%q]=%s", "value", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, fmt.Sprintf("{%q, %s}", "value", sce.ToLuaLiteral(paramVal)))
 		} else {
 			engine.Raise(sce.NewPlatformEvent(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution))
 		}
-		eventDataStr := "{" + strings.Join(parts, ",") + "}"
+		eventDataStr := "_scxml_params(" + strings.Join(parts, ",") + ")"
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {

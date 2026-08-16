@@ -31,10 +31,10 @@
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-		parts = append(parts, fmt.Sprintf("[%q]=%q", "{{ param.name | escape_go }}", "{{ param.static_value | escape_go }}"))
+		parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %q}", "{{ param.name | escape_go }}", "{{ param.static_value | escape_go }}"))
 {% elif param.expr %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %s}", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -42,7 +42,7 @@
 		}
 {% elif param.location %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %s}", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -60,7 +60,7 @@
 {% endif %}
 			sendAborted = true
 		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `{{ name }}`); nlErr == nil {
-			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ name }}", sce.ToLuaLiteral(nlVal)))
+			parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %s}", "{{ name }}", sce.ToLuaLiteral(nlVal)))
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -72,10 +72,10 @@
 {% if has_namelist %}
 		eventDataStr := ""
 		if !sendAborted {
-			eventDataStr = "{" + strings.Join(parts, ",") + "}"
+			eventDataStr = "_scxml_params(" + strings.Join(parts, ",") + ")"
 		}
 {% else %}
-		eventDataStr := "{" + strings.Join(parts, ",") + "}"
+		eventDataStr := "_scxml_params(" + strings.Join(parts, ",") + ")"
 {% endif %}
 		_ = eventDataStr
 {% elif has_params %}
@@ -87,7 +87,7 @@
 		// boundary (`escape_lua | escape_go`). Applying only the host
 		// filter produces Go source that compiles and Lua source that
 		// does not parse.
-		eventDataStr := "{ {% for param in action.params %}[\"{{ param.name | escape_lua | escape_go }}\"]=\"{{ param.static_value | escape_lua | escape_go }}\"{% if not loop.last %},{% endif %}{% endfor %} }"
+		eventDataStr := "_scxml_params({% for param in action.params %}{\"{{ param.name | escape_lua | escape_go }}\", \"{{ param.static_value | escape_lua | escape_go }}\"}{% if not loop.last %}, {% endif %}{% endfor %})"
 		_ = eventDataStr
 {% elif action.content %}
 	{
