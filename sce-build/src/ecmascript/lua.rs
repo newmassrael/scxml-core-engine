@@ -470,12 +470,21 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
             // Emitted receiver-first for the same reason `_indexOf` is: Lua's
             // own string library has neither these names nor these index
             // conventions, and `"abc".charAt(1)` is not valid Lua at all.
-            "substring" | "charAt" | "toLowerCase" | "toUpperCase" | "split" => {
+            "substring" | "charAt" | "toLowerCase" | "toUpperCase" | "split" | "replace"
+            | "slice" | "sort" | "reverse" => {
                 let helper = match property.as_str() {
                     "substring" => "_scxml_substring",
                     "charAt" => "_scxml_charat",
                     "toLowerCase" => "_scxml_tolowercase",
                     "toUpperCase" => "_scxml_touppercase",
+                    "replace" => "_scxml_replace",
+                    // One helper for both receivers: ECMA-262 gives `slice` to
+                    // String (15.5.4.13) and to Array (15.4.4.10) with the same
+                    // index rules, and which one a receiver is cannot be
+                    // decided here — the same reason `_indexOf` takes both.
+                    "slice" => "_scxml_slice",
+                    "sort" => "_scxml_sort",
+                    "reverse" => "_scxml_reverse",
                     _ => "_scxml_split",
                 };
                 let mut all = vec![receiver];
@@ -507,8 +516,16 @@ fn math_call(name: &str, args: &[String]) -> Result<String, ExprError> {
         }
         return Ok(format!("(({}) ^ ({}))", args[0], args[1]));
     }
+    // `Math.round` is not `math.floor(x + 0.5)` inline: ECMA-262 15.8.2.15
+    // sends a half toward +Infinity and hands NaN and the infinities straight
+    // back, and Lua has no rounding function at all. The shared library owns
+    // that clause so six engines cannot each pick a habit.
+    if name == "round" {
+        return Ok(format!("_scxml_round({})", args.join(", ")));
+    }
     const DIRECT: &[&str] = &[
         "sqrt", "abs", "floor", "ceil", "max", "min", "random", "log", "exp", "sin", "cos", "tan",
+        "asin", "acos", "atan",
     ];
     if DIRECT.contains(&name) {
         return Ok(format!("math.{name}({})", args.join(", ")));

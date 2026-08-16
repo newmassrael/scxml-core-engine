@@ -734,6 +734,65 @@
       "clause": "15.2.3.14 Object.keys names every own enumerable property"
     },
     {
+      "group": "builtins",
+      "note": "A string searchValue replaces the FIRST match and only that one — the clause, and the thing a `gsub`-shaped implementation gets wrong by replacing all of them.",
+      "setup": "",
+      "source": "'a,b,c'.replace(',', '-')",
+      "form": "value",
+      "expect": {"string": "a-b,c"},
+      "clause": "15.5.4.11 String.prototype.replace with a string searchValue"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "'abcdef'.slice(2, 4)",
+      "form": "value",
+      "expect": {"string": "cd"},
+      "clause": "15.5.4.13 String.prototype.slice"
+    },
+    {
+      "group": "builtins",
+      "note": "The default comparator sorts by ToString, so 10 comes before 9. An implementation that sorts numerically answers `1,9,10` and is wrong about ES3 — this is the case that tells the two apart.",
+      "setup": "var xs = [10, 9, 1];",
+      "source": "xs.sort().join(',')",
+      "form": "value",
+      "expect": {"string": "1,10,9"},
+      "clause": "15.4.4.11 Array.prototype.sort compares ToString by default"
+    },
+    {
+      "group": "builtins",
+      "setup": "var xs = [1, 2, 3];",
+      "source": "xs.slice(1).join(',')",
+      "form": "value",
+      "expect": {"string": "2,3"},
+      "clause": "15.4.4.10 Array.prototype.slice"
+    },
+    {
+      "group": "builtins",
+      "setup": "var xs = [1, 2, 3];",
+      "source": "xs.reverse().join(',')",
+      "form": "value",
+      "expect": {"string": "3,2,1"},
+      "clause": "15.4.4.8 Array.prototype.reverse"
+    },
+    {
+      "group": "builtins",
+      "note": "Half goes UP, which is not what a language's own rounding necessarily does — Lua has no `round` at all and the nearest habit, `math.floor(x + 0.5)`, happens to agree here and not for negatives.",
+      "setup": "",
+      "source": "Math.round(2.5)",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "15.8.2.15 Math.round rounds half toward +Infinity"
+    },
+    {
+      "group": "builtins",
+      "setup": "",
+      "source": "Math.round(-2.5)",
+      "form": "value",
+      "expect": {"number": -2},
+      "clause": "15.8.2.15 Math.round(-2.5) is -2, not -3"
+    },
+    {
       "group": "json",
       "note": "The AUTHOR's side of JSON, which is a different path from the one an event payload takes: `_event.data` is decoded by the host before a document ever sees it, so an engine can decode every event correctly and still have no `JSON.parse` for a `<script>` to call. No committed document reaches for it, which is why nothing noticed.",
       "setup": "",
