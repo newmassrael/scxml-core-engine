@@ -43,6 +43,7 @@
 //! rewriter's bugs lived. `every_forge_expression_also_parses_as_ecmascript`
 //! pins the containment the split relies on.
 
+pub mod builtins;
 pub mod lua;
 pub mod parser;
 

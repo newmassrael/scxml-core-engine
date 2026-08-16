@@ -36,6 +36,7 @@
 //! instead of the value-preserving function call it needs in value
 //! position.
 
+use super::builtins::{self, DOM_METHODS};
 use super::{BinOp, Expr, LogicalOp, Stmt, UnaryOp, UpdateOp};
 use crate::forge::error::ExprError;
 
@@ -402,15 +403,6 @@ fn index_access(object: &Expr, index: &Expr) -> Result<String, ExprError> {
     ))
 }
 
-/// The methods SCE's XML DOM objects carry (`LuaDOMBinding`).
-///
-/// ECMAScript binds `this` on every method call; Lua binds it only through
-/// the `:` call syntax. These are the only values in this datamodel whose
-/// methods use `this` — everything else an author can store is JSON data,
-/// where a field holding a function would be called without a receiver — so
-/// they are the set that takes `:`.
-const DOM_METHODS: &[&str] = &["getElementsByTagName", "getAttribute", "getTagName"];
-
 fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
     let mut emitted = Vec::with_capacity(args.len());
     for arg in args {
@@ -419,12 +411,19 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
 
     if let Expr::Member { object, property } = callee {
         if let Expr::Ident(name) = object.as_ref() {
-            if name == "Math" {
-                return math_call(property, &emitted);
-            }
-            // `JSON` and `Object` are tables the engines install, so their
-            // methods are ordinary Lua field calls.
-            if name == "JSON" || name == "Object" {
+            if let Some(namespace) = builtins::Namespace::from_ident(name) {
+                // A namespace this repository installs, so its member set
+                // is a fact and a member outside it is a mistake rather
+                // than an unknown. `JSON.serialize` used to be emitted
+                // verbatim and reach a nil at runtime.
+                if let Some(refusal) = builtins::unsupported_member(namespace, property) {
+                    return Err(refusal);
+                }
+                if namespace == builtins::Namespace::Math {
+                    return math_call(property, &emitted);
+                }
+                // `JSON` and `Object` are ordinary Lua tables, so their
+                // members are ordinary field calls.
                 return Ok(format!("{name}.{property}({})", emitted.join(", ")));
             }
         }
@@ -495,6 +494,14 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
                 return Ok(format!("{receiver}:{method}({})", emitted.join(", ")));
             }
             _ => {
+                // A standard method none of the arms above lowers.
+                // Falling through to a field call is what let
+                // `words.map(...)` generate cleanly on every backend and
+                // die at runtime, so the name is answered here rather
+                // than by the interpreter.
+                if let Some(refusal) = builtins::unsupported_method(property) {
+                    return Err(refusal);
+                }
                 // An ordinary method on an author's object. `this` is not
                 // bound: the datamodel has no prototype chain, and a
                 // function stored in a field is called as a field.
@@ -523,16 +530,15 @@ fn math_call(name: &str, args: &[String]) -> Result<String, ExprError> {
     if name == "round" {
         return Ok(format!("_scxml_round({})", args.join(", ")));
     }
-    const DIRECT: &[&str] = &[
-        "sqrt", "abs", "floor", "ceil", "max", "min", "random", "log", "exp", "sin", "cos", "tan",
-        "asin", "acos", "atan",
-    ];
-    if DIRECT.contains(&name) {
-        return Ok(format!("math.{name}({})", args.join(", ")));
-    }
-    Err(ExprError::UnsupportedConstruct {
-        construct: format!("Math.{name}()"),
-    })
+    // Everything else in `Math` is `math.<same name>`. The membership
+    // question was already answered by `builtins::unsupported_member`
+    // before this was called, so a name arriving here is one Lua's own
+    // `math` table carries under the same spelling.
+    debug_assert!(
+        builtins::MATH_MEMBERS.contains(&name),
+        "Math.{name} reached the emitter without passing the namespace check"
+    );
+    Ok(format!("math.{name}({})", args.join(", ")))
 }
 
 fn function_literal(params: &[String], body: &[Stmt]) -> Result<String, ExprError> {

@@ -735,6 +735,42 @@ no typed interpretation or are explicitly excluded:
   `expression/empty`, and numeric-parse failures on integer literal
   overflow, which dispatch as `validation/numeric-parse`.
 
+### §3.5 ECMAScript standard-library names the datamodel does not carry
+
+W3C SCXML Appendix B.2 names ECMAScript as a data model but does not
+oblige a processor to implement all of ECMA-262's standard library.
+SCE implements the part its corpus reaches for, in one shared
+`ecma_semantics.lua` every engine loads, and refuses the rest **by
+name** — `expression/unsupported-builtin`:
+
+- **Method calls.** `.map()`, `.filter()`, `.trim()`, `.getTime()`,
+  `.startsWith()` and the rest of ECMA-262's prototype vocabulary.
+  What the datamodel lowers is `charAt`, `concat`, `indexOf`, `join`,
+  `push`, `replace`, `reverse`, `slice`, `sort`, `split`, `substring`,
+  `toLowerCase`, `toString`, `toUpperCase`, plus `length` as a
+  property; the diagnostic carries that list as its
+  `fix: replace_one_of` candidates.
+- **Members of a namespace SCE installs.** `Math` (ECMA-262 15.8.2
+  minus the names Lua has no primitive for), `JSON.parse` /
+  `JSON.stringify`, `Object.keys`. A member outside one of those sets
+  — `JSON.serialize`, `Math.tanh` — is refused against the set.
+
+A method name in *neither* list is emitted as an ordinary field call,
+because an author's own object is entitled to it:
+`<data id="handlers" expr="{ retry: function() {…} }"/>` followed by
+`handlers.retry()` is accepted and lowered.
+
+Like every other expression refusal (§10.2 of `SCE_ERROR_CONTRACT.md`)
+this is reported without failing the build — W3C §5.9.1 obliges an
+unevaluable expression to raise `error.execution` at runtime rather
+than be refused at generation time — and `--lint` promotes it to fatal
+for documents this repository writes.
+
+`sce_build::ecmascript::builtins` is the single owner of both lists;
+`sce-build/tests/ecmascript_builtin_vocabulary.rs` binds them to the
+emitter and to the shared Lua library, so a name cannot be promised in
+one place and missing from the other.
+
 ### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
 
 NL→IR Mapping Roadmap Items 1, 5, and 6 add three metadata
@@ -1464,7 +1500,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (348 codes)
+## Appendix — `DiagnosticCode` index (351 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1669,6 +1705,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/empty` | Expression |
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |
+| `expression/unsupported-builtin` | Expression |
 | `expression/strict-equality` | Expression |
 | `expression/parse-mismatch` | Expression |
 | `expression/unexpected-token` | Expression |
