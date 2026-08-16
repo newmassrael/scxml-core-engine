@@ -393,6 +393,13 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v6
+      with:
+        # `sce-kotlin-quickjs` compiles `third_party/quickjs/quickjs.c` into a
+        # JNI library, so this lane needs the submodule its siblings declare.
+        # Without it CMake configured against a source file that was not
+        # there — "No SOURCES given to target: sce_quickjs_jni" — and the
+        # suite failed before running a case, on Rhino as well as QuickJS.
+        submodules: recursive
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

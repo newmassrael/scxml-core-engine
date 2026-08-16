@@ -135,6 +135,21 @@ jobs:
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
 
+    # `gate_registry_contract` drives the *staged* citation stage as a
+    # subprocess, and that stage refuses — exit 3, "the gate could not run,
+    # its own tooling is missing" — without the rev-pinned binary. This job
+    # never had it, so the workspace suite failed on every push for the two
+    # tests that need it, while saying nothing about the tree. The revision
+    # is read from `spec-citations.yml`, the one place it lives.
+    - name: Cache mnemosyne-cli (rev-pinned)
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/share/mnemosyne-rev
+        key: mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
+
+    - name: Install the rev-pinned mnemosyne-cli
+      run: scripts/install_mnemosyne_cli.sh
+
     # Delegates to the gate runner rather than restating the command, so
     # the suite has one spelling for both callers. The gate also starts the
     # W3C BasicHTTP fixture server on :8080 that test_201 and the 5xx series

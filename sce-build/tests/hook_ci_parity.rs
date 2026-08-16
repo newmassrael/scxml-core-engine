@@ -439,6 +439,15 @@ fn verification_invocations_depth(text: &str, depth: usize) -> BTreeSet<String> 
 /// an entry cannot go stale and a new skip cannot go undeclared.
 const CI_ONLY: &[(&str, &str)] = &[
     (
+        "scripts/install_mnemosyne_cli.sh",
+        "provisions the runner rather than verifying the tree: it is a \
+         `cargo install` from the network, which a push-time hook must not \
+         perform — a developer installs the pinned binary once, and the \
+         citation gate's own refusal prints the command that does it. The \
+         verification it enables is `ledger-citations`, which the hook does \
+         run.",
+    ),
+    (
         "check_spec_drift.py --mode upstream",
         "fetches the upstream spec over the network. A push-time gate must \
          not depend on an external host being reachable — in CI a fetch \

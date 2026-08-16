@@ -82,6 +82,21 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-tree-hygiene-
 
+    # `gate_registry_contract` drives the *staged* citation stage as a
+    # subprocess, and that stage refuses — exit 3, "the gate could not run,
+    # its own tooling is missing" — without the rev-pinned binary. This job
+    # never had it, so two of its tests failed on every push and said nothing
+    # about the tree each time. The revision is read from
+    # `spec-citations.yml`, the one place it lives.
+    - name: Cache mnemosyne-cli (rev-pinned)
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/share/mnemosyne-rev
+        key: mnemosyne-rev-${{ hashFiles('.github/workflows/spec-citations.yml') }}
+
+    - name: Install the rev-pinned mnemosyne-cli
+      run: scripts/install_mnemosyne_cli.sh
+
     # `git ls-files` is the gate's enumeration source, so it needs a real
     # repository rather than an exported tree. actions/checkout gives one.
     #
