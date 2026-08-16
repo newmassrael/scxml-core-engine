@@ -674,10 +674,9 @@ impl Test569Policy {
             Test569State::S0 => {
                 // W3C SCXML 3.13: Eventless transitions
                 if event == Test569Event::Null {
-                    if self.safe_evaluate_guard(
-                        "_scxml_truthy(_ioprocessors[\"scxml\"].location)",
-                        engine,
-                    ) {
+                    if self
+                        .safe_evaluate_guard("_scxml_truthy(_ioprocessors.scxml.location)", engine)
+                    {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;

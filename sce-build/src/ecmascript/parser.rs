@@ -553,9 +553,29 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let index = self.parse_assignment()?;
                     self.expect(&Token::RBracket)?;
-                    expr = Expr::Index {
-                        object: Box::new(expr),
-                        index: Box::new(index),
+                    // ECMA-262 11.2.1 defines `obj.name` as `obj["name"]`
+                    // — one operation, and the dot is the sugar. A
+                    // literal key is folded into the same node here so
+                    // that everything downstream sees one shape: the
+                    // emitter's rules hang off the property being named,
+                    // and while the two spellings arrived as two nodes,
+                    // `t['length']` reached a nil where `t.length` was
+                    // measured and `_event['name']()` generated cleanly
+                    // where `_event.name()` was refused.
+                    //
+                    // The lowering is unchanged for every key that is
+                    // not one of those names: a `Member` this datamodel
+                    // has no rule for emits `obj["key"]` through the
+                    // same encoder `Index` used.
+                    expr = match index {
+                        Expr::Str(property) => Expr::Member {
+                            object: Box::new(expr),
+                            property,
+                        },
+                        index => Expr::Index {
+                            object: Box::new(expr),
+                            index: Box::new(index),
+                        },
                     };
                 }
                 Token::LParen => {

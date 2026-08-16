@@ -821,7 +821,7 @@ then call it. ECMA-262 11.2.3 answers that with a TypeError, and
 before this rule the datamodel answered it with a `nil` at runtime and
 `status: "ok"` at generation time.
 
-Three closed lists carry the names, and each is closed for a reason
+Four closed lists carry the names, and each is closed for a reason
 rather than by sampling:
 
 - **`length`** — the only data property ECMA-262 gives a value in this
@@ -832,6 +832,21 @@ rather than by sampling:
 - **`Math`'s constants** — all eight of 15.8.1.
 - **The system variables** — `_event`, `_sessionid`, `_name`,
   `_ioprocessors`, `_x`. A session binds each to a string or a table.
+- **`_event`'s fields** — the seven §scxml-5.10.1 obliges every event to
+  carry: `name`, `type`, `sendid`, `origin`, `origintype`, `invokeid`,
+  `data`. The clause types the first six as character strings or URIs,
+  and `data` is whatever the sender included, which reaches the
+  datamodel as a `ScriptValue` — a union with no callable member. So
+  `cond="_event.name() == 'go'"` calls a string.
+
+  This list decides what a *call* is refused on, and nothing else. The
+  clause obliges those fields to be **present**; it does not say an
+  event carries only them, and W3C test178 reads `_event.raw` — a field
+  the specification never names, which an Event I/O Processor supplies
+  and which this repository registers, generates and runs. A member
+  outside the list is left alone in both positions, exactly as an
+  author's own object is, and the receiver is what decides the rule:
+  `handlers.name()` is the author's own function and stays legal.
 
 The refusal is `expression/property-not-callable`, and its repair is
 the name itself: the record carries `fix: replace_with` naming the
@@ -846,8 +861,21 @@ rather than reusing it. That code states the name is absent and offers
 what is present in its place; stating it of `Math.PI` was false for as
 long as the two shared a variant.
 
-`sce_build::ecmascript::builtins` owns the three lists and
-`sce-build/tests/ecmascript_property_calls.rs` binds each one to the
+Every rule in §3.5 through §3.7 is stated about the property being
+named, not about the syntax that names it. ECMA-262 11.2.1 defines
+`t.length` as `t['length']` — one operation with two spellings — so the
+frontend folds a literal key into the member form as it parses, before
+any of these rules run. While the two spellings were two AST nodes,
+each rule reached only one of them: `t['length']` became a field access
+that read a `nil` where `t.length` is measured, `Math['PI']` indexed a
+table this datamodel does not install, and `_event['name']()` generated
+cleanly one token away from a refusal. A key that names nothing this
+datamodel knows lowers exactly as it did.
+
+`sce_build::ecmascript::builtins` owns the four lists,
+`sce_build::ecmascript::parser` folds the two spellings, and
+`sce-build/tests/ecmascript_property_calls.rs` plus
+`sce-build/tests/ecmascript_member_access.rs` bind each rule to the
 engine that runs the lowered expression.
 
 ### §3.8 Inline `<content>` text is not an expression that must parse
