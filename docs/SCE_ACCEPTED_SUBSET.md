@@ -167,6 +167,40 @@ those documents ungeneratable rather than conformant, so a refused
 expression is emitted as Lua that raises when evaluated, carrying the
 parser's message.
 
+**A refusal is reported.** Not being a build failure is not a reason to
+be silent, and it was: the verdict was reached at generation time and
+survived only as a string literal inside the generated source, so
+`check` answered `status: "ok"` and `generate` exited `0` listing
+artifacts for a document that cannot run. Every refusal is now emitted
+as an `expression/*` diagnostic on stderr — the stage
+`SCE_ERROR_CONTRACT.md` §4 already defines for "ECMAScript unsupported
+constructs" — anchored on the element that wrote the expression and
+naming which of that element's expressions was refused. The run still
+succeeds: records on stderr with exit `0` and a manifest on stdout is
+how a reported refusal differs from a fatal one, which no consumer needs
+a new field to read (§1, §10.2).
+
+`--lint` promotes it to fatal. That flag already separates the two kinds
+of author — the design-time statechart lints are off by default because
+the W3C corpus declares unreachable states on purpose — and a refused
+expression is the same shape of claim: conformance obliges SCE to
+generate one, and nothing obliges an author to write one.
+`sce-build/src/ecmascript_acceptance.rs` is the walker;
+`sce-build/tests/ecmascript_acceptance_parity.rs` binds it to the
+filters by comparing, over every document this repository tracks, the
+refusals it reports against the raises the generated artifacts carry.
+
+**A native `cond` is not an ECMAScript expression, and only one backend
+lowers it.** `cpp:` and `kt:` name the language the guard is written in;
+the C++ and Kotlin templates strip the prefix and emit the body, and no
+other backend has that branch. Generating such a document for another
+backend is refused with `generate/unsupported-feature` on the backend
+axis. Before that refusal existed, Rust, Go and C11 emitted the guard
+verbatim — `if cpp:hardware.hasPower()`, which no compiler accepts — and
+Python lowered it through this frontend, producing a guard that raises
+on every evaluation and a transition that can never be taken. All four
+reported success.
+
 **Operators Lua does not share** — `+` (concatenation or addition
 depending on the operands), `==` (coercing), `%` (truncating), the
 bitwise family (over ToInt32), and computed indexing (zero-based over a

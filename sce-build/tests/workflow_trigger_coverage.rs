@@ -58,6 +58,18 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // rejection cannot fire on a document that used to build, which is
     // exactly the claim a stale `paths:` filter would stop checking.
     "ecmascript_semantics",
+    // Renders every committed document through every backend that lowers
+    // ECMAScript and compares the refusals the acceptance walker reports
+    // against the raises the artifacts carry. A document added anywhere
+    // changes both sides of that comparison, and the direction that
+    // matters — a refusal the walker invents — is only visible on a
+    // document that carries the construct.
+    "ecmascript_acceptance_parity",
+    // Sweeps every authored document for a refused expression, so a
+    // document added under `examples/` or `integration_resources/`
+    // changes what it reads. It is also the only CI-side copy of
+    // `scripts/gates/example-codegen.sh`, which has no workflow.
+    "cli_expression_refusal",
     // Runs the CLI over every committed *.scxml and performs the repair
     // each rejection proposes, so a document added anywhere changes both
     // what it reads and what it replays.
