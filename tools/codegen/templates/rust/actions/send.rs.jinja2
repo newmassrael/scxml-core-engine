@@ -63,11 +63,11 @@
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-        parts.push(format!("[{:?}]={:?}", "{{ param.name | escape_rust }}", "{{ param.static_value | escape_rust }}"));
+        parts.push(format!("{{ '{{' }}{:?}, {:?}{{ '}}' }}", "{{ param.name | escape_rust }}", "{{ param.static_value | escape_rust }}"));
 {% elif param.expr %}
         match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
             Ok(val) => {
-                parts.push(format!("[{:?}]={}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
+                parts.push(format!("{{ '{{' }}{:?}, {}{{ '}}' }}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' eval failed: {}", e);
@@ -79,7 +79,7 @@
 {% elif param.location %}
         match se.evaluate_expression(&sid, "{{ param.location }}") {
             Ok(val) => {
-                parts.push(format!("[{:?}]={}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
+                parts.push(format!("{{ '{{' }}{:?}, {}{{ '}}' }}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' location read failed: {}", e);
@@ -104,7 +104,7 @@
         } else {
             match se.evaluate_expression(&sid, "{{ name }}") {
                 Ok(val) => {
-                    parts.push(format!("[{:?}]={}", "{{ name }}", val.to_lua_literal()));
+                    parts.push(format!("{{ '{{' }}{:?}, {}{{ '}}' }}", "{{ name }}", val.to_lua_literal()));
                 }
                 Err(e) => {
                     ::sce_rust_runtime::sce_log_error!("send namelist '{{ name }}' eval failed: {}", e);
@@ -116,9 +116,9 @@
             }
         }
 {% endfor %}
-        if _send_aborted { String::new() } else { format!("{{ '{{' }}{}{{ '}}' }}", parts.join(",")) }
+        if _send_aborted { String::new() } else { format!("_scxml_params({})", parts.join(",")) }
 {% else %}
-        format!("{{ '{{' }}{}{{ '}}' }}", parts.join(","))
+        format!("_scxml_params({})", parts.join(","))
 {% endif %}
     };
 {% if has_namelist %}
@@ -134,7 +134,7 @@
     // carries it — so each is escaped once per boundary
     // (`escape_lua | escape_rust`). Applying only the host filter produces
     // Rust source that compiles and Lua source that does not parse.
-    let event_data: &str = "{ {% for param in action.params %}[\"{{ param.name | escape_lua | escape_rust }}\"]=\"{{ param.static_value | escape_lua | escape_rust }}\"{% if not loop.last %},{% endif %}{% endfor %} }";
+    let event_data: &str = "_scxml_params({% for param in action.params %}{\"{{ param.name | escape_lua | escape_rust }}\", \"{{ param.static_value | escape_lua | escape_rust }}\"}{% if not loop.last %}, {% endif %}{% endfor %})";
 {% elif action.content %}
     let event_data: &str = "{{ action.content | escape_rust }}";
 {% else %}

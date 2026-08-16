@@ -135,7 +135,7 @@ return;
 {% if action.params %}
 {
     std::map<std::string, std::vector<std::string>> params;
-    std::map<std::string, ScriptValue> typedParams;
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
 {% set needs_script_engine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
 {% if needs_script_engine %}
     this->ensureScriptEngine();
@@ -149,7 +149,7 @@ return;
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-            typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
+            typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
             params["{{ param.name | escape_cpp }}"].push_back("");
@@ -212,7 +212,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
 // W3C SCXML 5.10: Build event data from params for finalize access (test233)
 {
     std::map<std::string, std::vector<std::string>> params;
-    std::map<std::string, ScriptValue> typedParams;
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
 {% set needs_script_engine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
 {% if needs_script_engine %}
     this->ensureScriptEngine();
@@ -228,7 +228,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-            typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
+            typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
             params["{{ param.name | escape_cpp }}"].push_back("");
@@ -479,7 +479,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
 {% if action.namelist or action.params %}
     // W3C SCXML 5.10: Build event data from namelist and params (test354)
     std::map<std::string, std::vector<std::string>> params;
-    std::map<std::string, ScriptValue> typedParams;
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
 {% if action.namelist %}
     // W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
 {% if model.needs_script_engine or model.needs_event_origin %}
@@ -509,7 +509,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-            typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
+            typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
             params["{{ param.name | escape_cpp }}"].push_back("");
@@ -557,7 +557,7 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
 {% if action.namelist or action.params %}
 // W3C SCXML 5.10: Build event data from namelist and params (test354)
 std::map<std::string, std::vector<std::string>> params;
-std::map<std::string, ScriptValue> typedParams;
+std::map<std::string, std::vector<ScriptValue>> typedParams;
 {% if action.namelist %}
 // W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
 {% if model.needs_script_engine or model.needs_event_origin %}
@@ -587,7 +587,7 @@ std::map<std::string, ScriptValue> typedParams;
     auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
     if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
         params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-        typedParams["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
+        typedParams["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
     } else {
         SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr | escape_cpp }}");
         params["{{ param.name | escape_cpp }}"].push_back("");

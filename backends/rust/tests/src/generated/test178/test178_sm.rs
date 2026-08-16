@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: f21fa6fe20b06255f5ff03ff01c6dbc9228fed62e399d58a912b19b086193a03
+// template-hash: 6b3d1716c5fe7bf441783d277357c458e7e14d8fc3f1d3e67e7f0181f437b229
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -597,7 +597,11 @@ impl StatePolicy for Test178Policy {
                             let mut parts: Vec<String> = Vec::new();
                             match se.evaluate_expression(&sid, "2") {
                                 Ok(val) => {
-                                    parts.push(format!("[{:?}]={}", "Var1", val.to_lua_literal()));
+                                    parts.push(format!(
+                                        "{{{:?}, {}}}",
+                                        "Var1",
+                                        val.to_lua_literal()
+                                    ));
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -611,7 +615,11 @@ impl StatePolicy for Test178Policy {
                             }
                             match se.evaluate_expression(&sid, "3") {
                                 Ok(val) => {
-                                    parts.push(format!("[{:?}]={}", "Var1", val.to_lua_literal()));
+                                    parts.push(format!(
+                                        "{{{:?}, {}}}",
+                                        "Var1",
+                                        val.to_lua_literal()
+                                    ));
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -623,7 +631,7 @@ impl StatePolicy for Test178Policy {
                                     ));
                                 }
                             }
-                            format!("{{{}}}", parts.join(","))
+                            format!("_scxml_params({})", parts.join(","))
                         };
                         let event_data: &str = &event_data_string;
 

@@ -247,7 +247,7 @@
                     // non-reserved <param> entries. Reserved `_mesh_*` names
                     // have already been stripped by parse_mesh_rpc_invoke.
                     std::map<std::string, std::vector<std::string>> _mesh_params_{{ invoke_info.invoke_id }};
-                    std::map<std::string, ScriptValue> _mesh_typed_params_{{ invoke_info.invoke_id }};
+                    std::map<std::string, std::vector<ScriptValue>> _mesh_typed_params_{{ invoke_info.invoke_id }};
 {% set mesh_needs_scripts = invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
 {% if mesh_needs_scripts %}
                     this->ensureScriptEngine();
@@ -261,7 +261,7 @@
                         auto paramResult = scriptEngine_mesh_{{ invoke_info.invoke_id }}.evaluateExpression(sessionId_.value(), "{{ param.expr | escape_cpp }}").get();
                         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
                             _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-                            _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"] = paramResult.getInternalValue();
+                            _mesh_typed_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
                         } else {
                             SCE_LOG_ERROR("mesh-rpc invoke {{ invoke_info.invoke_id }} param '{{ param.name | escape_cpp }}' expr evaluation failed: {{ param.expr | escape_cpp }}");
                             _mesh_params_{{ invoke_info.invoke_id }}["{{ param.name | escape_cpp }}"].push_back("");

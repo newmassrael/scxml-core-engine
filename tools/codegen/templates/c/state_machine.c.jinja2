@@ -53,13 +53,25 @@
 {% macro lua_table_from_params(params) %}
                 char _ed[SCE_MAX_DATA_LEN];
                 int _ed_len = 0;
-                _ed[_ed_len++] = '{';
+                /* W3C SCXML 6.2: the params go through `_scxml_params`, which
+                   is what lets a repeated name become an Array of its values —
+                   a table constructor has already collapsed the duplicate by
+                   the time anything could look at it, and the last one silently
+                   won. Same shared rule every other backend now applies. */
+                {
+                    static const char *_pf = "_scxml_params(";
+                    int _pfl = (int)strlen(_pf);
+                    if (_ed_len + _pfl < (int)SCE_MAX_DATA_LEN - 1) {
+                        memcpy(_ed + _ed_len, _pf, (size_t)_pfl);
+                        _ed_len += _pfl;
+                    }
+                }
                 {% for param in params %}
                 {% if not loop.first %}
                 if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ','; }
                 {% endif %}
                 {
-                    static const char *_pn = "[\"{{ param.name | escape_lua | escape_c }}\"] = ";
+                    static const char *_pn = "{\"{{ param.name | escape_lua | escape_c }}\", ";
                     int _pnl = (int)strlen(_pn);
                     if (_ed_len + _pnl < (int)SCE_MAX_DATA_LEN - 1) {
                         memcpy(_ed + _ed_len, _pn, (size_t)_pnl);
@@ -99,8 +111,9 @@
                     }
                 }
 {% endif %}
-                {% endfor %}
                 if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = '}'; }
+                {% endfor %}
+                if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ')'; }
                 _ed[_ed_len] = '\0';
 {% endmacro %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the

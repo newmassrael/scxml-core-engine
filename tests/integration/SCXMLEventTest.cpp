@@ -662,8 +662,16 @@ TEST_F(SCXMLEventTest, W3C_Test178_DuplicateParamNamesSupport) {
     auto var1Array = eventDataJson[PARAM_NAME];
     ASSERT_EQ(var1Array.size(), EXPECTED_DUPLICATE_COUNT)
         << PARAM_NAME << " array should contain " << EXPECTED_DUPLICATE_COUNT << " values";
-    EXPECT_EQ(var1Array[0].get<std::string>(), FIRST_VALUE) << "First value should be '" << FIRST_VALUE << "'";
-    EXPECT_EQ(var1Array[1].get<std::string>(), SECOND_VALUE) << "Second value should be '" << SECOND_VALUE << "'";
+    // The ELEMENTS carry their type. `expr="2"` is an expression whose value is
+    // the Number 2, and a single such param has always been delivered as a
+    // number (`BuildEventDataJson_PrefersTypedWhenAvailable` pins that) — this
+    // assertion read `get<std::string>()` because a REPEATED name used to fall
+    // back to the stringified pair, so the two spellings of one document
+    // disagreed about a param's type purely by how many times it appeared.
+    EXPECT_TRUE(var1Array[0].is_number()) << "First value should keep its type";
+    EXPECT_EQ(var1Array[0].get<int>(), std::stoi(FIRST_VALUE));
+    EXPECT_TRUE(var1Array[1].is_number()) << "Second value should keep its type";
+    EXPECT_EQ(var1Array[1].get<int>(), std::stoi(SECOND_VALUE));
 }
 
 // W3C SCXML 6.2: Test 178 extension - Mixed single and duplicate param names
@@ -721,9 +729,13 @@ TEST_F(SCXMLEventTest, W3C_Test178_MixedSingleAndDuplicateParamNames) {
 
     auto multiArray = eventDataJson[MULTI_PARAM_NAME];
     ASSERT_EQ(multiArray.size(), EXPECTED_MULTI_COUNT);
-    EXPECT_EQ(multiArray[0].get<std::string>(), MULTI_VALUE_1);
-    EXPECT_EQ(multiArray[1].get<std::string>(), MULTI_VALUE_2);
-    EXPECT_EQ(multiArray[2].get<std::string>(), MULTI_VALUE_3);
+    // Numbers, for the reason spelled out in the sibling test above: the
+    // repeated name's elements are the evaluated values, not their spellings,
+    // so `1` `2` `3` arrive as Numbers exactly as `'hello'` above arrives as a
+    // String.
+    EXPECT_EQ(multiArray[0].get<int>(), std::stoi(MULTI_VALUE_1));
+    EXPECT_EQ(multiArray[1].get<int>(), std::stoi(MULTI_VALUE_2));
+    EXPECT_EQ(multiArray[2].get<int>(), std::stoi(MULTI_VALUE_3));
 }
 
 // W3C SCXML 6.2: Test 178 extension - Namelist with duplicate param names

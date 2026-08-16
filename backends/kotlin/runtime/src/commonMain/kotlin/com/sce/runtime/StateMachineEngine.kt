@@ -1349,6 +1349,29 @@ abstract class StateMachineEngine<S : State, E : Event>(
         return sb.toString()
     }
 
+    /**
+     * Record one `<send>` `<param>`, where a name may repeat.
+     *
+     * W3C's own test 178 sends two params of one name with different values and
+     * requires BOTH pairs to be delivered; a map cannot hold one key twice, so
+     * the second occurrence turns the entry into a list in document order.
+     * Writing straight into the map — which every generated send used to do —
+     * kept only the last value, silently. The wrapper class is what keeps that
+     * distinct from a param whose OWN value is a list: appending to the value
+     * would otherwise make `<param name="a" expr="[1,2]"/>` and two `a` params
+     * indistinguishable.
+     */
+    protected class RepeatedParam(val values: MutableList<Any?>)
+
+    protected fun putParam(params: MutableMap<String, Any?>, name: String, value: Any?) {
+        val held = params[name]
+        when {
+            !params.containsKey(name) -> params[name] = value
+            held is RepeatedParam -> held.values.add(value)
+            else -> params[name] = RepeatedParam(mutableListOf(held, value))
+        }
+    }
+
     protected fun valueToJson(value: Any?): String = when (value) {
         null -> "null"
         is Boolean -> value.toString()
@@ -1363,6 +1386,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 "\"${k}\":${valueToJson(v)}"
             }
             "{$entries}"
+        }
+        is RepeatedParam -> {
+            val items = value.values.joinToString(",") { valueToJson(it) }
+            "[$items]"
         }
         is List<*> -> {
             val items = value.joinToString(",") { valueToJson(it) }

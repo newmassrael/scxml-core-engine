@@ -689,6 +689,48 @@ function _scxml_reverse(arr)
     return arr
 end
 
+-- W3C SCXML 6.2: a `<send>`'s `<param>` list, as the object `_event.data` is.
+--
+-- A name may repeat — W3C's own test178 sends `<param name="1" expr="2"/>`
+-- twice with different values and requires BOTH pairs to be delivered — and an
+-- object cannot hold one name twice, so a repeated name becomes an Array of
+-- its values in document order. A single name is the value itself, because
+-- wrapping every param in a one-element Array would change what every existing
+-- document reads.
+--
+-- This exists because the emitted table literal cannot express it. Backends
+-- built `{["n"]=7, ["d"]=1, ["d"]=2}`, where Lua's last key wins and the first
+-- value is simply gone — silently, on five backends; the sixth kept both and
+-- lost their types instead (`EventDataHelper::mergeParams` publishes the
+-- STRING vector for a repeated name). test178 is a MANUAL test in the IRP, so
+-- no channel had ever asked. Measured 2026-08-16 by the third phase of
+-- `integration_resources/send_param_payload`.
+--
+-- Taking the pairs as arguments rather than a table is what makes the rule
+-- expressible at all: a table constructor has already collapsed the duplicate
+-- by the time anything could look at it.
+function _scxml_params(...)
+    local out = {}
+    local counts = {}
+    for i = 1, select("#", ...) do
+        local pair = select(i, ...)
+        local name, value = pair[1], pair[2]
+        local seen = counts[name]
+        if seen == nil then
+            counts[name] = 1
+            out[name] = value
+        elseif seen == 1 then
+            counts[name] = 2
+            out[name] = {out[name], value}
+        else
+            counts[name] = seen + 1
+            local held = out[name]
+            held[#held + 1] = value
+        end
+    end
+    return out
+end
+
 -- ECMA-262 15.2.3.14 Object.keys, the one way this datamodel can walk an
 -- object whose shape arrived with the payload.
 --
