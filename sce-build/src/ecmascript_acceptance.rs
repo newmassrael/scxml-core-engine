@@ -231,9 +231,13 @@ fn check_state(state: &State, into: &mut Collector<'_>) {
                 );
             }
         }
-        // Only the expression form reaches the frontend: a literal
-        // `<content>` body is used as the value rather than re-evaluated,
-        // and [`crate::parser`] is where that reading is made and cited.
+        // Only the `expr` form can be refused, for the reason
+        // [`check_variable`] gives below: `expr` promises an expression,
+        // while an inline body has "not an expression" among its legal
+        // readings and reaches `filters::to_lua_data_content`, which takes
+        // it. A `DoneDataContent::InlineText` therefore has no refusal to
+        // report, and a Null-data-model `Literal` never reaches the
+        // frontend at all.
         if let DoneDataContent::Expression(text) = &donedata.content {
             check(
                 ExpressionRole::Value,

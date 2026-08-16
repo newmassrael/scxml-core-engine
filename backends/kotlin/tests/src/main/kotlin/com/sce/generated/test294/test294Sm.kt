@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: eef83a0380a6f32e69bd8e491d75a942150e8193a11c5aedb68d2fc11fa47b6e
+// template-hash: b1f5842221aea79fe7d00a79a5e0a1c9bb465b536d392d5c439d8f7ec5538edd
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -430,7 +430,10 @@ class Test294StateMachine(
                     val engineDD = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
-                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
+                    // W3C SCXML B.2: inline text takes the ordered readings —
+                    // an expression when it is one, otherwise the string. The
+                    // reading is decided from the document, so every backend
+                    // reaches the same one for the same text.
                     try {
                         val contentResult = engineDD.evaluateExpr(sidDD, "'foo'")
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString

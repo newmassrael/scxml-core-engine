@@ -629,11 +629,17 @@ fn collect_donedata_causes(
             state.source_location.as_ref(),
         ));
     }
-    // Only `<content expr="...">` forces a script engine. Literal bodies
-    // are emitted as string constants by the codegen literal path and by
-    // the interpreter's `DoneDataHelper::emitContentLiteral`, so no
-    // evaluation is required.
-    if matches!(dd.content, DoneDataContent::Expression(_)) {
+    // `<content expr="...">` forces a script engine, and so does inline
+    // text under a data model that has a value expression language: the
+    // first of the ECMAScript data model appendix's readings is an
+    // evaluation, and which one applies is decided by lowering the text
+    // here. Only a Null-data-model literal body is free of it — that path
+    // emits a string constant, through the codegen literal branch and the
+    // interpreter's `DoneDataHelper::emitContentLiteral` alike.
+    if matches!(
+        dd.content,
+        DoneDataContent::Expression(_) | DoneDataContent::InlineText(_)
+    ) {
         out.push(NeedsScriptEngineCause::new(
             ScriptEngineCauseKind::DonedataContent {
                 state_id: state_id.to_string(),

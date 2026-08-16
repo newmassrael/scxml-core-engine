@@ -3385,12 +3385,15 @@ impl SCXMLParser {
         // §scxml-5.5 + 5.6 + Appendix B.2.2:
         //   - `<content expr="X"/>` → Expression (MUST be evaluated against
         //     the datamodel at runtime — script engine required).
-        //   - `<content>text</content>` with ECMAScript datamodel → the
-        //     spec (Appendix B.2.2) says inline text is parsed as JSON; SCE
-        //     delegates that parsing to the script engine by emitting it as
-        //     an Expression (`evaluate("21")` yields number 21, `'foo'`
-        //     yields string "foo"). This preserves in-machine `_event.data`
-        //     semantics for W3C-conformant ECMAScript documents.
+        //   - `<content>text</content>` with ECMAScript datamodel →
+        //     InlineText, which takes the ECMAScript data model appendix's
+        //     ordered readings the way inline `<data>` text does: an
+        //     expression if it is one
+        //     (`21` yields number 21, `'foo'` yields string "foo", which
+        //     W3C tests 529 and 294 require), and otherwise the string.
+        //     Emitting it as an Expression instead made the second reading
+        //     unreachable — `<content>inline payload</content>` lowered to
+        //     an expression that could only raise.
         //   - `<content>text</content>` with the "null" datamodel → Literal:
         //     the children are used **as the content value**, no evaluation,
         //     no script engine required. This is the `sce_base`-linkable
@@ -3405,7 +3408,7 @@ impl SCXMLParser {
                     dd.content = if datamodel == Datamodel::Null {
                         crate::model::DoneDataContent::Literal(trimmed.to_string())
                     } else {
-                        crate::model::DoneDataContent::Expression(trimmed.to_string())
+                        crate::model::DoneDataContent::InlineText(trimmed.to_string())
                     };
                 }
             }
