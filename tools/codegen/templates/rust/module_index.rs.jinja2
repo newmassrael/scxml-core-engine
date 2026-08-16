@@ -16,9 +16,41 @@
    unconditionally, which is the XML declaration, not the `<scxml>`
    element the `_machine` symbol resolves to.
 #}
-{%- import '_macros/sce_map_marker.jinja2' as sce_map -%}
-// GENERATED -- DO NOT EDIT (sce-codegen)
-{{ sce_map.source_marker(model.source_location, "rust", module_level=true, symbol_artifact=sce_artifact.machine) }}
+{#
+   `module_path`, when set, is a Rust string literal naming the module
+   file. It is what an `OUT_DIR` artifact needs and a source-tree sibling
+   does not: `mod x_sm;` finds a sibling by position, and an artifact
+   Cargo put in `OUT_DIR` has no position relative to the consumer's
+   source. A consumer cannot write the `#[path]` themselves either —
+   built-in attributes take a string literal, so `#[path = concat!(env!(
+   "OUT_DIR"), …)]` does not expand — which is why `compile_scxml` writes
+   this file: `build.rs` is the one place that knows `OUT_DIR` as a value
+   and can spell it as a literal.
 
-mod {{ module_stem }}_sm;
+   Both forms render here, and the two lines below are why: `mod x_sm;
+   pub use x_sm::*;` is the shape a consumer's names resolve through, and
+   a second emitter would be a second copy of it.
+
+   The `#[path]` form carries no SCE-MAP marker. The module-level marker
+   is an INNER attribute (`#![doc = …]`), which is exactly what an
+   `include!` of this file would reject — and it would be a second
+   declaration of a location the module file already declares, which the
+   consumer now receives intact.
+#}
+{#
+   The head is built as a value rather than as two template blocks. A
+   block-level `{% if %}` here has to place its own newlines around a
+   line that is a `//` comment, and getting that wrong does not fail to
+   render — it emits `// GENERATED …#[path = …]mod x_sm;`, where the
+   comment swallows both items and only the `pub use` survives to be
+   reported, one line further down, as an unresolved module.
+#}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map -%}
+{%- if module_path -%}
+{%- set head = "#[path = " ~ module_path ~ "]\n" -%}
+{%- else -%}
+{%- set head = sce_map.source_marker(model.source_location, "rust", module_level=true, symbol_artifact=sce_artifact.machine) ~ "\n\n" -%}
+{%- endif -%}
+// GENERATED -- DO NOT EDIT (sce-codegen)
+{{ head }}mod {{ module_stem }}_sm;
 pub use {{ module_stem }}_sm::*;

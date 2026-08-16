@@ -651,6 +651,46 @@ pub fn generate_rust_module_index(
     .map_err(|e| GenerateError::TemplateRender(e.to_string()))
 }
 
+/// The module index an `OUT_DIR` artifact needs, where the module file is
+/// not a sibling of the source that names it.
+///
+/// Same two lines [`generate_rust_module_index`] emits, from the same
+/// template, with a `#[path]` naming `module_file` absolutely. The
+/// consumer `include!`s the result; `include!` accepts it because every
+/// line is an item or an outer attribute, and the `mod` then loads the
+/// generated machine as a module **file**, where its inner attributes and
+/// inner doc comments are legal.
+///
+/// That is the whole point of the indirection. The generated machine
+/// opens with an audited suppression budget spelled as inner attributes;
+/// `include!`ing the machine directly puts those attributes in expansion
+/// position, where rustc refuses them, so consumers stripped the lines
+/// and replaced the budget with a blanket `#![allow(warnings)]` of their
+/// own. Two independent consumers reached that same workaround
+/// byte-for-byte. Through this shim they delete nothing and the budget
+/// arrives as SCE audited it.
+pub fn generate_rust_include_shim(
+    template_dir: &Path,
+    module_stem: &str,
+    module_file: &Path,
+) -> Result<String, GenerateError> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_filters(&mut env);
+    let tmpl = env
+        .get_template("module_index.rs.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
+    // Rust's own `Debug` for `str` is the escaper here: it produces a
+    // valid Rust string literal for any path the filesystem can name,
+    // including the backslashes a Windows `OUT_DIR` carries.
+    let module_path = format!("{:?}", module_file.to_string_lossy());
+    tmpl.render(minijinja::context! {
+        module_stem => module_stem,
+        module_path => module_path,
+    })
+    .map_err(|e| GenerateError::TemplateRender(e.to_string()))
+}
+
 /// Generate Rust code using pre-loaded template strings (WASM-compatible).
 ///
 /// See [`StatechartCodegenOptions::no_std`] for `no_std` semantics. The
