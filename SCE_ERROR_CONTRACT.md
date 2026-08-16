@@ -410,6 +410,7 @@ references against a real document and drift silently.
 | `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |
 | `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
 | `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
+| `expression/unsupported-builtin` | `expression` | `replace_one_of` | W3C SCXML §B.2 |
 | `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
 | `extern/abi-mismatch` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/ordering-unspecified` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |

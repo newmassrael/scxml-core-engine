@@ -30,6 +30,12 @@
 //      `kt:` name the language the guard is written in, and only that
 //      backend can lower it. Every other one used to emit either
 //      uncompilable source or a guard that always raises.
+//   4. **A standard method the datamodel lacks carries its repair.**
+//      `words.map(...)` used to be emitted as the Lua field call
+//      `words.map(...)`: `check` answered `status: "ok"` on all six
+//      backends and the machine died on evaluation. The refusal names
+//      the vocabulary that does exist, as `fix: replace_one_of`, so a
+//      consumer repairing the document does not need Appendix B.2.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -239,6 +245,108 @@ fn lint_makes_a_refused_expression_fatal_and_writes_nothing() {
         out.entries().is_empty(),
         "a refused run wrote {:?}",
         out.entries()
+    );
+}
+
+/// A document reaching for a method ECMA-262 defines and this
+/// datamodel does not implement.
+///
+/// Written here rather than taken from the corpus because no corpus
+/// document carries one — which is the whole reason the silence lasted.
+/// `.map` is the case an author meets first: it parses, it lowers to
+/// legal Lua, and the only thing wrong with it is that nothing on the
+/// other side answers to the name.
+const REACHING_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="words" expr="['b','a']"/>
+    <data id="n" expr="0"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="n" expr="words.map(function(w) { return w; }).length"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+#[test]
+fn an_unimplemented_standard_method_is_reported_with_the_vocabulary_that_exists() {
+    let out = ScratchDir::new("builtin-refusal");
+    let document = out.path().join("reaching.scxml");
+    std::fs::write(&document, REACHING_DOCUMENT).expect("write document");
+
+    let generated = run(&[
+        "generate",
+        document.to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        out.path().to_str().unwrap(),
+        "--error-format=json",
+    ]);
+
+    assert_eq!(generated.exit, Some(0), "stderr:\n{}", generated.stderr);
+    let diagnostics = records(&generated.stderr);
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "expected exactly one refusal record, got:\n{}",
+        generated.stderr
+    );
+    let record = &diagnostics[0];
+    assert_eq!(record["code"], "expression/unsupported-builtin");
+    assert_eq!(record["stage"], "expression");
+    assert_eq!(record["spec"], "W3C SCXML §B.2");
+    assert_eq!(
+        record["actual"], ".map()",
+        "the name reached for rides `actual`: {record}"
+    );
+    assert_eq!(record["fix"]["kind"], "replace_one_of");
+    let candidates: Vec<String> = record["fix"]["candidates"]
+        .as_array()
+        .expect("candidates")
+        .iter()
+        .map(|c| c.as_str().expect("candidate is a string").to_string())
+        .collect();
+    assert!(
+        candidates.contains(&".join()".to_string()) && candidates.contains(&".slice()".to_string()),
+        "the repair does not carry the vocabulary that exists: {candidates:?}"
+    );
+    // Non-overlap (SCE_ERROR_CONTRACT.md §3.2): the candidate list has
+    // one home, and for this code it is `fix`.
+    assert!(
+        record["expected"].is_null(),
+        "expected must stay absent: {record}"
+    );
+    assert_eq!(
+        record["location"]["line"].as_u64(),
+        Some(10),
+        "the record points at the `<assign>` that wrote it: {record}"
+    );
+
+    // §5.9.1 still applies: the document generates and raises at
+    // evaluation, exactly as a refused `cond` does.
+    assert!(
+        out.entries().iter().any(|n| n.ends_with("_sm.rs")),
+        "no artifact written: {:?}",
+        out.entries()
+    );
+
+    let linted = run(&[
+        "check",
+        document.to_str().unwrap(),
+        "--lint",
+        "--error-format=json",
+    ]);
+    assert_ne!(
+        linted.exit,
+        Some(0),
+        "--lint must refuse: {}",
+        linted.stderr
     );
 }
 

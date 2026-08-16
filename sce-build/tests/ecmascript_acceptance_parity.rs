@@ -249,6 +249,60 @@ fn every_refusal_the_walker_reports_is_one_a_backend_emits() {
     );
 }
 
+/// The corpus carries no document reaching for a standard method this
+/// datamodel lacks, so the sweeps above prove nothing about that class.
+///
+/// That absence is the reason the class went unnoticed: `words.map(...)`
+/// was emitted as the Lua field call `words.map(...)` on every backend,
+/// and no fixture ever asked. The document is written here rather than
+/// added to the corpus because a tracked fixture would have to be
+/// lint-clean — `every_authored_document_is_free_of_refused_expressions`
+/// sweeps the authored corpus for exactly this — so the one document
+/// that must carry a refusal belongs to the test that needs it.
+#[test]
+fn a_refused_builtin_reaches_the_artifact_of_every_lowering_backend() {
+    const DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="words" expr="['b','a']"/>
+    <data id="n" expr="0"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="n" expr="words.map(function(w) { return w; }).length"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("builtin-parity");
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let path = dir.join("reaching.scxml");
+    std::fs::write(&path, DOCUMENT).expect("write document");
+
+    let model = parse(&path).expect("the document parses");
+    let reported: BTreeSet<String> = refusals(&model).iter().map(refusal_key).collect();
+    assert_eq!(
+        reported.len(),
+        1,
+        "the walker should report exactly the one reach: {reported:?}"
+    );
+
+    for lang in LOWERING_BACKENDS {
+        let rendered = render(&model, *lang, "reaching")
+            .unwrap_or_else(|| panic!("{lang:?} renders the document"));
+        assert_eq!(
+            refusals_in_artifact(&rendered),
+            reported,
+            "{lang:?} embeds a refusal the walker does not report, or vice versa"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Which backends are in scope, pinned so the list cannot shrink
 /// silently.
 ///

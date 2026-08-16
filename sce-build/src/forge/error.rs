@@ -3706,6 +3706,28 @@ pub enum ExprError {
     #[error("unsupported ECMAScript construct: {construct}. Extended SCXML expressions must use the stateless subset.")]
     UnsupportedConstruct { construct: String },
 
+    /// A standard-library *name* the ECMAScript datamodel does not
+    /// provide — `words.map(...)`, `JSON.serialize(...)`, `Math.tanh(...)`.
+    ///
+    /// Separate from [`ExprError::UnsupportedConstruct`] because the two
+    /// ask different things of the author. A construct rejection is
+    /// about grammar and has no alternative to offer; this one names a
+    /// method that exists in the language and not in this datamodel, so
+    /// the vocabulary that *is* available is the whole of the answer and
+    /// rides in `available`. See [`crate::ecmascript::builtins`] for
+    /// which names are decided and why the rest stay open.
+    #[error("{name} is not provided by SCE's ECMAScript datamodel. Available: {}", .available.join(", "))]
+    UnsupportedBuiltin {
+        /// The name as the author reached for it, qualified by its owner
+        /// where there is one: `JSON.serialize`, `.map()`.
+        name: String,
+        /// What this datamodel does carry in that position — the closed
+        /// candidate set, so the diagnostic can offer it as a
+        /// `Fix::ReplaceOneOf` rather than sending the author to the
+        /// specification.
+        available: Vec<String>,
+    },
+
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
     StrictEquality {
