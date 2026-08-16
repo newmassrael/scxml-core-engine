@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "cf01a08b25",
+  "embed_version": "9ee721c1d7",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 244,
@@ -698,7 +698,7 @@
       "members": [
         "field std::chrono::milliseconds delay",
         "field std::chrono::milliseconds logicalExecuteTime",
-        "field std::map<std::string, ScriptValue> typedParams",
+        "field std::map<std::string, std::vector<ScriptValue>> typedParams",
         "field std::map<std::string, std::vector<std::string>> params",
         "field std::string content",
         "field std::string data",
