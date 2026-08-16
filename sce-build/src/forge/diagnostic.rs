@@ -794,6 +794,12 @@ pub enum DiagnosticCode {
     // misses among them and there may be none.
     #[serde(rename = "expression/unknown-identifier")]
     ExpressionUnknownIdentifier,
+    // A name this datamodel provides, written as a call — `t.length()`,
+    // `Math.PI()`. Distinct from `unsupported-builtin`, which says the
+    // name is absent: here it is present, so there is nothing to offer
+    // in its place and the repair is to drop the call.
+    #[serde(rename = "expression/property-not-callable")]
+    ExpressionPropertyNotCallable,
     #[serde(rename = "expression/strict-equality")]
     ExpressionStrictEquality,
     #[serde(rename = "expression/parse-mismatch")]
@@ -2880,6 +2886,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnsupportedConstruct,
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
+        ExpressionPropertyNotCallable,
         ExpressionStrictEquality,
         ExpressionParseMismatch,
         ExpressionUnexpectedToken,
@@ -3369,6 +3376,10 @@ impl DiagnosticCode {
             // document declares, so a name outside them is answered
             // there and not in Forge's expression language.
             ExpressionUnknownIdentifier => Some("W3C SCXML §B.2"),
+            // Same anchor again: B.2 is what makes ECMAScript's own
+            // rules the datamodel's rules, and calling a value is one
+            // ECMAScript answers for itself.
+            ExpressionPropertyNotCallable => Some("W3C SCXML §B.2"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4053,6 +4064,7 @@ impl DiagnosticCode {
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
+            ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionStrictEquality => "expression/strict-equality",
             ExpressionParseMismatch => "expression/parse-mismatch",
             ExpressionUnexpectedToken => "expression/unexpected-token",
@@ -7773,6 +7785,26 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             // same way are one diagnostic identity.
             key_fragments: vec![name.clone()],
         },
+        // The call is what `actual` names, because the call is what the
+        // consumer edits: `.length` occurs on the line either way, and a
+        // record pointing at it would leave the consumer to work out
+        // that the parentheses beside it are the part to remove. A call
+        // carrying arguments has no single replacement — `.length` is
+        // still the name, but what becomes of the arguments is the
+        // author's decision — so the record names the property and
+        // carries no `fix`, which is §3's spelling for that.
+        ExprError::PropertyNotCallable { name, arguments } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionPropertyNotCallable,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(if *arguments == 0 {
+                format!("{name}()")
+            } else {
+                name.clone()
+            }),
+            fix: (*arguments == 0).then(|| Fix::ReplaceWith { to: name.clone() }),
+            key_fragments: vec![name.clone()],
+        },
         ExprError::StrictEquality { operator, strict } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
@@ -10031,6 +10063,32 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1f905d2454137dec","code":"expression/unknown-identifier","stage":"expression","spec":"W3C SCXML §B.2","message":"wholesaleDistributor is not declared by this document","actual":"wholesaleDistributor"}"#,
+            ),
+            (
+                // A name the datamodel provides, called. The repair is
+                // the name itself, so it rides `Fix::ReplaceWith` — the
+                // opposite of the two entries above, where the producer
+                // had a set and could not pick from it.
+                "forge/expression-property-not-callable",
+                ExprError::PropertyNotCallable {
+                    name: ".length".into(),
+                    arguments: 0,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b4ec9e3bee3acf8b","code":"expression/property-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":".length holds a value, not a function. Write .length without the call.","actual":".length()","fix":{"kind":"replace_with","to":".length"}}"#,
+            ),
+            (
+                // The same code with the arguments that make the repair
+                // the author's to make: `actual` names the property and
+                // no `fix` rides, since dropping the call would discard
+                // them (SCE_ERROR_CONTRACT.md §3).
+                "forge/expression-property-not-callable-with-arguments",
+                ExprError::PropertyNotCallable {
+                    name: "Math.PI".into(),
+                    arguments: 1,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:87ec1b18624df1da","code":"expression/property-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"Math.PI holds a value, not a function. Write Math.PI without the call.","actual":"Math.PI"}"#,
             ),
             (
                 "forge/expression-parse-mismatch",
@@ -13472,6 +13530,11 @@ mod tests {
             | ExpressionLex
             | ExpressionUnsupportedConstruct
             | ExpressionStrictEquality
+            // The name that was called is the name that repairs it, so
+            // there is one replacement rather than a set — and none at
+            // all when the call carried arguments, since dropping it
+            // would discard them.
+            | ExpressionPropertyNotCallable
             | ExpressionUnexpectedToken
             | ExpressionInvalidLvalue
             | ExpressionTypeCoercion
@@ -14124,6 +14187,7 @@ mod tests {
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
+                | ExpressionPropertyNotCallable
                 | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
@@ -14382,9 +14446,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            352,
+            353,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 352 distinct variants to match the DiagnosticCode \
+             expected 353 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

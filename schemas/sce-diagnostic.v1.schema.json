@@ -117,6 +117,7 @@
         "expression/unsupported-construct",
         "expression/unsupported-builtin",
         "expression/unknown-identifier",
+        "expression/property-not-callable",
         "expression/strict-equality",
         "expression/parse-mismatch",
         "expression/unexpected-token",
