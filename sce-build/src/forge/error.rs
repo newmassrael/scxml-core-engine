@@ -3728,6 +3728,32 @@ pub enum ExprError {
         available: Vec<String>,
     },
 
+    /// A name this datamodel binds to a value, written as a call —
+    /// `t.length()`, `Math.PI()`, `_sessionid()`.
+    ///
+    /// Separate from [`ExprError::UnsupportedBuiltin`] because the claim
+    /// is the opposite one. That error says the name is absent and
+    /// offers the vocabulary that is present; this one says the name is
+    /// present and the author reached for it the wrong way. Reusing it
+    /// would have the producer state something false — `Math.PI` is
+    /// provided, and was answered *"not provided by SCE's ECMAScript
+    /// datamodel"* for exactly as long as the two shared a variant.
+    ///
+    /// ECMA-262 11.2.3 throws a TypeError when a value that is not a
+    /// function is called, so the repair is single-valued and rides
+    /// `Fix::ReplaceWith` — unless the call carries arguments, in which
+    /// case dropping it discards them and the author, not the producer,
+    /// decides what becomes of them.
+    #[error("{name} holds a value, not a function. Write {name} without the call.")]
+    PropertyNotCallable {
+        /// The name as it can be written to repair the call: `.length`,
+        /// `Math.PI`, `_sessionid`.
+        name: String,
+        /// How many arguments the call carried, which is what decides
+        /// whether the repair is a single replacement.
+        arguments: usize,
+    },
+
     /// A free identifier nothing declares — `conut + 1` where the
     /// document declares `count`.
     ///

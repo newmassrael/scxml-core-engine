@@ -358,14 +358,31 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
     // namespace, and Lua spells its members differently.
     if let Expr::Ident(name) = object {
         if name == "Math" {
+            // ECMA-262 15.8.1, all eight. Lua's `math` table carries one
+            // of them under a name of its own and computes the rest, so
+            // the arms are the definition and `builtins::MATH_CONSTANTS`
+            // is the membership — `every_math_constant_is_lowered` binds
+            // the two so a constant cannot be listed and left unlowered.
             return match property {
                 "PI" => Ok("math.pi".to_string()),
                 "E" => Ok("math.exp(1)".to_string()),
                 "LN2" => Ok("math.log(2)".to_string()),
                 "LN10" => Ok("math.log(10)".to_string()),
-                other => Err(ExprError::UnsupportedConstruct {
-                    construct: format!("Math.{other}"),
-                }),
+                "LOG2E" => Ok("(1 / math.log(2))".to_string()),
+                "LOG10E" => Ok("(1 / math.log(10))".to_string()),
+                "SQRT1_2" => Ok("math.sqrt(0.5)".to_string()),
+                "SQRT2" => Ok("math.sqrt(2)".to_string()),
+                // A member that is a function is a member this datamodel
+                // cannot hand out as a value: it has no first-class
+                // functions, so the reach is a construct rejection rather
+                // than a missing name.
+                other if builtins::MATH_FUNCTIONS.contains(&other) => {
+                    Err(ExprError::UnsupportedConstruct {
+                        construct: format!("Math.{other}"),
+                    })
+                }
+                other => Err(builtins::unknown_member(builtins::Namespace::Math, other)
+                    .expect("a member in neither list is unknown")),
             };
         }
     }
@@ -409,6 +426,16 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
         emitted.push(value(arg)?);
     }
 
+    // A call on a name that holds a value. The receiver is not consulted
+    // and does not need to be: `_sessionid` is bound by the session and
+    // `.length` is lowered as a property for every receiver a few lines
+    // up, so neither name can be reaching an author's function here.
+    if let Expr::Ident(name) = callee {
+        if let Some(refusal) = builtins::uncallable_global(name, args.len()) {
+            return Err(refusal);
+        }
+    }
+
     if let Expr::Member { object, property } = callee {
         if let Expr::Ident(name) = object.as_ref() {
             if let Some(namespace) = builtins::Namespace::from_ident(name) {
@@ -416,7 +443,8 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
                 // is a fact and a member outside it is a mistake rather
                 // than an unknown. `JSON.serialize` used to be emitted
                 // verbatim and reach a nil at runtime.
-                if let Some(refusal) = builtins::unsupported_member(namespace, property) {
+                if let Some(refusal) = builtins::unsupported_member(namespace, property, args.len())
+                {
                     return Err(refusal);
                 }
                 if namespace == builtins::Namespace::Math {
@@ -426,6 +454,13 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
                 // members are ordinary field calls.
                 return Ok(format!("{name}.{property}({})", emitted.join(", ")));
             }
+        }
+        // `member` lowers `.length` to Lua's `#` whatever the receiver
+        // holds, so the call form cannot be an author's own method: the
+        // property this datamodel provides is what the name reaches, and
+        // calling it is what went wrong.
+        if let Some(refusal) = builtins::uncallable_property(property, args.len()) {
+            return Err(refusal);
         }
         let receiver = operand(object)?;
         match property.as_str() {
@@ -535,7 +570,7 @@ fn math_call(name: &str, args: &[String]) -> Result<String, ExprError> {
     // before this was called, so a name arriving here is one Lua's own
     // `math` table carries under the same spelling.
     debug_assert!(
-        builtins::MATH_MEMBERS.contains(&name),
+        builtins::MATH_FUNCTIONS.contains(&name),
         "Math.{name} reached the emitter without passing the namespace check"
     );
     Ok(format!("math.{name}({})", args.join(", ")))

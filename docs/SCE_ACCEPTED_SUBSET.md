@@ -750,10 +750,11 @@ name** — `expression/unsupported-builtin`:
   `toLowerCase`, `toString`, `toUpperCase`, plus `length` as a
   property; the diagnostic carries that list as its
   `fix: replace_one_of` candidates.
-- **Members of a namespace SCE installs.** `Math` (ECMA-262 15.8.2
-  minus the names Lua has no primitive for), `JSON.parse` /
-  `JSON.stringify`, `Object.keys`. A member outside one of those sets
-  — `JSON.serialize`, `Math.tanh` — is refused against the set.
+- **Members of a namespace SCE installs.** `Math` — the functions of
+  ECMA-262 15.8.2 minus the names Lua has no primitive for, and all
+  eight constants of 15.8.1 — plus `JSON.parse` / `JSON.stringify` and
+  `Object.keys`. A member outside one of those sets — `JSON.serialize`,
+  `Math.tanh` — is refused against the set.
 
 A method name in *neither* list is emitted as an ordinary field call,
 because an author's own object is entitled to it:
@@ -810,6 +811,44 @@ which every backend's assign path already raises).
 `sce_build::ecmascript::resolve` owns the walk;
 `sce-build/tests/ecmascript_identifier_scope.rs` binds both to the
 corpus and to the installed vocabulary.
+
+### §3.7 Names this datamodel provides, written as a call
+
+§3.5 and §3.6 both ask whether a name exists. This one asks what was
+done with a name that does: `t.length()`, `Math.PI()` and
+`_sessionid()` each reach for something this datamodel provides and
+then call it. ECMA-262 11.2.3 answers that with a TypeError, and
+before this rule the datamodel answered it with a `nil` at runtime and
+`status: "ok"` at generation time.
+
+Three closed lists carry the names, and each is closed for a reason
+rather than by sampling:
+
+- **`length`** — the only data property ECMA-262 gives a value in this
+  datamodel's value space, on a string (15.5.5.1) and on an array
+  (15.4.5.2). The emitter already lowers `.length` to Lua's `#` for
+  every receiver, so the call form cannot be reaching an author's own
+  method.
+- **`Math`'s constants** — all eight of 15.8.1.
+- **The system variables** — `_event`, `_sessionid`, `_name`,
+  `_ioprocessors`, `_x`. A session binds each to a string or a table.
+
+The refusal is `expression/property-not-callable`, and its repair is
+the name itself: the record carries `fix: replace_with` naming the
+property, so `t.length()` becomes `t.length` without the consumer
+consulting anything. A call that carried arguments is the one shape
+with no single replacement — dropping it would discard them — so that
+record names the property and carries no `fix` (§3 of
+`SCE_ERROR_CONTRACT.md`).
+
+This is why the code is distinct from `expression/unsupported-builtin`
+rather than reusing it. That code states the name is absent and offers
+what is present in its place; stating it of `Math.PI` was false for as
+long as the two shared a variant.
+
+`sce_build::ecmascript::builtins` owns the three lists and
+`sce-build/tests/ecmascript_property_calls.rs` binds each one to the
+engine that runs the lowered expression.
 
 ### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
 
@@ -1747,6 +1786,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unsupported-construct` | Expression |
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |
+| `expression/property-not-callable` | Expression |
 | `expression/strict-equality` | Expression |
 | `expression/parse-mismatch` | Expression |
 | `expression/unexpected-token` | Expression |

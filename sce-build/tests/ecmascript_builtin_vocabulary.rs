@@ -28,7 +28,7 @@
 // claim is made by lowering an expression and reading the answer.
 
 use sce_build::ecmascript::builtins::{
-    JSON_MEMBERS, LOWERED_METHODS, MATH_MEMBERS, OBJECT_MEMBERS, UNIMPLEMENTED_METHODS,
+    JSON_MEMBERS, LOWERED_METHODS, MATH_FUNCTIONS, OBJECT_MEMBERS, UNIMPLEMENTED_METHODS,
 };
 use sce_build::ecmascript::{to_lua_value, DocumentScope, ExprError};
 use std::collections::BTreeSet;
@@ -111,7 +111,7 @@ fn both_vocabularies_are_sorted_and_unique() {
         ("LOWERED_METHODS", LOWERED_METHODS),
         ("JSON_MEMBERS", JSON_MEMBERS),
         ("OBJECT_MEMBERS", OBJECT_MEMBERS),
-        ("MATH_MEMBERS", MATH_MEMBERS),
+        ("MATH_FUNCTIONS", MATH_FUNCTIONS),
     ] {
         let mut sorted = list.to_vec();
         sorted.sort_unstable();
@@ -251,11 +251,11 @@ fn a_member_outside_an_installed_namespace_is_refused() {
     }
 }
 
-/// Every `Math` member listed lowers, and the two with a lowering of
+/// Every `Math` function listed lowers, and the two with a lowering of
 /// their own are the only two that are not `math.<same name>`.
 #[test]
 fn every_math_member_lowers() {
-    for &member in MATH_MEMBERS {
+    for &member in MATH_FUNCTIONS {
         // ECMA-262 15.8.2.13 takes two arguments and the emitter says
         // so; every other member here is happy with one.
         let args = if member == "pow" { "1, 2" } else { "1" };
