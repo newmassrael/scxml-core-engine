@@ -966,7 +966,8 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
                     // W3C SCXML 5.9: Script engine guard
                     if self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}
-                    if {{ trans.cond }} {
+                    // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+                    if {{ 'true' if trans.cond_constant else 'false' }} {
 {% endif %}
 {% endif %}
                         // W3C SCXML 3.4: Track transition metadata
@@ -1049,7 +1050,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% elif model.needs_script_engine %}
                     {% if not loop.first %}} else {% endif %}if self.safe_evaluate_guard("{{ transition.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}
-                    {% if not loop.first %}} else {% endif %}if {{ transition.cond }} {
+                    {% if not loop.first %}} else {% endif %}if {{ 'true' if transition.cond_constant else 'false' }} { // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
 {% endif %}
 {% else %}
 {# Unconditional fallback in a guarded chain = else branch #}

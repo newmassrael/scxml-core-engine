@@ -628,7 +628,8 @@ private:
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
                 if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) SCE_LIKELY {
 {% else %}
-                if ({{ trans.cond }}) SCE_LIKELY {
+                // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+                if ({{ 'true' if trans.cond_constant else 'false' }}) SCE_LIKELY {
 {% endif %}
                     AOT_DEBUG("AOT processTransition: Event matched descriptor '{{ trans.event }}' in state {}", static_cast<int>(checkState));
 // W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
@@ -694,7 +695,8 @@ private:
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
                 if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
 {% else %}
-            if ({{ transition.cond }}) {
+                // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
+            if ({{ 'true' if transition.cond_constant else 'false' }}) {
 {% endif %}
 {% set first_trans.value = False %}
 {% else %}
@@ -708,7 +710,8 @@ private:
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
                 } else if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
 {% else %}
-            } else if ({{ transition.cond }}) {
+                // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
+            } else if ({{ 'true' if transition.cond_constant else 'false' }}) {
 {% endif %}
 {% endif %}
 {% else %}

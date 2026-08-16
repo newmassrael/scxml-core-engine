@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b1f5842221aea79fe7d00a79a5e0a1c9bb465b536d392d5c439d8f7ec5538edd
+// template-hash: 128f5bda1db8a8695e204b38e87b8d2d3815bdde9691186823a5ecdc7374af1d
 // generated-at: 0
 // GENERATED -- DO NOT EDIT (sce-codegen)
 // SCE-MAP: test449.scxml:1
@@ -14,6 +14,6 @@ import org.junit.jupiter.api.DisplayName
 // W3C SCXML B.2: In the ECMAScript datamodel, the SCXML Processor must convert ECMAScript expressions used in conditional expressions into their effective boolean value using the ToBoolean operator as described in Section 9.2 of [ECMASCRIPT-262].
 @DisplayName("Test 449 -- W3C SCXML B.2")
 class Test449 : W3CTestBase<Test449State, Test449Event>() {
-    override fun createStateMachine() = Test449StateMachine(createEngine())
+    override fun createStateMachine() = Test449StateMachine()
     override val expectedPassState: Test449State = Test449State.Pass
 }

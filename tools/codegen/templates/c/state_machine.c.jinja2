@@ -1532,10 +1532,20 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 {{ emit_action(sub, in_foreach) }}
                 {% endfor %}
             }
-{% else %}
+{% elif model.needs_script_engine %}
             bool _if_pass;
 {{ se.lua_eval_guard(action.cond, '_if_pass') }}
             if (_if_pass) {
+                {% for sub in action.then_actions %}
+                {{ emit_action(sub, in_foreach) }}
+                {% endfor %}
+            }
+{% else %}
+            /* W3C SCXML 4.3: decided at build time — this machine carries no
+               script engine, so the guard cannot be evaluated at run time and
+               does not need to be. The Lua arm below used to run here too,
+               emitting a state reference the header never declares. */
+            if ({{ 'true' if action.cond_constant else 'false' }}) {
                 {% for sub in action.then_actions %}
                 {{ emit_action(sub, in_foreach) }}
                 {% endfor %}
@@ -1550,10 +1560,17 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                     {{ emit_action(sub, in_foreach) }}
                     {% endfor %}
                 }
-{% else %}
+{% elif model.needs_script_engine %}
                 bool _elif_pass;
 {{ se.lua_eval_guard(elif.cond, '_elif_pass') }}
                 if (_elif_pass) {
+                    {% for sub in elif.actions %}
+                    {{ emit_action(sub, in_foreach) }}
+                    {% endfor %}
+                }
+{% else %}
+                /* W3C SCXML 4.3: decided at build time — see the `<if>` arm. */
+                if ({{ 'true' if elif.cond_constant else 'false' }}) {
                     {% for sub in elif.actions %}
                     {{ emit_action(sub, in_foreach) }}
                     {% endfor %}
@@ -2956,10 +2973,11 @@ SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm
                     {{ emit_transition_body(trans) }}
                 }
             {% else %}
-                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" (native C
-                   lower; mirrors cpp process_transition.jinja2 else-branch — C
-                   compiler dead-code-eliminates `if (false)` arms). */
-                if ({{ trans.cond }}) {
+                /* W3C SCXML 3.13: cond="{{ trans.cond | escape_c }}" decided at
+                   build time (mirrors cpp process_transition.jinja2
+                   else-branch — the C compiler dead-code-eliminates an
+                   `if (false)` arm). */
+                if ({{ 'true' if trans.cond_constant else 'false' }}) {
                     {{ emit_transition_body(trans) }}
                 }
             {% endif %}

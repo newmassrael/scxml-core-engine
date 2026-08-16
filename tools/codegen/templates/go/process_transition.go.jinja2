@@ -166,7 +166,8 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
-			if {{ trans.cond }} {
+			// W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+			if {{ 'true' if trans.cond_constant else 'false' }} {
 {% endif %}
 {% endif %}
 			return &transitionInfo{
@@ -210,7 +211,8 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
-			if {{ trans.cond }} {
+			// W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+			if {{ 'true' if trans.cond_constant else 'false' }} {
 {% endif %}
 {% endif %}
 			return &transitionInfo{
@@ -260,7 +262,8 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
-			if {{ trans.cond }} {
+			// W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+			if {{ 'true' if trans.cond_constant else 'false' }} {
 {% endif %}
 {% endif %}
 {% if trans.target %}
@@ -308,7 +311,8 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
-			if {{ trans.cond }} {
+			// W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+			if {{ 'true' if trans.cond_constant else 'false' }} {
 {% endif %}
 {% endif %}
 {% if trans.target %}

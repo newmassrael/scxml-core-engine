@@ -57,6 +57,16 @@ pub struct Transition {
     pub is_cpp_condition: bool,
     pub cond_kt: String,
     pub is_kt_condition: bool,
+    /// The boolean [`cond`](Self::cond) has at build time, when the
+    /// frontend can decide it without the data model.
+    ///
+    /// `Some` is what makes a guard emittable with no script engine, so
+    /// it and [`crate::parser::check_expression_needs`] answer one
+    /// question and must not drift: a backend prints its own `true` /
+    /// `false` from this, and printing the author's text instead is the
+    /// defect the field exists to end — `cond="1"` reached Rust as
+    /// `if 1 {`.
+    pub cond_constant: Option<bool>,
     #[serde(rename = "type")]
     pub transition_type: String,
     pub actions: Vec<Action>,
@@ -211,6 +221,11 @@ pub struct Action {
     pub cond_kt: String,
     #[serde(default)]
     pub is_pure_in_predicate: bool,
+    /// The boolean [`cond`](Self::cond) has at build time — the same
+    /// field [`Transition::cond_constant`] carries, for the `<if>` a
+    /// backend emits through the same arms.
+    #[serde(default)]
+    pub cond_constant: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub then_actions: Vec<Action>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -307,6 +322,10 @@ pub struct ElseIfBranch {
     pub cond_cpp: String,
     pub cond_kt: String,
     pub is_pure_in_predicate: bool,
+    /// The boolean [`cond`](Self::cond) has at build time — see
+    /// [`Transition::cond_constant`]. An `<elseif>` reaches the same
+    /// arms its `<if>` does, so it needs the same answer.
+    pub cond_constant: Option<bool>,
     pub actions: Vec<Action>,
 }
 

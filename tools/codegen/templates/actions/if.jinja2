@@ -12,7 +12,8 @@ this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
 if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) SCE_LIKELY {
 {% else %}
-if ({{ action.cond }}) SCE_LIKELY {
+// W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
+if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
 {% endif %}
     {% for then_action in action.then_actions %}
     {% with action=then_action %}
@@ -20,7 +21,7 @@ if ({{ action.cond }}) SCE_LIKELY {
     {% endwith %}
     {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}", engine){% else %}{{ elseif.cond }}{% endif %}) {
+} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}", engine){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
     {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}
