@@ -45,12 +45,19 @@
 //!
 //! **A name that holds a value cannot be called.** The rules around this
 //! one ask what a name *is*; this one asks what was *done* with a name
-//! that exists. `t.length()`, `Math.PI()` and `_sessionid()` each reach
-//! for something this datamodel provides and then call it, which
-//! ECMA-262 11.2.3 answers with a TypeError and Lua answers by indexing
-//! a nil. [`VALUE_PROPERTIES`], [`MATH_CONSTANTS`] and [`VALUE_GLOBALS`]
-//! are those names, read in call position, and the repair is the only
-//! deterministic one in this module: drop the call.
+//! that exists. `t.length()`, `Math.PI()`, `_sessionid()` and
+//! `_event.name()` each reach for something this datamodel provides and
+//! then call it, which ECMA-262 11.2.3 answers with a TypeError and Lua
+//! answers by indexing a nil. [`VALUE_PROPERTIES`], [`MATH_CONSTANTS`],
+//! [`VALUE_GLOBALS`] and [`EVENT_FIELDS`] are those names, read in call
+//! position, and the repair is the only deterministic one in this
+//! module: drop the call.
+//!
+//! Each of those four lists is closed on its own terms, and
+//! [`EVENT_FIELDS`] is the one whose closure is narrower than it looks:
+//! it says which fields a *call* is refused on, not which fields an
+//! event has. See its own note for why an event carrying more than the
+//! specification names is a conformance fixture rather than a mistake.
 //!
 //! **A standard global SCE does not install is refused.**
 //! [`UNINSTALLED_GLOBALS`] is the third rule, and it is the one that
@@ -309,6 +316,40 @@ pub const VALUE_GLOBALS: &[&str] = &["_event", "_ioprocessors", "_name", "_sessi
 /// rests on, applied to the other half of the member grammar.
 pub const VALUE_PROPERTIES: &[&str] = &["length"];
 
+/// The fields the specification's internal structure of events obliges
+/// every event to carry, internal and external alike.
+///
+/// Every one of them holds a value. Six are typed by the clause itself —
+/// `name` and `type` are character strings, `origin` is a URI,
+/// `origintype` is what a `<send>` writes in `type`, `sendid` and
+/// `invokeid` are ids the Processor sets or leaves blank — and `data` is
+/// "whatever data the sending entity chose to include", which reaches
+/// the datamodel as a `ScriptValue`: null, boolean, number, string,
+/// array, object or DOM handle, a union with no callable member. So
+/// `_event.name()` is the TypeError of ECMA-262 11.2.3 however the event
+/// was raised, and dropping the call is the whole repair.
+///
+/// # A floor, not a ceiling
+///
+/// The clause says the Processor MUST ensure these fields are *present*.
+/// It does not say an event carries nothing else, and W3C test178 reads
+/// `_event.raw` — a field the specification never mentions, which an
+/// Event I/O Processor supplies and which this repository generates and
+/// runs as a registered conformance fixture. Membership here therefore
+/// decides only what a *call* is refused on: a member outside this list
+/// stays an ordinary field, read and called exactly as an author's own
+/// object is. Closing the namespace the way [`Namespace`] closes `Math`
+/// would reject that fixture.
+pub const EVENT_FIELDS: &[&str] = &[
+    "data",
+    "invokeid",
+    "name",
+    "origin",
+    "origintype",
+    "sendid",
+    "type",
+];
+
 /// ECMA-262 globals this datamodel does not install.
 ///
 /// Same reasoning as [`UNIMPLEMENTED_METHODS`], one AST node up: every
@@ -527,6 +568,45 @@ pub fn uncallable_global(name: &str, arguments: usize) -> Option<crate::forge::e
     }
     Some(crate::forge::error::ExprError::PropertyNotCallable {
         name: name.to_string(),
+        arguments,
+    })
+}
+
+/// The value fields a system variable carries, or an empty slice when
+/// the specification names none.
+///
+/// `_event` is the only system variable whose structure W3C SCXML
+/// enumerates. `_sessionid` and `_name` are strings with no fields at
+/// all, `_ioprocessors` is keyed by the Event I/O Processors a platform
+/// happens to support (5.10, C), and `_x` is by definition the
+/// platform's own root — none of the three has a field list a producer
+/// could state as a fact. A lookup rather than one flat list is what
+/// keeps that asymmetry visible, and what makes a second variable one
+/// arm rather than a second rule.
+pub fn system_value_fields(variable: &str) -> &'static [&'static str] {
+    match variable {
+        "_event" => EVENT_FIELDS,
+        _ => &[],
+    }
+}
+
+/// The refusal for a call on a system variable's field, or `None` when
+/// the specification does not name that field as one of its own.
+///
+/// The receiver is consulted here, unlike in [`uncallable_property`]:
+/// `name` and `data` are ordinary words, and an author's
+/// `handlers.data()` must survive. Only the variable the specification
+/// reserves carries the rule.
+pub fn uncallable_system_field(
+    variable: &str,
+    field: &str,
+    arguments: usize,
+) -> Option<crate::forge::error::ExprError> {
+    if !system_value_fields(variable).contains(&field) {
+        return None;
+    }
+    Some(crate::forge::error::ExprError::PropertyNotCallable {
+        name: format!("{variable}.{field}"),
         arguments,
     })
 }

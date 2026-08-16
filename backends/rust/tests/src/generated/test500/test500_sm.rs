@@ -249,7 +249,7 @@ impl Test500Policy {
             se,
             &sid,
             "Var1",
-            "_ioprocessors[\"scxml\"][\"location\"]",
+            "_ioprocessors.scxml.location",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -284,7 +284,7 @@ impl Test500Policy {
             se,
             &sid,
             "Var1",
-            "_ioprocessors[\"scxml\"][\"location\"]",
+            "_ioprocessors.scxml.location",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(

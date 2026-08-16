@@ -400,18 +400,20 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
 /// `obj[k]` — where the base of the index has to be decided.
 ///
 /// SCE stores an ECMAScript Array as a 1-based Lua sequence, so a numeric
-/// index moves by one and a string key does not. A literal settles it here;
-/// anything else is settled at runtime by `_scxml_index`, because whether
-/// `a[i]` addresses an array element or an object property depends on what
-/// `a` and `i` hold.
+/// index moves by one. A literal settles it here; anything else is settled
+/// at runtime by `_scxml_index`, because whether `a[i]` addresses an array
+/// element or an object property depends on what `a` and `i` hold.
+///
+/// A *string* literal never reaches here: [`super::parser`] folds it into
+/// [`Expr::Member`], because ECMA-262 11.2.1 makes `a['k']` and `a.k` the
+/// same operation and this datamodel's rules are stated about the property
+/// being named. [`member`] emits the same `a["k"]` for a key it has no
+/// rule for.
 fn index_access(object: &Expr, index: &Expr) -> Result<String, ExprError> {
     if let Expr::Number(text) = index {
         if let Ok(n) = text.parse::<u64>() {
             return Ok(format!("{}[{}]", operand(object)?, n + 1));
         }
-    }
-    if matches!(index, Expr::Str(_)) {
-        return Ok(format!("{}[{}]", operand(object)?, value(index)?));
     }
     Ok(format!(
         "_scxml_index({}, {})",
@@ -453,6 +455,16 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
                 // `JSON` and `Object` are ordinary Lua tables, so their
                 // members are ordinary field calls.
                 return Ok(format!("{name}.{property}({})", emitted.join(", ")));
+            }
+            // A field of a system variable, which the specification's
+            // internal structure of events fills with a value, never
+            // with a function. The receiver decides this one — `name` and
+            // `data` are ordinary words that an author's own object may
+            // hold a function under — and only the fields the clause
+            // names are refused, so `_event.raw` stays whatever the I/O
+            // processor made it.
+            if let Some(refusal) = builtins::uncallable_system_field(name, property, args.len()) {
+                return Err(refusal);
             }
         }
         // `member` lowers `.length` to Lua's `#` whatever the receiver

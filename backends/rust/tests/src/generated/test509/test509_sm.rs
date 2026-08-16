@@ -614,9 +614,7 @@ impl StatePolicy for Test509Policy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se
-                                .evaluate_expression(&sid, "_ioprocessors[\"basichttp\"].location")
-                            {
+                            match se.evaluate_expression(&sid, "_ioprocessors.basichttp.location") {
                                 Ok(ref val)
                                     if matches!(
                                         val,

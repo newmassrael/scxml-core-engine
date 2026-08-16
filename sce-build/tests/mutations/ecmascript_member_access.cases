@@ -1,0 +1,131 @@
+# Mutation cases for "a member is reached by either spelling, and a field
+# the specification fills with a value is not a function".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ecmascript_member_access.cases`.
+#
+# The first three restore the two defects exactly as they were: the call on
+# an event field that generated on all six backends, and the literal-key
+# spelling that bypassed every rule stated about a property. The fourth and
+# fifth are the *opposite* failure — a rule that reaches too far — and they
+# matter as much: closing `_event` the way `Math` is closed is what the
+# open-debt registry prescribed, and it would refuse W3C test178, which this
+# repository registers, generates and runs.
+#
+# The last two break the gates themselves. The refusal loop is driven by a
+# list, so a list that loses a member runs fewer probes and passes; the
+# pairing test compares spellings against each other, so a pair set that
+# loses its members compares nothing. Both go green exactly the way a clean
+# run does.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test ecmascript_member_access --test cli_expression_refusal
+# Both binaries link the frontend: the first calls `to_lua_value` directly
+# and the second drives `sce-codegen` as a subprocess, which is the surface
+# a consumer actually reads.
+mutation_targets sce-build/src/ecmascript/builtins.rs sce-build/src/ecmascript/lua.rs sce-build/src/ecmascript/parser.rs sce-build/tests/ecmascript_member_access.rs
+
+mutation_case "a call on an event field falls through to a field call again" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """            if let Some(refusal) = builtins::uncallable_system_field(name, property, args.len()) {
+                return Err(refusal);
+            }""",
+     "")
+PY
+
+mutation_case "the field list is consulted but its answer is discarded" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """    if !system_value_fields(variable).contains(&field) {
+        return None;
+    }""",
+     """    if !system_value_fields(variable).contains(&field) {
+        return None;
+    }
+    if field != "name" {
+        return None;
+    }""")
+PY
+
+mutation_case "a literal key becomes an index node again" <<'PY'
+edit("sce-build/src/ecmascript/parser.rs",
+     """                    expr = match index {
+                        Expr::Str(property) => Expr::Member {
+                            object: Box::new(expr),
+                            property,
+                        },
+                        index => Expr::Index {
+                            object: Box::new(expr),
+                            index: Box::new(index),
+                        },
+                    };""",
+     """                    expr = Expr::Index {
+                        object: Box::new(expr),
+                        index: Box::new(index),
+                    };""")
+PY
+
+mutation_case "the event becomes a closed namespace" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """    if !system_value_fields(variable).contains(&field) {
+        return None;
+    }""",
+     """    if system_value_fields(variable).is_empty() {
+        return None;
+    }""")
+PY
+
+mutation_case "the event's reads are narrowed to the clause as well" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """    // ECMAScript's `.length` is Lua's `#` for both strings and arrays,
+    // which are the two things carrying a length in this datamodel.
+    if property == "length" {""",
+     """    if let Expr::Ident(name) = object {
+        if name == "_event" && !builtins::EVENT_FIELDS.contains(&property) {
+            return Err(builtins::unknown_member(builtins::Namespace::Math, property)
+                .expect("a member outside the clause is unknown"));
+        }
+    }
+    // ECMAScript's `.length` is Lua's `#` for both strings and arrays,
+    // which are the two things carrying a length in this datamodel.
+    if property == "length" {""")
+PY
+
+mutation_case "the rule stops consulting the receiver" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """    if !system_value_fields(variable).contains(&field) {
+        return None;
+    }""",
+     """    if !EVENT_FIELDS.contains(&field) {
+        return None;
+    }""")
+PY
+
+mutation_case "the refusal loop is driven by a list that lost a field" <<'PY'
+edit("sce-build/tests/ecmascript_member_access.rs",
+     """    let clause = [
+        "name",
+        "type",
+        "sendid",
+        "origin",
+        "origintype",
+        "invokeid",
+        "data",
+    ];""",
+     """    let clause = ["name"];""")
+PY
+
+# A comparison test cannot defend itself against being rewritten into
+# `x == x` — that edit leaves it green by construction, and the first
+# round of this casefile reported exactly that as SURVIVED. What it can
+# defend is its *reach*, which is what the lower bound and
+# `a_refusal_is_reached_through_the_literal_key` are for: the pair set
+# cannot quietly shrink, and the rules that have to survive the fold are
+# also asserted somewhere that names its own expected answers.
+mutation_case "the pairing test's set shrinks to the pairs that already agreed" <<'PY'
+edit("sce-build/tests/ecmascript_member_access.rs",
+     """        ("t.charAt(0)", "t['charAt'](0)"),
+        ("handlers.count", "handlers['count']"),
+    ];""",
+     """    ];""")
+PY

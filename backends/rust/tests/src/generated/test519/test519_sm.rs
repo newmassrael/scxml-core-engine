@@ -641,9 +641,7 @@ impl StatePolicy for Test519Policy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            match se
-                                .evaluate_expression(&sid, "_ioprocessors[\"basichttp\"].location")
-                            {
+                            match se.evaluate_expression(&sid, "_ioprocessors.basichttp.location") {
                                 Ok(ref val)
                                     if matches!(
                                         val,
@@ -841,7 +839,7 @@ impl Test519Policy {
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test519Event::Test {
                     // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("_scxml_eq(_event.data[\"param1\"], 1)", engine) {
+                    if self.safe_evaluate_guard("_scxml_eq(_event.data.param1, 1)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_is_internal = false;
