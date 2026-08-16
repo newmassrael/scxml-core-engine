@@ -166,6 +166,29 @@ for slug in "${ORDER[@]}"; do
             printf '\nERROR gate: %s FAILED — run just this one with: scripts/gate %s\n' \
                 "$slug" "$slug" >&2
         fi
+        # WHAT DID NOT RUN, by name. The runner stops at the first failure, so
+        # every gate after this one is UNRUN — and saying nothing about them
+        # reads as "they passed". Measured 2026-08-16: a batch of six was read
+        # as covering all six when its third gate failed, and `embed-vendor`,
+        # two positions later, never executed; the manifest drift it exists to
+        # catch surfaced at `git push` instead, after the whole selected set
+        # had to run again from the start. The remedy is the one this
+        # repository applies elsewhere — make the silence say something —
+        # rather than a flag that keeps going past a red.
+        unrun=()
+        reached_failure=0
+        for other in "${ORDER[@]}"; do
+            [[ -n "$other" ]] || continue
+            if (( reached_failure )); then
+                unrun+=("$other")
+            elif [[ "$other" == "$slug" ]]; then
+                reached_failure=1
+            fi
+        done
+        if (( ${#unrun[@]} > 0 )); then
+            printf 'gate: %d gate(s) after it did NOT run, so nothing is claimed about them: %s\n' \
+                "${#unrun[@]}" "${unrun[*]}" >&2
+        fi
         exit "$rc"
     }
     ELAPSED["$slug"]=$(( SECONDS - start ))
