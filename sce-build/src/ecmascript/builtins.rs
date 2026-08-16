@@ -28,7 +28,7 @@
 //! honest answer is that SCE has none — not a field lookup that yields
 //! `nil`.
 //!
-//! # The two rules
+//! # The four rules
 //!
 //! **A closed namespace is closed.** `Math`, `JSON` and `Object` are
 //! tables *this repository* installs, in `ecma_semantics.lua` and
@@ -42,6 +42,15 @@
 //! field call, because that is what an author's own object needs:
 //! `<data id="handlers" expr="{ retry: function() {...} }"/>` followed by
 //! `handlers.retry()` is legal in this datamodel and must stay so.
+//!
+//! **A name that holds a value cannot be called.** The rules around this
+//! one ask what a name *is*; this one asks what was *done* with a name
+//! that exists. `t.length()`, `Math.PI()` and `_sessionid()` each reach
+//! for something this datamodel provides and then call it, which
+//! ECMA-262 11.2.3 answers with a TypeError and Lua answers by indexing
+//! a nil. [`VALUE_PROPERTIES`], [`MATH_CONSTANTS`] and [`VALUE_GLOBALS`]
+//! are those names, read in call position, and the repair is the only
+//! deterministic one in this module: drop the call.
 //!
 //! **A standard global SCE does not install is refused.**
 //! [`UNINSTALLED_GLOBALS`] is the third rule, and it is the one that
@@ -62,14 +71,35 @@ pub const JSON_MEMBERS: &[&str] = &["parse", "stringify"];
 /// arrived with an event payload.
 pub const OBJECT_MEMBERS: &[&str] = &["keys"];
 
-/// Members of `Math` the emitter lowers — ECMA-262 15.8.2.
+/// Members of `Math` the emitter lowers as function calls —
+/// ECMA-262 15.8.2.
 ///
 /// `pow` becomes Lua's `^` and `round` becomes `_scxml_round`; the rest
 /// are `math.<same name>`, which is why membership is decided here and
 /// the emitter only spells out the two exceptions.
-pub const MATH_MEMBERS: &[&str] = &[
+pub const MATH_FUNCTIONS: &[&str] = &[
     "abs", "acos", "asin", "atan", "ceil", "cos", "exp", "floor", "log", "max", "min", "pow",
     "random", "round", "sin", "sqrt", "tan",
+];
+
+/// Members of `Math` that hold a number — ECMA-262 15.8.1, all eight of
+/// them.
+///
+/// They are members of the same namespace as [`MATH_FUNCTIONS`] and a
+/// different kind of thing, which is the whole reason this list exists
+/// separately. Before it, the namespace had one member list holding only
+/// the functions while [`super::lua`] lowered four of the constants from
+/// arms of its own: `Math.PI` evaluated correctly and `Math.PI()` was
+/// answered *"Math.PI is not provided by SCE's ECMAScript datamodel"*,
+/// which is false, and `Math.SQRT2` — a constant the emitter had no arm
+/// for — generated cleanly and raised at runtime.
+///
+/// Listing all eight closes 15.8.1 rather than covering the half a
+/// previous reader happened to need, and splitting them from the
+/// functions is what lets a call on one be answered as the property call
+/// it is.
+pub const MATH_CONSTANTS: &[&str] = &[
+    "E", "LN10", "LN2", "LOG10E", "LOG2E", "PI", "SQRT1_2", "SQRT2",
 ];
 
 /// The method names [`super::lua`] lowers on an arbitrary receiver.
@@ -253,6 +283,32 @@ pub const INSTALLED_GLOBALS: &[&str] = &[
     "parseInt",
 ];
 
+/// The names in [`INSTALLED_GLOBALS`] that hold a value rather than
+/// something a call can name.
+///
+/// The system variables the specification reserves, and only those:
+/// `Math`, `JSON` and `Object` are namespaces whose members are reached
+/// through a member expression, and `String`, `Number`, `Boolean`,
+/// `parseInt`, `parseFloat` and `In` are functions. A session binds each
+/// name here to a string or a table, so `_sessionid()` calls something
+/// that was never a function.
+///
+/// `ecmascript_property_calls::every_value_global_is_installed` pins the
+/// containment, so a name cannot be declared uncallable here without
+/// this datamodel binding it at all.
+pub const VALUE_GLOBALS: &[&str] = &["_event", "_ioprocessors", "_name", "_sessionid", "_x"];
+
+/// The standard data properties this datamodel provides on a value.
+///
+/// `length` is the whole list, and the list is closed rather than
+/// partial: ECMA-262 gives a data property to a string (15.5.5.1) and to
+/// an array (15.4.5.2) under that one name, and [`super::lua`] lowers
+/// both to Lua's `#` for every receiver. A property outside this list is
+/// an author's own field, which is why the name is what decides and no
+/// type is consulted — the same reasoning [`UNIMPLEMENTED_METHODS`]
+/// rests on, applied to the other half of the member grammar.
+pub const VALUE_PROPERTIES: &[&str] = &["length"];
+
 /// ECMA-262 globals this datamodel does not install.
 ///
 /// Same reasoning as [`UNIMPLEMENTED_METHODS`], one AST node up: every
@@ -371,31 +427,122 @@ impl Namespace {
         }
     }
 
-    pub fn members(self) -> &'static [&'static str] {
+    /// The members a call may name — the ones that hold a function.
+    pub fn callable_members(self) -> &'static [&'static str] {
         match self {
-            Namespace::Math => MATH_MEMBERS,
+            Namespace::Math => MATH_FUNCTIONS,
             Namespace::Json => JSON_MEMBERS,
             Namespace::Object => OBJECT_MEMBERS,
         }
     }
+
+    /// The members that hold a value rather than a function.
+    ///
+    /// `Math` is the only namespace with any: `JSON` and `Object` are
+    /// tables of functions, so a call is the only thing an author can do
+    /// with a member of either.
+    pub fn value_members(self) -> &'static [&'static str] {
+        match self {
+            Namespace::Math => MATH_CONSTANTS,
+            Namespace::Json | Namespace::Object => &[],
+        }
+    }
 }
 
-/// The refusal for `<namespace>.<member>` when the namespace does not
-/// carry that member, or `None` when it does.
+/// The refusal for a call on `<namespace>.<member>`, or `None` when the
+/// member is one this datamodel lets a call name.
+///
+/// Two refusals, because two different things are wrong. A member the
+/// namespace does not carry is a name this datamodel lacks, and the
+/// vocabulary it does carry is the answer. A member it carries as a
+/// *value* is a name this datamodel has — calling it is what the author
+/// got wrong, and dropping the call is the whole repair.
 pub fn unsupported_member(
     namespace: Namespace,
     member: &str,
+    arguments: usize,
 ) -> Option<crate::forge::error::ExprError> {
-    if namespace.members().contains(&member) {
+    if namespace.callable_members().contains(&member) {
         return None;
+    }
+    if namespace.value_members().contains(&member) {
+        return Some(crate::forge::error::ExprError::PropertyNotCallable {
+            name: format!("{}.{member}", namespace.name()),
+            arguments,
+        });
     }
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
         name: format!("{}.{member}", namespace.name()),
+        // The candidates are the callable members alone: this record
+        // stands where a call was written, and offering `Math.PI` as a
+        // replacement for `Math.tanh` would repair one refusal into
+        // another.
         available: namespace
-            .members()
+            .callable_members()
             .iter()
             .map(|m| format!("{}.{m}", namespace.name()))
             .collect(),
+    })
+}
+
+/// The refusal for a read of `<namespace>.<member>` the namespace does
+/// not carry, or `None` when it does.
+///
+/// The counterpart of [`unsupported_member`] one AST node down. A read
+/// can name either kind of member — `Math.PI` is a number and `Math.abs`
+/// is a function this datamodel has no way to hand out as a value — so
+/// the membership question and the "can it be read" question are asked
+/// separately, and only the first is answered here.
+pub fn unknown_member(
+    namespace: Namespace,
+    member: &str,
+) -> Option<crate::forge::error::ExprError> {
+    if namespace.callable_members().contains(&member) || namespace.value_members().contains(&member)
+    {
+        return None;
+    }
+    let mut available: Vec<String> = namespace
+        .callable_members()
+        .iter()
+        .chain(namespace.value_members())
+        .map(|m| format!("{}.{m}", namespace.name()))
+        .collect();
+    available.sort();
+    Some(crate::forge::error::ExprError::UnsupportedBuiltin {
+        name: format!("{}.{member}", namespace.name()),
+        available,
+    })
+}
+
+/// The refusal for a call on a bare identifier, or `None` when the name
+/// is one a call may legally reach.
+///
+/// Only [`VALUE_GLOBALS`] is consulted. An identifier this datamodel
+/// does not install has already been answered by [`super::resolve`] —
+/// either as the author's own declaration, which may well hold a
+/// function, or as a name nothing declares.
+pub fn uncallable_global(name: &str, arguments: usize) -> Option<crate::forge::error::ExprError> {
+    if !VALUE_GLOBALS.contains(&name) {
+        return None;
+    }
+    Some(crate::forge::error::ExprError::PropertyNotCallable {
+        name: name.to_string(),
+        arguments,
+    })
+}
+
+/// The refusal for a call on a standard data property, or `None` when
+/// the property is not one this datamodel provides.
+pub fn uncallable_property(
+    property: &str,
+    arguments: usize,
+) -> Option<crate::forge::error::ExprError> {
+    if !VALUE_PROPERTIES.contains(&property) {
+        return None;
+    }
+    Some(crate::forge::error::ExprError::PropertyNotCallable {
+        name: format!(".{property}"),
+        arguments,
     })
 }
 
