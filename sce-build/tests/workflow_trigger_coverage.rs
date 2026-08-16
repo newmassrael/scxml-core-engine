@@ -70,6 +70,12 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // changes what it reads. It is also the only CI-side copy of
     // `scripts/gates/example-codegen.sh`, which has no workflow.
     "cli_expression_refusal",
+    // Parses every committed *.scxml and asserts that each guard a
+    // backend emits without a data model carries a value decided at
+    // build time, so a document added anywhere changes what it reads —
+    // and a document carrying the shape it exists for is exactly what a
+    // `paths:` filter over today's trees would stop it seeing.
+    "cli_guard_emission",
     // Runs the CLI over every committed *.scxml and performs the repair
     // each rejection proposes, so a document added anywhere changes both
     // what it reads and what it replays.

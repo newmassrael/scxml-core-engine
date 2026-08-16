@@ -1,0 +1,95 @@
+# Mutation cases for "a guard is evaluated by the data model unless SCE
+# decided it, and what a decided guard emits is a boolean".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/guard_needs_the_datamodel.cases`.
+#
+# The first two restore the defect at its root: a classifier whose
+# fallthrough is *native*, and a fold that answers for something it cannot
+# see. The next two restore it at the emitters — the author's text back in
+# guard position, which is what the classifier's answer used to license.
+# Rust and Kotlin are the two aimed at because their arms are one site
+# each; Go, C++ and C11 spell the same arm four, three and three times,
+# and an anchor that matches more than once no longer says where it aims.
+# The fifth is the opposite failure, a fold that reaches past the literal
+# grammar into an operator whose semantics belong to the data model.
+#
+# The last two break the gates. The cross-backend probe is a loop over a
+# list of backends, so a list that loses its members checks fewer of them;
+# and the corpus sweep passes trivially if it reaches no guard at all.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test guard_needs_the_datamodel --test cli_guard_emission
+# `cli_guard_emission` drives `sce-codegen` as a subprocess and reads the
+# emitted tree, so the templates are runtime inputs rather than compiled
+# code; `guard_needs_the_datamodel` calls the frontend directly.
+mutation_targets sce-build/src/parser.rs sce-build/src/ecmascript/mod.rs sce-build/tests/cli_guard_emission.rs
+mutation_runtime_targets tools/codegen/templates/rust/state_machine.rs.jinja2 tools/codegen/templates/kotlin/process_event.kt.jinja2
+
+mutation_case "the classifier falls through to native again" <<'PY'
+edit("sce-build/src/parser.rs",
+     """    (
+        crate::ecmascript::constant_truthiness(cond).is_none(),
+        false,
+    )""",
+     "    (false, false)")
+PY
+
+mutation_case "the fold answers for a name it cannot see" <<'PY'
+edit("sce-build/src/ecmascript/mod.rs",
+     """        Expr::Bool(b) => Some(*b),""",
+     """        Expr::Bool(b) => Some(*b),
+        Expr::Ident(_) => Some(true),""")
+PY
+
+mutation_case "the Rust guard arm prints the author's text again" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """                    // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
+                    if {{ 'true' if trans.cond_constant else 'false' }} {""",
+     """                    if {{ trans.cond }} {""")
+PY
+
+mutation_case "the Kotlin guard arm prints the author's text again" <<'PY'
+edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
+     """{{ 'true' if trans.cond_constant else 'false' }}""",
+     """{{ trans.cond }}""")
+PY
+
+mutation_case "the fold reaches into an operator the data model owns" <<'PY'
+edit("sce-build/src/ecmascript/mod.rs",
+     """        Expr::Unary {
+            op: UnaryOp::Not,
+            operand,
+        } => Some(!fold(operand)?),""",
+     """        Expr::Unary {
+            op: UnaryOp::Not,
+            operand,
+        } => Some(!fold(operand)?),
+        Expr::Binary { op, left, right } => match op {
+            crate::ecmascript::BinOp::StrictEq => Some(fold(left) == fold(right)),
+            _ => None,
+        },""")
+PY
+
+# The first round of this casefile aimed this case at a restated list of
+# six backend names and it SURVIVED: shrinking a list is invisible to a
+# loop over it. The list is now derived from `Language::ALL`, so the way
+# to lose coverage is to filter it — which the sweep below still cannot
+# see either, and which is why `every_backend_the_tool_serves_is_probed`
+# asserts the derivation against the same source.
+mutation_case "the cross-backend probe checks one backend" <<'PY'
+edit("sce-build/tests/cli_guard_emission.rs",
+     "    Language::ALL.iter().map(|l| l.canonical_name()).collect()",
+     """    Language::ALL
+        .iter()
+        .filter(|l| **l == Language::Python)
+        .map(|l| l.canonical_name())
+        .collect()""")
+PY
+
+mutation_case "the corpus sweep skips every document" <<'PY'
+edit("sce-build/tests/cli_guard_emission.rs",
+     "        if model.needs_script_engine {\n            continue;\n        }",
+     "        if true {\n            continue;\n        }")
+PY

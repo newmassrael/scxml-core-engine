@@ -263,6 +263,76 @@ pub fn to_lua_condition(source: &str, scope: &DocumentScope) -> Result<String, E
     lua::emit_condition(&ast)
 }
 
+/// The boolean a **condition** has at build time, or `None` when
+/// deciding it needs the data model.
+///
+/// A guard SCE can decide here is a guard no backend has to carry a
+/// script engine for, and every backend already has an arm for that
+/// case. What the arm did not have was a *value*: it emitted the
+/// author's text as target-language source, and the classifier that
+/// chose it — `parser::check_expression_needs` — decided from
+/// substrings, so its fallthrough sent anything it did not recognise
+/// down that path. `cond="1"` became Rust `if 1 {` and Go `if 1 {`,
+/// neither of which compiles, while C++ and C11 compiled it as their
+/// own truthiness and Kotlin emitted `&& 1 ->`. `check` answered exit 0
+/// with no record on any of them.
+///
+/// Only what ECMA-262 can evaluate with nothing bound is folded:
+/// literals, and `!` over one. 11.4.9 defines that operator by
+/// ToBoolean, which 9.2 defines for exactly these forms — `0`, `NaN`
+/// and `""` are false, every other number and string is true, and both
+/// spellings of the empty value are false. An identifier, a call or a
+/// member read is *not* decidable here whatever it looks like: `x`
+/// names something the data model holds, and answering it without the
+/// data model is what the classifier used to do.
+pub fn constant_truthiness(source: &str) -> Option<bool> {
+    fold(&parser::parse_expression(source).ok()?)
+}
+
+fn fold(expr: &Expr) -> Option<bool> {
+    match expr {
+        // ECMA-262 9.2 ToBoolean, one arm per type it defines.
+        Expr::Bool(b) => Some(*b),
+        Expr::Nullish => Some(false),
+        Expr::Str(s) => Some(!s.is_empty()),
+        Expr::Number(text) => {
+            // The literal is carried in its source spelling, so the
+            // value it denotes is what decides — `0x0` is false and
+            // `0.5` is true, neither of which the text alone shows.
+            let value = parse_numeric_literal(text)?;
+            Some(value != 0.0 && !value.is_nan())
+        }
+        Expr::Unary {
+            op: UnaryOp::Not,
+            operand,
+        } => Some(!fold(operand)?),
+        // `-1` is an operator applied to a literal rather than a literal
+        // (ECMA-262 11.4.7), and neither sign changes what 9.2 answers
+        // for a number: only zero and NaN are false, and negating either
+        // leaves it that way.
+        Expr::Unary {
+            op: UnaryOp::Neg | UnaryOp::Pos,
+            operand,
+        } => match operand.as_ref() {
+            Expr::Number(_) => fold(operand),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The value an ECMAScript numeric literal denotes, in every radix the
+/// grammar writes it in.
+fn parse_numeric_literal(text: &str) -> Option<f64> {
+    let lowered = text.to_ascii_lowercase();
+    for (prefix, radix) in [("0x", 16), ("0o", 8), ("0b", 2)] {
+        if let Some(digits) = lowered.strip_prefix(prefix) {
+            return i64::from_str_radix(digits, radix).ok().map(|n| n as f64);
+        }
+    }
+    lowered.parse::<f64>().ok()
+}
+
 /// Translate a `<script>` body: a statement list, emitted as a Lua chunk.
 pub fn to_lua_script(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
     let stmts = parser::parse_script(source)?;

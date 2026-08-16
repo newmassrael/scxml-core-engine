@@ -27,7 +27,7 @@
 {%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
 safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {%- elif trans.cond and not trans.is_cpp_condition -%}
-{{ trans.cond }}
+{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
 {%- endmacro %}
 {# --- Macro for rendering transition result (External/InternalToTarget/Internal) --- #}
