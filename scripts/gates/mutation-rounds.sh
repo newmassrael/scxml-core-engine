@@ -167,6 +167,31 @@ else
     fi
 fi
 
+# The count is printed whatever it is, including zero. A gate that says
+# nothing when it did nothing is indistinguishable from one that passed, and
+# this one legitimately has nothing to do on most pushes.
+sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reason"
+
+# `SCE_MUTATION_ROUNDS_DRY_RUN=1` prints the selection and stops.
+#
+# It exists so the choosing can be tested without the running: what this gate
+# decides is which casefiles a change set reaches, and a test that had to
+# execute the rounds to observe that decision would take an hour to assert a
+# property that is settled in milliseconds. The rounds themselves are
+# `scripts/mutate`'s, and `mutation_case_liveness.rs` already covers its half.
+#
+# Ahead of the ctest precondition below, because selecting is not running.
+# The workflow asks this dry run which casefiles a push reaches and configures
+# CMake when one of them needs it — so a dry run that refused for the want of
+# that tree refused precisely when the answer was "yes, configure one", and
+# the job went red for having been asked. Measured on the first push to touch
+# a C11 template: `c11_datamodel_reader.cases` was selected and the selection
+# step exited 3 before printing it.
+if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
+    printf '%s\n' ${SELECTED[@]+"${SELECTED[@]}"}
+    exit 0
+fi
+
 # ── Refuse rather than skip what this machine cannot run ──────────
 #
 # A ctest round selects from a configured CMake tree. Without one there is
@@ -189,23 +214,6 @@ if [[ ! -f build/CMakeCache.txt ]]; then
 Configure and build first (the cpp-suite and w3c-c11 gates do), or run only
 the cargo casefiles with SCE_MUTATION_ROUNDS."
     fi
-fi
-
-# The count is printed whatever it is, including zero. A gate that says
-# nothing when it did nothing is indistinguishable from one that passed, and
-# this one legitimately has nothing to do on most pushes.
-sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reason"
-
-# `SCE_MUTATION_ROUNDS_DRY_RUN=1` prints the selection and stops.
-#
-# It exists so the choosing can be tested without the running: what this gate
-# decides is which casefiles a change set reaches, and a test that had to
-# execute the rounds to observe that decision would take an hour to assert a
-# property that is settled in milliseconds. The rounds themselves are
-# `scripts/mutate`'s, and `mutation_case_liveness.rs` already covers its half.
-if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
-    printf '%s\n' ${SELECTED[@]+"${SELECTED[@]}"}
-    exit 0
 fi
 
 if (( ${#SELECTED[@]} == 0 )); then

@@ -60,3 +60,30 @@ edit("scripts/gates/mutation-rounds.sh",
      'sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reason"',
      'true')
 PY
+
+# ── The dry run refuses for want of what only a round needs ────────
+#
+# Selecting is not running. The workflow asks the dry run which casefiles a
+# push reaches and configures CMake when one of them says it needs it, so a
+# dry run that refused without that tree refused exactly when the answer was
+# "yes, configure one". It cost a red on the first push to touch a C11
+# template — the job failed for having been asked, and claimed nothing about
+# the tree.
+
+mutation_case "the ctest precondition runs ahead of the dry run again" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
+    printf '%s\\n' ${SELECTED[@]+"${SELECTED[@]}"}
+    exit 0
+fi""",
+     """if [[ ! -f build/CMakeCache.txt ]]; then
+    for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
+        [[ "${RUNNER_OF[$casefile]}" == "ctest" ]] \\
+            && sce_gate_cannot_run "no configured CMake tree at build/"
+    done
+fi
+if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
+    printf '%s\\n' ${SELECTED[@]+"${SELECTED[@]}"}
+    exit 0
+fi""")
+PY
