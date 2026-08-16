@@ -597,6 +597,8 @@ add_executable(integration_tests
     integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
     integration/AncestorEntryIsNotDefaultEntryTest.cpp
     integration/AncestorEntryIsNotDefaultEntryAotTest.cpp
+    integration/EventDataArrivesAsSentTest.cpp
+    integration/EventDataArrivesAsSentAotTest.cpp
     integration/AiLoopAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
@@ -997,6 +999,15 @@ sce_generate_static_integration_test(parallel_self_transition_keeps_its_leaf ${S
 # measured 2026-08-15, the same document without it passes while the defect is
 # still in the templates.
 sce_generate_static_integration_test(ancestor_entry_is_not_default_entry ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
+# datamodel as a value. `raiseExternalEvent(name, data)` and
+# `processEvent(event, metadata)` both take one, and until this fixture every
+# caller in the repository passed the empty string — so the boundary an
+# embedder calls was measured by nothing on any channel, while the payload
+# paths the W3C suite does cover all originate inside the document and are
+# lowered separately.
+sce_generate_static_integration_test(event_data_arrives_as_sent ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.4 + 3.7: a `<parallel>` completes when every region has reached a
 # `<final>`, and that raises `done.state.<parallel>`. A parallel owns no

@@ -1320,6 +1320,28 @@ public:
             return;
         }
         policy_.currentEventMetadata_ = metadata;
+        // §scxml-5.10: the metadata has to reach the `_event` binding, not
+        // merely be stored. `currentEventMetadata_` is read by the invoke
+        // finalize path; what fills `_event.data` / `.origin` / `.sendid` is
+        // the policy's pending fields, and those were populated only by the
+        // two QUEUE drains below — so a host that called this overload handed
+        // over a payload the document could never see. Measured 2026-08-16:
+        // five backends deliver a host payload on their equivalent call and
+        // this one silently dropped it, with `_event.data` left at whatever
+        // the previous dequeue had put there.
+        //
+        // The same helper the queue path uses, so the two cannot answer
+        // differently about what a metadata field means.
+        EventWithMetadata carried;
+        carried.event = event;
+        carried.data = metadata.data;
+        carried.origin = metadata.originSessionId;
+        carried.sendId = metadata.sendId;
+        carried.type = metadata.type;
+        carried.originType = metadata.originType;
+        carried.invokeId = metadata.invokeId;
+        carried.typedData = metadata.typedData;
+        SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, carried);
         processEventImpl(event);
     }
 

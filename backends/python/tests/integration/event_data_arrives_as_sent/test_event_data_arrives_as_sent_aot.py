@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+"""W3C SCXML 5.10 + B.2: a payload a HOST injects reaches the datamodel — Python AOT.
+
+The edge nothing measured. Every other integration fixture drives its machine
+with an empty payload — measured 2026-08-16, the data argument was ``""`` in
+every call on every channel until this one — so the host-to-datamodel boundary
+was covered by no test at all. The W3C suite does not reach it either: its
+payloads originate inside the document (``<send><content>``, ``<param>``,
+``<donedata>``), a separate path in every backend.
+
+Fixture: ``integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml``.
+
+Regeneration (after fixture or template edit):
+  ``scripts/regen_event_data_arrives_as_sent_python.sh`` (local)
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE))
+sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
+
+import event_data_arrives_as_sent_sm as _sm  # noqa: E402 — path inserted above
+from sce_runtime import EventMetadata  # noqa: E402 — path inserted above
+
+_State = _sm.EventDataArrivesAsSentState
+_Event = _sm.EventDataArrivesAsSentEvent
+
+
+def test_event_data_arrives_as_sent_aot() -> None:
+    engine = _sm.create_engine()
+    engine.initialize()
+
+    entry = engine.active_configuration()
+    assert _State.WAITING in entry, (
+        f"fixture came up as {entry}; it is supposed to start in `waiting`, so "
+        "nothing below is testing what it claims"
+    )
+
+    # A JSON object, the shape an embedder has when it holds structured data
+    # and a state machine to give it to.
+    engine.send_event(
+        _Event.PAYLOAD,
+        EventMetadata(data='{"milestone":"refined","turns":2}'),
+    )
+
+    after_payload = engine.active_configuration()
+    assert _State.MANGLED not in after_payload, (
+        "the host sent a JSON object and the guard `_event.data.milestone === "
+        "'refined' && _event.data.turns === 2` did not hold, so the payload did not "
+        f"arrive as an object with those properties (active: {after_payload})"
+    )
+    assert _State.HEARD in after_payload, (
+        "the payload guard neither matched nor mismatched — the machine is not in "
+        f"`heard` (active: {after_payload})"
+    )
+
+    # Text that is not JSON. The same call, and it must NOT be parsed into
+    # something else: `hold the line` is the value the document compares
+    # against, character for character.
+    engine.send_event(_Event.NOTE, EventMetadata(data="hold the line"))
+
+    after_note = engine.active_configuration()
+    assert _State.SETTLED in after_note, (
+        "the host sent the text `hold the line` and `_event.data === 'hold the line'` "
+        "did not hold, so a payload that is not JSON did not arrive as the string it "
+        f"was sent as (active: {after_note})"
+    )
