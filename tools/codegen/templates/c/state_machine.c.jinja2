@@ -3663,10 +3663,48 @@ SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
        siblings did not. cpp's equivalent is `EventWithMetadata.data`
        set in `Event::setData`, surfaced via `LuaEngine::setCurrentEvent`
        (LuaEngine.cpp:1138-1159), which is likewise per-dequeue. */
+    /* W3C SCXML 5.10 + B.2: the payload is DATA, so it crosses as a Lua
+       value and is decoded in Lua — never pasted into Lua source.
+
+       It used to be `snprintf("_event.data = (%s)", evt->data)` followed by an
+       unchecked `luaL_dostring`, and that spelling had three separate faults,
+       all of them silent. A payload an EMBEDDER hands in — the case
+       `watching-zenoh` has on an MCU and `examples/ai_loop` has every turn —
+       is normally JSON, and JSON is not a Lua expression: `{"a":1}` parses as
+       a Lua ARRAY of "a" and 1, and `{"a": "b"}` does not parse at all, after
+       which `_event.data` silently kept the PREVIOUS event's value. Measured
+       2026-08-16 by the fixture below — this backend was the only one of six
+       that failed it, because every other engine routes a host payload through
+       a JSON-then-string decoder (cpp `EventDataHelper::jsonStringToScriptValue`).
+       And a payload is host input: as Lua SOURCE it was executed, so an event's
+       data could run arbitrary code in the session.
+
+       `lua_pushstring` removes the source boundary entirely; the decode below
+       is the same best-effort shape `lua_send_content_literal` applies to a
+       `<content>` body — JSON key shim, `load` + `pcall`, raw string on
+       failure — so a Lua table literal from a cross-SM dispatch, a JSON object
+       from an embedder, and plain text all land the way they do everywhere
+       else. The chunk is now a fixed string with nothing interpolated, so its
+       result is checked: a failure here is this engine's own invariant
+       breaking, and W3C 4.9's `<log>` seam is where such a thing is said out
+       loud rather than swallowed. */
     if (evt->data[0] != '\0') {
-        char _setbuf[SCE_MAX_DATA_LEN + 64];
-        (void)snprintf(_setbuf, sizeof(_setbuf), "_event.data = (%s)", evt->data);
-        (void)luaL_dostring(L, _setbuf);
+        lua_pushstring(L, evt->data);
+        lua_setglobal(L, "_sce_raw_event_data");
+        if (luaL_dostring(L,
+                          "do "
+                          "local _c = _sce_raw_event_data; "
+                          "local _try = _c:gsub('\"([^\"]*)\"%s*:', '[\"%1\"]='); "
+                          "local _fn = load('return (' .. _try .. ')'); "
+                          "local _ok, _val = false, nil; "
+                          "if _fn then _ok, _val = pcall(_fn) end; "
+                          "if _ok then _event.data = _val else _event.data = _c end; "
+                          "_sce_raw_event_data = nil "
+                          "end") != 0) {
+            (void)fprintf(stderr, "SCE: event payload decode failed: %s\n",
+                          lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
+            lua_pop(L, 1);
+        }
     }
 }
 {% endif %}

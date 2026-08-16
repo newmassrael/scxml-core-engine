@@ -801,6 +801,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
+    # the datamodel as a value. Every other fixture here leaves the carrier's
+    # `data` field zeroed, so this edge — the one `watching-zenoh` uses on an
+    # MCU and the one `examples/ai_loop` answers with — was measured by nothing
+    # on any channel. It is a separate path from `<send><content>`, which the
+    # W3C suite does cover, and this backend lowers the two differently.
+    sce_generate_static_integration_c_test(event_data_arrives_as_sent "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_event_data_arrives_as_sent
+        integration/test_event_data_arrives_as_sent.c
+        ${INTEGRATION_C_TEST_event_data_arrives_as_sent_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_event_data_arrives_as_sent PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_event_data_arrives_as_sent PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_event_data_arrives_as_sent PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_event_data_arrives_as_sent
+        COMMAND sce_c_integration_event_data_arrives_as_sent
+    )
+    set_tests_properties(c11_integration_event_data_arrives_as_sent PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
     # implements is valid SCXML that must raise error.execution — not a document to
     # reject at build time. C11 reaches that raise through three gates the other

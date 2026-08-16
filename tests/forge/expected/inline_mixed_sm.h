@@ -162,6 +162,17 @@ struct inline_mixedPolicy {
     mutable ::std::string pendingEventInvokeId_;
     // W3C SCXML 6.2: Flag to mark next event as external (from send)
     mutable bool nextEventIsExternal_ = false;
+    // W3C SCXML 5.10: the current event's metadata — the payload, origin,
+    // sendid and invokeid a dequeued event carries.
+    //
+    // Unconditional, because the base engine's `processEvent(Event, const
+    // EventMetadata &)` writes it and that overload is PUBLIC: emitting the
+    // field only for machines that host an `<invoke>` did not narrow a feature,
+    // it made an advertised entry point fail to compile for every other machine
+    // — a host with a payload to deliver had no way in. Measured 2026-08-16
+    // while giving the fixture below a C++ AOT channel; five other backends
+    // accept a payload on their equivalent call, and this one type-errored.
+    mutable ::SCE::Core::EventMetadata currentEventMetadata_;
 
     // W3C SCXML 3.13: Track last transition for deferred action execution
     // W3C SCXML 3.4: Also needed for parallel states to track actual transition source
