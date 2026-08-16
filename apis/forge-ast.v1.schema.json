@@ -22,6 +22,14 @@
         "cond": {
           "type": "string"
         },
+        "cond_constant": {
+          "default": null,
+          "description": "The boolean [`cond`](Self::cond) has at build time — the same field [`Transition::cond_constant`] carries, for the `<if>` a backend emits through the same arms.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "cond_cpp": {
           "type": "string"
         },
@@ -1537,6 +1545,13 @@
         },
         "cond": {
           "type": "string"
+        },
+        "cond_constant": {
+          "description": "The boolean [`cond`](Self::cond) has at build time — see [`Transition::cond_constant`]. An `<elseif>` reaches the same arms its `<if>` does, so it needs the same answer.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "cond_cpp": {
           "type": "string"
@@ -5315,6 +5330,13 @@
         },
         "cond": {
           "type": "string"
+        },
+        "cond_constant": {
+          "description": "The boolean [`cond`](Self::cond) has at build time, when the frontend can decide it without the data model.\n\n`Some` is what makes a guard emittable with no script engine, so it and [`crate::parser::check_expression_needs`] answer one question and must not drift: a backend prints its own `true` / `false` from this, and printing the author's text instead is the defect the field exists to end — `cond=\"1\"` reached Rust as `if 1 {`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "cond_cpp": {
           "type": "string"

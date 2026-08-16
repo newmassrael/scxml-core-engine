@@ -55,5 +55,6 @@ cargo test -p sce-build --features cli \
     --test ecmascript_semantics \
     --test ecmascript_acceptance_parity \
     --test cli_expression_refusal \
+    --test cli_guard_emission \
     --test mutation_rounds_selection \
     || sce_gate_fail "tree-wide hygiene gates"

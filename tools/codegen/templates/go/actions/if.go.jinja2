@@ -7,7 +7,8 @@
 {% elif model.needs_script_engine %}
 	if p.evaluateGuard(`{{ action.cond | to_lua_guard }}`, engine) {
 {% else %}
-	if {{ action.cond }} {
+	// W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
+	if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
 {% for then_action in action.then_actions %}
 		{% with action=then_action %}{% include 'actions/' ~ then_action.type ~ '.go.jinja2' %}{% endwith %}
@@ -19,7 +20,7 @@
 {% elif model.needs_script_engine %}
 	} else if p.evaluateGuard(`{{ elseif.cond | to_lua_guard }}`, engine) {
 {% else %}
-	} else if {{ elseif.cond }} {
+	} else if {{ 'true' if elseif.cond_constant else 'false' }} {
 {% endif %}
 {% for elseif_action in elseif.actions %}
 		{% with action=elseif_action %}{% include 'actions/' ~ elseif_action.type ~ '.go.jinja2' %}{% endwith %}

@@ -10,7 +10,8 @@
 {% elif model.needs_script_engine and outer_if_action.cond %}
             if (safeEvaluateGuard("{{ outer_if_action.cond | escape_kotlin }}")) {
 {% elif outer_if_action.cond %}
-            if ({{ outer_if_action.cond }}) {
+            // W3C SCXML 4.2: cond="{{ outer_if_action.cond }}" decided at build time
+            if ({{ 'true' if outer_if_action.cond_constant else 'false' }}) {
 {% endif %}
 {% for then_action in outer_if_action.then_actions %}
 {% set action = then_action %}
@@ -22,7 +23,7 @@
 {% elif model.needs_script_engine and elseif.cond %}
             } else if (safeEvaluateGuard("{{ elseif.cond | escape_kotlin }}")) {
 {% else %}
-            } else if ({{ elseif.cond }}) {
+            } else if ({{ 'true' if elseif.cond_constant else 'false' }}) {
 {% endif %}
 {% for elif_action in elseif.actions %}
 {% set action = elif_action %}

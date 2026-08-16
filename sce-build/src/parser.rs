@@ -2295,6 +2295,14 @@ impl SCXMLParser {
             cond_cpp = convert_in_to_cpp(&cond);
             cond_kt = convert_in_to_kotlin(&cond);
         }
+        // Decided only for the author's own language: a `cpp:` / `kt:`
+        // condition is target source, and an `In()` predicate has an arm
+        // of its own on every backend.
+        let cond_constant = if is_cpp_condition || is_kt_condition || is_pure_in {
+            None
+        } else {
+            crate::ecmascript::constant_truthiness(&cond)
+        };
 
         let mut transition = Transition {
             event: elem.attribute("event").unwrap_or("").to_string(),
@@ -2306,6 +2314,7 @@ impl SCXMLParser {
             is_cpp_condition,
             cond_kt,
             is_kt_condition,
+            cond_constant,
             transition_type: elem.attribute("type").unwrap_or("external").to_string(),
             source_location: source_location_of(elem, source_name),
             ..Default::default()
@@ -2597,6 +2606,11 @@ impl SCXMLParser {
             }
         }
 
+        action.cond_constant = if is_pure_in {
+            None
+        } else {
+            crate::ecmascript::constant_truthiness(&cond)
+        };
         action.cond = cond;
         action.cond_cpp = cond_cpp;
         action.cond_kt = cond_kt;
@@ -2633,11 +2647,17 @@ impl SCXMLParser {
                     } else {
                         String::new()
                     };
+                    let ei_constant = if ei_pure_in {
+                        None
+                    } else {
+                        crate::ecmascript::constant_truthiness(&ei_cond)
+                    };
                     action.elseif_branches.push(ElseIfBranch {
                         cond: ei_cond,
                         cond_cpp: ei_cpp,
                         cond_kt: ei_kt,
                         is_pure_in_predicate: ei_pure_in,
+                        cond_constant: ei_constant,
                         actions: Vec::new(),
                     });
                     current_branch = action.elseif_branches.len(); // 1-indexed
@@ -5056,15 +5076,35 @@ fn convert_in_to_kotlin(cond: &str) -> String {
         .to_string()
 }
 
-/// Check if expression requires script engine evaluation (ports Python _requires_script_engine).
-/// Also returns whether the expression uses In() predicate.
+/// Whether a condition has to be evaluated by the data model, and
+/// whether it uses the `In()` predicate.
 ///
-/// Exposed to [`crate::script_engine_analyzer`] so the analyzer can replay
-/// the same classification on a fully-parsed model without reimplementing
-/// the heuristic — keeps the "which cond strings are native" boundary in
-/// one place.
+/// The single classifier: [`crate::script_engine_analyzer`] replays it
+/// on a fully-parsed model rather than reimplementing the boundary, and
+/// every backend's guard arm is chosen by its answer.
+///
+/// Four conditions do not need the data model, and the list is closed
+/// rather than sampled:
+///
+/// * a `cpp:` / `kt:` condition — the author wrote target-language
+///   source, and only that backend lowers it;
+/// * a pure `In(...)` predicate — the specification answers it from the
+///   active configuration alone;
+/// * a condition the frontend decides at build time, which
+///   [`crate::ecmascript::constant_truthiness`] folds to a boolean the
+///   emitters print as their own literal;
+/// * a typed `_event.data` guard under an imported EventSchema, decided
+///   by the analyzer after this because it needs the schema.
+///
+/// Everything else needs the data model. This used to be decided by
+/// substring — a list of operators, quote characters and reserved words
+/// — whose fallthrough was *native*, so a condition the list did not
+/// recognise was emitted as target-language source. `cond="1"` became
+/// Rust `if 1 {`, `cond="x"` became `if x {`, and `cond="Math.abs(1)"`
+/// reached the backend without ever passing the frontend that owns the
+/// name `Math`. All three generated cleanly and reported nothing.
 pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
-    if cond.is_empty() {
+    if cond.trim().is_empty() {
         return (false, false);
     }
     if cond.starts_with("cpp:") || cond.starts_with("kt:") {
@@ -5074,83 +5114,17 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
     if is_pure_in_predicate(cond) {
         return (false, has_in);
     }
-    // Mixed In() with ECMAScript needs script engine
+    // A mixed `In(...) && x` reads the configuration *and* the data
+    // model, so the data model evaluates the whole of it.
     if has_in {
         return (true, true);
     }
-    // ECMAScript-specific features
-    let js_features = ["typeof", "_event.", "function", "var ", "let ", "const "];
-    for f in &js_features {
-        if cond.contains(f) {
-            return (true, false);
-        }
-    }
-    // §scxml-5.9: System-reserved identifiers starting with underscore
-    static RE_UNDERSCORE: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"\b_[a-zA-Z]\w*\b").unwrap());
-    if RE_UNDERSCORE.is_match(cond) {
-        return (true, false);
-    }
-    // ECMAScript comparison and logical operators
-    let operators = ["===", "!==", "==", "!=", "&&", "||", "<=", ">=", "<", ">"];
-    for op in &operators {
-        if cond.contains(op) {
-            return (true, false);
-        }
-    }
-    // String/number literals
-    if cond.contains('\'') || cond.contains('"') {
-        return (true, false);
-    }
-    // Note: _event.* fields are already caught by "_event." in js_features above.
-    // C++/Rust reserved keywords that would be invalid as conditions
-    let reserved = [
-        "return",
-        "break",
-        "continue",
-        "goto",
-        "switch",
-        "case",
-        "default",
-        "if",
-        "else",
-        "while",
-        "do",
-        "for",
-        "class",
-        "struct",
-        "typedef",
-        "using",
-        "namespace",
-        "template",
-        "typename",
-        "static",
-        "extern",
-        "inline",
-        "virtual",
-        "operator",
-        "new",
-        "delete",
-        "this",
-        "throw",
-        "try",
-        "catch",
-        "public",
-        "private",
-        "protected",
-    ];
-    let stripped = cond.trim();
-    for kw in &reserved {
-        if stripped == *kw
-            || (stripped.starts_with(kw)
-                && stripped.len() > kw.len()
-                && !stripped.as_bytes()[kw.len()].is_ascii_alphanumeric()
-                && stripped.as_bytes()[kw.len()] != b'_')
-        {
-            return (true, false);
-        }
-    }
-    (false, false)
+    // Everything else is the data model's to evaluate, unless SCE can
+    // decide the value itself.
+    (
+        crate::ecmascript::constant_truthiness(cond).is_none(),
+        false,
+    )
 }
 
 fn parse_delay_to_ms(delay: &str) -> i64 {
@@ -5594,10 +5568,19 @@ mod tests {
         assert!(check_expression_needs("a || b").0);
     }
 
+    /// A string literal is decided here, not by the data model.
+    ///
+    /// This asserted the opposite while the classifier looked for a
+    /// quote character: a literal was sent to an engine because it
+    /// *contained* something the list recognised. ECMA-262 9.2 gives it
+    /// a value with nothing bound, so W3C test 449 — `cond="'foo'"`,
+    /// "test that ecmascript objects are converted to booleans inside
+    /// cond" — is a pure-static machine.
     #[test]
-    fn expr_needs_string_literal() {
-        assert!(check_expression_needs("'hello'").0);
-        assert!(check_expression_needs("\"hello\"").0);
+    fn expr_string_literal_is_decided_here() {
+        assert!(!check_expression_needs("'hello'").0);
+        assert!(!check_expression_needs("\"hello\"").0);
+        assert!(!check_expression_needs("''").0);
     }
 
     #[test]
@@ -5606,18 +5589,30 @@ mod tests {
         assert!(check_expression_needs("if(true)").0);
     }
 
+    /// A name that merely begins with a reserved word is an identifier,
+    /// and an identifier needs the data model like any other.
+    ///
+    /// The boundary this checks used to decide something else: a name
+    /// that did *not* match the keyword list fell through to "native"
+    /// and was emitted as target-language source. `ifelse` is a
+    /// perfectly good `<data id>`, and the question a classifier can
+    /// answer about it is not whether it looks like a keyword.
     #[test]
-    fn expr_needs_reserved_keyword_boundary() {
-        // "ifelse" should NOT match "if" because next char is alphanumeric
-        assert!(!check_expression_needs("ifelse").0);
-        // "if_something" should NOT match because next char is underscore
-        assert!(!check_expression_needs("if_something").0);
+    fn expr_a_name_beginning_with_a_keyword_is_still_a_name() {
+        assert!(check_expression_needs("ifelse").0);
+        assert!(check_expression_needs("if_something").0);
     }
 
+    /// A bare identifier needs the data model.
+    ///
+    /// This test asserted the defect in as many words — *"a bare
+    /// identifier without operators/keywords should not need engine"* —
+    /// and what that licensed was Rust `if myVariable {`, naming
+    /// nothing, with `check` answering exit 0. A name is precisely what
+    /// only the data model holds.
     #[test]
-    fn expr_needs_simple_identifier_no_engine() {
-        // A bare identifier without operators/keywords should not need engine
-        assert_eq!(check_expression_needs("myVariable"), (false, false));
+    fn expr_a_bare_identifier_needs_the_datamodel() {
+        assert_eq!(check_expression_needs("myVariable"), (true, false));
     }
 
     // ── is_static_string_literal / extract_static_string_literal ─
