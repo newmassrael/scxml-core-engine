@@ -567,6 +567,39 @@ pub fn resolve_driver_refs_with_root(
 /// Generates `{name}_sm.rs` for each input SCXML file. Intended for
 /// use in `build.rs`.
 ///
+/// # How to consume what this writes
+///
+/// ```ignore
+/// // src/sm.rs, in the crate whose build.rs called compile_scxml
+/// pub mod ai_loop {
+///     include!(concat!(env!("OUT_DIR"), "/ai_loop_sm.include.rs"));
+/// }
+/// ```
+///
+/// **`{name}_sm.include.rs`, not `{name}_sm.rs`.** The machine itself is
+/// a module *file*: it opens with an audited suppression budget spelled
+/// as inner attributes (`#![allow(…)]`) and an inner doc comment, both of
+/// which rustc refuses in `include!`'s expansion position. The `.include`
+/// file is a two-line index — `#[path = "…"] mod {name}_sm; pub use
+/// {name}_sm::*;` — that names the machine absolutely and re-exports it,
+/// so `include!`ing it puts the machine's items exactly where including
+/// the machine would have, with the budget intact.
+///
+/// A consumer cannot write that `#[path]` themselves: built-in attributes
+/// take a string literal, so `#[path = concat!(env!("OUT_DIR"), …)]` does
+/// not expand. `build.rs` is the only place that holds `OUT_DIR` as a
+/// value, which is why this function writes the line rather than
+/// documenting it.
+///
+/// **Do not strip lines from `{name}_sm.rs`.** Filtering out `#![` and
+/// `//!` makes it `include!`-able and costs the budget: the eleven allows
+/// SCE audited against the W3C fixture suite are replaced by whatever
+/// blanket the consumer reaches for, which then also swallows real
+/// warnings in the generated code and does not narrow when SCE narrows.
+/// Two independent consumers wrote that same filter before this route
+/// existed. `sce-build/tests/build_rs_consumer_contract.rs` holds the
+/// route to all three of its promises.
+///
 /// For every input, emits `cargo::rerun-if-changed=` lines for both
 /// the input itself and every preprocessor dependency the parser
 /// pulled in (`<xi:include>` targets, `<sce:use template>` fragments).
@@ -647,6 +680,18 @@ pub fn compile_scxml_with_derives(
         // trailing newline itself rather than inherit it.
         std::fs::write(&out_path, generator::with_trailing_newline(&code).as_ref())
             .unwrap_or_else(|e| panic!("Cannot write {}: {e}", out_path.display()));
+
+        // The consumption route, written beside the artifact because
+        // `build.rs` is the only place that knows `OUT_DIR` as a value.
+        // See this function's documentation for what it is for.
+        let include_path = Path::new(&out_dir).join(format!("{stem}_sm.include.rs"));
+        let shim = generator::generate_rust_include_shim(&template_dir, stem, &out_path)
+            .unwrap_or_else(|e| panic!("Cannot render the include shim for {stem}: {e}"));
+        std::fs::write(
+            &include_path,
+            generator::with_trailing_newline(&shim).as_ref(),
+        )
+        .unwrap_or_else(|e| panic!("Cannot write {}: {e}", include_path.display()));
 
         println!("cargo::rerun-if-changed={scxml_path}");
         for dep in &output.deps {
