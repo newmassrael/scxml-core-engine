@@ -4576,6 +4576,47 @@ impl SingleDiagnostic for ForgeError {
     }
 }
 
+/// An expression the ECMAScript frontend refused, reported without
+/// stopping the build.
+///
+/// The payload is the inner [`ExprError`]'s — the same `expression/*`
+/// code, `actual` and key fragments a fatal rejection of the same
+/// construct carries, so one construct has one wire identity whichever
+/// dialect met it. What differs is only when the record is emitted:
+/// the spec obliges the generated machine to raise `error.execution`
+/// rather than be refused at build time, so this record accompanies a
+/// successful run instead of replacing one.
+///
+/// `exit_code` is the expression stage's, unused on the reporting path
+/// and read only when `--lint` promotes the refusal to fatal — an
+/// authored document has no §5.9.1 excuse for carrying one.
+impl ToDiagnostics for crate::ecmascript_acceptance::RefusedExpression {
+    fn exit_code(&self) -> i32 {
+        ForgeError::Expression(ExprError::UnsupportedConstruct {
+            construct: String::new(),
+        })
+        .exit_code()
+    }
+
+    fn to_diagnostics(&self) -> Vec<Diagnostic> {
+        vec![self.to_single_diagnostic()]
+    }
+}
+
+impl SingleDiagnostic for crate::ecmascript_acceptance::RefusedExpression {
+    fn diagnostic_payload(&self) -> DiagnosticPayload {
+        expression_fields(&self.error)
+    }
+
+    fn diagnostic_location(&self) -> Option<Location> {
+        self.location.as_ref().map(|at| Location {
+            file: at.file.clone(),
+            line: at.line,
+            col: at.col,
+        })
+    }
+}
+
 impl ToDiagnostics for Located<ForgeError> {
     fn exit_code(&self) -> i32 {
         self.error.exit_code()

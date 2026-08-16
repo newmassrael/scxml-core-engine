@@ -30,6 +30,20 @@ enforcement is `forge::diagnostic::tests::diagnostic_goldens_are_byte_stable`
 Consumers **must** split the two streams by fd. A parser that reads
 stdout looking for errors is reading the wrong stream.
 
+**A diagnostic does not imply failure.** Most do — the record is emitted
+and the process exits non-zero — but some verdicts are reached at
+generation time and are obliged to let the run finish: W3C SCXML §5.9.1
+requires an unevaluable `cond` to raise `error.execution` at runtime
+rather than be refused at build time, so the document must still
+generate. Such a run emits its records on stderr **and** its manifest on
+stdout, and exits `0`. No severity field carries this: [§10.2](#102-stream-discipline)
+already makes the exit code the thing that says whether stdout is valid,
+so `records + exit 0 + manifest` and `records + non-zero exit + empty
+stdout` are already distinguishable. A consumer that treats any record
+as fatal will refuse documents the W3C conformance suite requires.
+`sce-codegen --lint` is the opt-in that promotes the reportable ones to
+fatal, for authors who have no conformance excuse for carrying them.
+
 ## 2. Record shape
 
 ```json

@@ -359,6 +359,117 @@ fn reject_native_actions_in_unsupported_lang(
     )))
 }
 
+/// The native-code prefixes a `cond` may carry, paired with the one
+/// backend that lowers each.
+///
+/// `cpp:` is C++'s and `kt:` is Kotlin's: their templates branch on
+/// `is_cpp_condition` / `is_kt_condition` and emit `cond_cpp_transformed`
+/// / `cond_kt`, which are the *stripped* bodies. No other backend has
+/// that branch.
+const NATIVE_COND_PREFIXES: &[(&str, &str)] = &[("cpp:", "C++"), ("kt:", "Kotlin")];
+
+/// The first `cond` in `model` carrying a native prefix this language
+/// cannot lower.
+fn first_unlowerable_native_cond(model: &SCXMLModel, language: &str) -> Option<(String, String)> {
+    fn scan_actions(actions: &[crate::model::Action], language: &str) -> Option<(String, String)> {
+        for action in actions {
+            if let Some(hit) = unlowerable(&action.cond, language) {
+                return Some(hit);
+            }
+            for branch in &action.elseif_branches {
+                if let Some(hit) = unlowerable(&branch.cond, language) {
+                    return Some(hit);
+                }
+                if let Some(hit) = scan_actions(&branch.actions, language) {
+                    return Some(hit);
+                }
+            }
+            for nested in action
+                .then_actions
+                .iter()
+                .chain(action.else_actions.iter())
+                .chain(action.actions.iter())
+            {
+                if let Some(hit) = scan_actions(std::slice::from_ref(nested), language) {
+                    return Some(hit);
+                }
+            }
+        }
+        None
+    }
+
+    fn unlowerable(cond: &str, language: &str) -> Option<(String, String)> {
+        NATIVE_COND_PREFIXES
+            .iter()
+            .find(|(prefix, owner)| cond.starts_with(prefix) && *owner != language)
+            .map(|(_, owner)| (cond.to_string(), (*owner).to_string()))
+    }
+
+    let mut states: Vec<&crate::model::State> = model.states.values().collect();
+    states.sort_by_key(|s| s.document_order);
+    for state in states {
+        for transition in &state.transitions {
+            if let Some(hit) = unlowerable(&transition.cond, language) {
+                return Some(hit);
+            }
+            if let Some(hit) = scan_actions(&transition.actions, language) {
+                return Some(hit);
+            }
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            if let Some(hit) = scan_actions(block, language) {
+                return Some(hit);
+            }
+        }
+        if let Some(hit) = scan_actions(&state.initial_transition_actions, language) {
+            return Some(hit);
+        }
+    }
+    None
+}
+
+/// §scxml-3.13 native `cond`: a `cpp:` / `kt:` prefix names the language
+/// the guard is written in, and only that language's backend has a
+/// branch that strips the prefix and emits the body.
+///
+/// Every other backend used to accept the document and emit something
+/// that cannot work, in one of two shapes, both silent:
+///
+/// * Rust, Go and C11 fall through to the else-branch that emits the
+///   `cond` **verbatim** — a branch that is right for a guard which is
+///   already a valid expression in the target language (`true`, `1 == 1`)
+///   and produces `if cpp:hardware.hasPower() {`, which no compiler
+///   accepts, for one that is not. `sce-codegen` reported success and
+///   listed the artifact.
+/// * Python has no else-branch and lowers the guard through the
+///   ECMAScript frontend, which refuses `cpp:…` at the `:`. That
+///   compiles, and the guard then raises `error.execution` and reads
+///   false on every evaluation — a transition that can never be taken.
+///
+/// Refused here for the same reason `<sce:action>` is: a construct one
+/// backend implements is a backend-axis gap, and the operator who picked
+/// the wrong `--lang` should learn it from a diagnostic rather than from
+/// a compiler or from a machine that quietly never moves.
+fn reject_native_conditions_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    let Some((cond, owner)) = first_unlowerable_native_cond(model, language) else {
+        return Ok(());
+    };
+    Err(GenerateError::UnsupportedFeature(format!(
+        "cond=\"{cond}\" in '{}' is a native {owner} guard and has no {language} \
+         codegen path — a native cond is lowered only by the backend whose \
+         language it names. Either generate this machine for that backend or \
+         write the guard as an ECMAScript expression.",
+        model.name
+    )))
+}
+
 // EventSchema MCU native lowering: every backend
 // (Rust, C11, C++, Kotlin, Go, Python) now lowers a typed `_event.data`
 // transition guard to a script-engine-free native comparison, so the former
@@ -506,6 +617,7 @@ pub fn generate_with_options(
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
+    reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
@@ -550,6 +662,7 @@ pub fn generate_with_templates(
     no_std: bool,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
+    reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
@@ -722,6 +835,7 @@ fn render_cpp(
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     reject_native_actions_in_unsupported_lang(model, "C++")?;
+    reject_native_conditions_in_unsupported_lang(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // §scxml-5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -865,6 +979,7 @@ fn render_c11(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
+    reject_native_conditions_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
@@ -975,6 +1090,7 @@ pub fn generate_kotlin(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
+    reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
@@ -992,6 +1108,7 @@ pub fn generate_kotlin_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
+    reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
@@ -1136,6 +1253,7 @@ fn render_kotlin(
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
+    reject_native_conditions_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_go_filters(&mut env);
@@ -1149,6 +1267,7 @@ pub fn generate_go_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
+    reject_native_conditions_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_go_filters(&mut env);
@@ -1171,6 +1290,7 @@ pub fn generate_go_with_templates(
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
+    reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
@@ -1185,6 +1305,7 @@ pub fn generate_python_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
+    reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;

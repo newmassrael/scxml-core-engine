@@ -24,6 +24,7 @@ pub mod conformance;
 /// string-rewriting transformer whose entry point could not fail; see the
 /// module docs for what that signature cost.
 pub mod ecmascript;
+pub mod ecmascript_acceptance;
 pub mod filters;
 pub mod forge;
 #[cfg(not(target_arch = "wasm32"))]

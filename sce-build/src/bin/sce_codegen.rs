@@ -525,6 +525,36 @@ impl ErrorFormat {
         std::process::exit(err.exit_code());
     }
 
+    /// Emit a diagnostic and keep going.
+    ///
+    /// Every other emitter on this type terminates, which is why a
+    /// verdict that must *not* stop the build had nowhere to go. The
+    /// spec obliges an unevaluable `cond` to reach the runtime as
+    /// `error.execution` rather than be refused at generation time — the
+    /// clause and its citation live on `filters::to_lua_guard` — so the
+    /// document stays generatable and the record accompanies a successful
+    /// run instead of replacing one.
+    ///
+    /// No severity field is invented for this. `SCE_ERROR_CONTRACT.md`
+    /// §1 already splits the streams — stdout carries the manifest,
+    /// stderr the diagnostics — and §10.2 makes the exit code the thing
+    /// that says whether stdout is valid, so a consumer separates a
+    /// reported refusal (records, exit `0`, manifest on stdout) from a
+    /// fatal one (records, non-zero exit, empty stdout) with what the
+    /// contract already gives it.
+    fn report<E: ToDiagnostics + std::fmt::Display>(self, err: &E, human_prefix: &str) {
+        match self {
+            ErrorFormat::Human => {
+                eprintln!("{human_prefix}{err}");
+            }
+            ErrorFormat::Json => {
+                for diag in err.to_diagnostics() {
+                    emit_ndjson(&diag);
+                }
+            }
+        }
+    }
+
     /// Convenience shim for the most common case: a forge-pipeline
     /// error reported with the legacy "Forge codegen error: " banner.
     ///
@@ -2393,6 +2423,56 @@ fn load_deploy_config(
     }
 }
 
+/// Report every expression the ECMAScript frontend refused, and let
+/// `--lint` decide whether they end the run.
+///
+/// The refusal is a generation-time verdict that used to reach nobody:
+/// [`sce_build::filters`] emits it as Lua that raises when evaluated —
+/// the spec's requirement, and the reason W3C tests 309 and 344 stay
+/// generatable — and the parser's message then survived only as a string
+/// literal inside the artifact. `check` answered `status: "ok"` for a
+/// document that cannot run.
+///
+/// `--lint` is where the answer flips, because it is already the flag
+/// that separates the two kinds of author. The design-time lints are off
+/// by default since the W3C corpus declares unreachable states on
+/// purpose; `scripts/gates/example-codegen.sh` turns them on for every
+/// document *this repository writes*, which carry no such excuse. A
+/// refused expression is the same shape of claim: conformance obliges
+/// SCE to generate one, and nothing obliges an author to write one.
+///
+/// Both subcommands call this so `check` and `generate` cannot disagree,
+/// which `check_and_generate_agree_on_every_document_and_backend`
+/// already sweeps.
+fn report_refused_expressions(
+    model: &sce_build::model::SCXMLModel,
+    lint: bool,
+    error_format: ErrorFormat,
+) {
+    let refused = sce_build::ecmascript_acceptance::refusals(model);
+    if refused.is_empty() {
+        return;
+    }
+    for refusal in &refused {
+        let human_prefix = match &refusal.location {
+            Some(at) => format!(
+                "{}:{}:{}: ",
+                at.file,
+                at.line.unwrap_or(0),
+                at.col.unwrap_or(0)
+            ),
+            None => String::new(),
+        };
+        error_format.report(refusal, &human_prefix);
+    }
+    if lint {
+        // Reported first, then fatal: an author fixing a document wants
+        // every refusal it carries, not the first one re-discovered a
+        // build at a time.
+        std::process::exit(refused[0].exit_code());
+    }
+}
+
 /// Script-engine facts for one statechart, or `None` when the document
 /// does not parse.
 ///
@@ -2743,6 +2823,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     error_format.emit_forge_and_exit(&e);
                 }
             }
+
+            // Always reported, fatal only under `--lint`. Placed beside
+            // the lints for the same reason they are: `generate` runs it
+            // at the matching point in its own pass.
+            report_refused_expressions(&model, lint, error_format);
 
             // SCE Protocol-Synthesis RFC §synth-5-O — not a lint: an IR
             // node reaching codegen without a source coordinate emits a
@@ -3373,6 +3458,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             error_format.emit_forge_and_exit(&e);
         }
     }
+
+    // Always reported, fatal only under `--lint` — see the `check` call
+    // site for why the flag is the one that decides.
+    report_refused_expressions(&model, lint, error_format);
 
     // SCE Protocol-Synthesis RFC §synth-5-O — see the `check` call site.
     // Runs before `resolve_source_path` so a `None` cannot leak into the
