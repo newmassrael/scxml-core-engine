@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8c4a7d84a6ea23ea88829e171f3ef6f30c77da38dc5a67c7f0b53b8d9b23526b
-// template-hash: f21fa6fe20b06255f5ff03ff01c6dbc9228fed62e399d58a912b19b086193a03
+// source-hash: d307f64e2f440b5e64842da73b67f9e9208ee8c09e59399434add3727578f7cc
+// template-hash: 6b3d1716c5fe7bf441783d277357c458e7e14d8fc3f1d3e67e7f0181f437b229
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -373,7 +373,7 @@ impl StatePolicy for SendParamPayloadSceSynthInvokeInvEmitterPolicy {
                         // carries it — so each is escaped once per boundary
                         // (`escape_lua | escape_rust`). Applying only the host filter produces
                         // Rust source that compiles and Lua source that does not parse.
-                        let event_data: &str = "{ [\"value\"]=\"42\" }";
+                        let event_data: &str = "_scxml_params({\"value\", \"42\"})";
 
                         // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
                         if let Some(ref parent_queue) = self.parent_external_queue {

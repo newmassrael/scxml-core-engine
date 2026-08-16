@@ -87,7 +87,7 @@ public:
     template <typename JSEngineType, typename ErrorHandler>
     static bool evaluateNamelist(JSEngineType &jsEngine, const std::string &sessionId, const std::string &namelist,
                                  std::map<std::string, std::vector<std::string>> &params, ErrorHandler errorHandler,
-                                 std::map<std::string, ScriptValue> *outTypedParams = nullptr) {
+                                 std::map<std::string, std::vector<ScriptValue>> *outTypedParams = nullptr) {
         if (namelist.empty()) {
             return true;  // No namelist to evaluate
         }
@@ -123,7 +123,9 @@ public:
 
             // §scxml-C-1: Preserve typed value for engine-agnostic ScriptValue pipeline
             if (outTypedParams) {
-                (*outTypedParams)[varName] = varResult.getInternalValue();
+                // A vector per name, matching `params` above: the same normal
+                // form a repeated `<param>` uses, so one rule covers both.
+                (*outTypedParams)[varName].push_back(varResult.getInternalValue());
             }
         }
 

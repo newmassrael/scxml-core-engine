@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: f21fa6fe20b06255f5ff03ff01c6dbc9228fed62e399d58a912b19b086193a03
+// template-hash: 6b3d1716c5fe7bf441783d277357c458e7e14d8fc3f1d3e67e7f0181f437b229
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -230,7 +230,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
                 val engineP = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
-                try { paramsP["sid"] = engineP.evaluateExpr(sidP, "_sessionid") } catch (_: Exception) { paramsP["sid"] = "" }
+                try { putParam(paramsP, "sid", engineP.evaluateExpr(sidP, "_sessionid")) } catch (_: Exception) { putParam(paramsP, "sid", "") }
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("fromChild", eventDataP)
             }

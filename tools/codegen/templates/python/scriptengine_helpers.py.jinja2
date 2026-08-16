@@ -413,11 +413,26 @@
                 except _ScriptError:
                     self._raise_error_execution(engine)
                     raise _ActionAbort
+        # W3C SCXML 6.2: a `<param>` name may repeat, and test178 in the IRP
+        # requires both pairs to be delivered. A dict cannot hold one key
+        # twice, so the second occurrence turns the entry into a list in
+        # document order — the same normal form `_scxml_params` gives the
+        # Lua-literal backends. Writing straight into the dict, as this did,
+        # silently dropped every value but the last.
+        _repeats: dict = {}
         for name, lua_expr in params:
             try:
-                marshalled[name] = engine._script_engine.evaluate_expression(
+                _value = engine._script_engine.evaluate_expression(
                     self._session_id, lua_expr
                 ).to_python()
+                _count = _repeats.get(name, 0) + 1
+                _repeats[name] = _count
+                if _count == 1:
+                    marshalled[name] = _value
+                elif _count == 2:
+                    marshalled[name] = [marshalled[name], _value]
+                else:
+                    marshalled[name].append(_value)
             except _ScriptError:
                 self._raise_error_execution(engine)
                 raise _ActionAbort

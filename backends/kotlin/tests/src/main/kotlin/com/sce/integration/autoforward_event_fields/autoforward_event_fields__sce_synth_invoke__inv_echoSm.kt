@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: f21fa6fe20b06255f5ff03ff01c6dbc9228fed62e399d58a912b19b086193a03
+// template-hash: 6b3d1716c5fe7bf441783d277357c458e7e14d8fc3f1d3e67e7f0181f437b229
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -251,7 +251,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
                 val engineP = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                 val sidP = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val paramsP = mutableMapOf<String, Any?>()
-                try { paramsP["value"] = engineP.evaluateExpr(sidP, "42") } catch (_: Exception) { paramsP["value"] = "" }
+                try { putParam(paramsP, "value", engineP.evaluateExpr(sidP, "42")) } catch (_: Exception) { putParam(paramsP, "value", "") }
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childToParent", eventDataP)
             }

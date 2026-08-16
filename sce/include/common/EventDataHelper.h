@@ -71,7 +71,7 @@ public:
      * @param typedParams Map of param names to ScriptValue values
      * @return ScriptValue containing a ScriptObject with param properties
      */
-    static ScriptValue buildScriptValueFromParams(const std::map<std::string, ScriptValue> &typedParams);
+    static ScriptValue buildScriptValueFromParams(const std::map<std::string, std::vector<ScriptValue>> &typedParams);
 
     /**
      * @brief Build type-preserving JSON string from typed params
@@ -90,7 +90,7 @@ public:
      * @param typedParams Map of param names to ScriptValue values
      * @return JSON string with type-preserving values (e.g., {"aParam":1,"arr":[1,2],"obj":{"k":"v"}})
      */
-    static std::string buildJsonFromTypedParams(const std::map<std::string, ScriptValue> &typedParams);
+    static std::string buildJsonFromTypedParams(const std::map<std::string, std::vector<ScriptValue>> &typedParams);
 
     /**
      * @brief Build event data JSON, preferring type-preserving form when typed params exist.
@@ -113,7 +113,7 @@ public:
      * @return JSON carrying each param's type where the shape allows it
      */
     static std::string buildEventDataJson(const std::map<std::string, std::vector<std::string>> &stringParams,
-                                          const std::map<std::string, ScriptValue> &typedParams);
+                                          const std::map<std::string, std::vector<ScriptValue>> &typedParams);
 
     /**
      * @brief Build event data JSON that carries a `data` payload alongside params.
@@ -130,7 +130,7 @@ public:
      */
     static std::string buildEventDataJson(const std::string &data,
                                           const std::map<std::string, std::vector<std::string>> &stringParams,
-                                          const std::map<std::string, ScriptValue> &typedParams);
+                                          const std::map<std::string, std::vector<ScriptValue>> &typedParams);
 
     /**
      * @brief Convert ScriptValue to JSON string

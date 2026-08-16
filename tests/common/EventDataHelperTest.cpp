@@ -129,8 +129,11 @@ TEST_F(EventDataHelperTest, BuildEventDataJson_PrefersTypedWhenAvailable) {
     std::map<std::string, std::vector<std::string>> stringParams;
     stringParams["force"].push_back("42");
 
-    std::map<std::string, ScriptValue> typedParams;
-    typedParams["force"] = static_cast<int64_t>(42);
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
+    // Built as a whole vector rather than pushed: GCC 13 reports a
+    // maybe-uninitialized false positive for `push_back` of a temporary
+    // `std::variant` into a fresh vector, and `-Werror` makes that fatal.
+    typedParams["force"] = std::vector<ScriptValue>{static_cast<int64_t>(42)};
 
     std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
 
@@ -145,7 +148,7 @@ TEST_F(EventDataHelperTest, BuildEventDataJson_FallsBackToStringOnly) {
     std::map<std::string, std::vector<std::string>> stringParams;
     stringParams["force"].push_back("42");
 
-    std::map<std::string, ScriptValue> typedParams;  // empty
+    std::map<std::string, std::vector<ScriptValue>> typedParams;  // empty
 
     std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
 
@@ -171,10 +174,13 @@ TEST_F(EventDataHelperTest, BuildEventDataJson_KeepsDuplicateValuesAndTypesTheRe
     stringParams["tag"].push_back("b");
     stringParams["force"].push_back("42");
 
-    std::map<std::string, ScriptValue> typedParams;
-    typedParams["force"] = static_cast<int64_t>(42);
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
+    // Built as a whole vector rather than pushed: GCC 13 reports a
+    // maybe-uninitialized false positive for `push_back` of a temporary
+    // `std::variant` into a fresh vector, and `-Werror` makes that fatal.
+    typedParams["force"] = std::vector<ScriptValue>{static_cast<int64_t>(42)};
     // What the send path actually records for a repeated name: the last one.
-    typedParams["tag"] = std::string("b");
+    typedParams["tag"] = std::vector<ScriptValue>{std::string("b")};
 
     std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
 
@@ -193,8 +199,8 @@ TEST_F(EventDataHelperTest, BuildEventDataJson_KeepsTypedOnlyNames) {
     std::map<std::string, std::vector<std::string>> stringParams;
     stringParams["named"].push_back("x");
 
-    std::map<std::string, ScriptValue> typedParams;
-    typedParams["only"] = true;
+    std::map<std::string, std::vector<ScriptValue>> typedParams;
+    typedParams["only"] = std::vector<ScriptValue>{true};
 
     std::string result = EventDataHelper::buildEventDataJson(stringParams, typedParams);
 
