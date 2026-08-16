@@ -12,7 +12,7 @@
 // survived only inside a string literal in the generated source, where
 // its one reader was whoever later ran the machine.
 //
-// Three claims are pinned here, and none follows from the others:
+// Five claims are pinned here, and none follows from the others:
 //
 //   1. **Reported, and still generated.** The diagnostic is on stderr,
 //      the manifest is on stdout, the exit is `0`, and the artifact is
@@ -36,6 +36,13 @@
 //      backends and the machine died on evaluation. The refusal names
 //      the vocabulary that does exist, as `fix: replace_one_of`, so a
 //      consumer repairing the document does not need Appendix B.2.
+//   5. **A call on an event field is refused, and a platform field is
+//      not.** W3C SCXML 5.10.1 fills seven fields of `_event` with
+//      values, so `_event.name()` calls a string; the clause is a floor
+//      rather than a ceiling, so `_event.raw` — which W3C test178 reads
+//      and this repository generates — is left alone. One rule cannot
+//      be checked without the other: closing the namespace would refuse
+//      a registered conformance fixture.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -457,4 +464,129 @@ fn a_native_cond_is_refused_by_every_backend_but_its_own() {
             out.entries()
         );
     }
+}
+
+/// A guard that calls a field of `_event`.
+///
+/// W3C SCXML 5.10.1 fills `name` with a character string, so this guard
+/// calls a string. It used to generate on all six backends with `check
+/// --lint` answering exit 0 and no record on any stream; the machine
+/// died evaluating the guard.
+const EVENT_FIELD_CALL_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <state id="s0">
+    <transition event="go" cond="_event.name() == 'go'" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+/// The refusal reaches every backend, and carries the repair.
+///
+/// Every backend, because they do not all lower author ECMAScript the
+/// same way — C++ and Kotlin run the author's expression on a JavaScript
+/// engine and borrow only the acceptance verdict — and a rule that
+/// reached five of six would leave the sixth generating a machine that
+/// dies where the others are answered at design time.
+#[test]
+fn a_call_on_an_event_field_is_refused_by_every_backend() {
+    let out = ScratchDir::new("event-field-call");
+    let document = out.path().join("event_field_call.scxml");
+    std::fs::write(&document, EVENT_FIELD_CALL_DOCUMENT).expect("write document");
+
+    for language in ["rust", "cpp", "kotlin", "go", "python", "c11"] {
+        let generated = ScratchDir::new(&format!("event-field-call-{language}"));
+        let run = run(&[
+            "generate",
+            document.to_str().unwrap(),
+            "-l",
+            language,
+            "-o",
+            generated.path().to_str().unwrap(),
+            "--error-format=json",
+        ]);
+        let diagnostics = records(&run.stderr);
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "{language} reported {} record(s):\n{}",
+            diagnostics.len(),
+            run.stderr
+        );
+        let record = &diagnostics[0];
+        assert_eq!(
+            record["code"], "expression/property-not-callable",
+            "{language} refused on the wrong axis: {record}"
+        );
+        assert_eq!(record["actual"], "_event.name()");
+        // ECMA-262 11.2.3 leaves one repair, and the call carries no
+        // arguments to strand, so it rides `replace_with`.
+        assert_eq!(record["fix"]["kind"], "replace_with");
+        assert_eq!(record["fix"]["to"], "_event.name");
+        assert_eq!(
+            record["location"]["line"].as_u64(),
+            Some(5),
+            "{language} pointed at the wrong line: {record}"
+        );
+        // §5.9.1: a cond the processor cannot evaluate still generates.
+        assert_eq!(run.exit, Some(0), "{language} stderr:\n{}", run.stderr);
+    }
+
+    let linted = run(&[
+        "check",
+        document.to_str().unwrap(),
+        "--lint",
+        "--error-format=json",
+    ]);
+    assert_ne!(
+        linted.exit,
+        Some(0),
+        "--lint must refuse: {}",
+        linted.stderr
+    );
+}
+
+/// An event field the specification does not name is not refused.
+///
+/// W3C test178 reads `_event.raw`, which 5.10.1 never mentions and an
+/// Event I/O Processor supplies. It is a registered conformance fixture,
+/// so the rule above has to be stated about the fields the clause names
+/// rather than about `_event` as a closed namespace — the shape `Math`
+/// has. Read from the fixture on disk rather than from a copy of the
+/// expression: a rule that closed the namespace would still pass against
+/// a copy nobody generates.
+#[test]
+fn a_platform_field_of_the_event_is_not_refused() {
+    const DOCUMENT: &str = "resources/178/test178.scxml";
+    let source = std::fs::read_to_string(repo_root().join(DOCUMENT)).expect("read test178");
+    assert!(
+        source.contains("_event.raw"),
+        "{DOCUMENT} no longer carries the expression this test exists for"
+    );
+
+    let out = ScratchDir::new("event-platform-field");
+    let run = run(&[
+        "generate",
+        DOCUMENT,
+        "-l",
+        "rust",
+        "-o",
+        out.path().to_str().unwrap(),
+        "--error-format=json",
+    ]);
+    assert_eq!(run.exit, Some(0), "stderr:\n{}", run.stderr);
+    let expression_records: Vec<_> = records(&run.stderr)
+        .into_iter()
+        .filter(|r| r["stage"] == "expression")
+        .collect();
+    assert!(
+        expression_records.is_empty(),
+        "a registered conformance fixture was refused: {expression_records:?}"
+    );
+    assert!(
+        out.entries().iter().any(|n| n.ends_with("_sm.rs")),
+        "no artifact written: {:?}",
+        out.entries()
+    );
 }

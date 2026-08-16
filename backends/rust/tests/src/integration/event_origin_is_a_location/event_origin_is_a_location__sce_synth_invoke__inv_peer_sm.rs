@@ -609,8 +609,7 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                             let mut parts: Vec<String> = Vec::new();
-                            match se.evaluate_expression(&sid, "_ioprocessors[\"scxml\"].location")
-                            {
+                            match se.evaluate_expression(&sid, "_ioprocessors.scxml.location") {
                                 Ok(val) => {
                                     parts.push(format!(
                                         "{{{:?}, {}}}",

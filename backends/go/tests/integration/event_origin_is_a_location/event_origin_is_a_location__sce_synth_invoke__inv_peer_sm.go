@@ -506,7 +506,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
 		parts := make([]string, 0)
-		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_ioprocessors["scxml"].location`); paramErr == nil {
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_ioprocessors.scxml.location`); paramErr == nil {
 			parts = append(parts, fmt.Sprintf("{%q, %s}", "myLocation", sce.ToLuaLiteral(paramVal)))
 		} else {
 			engine.Raise(sce.NewPlatformEvent(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution))
