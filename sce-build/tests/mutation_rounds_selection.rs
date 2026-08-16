@@ -42,6 +42,59 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Run the gate in dry-run mode over a change set from a tree that has no
+/// configured CMake build, and return what it chose.
+///
+/// The workflow's runner is such a tree: it asks this dry run which casefiles
+/// a push reaches and configures CMake only when one of them says it needs
+/// it. So the answer has to be available *before* the tree exists, and the
+/// only way to assert that is to ask from somewhere the tree does not.
+/// A copy under a fresh index rather than the checkout itself: the gate
+/// enumerates its corpus with `git ls-files`, so the tree it runs in has to
+/// be a repository, and the one thing this fixture must not have is the
+/// `build/` the real checkout carries.
+fn selection_without_a_cmake_tree(changed: &[&str]) -> (bool, BTreeSet<String>, String) {
+    let dir = tempdir().expect("tempdir");
+    for entry in ["scripts", "sce-build/tests/mutations"] {
+        let dest = dir.path().join(entry);
+        fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
+        copy_tree(&repo_root().join(entry), &dest);
+    }
+    for args in [vec!["init", "-q"], vec!["add", "-A"]] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(dir.path())
+            .output()
+            .expect("prepare the fixture index");
+        assert!(out.status.success(), "git {args:?} failed in the fixture");
+    }
+    assert!(
+        !dir.path().join("build/CMakeCache.txt").exists(),
+        "this tree was supposed to be the one without a CMake cache"
+    );
+    let changed_file = dir.path().join("changed.txt");
+    fs::write(&changed_file, changed.join("\n") + "\n").expect("write change set");
+
+    let out = Command::new("bash")
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(dir.path())
+        .env("SCE_GATE_CHANGED_FILE", &changed_file)
+        .env("SCE_MUTATION_ROUNDS_DRY_RUN", "1")
+        .env_remove("SCE_MUTATION_ROUNDS")
+        .output()
+        .expect("run the gate");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
+}
+
 /// Run the gate in dry-run mode over a change set, and return what it chose.
 ///
 /// `SCE_GATE_CHANGED_FILE` is the same channel `scripts/gate` fills from
@@ -95,6 +148,33 @@ fn declared_targets(casefile: &str) -> Vec<String> {
         .filter_map(|line| line.strip_prefix("target\t"))
         .map(str::to_string)
         .collect()
+}
+
+/// Copy a file or directory recursively, preserving the executable bit —
+/// `scripts/gates/*.sh` and `scripts/mutate` are run, not read.
+fn copy_tree(from: &Path, to: &Path) {
+    if from.is_dir() {
+        fs::create_dir_all(to).expect("create directory");
+        for entry in fs::read_dir(from).expect("read directory") {
+            let entry = entry.expect("dir entry");
+            copy_tree(&entry.path(), &to.join(entry.file_name()));
+        }
+    } else {
+        fs::copy(from, to).expect("copy file");
+    }
+}
+
+/// Whether a casefile drives its round through ctest — the same line the
+/// workflow reads to decide whether to configure CMake.
+fn declares_ctest(casefile: &str) -> bool {
+    let out = Command::new("scripts/mutate")
+        .args(["--declares", casefile])
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --declares");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line == "runner\tctest")
 }
 
 fn casefiles() -> Vec<String> {
@@ -179,6 +259,46 @@ fn a_change_to_a_declared_target_selects_exactly_its_casefiles() {
 
 /// A path that merely looks like a declared target does not select it.
 ///
+/// A dry run answers even when what it selects would need a CMake tree.
+///
+/// This is the case the workflow asks about and the one the gate used to
+/// refuse: the "no configured tree" precondition ran ahead of the dry-run
+/// exit, so selecting a ctest casefile — the answer that means *build one* —
+/// exited 3 before printing it. Measured on the first push to touch a C11
+/// template: the selection step went red for having been asked.
+///
+/// Driven from a real ctest casefile's declared target rather than a written
+/// path, so a corpus that stops declaring one fails here instead of passing
+/// against a shape nothing has.
+#[test]
+fn a_dry_run_answers_for_a_casefile_that_would_need_a_cmake_tree() {
+    let ctest_casefiles: Vec<String> = casefiles()
+        .into_iter()
+        .filter(|casefile| declares_ctest(casefile))
+        .collect();
+    assert!(
+        !ctest_casefiles.is_empty(),
+        "the corpus declares no ctest casefile, so this test asserts nothing"
+    );
+
+    for casefile in ctest_casefiles {
+        let targets = declared_targets(&casefile);
+        let target = targets
+            .first()
+            .unwrap_or_else(|| panic!("{casefile} declares no target"));
+        let (ok, chosen, log) = selection_without_a_cmake_tree(&[target]);
+        assert!(
+            ok,
+            "the gate refused to *choose* for want of a tree it would only \
+             need in order to *run*:\n{log}"
+        );
+        assert!(
+            chosen.contains(&casefile),
+            "{target} did not select {casefile}: {chosen:?}\n{log}"
+        );
+    }
+}
+
 /// The intersection is exact because both sides are repository-relative paths
 /// written by the same tooling. A prefix or substring match would pull in
 /// every casefile under a directory somebody touched, which is how a
