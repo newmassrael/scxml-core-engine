@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: eef83a0380a6f32e69bd8e491d75a942150e8193a11c5aedb68d2fc11fa47b6e
+// template-hash: b1f5842221aea79fe7d00a79a5e0a1c9bb465b536d392d5c439d8f7ec5538edd
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -687,7 +687,10 @@ impl StatePolicy for Test294Policy {
                 let mut done_event_data = String::new();
                 let mut done_data_ok = true;
                 {
-                    // W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
+                    // W3C SCXML B.2: inline text takes the ordered readings —
+                    // an expression when it is one, otherwise the string. The
+                    // same filter inline `<data>` text goes through decides
+                    // which, so the two cannot answer it differently.
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();

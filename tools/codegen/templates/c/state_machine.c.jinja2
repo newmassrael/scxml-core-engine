@@ -1178,7 +1178,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                (`feedback_spec_mirror_parity.md` carve-out: reference
                backend's branch ≡ contract). First force fixture exercises
                the path. */
-            {{ se.lua_eval_donedata_content_expr(action.contentexpr) }}
+            {{ se.lua_eval_donedata_content(action.contentexpr | to_lua_expr) }}
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
@@ -2348,15 +2348,23 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% elif state.donedata.content.kind == "expression" %}
         /* W3C SCXML 5.5: <content expr="{{ state.donedata.content.text | escape_c }}"/>
            — evaluate against the active datamodel. */
-        {{ se.lua_eval_donedata_content_expr(state.donedata.content.text) }}
+        {{ se.lua_eval_donedata_content(state.donedata.content.text | to_lua_expr) }}
+        {% elif state.donedata.content.kind == "inline_text" %}
+        /* W3C SCXML B.2: <content>{{ state.donedata.content.text | escape_c }}</content>
+           under a datamodel with a value expression language. The clause
+           orders the readings — an expression if it is one, otherwise the
+           string — and `to_lua_data_content` is where that order is
+           applied, the same filter inline `<data>` text goes through. The
+           `<send>` literal evaluator below states the same distinction for
+           its own element. */
+        {{ se.lua_eval_donedata_content(state.donedata.content.text | to_lua_data_content) }}
         {% elif state.donedata.content.kind == "literal" %}
         /* W3C SCXML 5.5 + Appendix B.2.2: <content>literal-text</content>
            under the "null" datamodel — the inline text is the content
            value verbatim, no evaluation, no script engine required.
-           Parser routes to `kind == "literal"` only when datamodel="null"
-           (parser.rs:1975-1979); ECMAScript-datamodel models with the
-           same XML route through the Expression arm above per Appendix
-           B.2.2 JSON parse semantics. Mirrors cpp `DoneDataHelper::
+           Parser routes to `kind == "literal"` only when datamodel="null";
+           models with a value expression language and the same XML route
+           through the inline-text arm above. Mirrors cpp `DoneDataHelper::
            emitContentLiteral` (sce/include/common/DoneDataHelper.h:94-101)
            which lives in `sce_base` precisely because it bypasses the
            script engine. C11 splits the carrier across two slots: when

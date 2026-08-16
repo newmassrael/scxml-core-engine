@@ -37,6 +37,7 @@ use std::process::{Command, Stdio};
 /// fixture is a single-line change here plus a new SCXML file.
 const FIXTURES: &[&str] = &[
     "degenerate_minimal",
+    "final_inline_text",
     "final_nested_literal",
     "final_top_expr",
     "final_top_literal",

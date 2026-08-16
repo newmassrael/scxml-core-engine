@@ -985,7 +985,7 @@ pub fn generate_cpp(
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_cpp_filters(&mut env);
+    filters::register_cpp_filters(&mut env, &document_scope(model));
     render_cpp(&mut env, model, input_stem, cpp_namespace_prefix)
 }
 
@@ -997,7 +997,7 @@ pub fn generate_cpp_with_templates(
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
-    filters::register_cpp_filters(&mut env);
+    filters::register_cpp_filters(&mut env, &document_scope(model));
     render_cpp(&mut env, model, input_stem, None)
 }
 
@@ -1271,7 +1271,7 @@ pub fn generate_kotlin(
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_kotlin_filters(&mut env);
+    filters::register_kotlin_filters(&mut env, &document_scope(model));
     register_kotlin_dynamic_filters(&mut env, model);
     render_kotlin(&mut env, model, package_prefix)
 }
@@ -1290,7 +1290,7 @@ pub fn generate_kotlin_with_templates(
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
-    filters::register_kotlin_filters(&mut env);
+    filters::register_kotlin_filters(&mut env, &document_scope(model));
     register_kotlin_dynamic_filters(&mut env, model);
     render_kotlin(&mut env, model, package_prefix)
 }

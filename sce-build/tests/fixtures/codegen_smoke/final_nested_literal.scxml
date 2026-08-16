@@ -6,9 +6,13 @@
   `done.state.<parent>` emission branch (state.parent is set) alongside
   the literal content handling. Distinct from the top-level case
   because the close braces diverge on `state.parent` presence.
+
+  Carries `datamodel="null"` for the reason its top-level sibling does:
+  the literal arm is reached by the Null data model, and without the
+  attribute this document exercised the expression arm instead.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       name="final_nested_literal" initial="compound">
+       datamodel="null" name="final_nested_literal" initial="compound">
   <state id="compound" initial="leaf">
     <transition event="done.state.compound" target="outcome"/>
     <final id="leaf">

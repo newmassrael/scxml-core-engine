@@ -735,9 +735,15 @@
    — the cpp path returns `outEventData = ""` on failure but still emits
    the done.state event; the C11 emit follows that same flow because the
    structural-error short-circuit only applies to params, not content. #}
-{% macro lua_eval_donedata_content_expr(expr) %}
+{# `lua` arrives already lowered, because which filter lowers it is what
+   distinguishes the two readings §scxml-B-2 gives `<content>`: `expr`
+   promises an expression (`to_lua_expr`), while inline text is an
+   expression only if it is one and otherwise a string
+   (`to_lua_data_content`). Taking the lowered form as the parameter is
+   what lets both readings share this body rather than fork it. #}
+{% macro lua_eval_donedata_content(lua) %}
     if (luaL_dostring(sm->L,
-        "_pending_donedata = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        "_pending_donedata = ({{ lua | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;

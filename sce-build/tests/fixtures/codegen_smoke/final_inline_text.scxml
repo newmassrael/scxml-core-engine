@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+  Structural smoke fixture: <donedata> inline <content> under a data
+  model that has a value expression language.
+
+  Its Null-data-model siblings (final_top_literal, final_nested_literal)
+  cover the arm where inline text is the value verbatim. This one covers
+  the arm where §scxml-B-2's readings are ordered: `21` is a number and
+  `an inline "payload"` is a string, and the same filter inline <data>
+  text goes through is what decides which.
+
+  Both final states carry one, because the two arms close their braces
+  differently on `state.parent` — the same cross-product that produced a
+  brace-imbalanced C++ header once already. The quote in the second
+  payload is here for the compile gate: the text lands inside a Lua
+  string literal inside a C/C++/Kotlin literal, so an escaping that
+  agrees at only one of those boundaries breaks the build.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="final_inline_text" initial="compound">
+  <state id="compound" initial="leaf">
+    <transition event="done.state.compound" target="outcome"/>
+    <final id="leaf">
+      <donedata>
+        <content>21</content>
+      </donedata>
+    </final>
+  </state>
+  <final id="outcome">
+    <donedata>
+      <content>an inline "payload"</content>
+    </donedata>
+  </final>
+</scxml>

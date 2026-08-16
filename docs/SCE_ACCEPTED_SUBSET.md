@@ -850,6 +850,36 @@ long as the two shared a variant.
 `sce-build/tests/ecmascript_property_calls.rs` binds each one to the
 engine that runs the lowered expression.
 
+### §3.8 Inline `<content>` text is not an expression that must parse
+
+§3.5 through §3.7 judge text that *claims* to be an expression — an
+`expr` attribute, a `cond`, a `<script>` body. Inline `<content>` text
+makes no such claim, and §B.2 gives it ordered readings instead: an
+expression if it is one, XML if it opens with `<`, and otherwise a
+string. `<content>21</content>` is therefore the number 21 (W3C test
+529), `<content>'foo'</content>` the string `foo` (test 294), and
+`<content>inline payload</content>` the string `inline payload` — no
+diagnostic, because nothing was refused.
+
+The three places the specification puts inline content take the same
+readings: `<data>`, `<send><content>` and `<donedata><content>`. The
+last of them did not, and the difference was visible from outside — the
+inline body shared a model variant with the `expr` attribute, so a
+payload of ordinary prose was lowered as an expression, reported as
+`expression/unexpected-token` against a document that had written no
+expression, and reached `error.execution` at runtime.
+
+`<content expr="X"/>` keeps the reading its attribute names: X is an
+expression, and one that cannot be evaluated raises `error.execution`
+rather than being refused at build time (§scxml-5.9.1, W3C test 344).
+The two are distinct model variants for that reason.
+
+`sce_build::filters::to_lua_data_content` carries the readings for the
+backends that lower to Lua and `to_author_data_content` for the two that
+hand the author's ECMAScript to an ECMAScript engine;
+`sce-build/tests/donedata_inline_content.rs` binds both to the engine
+that runs the result.
+
 ### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
 
 NL→IR Mapping Roadmap Items 1, 5, and 6 add three metadata

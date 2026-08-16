@@ -221,10 +221,19 @@
                     val engineDD = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sidDD = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                     var doneEventData = ""
+{% if state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
+{% set donedata_content_source = state.donedata.content.text %}
+{% else %}
+                    // W3C SCXML B.2: inline text takes the ordered readings —
+                    // an expression when it is one, otherwise the string. The
+                    // reading is decided from the document, so every backend
+                    // reaches the same one for the same text.
+{% set donedata_content_source = state.donedata.content.text | to_author_data_content %}
+{% endif %}
                     try {
-                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.content.text | escape_kotlin }}")
+                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ donedata_content_source | escape_kotlin }}")
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {

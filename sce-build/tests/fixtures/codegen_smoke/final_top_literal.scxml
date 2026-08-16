@@ -8,9 +8,14 @@
   d6ca6b19 this cross-product produced a brace-imbalanced C++ header
   because the `if not state.parent` close was missing. Compiling the
   four generated artefacts is the regression guard.
+
+  `datamodel="null"` is what makes the sentence above true, and it was
+  absent while the sentence was here: SCE's platform-specific default is
+  ECMAScript, so this document reached the *expression* arm and the
+  literal cross-product it names went unexercised.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
-       name="final_top_literal" initial="done">
+       datamodel="null" name="final_top_literal" initial="done">
   <final id="done">
     <donedata>
       <content>inline payload</content>
