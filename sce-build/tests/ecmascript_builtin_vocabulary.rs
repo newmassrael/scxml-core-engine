@@ -30,9 +30,21 @@
 use sce_build::ecmascript::builtins::{
     JSON_MEMBERS, LOWERED_METHODS, MATH_MEMBERS, OBJECT_MEMBERS, UNIMPLEMENTED_METHODS,
 };
-use sce_build::ecmascript::{to_lua_value, ExprError};
+use sce_build::ecmascript::{to_lua_value, DocumentScope, ExprError};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+
+/// The receivers this file's probes hang a call on.
+///
+/// Every source here is a claim about a *method* or a *namespace*, so
+/// `x`, `a` and `handlers` are scaffolding — they exist to give the call
+/// something to be called on. Declaring them keeps these probes about
+/// the vocabulary; whether an undeclared name is refused is
+/// `ecmascript_identifier_scope`'s question, and answering it here too
+/// would make every probe fail for the wrong reason.
+fn probes() -> DocumentScope {
+    DocumentScope::declaring(["a", "b", "c", "handlers", "i", "o", "x", "xs"])
+}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -68,7 +80,7 @@ fn functions_defined_in(source: &str) -> BTreeSet<String> {
 
 /// Lower `x.<method>()` and hand back the Lua, or the refusal.
 fn lower_method(method: &str) -> Result<String, ExprError> {
-    to_lua_value(&format!("x.{method}()"))
+    to_lua_value(&format!("x.{method}()"), &probes())
 }
 
 // ── The two lists are one decision ────────────────────────────────
@@ -171,7 +183,8 @@ fn every_unimplemented_method_is_refused_with_its_alternatives() {
 /// refusing every unknown name would take that away.
 #[test]
 fn an_authors_own_method_is_still_a_field_call() {
-    let lua = to_lua_value("handlers.retry(3)").expect("an author's own method is accepted");
+    let lua =
+        to_lua_value("handlers.retry(3)", &probes()).expect("an author's own method is accepted");
     assert_eq!(lua, "handlers.retry(3)");
 }
 
@@ -222,7 +235,7 @@ fn a_member_outside_an_installed_namespace_is_refused() {
         ("Object.freeze(x)", "Object.freeze"),
         ("Math.tanh(x)", "Math.tanh"),
     ] {
-        match to_lua_value(source) {
+        match to_lua_value(source, &probes()) {
             Err(ExprError::UnsupportedBuiltin { name, available }) => {
                 assert_eq!(name, expected_name);
                 assert!(
@@ -246,7 +259,7 @@ fn every_math_member_lowers() {
         // ECMA-262 15.8.2.13 takes two arguments and the emitter says
         // so; every other member here is happy with one.
         let args = if member == "pow" { "1, 2" } else { "1" };
-        let lua = to_lua_value(&format!("Math.{member}({args})"))
+        let lua = to_lua_value(&format!("Math.{member}({args})"), &probes())
             .unwrap_or_else(|e| panic!("Math.{member} is listed but refused: {e}"));
         match member {
             // ECMA-262 15.8.2.13 is Lua's `^`, and 15.8.2.15 sends a
@@ -314,7 +327,7 @@ fn every_helper_the_emitter_names_is_defined_in_the_shared_library() {
     }
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for source in &sources {
-        let lua = match to_lua_value(source) {
+        let lua = match to_lua_value(source, &probes()) {
             Ok(lua) => lua,
             Err(e) => panic!("`{source}` is inside the accepted subset but was refused: {e}"),
         };

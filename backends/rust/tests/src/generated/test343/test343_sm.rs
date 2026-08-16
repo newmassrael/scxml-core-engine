@@ -603,20 +603,15 @@ impl StatePolicy for Test343Policy {
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     let mut json_parts: Vec<String> = Vec::new();
-                    match se.evaluate_expression(&sid, "foo") {
+                    match se.evaluate_expression(&sid, "error(\"SCXML expr is not valid ECMAScript: foo: foo is not declared by this document\")") {
                         Ok(val) => {
                             let mut part = String::from("[\"someParam\"] = ");
                             part.push_str(&val.to_lua_literal());
                             json_parts.push(part);
                         }
                         Err(e) => {
-                            ::sce_rust_runtime::sce_log_error!(
-                                "Donedata param 'someParam' eval failed: {}",
-                                e
-                            );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                Test343Event::ErrorExecution,
-                            ));
+                            ::sce_rust_runtime::sce_log_error!("Donedata param 'someParam' eval failed: {}", e);
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test343Event::ErrorExecution));
                         }
                     }
                     if done_data_ok {

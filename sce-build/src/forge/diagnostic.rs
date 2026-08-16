@@ -787,6 +787,13 @@ pub enum DiagnosticCode {
     // closed set, so it rides `Fix::ReplaceOneOf`.
     #[serde(rename = "expression/unsupported-builtin")]
     ExpressionUnsupportedBuiltin,
+    // A free identifier nothing declares — `conut + 1` beside a
+    // `<data id="count">`. Distinct from `unsupported-builtin`, which
+    // names something the *language* has: here the repair comes from
+    // the document's own declarations, so the candidates are the near
+    // misses among them and there may be none.
+    #[serde(rename = "expression/unknown-identifier")]
+    ExpressionUnknownIdentifier,
     #[serde(rename = "expression/strict-equality")]
     ExpressionStrictEquality,
     #[serde(rename = "expression/parse-mismatch")]
@@ -2872,6 +2879,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionLex,
         ExpressionUnsupportedConstruct,
         ExpressionUnsupportedBuiltin,
+        ExpressionUnknownIdentifier,
         ExpressionStrictEquality,
         ExpressionParseMismatch,
         ExpressionUnexpectedToken,
@@ -3356,6 +3364,11 @@ impl DiagnosticCode {
             // Forge's expression language: a Forge document cannot
             // reach it, and the author fixing it is reading B.2.
             ExpressionUnsupportedBuiltin => Some("W3C SCXML §B.2"),
+            // Same anchor, same reason: B.2 is where the ECMAScript data
+            // model says the datamodel's variables are the ones the
+            // document declares, so a name outside them is answered
+            // there and not in Forge's expression language.
+            ExpressionUnknownIdentifier => Some("W3C SCXML §B.2"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4039,6 +4052,7 @@ impl DiagnosticCode {
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
+            ExpressionUnknownIdentifier => "expression/unknown-identifier",
             ExpressionStrictEquality => "expression/strict-equality",
             ExpressionParseMismatch => "expression/parse-mismatch",
             ExpressionUnexpectedToken => "expression/unexpected-token",
@@ -7742,6 +7756,23 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             }),
             key_fragments: vec![name.clone()],
         },
+        // The near misses are the answer, and there may be none. An
+        // empty `candidates` reaches `with_a_choice_to_offer` and becomes
+        // an absent `fix` — the contract's spelling for "no local edit
+        // repairs this" — rather than a choice from nothing.
+        ExprError::UnknownIdentifier { name, candidates } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionUnknownIdentifier,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            // The candidates are derived from the document, not from the
+            // mistake, so two documents misspelling the same name the
+            // same way are one diagnostic identity.
+            key_fragments: vec![name.clone()],
+        },
         ExprError::StrictEquality { operator, strict } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
@@ -9976,6 +10007,30 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:136a075615baf31b","code":"expression/unsupported-builtin","stage":"expression","spec":"W3C SCXML §B.2","message":".map() is not provided by SCE's ECMAScript datamodel. Available: .join(), .push()","actual":".map()","fix":{"kind":"replace_one_of","candidates":[".join()",".push()"]}}"#,
+            ),
+            (
+                // A misspelling. The candidates come from the document
+                // rather than from the language, which is the whole
+                // difference from the entry above.
+                "forge/expression-unknown-identifier",
+                ExprError::UnknownIdentifier {
+                    name: "conut".into(),
+                    candidates: vec!["count".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:30e4d0dbd04a0706","code":"expression/unknown-identifier","stage":"expression","spec":"W3C SCXML §B.2","message":"conut is not declared by this document. Did you mean: count?","actual":"conut","fix":{"kind":"replace_one_of","candidates":["count"]}}"#,
+            ),
+            (
+                // The same code with nothing to offer: `candidates` came
+                // out empty, so `fix` is absent rather than a choice
+                // from nothing (SCE_ERROR_CONTRACT.md §3.1).
+                "forge/expression-unknown-identifier-no-candidates",
+                ExprError::UnknownIdentifier {
+                    name: "wholesaleDistributor".into(),
+                    candidates: Vec::new(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1f905d2454137dec","code":"expression/unknown-identifier","stage":"expression","spec":"W3C SCXML §B.2","message":"wholesaleDistributor is not declared by this document","actual":"wholesaleDistributor"}"#,
             ),
             (
                 "forge/expression-parse-mismatch",
@@ -12983,6 +13038,13 @@ mod tests {
             // `expected` stays absent, exactly as the unsupported
             // `datamodel` value above.
             | ExpressionUnsupportedBuiltin
+            // A name nothing declares. The candidate set is open in
+            // principle — any name could be declared — but what rides
+            // `fix` is the closed part of it: the declarations already in
+            // this document that are one or two edits away. Same bucket
+            // for the same reason, and empty candidates become no `fix`
+            // rather than an empty choice.
+            | ExpressionUnknownIdentifier
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -14061,6 +14123,7 @@ mod tests {
                 | ReassemblyPerPeerQuotaBuildInvariantViolated
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
+                | ExpressionUnknownIdentifier
                 | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
@@ -14319,9 +14382,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            351,
+            352,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 351 distinct variants to match the DiagnosticCode \
+             expected 352 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

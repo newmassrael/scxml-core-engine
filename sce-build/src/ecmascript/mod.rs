@@ -46,8 +46,11 @@
 pub mod builtins;
 pub mod lua;
 pub mod parser;
+pub mod resolve;
+pub mod scope;
 
 pub use crate::forge::error::ExprError;
+pub use scope::DocumentScope;
 
 /// An ECMAScript expression.
 ///
@@ -236,8 +239,15 @@ pub enum Stmt {
 /// The result is a Lua expression, not a statement, so it can be spliced
 /// into the `= (…)` and `return (…)` positions the generated code puts it
 /// in.
-pub fn to_lua_value(source: &str) -> Result<String, ExprError> {
+///
+/// `scope` is the document's declarations. Three passes run in order —
+/// parse, resolve, emit — and they answer three separable questions:
+/// is this the grammar, do these names exist, what Lua is it. The
+/// middle one is the only one that needs anything outside the source,
+/// which is why it is the only one with a second parameter.
+pub fn to_lua_value(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
     let ast = parser::parse_expression(source)?;
+    resolve::expression(&ast, scope)?;
     lua::emit_value(&ast)
 }
 
@@ -247,14 +257,16 @@ pub fn to_lua_value(source: &str) -> Result<String, ExprError> {
 /// The result is a Lua expression of type boolean: ECMAScript truthiness is
 /// applied here rather than left to Lua's, which counts `0` and `""` as
 /// true.
-pub fn to_lua_condition(source: &str) -> Result<String, ExprError> {
+pub fn to_lua_condition(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
     let ast = parser::parse_expression(source)?;
+    resolve::expression(&ast, scope)?;
     lua::emit_condition(&ast)
 }
 
 /// Translate a `<script>` body: a statement list, emitted as a Lua chunk.
-pub fn to_lua_script(source: &str) -> Result<String, ExprError> {
+pub fn to_lua_script(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
     let stmts = parser::parse_script(source)?;
+    resolve::script(&stmts, scope)?;
     lua::emit_script(&stmts)
 }
 
@@ -263,6 +275,14 @@ pub fn to_lua_script(source: &str) -> Result<String, ExprError> {
 /// A location is a restricted expression — an identifier or a member/index
 /// path rooted at one — and this rejects anything else instead of emitting
 /// Lua that would assign to a temporary.
+///
+/// No name resolution: a location is a **write**, and writing is how this
+/// datamodel's globals come into existence (ECMA-262 10.2.1, and the Lua
+/// [`lua`] emits does the same). The specification makes a location that
+/// cannot be created an `error.execution` at run time, which every
+/// backend's assign path already raises — refusing here would refuse the
+/// very documents that clause is written for. [`scope::DocumentScope`]
+/// reads these locations as *declarations* for the same reason.
 pub fn to_lua_location(source: &str) -> Result<String, ExprError> {
     let ast = parser::parse_expression(source)?;
     lua::emit_location(&ast)

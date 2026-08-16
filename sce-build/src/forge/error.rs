@@ -3728,6 +3728,24 @@ pub enum ExprError {
         available: Vec<String>,
     },
 
+    /// A free identifier nothing declares — `conut + 1` where the
+    /// document declares `count`.
+    ///
+    /// Separate from [`ExprError::UnsupportedBuiltin`] because the
+    /// repair comes from somewhere else. An unsupported builtin is a
+    /// name the *language* has and this datamodel lacks, so the answer
+    /// is SCE's vocabulary; an unknown identifier is a name *nothing*
+    /// has, so the answer is the document's own declarations — the
+    /// author either misspelled one or has yet to write the `<data>`
+    /// that declares it. `candidates` carries the near misses and is
+    /// empty when there are none, which is the honest shape for "no
+    /// local edit repairs this".
+    #[error("{name} is not declared by this document{}", crate::forge::error::did_you_mean(.candidates))]
+    UnknownIdentifier {
+        name: String,
+        candidates: Vec<String>,
+    },
+
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
     StrictEquality {
@@ -3755,6 +3773,21 @@ pub enum ExprError {
     /// Currently: Go has no ternary expression.
     #[error("cannot transpile ternary expression to Go: Go has no conditional expression")]
     GoTernary,
+}
+
+/// The trailing clause of an "unknown name" message, or nothing when
+/// there is no near miss to offer.
+///
+/// A free function rather than an inline format expression because
+/// `Display` is what `SingleDiagnostic` reads for the record's
+/// `message`, so the empty case has to produce a sentence that ends
+/// cleanly — "Var1 is not declared by this document." — rather than a
+/// dangling "Did you mean: ".
+pub fn did_you_mean(candidates: &[String]) -> String {
+    if candidates.is_empty() {
+        return String::new();
+    }
+    format!(". Did you mean: {}?", candidates.join(", "))
 }
 
 // ── Stage 5: Cross-file import resolution ──────────────────────

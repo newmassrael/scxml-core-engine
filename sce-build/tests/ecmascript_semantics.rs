@@ -28,7 +28,9 @@
 //! `nil` and `false`. Nothing failed — the guard just took the other
 //! branch. The table's "truthiness" group is that defect, pinned.
 
-use sce_build::ecmascript::{to_lua_condition, to_lua_script, to_lua_value};
+use sce_build::ecmascript::{
+    to_lua_condition, to_lua_script, to_lua_value, DocumentScope, ExprError,
+};
 use sce_rust_lua::LuaEngine;
 use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
 use serde::Deserialize;
@@ -131,6 +133,19 @@ fn emitted_lua() -> Vec<Emission> {
     sidecar.cases
 }
 
+/// The declarations a case's own `setup` makes.
+///
+/// A case is a one-document world: `setup` is its `<script>` and `source`
+/// is its `expr`, so the scope the frontend resolves against is the one
+/// that chunk builds. Reusing [`DocumentScope::declare_chunk`] rather
+/// than listing the names keeps this test and production on one reading
+/// of what a chunk declares.
+fn scope_for(setup: &str) -> DocumentScope {
+    let mut scope = DocumentScope::installed();
+    scope.declare_chunk(setup);
+    scope
+}
+
 /// Every case, run through the emitter and then through the engine that
 /// runs generated Rust.
 #[test]
@@ -143,8 +158,9 @@ fn emitted_lua_answers_what_ecmascript_answers() {
         let session = format!("case{index}");
         engine.create_session(&session);
 
+        let scope = scope_for(&case.setup);
         if !case.setup.is_empty() {
-            let script = match to_lua_script(&case.setup) {
+            let script = match to_lua_script(&case.setup, &scope) {
                 Ok(script) => script,
                 Err(err) => {
                     failures.push(format!(
@@ -164,8 +180,8 @@ fn emitted_lua_answers_what_ecmascript_answers() {
         }
 
         let emitted = match case.form {
-            Form::Condition => to_lua_condition(&case.source),
-            Form::Value => to_lua_value(&case.source),
+            Form::Condition => to_lua_condition(&case.source, &scope),
+            Form::Value => to_lua_value(&case.source, &scope),
         };
         let emitted = match emitted {
             Ok(emitted) => emitted,
@@ -304,15 +320,16 @@ fn the_emitted_lua_every_backend_reads_is_what_this_frontend_emits() {
     let cases = cases();
     let mut rows = Vec::new();
     for case in &cases {
+        let scope = scope_for(&case.setup);
         let setup = if case.setup.is_empty() {
             String::new()
         } else {
-            to_lua_script(&case.setup)
+            to_lua_script(&case.setup, &scope)
                 .unwrap_or_else(|err| panic!("[{}] setup did not compile: {err}", case.source))
         };
         let expression = match case.form {
-            Form::Condition => to_lua_condition(&case.source),
-            Form::Value => to_lua_value(&case.source),
+            Form::Condition => to_lua_condition(&case.source, &scope),
+            Form::Value => to_lua_value(&case.source, &scope),
         }
         .unwrap_or_else(|err| panic!("[{}] did not compile: {err}", case.source));
         rows.push(serde_json::json!({
@@ -423,9 +440,9 @@ fn every_committed_ecmascript_expression_compiles() {
                 continue;
             }
             let result = if attribute == "cond" {
-                to_lua_condition(&source)
+                compiles_as_condition(&source)
             } else {
-                to_lua_value(&source)
+                compiles_as_value(&source)
             };
             match result {
                 Ok(_) => compiled += 1,
@@ -439,7 +456,7 @@ fn every_committed_ecmascript_expression_compiles() {
             if body.contains("<cpp>") || body.trim().is_empty() {
                 continue;
             }
-            match to_lua_script(&body) {
+            match compiles_as_script(&body) {
                 Ok(_) => compiled += 1,
                 Err(err) => failures.push(format!("{label}: <script> -> {err}")),
             }
@@ -529,7 +546,7 @@ fn every_forge_expression_also_parses_as_ecmascript() {
     ];
     let mut refused = Vec::new();
     for shape in FORGE_SHAPES {
-        if let Err(err) = to_lua_value(shape) {
+        if let Err(err) = compiles_as_value(shape) {
             refused.push(format!("{shape} -> {err}"));
         }
     }
@@ -539,6 +556,36 @@ fn every_forge_expression_also_parses_as_ecmascript() {
          so the two have drifted:\n{}",
         refused.join("\n")
     );
+}
+
+// ── Grammar without names ──────────────────────────────────────
+//
+// Two sweeps below ask whether an expression *compiles* — whether the
+// grammar admits it and the emitter has a shape for it. They read source
+// out of documents (and out of a literal table) without the document, so
+// they cannot ask the other question the frontend answers: whether the
+// names it mentions are declared. That one is asked over the same corpus
+// by `ecmascript_acceptance_parity`, which builds the model and therefore
+// has a scope to ask it with.
+//
+// Calling the two halves directly rather than through
+// `to_lua_value` is what keeps the distinction honest: a sweep handed
+// `DocumentScope::installed()` would report every `Var1` in the corpus as
+// undeclared and would be measuring the absence of its own input.
+
+fn compiles_as_value(source: &str) -> Result<String, ExprError> {
+    let ast = sce_build::ecmascript::parser::parse_expression(source)?;
+    sce_build::ecmascript::lua::emit_value(&ast)
+}
+
+fn compiles_as_condition(source: &str) -> Result<String, ExprError> {
+    let ast = sce_build::ecmascript::parser::parse_expression(source)?;
+    sce_build::ecmascript::lua::emit_condition(&ast)
+}
+
+fn compiles_as_script(source: &str) -> Result<String, ExprError> {
+    let stmts = sce_build::ecmascript::parser::parse_script(source)?;
+    sce_build::ecmascript::lua::emit_script(&stmts)
 }
 
 fn repo_root() -> std::path::PathBuf {

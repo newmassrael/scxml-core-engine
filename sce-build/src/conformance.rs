@@ -1665,8 +1665,13 @@ pub fn render_harness(
     let mut env = crate::generator::new_env();
     // Case-conversion filters are shared with the forge product templates so
     // the naming conventions stay aligned between product and test code.
-    crate::filters::register_filters(&mut env);
-    crate::filters::register_go_filters(&mut env);
+    // The harness templates render test *code*, not an authored
+    // datamodel: nothing here pipes an SCXML expression through
+    // `to_lua_expr`, so the scope has no document to carry and the
+    // installed vocabulary is the whole of it.
+    let scope = std::sync::Arc::new(crate::ecmascript::DocumentScope::installed());
+    crate::filters::register_filters(&mut env, &scope);
+    crate::filters::register_go_filters(&mut env, &scope);
     // Conformance type-mapping filters: every per-language template uses the
     // same filter names (`rust_type`, `cpp_type`, `go_type`, `kt_type`, plus
     // the `*_unmarshal` variants) so the canonical-type table lives in one
