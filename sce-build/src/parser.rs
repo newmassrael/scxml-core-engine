@@ -5119,8 +5119,11 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
     if has_in {
         return (true, true);
     }
-    // Everything else is the data model's to evaluate, unless SCE can
-    // decide the value itself.
+    // §scxml-5.9: a `cond` is evaluated in the data model, and one the
+    // Processor cannot evaluate raises `error.execution` and reads as
+    // false. Both halves are the data model's to perform, so everything
+    // this far down goes to it — unless SCE decided the value itself,
+    // in which case there is nothing left to evaluate.
     (
         crate::ecmascript::constant_truthiness(cond).is_none(),
         false,
