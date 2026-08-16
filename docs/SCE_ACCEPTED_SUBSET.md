@@ -698,12 +698,20 @@ or `validation/require-either` depending on the anchor).
 
 ### §3.3 Runtime event metadata references
 
-Guards or data-model expressions that read `_event.origintype` (the
-W3C-defined event origin-type slot) are rejected as
-`expression/unsupported-construct`. The generated code has no
-mechanism to populate this runtime-only metadata at AOT targets.
-Other `_event.*` fields (`name`, `type`, `data`, `origin`, `sendid`,
-`invokeid`) are supported.
+Nothing here is excluded any more. This section used to say that a
+guard reading `_event.origintype` was rejected as
+`expression/unsupported-construct` because AOT output had no way to
+populate the slot. The generated code populates it, and five W3C
+fixtures the conformance registry carries — 198, 230, 253, 336 and
+352 — read the field and pass on every backend, so the exclusion had
+outlived its cause and the document was stating a refusal the producer
+does not make.
+
+Every field §scxml-5.10.1 names reads on every backend.
+`ecmascript_member_access::every_field_the_specification_names_still_reads`
+runs each of the seven on the engine a generated machine uses, so this
+paragraph cannot go stale again without a test going red. What a call
+on one of those fields does is §3.7.
 
 ### §3.4 Unsupported expression-language constructs
 
