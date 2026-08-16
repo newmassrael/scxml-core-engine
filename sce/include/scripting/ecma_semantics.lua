@@ -599,6 +599,96 @@ function parseFloat(value)
     return sign * n
 end
 
+-- ECMA-262 15.8.2.15 Math.round.
+--
+-- Lua has no rounding function, and the habit that fills the gap
+-- (`math.floor(x + 0.5)`) is right only because the clause sends a half toward
+-- +Infinity — `Math.round(-2.5)` is -2, not -3, which is what a "round half
+-- away from zero" implementation would answer. NaN and the infinities are
+-- handed back rather than floored, since `math.floor` has no answer for them.
+function _scxml_round(v)
+    local n = _scxml_tonumber(v)
+    if n ~= n or n == math.huge or n == -math.huge then return n end
+    return math.floor(n + 0.5)
+end
+
+-- ECMA-262 15.5.4.11 String.prototype.replace, for the searchValue this
+-- datamodel can express.
+--
+-- A RegExp is not among them (the accepted subset has no regular expression
+-- literal), so the search is a string — and a string searchValue replaces the
+-- FIRST match and only that one. That is the clause and it is the half a
+-- `gsub`-shaped implementation gets wrong; `gsub` is also absent from go-lua,
+-- so the plain-search spelling is what every backend can run.
+function _scxml_replace(s, search, replacement)
+    s = _scxml_tostring(s)
+    local needle = _scxml_tostring(search)
+    local rep = _scxml_tostring(replacement)
+    if needle == "" then return rep .. s end
+    local a, b = string.find(s, needle, 1, true)
+    if a == nil then return s end
+    return string.sub(s, 1, a - 1) .. rep .. string.sub(s, b + 1)
+end
+
+-- ECMA-262 15.5.4.13 String.prototype.slice / 15.4.4.10 Array.prototype.slice.
+--
+-- One helper for both, because the emitter cannot tell which receiver it has —
+-- the same reason `_indexOf` takes both. A negative index counts from the end
+-- and an out-of-range one clamps, which is what separates `slice` from
+-- `substring`: that one SWAPS a reversed pair, this one yields nothing.
+function _scxml_slice(subject, from, to)
+    local is_text = (type(subject) == "string")
+    if not is_text and type(subject) ~= "table" then return subject end
+    local len = #subject
+    local a = (from == nil) and 0 or _scxml_tonumber(from)
+    if a ~= a then a = 0 end
+    a = (a >= 0) and math.floor(a) or -math.floor(-a)
+    if a < 0 then a = len + a end
+    if a < 0 then a = 0 elseif a > len then a = len end
+    local b = (to == nil) and len or _scxml_tonumber(to)
+    if b ~= b then b = 0 end
+    b = (b >= 0) and math.floor(b) or -math.floor(-b)
+    if b < 0 then b = len + b end
+    if b < 0 then b = 0 elseif b > len then b = len end
+    if is_text then
+        if b <= a then return "" end
+        return string.sub(subject, a + 1, b)
+    end
+    local out = {}
+    for i = a + 1, b do out[#out + 1] = subject[i] end
+    return out
+end
+
+-- ECMA-262 15.4.4.11 Array.prototype.sort.
+--
+-- The default comparator compares ToString of the elements, so `[10, 9]` sorts
+-- to `[10, 9]` and not `[9, 10]`. That surprises everyone once and is the
+-- clause; an implementation that sorts numerically is answering a different
+-- language. Sorting is IN PLACE and the array itself comes back, which is what
+-- lets `xs.sort()` and `xs` be the same value afterwards.
+function _scxml_sort(arr, comparator)
+    if type(arr) ~= "table" then return arr end
+    if comparator == nil then
+        table.sort(arr, function(x, y) return _scxml_tostring(x) < _scxml_tostring(y) end)
+    else
+        table.sort(arr, function(x, y) return _scxml_tonumber(comparator(x, y)) < 0 end)
+    end
+    return arr
+end
+
+-- ECMA-262 15.4.4.8 Array.prototype.reverse — in place, and the array itself
+-- is the result.
+function _scxml_reverse(arr)
+    if type(arr) ~= "table" then return arr end
+    local i, j = 1, #arr
+    while i < j do
+        arr[i], arr[j] = arr[j], arr[i]
+        i = i + 1
+        j = j - 1
+    end
+    return arr
+end
+
 -- ECMA-262 15.2.3.14 Object.keys, the one way this datamodel can walk an
 -- object whose shape arrived with the payload.
 --
