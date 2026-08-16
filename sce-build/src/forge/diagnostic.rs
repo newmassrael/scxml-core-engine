@@ -780,6 +780,13 @@ pub enum DiagnosticCode {
     ExpressionLex,
     #[serde(rename = "expression/unsupported-construct")]
     ExpressionUnsupportedConstruct,
+    // A standard-library *name* the ECMAScript datamodel does not
+    // carry — `words.map(...)`, `JSON.serialize(...)`. Distinct from
+    // `unsupported-construct`, which is about grammar and has no
+    // alternative to name: here the vocabulary that does exist is a
+    // closed set, so it rides `Fix::ReplaceOneOf`.
+    #[serde(rename = "expression/unsupported-builtin")]
+    ExpressionUnsupportedBuiltin,
     #[serde(rename = "expression/strict-equality")]
     ExpressionStrictEquality,
     #[serde(rename = "expression/parse-mismatch")]
@@ -2864,6 +2871,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionEmpty,
         ExpressionLex,
         ExpressionUnsupportedConstruct,
+        ExpressionUnsupportedBuiltin,
         ExpressionStrictEquality,
         ExpressionParseMismatch,
         ExpressionUnexpectedToken,
@@ -3342,6 +3350,12 @@ impl DiagnosticCode {
             // construct the selected model has no language for.
             ScxmlUnsupportedDatamodel => Some("W3C SCXML §3.2"),
             ScxmlNullDatamodelForbidsConstruct => Some("W3C SCXML §B.1"),
+            // The name the author reached for is one Appendix B.2's
+            // datamodel defines and SCE does not implement, so it
+            // anchors on the ECMAScript data model rather than on
+            // Forge's expression language: a Forge document cannot
+            // reach it, and the author fixing it is reading B.2.
+            ExpressionUnsupportedBuiltin => Some("W3C SCXML §B.2"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4024,6 +4038,7 @@ impl DiagnosticCode {
             ExpressionEmpty => "expression/empty",
             ExpressionLex => "expression/lex",
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
+            ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionStrictEquality => "expression/strict-equality",
             ExpressionParseMismatch => "expression/parse-mismatch",
             ExpressionUnexpectedToken => "expression/unexpected-token",
@@ -7712,6 +7727,21 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![construct.clone()],
         },
+        // The vocabulary that exists is the answer, so it rides `fix`
+        // as the candidate set a consumer can offer directly. `expected`
+        // stays absent: non-overlap gives the candidates one home, and
+        // this producer's home is `fix` (`non_overlap_class` places the
+        // code in `FixCarriesCandidates`).
+        ExprError::UnsupportedBuiltin { name, available } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionUnsupportedBuiltin,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: available.clone(),
+            }),
+            key_fragments: vec![name.clone()],
+        },
         ExprError::StrictEquality { operator, strict } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
@@ -9933,6 +9963,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d953d35f95a3575d","code":"expression/unsupported-construct","stage":"expression","spec":"SCE Forge §3.4","message":"unsupported ECMAScript construct: arrow function. Extended SCXML expressions must use the stateless subset.","actual":"arrow function"}"#,
+            ),
+            (
+                // A standard method name the datamodel has no
+                // implementation for. The candidate set is what the
+                // emitter can lower, so a consumer repairing this does
+                // not need Appendix B.2 open.
+                "forge/expression-unsupported-builtin",
+                ExprError::UnsupportedBuiltin {
+                    name: ".map()".into(),
+                    available: vec![".join()".into(), ".push()".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:136a075615baf31b","code":"expression/unsupported-builtin","stage":"expression","spec":"W3C SCXML §B.2","message":".map() is not provided by SCE's ECMAScript datamodel. Available: .join(), .push()","actual":".map()","fix":{"kind":"replace_one_of","candidates":[".join()",".push()"]}}"#,
             ),
             (
                 "forge/expression-parse-mismatch",
@@ -12933,6 +12976,13 @@ mod tests {
             // `Fix::ReplaceOneOf` over that set. `xpath` and a typo take
             // the same repair even though they differ in why.
             | ScxmlUnsupportedDatamodel
+            // A standard method name this datamodel does not implement.
+            // What it *does* implement is a closed set — the emitter's
+            // dispatch table, or the member list of a namespace this
+            // repository installs — so the candidates ride `fix` and
+            // `expected` stays absent, exactly as the unsupported
+            // `datamodel` value above.
+            | ExpressionUnsupportedBuiltin
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -14010,7 +14060,8 @@ mod tests {
                 | ScxmlAcceptSideStatesWithoutRoleDeclaration
                 | ReassemblyPerPeerQuotaBuildInvariantViolated
                 | ExpressionEmpty | ExpressionLex
-                | ExpressionUnsupportedConstruct | ExpressionStrictEquality
+                | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
+                | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
                 | ExpressionGoTernaryUnsupported | ImportFileNotFound
@@ -14268,9 +14319,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            350,
+            351,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 350 distinct variants to match the DiagnosticCode \
+             expected 351 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

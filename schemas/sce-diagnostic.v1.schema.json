@@ -115,6 +115,7 @@
         "expression/empty",
         "expression/lex",
         "expression/unsupported-construct",
+        "expression/unsupported-builtin",
         "expression/strict-equality",
         "expression/parse-mismatch",
         "expression/unexpected-token",
