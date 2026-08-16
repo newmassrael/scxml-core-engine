@@ -39,7 +39,7 @@
 //! the set this module reports are the same set. A site this walker
 //! forgets, or one it invents, reds that test.
 
-use crate::ecmascript::ExprError;
+use crate::ecmascript::{DocumentScope, ExprError};
 use crate::forge::error::SourceLocation;
 use crate::model::{Action, DoneDataContent, Invoke, Param, SCXMLModel, State, Variable};
 
@@ -75,11 +75,11 @@ impl ExpressionRole {
         }
     }
 
-    fn lower(self, source: &str) -> Result<String, ExprError> {
+    fn lower(self, source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
         match self {
-            ExpressionRole::Value => crate::ecmascript::to_lua_value(source),
-            ExpressionRole::Condition => crate::ecmascript::to_lua_condition(source),
-            ExpressionRole::Script => crate::ecmascript::to_lua_script(source),
+            ExpressionRole::Value => crate::ecmascript::to_lua_value(source, scope),
+            ExpressionRole::Condition => crate::ecmascript::to_lua_condition(source, scope),
+            ExpressionRole::Script => crate::ecmascript::to_lua_script(source, scope),
         }
     }
 }
@@ -126,10 +126,21 @@ impl std::fmt::Display for RefusedExpression {
 /// for every document in the W3C corpus except the two that write
 /// `cond="return"` on purpose.
 pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
-    let mut out = Vec::new();
+    // One scope for the document, assembled before any expression is
+    // lowered. A `<data>` declared in the last state is in scope for the
+    // first state's `cond`: the datamodel is one table, and early
+    // binding puts every declaration in it before the first macrostep.
+    // Building it per expression would make the verdict depend on
+    // document order, which nothing in the spec licenses.
+    let scope = DocumentScope::from_model(model);
+    let mut into = Collector {
+        scope: &scope,
+        document_needs_script_engine: model.needs_script_engine,
+        out: Vec::new(),
+    };
 
     for var in &model.variables {
-        check_variable(var, &mut out);
+        check_variable(var, &mut into);
     }
     for script in &model.global_scripts {
         check(
@@ -137,31 +148,46 @@ pub fn refusals(model: &SCXMLModel) -> Vec<RefusedExpression> {
             "<script>",
             &script.content,
             script.source_location.as_ref(),
-            &mut out,
+            &mut into,
         );
     }
 
     let mut states: Vec<&State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
     for state in states {
-        check_state(state, &mut out);
+        check_state(state, &mut into);
     }
-    out
+    into.out
 }
 
-fn check_state(state: &State, out: &mut Vec<RefusedExpression>) {
+/// The walk's accumulator: the refusals found so far, and the scope every
+/// one of them was judged against.
+///
+/// The two travel together because they are used together at exactly one
+/// site — [`check`] — and every other function here exists only to reach
+/// it. Passing them separately would put the same pair in fourteen
+/// signatures and let a future site take the scope from somewhere else.
+struct Collector<'a> {
+    scope: &'a DocumentScope,
+    /// Whether the templates will route this document's guards through
+    /// the frontend at all — see [`check_condition`].
+    document_needs_script_engine: bool,
+    out: Vec<RefusedExpression>,
+}
+
+fn check_state(state: &State, into: &mut Collector<'_>) {
     for var in &state.datamodel {
-        check_variable(var, out);
+        check_variable(var, into);
     }
     for transition in &state.transitions {
         check_condition(
             "<transition cond>",
             &transition.cond,
             transition.source_location.as_ref(),
-            out,
+            into,
         );
         for action in &transition.actions {
-            check_action(action, out);
+            check_action(action, into);
         }
     }
     for block in state
@@ -170,17 +196,17 @@ fn check_state(state: &State, out: &mut Vec<RefusedExpression>) {
         .chain(state.on_exit_blocks.iter())
     {
         for action in block {
-            check_action(action, out);
+            check_action(action, into);
         }
     }
     for action in &state.initial_transition_actions {
-        check_action(action, out);
+        check_action(action, into);
     }
     for action in &state.initial_history_default_actions {
-        check_action(action, out);
+        check_action(action, into);
     }
     for invoke in &state.invokes {
-        check_invoke(invoke, out);
+        check_invoke(invoke, into);
     }
     if let Some(donedata) = &state.donedata {
         for param in &donedata.params {
@@ -190,7 +216,18 @@ fn check_state(state: &State, out: &mut Vec<RefusedExpression>) {
                     "<donedata><param expr>",
                     expr,
                     state.source_location.as_ref(),
-                    out,
+                    into,
+                );
+            }
+            // The `location` half, for the reason [`check_params`] gives:
+            // it is read, through the same value seam.
+            if let Some(location) = &param.location {
+                check(
+                    ExpressionRole::Value,
+                    "<donedata><param location>",
+                    location,
+                    state.source_location.as_ref(),
+                    into,
                 );
             }
         }
@@ -203,13 +240,13 @@ fn check_state(state: &State, out: &mut Vec<RefusedExpression>) {
                 "<donedata><content expr>",
                 text,
                 state.source_location.as_ref(),
-                out,
+                into,
             );
         }
     }
 }
 
-fn check_variable(var: &Variable, out: &mut Vec<RefusedExpression>) {
+fn check_variable(var: &Variable, into: &mut Collector<'_>) {
     // `<data>`'s inline body is not checked here. The spec makes "not an
     // expression" a legal reading of it, and `filters::to_lua_data_content`
     // — which carries that clause — takes that reading: a body the
@@ -220,11 +257,11 @@ fn check_variable(var: &Variable, out: &mut Vec<RefusedExpression>) {
         "<data expr>",
         &var.expr,
         var.source_location.as_ref(),
-        out,
+        into,
     );
 }
 
-fn check_invoke(invoke: &Invoke, out: &mut Vec<RefusedExpression>) {
+fn check_invoke(invoke: &Invoke, into: &mut Collector<'_>) {
     match invoke {
         Invoke::Scxml(info) => {
             check(
@@ -232,12 +269,12 @@ fn check_invoke(invoke: &Invoke, out: &mut Vec<RefusedExpression>) {
                 "<finalize>",
                 &info.finalize_content,
                 info.common.source_location.as_ref(),
-                out,
+                into,
             );
             check_params(
                 &info.common.params,
                 info.common.source_location.as_ref(),
-                out,
+                into,
             );
         }
         Invoke::Hybrid(info) => {
@@ -246,23 +283,23 @@ fn check_invoke(invoke: &Invoke, out: &mut Vec<RefusedExpression>) {
                 "<invoke srcexpr>",
                 &info.srcexpr,
                 info.common.source_location.as_ref(),
-                out,
+                into,
             );
             check(
                 ExpressionRole::Value,
                 "<invoke contentexpr>",
                 &info.contentexpr,
                 info.common.source_location.as_ref(),
-                out,
+                into,
             );
             check_params(
                 &info.common.params,
                 info.common.source_location.as_ref(),
-                out,
+                into,
             );
         }
         Invoke::MeshRpc(info) => {
-            check_params(&info.base.params, info.base.source_location.as_ref(), out);
+            check_params(&info.base.params, info.base.source_location.as_ref(), into);
         }
         // An unsupported invoke type raises at entry and starts no
         // session — see [`crate::model::UnsupportedInvokeInfo`] — so
@@ -271,11 +308,7 @@ fn check_invoke(invoke: &Invoke, out: &mut Vec<RefusedExpression>) {
     }
 }
 
-fn check_params(
-    params: &[Param],
-    fallback: Option<&SourceLocation>,
-    out: &mut Vec<RefusedExpression>,
-) {
+fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut Collector<'_>) {
     for param in params {
         // A `<param>` carries its own coordinate for exactly this: the
         // enclosing element's line does not contain the rejected value.
@@ -285,12 +318,27 @@ fn check_params(
             "<param expr>",
             &param.expr,
             location,
-            out,
+            into,
+        );
+        // `location` is the other half of the same element and is
+        // *read* — the value at that location becomes the payload
+        // field. Every backend lowers it through the same value seam
+        // `expr` goes through, which is why it belongs here and not with
+        // the write targets [`crate::ecmascript::to_lua_location`] serves.
+        // W3C test 343 is the fixture: `<param location="foo"/>` naming
+        // nothing is the illegal `<param>` whose `error.execution` the
+        // test waits for.
+        check(
+            ExpressionRole::Value,
+            "<param location>",
+            &param.location,
+            location,
+            into,
         );
     }
 }
 
-fn check_action(action: &Action, out: &mut Vec<RefusedExpression>) {
+fn check_action(action: &Action, into: &mut Collector<'_>) {
     let at = action.source_location.as_ref();
     match action.action_type.as_str() {
         "send" => {
@@ -299,45 +347,45 @@ fn check_action(action: &Action, out: &mut Vec<RefusedExpression>) {
                 "<send eventexpr>",
                 &action.eventexpr,
                 at,
-                out,
+                into,
             );
             check(
                 ExpressionRole::Value,
                 "<send targetexpr>",
                 &action.targetexpr,
                 at,
-                out,
+                into,
             );
             check(
                 ExpressionRole::Value,
                 "<send delayexpr>",
                 &action.delayexpr,
                 at,
-                out,
+                into,
             );
             check(
                 ExpressionRole::Value,
                 "<send contentexpr>",
                 &action.contentexpr,
                 at,
-                out,
+                into,
             );
-            check_params(&action.params, at, out);
+            check_params(&action.params, at, into);
         }
         "assign" => check(
             ExpressionRole::Value,
             "<assign expr>",
             &action.expr,
             at,
-            out,
+            into,
         ),
-        "log" => check(ExpressionRole::Value, "<log expr>", &action.expr, at, out),
+        "log" => check(ExpressionRole::Value, "<log expr>", &action.expr, at, into),
         "cancel" => check(
             ExpressionRole::Value,
             "<cancel sendidexpr>",
             &action.sendidexpr,
             at,
-            out,
+            into,
         ),
         "foreach" => {
             check(
@@ -345,25 +393,25 @@ fn check_action(action: &Action, out: &mut Vec<RefusedExpression>) {
                 "<foreach array>",
                 &action.array,
                 at,
-                out,
+                into,
             );
             for nested in &action.actions {
-                check_action(nested, out);
+                check_action(nested, into);
             }
         }
         "if" => {
-            check_condition("<if cond>", &action.cond, at, out);
+            check_condition("<if cond>", &action.cond, at, into);
             for nested in &action.then_actions {
-                check_action(nested, out);
+                check_action(nested, into);
             }
             for branch in &action.elseif_branches {
-                check_condition("<elseif cond>", &branch.cond, at, out);
+                check_condition("<elseif cond>", &branch.cond, at, into);
                 for nested in &branch.actions {
-                    check_action(nested, out);
+                    check_action(nested, into);
                 }
             }
             for nested in &action.else_actions {
-                check_action(nested, out);
+                check_action(nested, into);
             }
         }
         // A `<cpp>` / `<kt>` child is emitted as source in that language
@@ -371,7 +419,13 @@ fn check_action(action: &Action, out: &mut Vec<RefusedExpression>) {
         // the arm pattern: an inline `<script>` is the only shape whose
         // body this frontend is asked to read.
         "script" if !action.is_cpp_function && !action.is_kt_function => {
-            check(ExpressionRole::Script, "<script>", &action.content, at, out);
+            check(
+                ExpressionRole::Script,
+                "<script>",
+                &action.content,
+                at,
+                into,
+            );
         }
         _ => {}
     }
@@ -380,22 +434,39 @@ fn check_action(action: &Action, out: &mut Vec<RefusedExpression>) {
 /// A `cond`, skipping the spellings no backend lowers through the
 /// frontend.
 ///
-/// [`crate::parser::check_expression_needs`] is the single classifier for
-/// that boundary — it answers `false` for a `cpp:` / `kt:` prefixed
-/// condition and for a pure `In()` predicate, both of which are emitted
-/// as native code. Asking it here rather than re-deciding keeps this
-/// walker and the templates on one definition of "native".
+/// Two questions, and the second is about the document rather than the
+/// guard. A `cpp:` / `kt:` prefixed condition and a pure `In()`
+/// predicate are emitted as native code by every backend, so
+/// [`crate::parser::check_expression_needs`] answers the first. But a
+/// guard that is *not* one of those reaches the frontend only when the
+/// document needs a script engine at all: the templates branch on
+/// `model.needs_script_engine`, and a document without one emits every
+/// remaining guard verbatim in the target language.
+///
+/// Asking only the first question is what this used to do, and it was
+/// wrong in both directions for a bare call like `cond="shouldCool()"`:
+/// the classifier calls it native — it has no operator, no literal and
+/// no reserved word — while a document whose `<script>` bodies already
+/// forced a script engine lowers it through `to_lua_guard` like any
+/// other. The walker reported nothing and the artifact carried a
+/// refusal.
 fn check_condition(
     site: &str,
     cond: &str,
     location: Option<&SourceLocation>,
-    out: &mut Vec<RefusedExpression>,
+    into: &mut Collector<'_>,
 ) {
     let (needs_engine, _has_in) = crate::parser::check_expression_needs(cond);
-    if !needs_engine {
+    if !needs_engine && !into.document_needs_script_engine {
         return;
     }
-    check(ExpressionRole::Condition, site, cond, location, out);
+    if cond.starts_with("cpp:") || cond.starts_with("kt:") {
+        return;
+    }
+    if crate::parser::is_pure_in_predicate(cond) {
+        return;
+    }
+    check(ExpressionRole::Condition, site, cond, location, into);
 }
 
 fn check(
@@ -403,7 +474,7 @@ fn check(
     site: &str,
     source: &str,
     location: Option<&SourceLocation>,
-    out: &mut Vec<RefusedExpression>,
+    into: &mut Collector<'_>,
 ) {
     // An absent attribute is not an expression. The filters answer the
     // same way — an empty `expr` lowers to nothing, an empty `cond` to
@@ -411,8 +482,8 @@ fn check(
     if source.is_empty() {
         return;
     }
-    if let Err(error) = role.lower(source) {
-        out.push(RefusedExpression {
+    if let Err(error) = role.lower(source, into.scope) {
+        into.out.push(RefusedExpression {
             role,
             site: site.to_string(),
             source: source.to_string(),

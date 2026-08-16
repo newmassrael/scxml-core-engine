@@ -771,6 +771,46 @@ for documents this repository writes.
 emitter and to the shared Lua library, so a name cannot be promised in
 one place and missing from the other.
 
+### §3.6 Identifiers the document does not declare
+
+§3.5 decides a name from the name alone. A bare identifier cannot be
+decided that way: `Date` is a global ECMA-262 defines, and it is also a
+legal `<data id="Date">`. So the frontend resolves identifiers against
+the document — every `<data id>` at any depth, every `<foreach item>`
+and `<foreach index>`, every `<assign location>` and `<send
+idlocation>` naming a variable, and every top-level `var` and
+`function` a `<script>` declares (those are emitted without `local`
+precisely so a later `cond` can read them, W3C test 302). Names bound
+inside one expression — function parameters, a `var` in a function
+body — are lexical and tracked as the expression is walked, including
+ECMA-262's `var` hoisting.
+
+A name left over is refused in one of two readings:
+
+- **`expression/unsupported-builtin`**, when ECMA-262 defines it as a
+  global and SCE does not install it — `Date`, `isNaN`, `Promise`,
+  `console`. The candidates are the globals this datamodel *does*
+  bind: `Math`, `JSON`, `Object`, `String`, `Number`, `Boolean`,
+  `parseInt`, `parseFloat`, `In`.
+- **`expression/unknown-identifier`**, when nothing defines it at all
+  — a misspelling, or a `<data>` yet to be written. The candidates are
+  the document's own declarations within a small edit distance, so
+  `conut` beside a `<data id="count">` carries `count` as its
+  `fix: replace_one_of`. There may be none, in which case the record
+  carries no `fix` (§3 of `SCE_ERROR_CONTRACT.md`).
+
+Two positions are deliberately exempt. `typeof x` on an undeclared name
+is ECMA-262 11.4.3's one non-throwing read — it is how a document asks
+whether something exists — and an `<assign location>` is a *write*,
+which is how this datamodel's globals come into existence (§scxml-5.4
+makes a location that cannot be created a runtime `error.execution`,
+which every backend's assign path already raises).
+
+`sce_build::ecmascript::scope` owns the declarations and
+`sce_build::ecmascript::resolve` owns the walk;
+`sce-build/tests/ecmascript_identifier_scope.rs` binds both to the
+corpus and to the installed vocabulary.
+
 ### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
 
 NL→IR Mapping Roadmap Items 1, 5, and 6 add three metadata
@@ -1500,7 +1540,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (351 codes)
+## Appendix — `DiagnosticCode` index (352 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1706,6 +1746,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/lex` | Expression |
 | `expression/unsupported-construct` | Expression |
 | `expression/unsupported-builtin` | Expression |
+| `expression/unknown-identifier` | Expression |
 | `expression/strict-equality` | Expression |
 | `expression/parse-mismatch` | Expression |
 | `expression/unexpected-token` | Expression |

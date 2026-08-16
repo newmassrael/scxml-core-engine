@@ -5015,7 +5015,7 @@ fn serialize_node_inner(node: &roxmltree::Node, parent_ns: Option<&str>, c14n: b
 }
 
 /// §scxml-5.9.2: Check if expression is pure In() predicate
-fn is_pure_in_predicate(cond: &str) -> bool {
+pub(crate) fn is_pure_in_predicate(cond: &str) -> bool {
     static RE_IN_CALL: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r#"In\(['"][^'"]+['"]\)"#).unwrap());
 

@@ -4,12 +4,27 @@
 // Multi-language code generator — renders minijinja templates from SCXMLModel.
 // Supports Rust, C++, and Kotlin code generation.
 
+use crate::ecmascript::DocumentScope;
 use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::symbol_mangling;
 use crate::model::SCXMLModel;
 use minijinja::Environment;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+/// The declarations the ECMAScript filters resolve authored names
+/// against, for one document.
+///
+/// Built here, at the point where a backend's template environment is
+/// assembled, because that is the one place every backend passes
+/// through — the four that lower the datamodel to Lua share the scope
+/// with [`crate::ecmascript_acceptance`], and a `check` that disagreed
+/// with a `generate` about which names exist would put two answers on
+/// one document.
+fn document_scope(model: &SCXMLModel) -> Arc<DocumentScope> {
+    Arc::new(DocumentScope::from_model(model))
+}
 
 /// Create a minijinja Environment with Python Jinja2 compatibility enabled.
 pub(crate) fn new_env<'a>() -> Environment<'a> {
@@ -470,6 +485,120 @@ fn reject_native_conditions_in_unsupported_lang(
     )))
 }
 
+/// The backend that can emit `action`'s body, when the body is not
+/// ECMAScript — the [`NATIVE_COND_PREFIXES`] question for `<script>`.
+///
+/// A `<script><cpp>…</cpp></script>` body is C++ source and a
+/// `<script><kt>…</kt></script>` body is Kotlin source; the parser
+/// records which by setting `is_cpp_function` / `is_kt_function`, and
+/// only those two backends have a branch that emits the body as code.
+///
+/// A function rather than the table its `cond` sibling uses, because the
+/// discriminator here is a field on the action rather than a prefix on a
+/// string: there is no data to tabulate.
+fn native_script_owner(action: &crate::model::Action) -> Option<&'static str> {
+    if action.action_type != "script" {
+        return None;
+    }
+    if action.is_cpp_function {
+        return Some("C++");
+    }
+    if action.is_kt_function {
+        return Some("Kotlin");
+    }
+    None
+}
+
+/// The first `<script>` in `model` written in a language this backend
+/// cannot emit.
+fn first_unlowerable_native_script(model: &SCXMLModel, language: &str) -> Option<String> {
+    fn owner(action: &crate::model::Action, language: &str) -> Option<String> {
+        native_script_owner(action)
+            .filter(|owner| *owner != language)
+            .map(str::to_string)
+    }
+
+    fn scan(actions: &[crate::model::Action], language: &str) -> Option<String> {
+        for action in actions {
+            if let Some(hit) = owner(action, language) {
+                return Some(hit);
+            }
+            for branch in &action.elseif_branches {
+                if let Some(hit) = scan(&branch.actions, language) {
+                    return Some(hit);
+                }
+            }
+            for nested in action
+                .then_actions
+                .iter()
+                .chain(action.else_actions.iter())
+                .chain(action.actions.iter())
+            {
+                if let Some(hit) = scan(std::slice::from_ref(nested), language) {
+                    return Some(hit);
+                }
+            }
+        }
+        None
+    }
+
+    let mut states: Vec<&crate::model::State> = model.states.values().collect();
+    states.sort_by_key(|s| s.document_order);
+    for state in states {
+        for transition in &state.transitions {
+            if let Some(hit) = scan(&transition.actions, language) {
+                return Some(hit);
+            }
+        }
+        for block in state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+        {
+            if let Some(hit) = scan(block, language) {
+                return Some(hit);
+            }
+        }
+        if let Some(hit) = scan(&state.initial_transition_actions, language) {
+            return Some(hit);
+        }
+    }
+    None
+}
+
+/// A native `<script>`: the same rule
+/// [`reject_native_conditions_in_unsupported_lang`] enforces for `cond`,
+/// for the element one node over.
+///
+/// The two had drifted. A native `cond` was refused on the backends that
+/// cannot lower it; a native `<script>` was not, and the four backends
+/// that run the datamodel on Lua piped its C++ body straight through the
+/// ECMAScript frontend. That produced a Lua chunk calling
+/// `aim.onDisabled()` on a session where `aim` is a C++ object and no Lua
+/// value at all — nil, at run time, with `sce-codegen` reporting success.
+///
+/// Found by giving the frontend the document's declarations: `aim` is
+/// declared by `<sce:context>` for the C++ backend and by nothing for the
+/// others, so the refusal that had been invisible became a message. The
+/// message is right and the lowering is what was wrong.
+fn reject_native_scripts_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    let Some(owner) = first_unlowerable_native_script(model, language) else {
+        return Ok(());
+    };
+    Err(GenerateError::UnsupportedFeature(format!(
+        "<script><{}>…</{}></script> in '{}' is a native {owner} body and has no \
+         {language} codegen path — a native script is lowered only by the backend \
+         whose language it names. Either generate this machine for that backend or \
+         write the script as ECMAScript.",
+        if owner == "C++" { "cpp" } else { "kt" },
+        if owner == "C++" { "cpp" } else { "kt" },
+        model.name
+    )))
+}
+
 // EventSchema MCU native lowering: every backend
 // (Rust, C11, C++, Kotlin, Go, Python) now lowers a typed `_event.data`
 // transition guard to a script-engine-free native comparison, so the former
@@ -618,9 +747,10 @@ pub fn generate_with_options(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
+    reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_filters(&mut env);
+    filters::register_filters(&mut env, &document_scope(model));
     render_rust(&mut env, model, options)
 }
 
@@ -640,7 +770,7 @@ pub fn generate_rust_module_index(
 ) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_filters(&mut env);
+    filters::register_filters(&mut env, &document_scope(model));
     let tmpl = env
         .get_template("module_index.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
@@ -676,7 +806,11 @@ pub fn generate_rust_include_shim(
 ) -> Result<String, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_filters(&mut env);
+    // No document, and none is needed: `module_index.rs.jinja2` renders
+    // two items naming a path, and the one thing a scope decides — which
+    // identifiers an authored expression may read — has no expression
+    // here to decide it for.
+    filters::register_filters(&mut env, &Arc::new(DocumentScope::installed()));
     let tmpl = env
         .get_template("module_index.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(e.to_string()))?;
@@ -703,9 +837,10 @@ pub fn generate_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
+    reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
-    filters::register_filters(&mut env);
+    filters::register_filters(&mut env, &document_scope(model));
     render_rust(
         &mut env,
         model,
@@ -876,6 +1011,7 @@ fn render_cpp(
     reject_liveliness_without_handler(model)?;
     reject_native_actions_in_unsupported_lang(model, "C++")?;
     reject_native_conditions_in_unsupported_lang(model, "C++")?;
+    reject_native_scripts_in_unsupported_lang(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // §scxml-5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -995,7 +1131,7 @@ pub fn generate_c11(
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_c11_filters(&mut env);
+    filters::register_c11_filters(&mut env, &document_scope(model));
     render_c11(&mut env, model, input_stem, c_symbol_prefix)
 }
 
@@ -1007,7 +1143,7 @@ pub fn generate_c11_with_templates(
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
-    filters::register_c11_filters(&mut env);
+    filters::register_c11_filters(&mut env, &document_scope(model));
     render_c11(&mut env, model, input_stem, None)
 }
 
@@ -1020,6 +1156,7 @@ fn render_c11(
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
     reject_native_conditions_in_unsupported_lang(model, "C11")?;
+    reject_native_scripts_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
@@ -1131,6 +1268,7 @@ pub fn generate_kotlin(
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
+    reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
@@ -1149,6 +1287,7 @@ pub fn generate_kotlin_with_templates(
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
+    reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
@@ -1294,9 +1433,10 @@ pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, Ge
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
+    reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_go_filters(&mut env);
+    filters::register_go_filters(&mut env, &document_scope(model));
     render_go(&mut env, model)
 }
 
@@ -1308,9 +1448,10 @@ pub fn generate_go_with_templates(
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
+    reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
-    filters::register_go_filters(&mut env);
+    filters::register_go_filters(&mut env, &document_scope(model));
     render_go(&mut env, model)
 }
 
@@ -1331,10 +1472,11 @@ pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
+    reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
-    filters::register_python_filters(&mut env);
+    filters::register_python_filters(&mut env, &document_scope(model));
     render_python(&mut env, model)
 }
 
@@ -1346,10 +1488,11 @@ pub fn generate_python_with_templates(
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
+    reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
-    filters::register_python_filters(&mut env);
+    filters::register_python_filters(&mut env, &document_scope(model));
     render_python(&mut env, model)
 }
 
