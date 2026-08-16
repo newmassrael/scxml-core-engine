@@ -120,9 +120,17 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				}
 			}
 		}
-{% elif state.donedata.content.kind == "expression" %}
+{% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 		{
+{% if state.donedata.content.kind == "expression" %}
 			// W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
+{% set donedata_content_lua = state.donedata.content.text | to_lua_expr %}
+{% else %}
+			// W3C SCXML B.2: inline text takes the ordered readings — an
+			// expression when it is one, otherwise the string. The same
+			// filter inline `<data>` text goes through decides which.
+{% set donedata_content_lua = state.donedata.content.text | to_lua_data_content %}
+{% endif %}
 			p.ensureScriptEngine()
 			se := p.ScriptEngine
 			if se != nil {
@@ -131,7 +139,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				   `"` into `\"`, which a raw string passes to Lua verbatim.
 				   The bug was invisible while the emitted Lua quoted its
 				   strings with `'`. #}
-				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content.text | to_lua_expr }}`); err == nil {
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ donedata_content_lua }}`); err == nil {
 					doneEventData = sce.ToLuaLiteral(val)
 				} else {
 {% if 'error.execution' in model.events %}

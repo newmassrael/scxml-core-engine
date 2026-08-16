@@ -465,14 +465,23 @@
                         AOT_DEBUG("Skipping done.state event due to structural donedata error");
                         break;
                     }
-{% elif state.donedata.content.kind == "expression" %}
+{% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
+{% if state.donedata.content.kind == "expression" %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/> against the datamodel.
+{% set donedata_content_source = state.donedata.content.text %}
+{% else %}
+                    // W3C SCXML B.2: inline text takes the ordered readings —
+                    // an expression when it is one, otherwise the string. The
+                    // reading is decided from the document, so every backend
+                    // reaches the same one for the same text.
+{% set donedata_content_source = state.donedata.content.text | to_author_data_content %}
+{% endif %}
                     this->ensureScriptEngine();
                     auto& scriptEngine = getScriptEngine();
                     ::SCE::DoneDataHelper::evaluateContent(
                         scriptEngine,
                         sessionId_.value(),
-                        "{{ state.donedata.content.text }}",
+                        "{{ donedata_content_source | escape_cpp }}",
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);

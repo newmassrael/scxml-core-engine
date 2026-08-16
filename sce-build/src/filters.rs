@@ -377,7 +377,7 @@ fn read_data_src(src: String, base_path: String) -> Result<String, minijinja::Er
 /// malformed record — `diagnostic_corpus_schema` fails on it. Surfacing a
 /// refusal as a real `DiagnosticCode` is the follow-up that belongs to the
 /// error-contract checklist, not to this seam.
-fn to_lua_expr(expr: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
+pub fn to_lua_expr(expr: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
     // §scxml-B-2: a value expression — `<data expr>`, `<assign expr>`,
     // `<param expr>`, `<log expr>` — evaluated for what it yields.
     if expr.is_empty() {
@@ -444,7 +444,10 @@ fn lua_that_raises(what: &str, source: &str, err: crate::ecmascript::ExprError) 
 /// and the string only appeared because the parse error triggered a
 /// fallback. The reading is decidable without running anything, so it is
 /// made where it can be seen.
-fn to_lua_data_content(content: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
+pub fn to_lua_data_content(
+    content: String,
+    scope: &DocumentScope,
+) -> Result<String, minijinja::Error> {
     if content.is_empty() {
         return Ok(String::new());
     }
@@ -466,6 +469,60 @@ fn to_lua_data_content(content: String, scope: &DocumentScope) -> Result<String,
         return Ok(content);
     }
     Ok(lua_string_literal(&normalize_ws(content)))
+}
+
+/// Inline `<content>` text, kept in the author's own language.
+///
+/// The same reading as [`to_lua_data_content`], for the two backends that
+/// hand the author's ECMAScript to an ECMAScript engine instead of
+/// lowering it. Only the *answer* is language-specific: whether the text
+/// is an expression at all is a question about the document, and asking
+/// it differently per backend is how `<content>21</content>` could come
+/// to mean a number in one generated machine and a string in another.
+///
+/// Accepted text is handed back untouched — it is already in the language
+/// the engine speaks. Text that is not an expression becomes an
+/// ECMAScript string literal, which is §scxml-B-2's second reading, and
+/// XML is passed through for the same reason [`to_lua_data_content`]
+/// passes it through: the DOM node is built at the other end of the seam.
+pub fn to_author_data_content(
+    content: String,
+    scope: &DocumentScope,
+) -> Result<String, minijinja::Error> {
+    if content.is_empty() {
+        return Ok(String::new());
+    }
+    if crate::ecmascript::to_lua_value(&content, scope).is_ok() {
+        return Ok(content);
+    }
+    if content.trim_start().starts_with('<') {
+        return Ok(content);
+    }
+    Ok(ecmascript_string_literal(&normalize_ws(content)))
+}
+
+/// Render text as an ECMAScript string literal.
+///
+/// Single-quoted because that is the spelling the conformance suite's own
+/// documents use (`<content>'foo'</content>`), and because the result is
+/// embedded in a C++ or Kotlin double-quoted literal by the escaper at
+/// the next step — a quote that does not have to be escaped twice is one
+/// fewer place the two escapings can disagree.
+fn ecmascript_string_literal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('\'');
+    for ch in text.chars() {
+        match ch {
+            '\'' => out.push_str("\\'"),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('\'');
+    out
 }
 
 /// Render text as a Lua string literal. Shares the emitter's escaping rules
@@ -813,7 +870,19 @@ fn to_in_predicate_go(cond_cpp: String) -> String {
 // ── C++ filters ──────────────────────────────────────────────────
 
 /// Register all C++-specific filters on the minijinja environment.
-pub fn register_cpp_filters(env: &mut minijinja::Environment) {
+///
+/// The scope is here for one filter. This backend does not lower the
+/// author's ECMAScript — it hands it to an ECMAScript engine — so it has
+/// no use for the seam [`register_ecmascript_filters`] installs. It does
+/// need the one question that seam can answer: §scxml-B-2 makes "is this
+/// inline `<content>` an expression at all?" decide the *value*, and a
+/// backend answering it for itself is how the same document comes to
+/// carry a number in one generated machine and a string in another.
+pub fn register_cpp_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    let for_content = Arc::clone(scope);
+    env.add_filter("to_author_data_content", move |content: String| {
+        to_author_data_content(content, &for_content)
+    });
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("capitalize", capitalize_state);
@@ -1065,7 +1134,14 @@ fn to_in_predicate_c11(
 // ── Kotlin filters ───────────────────────────────────────────────
 
 /// Register all Kotlin-specific filters on the minijinja environment.
-pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
+///
+/// Carries the scope for the same single filter, and for the same reason,
+/// as [`register_cpp_filters`].
+pub fn register_kotlin_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    let for_content = Arc::clone(scope);
+    env.add_filter("to_author_data_content", move |content: String| {
+        to_author_data_content(content, &for_content)
+    });
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);

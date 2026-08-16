@@ -385,10 +385,31 @@ pub struct DoneData {
 /// - [`DoneDataContent::None`] — no `<content>` child (`{"kind":"none"}`).
 /// - [`DoneDataContent::Expression`] — `<content expr="X"/>`, MUST be
 ///   evaluated against the active datamodel (`{"kind":"expression","text":"X"}`).
-/// - [`DoneDataContent::Literal`] — `<content>inline text</content>`; per
-///   §scxml-5.5 the children are used **as the content value**, not
-///   re-evaluated as an expression. Literal means no script engine required
-///   at runtime (`{"kind":"literal","text":"..."}`).
+/// - [`DoneDataContent::InlineText`] — `<content>text</content>` under a
+///   data model that has a value expression language
+///   (`{"kind":"inline_text","text":"..."}`).
+/// - [`DoneDataContent::Literal`] — `<content>inline text</content>` under
+///   the Null data model; per §scxml-5.5 the children are used **as the
+///   content value**, not re-evaluated as an expression. Literal means no
+///   script engine required at runtime (`{"kind":"literal","text":"..."}`).
+///
+/// # Why inline text is not the `expr` attribute
+///
+/// Both used to be [`DoneDataContent::Expression`], and the rule that
+/// belongs to only one of them was applied to both. `<content expr="X"/>`
+/// says *evaluate this*, so text that cannot be evaluated is an error the
+/// runtime reports rather than one the build refuses, and W3C test 344 is
+/// in the suite to check it. Inline text says *this is the value*, and the
+/// ECMAScript data model appendix gives it a second reading when the first
+/// does not apply: content that is neither XML nor JSON **is a string**.
+/// Collapsing the two made
+/// `<content>inline payload</content>` generate an expression that could
+/// only ever raise, so a document whose payload was ordinary prose reached
+/// `error.execution` instead of carrying its prose.
+///
+/// [`Variable`] has taken the two readings apart since the inline-`<data>`
+/// path moved its decision to generation time; this variant is what lets
+/// `<donedata>` reach the same answer through the same filter.
 ///
 /// Serialized via adjacent tagging (`tag = "kind", content = "text"`) so
 /// minijinja consumers match on `donedata.content.kind` and read the payload
@@ -400,6 +421,7 @@ pub enum DoneDataContent {
     #[default]
     None,
     Expression(String),
+    InlineText(String),
     Literal(String),
 }
 

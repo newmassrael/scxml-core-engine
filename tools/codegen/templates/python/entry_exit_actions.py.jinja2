@@ -111,11 +111,19 @@
 {% endfor %}
             if _done_data_ok:
                 _done_data = "{" + ", ".join(_done_parts) + "}"
-{% elif state.donedata.content.kind == "expression" %}
+{% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
+{% if state.donedata.content.kind == "expression" %}
+{% set donedata_content_lua = state.donedata.content.text | to_lua_expr %}
+{% else %}
+            # W3C SCXML B.2: inline text takes the ordered readings — an
+            # expression when it is one, otherwise the string. The same
+            # filter inline `<data>` text goes through decides which.
+{% set donedata_content_lua = state.donedata.content.text | to_lua_data_content %}
+{% endif %}
             try:
                 _done_data = engine._script_engine.evaluate_expression(
                     self._session_id,
-                    {{ state.donedata.content.text | to_lua_expr | py_string_literal }},
+                    {{ donedata_content_lua | py_string_literal }},
                 ).to_lua_literal()
             except _ScriptError:
                 _done_data_ok = False
