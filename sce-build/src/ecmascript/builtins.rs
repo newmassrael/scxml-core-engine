@@ -43,11 +43,14 @@
 //! `<data id="handlers" expr="{ retry: function() {...} }"/>` followed by
 //! `handlers.retry()` is legal in this datamodel and must stay so.
 //!
-//! Statics on globals SCE does not install at all (`Date.now`,
-//! `Array.isArray`) are outside both rules and are still silent. They
-//! share the bare-identifier problem — `Date` could name an author's own
-//! `<data>` — and deciding them needs the document, which an expression
-//! emitter does not have.
+//! **A standard global SCE does not install is refused.**
+//! [`UNINSTALLED_GLOBALS`] is the third rule, and it is the one that
+//! needs more than an expression: `Date` could name an author's own
+//! `<data id="Date">`, so the name alone does not settle it. The
+//! document does. [`super::scope::DocumentScope`] carries the
+//! declarations and [`super::resolve`] asks this module only about the
+//! names left over — which is why `Date.now()` is answered here and
+//! decided there.
 
 /// Members of the `JSON` table, from `sce/include/scripting/
 /// json_builtins.lua`, which every engine loads.
@@ -211,6 +214,133 @@ pub const UNIMPLEMENTED_METHODS: &[&str] = &[
     "trimEnd",
     "trimStart",
 ];
+
+/// Every name this datamodel binds in global position.
+///
+/// Three groups, and the reason each is here is different:
+///
+/// * `Math` — not a Lua table at all. [`super::lua`] rewrites
+///   `Math.<member>` to Lua's `math`, so the identifier never reaches
+///   the engine, but it is a name the author may legally write.
+/// * `JSON`, `Object`, `String`, `Number`, `Boolean`, `parseInt`,
+///   `parseFloat` — installed by `sce/include/scripting/*.lua`, which
+///   every engine loads. `String`/`Number`/`Boolean` are ECMA-262
+///   15.5.1 / 15.6.1 / 15.7.1 conversion functions, not constructors:
+///   this datamodel has no `new`.
+/// * `In` and the system variables the specification reserves —
+///   `_event`, `_sessionid`, `_name`, `_ioprocessors`, `_x` — bound per
+///   session by each engine's session setup rather than by the shared
+///   library.
+///
+/// A name outside this list and outside the document is what
+/// [`super::resolve`] refuses. Keeping the list here rather than in the
+/// resolver is what lets `ecmascript_identifier_scope` assert each entry
+/// against the library that installs it.
+pub const INSTALLED_GLOBALS: &[&str] = &[
+    "Boolean",
+    "In",
+    "JSON",
+    "Math",
+    "Number",
+    "Object",
+    "String",
+    "_event",
+    "_ioprocessors",
+    "_name",
+    "_sessionid",
+    "_x",
+    "parseFloat",
+    "parseInt",
+];
+
+/// ECMA-262 globals this datamodel does not install.
+///
+/// Same reasoning as [`UNIMPLEMENTED_METHODS`], one AST node up: every
+/// entry is a name the language defines, so every entry is a name an
+/// author is entitled to expect and SCE cannot supply. Answering
+/// `Date.now()` with a nil index at runtime teaches nothing; naming it
+/// here lets the frontend say which globals do exist.
+///
+/// Wider than ES3 for the same reason the method list is: `Promise`,
+/// `console` and `setTimeout` are what a modern author reaches for
+/// first, and they are exactly the reaches a design-time answer is worth
+/// most on.
+///
+/// `Array` is on the list even though [`super::lua`] reads it in
+/// `x instanceof Array` — that arm consumes the name as part of the
+/// operator rather than as a global, and [`super::resolve`] skips it
+/// there for that reason. Every other position is a real reach for a
+/// constructor this datamodel has no `new` for.
+pub const UNINSTALLED_GLOBALS: &[&str] = &[
+    // ECMA-262 15.1 — the global object's own properties and functions
+    "Infinity",
+    "NaN",
+    "decodeURI",
+    "decodeURIComponent",
+    "encodeURI",
+    "encodeURIComponent",
+    "escape",
+    "eval",
+    "isFinite",
+    "isNaN",
+    "unescape",
+    // ECMA-262 15.3-15.11 — constructors
+    "Array",
+    "Date",
+    "Error",
+    "EvalError",
+    "Function",
+    "RangeError",
+    "ReferenceError",
+    "RegExp",
+    "SyntaxError",
+    "TypeError",
+    "URIError",
+    // ES2015 and later
+    "BigInt",
+    "Map",
+    "Promise",
+    "Proxy",
+    "Reflect",
+    "Set",
+    "Symbol",
+    "WeakMap",
+    "WeakSet",
+    "globalThis",
+    // Host globals of the two environments an author is likely writing
+    // from — a browser or Node. Neither is what an SCXML datamodel is.
+    "clearInterval",
+    "clearTimeout",
+    "console",
+    "document",
+    "fetch",
+    "module",
+    "process",
+    "require",
+    "setInterval",
+    "setTimeout",
+    "window",
+];
+
+/// The refusal for a free identifier, or `None` when the name is not one
+/// ECMA-262 defines — in which case it is the author's own and
+/// [`super::resolve`] answers it from the document rather than from here.
+pub fn unsupported_global(name: &str) -> Option<crate::forge::error::ExprError> {
+    if !UNINSTALLED_GLOBALS.contains(&name) {
+        return None;
+    }
+    Some(crate::forge::error::ExprError::UnsupportedBuiltin {
+        name: name.to_string(),
+        // The system variables are filtered out: `_event` is not a
+        // substitute for `Date`, it is a different kind of name, and a
+        // candidate list a consumer cannot choose from is noise.
+        available: INSTALLED_GLOBALS
+            .iter()
+            .filter(|installed| !installed.starts_with('_'))
+            .map(|installed| (*installed).to_string())
+            .collect(),
+    })
+}
 
 /// A namespace SCE installs, for [`unsupported_member`] to name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

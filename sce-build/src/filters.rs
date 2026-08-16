@@ -6,7 +6,9 @@
 
 use minijinja::Value;
 use regex::Regex;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
+
+use crate::ecmascript::DocumentScope;
 
 // ── Compiled regex patterns (compiled once, reused across calls) ──
 
@@ -78,7 +80,7 @@ const RUST_KEYWORDS: &[&str] = &[
 ];
 
 /// Register all Rust-specific filters on the minijinja environment.
-pub fn register_filters(env: &mut minijinja::Environment) {
+pub fn register_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_snake_case", to_snake_case);
@@ -95,17 +97,40 @@ pub fn register_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_in_predicate_rust", to_in_predicate_rust);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("to_machine_name", to_pascal_case);
-    // ECMAScript→Lua transformation filters
-    env.add_filter("to_lua_expr", to_lua_expr);
-    env.add_filter("to_lua_data_content", to_lua_data_content);
-    env.add_filter("to_lua_guard", to_lua_guard);
-    env.add_filter("to_lua_script", to_lua_script);
-    env.add_filter("escape_lua", escape_lua);
+    register_ecmascript_filters(env, scope);
     // Cross-engine compatibility filters (replace Python-specific string methods)
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
     env.add_filter("callback_lang", filter_callback_lang);
+}
+
+/// The ECMAScript→Lua seam, in the four backends that run the datamodel
+/// on a Lua interpreter.
+///
+/// One function rather than four identical blocks because the seam has a
+/// contract — see [`to_lua_expr`] — and the document scope is part of it.
+/// A backend that registered three of the four filters, or registered
+/// them against a scope of its own, would answer a different question
+/// about the same document than `check` does.
+fn register_ecmascript_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
+    let for_expr = Arc::clone(scope);
+    env.add_filter("to_lua_expr", move |expr: String| {
+        to_lua_expr(expr, &for_expr)
+    });
+    let for_content = Arc::clone(scope);
+    env.add_filter("to_lua_data_content", move |content: String| {
+        to_lua_data_content(content, &for_content)
+    });
+    let for_guard = Arc::clone(scope);
+    env.add_filter("to_lua_guard", move |expr: String| {
+        to_lua_guard(expr, &for_guard)
+    });
+    let for_script = Arc::clone(scope);
+    env.add_filter("to_lua_script", move |script: String| {
+        to_lua_script(script, &for_script)
+    });
+    env.add_filter("escape_lua", escape_lua);
 }
 
 /// Convert identifier to snake_case for Rust function/variable/module names.
@@ -352,38 +377,38 @@ fn read_data_src(src: String, base_path: String) -> Result<String, minijinja::Er
 /// malformed record — `diagnostic_corpus_schema` fails on it. Surfacing a
 /// refusal as a real `DiagnosticCode` is the follow-up that belongs to the
 /// error-contract checklist, not to this seam.
-fn to_lua_expr(expr: String) -> Result<String, minijinja::Error> {
+fn to_lua_expr(expr: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
     // §scxml-B-2: a value expression — `<data expr>`, `<assign expr>`,
     // `<param expr>`, `<log expr>` — evaluated for what it yields.
     if expr.is_empty() {
         return Ok(String::new());
     }
-    Ok(match crate::ecmascript::to_lua_value(&expr) {
+    Ok(match crate::ecmascript::to_lua_value(&expr, scope) {
         Ok(lua) => lua,
         Err(err) => lua_that_raises("expr", &expr, err),
     })
 }
 
-fn to_lua_guard(expr: String) -> Result<String, minijinja::Error> {
+fn to_lua_guard(expr: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
     // §scxml-B-2: a condition — `transition/@cond`, `<if>`, `<elseif>` —
     // evaluated under ECMAScript truthiness, which counts `0` and `""` as
     // false where Lua counts them as true.
     if expr.is_empty() {
         return Ok("true".to_string());
     }
-    Ok(match crate::ecmascript::to_lua_condition(&expr) {
+    Ok(match crate::ecmascript::to_lua_condition(&expr, scope) {
         Ok(lua) => lua,
         Err(err) => lua_that_raises("cond", &expr, err),
     })
 }
 
-fn to_lua_script(script: String) -> Result<String, minijinja::Error> {
+fn to_lua_script(script: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
     // §scxml-B-2: a `<script>` body — the one place the datamodel admits
     // statements rather than a single expression.
     if script.is_empty() {
         return Ok(String::new());
     }
-    Ok(match crate::ecmascript::to_lua_script(&script) {
+    Ok(match crate::ecmascript::to_lua_script(&script, scope) {
         Ok(lua) => lua,
         Err(err) => lua_that_raises("script", &script, err),
     })
@@ -419,11 +444,15 @@ fn lua_that_raises(what: &str, source: &str, err: crate::ecmascript::ExprError) 
 /// and the string only appeared because the parse error triggered a
 /// fallback. The reading is decidable without running anything, so it is
 /// made where it can be seen.
-fn to_lua_data_content(content: String) -> Result<String, minijinja::Error> {
+fn to_lua_data_content(content: String, scope: &DocumentScope) -> Result<String, minijinja::Error> {
     if content.is_empty() {
         return Ok(String::new());
     }
-    if let Ok(lua) = crate::ecmascript::to_lua_value(&content) {
+    // The scope reaches here too, and it changes an answer: `<data>Date
+    // </data>` is a *string*, not a reach for a global SCE lacks. Reading
+    // it as an expression would have bound the name; the refusal sends it
+    // to the string branch below, which is the reading §scxml-B-2 wants.
+    if let Ok(lua) = crate::ecmascript::to_lua_value(&content, scope) {
         return Ok(lua);
     }
     // XML is the reading this filter must *not* make. §scxml-B-2 orders the
@@ -682,7 +711,7 @@ const GO_KEYWORDS: &[&str] = &[
 ];
 
 /// Register all Go-specific filters on the minijinja environment.
-pub fn register_go_filters(env: &mut minijinja::Environment) {
+pub fn register_go_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
@@ -698,12 +727,7 @@ pub fn register_go_filters(env: &mut minijinja::Environment) {
     env.add_filter("to_in_predicate_go", to_in_predicate_go);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("to_machine_name", to_pascal_case);
-    // ECMAScript→Lua transformation filters (shared with Rust)
-    env.add_filter("to_lua_expr", to_lua_expr);
-    env.add_filter("to_lua_data_content", to_lua_data_content);
-    env.add_filter("to_lua_guard", to_lua_guard);
-    env.add_filter("to_lua_script", to_lua_script);
-    env.add_filter("escape_lua", escape_lua);
+    register_ecmascript_filters(env, scope);
     // Cross-engine compatibility filters
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
@@ -829,7 +853,7 @@ fn escape_cpp(text: String) -> String {
 /// here (not just on Rust/Go) because the C11 backend transpiles
 /// ECMAScript expressions to Lua at codegen time and embeds the result
 /// as a C string literal passed through `luaL_dostring`.
-pub fn register_c11_filters(env: &mut minijinja::Environment) {
+pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     // §scxml-B-2: the C11 backend has no file to load at runtime — RFC
     // §synth-5-J-1 forbids a runtime `fopen` in `sce-c-runtime` — so the
     // shared semantics travel into the generated source as a C string
@@ -852,11 +876,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
     env.add_filter("escape_c", escape_c);
     env.add_filter("escape_json_string", escape_json_string);
-    env.add_filter("to_lua_expr", to_lua_expr);
-    env.add_filter("to_lua_data_content", to_lua_data_content);
-    env.add_filter("to_lua_guard", to_lua_guard);
-    env.add_filter("to_lua_script", to_lua_script);
-    env.add_filter("escape_lua", escape_lua);
+    register_ecmascript_filters(env, scope);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("read_data_src", read_data_src);
@@ -1151,7 +1171,7 @@ fn to_state_class_name(name: String) -> String {
 /// datamodel variables live inside the `IScriptEngine` session behind
 /// string-keyed accessors, so SCXML author identifiers never reach a
 /// Python parser either.
-pub fn register_python_filters(env: &mut minijinja::Environment) {
+pub fn register_python_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
@@ -1164,10 +1184,7 @@ pub fn register_python_filters(env: &mut minijinja::Environment) {
     // identical to those backends; templates pipe author expressions
     // through `| to_lua_expr | py_string_literal` so the generated
     // module hands Lua text (not Python) to the script engine.
-    env.add_filter("to_lua_expr", to_lua_expr);
-    env.add_filter("to_lua_data_content", to_lua_data_content);
-    env.add_filter("to_lua_guard", to_lua_guard);
-    env.add_filter("to_lua_script", to_lua_script);
+    register_ecmascript_filters(env, scope);
     env.add_filter("to_event_variant", to_event_variant);
     env.add_filter("to_state_variant", to_state_variant);
     env.add_filter("to_machine_name", to_pascal_case);
