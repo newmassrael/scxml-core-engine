@@ -240,23 +240,12 @@ const PASTE_BACKENDS: &[Backend] = &[
                 key_at: 0,
                 value_at: 1,
             },
+            // One marker for all four send shapes: they used to write the
+            // map directly (`paramsP["k"] = v`) and now go through
+            // `putParam(paramsP, "k", v)`, which is what lets a repeated
+            // name become an Array instead of overwriting.
             Extractor::HostPairs {
-                marker: "paramsP[",
-                key_at: 0,
-                value_at: 1,
-            },
-            Extractor::HostPairs {
-                marker: "paramsT[",
-                key_at: 0,
-                value_at: 1,
-            },
-            Extractor::HostPairs {
-                marker: "paramsE[",
-                key_at: 0,
-                value_at: 1,
-            },
-            Extractor::HostPairs {
-                marker: "paramsI[",
+                marker: "putParam(params",
                 key_at: 0,
                 value_at: 1,
             },
@@ -480,6 +469,15 @@ fn extract_lua_tables(source: &str, marker: &str) -> (Vec<(String, String)>, Vec
     let mut errors: Vec<String> = Vec::new();
     let mut found = Vec::new();
     let lua = mlua::Lua::new();
+    // The emitted payload is `_scxml_params({"k", v}, …)` rather than a bare
+    // table constructor, because a constructor cannot express a repeated
+    // `<param>` name — Lua's last key wins and the first value is gone. So the
+    // builder has to be in scope to read the payload back, and loading the
+    // shared file rather than reimplementing it is what keeps this gate
+    // measuring what production assembles.
+    lua.load(sce_build::filters::ECMA_SEMANTICS_LUA)
+        .exec()
+        .expect("the shared semantics file loads");
 
     for line in source.lines() {
         let Some(at) = line.find(marker) else {
@@ -500,7 +498,9 @@ fn extract_lua_tables(source: &str, marker: &str) -> (Vec<(String, String)>, Vec
             }
         };
         let trimmed = lua_source.trim();
-        if !(trimmed.starts_with('{') && trimmed.ends_with('}')) {
+        let is_table = trimmed.starts_with('{') && trimmed.ends_with('}');
+        let is_params_call = trimmed.starts_with("_scxml_params(") && trimmed.ends_with(')');
+        if !(is_table || is_params_call) {
             continue;
         }
 
@@ -743,7 +743,18 @@ fn extract_lua_keys(source: &str, marker: &str) -> (Vec<String>, Vec<String>) {
                 }
             };
             let mut rest = lua_source.as_str();
-            while let Some(at) = rest.find("[\"") {
+            // Two spellings, because the payload is no longer always a table
+            // constructor: a `<param>` name reaches the Lua layer as the index
+            // `["name"] = v` where the emitter still writes a table, and as
+            // the pair `{"name", v}` where it writes `_scxml_params(...)` —
+            // which is what lets a repeated name become an Array instead of
+            // overwriting. Both put the name in a Lua string literal one
+            // character in, which is all this scan depends on.
+            let next_key = |s: &str| match (s.find("[\""), s.find("{\"")) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            while let Some(at) = next_key(rest) {
                 let tail: Vec<char> = rest[at + 1..].chars().collect();
                 match scan_literal(&tail, 0) {
                     Some((raw_key, _)) => {
