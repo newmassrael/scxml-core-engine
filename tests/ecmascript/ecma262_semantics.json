@@ -734,6 +734,56 @@
       "clause": "15.2.3.14 Object.keys names every own enumerable property"
     },
     {
+      "group": "json",
+      "note": "The AUTHOR's side of JSON, which is a different path from the one an event payload takes: `_event.data` is decoded by the host before a document ever sees it, so an engine can decode every event correctly and still have no `JSON.parse` for a `<script>` to call. No committed document reaches for it, which is why nothing noticed.",
+      "setup": "",
+      "source": "JSON.parse('{\"a\":1}').a",
+      "form": "value",
+      "expect": {"number": 1},
+      "clause": "15.12.2 JSON.parse yields a value whose properties are addressable"
+    },
+    {
+      "group": "json",
+      "setup": "",
+      "source": "JSON.parse('[10,20,30]').length",
+      "form": "value",
+      "expect": {"number": 3},
+      "clause": "15.12.2 a JSON array parses to an Array"
+    },
+    {
+      "group": "json",
+      "setup": "",
+      "source": "JSON.parse('\"x\"')",
+      "form": "value",
+      "expect": {"string": "x"},
+      "clause": "15.12.2 a JSON text may be a scalar, not only an object"
+    },
+    {
+      "group": "json",
+      "note": "An Array rather than an object, so the claim survives the key order this table deliberately does not fix.",
+      "setup": "",
+      "source": "JSON.stringify([1,2])",
+      "form": "value",
+      "expect": {"string": "[1,2]"},
+      "clause": "15.12.3 JSON.stringify of an Array"
+    },
+    {
+      "group": "json",
+      "setup": "",
+      "source": "JSON.parse(JSON.stringify([7,8]))[1]",
+      "form": "value",
+      "expect": {"number": 8},
+      "clause": "15.12.2 / 15.12.3 the two are inverses over this datamodel's values"
+    },
+    {
+      "group": "json",
+      "setup": "",
+      "source": "typeof JSON.parse('{\"a\":1}')",
+      "form": "value",
+      "expect": {"string": "object"},
+      "clause": "15.12.2 the result of parsing a JSON object is an object"
+    },
+    {
       "group": "builtins",
       "note": "The constructors called as functions — the conversion an SCXML author reaches for when a payload arrives as text.",
       "setup": "",

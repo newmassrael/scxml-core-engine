@@ -428,6 +428,36 @@
       "source": "Object.keys(o).length"
     },
     {
+      "expression": "JSON.parse(\"{\\\"a\\\":1}\").a",
+      "setup": "",
+      "source": "JSON.parse('{\"a\":1}').a"
+    },
+    {
+      "expression": "#JSON.parse(\"[10,20,30]\")",
+      "setup": "",
+      "source": "JSON.parse('[10,20,30]').length"
+    },
+    {
+      "expression": "JSON.parse(\"\\\"x\\\"\")",
+      "setup": "",
+      "source": "JSON.parse('\"x\"')"
+    },
+    {
+      "expression": "JSON.stringify({1, 2})",
+      "setup": "",
+      "source": "JSON.stringify([1,2])"
+    },
+    {
+      "expression": "JSON.parse(JSON.stringify({7, 8}))[2]",
+      "setup": "",
+      "source": "JSON.parse(JSON.stringify([7,8]))[1]"
+    },
+    {
+      "expression": "_typeof(JSON.parse(\"{\\\"a\\\":1}\"))",
+      "setup": "",
+      "source": "typeof JSON.parse('{\"a\":1}')"
+    },
+    {
       "expression": "String(42)",
       "setup": "",
       "source": "String(42)"

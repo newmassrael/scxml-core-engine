@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.10 + B.2: an event a HOST injects carries a payload, and the
+  document reads it as a value rather than as text.
+
+  This is the one direction nothing in the repository asked. Every integration
+  fixture drives its machine with `raise_external(event, "", "")` — measured
+  2026-08-16, the payload argument is the empty string in every call on every
+  channel — so the whole host-to-datamodel edge was covered by nothing. The
+  W3C suite does not reach it either: its payloads originate INSIDE the
+  document (`<send><content>`, `<param>`, `<donedata>`), which is a different
+  code path that each backend implements separately.
+
+  It is also the edge a supervising host actually uses. `examples/ai_loop`
+  answers its machine with `{"done":true}` and the document selects on
+  `_event.data.done`; the same shape reaches SCE from any embedder that has a
+  JSON payload and a state machine to give it to.
+
+  Two claims, two clauses, and a `<final>` for each failure so a red says
+  which half broke rather than only that something did:
+
+    settled   both — a JSON object arrived as an object, and text as text
+    mangled   the JSON payload did not become addressable properties
+    garbled   the plain-text payload did not arrive as that string
+
+  The first guard tests `_event.data` before indexing it. That is not defensive
+  style: a backend that drops the payload leaves the variable nil, and
+  `nil.milestone` raises where `undefined.milestone` would — the run would then
+  be reporting an evaluation error rather than the missing payload, and W3C
+  §5.9.1 (a cond that raises is false) would send it to the same place with a
+  different reason. Short-circuiting keeps the answer about the payload.
+
+  `hold the line` starts with a letter on purpose: cpp `EventDataHelper::
+  jsonStringToScriptValue` attempts a JSON parse only for bodies that open
+  with a JSON-eligible character, so a word-initial payload exercises the
+  raw-string fallback rather than the parser.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="event_data_arrives_as_sent" datamodel="ecmascript" initial="waiting">
+
+  <state id="waiting">
+    <transition event="payload"
+                cond="_event.data &amp;&amp; _event.data.milestone === 'refined' &amp;&amp; _event.data.turns === 2"
+                target="heard"/>
+    <transition event="payload" target="mangled"/>
+  </state>
+
+  <state id="heard">
+    <transition event="note" cond="_event.data === 'hold the line'" target="settled"/>
+    <transition event="note" target="garbled"/>
+  </state>
+
+  <final id="settled"/>
+  <final id="mangled"/>
+  <final id="garbled"/>
+</scxml>

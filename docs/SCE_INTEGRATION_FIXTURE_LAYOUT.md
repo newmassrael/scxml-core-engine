@@ -171,6 +171,32 @@ the wrongly-entered state's `<onentry>` sends the opening prompt, so the
 supervised session was re-introduced to itself every time a person answered a
 dialog — on both AOT engines, with every W3C fixture green.
 
+`event_data_arrives_as_sent` covers W3C SCXML 5.10 + B.2: a payload a HOST
+injects reaches the datamodel as a value. Every other fixture here drives its
+machine with an empty payload — measured 2026-08-16, the data argument was
+`""` in every call on every channel — so the boundary an embedder calls was
+covered by nothing, while the payload paths the W3C IRP suite does exercise
+(`<send><content>`, `<param>`, `<donedata>`) all originate INSIDE the document
+and are lowered on separate code.
+
+The document asks two claims and lands each failure in a `<final>` of its own:
+`mangled` when a JSON object did not become addressable properties, `garbled`
+when text did not arrive as that string, `settled` when both held. The first
+guard tests `_event.data` before indexing it, which is not defensive style: a
+backend that drops the payload leaves the variable nil, and the run would then
+report an evaluation error rather than the missing payload.
+
+Three defects, all silent, all found by giving the fixture a channel. C11 built
+the assignment as Lua SOURCE (`_event.data = (<raw>)`) and discarded the load
+result, so a JSON object parsed as a Lua array, a JSON object with a string
+value did not parse at all and left the PREVIOUS event's data in place, and a
+payload was executable code. C++ AOT emitted `currentEventMetadata_` only for
+machines hosting an `<invoke>`, so the base engine's public `processEvent(Event,
+const EventMetadata &)` did not compile for any other machine; and once it did,
+that overload stored the metadata without populating the policy's pending
+fields, which is what `_event` is bound from. The `<content>` path was green
+throughout on all three.
+
 `parallel_completion_raises_done_state` covers W3C SCXML 3.4 + 3.7: a
 `<parallel>` is done once every region has reached a `<final>`, and that raises
 `done.state.<parallel>`. A parallel owns no `<final>` of its own — the regions
