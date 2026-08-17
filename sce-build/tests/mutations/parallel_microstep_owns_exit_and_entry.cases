@@ -25,6 +25,14 @@
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
 mutation_targets sce/include/static/StaticExecutionEngine.h
+# The three suites the round reds, measured: `AiLoopAotTest.TheBudgetEndsThe
+# RunFromWhereverTheCycleIs`, `ParallelCurrentStateAotTest.SettlingCurrentState
+# DoesNotDisturbTheOtherRegion` and `ParallelSelfTransitionKeepsItsLeafAotTest.
+# TheSelfTransitionedRegionAnswersTheNextEvent`. Any one of them weakening is
+# enough to matter, so all three are named.
+mutation_oracles tests/integration/AiLoopAotTest.cpp
+mutation_oracles tests/integration/ParallelCurrentStateAotTest.cpp
+mutation_oracles tests/integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
 
 # ── Exit and entry applied twice ───────────────────────────────────
 #

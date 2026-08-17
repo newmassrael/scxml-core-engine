@@ -174,6 +174,48 @@ fn declared_targets(casefile: &str) -> Vec<String> {
         .collect()
 }
 
+/// The oracles a casefile resolves: the test whose assertions produced its
+/// verdicts, plus the casefile itself.
+///
+/// The other half of what retires a verdict. `declared_targets` above answers
+/// "what does a case break"; this answers "what noticed" — and a change to the
+/// noticing side invalidates the last verdict exactly as a change to the broken
+/// side does. Asked of the harness rather than derived here, for the reason the
+/// harness's own header gives: a second reader of the casefile vocabulary is a
+/// copy, and the copy is what goes stale.
+fn declared_oracles(casefile: &str) -> Vec<String> {
+    let out = Command::new("scripts/mutate")
+        .args(["--declares", casefile])
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --declares");
+    assert!(
+        out.status.success(),
+        "`scripts/mutate --declares {casefile}` failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("oracle\t"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Every path git tracks, for asking whether a declaration names a real file
+/// rather than one somebody moved.
+fn tracked_files() -> BTreeSet<String> {
+    let out = Command::new("git")
+        .args(["ls-files"])
+        .current_dir(repo_root())
+        .output()
+        .expect("git ls-files");
+    assert!(out.status.success(), "git ls-files failed");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
 /// Copy a file or directory recursively, preserving the executable bit —
 /// `scripts/gates/*.sh` and `scripts/mutate` are run, not read.
 fn copy_tree(from: &Path, to: &Path) {
@@ -587,6 +629,105 @@ fn run_body_named(workflow: &str, step_name: &str) -> String {
         .map(|line| line.get(pad..).unwrap_or("").to_string())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Every casefile names the test that caught it, and the name resolves.
+///
+/// A casefile declares a SELECTOR — `--test datamodel_read_accessor`, `-R
+/// '^IntegrationTests$'` — and a selector is not a path, so nothing about it
+/// tells the gate which file to watch. Until this existed the answer was
+/// nothing: 19 of the 30 casefiles had no path on the oracle side at all, and
+/// the remaining 11 were covered by the accident that their cases mutate their
+/// own test file.
+///
+/// Two claims, and the second is what keeps the first from being decorative:
+/// every casefile resolves at least one oracle beyond itself, and every path it
+/// names is tracked. An oracle naming a file somebody moved is a watch on
+/// nothing, and it would read exactly like a watch that works.
+#[test]
+fn every_casefile_names_the_test_that_catches_it() {
+    let corpus = casefiles();
+    assert!(
+        corpus.len() >= 20,
+        "the sweep found only {} casefile(s), so this test is not measuring the \
+         corpus it claims to",
+        corpus.len()
+    );
+    let tracked = tracked_files();
+
+    for casefile in &corpus {
+        let oracles = declared_oracles(casefile);
+        assert!(
+            oracles.contains(casefile),
+            "⚠ {casefile} does not name ITSELF as an oracle. Its text decides \
+             which edit is applied and where, so a change to it retires the \
+             verdict as surely as a change to the source under study — and a \
+             casefile edit selecting no round is measured, not hypothetical. \
+             Got: {oracles:?}"
+        );
+        let tests: Vec<&String> = oracles.iter().filter(|path| *path != casefile).collect();
+        assert!(
+            !tests.is_empty(),
+            "⚠ {casefile} names no test-side oracle. Weaken the assertion that \
+             catches its cases and every one of them keeps the verdict it last \
+             earned. A cargo selector resolves this from `--test`; a ctest one \
+             cannot, and declares `mutation_oracles` instead — measured from \
+             which tests the round actually reds, not guessed."
+        );
+        for path in tests {
+            assert!(
+                tracked.contains(path.as_str()),
+                "⚠ {casefile} names the oracle `{path}`, which git does not \
+                 track. A path that moved makes this a watch on nothing."
+            );
+        }
+    }
+}
+
+/// A change to the test that catches a case selects that case's round.
+///
+/// The property K2 named and the corpus did not have. Driven off every
+/// casefile's own declaration, so it covers the corpus rather than a sample,
+/// and asserted in one gate invocation because the gate reads all thirty
+/// declarations on every call.
+#[test]
+fn a_change_to_an_oracle_selects_the_round_it_belongs_to() {
+    let corpus = casefiles();
+    let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for casefile in &corpus {
+        for oracle in declared_oracles(casefile) {
+            owners.entry(oracle).or_default().push(casefile.clone());
+        }
+    }
+    let every_oracle: Vec<&str> = owners.keys().map(String::as_str).collect();
+
+    let (ok, chosen, log) = selection_for(&every_oracle);
+    assert!(ok, "the gate failed while choosing:\n{log}");
+    for casefile in &corpus {
+        assert!(
+            chosen.contains_key(casefile),
+            "⚠ every oracle in the corpus was in the change set and {casefile} \
+             was still not selected, so nothing re-proves its cases when the \
+             test that catches them changes. Chose: {chosen:?}\n{log}"
+        );
+    }
+
+    // And exactly, for an oracle that belongs to one casefile alone: selecting
+    // everything on every change would be the other failure — a corpus sweep
+    // on every push, which is the version of this gate that gets switched off.
+    let (sole, owner) = owners
+        .iter()
+        .find(|(oracle, files)| files.len() == 1 && oracle.ends_with(".rs"))
+        .map(|(oracle, files)| (oracle.clone(), files[0].clone()))
+        .expect("some oracle belongs to exactly one casefile");
+    let (ok, chosen, log) = selection_for(&[&sole]);
+    assert!(ok, "the gate failed while choosing:\n{log}");
+    assert_eq!(
+        chosen.keys().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from([owner.clone()]),
+        "⚠ `{sole}` is the oracle of `{owner}` and of nothing else, so it must \
+         select that round and no other.\n{log}"
+    );
 }
 
 /// The `env:` mapping of the workflow step carrying the given `name:`.

@@ -76,12 +76,23 @@ fn fixture_with_selector(selector: &str, target_body: &str, cases: &str) -> Fixt
     let target = dir.path().join("subject.txt");
     fs::write(&target, target_body).expect("write the subject");
 
+    // The oracle side of the declaration, which the harness requires of every
+    // casefile: a selector says which suite runs, never which file holds the
+    // assertions, so a casefile that names none leaves its verdicts unwatched
+    // when that file is weakened. A `--lib` selector — what these fixtures use
+    // — derives nothing, so it is spelled. A stand-in file rather than the
+    // subject, because naming the subject would make the two sides of the
+    // verdict one file and quietly rob every test below of the distinction.
+    let oracle = dir.path().join("oracle.txt");
+    fs::write(&oracle, "the assertions that would catch it\n").expect("write the oracle");
+    let oracle_path = oracle.display().to_string();
+
     let path = target.display().to_string();
     let casefile = dir.path().join("fixture.cases");
     fs::write(
         &casefile,
         format!(
-            "{selector}\nmutation_targets {path}\n\n{}",
+            "{selector}\nmutation_targets {path}\nmutation_oracles {oracle_path}\n\n{}",
             // `{:?}` on the path yields a quoted, escaped literal, which is
             // what a Python case body needs to name it.
             cases.replace("TARGET", &format!("{path:?}"))
