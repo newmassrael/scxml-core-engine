@@ -113,16 +113,35 @@ jobs:
         # Through the runner, like the run step below: one spelling for the
         # selection and for the rounds means the probe cannot answer for a
         # different set than the one that executes.
-        SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > selected.txt
-        cat selected.txt
-        echo "count=$(grep -c . selected.txt || true)" >> "$GITHUB_OUTPUT"
-        needs_ctest=no
-        while read -r casefile; do
-          [ -n "$casefile" ] || continue
-          if scripts/mutate --declares "$casefile" | grep -qx "runner	ctest"; then
-            needs_ctest=yes
-          fi
-        done < selected.txt
+        #
+        # That includes the runner column. It used to be re-derived here, once
+        # per selected casefile, as `scripts/mutate --declares "$f" | grep -q`
+        # — and under `set -o pipefail` a pipeline reports its LAST failing
+        # member: `grep -q` leaves at the first match, the writer takes
+        # SIGPIPE, and the status is 141. So this step answered "no CMake tree
+        # needed" on every push that needed one (20/20 measured, not a race),
+        # skipped the configure step below, and the rounds refused for the
+        # want of a tree this step had just declined to build. Five casefiles
+        # — ai_loop_history_cpp, c11_datamodel_reader and the three parallel_*
+        # — went 34 commits without one CI round because of it.
+        #
+        # The gate already computes the runner in order to refuse, so it says
+        # it: each line is `casefile<TAB>runner`.
+        #
+        # RUNNER_TEMP rather than the workspace, so this step writes nothing
+        # into the tree. That is what lets a test execute this script against
+        # a real checkout instead of asserting over a copy of it —
+        # `mutation_rounds_selection.rs` does exactly that, which is the only
+        # shape of test the defect above could not have survived.
+        selected="${RUNNER_TEMP:?}/selected.txt"
+        SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > "$selected"
+        cat "$selected"
+        echo "count=$(grep -c . "$selected" || true)" >> "$GITHUB_OUTPUT"
+        if awk -F'\t' '$2 == "ctest" { found = 1 } END { exit !found }' "$selected"; then
+          needs_ctest=yes
+        else
+          needs_ctest=no
+        fi
         echo "needs_ctest=$needs_ctest" >> "$GITHUB_OUTPUT"
         echo "ctest tree required: $needs_ctest"
 
