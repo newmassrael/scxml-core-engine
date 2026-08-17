@@ -26,6 +26,13 @@ mutation_runtime_targets scripts/gates/mutation-rounds.sh
 # workflow is a runtime target too. The gate answering correctly was never the
 # half that broke.
 mutation_runtime_targets .github/workflows/mutation-rounds.yml
+# The lane's tree preparation, executed the same way by
+# `the_lane_prepares_the_tree_the_rounds_judge`: the script the step now calls,
+# and the helper it delegates the configure to. Both are read at run time, and
+# both carried a defect that only a runner could meet — a configure with no
+# generator built first.
+mutation_runtime_targets scripts/prepare_ctest_tree.sh
+mutation_runtime_targets scripts/gates/lib.sh
 
 # ── The match stops being exact ────────────────────────────────────
 #
@@ -118,6 +125,61 @@ PY
 # A case against the workflow rather than the gate on purpose: the gate was
 # right the whole time, and a corpus that only mutates the gate would have
 # stayed green through all 34 of those commits.
+
+mutation_case "the lane writes its own recipe for the tree again" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     "      run: scripts/prepare_ctest_tree.sh",
+     """      run: |
+        set -euo pipefail
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build --parallel "$(nproc)\"""")
+PY
+
+# ── The tree is configured without the generator it needs ──────────
+#
+# The defect verbatim. A runner's checkout has no `target/`, the configure
+# resolves `sce-codegen` and stops with a FATAL_ERROR without one, and this is
+# the line that makes sure there is one. Nothing on a developer's machine can
+# feel its absence — every workstation here carries a built generator — which
+# is why the case has to be a mutation and the test has to run in a fixture
+# that has none.
+
+mutation_case "the tree is configured without the generator it requires" <<'PY'
+edit("scripts/gates/lib.sh",
+     """    sce_gate_codegen >/dev/null \\
+        || sce_gate_fail "could not provide sce-codegen, which configuring $SCE_MAIN_BUILD_DIR requires\"""",
+     "    true")
+PY
+
+# ── One step is narrowed and the other is not ──────────────────────
+#
+# The selection decides whether a CMake tree gets configured; the rounds decide
+# what runs in it. An input that reaches one and not the other makes the lane
+# prepare for one set and judge another — the asymmetry this lane already paid
+# for, in its other direction.
+
+mutation_case "the dispatch narrows the rounds but not the selection" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """        # Both steps, or the selection and the run would answer for different
+        # sets — the shape of defect this lane already paid for once.
+        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+      run: scripts/gate mutation-rounds""",
+     "      run: scripts/gate mutation-rounds")
+PY
+
+# ── The tree is configured and never built ─────────────────────────
+#
+# `scripts/mutate` builds its own baseline with the output discarded, so a tree
+# that does not compile surfaces there as a round that proves nothing rather
+# than as the build failure it is. The first build in the open is what makes
+# that attributable.
+
+mutation_case "the prepared tree is never built" <<'PY'
+edit("scripts/prepare_ctest_tree.sh",
+     """cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(nproc)" \\
+    || sce_gate_fail "the main tree does not build; the rounds below it would have nothing to judge\"""",
+     "true")
+PY
 
 mutation_case "the lane derives the runner in its own shell again" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",

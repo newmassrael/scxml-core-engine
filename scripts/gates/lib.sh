@@ -136,6 +136,27 @@ sce_gate_http_fixture_server() {
 sce_main_build_dir() {
     SCE_MAIN_BUILD_DIR="${SCE_W3C_BUILD_DIR:-build}"
 
+    # The generator this tree is built with, resolved before anything asks
+    # CMake for anything.
+    #
+    # `cmake/SCEFindCodegen.cmake` searches `target/{debug,release}` and PATH
+    # and stops with a FATAL_ERROR when it finds nothing, so a configure run in
+    # a checkout that has no `target/` cannot succeed — and a configure is
+    # exactly what this function does next. It was left to each caller to
+    # remember: six workflows carry a "Build sce-codegen" step ahead of the gate
+    # they run, and `mutation-rounds.yml` did not. Its ctest path was reached
+    # for the first time in 34 commits on 2026-08-17 and died at
+    # `SCEFindCodegen.cmake:55` before a round ran.
+    #
+    # Unconditional rather than inside the configure branch below, because a
+    # ready tree needs the binary too: CI restores `build/CMakeCache.txt` from a
+    # cache, the cache names a `SCE_CODEGEN` path from an earlier run, and every
+    # generator call then fails with the empty error that module's header
+    # describes. `sce_codegen_require` returns in one process when the tree
+    # already holds a current binary, so the ready case pays nothing for this.
+    sce_gate_codegen >/dev/null \
+        || sce_gate_fail "could not provide sce-codegen, which configuring $SCE_MAIN_BUILD_DIR requires"
+
     # The lane builds RelWithDebInfo under Ninja. A gate that judged a
     # differently configured binary would be reporting on something CI never
     # sees — the defect `forge-cpp` carried until its build type was pinned. An

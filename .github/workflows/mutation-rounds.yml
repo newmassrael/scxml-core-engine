@@ -43,7 +43,22 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  # A dispatch can name the casefiles to run, because otherwise the only way
+  # to exercise a given round in CI is to wait for a push that happens to
+  # touch its declared target — and waiting is what let the ctest path sit
+  # unrun for 34 commits with two defects in it. `SCE_MUTATION_ROUNDS` is the
+  # gate's own channel for a named subset, so this hands the dispatch to the
+  # gate rather than adding a second way to select.
+  #
+  # Empty means what a dispatch has always meant here: no range resolves, so
+  # the corpus runs whole.
   workflow_dispatch:
+    inputs:
+      casefiles:
+        description: >-
+          Casefiles to run, comma-separated (or `all`). Empty runs the corpus.
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -108,6 +123,11 @@ jobs:
       id: select
       env:
         SCE_GATE_CHANGED_FILE: ${{ steps.changed.outputs.file }}
+        # The dispatch's subset, read by the gate ahead of any change set. In
+        # the step's `env:` rather than its body: a `${{ }}` inside the body is
+        # a string bash never expands, and the test that executes this step
+        # would then be running something other than what CI runs.
+        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
       run: |
         set -euo pipefail
         # Through the runner, like the run step below: one spelling for the
@@ -174,6 +194,13 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-mutation-rounds-
 
+    # The build type is in the key, not only in the recipe. A cache entry is
+    # restored by prefix, and the run that first reached this path left a
+    # `CMakeCache.txt` recording `CMAKE_BUILD_TYPE=Debug` — the build type the
+    # step used to name. Restoring that into a job that now configures
+    # RelWithDebInfo does not reconfigure it: `sce_main_build_dir` refuses a
+    # tree whose recorded build type is not the one the gates judge, so the
+    # lane would go red on a cache rather than on anything in the tree.
     - name: Cache CMake Build
       if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
       uses: actions/cache@v5
@@ -182,19 +209,29 @@ jobs:
           build/CMakeCache.txt
           build/CMakeFiles
           build/_deps
-        key: ${{ runner.os }}-cmake-mutation-rounds-${{ hashFiles('**/CMakeLists.txt') }}
+        key: ${{ runner.os }}-cmake-mutation-rounds-relwithdebinfo-${{ hashFiles('**/CMakeLists.txt') }}
         restore-keys: |
-          ${{ runner.os }}-cmake-mutation-rounds-
+          ${{ runner.os }}-cmake-mutation-rounds-relwithdebinfo-
 
     # A ctest round selects from a configured tree; without one the gate
     # refuses (exit 3) rather than reporting green over what it cannot run.
     # This is the step that makes sure it never has to.
+    #
+    # Delegated for the same reason the selection above is: this step used to
+    # spell the recipe out — `cmake -S . -B build -G Ninja
+    # -DCMAKE_BUILD_TYPE=Debug` — and it was wrong twice over. It configured
+    # without building `sce-codegen`, which no runner can do (the configure
+    # resolves the generator and stops with a FATAL_ERROR), and it named a
+    # build type the gates refuse, so the half-hour it spent would have
+    # produced a tree the rounds then declined to judge. Both survived because
+    # nothing ran them: this path was first reached on 2026-08-17, 34 commits
+    # after the ctest casefiles were written.
+    #
+    # `scripts/prepare_ctest_tree.sh` is the one recipe, and the gate's refusal
+    # names it too, so a developer configuring by hand gets the tree CI gets.
     - name: Configure and build the CMake tree
       if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
-      run: |
-        set -euo pipefail
-        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-        cmake --build build --parallel "$(nproc)"
+      run: scripts/prepare_ctest_tree.sh
 
     # Delegated rather than restated: the selection, the per-round verdict and
     # the floors all live in the gate, so this lane and a developer running
@@ -204,6 +241,9 @@ jobs:
       if: steps.select.outputs.count != '0'
       env:
         SCE_GATE_CHANGED_FILE: ${{ steps.changed.outputs.file }}
+        # Both steps, or the selection and the run would answer for different
+        # sets — the shape of defect this lane already paid for once.
+        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
       run: scripts/gate mutation-rounds
 
     - name: Nothing to run
