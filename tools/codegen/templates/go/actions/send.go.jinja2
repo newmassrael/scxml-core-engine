@@ -9,7 +9,7 @@
 {% if action.idlocation and model.needs_script_engine %}
 	{
 		sendIDStr := "{{ send_id | escape_go }}"
-		p.assignVariable(`{{ action.idlocation }}`, `"` + sendIDStr + `"`)
+		p.assignVariable(`{{ action.idlocation | to_lua_location }}`, `"` + sendIDStr + `"`)
 {% endif %}
 {# ── Build event data from <param>, namelist, or <content> ── #}
 {% set has_params = action.params and action.params | length > 0 %}

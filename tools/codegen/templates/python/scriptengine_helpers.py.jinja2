@@ -506,16 +506,35 @@
         When `explicit_id` is non-empty it wins; otherwise the engine
         generates a deterministic auto-id. When `idlocation` is set the
         chosen id is written back into the datamodel so user code can
-        `<cancel sendid="..."/>` it later."""
+        `<cancel sendid="..."/>` it later.
+
+        The write goes through `execute_script`, not `set_variable`:
+        `idlocation` arrives lowered by the ECMAScript frontend and may
+        therefore be a member path (`obj.slot`, `arr[1]`), which
+        `set_variable` cannot express — it binds a global under whatever
+        string it is handed. Rust, Go and C11 all assign through a chunk
+        for the same reason."""
         sid = explicit_id if explicit_id else engine._next_auto_sendid()
         if idlocation:
             try:
-                engine._script_engine.set_variable(
-                    self._session_id, idlocation, _ScriptValue.of(sid)
+                engine._script_engine.execute_script(
+                    self._session_id,
+                    f"{idlocation} = {self._lua_string_literal(sid)}",
                 )
             except _ScriptError:
                 pass
         return sid
+
+    @staticmethod
+    def _lua_string_literal(text: str) -> str:
+        """`text` as a Lua string literal, escaping what Lua requires."""
+        escaped = (
+            text.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
+        return f'"{escaped}"'
 
     @staticmethod
     def _event_name_matches(descriptor: str, name: str) -> bool:

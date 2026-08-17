@@ -10111,7 +10111,7 @@ mod tests {
                     detail: "cannot assign to a function call".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0b54880b78b1e343","code":"expression/invalid-lvalue","stage":"expression","spec":"SCE Forge §3.4","message":"assign location \"call expression\" is not an lvalue: cannot assign to a function call"}"#,
+                r#"{"v":1,"id":"fnv1a:0b54880b78b1e343","code":"expression/invalid-lvalue","stage":"expression","spec":"SCE Forge §3.4","message":"assign location 'call expression' is not an lvalue: cannot assign to a function call"}"#,
             ),
             (
                 "forge/expression-type-coercion",

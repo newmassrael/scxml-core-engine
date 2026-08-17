@@ -3788,7 +3788,14 @@ pub enum ExprError {
     UnexpectedToken { token: String },
 
     /// Assignment target is not a legal lvalue.
-    #[error("assign location {location:?} is not an lvalue: {detail}")]
+    ///
+    /// Single-quoted like every sibling in this enum rather than
+    /// `{location:?}`: the message travels inside the generated artifact
+    /// as a Lua string literal held by a string literal of the target
+    /// language, and a double quote has to survive both escapings intact
+    /// for a reader — or for `ecmascript_acceptance_parity`, which joins
+    /// the two sides on this text — to see the whole sentence.
+    #[error("assign location '{location}' is not an lvalue: {detail}")]
     InvalidLvalue { location: String, detail: String },
 
     /// Type coercion failure in a language emitter (Rust, Go).

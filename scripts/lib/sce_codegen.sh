@@ -40,12 +40,26 @@ sce_codegen_path() {
 }
 
 # Print the path of the sce-codegen binary, building it when no profile
-# holds one. Build output goes to stderr so the path stays the only
-# thing on stdout and `$(...)` capture stays usable.
+# holds one *or when the one it holds was built from other sources*.
+# Build output goes to stderr so the path stays the only thing on stdout
+# and `$(...)` capture stays usable.
+#
+# "Or when the one it holds was built from other sources" is the whole
+# difference between a regeneration and a re-stamp. This helper used to
+# hand back whatever binary existed, so `regen_all_committed_trees.sh`
+# refreshed the W3C trees with a generator predating the very edit being
+# regenerated for — and then rebuilt, mid-script, for a later phase that
+# happened to go through cargo, leaving one commit holding trees from two
+# different generators. The binary carries a witness for exactly this
+# question and `verify-generator` reads it (`cmake/SCEFindCodegen.cmake`
+# already asks it at configure time); asking it here costs one process
+# and makes "regenerate and expect no diff" true of a tree whose sources
+# just moved.
 sce_codegen_require() {
     local root="${1:-$(git rev-parse --show-toplevel)}"
     local path
-    if path="$(sce_codegen_path "$root")"; then
+    if path="$(sce_codegen_path "$root")" \
+        && "$path" verify-generator --root "$root" >/dev/null 2>&1; then
         printf '%s\n' "$path"
         return 0
     fi

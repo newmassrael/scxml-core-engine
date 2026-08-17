@@ -364,7 +364,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                on this path. The replace-chain stays in for defensive
                escaping should a future fixture introduce them. */
             if (luaL_dostring(sm->L,
-                "{{ action.location }} = '{{ action.content | replace('\\', '\\\\') | replace("'", "\\'") | escape_c }}'") != 0) {
+                "{{ action.location | to_lua_location | escape_c }} = '{{ action.content | replace('\\', '\\\\') | replace("'", "\\'") | escape_c }}'") != 0) {
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));
@@ -534,7 +534,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                `__send_N` (parser.rs:1158) so the lua chunk's single-quoted
                literal is safe without escape handling. */
             (void)luaL_dostring(sm->L,
-                "{{ action.idlocation }} = '{{ action.auto_send_id | escape_c }}'");
+                "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
             _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
@@ -553,7 +553,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                through `EventWithMetadata`'s constructor; C11 strncpy's it
                into the meta struct's send_id field directly (jinja2-inline). */
             (void)luaL_dostring(sm->L,
-                "{{ action.idlocation }} = '{{ action.auto_send_id | escape_c }}'");
+                "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
@@ -1296,7 +1296,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                    SCXMLEventProcessor idlocation arms above and cpp
                    `actions/send.jinja2:26-35`. */
                 (void)luaL_dostring(sm->L,
-                    "{{ action.idlocation }} = '{{ action.auto_send_id | escape_c }}'");
+                    "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
 {% endif %}
 {% if action.typeexpr %}
                 /* W3C SCXML 6.2: runtime typeexpr evaluation. The static

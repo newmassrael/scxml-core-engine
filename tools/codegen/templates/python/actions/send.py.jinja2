@@ -47,7 +47,7 @@
    per 3.8.1, so the abort sentinel (caught by the per-block
    try/except in `entry_exit_actions.py.jinja2`) is what test376
    relies on, not a `return` that would also skip the next block. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if 'error.execution' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% endif %}
@@ -83,7 +83,7 @@
    the platform does not support raises `error.execution`. The processor
    set is intentionally narrow (default SCXMLEventProcessor + BasicHTTP);
    any other URI lands here. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if 'error.execution' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% endif %}
@@ -95,7 +95,7 @@
    action time, so it falls through to the resolving arm below rather than
    erroring here — this guard used to test `target` alone and swallowed every
    `<send type="BasicHTTP" targetexpr="...">` before it could reach the wire. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if 'error.communication' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% endif %}
@@ -109,7 +109,7 @@
    attributes — the spec only requires error.execution on the surrounding
    executable-content block when ALL attributes fail, which the
    block-abort wrapper already covers). #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}_http_params = self._build_http_params(engine, [
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
@@ -142,7 +142,7 @@
    anything else → `error.communication`. The runtime dispatch table
    keeps the four transports of the static arms inside one branch so
    the same `targetexpr` can name any of them. #}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {{ indent }}try:
 {{ indent }}    _resolved_target = engine._script_engine.evaluate_expression(self._session_id, {{ action.targetexpr | to_lua_expr | py_string_literal }}).to_python()
 {{ indent }}except _ScriptError:
@@ -247,7 +247,7 @@
                      or action.params or action.content or action.contentexpr
                      or action.namelist %}
 {% if has_dynamic -%}
-{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
+{{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | to_lua_location | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if action.eventexpr -%}
 {{ indent }}_evt = self._eval_event_name(engine, {{ action.eventexpr | to_lua_expr | py_string_literal }})
 {{ indent }}if _evt is None:
