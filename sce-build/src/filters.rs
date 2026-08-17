@@ -1220,13 +1220,27 @@ pub const JSON_BUILTINS_LUA: &str = include_str!("../../sce/include/scripting/js
 /// one.
 /// Split shared Lua source into the pieces the C11 embed loads separately.
 ///
-/// The split is on BLANK LINES, which is what keeps a chunk a complete Lua
-/// chunk: every definition in the shared assets is a top-level `function`
-/// separated from its neighbours by one, so a boundary never falls inside a
-/// body. That property is load-bearing rather than tidy — the generated code
-/// discards each `luaL_dostring` result, so a chunk that failed to compile
-/// would leave its definitions simply absent, and the first document to call
-/// one would fail at runtime with no reference back to here.
+/// The split is on blank lines that are OUTSIDE a function body, and the
+/// second half of that sentence is load-bearing. Each chunk is emitted as its
+/// own `luaL_dostring` whose result the generated code discards, so a chunk
+/// that failed to compile would leave its definitions simply absent and the
+/// first document to call one would fail at runtime with no reference back to
+/// here.
+///
+/// ⚠ This used to break at EVERY blank line, on the stated ground that "every
+/// definition in the shared assets is a top-level `function` separated from
+/// its neighbours by one, so a boundary never falls inside a body". That was
+/// not true: `ecma_semantics.lua` carries 25 blank lines inside bodies
+/// (measured 2026-08-18), so the property held only while the running byte
+/// count happened not to reach `MAX_CHUNK` at one of them. Adding a paragraph
+/// anywhere earlier in either file could move a boundary into a function and
+/// delete it, silently. It cost a debugging cycle when a new parser in
+/// `json_builtins.lua` was split that way and surfaced as nine unrelated C11
+/// failures.
+///
+/// Tracking depth makes the claim true by construction instead of by luck, and
+/// costs nothing: a chunk simply grows past `MAX_CHUNK` until the function it
+/// is inside ends.
 ///
 /// Public so the split can be exercised against a real interpreter rather
 /// than reviewed: `sce-build/tests/shared_lua_assets.rs` loads these chunks
@@ -1237,19 +1251,52 @@ pub fn c11_lua_chunks(text: &str) -> Vec<String> {
     const MAX_CHUNK: usize = 2500;
     let mut chunks: Vec<String> = Vec::new();
     let mut current = String::new();
+    let mut depth: usize = 0;
     for paragraph in text.split("\n\n") {
-        if !current.is_empty() && current.len() + paragraph.len() > MAX_CHUNK {
+        // `depth == 0` is the whole guard: a boundary is legal only between
+        // definitions. The shared assets write every `function` at column 0
+        // and close it with an `end` at column 0, which is what makes this
+        // countable without a Lua parser — and
+        // `the_chunker_tracks_function_depth_in_both_shared_assets` asserts
+        // the count returns to zero for each file, so a style that broke the
+        // convention would be a red rather than a silent miscount.
+        if depth == 0 && !current.is_empty() && current.len() + paragraph.len() > MAX_CHUNK {
             chunks.push(std::mem::take(&mut current));
         }
         if !current.is_empty() {
             current.push_str("\n\n");
         }
         current.push_str(paragraph);
+        depth = lua_depth_after(paragraph, depth);
     }
     if !current.is_empty() {
         chunks.push(current);
     }
     chunks
+}
+
+/// Function nesting depth after reading `paragraph`, starting from `depth`.
+///
+/// Counts only the column-0 spellings the shared Lua assets use, because that
+/// is the property being relied on rather than a general Lua parse: a
+/// `function` at column 0 opens a definition and an `end` at column 0 closes
+/// it. Anything indented belongs to a body and cannot be a boundary anyway.
+fn lua_depth_after(paragraph: &str, depth: usize) -> usize {
+    let mut depth = depth;
+    for line in paragraph.lines() {
+        if line.starts_with("function ") || line.starts_with("local function ") {
+            // A one-liner (`function f(a) return a end`) opens and closes on
+            // the same line and must not raise the depth — `ecma_semantics.lua`
+            // writes four of them, and counting them as open left the guard
+            // believing it was inside a body for the rest of the file.
+            if !line.ends_with(" end") {
+                depth += 1;
+            }
+        } else if line == "end" {
+            depth = depth.saturating_sub(1);
+        }
+    }
+    depth
 }
 
 fn c_lua_dostring_chunks(text: &str) -> String {
