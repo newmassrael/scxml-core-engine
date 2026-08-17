@@ -395,7 +395,27 @@
                 self._raise_error_execution(engine)
                 raise _ActionAbort
         if content:
-            return content
+            # W3C SCXML B.2: `content` arrives already read — the caller
+            # ran the same filter inline `<data>` and `<donedata>` text
+            # goes through, so it is a Lua expression for the value the
+            # clause's ordered readings give. Returning the author's text
+            # unread was this backend's answer to
+            # `<content>123</content>`: the string "123", where the four
+            # backends that evaluated something got a number.
+            #
+            # XML is the reading before that one, and the filter hands it
+            # back as source because only whatever binds `_event.data` can
+            # build a DOM node. Evaluating it here made W3C 561's
+            # `<books>` document an error instead.
+            if content.lstrip()[:1] == "<":
+                return content
+            try:
+                return engine._script_engine.evaluate_expression(
+                    self._session_id, content
+                ).to_python()
+            except _ScriptError:
+                self._raise_error_execution(engine)
+                raise _ActionAbort
         if not params and not namelist:
             return ""
         marshalled = {}

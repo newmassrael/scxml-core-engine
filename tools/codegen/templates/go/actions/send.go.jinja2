@@ -91,7 +91,11 @@
 		_ = eventDataStr
 {% elif action.content %}
 	{
-		eventDataStr := "{{ action.content | escape_go }}"
+		// W3C SCXML B.2: inline text takes the ordered readings, decided by
+		// the same filter inline `<data>` and `<donedata>` text goes
+		// through — see `rust/actions/send.rs.jinja2` for what reading it
+		// at run time instead did.
+		eventDataStr := "{{ action.content | to_lua_data_content | escape_go }}"
 		_ = eventDataStr
 {% else %}
 	{

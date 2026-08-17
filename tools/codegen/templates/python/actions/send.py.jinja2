@@ -27,7 +27,7 @@
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {{ indent }}self._parent_queue.append(({{ action.event | py_string_literal }}, _parent_data))
 {% endif %}
 {% elif action.target.startswith('!') %}
@@ -64,7 +64,7 @@
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_int_data))
 {% else -%}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }})
@@ -161,7 +161,7 @@
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {% if action.eventexpr -%}
 {{ indent }}try:
 {{ indent }}    _dyn_evt_name = str(engine._script_engine.evaluate_expression(self._session_id, {{ action.eventexpr | to_lua_expr | py_string_literal }}).to_python())
@@ -266,7 +266,7 @@
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
+], {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.contentexpr | to_lua_expr | py_string_literal }}, {{ action.namelist | py_string_literal }})
 {% if action.delayexpr -%}
 {{ send_indent }}engine.schedule_send(_evt, self._eval_delay_ms(engine, {{ action.delayexpr | to_lua_expr | py_string_literal }}), _sid, _data)
 {% elif action.delay_ms > 0 -%}

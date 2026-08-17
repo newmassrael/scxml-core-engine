@@ -364,11 +364,24 @@
 {% endif %}
             }
 {% elif action.content and action.event %}
-            // W3C SCXML B.2: Set event data from <content> (C++ EventDataHelper::jsonStringToScriptValue pattern)
-{% if action.delay or action.delayexpr %}
-            scheduleSend("{{ action.auto_send_id }}", {{ action.delay_ms | default(0) }}L, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = "{{ action.content | escape_kotlin }}"))
+{# W3C SCXML B.2 orders three readings, and only two of them are values
+   this side can produce. XML is the first: it becomes a DOM node, which
+   is built by whatever binds `_event.data` — both engines this backend
+   runs on open with that check — so the source text is what has to
+   arrive, unevaluated. Sending it through `JSON.stringify` instead
+   turned W3C 561's `<books>` document into a syntax error. #}
+{% set content_is_xml = (action.content | trim) is startingwith('<') %}
+{% if content_is_xml %}
+{% set content_data = '"' ~ (action.content | escape_kotlin) ~ '"' %}
 {% else %}
-            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = "{{ action.content | escape_kotlin }}"))
+{% set content_data = 'evaluateSendContent("' ~ (action.content | to_author_data_content | escape_kotlin) ~ '")' %}
+{% endif %}
+            // W3C SCXML B.2: the reading is decided at build time; a value
+            // is evaluated here and serialized, XML is handed on as source.
+{% if action.delay or action.delayexpr %}
+            scheduleSend("{{ action.auto_send_id }}", {{ action.delay_ms | default(0) }}L, {{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = {{ content_data }}))
+{% else %}
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: "", data = {{ content_data }}))
 {% endif %}
 {% elif action.contentexpr and action.event and model.needs_script_engine %}
             // W3C SCXML 5.10: Evaluate content expression

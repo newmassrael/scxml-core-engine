@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 128f5bda1db8a8695e204b38e87b8d2d3815bdde9691186823a5ecdc7374af1d
+// template-hash: 039ad389d30ffb729c7c2441931b41f36924cbf4b6013115d42ef3094467532b
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -137,6 +137,31 @@ class Test562StateMachine(
         }
     }
 
+    // W3C SCXML B.2: the value of an inline `<content>` body, serialized
+    // for transport.
+    //
+    // The reading is decided at build time — `source` is already the
+    // expression or string literal the clause's ordered readings give —
+    // and this evaluates it *here*, at send time, rather than handing the
+    // expression to whatever reads `_event.data` later. That distinction
+    // is not academic: the two engines this backend runs on disagree
+    // about what a data string is. QuickJS tries a JS evaluation before
+    // falling back; Rhino goes straight from JSON to the normalized
+    // string, so an expression handed to it arrives as its own source
+    // text. `JSON.stringify` is what both of them can read back, and it
+    // is the same shape the C++ backend transports.
+    private fun evaluateSendContent(source: String): String {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+        } catch (e: Exception) {
+            raiseInternal(Test562Event.Error.Execution)
+            ""
+        }
+    }
+
     // W3C SCXML 5.3: Assignment via script engine
     private fun executeAssign(location: String, expr: String) {
         ensureScriptEngine()
@@ -256,8 +281,9 @@ class Test562StateMachine(
                 if (!activeStateIds.add("s0")) return
 
 
-            // W3C SCXML B.2: Set event data from <content> (C++ EventDataHelper::jsonStringToScriptValue pattern)
-            send(Test562Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = "this is  a  \nstring"))
+            // W3C SCXML B.2: the reading is decided at build time; a value
+            // is evaluated here and serialized, XML is handed on as source.
+            send(Test562Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = evaluateSendContent("'this is a string'")))
             }
         }
     }

@@ -145,6 +145,31 @@
         }
     }
 
+    // W3C SCXML B.2: the value of an inline `<content>` body, serialized
+    // for transport.
+    //
+    // The reading is decided at build time — `source` is already the
+    // expression or string literal the clause's ordered readings give —
+    // and this evaluates it *here*, at send time, rather than handing the
+    // expression to whatever reads `_event.data` later. That distinction
+    // is not academic: the two engines this backend runs on disagree
+    // about what a data string is. QuickJS tries a JS evaluation before
+    // falling back; Rhino goes straight from JSON to the normalized
+    // string, so an expression handed to it arrives as its own source
+    // text. `JSON.stringify` is what both of them can read back, and it
+    // is the same shape the C++ backend transports.
+    private fun evaluateSendContent(source: String): String {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+            ""
+        }
+    }
+
     // W3C SCXML 5.3: Assignment via script engine
     private fun executeAssign(location: String, expr: String) {
         ensureScriptEngine()

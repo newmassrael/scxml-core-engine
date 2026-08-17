@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 128f5bda1db8a8695e204b38e87b8d2d3815bdde9691186823a5ecdc7374af1d
+// template-hash: 039ad389d30ffb729c7c2441931b41f36924cbf4b6013115d42ef3094467532b
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -609,7 +609,16 @@ impl StatePolicy for Test520Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        let event_data: &str = "this is some content";
+                        // W3C SCXML B.2: inline text takes the ordered readings — an expression
+                        // when it is one, XML when it opens with `<`, otherwise the string. The
+                        // same filter inline `<data>` and `<donedata>` text goes through decides
+                        // which, so one clause reaches one answer wherever `<content>` appears.
+                        //
+                        // Handing the author's text over unread made this line evaluate it *as
+                        // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
+                        // the datamodel reads 5, and whether the text was an expression at all
+                        // was discovered by an evaluation that failed.
+                        let event_data: &str = "\"this is some content\"";
 
                         // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
                         let _resolved_target: Option<String> = {
