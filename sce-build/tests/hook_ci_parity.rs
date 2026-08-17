@@ -439,6 +439,15 @@ fn verification_invocations_depth(text: &str, depth: usize) -> BTreeSet<String> 
 /// an entry cannot go stale and a new skip cannot go undeclared.
 const CI_ONLY: &[(&str, &str)] = &[
     (
+        "scripts/install_mesh_transports.sh",
+        "provisions the runner rather than verifying the tree: it builds \
+         vsomeip3, zenohcxx and CycloneDDS from source, which a push-time \
+         hook must not do. A workstation carries them already — that is why \
+         it registers 178 cases where a bare runner registers 130 — and \
+         `cpp-suite`, which the hook does run, refuses rather than report on \
+         the smaller set.",
+    ),
+    (
         "scripts/install_mnemosyne_cli.sh",
         "provisions the runner rather than verifying the tree: it is a \
          `cargo install` from the network, which a push-time hook must not \

@@ -50,7 +50,38 @@ jobs:
           libxml2-dev \
           libspdlog-dev \
           libfmt-dev \
-          libboost-dev
+          libboost-dev \
+          libboost-system-dev \
+          libboost-thread-dev \
+          libboost-filesystem-dev
+
+    # `tests/CMakeLists.txt` registers its transport suites behind
+    # `find_package(vsomeip3|zenohcxx|CycloneDDS QUIET)`, so a runner without
+    # them registers a smaller suite than this job's name claims — 130 non-c11
+    # cases against a floor of 140. The gate refused rather than report green
+    # over the remainder, which made this lane red on every push while
+    # claiming nothing about the tree. The versions live in the script, one
+    # place, checked against upstream tags.
+    # A prefix of its own rather than /usr/local: the runner image keeps its
+    # preinstalled toolchains there (the Android SDK alone is gigabytes), and
+    # a cache of that is neither restorable nor honest about what it holds.
+    # `CMAKE_PREFIX_PATH` and `LD_LIBRARY_PATH` below are what make a private
+    # prefix visible to `find_package` and to the tests that then link it.
+    - name: Cache mesh transport SDKs
+      id: transports
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/sce-mesh-transports
+        key: mesh-transports-${{ runner.os }}-${{ hashFiles('scripts/install_mesh_transports.sh') }}
+
+    - name: Build and install the mesh transport SDKs
+      if: steps.transports.outputs.cache-hit != 'true'
+      run: scripts/install_mesh_transports.sh "$HOME/.local/sce-mesh-transports"
+
+    - name: Put the transport prefix on the CMake and loader paths
+      run: |
+        echo "CMAKE_PREFIX_PATH=$HOME/.local/sce-mesh-transports" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=$HOME/.local/sce-mesh-transports/lib" >> "$GITHUB_ENV"
 
     - name: Setup Problem Matchers
       run: |
