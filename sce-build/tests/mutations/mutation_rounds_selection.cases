@@ -21,6 +21,11 @@
 
 mutation_tests -p sce-build --test mutation_rounds_selection
 mutation_runtime_targets scripts/gates/mutation-rounds.sh
+# The lane's selection step is read out of the YAML and executed by
+# `the_lane_configures_a_cmake_tree_when_the_selection_needs_one`, so the
+# workflow is a runtime target too. The gate answering correctly was never the
+# half that broke.
+mutation_runtime_targets .github/workflows/mutation-rounds.yml
 
 # ── The match stops being exact ────────────────────────────────────
 #
@@ -73,9 +78,7 @@ PY
 mutation_case "the ctest precondition runs ahead of the dry run again" <<'PY'
 edit("scripts/gates/mutation-rounds.sh",
      """if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
-    printf '%s\\n' ${SELECTED[@]+"${SELECTED[@]}"}
-    exit 0
-fi""",
+    for casefile in""",
      """if [[ ! -f build/CMakeCache.txt ]]; then
     for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
         [[ "${RUNNER_OF[$casefile]}" == "ctest" ]] \\
@@ -83,7 +86,51 @@ fi""",
     done
 fi
 if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
-    printf '%s\\n' ${SELECTED[@]+"${SELECTED[@]}"}
-    exit 0
-fi""")
+    for casefile in""")
+PY
+
+# ── The report stops naming the runner ─────────────────────────────
+#
+# The workflow has to know whether the selection contains a ctest round
+# *before* it installs anything, and the gate is the only party that has
+# already read every declaration. Dropping the column does not make the
+# question go away — it moves it somewhere else, and the somewhere else it
+# lived before was a shell pipeline that answered wrong on every push that
+# needed it.
+
+mutation_case "the dry run stops saying which runner each round needs" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     """    for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
+        printf '%s\\t%s\\n' "$casefile" "${RUNNER_OF[$casefile]}"
+    done""",
+     """    printf '%s\\n' ${SELECTED[@]+"${SELECTED[@]}"}""")
+PY
+
+# ── The lane works the runner out for itself again ─────────────────
+#
+# This is the defect verbatim, restored: `grep -q` leaves at the first match,
+# the writer takes SIGPIPE, and under `set -o pipefail` the pipeline reports
+# 141 — so the lane answers "no CMake tree needed" precisely when one is, and
+# the rounds then refuse (exit 3) for the want of the tree the step declined
+# to build. Measured 20/20, deterministic. Five casefiles went 34 commits
+# without a single CI round before anybody read the lane.
+#
+# A case against the workflow rather than the gate on purpose: the gate was
+# right the whole time, and a corpus that only mutates the gate would have
+# stayed green through all 34 of those commits.
+
+mutation_case "the lane derives the runner in its own shell again" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """        if awk -F'\\t' '$2 == "ctest" { found = 1 } END { exit !found }' "$selected"; then
+          needs_ctest=yes
+        else
+          needs_ctest=no
+        fi""",
+     """        needs_ctest=no
+        while read -r casefile _; do
+          [ -n "$casefile" ] || continue
+          if scripts/mutate --declares "$casefile" | grep -qx $'runner\\tctest'; then
+            needs_ctest=yes
+          fi
+        done < "$selected\"""")
 PY
