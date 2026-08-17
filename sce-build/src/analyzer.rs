@@ -554,6 +554,18 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             if !action.params.is_empty() {
                 model.needs_event_data_helper = Some(true);
             }
+            // Inline `<content>` is evaluated by the same helper
+            // `<donedata>` uses, for the same reason and against the same
+            // clause: §scxml-B-2 gives the text one reading wherever
+            // `<content>` appears, and `evaluateContent` is where that
+            // reading becomes a value and its typed carrier. The flag is
+            // named for the element it was written for; what it gates is
+            // the include, which this needs too. Without it the emitted
+            // C++ named `::SCE::DoneDataHelper` with no header declaring
+            // it, and W3C 179 stopped compiling.
+            if !action.content.is_empty() {
+                model.needs_donedata_helper = Some(true);
+            }
             if !action.delay.is_empty() || !action.delayexpr.is_empty() {
                 model.needs_event_scheduler = Some(true);
             }

@@ -1,0 +1,89 @@
+# Mutation cases for "inline `<content>` text is read once, at build time,
+# wherever the clause puts it".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/inline_content_has_one_reading.cases`.
+#
+# The first four restore the defect one backend at a time, because that is
+# how it existed: five backends each searched for the reading at run time,
+# in five different ways, and every one of them generated cleanly. A case
+# per backend is what says the gate sees each of them rather than noticing
+# that *something* changed.
+#
+# The last two break the gate. It compares emitted text, so a comparison
+# that stops looking at a backend checks fewer of them; and its comment
+# stripper is what lets it read emitted sources that explain the very
+# searches it looks for — a stripper that stops stripping reports the
+# explanation as the defect, which is what happened twice while this file
+# was being written.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test inline_content_has_one_reading
+mutation_targets sce-build/tests/inline_content_has_one_reading.rs
+mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/c/scriptengine.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2
+
+mutation_case "rust hands the author's text over unread again" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     '''let event_data: &str = "{{ action.content | to_lua_data_content | escape_rust }}";''',
+     '''let event_data: &str = "{{ action.content | escape_rust }}";''')
+PY
+
+mutation_case "go hands the author's text over unread again" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     '''eventDataStr := "{{ action.content | to_lua_data_content | escape_go }}"''',
+     '''eventDataStr := "{{ action.content | escape_go }}"''')
+PY
+
+# Aimed at the helper rather than a call site: `send.py.jinja2` spells the
+# same call four times, one per dispatch shape, so an anchor there names
+# one of four and the first round of this casefile mutated a site the
+# probe document does not reach — SURVIVED, with the defect live. The
+# helper is the single place the reading is consumed.
+mutation_case "python returns the author's text unread again" <<'PY'
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """            try:
+                return engine._script_engine.evaluate_expression(
+                    self._session_id, content
+                ).to_python()
+            except _ScriptError:
+                self._raise_error_execution(engine)
+                raise _ActionAbort""",
+     """            return content""")
+PY
+
+mutation_case "c11 searches for the reading at run time again" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     '''    (void)luaL_dostring(sm->L,
+        "_pending_donedata = ({{ content | to_lua_data_content | escape_c }})");''',
+     '''    (void)luaL_dostring(sm->L,
+        "do "
+          "local _c = [[{{ content | escape_c }}]]; "
+          "local _fn = load('return (' .. _c .. ')'); "
+          "local _ok = false; local _val = nil; "
+          "if _fn then _ok, _val = pcall(_fn) end; "
+          "if _ok then _pending_donedata = _val "
+          "else _pending_donedata = _c end "
+        "end");''')
+PY
+
+mutation_case "the comparison stops looking at four backends" <<'PY'
+edit("sce-build/tests/inline_content_has_one_reading.rs",
+     """    let probed: Vec<&str> = Language::ALL.iter().map(|l| l.canonical_name()).collect();""",
+     """    let probed: Vec<&str> = Language::ALL
+        .iter()
+        .filter(|l| **l == Language::Cpp)
+        .map(|l| l.canonical_name())
+        .collect();""")
+PY
+
+# The line-comment path is the load-bearing one: the C++ emitter explains
+# what it replaced in a `//` comment naming `jsonStringToScriptValue`,
+# which is exactly the term the search below looks for. Aiming this at the
+# block path instead was SURVIVED in the first round — true, and useless,
+# because no emitted block comment happens to carry a search term today.
+mutation_case "the comment stripper stops stripping line comments" <<'PY'
+edit("sce-build/tests/inline_content_has_one_reading.rs",
+     """        if (c == '/' && next == Some('/')) || (c == '#' && at_line_start) {""",
+     """        if false && ((c == '/' && next == Some('/')) || (c == '#' && at_line_start)) {""")
+PY
