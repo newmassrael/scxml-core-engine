@@ -227,8 +227,9 @@ if [[ ! -f build/CMakeCache.txt ]]; then
     done
     if (( ${#needs_ctest[@]} > 0 )); then
         sce_gate_cannot_run "no configured CMake tree at build/, and ${#needs_ctest[@]} selected casefile(s) declare a ctest selector: ${needs_ctest[*]}
-Configure and build first (the cpp-suite and w3c-c11 gates do), or run only
-the cargo casefiles with SCE_MUTATION_ROUNDS."
+Prepare one with scripts/prepare_ctest_tree.sh — the same script the lane
+runs, so the tree judged here is the tree judged there — or run only the
+cargo casefiles with SCE_MUTATION_ROUNDS."
     fi
 fi
 

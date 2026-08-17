@@ -28,10 +28,11 @@
 // repository: what the gate reads is a list of paths, and a test that had to
 // touch those paths to be selected would be editing the tree it is judging.
 //
-// One of these runs the lane's own selection step rather than the gate — see
-// `the_lane_configures_a_cmake_tree_when_the_selection_needs_one`. The gate
-// answering correctly is only half of the property, and the half that was
-// already true when the lane had been wrong for 34 commits.
+// Two of these run the lane's own shell rather than the gate — see
+// `the_lane_configures_a_cmake_tree_when_the_selection_needs_one` and
+// `the_lane_prepares_the_tree_the_rounds_judge`. The gate answering correctly
+// is only half of the property, and the half that was already true when the
+// lane had been wrong for 34 commits.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -537,6 +538,314 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
         Some("0"),
         "the cargo change set selected nothing, so the answer above says \
          nothing:\n{cargo_log}"
+    );
+}
+
+/// The `run:` body of the workflow step carrying the given `name:`, whether it
+/// is a `run: |` block or a single command on the `run:` line itself.
+///
+/// Both forms are executed here, because both are forms the runner executes.
+/// A test that only understood the block would silently stop asserting the day
+/// a step shrank to one line — which is the shape a step has once it stops
+/// carrying a recipe of its own, and therefore exactly the shape this file
+/// wants to keep.
+fn run_body_named(workflow: &str, step_name: &str) -> String {
+    let lines: Vec<&str> = workflow.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.trim() == format!("- name: {step_name}"))
+        .unwrap_or_else(|| panic!("the workflow has no step named {step_name:?}"));
+    let run_at = lines[at + 1..]
+        .iter()
+        .take_while(|line| !line.trim().starts_with("- name:"))
+        .position(|line| line.trim().starts_with("run:"))
+        .map(|offset| at + 1 + offset)
+        .unwrap_or_else(|| panic!("step {step_name:?} has no `run:`"));
+
+    let inline = lines[run_at]
+        .trim()
+        .strip_prefix("run:")
+        .expect("a run: line")
+        .trim();
+    if inline != "|" {
+        return inline.to_string();
+    }
+
+    let outer = indent_of(lines[run_at]);
+    let body: Vec<&str> = lines[run_at + 1..]
+        .iter()
+        .take_while(|line| line.trim().is_empty() || indent_of(line) > outer)
+        .copied()
+        .collect();
+    let pad = body
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| indent_of(line))
+        .min()
+        .expect("the block is not empty");
+    body.iter()
+        .map(|line| line.get(pad..).unwrap_or("").to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The `env:` mapping of the workflow step carrying the given `name:`.
+fn step_env(workflow: &str, step_name: &str) -> BTreeMap<String, String> {
+    let lines: Vec<&str> = workflow.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.trim() == format!("- name: {step_name}"))
+        .unwrap_or_else(|| panic!("the workflow has no step named {step_name:?}"));
+    let step: Vec<&str> = lines[at + 1..]
+        .iter()
+        .take_while(|line| !line.trim().starts_with("- name:"))
+        .copied()
+        .collect();
+    let env_at = match step.iter().position(|line| line.trim() == "env:") {
+        Some(at) => at,
+        None => return BTreeMap::new(),
+    };
+    let outer = indent_of(step[env_at]);
+    step[env_at + 1..]
+        .iter()
+        .take_while(|line| line.trim().is_empty() || indent_of(line) > outer)
+        .filter(|line| !line.trim().starts_with('#') && !line.trim().is_empty())
+        .filter_map(|line| line.trim().split_once(": "))
+        .map(|(key, value)| (key.to_string(), value.trim().to_string()))
+        .collect()
+}
+
+/// The step that chooses and the step that runs are handed the same inputs.
+///
+/// They are two invocations of one gate, and every input that narrows the
+/// corpus has to reach both: the first decides whether a CMake tree is
+/// configured, the second decides which rounds execute. An input that reaches
+/// only one of them makes the lane install for a set it will not run, or run a
+/// set it never prepared for — and this lane has already paid for that exact
+/// asymmetry once, when the selection answered "no tree needed" for a push
+/// whose rounds then needed one.
+///
+/// Asserted as equality between the two mappings rather than against a list
+/// written here, so an input added later is covered the day it is added.
+#[test]
+fn the_selection_and_the_rounds_are_handed_the_same_inputs() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+
+    let select = step_env(&workflow, "Which casefiles does this change reach");
+    let run = step_env(&workflow, "Run the rounds");
+
+    assert!(
+        !run.is_empty(),
+        "⚠ the rounds step declares no `env:` at all, so the comparison below \
+         would hold only by both sides being empty"
+    );
+    assert_eq!(
+        select, run,
+        "⚠ the two steps are handed different inputs. A key on only one side \
+         is the asymmetry itself: reaching only the selection makes the lane \
+         install a CMake tree for a set it will not run, and reaching only the \
+         rounds makes it run a set it never prepared for. Whichever key it is, \
+         it belongs in both `env:` blocks or in neither."
+    );
+}
+
+/// Run a shell body in a checkout that has neither a `target/` nor a `build/`,
+/// with `cmake` and `cargo` replaced by shims that record their arguments, and
+/// return the commands it ran.
+///
+/// The fixture is the environment CI has and a developer's machine does not.
+/// Every workstation in this project carries a built generator under
+/// `target/debug`, so a preparation that forgets to produce one still
+/// configures here and fails only on a runner — which is precisely what
+/// happened: the lane's ctest path was reached for the first time in 34
+/// commits on 2026-08-17 and stopped at `SCEFindCodegen.cmake:55`, "sce-codegen
+/// not found", before a single round ran.
+///
+/// The shims record rather than execute because what is under test is the
+/// recipe, not CMake: a real configure-and-build is the half-hour this lane
+/// pays in CI, and asserting over it here would buy nothing the recorded
+/// argument lists do not already say.
+fn prepared_by(body: &str) -> (Vec<String>, String) {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    copy_tree(&repo_root().join("scripts"), &root.join("scripts"));
+
+    // `scripts/gates/lib.sh` resolves the repository root with git, so the
+    // fixture has to be one. Nothing is committed: the preparation reads
+    // files, not history.
+    let init = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .output()
+        .expect("git init the fixture");
+    assert!(init.status.success(), "git init failed in the fixture");
+
+    let log = root.join("commands.log");
+    let shims = root.join("shims");
+    fs::create_dir(&shims).expect("create the shim directory");
+    write_shim(
+        &shims.join("cmake"),
+        "printf 'cmake %s\\n' \"$*\" >> \"$SCE_SHIM_LOG\"\n",
+    );
+    // The cargo shim leaves a binary behind because the real one would, and
+    // because the resolver asks again afterwards: a shim that only recorded
+    // the build would make `sce_codegen_require` report "the build produced no
+    // binary" and the preparation would fail for the fixture's reason rather
+    // than the tree's.
+    write_shim(
+        &shims.join("cargo"),
+        "printf 'cargo %s\\n' \"$*\" >> \"$SCE_SHIM_LOG\"\n\
+         mkdir -p \"$SCE_SHIM_ROOT/target/debug\"\n\
+         printf '#!/usr/bin/env bash\\nexit 0\\n' > \"$SCE_SHIM_ROOT/target/debug/sce-codegen\"\n\
+         chmod +x \"$SCE_SHIM_ROOT/target/debug/sce-codegen\"\n",
+    );
+
+    let step = root.join("step.sh");
+    fs::write(&step, body).expect("write the step script");
+
+    // `bash -e <file>` is how the runner invokes a `run:` block
+    // (`shell: /usr/bin/bash -e {0}`).
+    let out = Command::new("bash")
+        .arg("-e")
+        .arg(&step)
+        .current_dir(root)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                shims.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("SCE_SHIM_LOG", &log)
+        .env("SCE_SHIM_ROOT", root)
+        // A developer with a build directory pinned in their environment would
+        // otherwise have the fixture point at their tree.
+        .env_remove("SCE_W3C_BUILD_DIR")
+        .output()
+        .expect("run the tree preparation");
+
+    let report = format!(
+        "--- stdout ---\n{}\n--- stderr ---\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success(),
+        "the tree preparation failed in a checkout with no target/ and no \
+         build/ — which is every runner:\n{report}"
+    );
+    let commands = fs::read_to_string(&log)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    (commands, report)
+}
+
+fn write_shim(path: &Path, body: &str) {
+    fs::write(path, format!("#!/usr/bin/env bash\n{body}")).expect("write a shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+            .expect("make the shim executable");
+    }
+}
+
+/// A recorded `cmake` invocation that configures a tree rather than building
+/// one.
+fn is_configure(command: &str) -> bool {
+    command.starts_with("cmake ") && !command.contains("--build")
+}
+
+/// The lane prepares the tree the rounds judge, by the same recipe the gates
+/// judge it with.
+///
+/// Its sibling above asserts that the lane ASKS for a tree when the selection
+/// needs one. This one asserts that what it then produces is a tree — and the
+/// distinction is not academic: the lane got the asking right on 2026-08-17,
+/// reached its own configure step for the first time in 34 commits, and went
+/// red inside it.
+///
+/// Two independent defects were in that one step, and both are the same shape:
+/// a recipe written out here instead of delegated.
+///
+///   * `cmake -S . -B build` with no generator built first. The configure
+///     resolves `sce-codegen` and stops with a FATAL_ERROR without one
+///     (`cmake/SCEFindCodegen.cmake`), so the step could not have worked on any
+///     runner. Every sibling lane that configures this tree carries a "Build
+///     sce-codegen" step; this one did not, and nothing said so because nothing
+///     ran it.
+///   * `-DCMAKE_BUILD_TYPE=Debug`, against the `RelWithDebInfo` every gate
+///     requires — `sce_main_build_dir` refuses a tree configured any other way,
+///     in as many words. The lane would have built a tree (with AddressSanitizer
+///     on, per the configure's own log) that the gate it exists to serve would
+///     then have rejected.
+///
+/// So the assertion is not "the step names a build type"; it is that the step's
+/// configure IS the gates' configure, compared by running both. A recipe
+/// restated here can drift from the one the gates use; a delegated one cannot.
+#[test]
+fn the_lane_prepares_the_tree_the_rounds_judge() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let step = run_body_named(&workflow, "Configure and build the CMake tree");
+    assert!(
+        !step.contains("${{"),
+        "⚠ the step interpolates a workflow expression, which bash sees \
+         literally — this test would be running a different string than CI \
+         does. Move the expression into the step's `env:`:\n{step}"
+    );
+
+    let (lane, lane_log) = prepared_by(&step);
+    // What the gates do when they need this tree, run the same way. The
+    // comparison is between two executions rather than against a written-down
+    // expectation, so it keeps holding through a change to the configure and
+    // fails the moment the lane stops making the same call.
+    let (gate, gate_log) = prepared_by("source scripts/gates/lib.sh\nsce_main_build_dir\n");
+
+    let first_cmake = lane
+        .iter()
+        .position(|command| command.starts_with("cmake "))
+        .unwrap_or_else(|| {
+            panic!("⚠ the step ran no cmake at all, so it prepares nothing:\n{lane_log}")
+        });
+    assert!(
+        lane[..first_cmake]
+            .iter()
+            .any(|command| command.contains("--bin sce-codegen")),
+        "⚠ the step configures before anything builds sce-codegen. A runner's \
+         checkout has no `target/`, the configure resolves the generator and \
+         stops with a FATAL_ERROR without it, and that is the red this lane \
+         carried on its first ctest push. Commands were: {lane:?}\n{lane_log}"
+    );
+
+    let lane_configure = lane.iter().find(|command| is_configure(command));
+    let gate_configure = gate.iter().find(|command| is_configure(command));
+    assert!(
+        gate_configure.is_some(),
+        "⚠ `sce_main_build_dir` configured nothing in a tree that has no \
+         `build/`, so the comparison below would hold vacuously:\n{gate_log}"
+    );
+    assert_eq!(
+        lane_configure, gate_configure,
+        "⚠ the lane must configure the tree through `sce_main_build_dir`, not \
+         with a recipe of its own. The gate refuses a tree configured any other \
+         way — build type, `BUILD_TESTS`, `SCE_ENABLE_MESH` — so a second \
+         recipe here builds something the rounds then decline to judge.\n\
+         lane: {lane:?}\ngate: {gate:?}"
+    );
+
+    assert!(
+        lane.iter()
+            .any(|command| command.starts_with("cmake --build")),
+        "⚠ the lane must BUILD the tree, not only configure it. `scripts/mutate` \
+         builds its own baseline with the output discarded, so a compile error \
+         first met there is reported as a round that proves nothing rather than \
+         as the build failure it is. Commands were: {lane:?}\n{lane_log}"
     );
 }
 
