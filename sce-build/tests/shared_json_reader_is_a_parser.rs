@@ -24,7 +24,7 @@
 // leaves `JSON.parse` nil at run time. That happened while this parser was
 // being written, and the C11 suite reported it as nine unrelated failures.
 
-use sce_build::filters::{c11_lua_chunks, JSON_BUILTINS_LUA};
+use sce_build::filters::{c11_lua_chunks, ECMA_SEMANTICS_LUA, JSON_BUILTINS_LUA};
 
 /// The shared file in a bare Lua state — no engine, no overrides.
 fn shared_reader() -> mlua::Lua {
@@ -199,6 +199,128 @@ fn every_c11_chunk_of_the_shared_reader_compiles_alone() {
                     chunks.len()
                 )
             });
+    }
+}
+
+/// The same question of the OTHER shared asset, and of the property the
+/// chunker relies on rather than of one file's current byte offsets.
+///
+/// `ecma_semantics.lua` carries 25 blank lines inside function bodies
+/// (measured 2026-08-18). While the chunker broke at every blank line, whether
+/// one of those became a chunk boundary — and deleted the function it was
+/// inside — depended on the running byte count, so adding a paragraph anywhere
+/// earlier in the file could do it. Asserting per-file compilation is what
+/// makes that a red instead of a silent loss.
+#[test]
+fn every_c11_chunk_of_each_shared_asset_compiles_alone() {
+    for (name, source) in [
+        ("json_builtins.lua", JSON_BUILTINS_LUA),
+        ("ecma_semantics.lua", ECMA_SEMANTICS_LUA),
+    ] {
+        let chunks = c11_lua_chunks(source);
+        assert!(
+            chunks.len() > 1,
+            "{name}: the splitter returned one chunk, so this is checking nothing"
+        );
+        let lua = mlua::Lua::new();
+        for (i, chunk) in chunks.iter().enumerate() {
+            lua.load(chunk.as_str())
+                .into_function()
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{name}: chunk {i} of {} does not compile on its own — C11 \
+                         loads it as its own `luaL_dostring` and would silently \
+                         lose it: {e}",
+                        chunks.len()
+                    )
+                });
+        }
+    }
+}
+
+/// A blank line inside a function is harmless BY CONSTRUCTION, not by luck.
+///
+/// The input below forces the old rule to break inside a body: one long
+/// definition, well past the chunker's size threshold, with a blank line in
+/// the middle of it. Breaking at that blank line produces two fragments that
+/// neither compile; the depth guard keeps them together.
+#[test]
+fn a_blank_line_inside_a_function_is_not_a_chunk_boundary() {
+    // Assignments rather than `local`s: Lua caps a function at 200 locals,
+    // and hitting that cap would fail this test for a reason that has nothing
+    // to do with chunking.
+    let filler = "    _pad[#_pad + 1] = 1\n".repeat(400);
+    let source = format!(
+        "function _probe_a()\n{filler}\n{filler}    return 1\nend\n\nfunction _probe_b()\n    return 2\nend\n"
+    );
+    let chunks = c11_lua_chunks(&source);
+    let lua = mlua::Lua::new();
+    for (i, chunk) in chunks.iter().enumerate() {
+        lua.load(chunk.as_str())
+            .into_function()
+            .unwrap_or_else(|e| {
+                panic!(
+                    "chunk {i} of {} split a function at a blank line inside its \
+                 body: {e}",
+                    chunks.len()
+                )
+            });
+    }
+}
+
+/// Chunks stay under the size the splitter exists to respect.
+///
+/// C99 guarantees only 4095 characters in a string literal after
+/// concatenation, and each chunk becomes exactly one such literal in the C11
+/// emit. The depth guard lets a chunk grow past the 2500-byte target — that is
+/// its whole point, since it will not cut a function in half to hit it — so
+/// the target is not the invariant and this ceiling is. Without it a broken
+/// depth count is invisible: mistaking one definition for an open body merges
+/// every chunk after it into one, and nothing else in this file notices.
+#[test]
+fn no_c11_chunk_exceeds_the_c99_literal_floor() {
+    const C99_FLOOR: usize = 4095;
+    for (name, source) in [
+        ("json_builtins.lua", JSON_BUILTINS_LUA),
+        ("ecma_semantics.lua", ECMA_SEMANTICS_LUA),
+    ] {
+        for (i, chunk) in c11_lua_chunks(source).iter().enumerate() {
+            assert!(
+                chunk.len() < C99_FLOOR,
+                "{name}: chunk {i} is {} bytes, over the {C99_FLOOR} a C string \
+                 literal is guaranteed to hold — either one definition grew past \
+                 it, or the depth guard stopped finding a boundary",
+                chunk.len()
+            );
+        }
+    }
+}
+
+/// The depth count the guard above relies on returns to zero for each shared
+/// asset — so a definition written in a style the counter cannot see (an
+/// indented `end`, a `function` behind an assignment) is a red here rather
+/// than a boundary in the wrong place later.
+#[test]
+fn the_chunker_tracks_function_depth_in_both_shared_assets() {
+    for (name, source) in [
+        ("json_builtins.lua", JSON_BUILTINS_LUA),
+        ("ecma_semantics.lua", ECMA_SEMANTICS_LUA),
+    ] {
+        let mut depth: i64 = 0;
+        let mut lowest: i64 = 0;
+        for line in source.lines() {
+            if line.starts_with("function ") || line.starts_with("local function ") {
+                // A one-liner opens and closes on the same line.
+                if !line.ends_with(" end") {
+                    depth += 1;
+                }
+            } else if line == "end" {
+                depth -= 1;
+                lowest = lowest.min(depth);
+            }
+        }
+        assert_eq!(depth, 0, "{name}: unbalanced column-0 function/end count");
+        assert_eq!(lowest, 0, "{name}: a column-0 `end` closed nothing");
     }
 }
 
