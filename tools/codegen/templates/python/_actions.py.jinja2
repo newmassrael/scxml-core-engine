@@ -78,11 +78,11 @@
 {%- macro emit_foreach(action, indent, machine_name, model) -%}
 {% if action.index %}
 {{ indent }}for {{ action.index }}_idx_, _item_ in self._foreach(engine, {{ action.array | to_lua_expr | py_string_literal }}):
-{{ indent }}    self._assign_runtime(engine, {{ action.item | py_string_literal }}, _item_)
-{{ indent }}    self._assign_runtime(engine, {{ action.index | py_string_literal }}, {{ action.index }}_idx_)
+{{ indent }}    self._assign_runtime(engine, {{ action.item | to_lua_location | py_string_literal }}, _item_)
+{{ indent }}    self._assign_runtime(engine, {{ action.index | to_lua_location | py_string_literal }}, {{ action.index }}_idx_)
 {% else %}
 {{ indent }}for _item_ in self._foreach_values(engine, {{ action.array | to_lua_expr | py_string_literal }}):
-{{ indent }}    self._assign_runtime(engine, {{ action.item | py_string_literal }}, _item_)
+{{ indent }}    self._assign_runtime(engine, {{ action.item | to_lua_location | py_string_literal }}, _item_)
 {% endif %}
 {% for sub in action.actions %}{{ emit(sub, indent ~ '    ', machine_name, model) }}{% endfor %}
 {% if not action.actions %}{{ indent }}    pass

@@ -108,7 +108,22 @@ fn refusals_in_artifact(rendered: &str) -> BTreeSet<String> {
 /// walker's side. `wire_word` is the shared spelling of `{word}`, so the
 /// two are one definition rather than two literals that happen to agree.
 fn refusal_key(r: &sce_build::ecmascript_acceptance::RefusedExpression) -> String {
-    format!("{} {}: {}", r.role.wire_word(), r.source, r.error)
+    let key = format!("{} {}: {}", r.role.wire_word(), r.source, r.error);
+    // [`refusals_in_artifact`] ends a message at the closing quote of
+    // the literal holding it, so a message carrying a double quote of
+    // its own is read as a shorter message on the artifact side and
+    // never joins — which is a silent pass in one direction and an
+    // unexplainable mismatch in the other. `ExprError::InvalidLvalue`
+    // used to spell its subject with `{:?}` and cost exactly that. The
+    // assumption is asserted rather than documented so a message that
+    // reintroduces one says so.
+    assert!(
+        !key.contains('"'),
+        "a refusal carrying a double quote cannot be joined across the \
+         escaping the artifact applies — quote it the way every other \
+         `ExprError` variant does: {key}"
+    );
+    key
 }
 
 /// Every `.scxml` this repository tracks.

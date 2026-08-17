@@ -429,3 +429,108 @@ fn the_shell_locator_finds_the_generator_in_either_profile() {
          stale release binary silently outranks it; got {both:?}",
     );
 }
+
+/// A binary that exists is not the same as a binary built from these
+/// sources, and the shell locator must ask.
+///
+/// `sce_codegen_require` handed back whatever `target/` held. That is
+/// the locator the 46 regen scripts go through, so
+/// `regen_all_committed_trees.sh` refreshed the W3C trees with a
+/// generator predating the edit being regenerated for — and then
+/// rebuilt mid-script, for a later phase that happened to go through
+/// cargo, leaving one working tree holding artifacts from two different
+/// generators. The other three locators already avoid this: CMake asks
+/// `verify-generator`, Gradle and the Python harness rebuild whenever
+/// cargo is present.
+///
+/// Driven against a sandbox rather than read: the property is which of
+/// two commands the function runs, and a stale binary is exactly what
+/// the real tree does not have when the suite runs.
+#[test]
+fn the_shell_locator_rebuilds_a_generator_that_disagrees_with_the_tree() {
+    let root = repo_root();
+    let sandbox = std::env::temp_dir().join(format!("sce-codegen-witness-{}", std::process::id()));
+
+    // `verify_exit` is what the planted binary answers `verify-generator`
+    // with: 20 is the CLI's "stale or unwitnessed", 0 is "current".
+    let run = |verify_exit: i32| -> (String, bool) {
+        let _ = std::fs::remove_dir_all(&sandbox);
+        let bin_dir = sandbox.join("target/debug");
+        let fake_path = sandbox.join("fakebin");
+        std::fs::create_dir_all(&bin_dir).expect("create sandbox profile dir");
+        std::fs::create_dir_all(&fake_path).expect("create fake PATH dir");
+
+        let write_exec = |path: &std::path::Path, body: &str| {
+            std::fs::write(path, body).expect("write stub");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+                    .expect("chmod stub");
+            }
+        };
+
+        write_exec(
+            &bin_dir.join("sce-codegen"),
+            &format!(
+                "#!/bin/sh\ncase \"$1\" in verify-generator) exit {verify_exit};; esac\nexit 0\n"
+            ),
+        );
+        // Stands in for the rebuild: records that it ran, and leaves a
+        // binary that agrees with the tree.
+        write_exec(
+            &fake_path.join("cargo"),
+            &format!(
+                "#!/bin/sh\ntouch {sandbox}/rebuilt\n\
+                 printf '#!/bin/sh\\nexit 0\\n' > {sandbox}/target/debug/sce-codegen\n\
+                 chmod 755 {sandbox}/target/debug/sce-codegen\nexit 0\n",
+                sandbox = sandbox.display()
+            ),
+        );
+
+        let script = format!(
+            "set -euo pipefail\nexport PATH={fake}:$PATH\nsource {root}/scripts/lib/sce_codegen.sh\n\
+             sce_codegen_require {sandbox}\n",
+            fake = fake_path.display(),
+            root = root.display(),
+            sandbox = sandbox.display(),
+        );
+        let out = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .expect("bash runs the locator");
+        assert!(
+            out.status.success(),
+            "the locator failed with verify exit {verify_exit}:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            sandbox.join("rebuilt").exists(),
+        )
+    };
+
+    let (stale_path, stale_rebuilt) = run(20);
+    let (current_path, current_rebuilt) = run(0);
+    let _ = std::fs::remove_dir_all(&sandbox);
+
+    assert!(
+        stale_rebuilt,
+        "a generator that disagrees with the tree was handed straight back — \
+         every regen script would then re-stamp committed trees with it",
+    );
+    assert!(
+        stale_path.ends_with("target/debug/sce-codegen"),
+        "after the rebuild the locator must still name the binary; got {stale_path:?}",
+    );
+    assert!(
+        !current_rebuilt,
+        "a generator that already agrees with the tree was rebuilt anyway — the \
+         witness exists so a prebuilt binary works where cargo is absent",
+    );
+    assert!(
+        current_path.ends_with("target/debug/sce-codegen"),
+        "a current generator must be handed back as found; got {current_path:?}",
+    );
+}

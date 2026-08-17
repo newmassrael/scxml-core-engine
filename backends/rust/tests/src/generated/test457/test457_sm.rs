@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 039ad389d30ffb729c7c2441931b41f36924cbf4b6013115d42ef3094467532b
+// template-hash: c368ce80174f466d84e6185a3a865287545abdfeafb6bd04a27d03c8ef959c7a
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -899,7 +899,7 @@ impl StatePolicy for Test457Policy {
                         // runtime guard; the guard only checks legality of a non-empty name to
                         // mirror the C++ helper for fixtures that supply a syntactically invalid
                         // identifier.
-                        let item_name = "'continue'";
+                        let item_name = "(error(\"SCXML location is not valid ECMAScript: 'continue': assign location 'string literal' is not an lvalue: an assignment target must be an identifier or a member path\"))[1]";
                         if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
                             ::sce_rust_runtime::sce_log_error!(
                                 "Foreach validation failed: '{}' is not a legal variable name",

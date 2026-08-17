@@ -16,7 +16,7 @@
 {% else %}
 {% if action.content %}
 	// W3C SCXML 5.3: <assign location="{{ loc }}"> (inline content)
-	if err := p.assignVariable(`{{ loc }}`, `'{{ action.content | escape_go }}'`); err != nil {
+	if err := p.assignVariable(`{{ loc | to_lua_location }}`, `'{{ action.content | escape_go }}'`); err != nil {
 {% if 'error.execution' in model.events %}
 		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}
@@ -26,7 +26,10 @@
 	}
 {% elif action.expr %}
 	// W3C SCXML 5.3: <assign location="{{ loc }}" expr="{{ action.expr | escape_go }}">
-	if err := p.assignVariable(`{{ loc }}`, `{{ action.expr | to_lua_expr }}`); err != nil {
+	{# W3C SCXML B.2: the target is authored ECMAScript, lowered by the
+	   same frontend the reads go through — `arr[0]` names one cell
+	   whichever side of the `=` it is written on. #}
+	if err := p.assignVariable(`{{ loc | to_lua_location }}`, `{{ action.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
 		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}

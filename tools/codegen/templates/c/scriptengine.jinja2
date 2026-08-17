@@ -579,9 +579,12 @@
    sets needs_script_engine, and any fixture using <assign> does. The
    guard/eval failure on cond expressions remains silent-drop until a
    negative-cond fixture forces it. #}
+{# W3C SCXML B.2: the target is authored ECMAScript, lowered by the same
+   frontend the reads go through — `arr[0]` names one cell whichever side
+   of the `=` it is written on. #}
 {% macro lua_assign(loc, expr) %}
     if (luaL_dostring(sm->L,
-        "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        "{{ loc | to_lua_location | escape_c }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
@@ -603,7 +606,7 @@
    so existing fixtures (test147 outside <foreach>) are unaffected. #}
 {% macro lua_assign_in_foreach_body(loc, expr) %}
     if (luaL_dostring(sm->L,
-        "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
+        "{{ loc | to_lua_location | escape_c }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         break;
     }
@@ -657,14 +660,16 @@
    233-256), never to this macro — the call-site `{% if action.actions %}`
    guard is the single seam. #}
 {% macro lua_foreach_no_body(array, item, index) %}
+{% set item_loc = item | to_lua_location | escape_c %}
+{% set index_loc = index | to_lua_location | escape_c %}
     (void)luaL_dostring(sm->L,
-        "{{ item }} = nil; "
-        {% if index %}"{{ index }} = nil; "{% endif %}
+        "{{ item_loc }} = nil; "
+        {% if index %}"{{ index_loc }} = nil; "{% endif %}
         "do local _a = ({{ array | to_lua_expr | escape_c }}); "
         "if _isArray(_a) or type(_a) == 'table' then "
         "for _i, _v in ipairs(_a) do "
-        "{{ item }} = _v"
-        {% if index %}"; {{ index }} = _i - 1"{% endif %}
+        "{{ item_loc }} = _v"
+        {% if index %}"; {{ index_loc }} = _i - 1"{% endif %}
         " end end end");
 {% endmacro %}
 
@@ -689,25 +694,35 @@
     lua_pop(sm->L, 1);
     /* W3C 4.6: declare item / index on the datamodel even for empty arrays. */
     (void)luaL_dostring(sm->L,
-        "{{ item }} = nil"
-        {% if index %}"; {{ index }} = nil"{% endif %});
+        "{{ item | to_lua_location | escape_c }} = nil"
+        {% if index %}"; {{ index | to_lua_location | escape_c }} = nil"{% endif %});
 {% endmacro %}
 
 {# Per-iteration update: set item to `_sce_foreach_arr[_i+1]` (lua is
    1-based, W3C index is 0-based; the C loop counter `_i` is the W3C
-   index). Variable names come from the fixture; the snprintf buffer is
-   sized for the W3C corpus (≤ 32-char identifiers). On chunk failure
-   (e.g. illegal item identifier like `'continue'` triggering a Lua
-   syntax error) raise EVENT_ERROR_EXECUTION and `break` the C loop —
-   W3C 4.6 mandates loop termination on iteration failure. The
-   surrounding entry-block continues per the bb1c4503 carve-out
-   (W3C 4.6 surrounding-block-abort lifts with its own force fixture). #}
+   index). On chunk failure (e.g. illegal item identifier like
+   `'continue'` triggering a Lua syntax error) raise
+   EVENT_ERROR_EXECUTION and `break` the C loop — W3C 4.6 mandates loop
+   termination on iteration failure. The surrounding entry-block
+   continues per the bb1c4503 carve-out (W3C 4.6
+   surrounding-block-abort lifts with its own force fixture).
+
+   The buffer is sized from the two targets this chunk actually writes
+   rather than from a corpus assumption. It used to be a flat 96 bytes,
+   "sized for the W3C corpus (≤ 32-char identifiers)" — a claim about
+   the fixtures rather than about the document being generated, and a
+   target the frontend refuses carries its refusal *message* here, which
+   gcc rejected at 196 bytes with `-Werror=format-truncation`. The
+   lengths are known at generation time, so they are used: 96 covers the
+   fixed text (26) and two `%d` at 11 each, with room to spare. #}
 {% macro lua_foreach_body_iter(item, index) %}
+{% set item_loc = item | to_lua_location | escape_c %}
+{% set index_loc = index | to_lua_location | escape_c %}
     {
-        char _sce_buf[96];
+        char _sce_buf[{{ 96 + (item_loc | length) + (index_loc | length) }}];
         (void)snprintf(_sce_buf, sizeof(_sce_buf),
-            "{{ item }} = _sce_foreach_arr[%d]"
-            {% if index %}"; {{ index }} = %d"{% endif %},
+            "{{ item_loc }} = _sce_foreach_arr[%d]"
+            {% if index %}"; {{ index_loc }} = %d"{% endif %},
             _i + 1{% if index %}, _i{% endif %});
         if (luaL_dostring(sm->L, _sce_buf) != 0) {
             lua_pop(sm->L, 1);

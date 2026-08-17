@@ -43,14 +43,16 @@ use crate::ecmascript::{DocumentScope, ExprError};
 use crate::forge::error::SourceLocation;
 use crate::model::{Action, DoneDataContent, Invoke, Param, SCXMLModel, State, Variable};
 
-/// The three roles an authored expression can have, one per frontend
+/// The four roles an authored expression can have, one per frontend
 /// entry point.
 ///
 /// The role is what decides which function lowers the source, so it is
 /// also what decides the verdict: `to_lua_condition` applies ECMAScript
-/// truthiness where `to_lua_value` does not, and `to_lua_script` admits
-/// the statement grammar neither of the others does. A walker that
-/// checked every site as a value would refuse legal `<script>` bodies.
+/// truthiness where `to_lua_value` does not, `to_lua_script` admits the
+/// statement grammar neither of the others does, and `to_lua_location`
+/// admits only what can be assigned to. A walker that checked every site
+/// as a value would refuse legal `<script>` bodies and accept
+/// `<assign location="1 + 1"/>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpressionRole {
     /// `<data expr>`, `<assign expr>`, `<param expr>`, `<log expr>`,
@@ -61,6 +63,13 @@ pub enum ExpressionRole {
     Condition,
     /// A `<script>` body or `<finalize>` body — a statement list.
     Script,
+    /// `<assign location>`, `<send idlocation>`, `<foreach item>`,
+    /// `<foreach index>` — the places a document *writes*, which the
+    /// data model restricts to an identifier or a member path rooted at
+    /// one. Unlike the three above, the source is not resolved against
+    /// the document's declarations: writing is how this datamodel's
+    /// globals come into existence.
+    Location,
 }
 
 impl ExpressionRole {
@@ -72,6 +81,7 @@ impl ExpressionRole {
             ExpressionRole::Value => "expr",
             ExpressionRole::Condition => "cond",
             ExpressionRole::Script => "script",
+            ExpressionRole::Location => "location",
         }
     }
 
@@ -80,6 +90,7 @@ impl ExpressionRole {
             ExpressionRole::Value => crate::ecmascript::to_lua_value(source, scope),
             ExpressionRole::Condition => crate::ecmascript::to_lua_condition(source, scope),
             ExpressionRole::Script => crate::ecmascript::to_lua_script(source, scope),
+            ExpressionRole::Location => crate::ecmascript::to_lua_location(source),
         }
     }
 }
@@ -374,15 +385,31 @@ fn check_action(action: &Action, into: &mut Collector<'_>) {
                 at,
                 into,
             );
+            check(
+                ExpressionRole::Location,
+                "<send idlocation>",
+                &action.idlocation,
+                at,
+                into,
+            );
             check_params(&action.params, at, into);
         }
-        "assign" => check(
-            ExpressionRole::Value,
-            "<assign expr>",
-            &action.expr,
-            at,
-            into,
-        ),
+        "assign" => {
+            check(
+                ExpressionRole::Value,
+                "<assign expr>",
+                &action.expr,
+                at,
+                into,
+            );
+            check(
+                ExpressionRole::Location,
+                "<assign location>",
+                &action.location,
+                at,
+                into,
+            );
+        }
         "log" => check(ExpressionRole::Value, "<log expr>", &action.expr, at, into),
         "cancel" => check(
             ExpressionRole::Value,
@@ -396,6 +423,23 @@ fn check_action(action: &Action, into: &mut Collector<'_>) {
                 ExpressionRole::Value,
                 "<foreach array>",
                 &action.array,
+                at,
+                into,
+            );
+            // The two iteration variables are written once per turn, so
+            // they are targets rather than reads — §scxml-4.6 types both
+            // as location expressions.
+            check(
+                ExpressionRole::Location,
+                "<foreach item>",
+                &action.item,
+                at,
+                into,
+            );
+            check(
+                ExpressionRole::Location,
+                "<foreach index>",
+                &action.index,
                 at,
                 into,
             );
