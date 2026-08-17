@@ -791,16 +791,18 @@
     sce_lua_dom_push_object(sm->L, "{{ content | escape_c }}");
     lua_setglobal(sm->L, "_pending_donedata");
     {% else %}
+    /* W3C SCXML B.2: the reading is decided at build time by the same
+       filter inline `<data>` and `<donedata>` text goes through — an
+       expression when it is one, otherwise the string — so this emits the
+       value rather than a search for it.
+       What stood here searched at run time, in three steps of generated
+       Lua: rewrite `"k":` into `["k"]=`, `load('return (' .. text .. ')')`,
+       and fall back to the trimmed string when that failed. Five backends
+       carried five such searches and answered the same document five
+       different ways; the JSON rewrite alone made this one accept text no
+       other did. Deciding here is what makes the six agree. */
     (void)luaL_dostring(sm->L,
-        "do "
-          "local _c = [[{{ content | escape_c }}]]; "
-          "local _try = _c:gsub('\"([^\"]*)\"%s*:', '[\"%1\"]='); "
-          "local _fn = load('return (' .. _try .. ')'); "
-          "local _ok = false; local _val = nil; "
-          "if _fn then _ok, _val = pcall(_fn) end; "
-          "if _ok then _pending_donedata = _val "
-          "else _pending_donedata = _c:gsub('%s+', ' '):match('^%s*(.-)%s*$') end "
-        "end");
+        "_pending_donedata = ({{ content | to_lua_data_content | escape_c }})");
     {% endif %}
 {% endmacro %}
 

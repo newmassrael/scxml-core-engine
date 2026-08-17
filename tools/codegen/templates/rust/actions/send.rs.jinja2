@@ -136,7 +136,16 @@
     // Rust source that compiles and Lua source that does not parse.
     let event_data: &str = "_scxml_params({% for param in action.params %}{\"{{ param.name | escape_lua | escape_rust }}\", \"{{ param.static_value | escape_lua | escape_rust }}\"}{% if not loop.last %}, {% endif %}{% endfor %})";
 {% elif action.content %}
-    let event_data: &str = "{{ action.content | escape_rust }}";
+    // W3C SCXML B.2: inline text takes the ordered readings — an expression
+    // when it is one, XML when it opens with `<`, otherwise the string. The
+    // same filter inline `<data>` and `<donedata>` text goes through decides
+    // which, so one clause reaches one answer wherever `<content>` appears.
+    //
+    // Handing the author's text over unread made this line evaluate it *as
+    // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
+    // the datamodel reads 5, and whether the text was an expression at all
+    // was discovered by an evaluation that failed.
+    let event_data: &str = "{{ action.content | to_lua_data_content | escape_rust }}";
 {% else %}
     let event_data: &str = "";
 {% endif %}

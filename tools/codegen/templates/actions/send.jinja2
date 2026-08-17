@@ -670,10 +670,45 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% endif %}
 {% endif %}
 {% elif action.content %}
-// W3C SCXML B.2: Set event data from <content> with pipeline-level JSON parsing
+// W3C SCXML B.2: Set event data from inline <content>.
+//
+// The reading is decided at build time by the same filter inline `<data>`
+// and `<donedata>` text goes through — an expression when it is one, XML
+// when it opens with `<`, otherwise the string — so one clause reaches one
+// answer wherever `<content>` appears. What stood here searched for the
+// reading at run time with `jsonStringToScriptValue`, which accepts JSON
+// and nothing else: `<content>123</content>` became a number here, a
+// string on Python, nil-on-Lua on Rust and Go, and whatever a four-step
+// cascade decided on Kotlin and C11. Five searches, five answers, one
+// document.
 {
-std::string contentData = "{{ action.content | escape_cpp }}";
-auto typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(contentData);
+std::string contentData;
+std::optional<ScriptValue> typedData;
+{% set content_is_xml = (action.content | trim) is startingwith('<') %}
+{% if content_is_xml %}
+// W3C SCXML B.2, first reading: content that opens with `<` is an XML
+// document, and the DOM node is built by whatever binds `_event.data` —
+// so the source text is what has to arrive, unevaluated. Sending it
+// through the evaluator instead made W3C 561's `<books>` a syntax error.
+contentData = "{{ action.content | escape_cpp }}";
+{% elif model.needs_script_engine %}
+this->ensureScriptEngine();
+auto& contentScriptEngine = getScriptEngine();
+::SCE::DoneDataHelper::evaluateContent(
+    contentScriptEngine,
+    sessionId_.value(),
+    "{{ action.content | to_author_data_content | escape_cpp }}",
+    contentData,
+    [&engine](const std::string& msg) {
+        SCE_LOG_WARN("send content evaluation failed: {}", msg);
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+    },
+    &typedData);
+{% else %}
+// §scxml-B-1: a machine with no data model has no value expressions, so
+// the children *are* the value — the same arm `<donedata>` takes there.
+::SCE::DoneDataHelper::emitContentLiteral("{{ action.content | escape_cpp }}", contentData, &typedData);
+{% endif %}
 {% if action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' %}
 {% if action.targetexpr %}
 if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
