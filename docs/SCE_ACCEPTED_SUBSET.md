@@ -916,6 +916,44 @@ hand the author's ECMAScript to an ECMAScript engine;
 `sce-build/tests/donedata_inline_content.rs` binds both to the engine
 that runs the result.
 
+### §3.9 Where a document writes
+
+§3.5 through §3.8 judge text a document *reads*. Four attributes name a
+place it **writes**: `<assign location>`, `<send idlocation>`,
+`<foreach item>` and `<foreach index>`. §scxml-B-2 restricts each to a
+location expression — an identifier, or a member/index path rooted at
+one — and SCE lowers all four through the same ECMAScript frontend the
+reads go through.
+
+That the two go through one frontend is the point, not an
+implementation detail. ECMA-262 11.2.1 defines `arr[0]` once, and a
+Lua table's first element is at index 1, so a write spliced verbatim
+and a read that was lowered name *different cells*: `<assign
+location="arr[0]" expr="99"/>` followed by `cond="arr[0] == 99"` took
+the false branch on every backend that runs the datamodel on Lua, with
+no diagnostic and exit 0.
+
+A target that is not a location expression — `location="1 + 1"`,
+`item="'continue'"`, an unterminated string — is reported at the
+element that wrote it, as `expression/invalid-lvalue` or whichever
+`expression/*` code the parse failed with. Like a `cond` that cannot be
+evaluated (§3.4), it does not make the document ungeneratable:
+§scxml-5.4 makes a location that denotes nothing a runtime
+`error.execution`, so the artifact carries an assignment target that
+raises the same message when the engine reaches it.
+
+Unlike a read, a write target is **not** resolved against the
+document's declarations — writing is how this datamodel's globals come
+into existence (§3.6 states the same exemption from the other side).
+`<param location>` is a read, not a write: the value at that location
+becomes the payload field, so it goes through the value seam.
+
+`sce_build::ecmascript::to_lua_location` lowers the target,
+`sce_build::filters::to_lua_location` is the seam every backend
+template goes through, and
+`sce-build/tests/ecmascript_write_targets.rs` runs a write and a read
+of the same authored text on the engine a generated machine uses.
+
 ### §2.10 Metadata annotations — `sce:req` / `sce:provenance` / `sce:unresolved`
 
 NL→IR Mapping Roadmap Items 1, 5, and 6 add three metadata

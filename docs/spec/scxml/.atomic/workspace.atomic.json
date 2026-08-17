@@ -3788,6 +3788,11 @@
         {
           "file": "sce-build/src/ecmascript/lua.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/ecmascript_acceptance.rs",
+          "symbol": "check_action",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5666,6 +5671,11 @@
           "file": "tests/w3c/aot_tests/Test287.h",
           "symbol": "Test287",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "lua_target_that_raises",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

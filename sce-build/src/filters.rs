@@ -130,6 +130,10 @@ fn register_ecmascript_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     env.add_filter("to_lua_script", move |script: String| {
         to_lua_script(script, &for_script)
     });
+    // No scope: a write is how this datamodel's globals come into
+    // existence, so the target is not resolved against what the document
+    // declares. See [`crate::ecmascript::to_lua_location`].
+    env.add_filter("to_lua_location", to_lua_location);
     env.add_filter("escape_lua", escape_lua);
 }
 
@@ -412,6 +416,45 @@ fn to_lua_script(script: String, scope: &DocumentScope) -> Result<String, miniji
         Ok(lua) => lua,
         Err(err) => lua_that_raises("script", &script, err),
     })
+}
+
+/// An authored write target — `<assign location>`, `<send idlocation>`,
+/// `<foreach item>`, `<foreach index>` — lowered to the Lua the engine
+/// underneath actually assigns to.
+///
+/// The same seam the reads go through, for the same reason: ECMA-262
+/// 11.2.1 defines `arr[0]` once, and a document that writes it through
+/// one lowering and reads it through another names two cells. Splicing
+/// the author's text is what every template did, so `<assign
+/// location="arr[0]"/>` wrote a Lua table's zeroth slot while every read
+/// of `arr[0]` measured its first.
+pub fn to_lua_location(location: String) -> Result<String, minijinja::Error> {
+    if location.is_empty() {
+        return Ok(String::new());
+    }
+    Ok(match crate::ecmascript::to_lua_location(&location) {
+        Ok(lua) => lua,
+        Err(err) => lua_target_that_raises(&location, err),
+    })
+}
+
+/// A Lua *assignment target* that raises the parser's message instead of
+/// naming a cell.
+///
+/// A refused target has to survive as far as the assignment, which means
+/// it has to stay an assignment target. `error("…") = 1` is not one:
+/// Lua's grammar admits a function call as a statement, never as the
+/// left side of `=`, so the chunk would fail to *parse* and the author's
+/// message would be replaced by a syntax error at the one moment it is
+/// needed. Indexing the raise keeps the statement grammatical — Lua 5.4
+/// §3.5 makes `'(' exp ')' '[' exp ']'` a var — and the prefix is
+/// evaluated before any assignment happens, so nothing is written.
+fn lua_target_that_raises(source: &str, err: crate::ecmascript::ExprError) -> String {
+    // §scxml-5.4: a location that denotes nothing is an `error.execution`
+    // at run time rather than a document that cannot be generated, so the
+    // codegen-time verdict is carried to the runtime the clause describes
+    // instead of refusing the document.
+    format!("({})[1]", lua_that_raises("location", source, err))
 }
 
 /// Lua that raises the parser's message when the engine evaluates it.

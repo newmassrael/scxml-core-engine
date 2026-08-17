@@ -8,9 +8,12 @@
    eval-then-string fallback so XML payloads (W3C B.2 test530) and
    literal-text content land in the datamodel correctly. #}
 {%- macro emit(action, indent, machine_name, model) -%}
+{# W3C SCXML B.2: the target is authored ECMAScript, so it is lowered by
+   the same frontend the reads go through — `arr[0]` names one cell
+   whichever side of the `=` it is written on. #}
 {% if action.expr -%}
-{{ indent }}self._assign(engine, {{ action.location | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
+{{ indent }}self._assign(engine, {{ action.location | to_lua_location | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
 {% else -%}
-{{ indent }}self._assign_content(engine, {{ action.location | py_string_literal }}, {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
+{{ indent }}self._assign_content(engine, {{ action.location | to_lua_location | py_string_literal }}, {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
 {% endif -%}
 {% endmacro -%}

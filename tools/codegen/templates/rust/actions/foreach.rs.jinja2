@@ -24,7 +24,10 @@
     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
 {% else %}
-    let item_name = "{{ action.item }}";
+    {# W3C SCXML 4.6: `item` is a location expression, so it is lowered by
+       the same frontend every other write target goes through. A legal
+       identifier lowers to itself; anything else fails the guard below. #}
+    let item_name = "{{ action.item | to_lua_location | escape_rust }}";
     if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
         ::sce_rust_runtime::sce_log_error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
 {% if 'error.execution' in model.events %}
@@ -45,7 +48,7 @@
                     }
 {% if action.index %}
                     // Set index variable
-                    if let Err(e) = se.set_variable(&sid, "{{ action.index }}", sce_rust_runtime::ScriptValue::Int(_idx as i64)) {
+                    if let Err(e) = se.set_variable(&sid, "{{ action.index | to_lua_location | escape_rust }}", sce_rust_runtime::ScriptValue::Int(_idx as i64)) {
                         ::sce_rust_runtime::sce_log_error!("Foreach: failed to set index '{{ action.index }}': {}", e);
                         foreach_success = false;
                         break;

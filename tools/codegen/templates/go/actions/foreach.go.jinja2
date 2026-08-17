@@ -5,7 +5,10 @@
 {% if model.needs_script_engine %}
 	// W3C SCXML 4.6: foreach over {{ action.array }}
 	{
-		foreachItemName := "{{ action.item | default("") }}"
+		{# W3C SCXML 4.6: `item` is a location expression, lowered by the
+		   same frontend every other write target goes through. A legal
+		   identifier lowers to itself; anything else fails the guard. #}
+		foreachItemName := "{{ action.item | default("") | to_lua_location | escape_go }}"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -33,7 +36,7 @@
 					   raw index. W3C test 459 asserts the final index is 2
 					   over a three-element array, and it passed only because
 					   the `cond` reading the index could not be evaluated. #}
-					if err := p.ScriptEngine.SetVariable(p.SessionID, "{{ action.index }}", int64(foreachIdx)); err != nil {
+					if err := p.ScriptEngine.SetVariable(p.SessionID, "{{ action.index | to_lua_location | escape_go }}", int64(foreachIdx)); err != nil {
 						foreachSuccess = false
 						break
 					}

@@ -35,7 +35,10 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
     // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
     // through evaluate_expression + set_variable would round-trip through ScriptValue
     // and create a fresh table, breaking reference equality.
-    let assign_script = format!("{} = {}", "{{ loc }}", expr);
+    {# W3C SCXML B.2: the target is authored ECMAScript, so it is lowered
+       by the same frontend the reads go through — `arr[0]` names one cell
+       whichever side of the `=` it is written on. #}
+    let assign_script = format!("{} = {}", "{{ loc | to_lua_location | escape_rust }}", expr);
     if let Err(e) = se.execute_script(&sid, &assign_script) {
         ::sce_rust_runtime::sce_log_error!("Assign failed for '{{ loc }}': {}", e);
 {% if 'error.execution' in model.events %}
