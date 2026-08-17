@@ -38,11 +38,23 @@
 {% endif %}
 
 {# W3C SCXML 6.2: Build event data from <param>, namelist, or <content> at send time.
-   The data is a Lua table literal string (e.g. `{aParam=2, bParam="text"}`) that
-   `set_current_event` parses when the event is later processed. Dynamic expressions
-   (non-static-literal params, namelist) are evaluated NOW so delayed sends see the
-   value at send time (tests 176, 186). Pure static literal params are embedded at
-   codegen time so tests without a script engine still work (test 531). #}
+
+   The data is JSON, per §scxml-B-2-9: a value that leaves the ECMAScript data
+   model is serialized to JSON. An event payload always leaves it — the reader
+   is another dequeue, often another session, sometimes another process and
+   another backend — so the wire cannot be the sending engine's own source
+   language. It was: this line built `_scxml_params({...})`, Lua source, and
+   the receiving `set_current_event` ran it to get the value back. That made
+   the payload EXECUTABLE at the receiving end (measured 2026-08-17: a host
+   payload `(function() ... end)()` ran in the session's globals) and made
+   `_event.data` type-dependent on which backend sent it (`2 + 3` arrived as
+   5 here and as the string "2 + 3" on cpp, which already shipped JSON).
+
+   Dynamic expressions (non-static-literal params, namelist) are evaluated NOW
+   so delayed sends see the value at send time (tests 176, 186). Pure static
+   literal params are serialized at codegen time so tests without a script
+   engine still work (test 531) — which the JSON wire allows and the Lua one
+   did not, since reading it back needed an interpreter. #}
 {% set has_params = action.params and action.params | length > 0 %}
 {% set has_namelist = action.namelist and action.namelist | trim %}
 {# Check if any param requires dynamic expression evaluation (test 567). #}
@@ -61,15 +73,20 @@
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let mut parts: Vec<String> = Vec::new();
+        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+        // delivered, so each name carries a vector. The typed value is kept
+        // rather than its text — a receiver reading `_event.data.value === 42`
+        // finds the string "42" unequal.
+        let mut wire_params: ::std::collections::BTreeMap<String, Vec<::sce_rust_runtime::ScriptValue>> =
+            ::std::collections::BTreeMap::new();
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-        parts.push(format!("{{ '{{' }}{:?}, {:?}{{ '}}' }}", "{{ param.name | escape_rust }}", "{{ param.static_value | escape_rust }}"));
+        wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(::sce_rust_runtime::ScriptValue::String("{{ param.static_value | escape_rust }}".to_string()));
 {% elif param.expr %}
         match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
             Ok(val) => {
-                parts.push(format!("{{ '{{' }}{:?}, {}{{ '}}' }}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
+                wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' eval failed: {}", e);
@@ -81,7 +98,7 @@
 {% elif param.location %}
         match se.evaluate_expression(&sid, "{{ param.location }}") {
             Ok(val) => {
-                parts.push(format!("{{ '{{' }}{:?}, {}{{ '}}' }}", "{{ param.name | escape_rust }}", val.to_lua_literal()));
+                wire_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(val);
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param '{{ param.name | escape_rust }}' location read failed: {}", e);
@@ -106,7 +123,7 @@
         } else {
             match se.evaluate_expression(&sid, "{{ name }}") {
                 Ok(val) => {
-                    parts.push(format!("{{ '{{' }}{:?}, {}{{ '}}' }}", "{{ name }}", val.to_lua_literal()));
+                    wire_params.entry("{{ name }}".to_string()).or_default().push(val);
                 }
                 Err(e) => {
                     ::sce_rust_runtime::sce_log_error!("send namelist '{{ name }}' eval failed: {}", e);
@@ -118,9 +135,13 @@
             }
         }
 {% endfor %}
-        if _send_aborted { String::new() } else { format!("_scxml_params({})", parts.join(",")) }
+        if _send_aborted {
+            String::new()
+        } else {
+            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&wire_params)
+        }
 {% else %}
-        format!("_scxml_params({})", parts.join(","))
+        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&wire_params)
 {% endif %}
     };
 {% if has_namelist %}
@@ -130,13 +151,15 @@
     let event_data: &str = &event_data_string;
 {% endif %}
 {% elif has_params %}
-    // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time.
-    // The author name/value cross two literal boundaries — the Lua table
-    // constructor this line assembles, then the Rust string literal that
-    // carries it — so each is escaped once per boundary
-    // (`escape_lua | escape_rust`). Applying only the host filter produces
-    // Rust source that compiles and Lua source that does not parse.
-    let event_data: &str = "_scxml_params({% for param in action.params %}{\"{{ param.name | escape_lua | escape_rust }}\", \"{{ param.static_value | escape_lua | escape_rust }}\"}{% if not loop.last %}, {% endif %}{% endfor %})";
+    // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+    // finished here. It has to be: this arm is what a machine with no script
+    // engine emits, and the wire it used to write — a `_scxml_params(...)`
+    // call in Lua — could only be read back by an interpreter.
+    //
+    // The author name/value cross two literal boundaries, the JSON text this
+    // filter assembles and the Rust string literal carrying it, so each is
+    // escaped once per boundary (`static_params_json | escape_rust`).
+    let event_data: &str = "{{ action.params | static_params_json | escape_rust }}";
 {% elif action.content %}
     // W3C SCXML B.2: inline text takes the ordered readings — an expression
     // when it is one, XML when it opens with `<`, otherwise the string. The
@@ -147,7 +170,33 @@
     // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
     // the datamodel reads 5, and whether the text was an expression at all
     // was discovered by an evaluation that failed.
-    let event_data: &str = "{{ action.content | to_lua_data_content | escape_rust }}";
+{% if action.content | data_content_is_xml %}
+    // XML travels as the document text. §scxml-B-2-8-1 has the RECEIVER build
+    // the DOM — serializing a DOM into the payload would make the reading
+    // depend on the sender having parsed it first (W3C test561).
+    let event_data: &str = "{{ action.content | escape_rust }}";
+{% elif model.needs_script_engine %}
+    // The reading is decided at codegen time; the VALUE is produced here, at
+    // send time, and serialized so the far end parses instead of evaluating.
+    let event_data_string: String = {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        match se.evaluate_expression(&sid, "{{ action.content | to_lua_data_content | escape_rust }}") {
+            Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val),
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("send content eval failed: {}", e);
+                String::new()
+            }
+        }
+    };
+    let event_data: &str = &event_data_string;
+{% else %}
+    // No data model, so the text is the value and there is nothing to
+    // evaluate — §scxml-B-2-8-1's last rung, taken at codegen time.
+    let event_data: &str = "\"{{ action.content | normalize_ws | escape_json_string | escape_rust }}\"";
+{% endif %}
 {% else %}
     let event_data: &str = "";
 {% endif %}

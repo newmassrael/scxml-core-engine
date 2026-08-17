@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -605,8 +605,11 @@ impl StatePolicy for Test343Policy {
                     let mut json_parts: Vec<String> = Vec::new();
                     match se.evaluate_expression(&sid, "error(\"SCXML expr is not valid ECMAScript: foo: foo is not declared by this document\")") {
                         Ok(val) => {
-                            let mut part = String::from("[\"someParam\"] = ");
-                            part.push_str(&val.to_lua_literal());
+                            // §scxml-B-2-9: donedata rides an event, so it
+                            // leaves the data model and travels as JSON —
+                            // the same wire `<send>`'s params take.
+                            let mut part = String::from("\"someParam\":");
+                            part.push_str(&::sce_rust_runtime::helpers::event_data::script_value_to_json(&val));
                             json_parts.push(part);
                         }
                         Err(e) => {
@@ -616,7 +619,7 @@ impl StatePolicy for Test343Policy {
                     }
                     if done_data_ok {
                         done_event_data = String::from("{");
-                        done_event_data.push_str(&json_parts.join(", "));
+                        done_event_data.push_str(&json_parts.join(","));
                         done_event_data.push('}');
                     }
                 }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -604,8 +604,11 @@ impl StatePolicy for Test529Policy {
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     match se.evaluate_expression(&sid, "21") {
+                        // §scxml-B-2-9: serialized, not spelled as Lua source
+                        // — the reader is the parent's dequeue, which parses.
                         Ok(val) => {
-                            done_event_data = val.to_lua_literal();
+                            done_event_data =
+                                ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val);
                         }
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!(

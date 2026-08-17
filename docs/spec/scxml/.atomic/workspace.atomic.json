@@ -7371,6 +7371,21 @@
           "file": "sce/src/events/EventSchedulerImpl.cpp",
           "symbol": "EventSchedulerImpl::timerThreadMain",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "BuildJSONFromTypedParams",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "build_json_from_typed_params",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "static_params_json",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -10467,6 +10482,11 @@
           "file": "sce/src/parsing/DoneDataParser.cpp",
           "symbol": "SCE::DoneDataParser::parseContent",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "_coerce_event_data_to_lua",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10495,6 +10515,26 @@
           "file": "sce/src/common/EventDataHelper.cpp",
           "symbol": "EventDataHelper::scriptValueToJsonString",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "ScriptValueToJSON",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/i_script_engine.py",
+          "symbol": "to_json_literal",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "script_value_to_json",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "register_event_wire_filters",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

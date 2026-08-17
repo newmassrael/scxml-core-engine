@@ -22,6 +22,26 @@ from typing import Any, Callable, Dict, List, Optional
 from ..io_processors import IoProcessorDescriptor
 
 
+def _json_string(text: str) -> str:
+    """A JSON string literal. Ports C++ `DoneDataHelper::escapeJsonString`.
+
+    Spelled out rather than delegating to `json.dumps` so the escape set
+    is the one the other five backends apply — `json.dumps` also escapes
+    non-ASCII by default, which would make the same payload differ
+    between backends byte for byte.
+    """
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+    )
+    return f'"{escaped}"'
+
+
 class ScriptValueKind(Enum):
     """Discriminator for `ScriptValue`. Matches the C++ `std::variant`
     case set so DOM payloads can round-trip without losing type."""
@@ -148,6 +168,64 @@ class ScriptValue:
                 + "}"
             )
         return "nil"
+
+    def to_json_literal(self) -> str:
+        """Render this value for a wire that leaves the ECMAScript data
+        model.
+
+        The clause cited in the body names JSON as that serialisation —
+        it is what the BasicHTTP Event I/O Processor sends — and an event
+        payload always leaves the data model: the reader is another
+        dequeue, often another session, in a mesh another process running
+        another backend.
+
+        This is the counterpart of `to_lua_literal`, and the difference
+        is the point. A Lua literal is *source*, so reading it back
+        required the receiver to RUN it — which made `_event.data` mean
+        one thing on a Lua backend and another on a JavaScript one, and
+        made any payload executable at the far end. Ports the C++
+        `scriptValueToJson` in `sce/src/common/EventDataHelper.cpp`.
+
+        Object keys are sorted so equal content produces equal bytes,
+        matching the C++ `std::map` original and the Rust/Go ports.
+        """
+        # §scxml-B-2-9: a value that has to leave the ECMAScript data model
+        # is serialized to JSON, which reconstructs it in full rather than
+        # falling back to a lossy platform format.
+        if self.kind is ScriptValueKind.NULL or self.kind is ScriptValueKind.UNDEFINED:
+            # JSON has no `undefined`; the C++ port maps both to null.
+            return "null"
+        if self.kind is ScriptValueKind.BOOL:
+            return "true" if self.bool_val else "false"
+        if self.kind is ScriptValueKind.INT:
+            return str(self.int_val)
+        if self.kind is ScriptValueKind.DOUBLE:
+            value = self.double_val
+            if value != value or value in (float("inf"), float("-inf")):
+                # RFC 8259 has no spelling for NaN or the infinities.
+                return "null"
+            if value == int(value) and abs(value) < 1e15:
+                return str(int(value))
+            return repr(value)
+        if self.kind is ScriptValueKind.STRING:
+            return _json_string(self.string_val)
+        if self.kind is ScriptValueKind.ARRAY:
+            return "[" + ",".join(v.to_json_literal() for v in self.array_val) + "]"
+        if self.kind is ScriptValueKind.OBJECT:
+            return (
+                "{"
+                + ",".join(
+                    f"{_json_string(k)}:{self.object_val[k].to_json_literal()}"
+                    for k in sorted(self.object_val)
+                )
+                + "}"
+            )
+        if self.kind is ScriptValueKind.DOM:
+            # The data model reads XML into a DOM at the *receiving* end,
+            # from the document text — so a DOM that reaches here crosses
+            # as that text.
+            return _json_string(self.dom_val or "")
+        return "null"
 
     def to_bool(self) -> bool:
         """W3C SCXML B.2.3 — ECMAScript truthiness. Falsy: null,

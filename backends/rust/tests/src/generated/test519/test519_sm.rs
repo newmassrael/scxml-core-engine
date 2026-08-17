@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -612,14 +612,20 @@ impl StatePolicy for Test519Policy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let mut parts: Vec<String> = Vec::new();
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            let mut wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
                             match se.evaluate_expression(&sid, "1") {
                                 Ok(val) => {
-                                    parts.push(format!(
-                                        "{{{:?}, {}}}",
-                                        "param1",
-                                        val.to_lua_literal()
-                                    ));
+                                    wire_params
+                                        .entry("param1".to_string())
+                                        .or_default()
+                                        .push(val);
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -631,7 +637,9 @@ impl StatePolicy for Test519Policy {
                                     ));
                                 }
                             }
-                            format!("_scxml_params({})", parts.join(","))
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                &wire_params,
+                            )
                         };
                         let event_data: &str = &event_data_string;
 

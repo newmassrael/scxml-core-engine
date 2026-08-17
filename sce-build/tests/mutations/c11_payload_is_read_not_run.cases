@@ -1,0 +1,53 @@
+# Mutation cases for §scxml-B-2-8-1 on the C11 backend — the arriving
+# `_event.data` is parsed, and the parser is the shared one.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/c11_payload_is_read_not_run.cases`.
+#
+# C11 is the backend that decodes a payload through the SHARED
+# `sce/include/scripting/json_builtins.lua`: it has no native JSON decoder to
+# install over it, unlike the Rust and Go engines. It runs the payload through
+# a reader that used to rewrite its argument into Lua source and `load` it, so
+# `2 + 3` "parsed" to 5 and a payload that was a CALL ran — at the receiving
+# boundary, on text an embedder wrote (`examples/ai_loop` answers its machine
+# every turn; `watching-zenoh` hands in an MCU's wire payload).
+#
+# ⚠ The shared reader itself is NOT mutated from here, measured rather than
+# assumed: this backend's generated sources come from a codegen binary that
+# CMake finds rather than builds, so an edit to a file that binary embeds
+# leaves every test binary byte-identical and the round reports INCONCLUSIVE.
+# Those cases live in `event_payload_is_read_not_run.cases`, against
+# `shared_json_reader_is_a_parser`, which loads the file raw. What stays here
+# is what the C11 TEMPLATE decides, which is the half a cargo round cannot see.
+#
+# The target is the template rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree,
+# so the template is what the built binaries carry.
+
+mutation_ctest --test-dir build -R '^c11_integration_(event_data_arrives_as_sent|send_param_payload)$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+# The authored files in those tests; everything else they compile is generated
+# at CMake time, so the assertions every case below reds live here.
+mutation_oracles backends/c/tests/integration/test_event_data_arrives_as_sent.c backends/c/tests/integration/test_send_param_payload.c
+
+# ── The receiving boundary runs the payload again ──────────────────
+
+mutation_case "the c11 receiver evaluates the payload as Lua again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     '''                          "local _val, _ok = JSON.parse(_c); "
+                          "if _ok then _event.data = _val "
+                          "else _event.data = _scxml_normalize_ws(_c) end; "''',
+     '''                          "local _try = _c:gsub('\\"([^\\"]*)\\"%s*:', '[\\"%1\\"]='); "
+                          "local _fn = load('return (' .. _try .. ')'); "
+                          "local _ok, _val = false, nil; "
+                          "if _fn then _ok, _val = pcall(_fn) end; "
+                          "if _ok then _event.data = _val else _event.data = _c end; "''')
+PY
+
+# The wire the other half of the pair writes. C11 assembles the params in its
+# own engine and ships the serialisation; shipping the CALL instead is what
+# forced the receiving side to evaluate.
+mutation_case "the c11 sender ships the Lua call as the wire again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     '''                    (void)snprintf(_edj, sizeof(_edj), "return JSON.stringify(%s)", _ed);''',
+     '''                    (void)snprintf(_edj, sizeof(_edj), "return [==[%s]==]", _ed);''')
+PY

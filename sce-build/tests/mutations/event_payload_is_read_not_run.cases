@@ -1,0 +1,139 @@
+# Mutation cases for §scxml-B-2-8-1 — an arriving `_event.data` is READ.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/event_payload_is_read_not_run.cases`.
+#
+# The clause gives the payload three readings: XML becomes a DOM, JSON becomes
+# the value, and anything else becomes a space-normalized string. Five of six
+# backends took a fourth — they ran the text as source first, each in its own
+# language — and the reason it stood for so long is that it was load-bearing:
+# `<send>` shipped `_scxml_params({...})`, Lua SOURCE, so the run WAS the
+# deserializer. Removing it alone turned 27 Rust tests red. Both halves moved
+# together, and each half is restored on its own below.
+#
+# What the cases restore, and what each would cost if nobody noticed:
+#   * the receiving rung — a payload from a host, a peer session or an HTTP
+#     sender executes in the receiving session's globals, and `2 + 3` means 5
+#     here and the string "2 + 3" on the two engines that read the clause.
+#   * the sending wire — a payload only the sender's own language can read,
+#     so a cross-backend mesh event arrives as text.
+#
+# ⚠ The shared `json_builtins.lua` reader is not covered by the ENGINE tests
+# here, and that is measured rather than assumed: a mutation to its strictness
+# left all nine of them green, because this engine installs a NATIVE
+# `JSON.parse` over the shared file. The backend that decodes a payload
+# through the shared reader is C11 — which rebuilds through a codegen binary
+# CMake does not rebuild, so a ctest round cannot see the file move either.
+# `shared_json_reader_is_a_parser` loads it raw, and the last two cases below
+# are aimed at it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-lua --test event_payload_is_data_not_code -p sce-rust-tests --test event_data_arrives_as_sent -p sce-rust-tests --test send_param_payload -p sce-build --features cli --test author_literal_boundaries -p sce-build --features cli --test shared_json_reader_is_a_parser
+mutation_targets backends/rust/lua/src/lib.rs backends/rust/runtime/src/helpers/event_data.rs sce/include/scripting/json_builtins.lua
+mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2
+mutation_oracles backends/rust/lua/tests/event_payload_is_data_not_code.rs backends/rust/tests/tests/event_data_arrives_as_sent.rs backends/rust/tests/tests/send_param_payload.rs sce-build/tests/author_literal_boundaries.rs sce-build/tests/shared_json_reader_is_a_parser.rs
+
+mutation_case "the rust receiver evaluates the payload as Lua again" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """                match json_to_lua_value(&session.lua, event_data) {
+                    Some(val) => {
+                        event_table.set("data", val).map_err(map_lua_err)?;
+                    }""",
+     """                if let Ok(val) = session
+                    .lua
+                    .load(format!("return {}", event_data))
+                    .eval::<LuaValue>()
+                {
+                    event_table.set("data", val).map_err(map_lua_err)?;
+                    return Ok(());
+                }
+                match json_to_lua_value(&session.lua, event_data) {
+                    Some(val) => {
+                        event_table.set("data", val).map_err(map_lua_err)?;
+                    }""")
+PY
+
+# The generated tree the second artifact runs is committed, so a template
+# edit alone would not reach it. `author_literal_boundaries` generates from
+# the templates at test time, which is what makes this case answerable.
+mutation_case "the rust sender ships Lua source as the wire again" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     '''    let event_data: &str = "{{ action.params | static_params_json | escape_rust }}";''',
+     '''    let event_data: &str = "_scxml_params({% for param in action.params %}{\\"{{ param.name | escape_lua | escape_rust }}\\", \\"{{ param.static_value | escape_lua | escape_rust }}\\"}{% if not loop.last %}, {% endif %}{% endfor %})";''')
+PY
+
+# The repeated-name rule W3C test178 requires, in the helper every backend
+# ports from `EventDataHelper::buildJsonFromTypedParams`. Dropping it is the
+# defect that shipped before the helper existed: an object cannot hold one
+# name twice, so the last value silently won.
+mutation_case "a repeated param name keeps only its last value again" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_data.rs",
+     """        let published = if values.len() == 1 {
+            script_value_to_json(&values[0])
+        } else {""",
+     """        let published = if true {
+            script_value_to_json(&values[values.len() - 1])
+        } else {""")
+PY
+
+# The serializer, not the assembler: a value that crosses as its Lua spelling
+# is unreadable to a receiver that parses, and `to_lua_literal` is one
+# character away in the same module.
+mutation_case "the wire carries Lua literals for its values again" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_data.rs",
+     """        ScriptValue::String(s) => format!("\\"{}\\"", escape_json_string(s)),""",
+     """        ScriptValue::String(s) => format!("'{}'", escape_json_string(s)),""")
+PY
+
+# ── The shared reader stops being a parser ─────────────────────────
+#
+# The rung C11 decodes an arriving payload through. Accepting a prefix, or
+# falling back to evaluating, is the defect restored: `2 + 3` reaches the far
+# end as 5 and a payload that is a call runs there.
+
+mutation_case "the shared JSON reader accepts trailing text again" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     """    if i <= #s then return nil, false end
+    return value, true""",
+     """    return value, true""")
+PY
+
+mutation_case "the shared JSON reader falls back to evaluating again" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     """    local first = string.byte(s, i)
+    if first == nil or first < 48 or first > 57 then return nil, i, false end""",
+     """    local first = string.byte(s, i)
+    if first == nil or first < 48 or first > 57 then
+        local fn = load("return " .. s, "json", "t", {})
+        if fn then return fn(), #s + 1, true end
+        return nil, i, false
+    end""")
+PY
+
+# The packaging invariant, which is not about JSON: a blank line inside one of
+# the reader's functions splits it across two `luaL_dostring` calls in the C11
+# emit, both fail to compile, and `JSON.parse` is nil at run time there with
+# nothing said out loud. It happened while this parser was being written.
+mutation_case "a reader function is split across two c11 chunks" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     """    local value, i, ok = JSON._parse_value(s, 1)
+    if not ok then return nil, false end""",
+     """    local value, i, ok = JSON._parse_value(s, 1)
+
+    if not ok then return nil, false end""")
+PY
+
+# ECMA-262 15.12.2 gives `JSON.parse` one return. A second is not invisible:
+# `return JSON.parse(x)` propagates every value in tail position, and lupa
+# surfaces that as a tuple — which is how the Python ECMA-262 table caught it.
+mutation_case "the author-facing parse leaks its ok flag again" <<'PY'
+edit("sce/include/scripting/json_builtins.lua",
+     """function JSON.parse(s)
+    local value = JSON._parse_document(s)
+    return value
+end""",
+     """function JSON.parse(s)
+    return JSON._parse_document(s)
+end""")
+PY

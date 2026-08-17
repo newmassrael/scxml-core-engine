@@ -105,14 +105,27 @@
          a number that arrived stringified is a different defect from a
          duplicate name that lost one of its values. -->
     <state id="typedPhase">
+        <datamodel>
+            <!-- Read by a `<param expr>` below rather than written into one.
+                 A param whose expression is a literal is folded at codegen
+                 time and serialised there; only one that has to be EVALUATED
+                 reaches the runtime serialiser, and until this variable
+                 existed no string ever did — every string-valued param in
+                 this corpus was a literal, so the serialiser's string arm
+                 could emit any spelling at all and stay green (measured
+                 2026-08-17 by a mutation that made it emit Lua quotes). -->
+            <data id="tag" expr="'kept'"/>
+        </datamodel>
         <onentry>
             <send target="#_internal" event="typed">
                 <param name="n" expr="7"/>
+                <param name="s" expr="tag"/>
                 <param name="d" expr="1"/>
                 <param name="d" expr="2"/>
             </send>
         </onentry>
         <transition event="typed" cond="_event.data.n !== 7" target="failNumberType"/>
+        <transition event="typed" cond="_event.data.s !== 'kept'" target="failStringType"/>
         <transition event="typed"
                     cond="_event.data.d.length === 2 &amp;&amp; _event.data.d[0] === 1 &amp;&amp; _event.data.d[1] === 2"
                     target="pass"/>
@@ -123,5 +136,6 @@
     <final id="failChildPayload"/>
     <final id="failInternalPayload"/>
     <final id="failNumberType"/>
+    <final id="failStringType"/>
     <final id="failDuplicateParams"/>
 </scxml>

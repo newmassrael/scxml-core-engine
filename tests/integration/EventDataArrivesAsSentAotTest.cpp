@@ -84,11 +84,24 @@ TEST(EventDataArrivesAsSentAotTest, AHostsJsonPayloadIsAddressableAndItsTextStay
     // against, character for character.
     sm.processEvent(SM::Event::Note, SCE::Core::EventMetadata("note", "hold the line"));
 
-    EXPECT_TRUE(isActive(sm, SM::State::Settled))
+    EXPECT_FALSE(isActive(sm, SM::State::Garbled))
         << "the host sent the text `hold the line` and `_event.data === 'hold the line'` did not "
            "hold, so a payload that is not JSON did not arrive as the string it was sent as. "
            "active: "
         << describe(sm);
+
+    // Text that happens to be a valid expression. §scxml-B-2-8-1 gives the
+    // payload three readings and none of them is "evaluate it": a payload is
+    // what a host, a peer session or an HTTP sender put there, and running it
+    // makes `_event.data` mean whatever the receiver's engine is written in.
+    sm.processEvent(SM::Event::Arith, SCE::Core::EventMetadata("arith", "2 + 3"));
+
+    EXPECT_FALSE(isActive(sm, SM::State::Evaluated))
+        << "the host sent the text `2 + 3` and it arrived as 5 — the payload was run rather than "
+           "read. active: "
+        << describe(sm);
+    EXPECT_TRUE(isActive(sm, SM::State::Settled))
+        << "the arithmetic-shaped payload neither matched nor mismatched. active: " << describe(sm);
 }
 
 }  // namespace SCE::Tests

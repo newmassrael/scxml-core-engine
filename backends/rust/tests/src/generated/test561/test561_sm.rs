@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -592,6 +592,9 @@ impl StatePolicy for Test561Policy {
                         // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
                         // the datamodel reads 5, and whether the text was an expression at all
                         // was discovered by an evaluation that failed.
+                        // XML travels as the document text. §scxml-B-2-8-1 has the RECEIVER build
+                        // the DOM — serializing a DOM into the payload would make the reading
+                        // depend on the sender having parsed it first (W3C test561).
                         let event_data: &str = "<books xmlns=\"\">\n<book title=\"title1\"/>\n<book title=\"title2\"/>\n</books>";
 
                         // W3C SCXML 6.2: Default send (no target = external event)

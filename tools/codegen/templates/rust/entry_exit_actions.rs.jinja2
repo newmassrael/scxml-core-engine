@@ -197,8 +197,11 @@
 {% else %}
                     match se.evaluate_expression(&sid, "{{ param_expr | to_lua_expr | escape_rust }}") {
                         Ok(val) => {
-                            let mut part = String::from("[\"{{ param.name | escape_lua | escape_rust }}\"] = ");
-                            part.push_str(&val.to_lua_literal());
+                            // §scxml-B-2-9: donedata rides an event, so it
+                            // leaves the data model and travels as JSON —
+                            // the same wire `<send>`'s params take.
+                            let mut part = String::from("\"{{ param.name | escape_json_string | escape_rust }}\":");
+                            part.push_str(&::sce_rust_runtime::helpers::event_data::script_value_to_json(&val));
                             json_parts.push(part);
                         }
                         Err(e) => {
@@ -212,7 +215,7 @@
 {% endfor %}
                     if done_data_ok {
                         done_event_data = String::from("{");
-                        done_event_data.push_str(&json_parts.join(", "));
+                        done_event_data.push_str(&json_parts.join(","));
                         done_event_data.push('}');
                     }
                 }
@@ -233,7 +236,9 @@
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     match se.evaluate_expression(&sid, "{{ donedata_content_lua | escape_rust }}") {
-                        Ok(val) => { done_event_data = val.to_lua_literal(); }
+                        // §scxml-B-2-9: serialized, not spelled as Lua source
+                        // — the reader is the parent's dequeue, which parses.
+                        Ok(val) => { done_event_data = ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val); }
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata content expr eval failed: {}", e);
 {% if 'error.execution' in model.events %}
