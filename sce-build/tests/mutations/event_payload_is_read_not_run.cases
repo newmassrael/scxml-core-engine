@@ -30,7 +30,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-lua --test event_payload_is_data_not_code -p sce-rust-tests --test event_data_arrives_as_sent -p sce-rust-tests --test send_param_payload -p sce-build --features cli --test author_literal_boundaries -p sce-build --features cli --test shared_json_reader_is_a_parser
-mutation_targets backends/rust/lua/src/lib.rs backends/rust/runtime/src/helpers/event_data.rs sce/include/scripting/json_builtins.lua
+mutation_targets backends/rust/lua/src/lib.rs backends/rust/runtime/src/helpers/event_data.rs sce/include/scripting/json_builtins.lua sce-build/src/filters.rs
 mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2
 mutation_oracles backends/rust/lua/tests/event_payload_is_data_not_code.rs backends/rust/tests/tests/event_data_arrives_as_sent.rs backends/rust/tests/tests/send_param_payload.rs sce-build/tests/author_literal_boundaries.rs sce-build/tests/shared_json_reader_is_a_parser.rs
 
@@ -111,17 +111,35 @@ edit("sce/include/scripting/json_builtins.lua",
     end""")
 PY
 
-# The packaging invariant, which is not about JSON: a blank line inside one of
-# the reader's functions splits it across two `luaL_dostring` calls in the C11
-# emit, both fail to compile, and `JSON.parse` is nil at run time there with
-# nothing said out loud. It happened while this parser was being written.
-mutation_case "a reader function is split across two c11 chunks" <<'PY'
-edit("sce/include/scripting/json_builtins.lua",
-     """    local value, i, ok = JSON._parse_value(s, 1)
-    if not ok then return nil, false end""",
-     """    local value, i, ok = JSON._parse_value(s, 1)
+# The packaging invariant, which is not about JSON: the C11 emit splits these
+# files into one `luaL_dostring` per chunk, and a boundary that lands inside a
+# function produces two fragments that neither compile — silently, because the
+# emitted calls are `(void)`-cast, leaving the function simply absent. It
+# happened while this parser was being written and surfaced as nine unrelated
+# C11 failures.
+#
+# ⚠ Aimed at the CHUNKER rather than at a blank line in the source, and the
+# first shape of this case is why: a blank line only becomes a boundary when
+# the running byte count reaches the threshold there, so the same edit was
+# CAUGHT locally and SURVIVED in CI after the file was reshaped between the
+# two runs. The depth guard makes the hazard structural, so removing the guard
+# is the mutation that restores it.
+mutation_case "the c11 chunker splits inside a function body again" <<'PY'
+edit("sce-build/src/filters.rs",
+     """        if depth == 0 && !current.is_empty() && current.len() + paragraph.len() > MAX_CHUNK {""",
+     """        if !current.is_empty() && current.len() + paragraph.len() > MAX_CHUNK {""")
+PY
 
-    if not ok then return nil, false end""")
+# The counter the guard reads. `ecma_semantics.lua` writes four one-line
+# functions, and counting one as an open body left the guard believing it was
+# inside a function for the rest of the file — measured, by the depth-balance
+# test, which is the only reason the guard is not silently inert.
+mutation_case "the depth counter mistakes a one-line function for an open body" <<'PY'
+edit("sce-build/src/filters.rs",
+     """            if !line.ends_with(" end") {
+                depth += 1;
+            }""",
+     """            depth += 1;""")
 PY
 
 # ECMA-262 15.12.2 gives `JSON.parse` one return. A second is not invisible:
