@@ -187,8 +187,24 @@ sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reaso
 # the job went red for having been asked. Measured on the first push to touch
 # a C11 template: `c11_datamodel_reader.cases` was selected and the selection
 # step exited 3 before printing it.
+#
+# Each line carries the runner beside the casefile — `path<TAB>runner` — for
+# the same reason the count is printed at all: the caller has to act on it,
+# and the only alternative is to derive it a second time. That second
+# derivation existed, in the lane's own shell, and it was wrong on every push
+# that needed it: `scripts/mutate --declares "$f" | grep -qx "runner\tctest"`
+# under `set -o pipefail` returns the *writer's* status, and `grep -q` exits
+# at the first match, so the writer takes SIGPIPE and the pipeline reports
+# 141. Measured 20/20 on this repository — not a race. The lane skipped its
+# CMake step and the rounds then refused for the tree it had just declined to
+# build, which is how the five ctest casefiles — `ai_loop_history_cpp`,
+# `c11_datamodel_reader` and the three `parallel_*` — went 34 commits without
+# a single CI round, `parallel_microstep_owns_exit_and_entry` among them: the
+# very case whose silent INCONCLUSIVE this gate was written to catch.
 if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
-    printf '%s\n' ${SELECTED[@]+"${SELECTED[@]}"}
+    for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
+        printf '%s\t%s\n' "$casefile" "${RUNNER_OF[$casefile]}"
+    done
     exit 0
 fi
 
