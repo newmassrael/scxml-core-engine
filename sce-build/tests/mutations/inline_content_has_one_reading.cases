@@ -23,16 +23,21 @@ mutation_tests -p sce-build --features cli --test inline_content_has_one_reading
 mutation_targets sce-build/tests/inline_content_has_one_reading.rs sce-build/src/parser.rs sce-build/src/filters.rs
 mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/c/scriptengine.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 tools/codegen/templates/rust/actions/assign.rs.jinja2 tools/codegen/templates/go/actions/assign.go.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/python/actions/assign.py.jinja2 tools/codegen/templates/actions/assign.jinja2 tools/codegen/templates/kotlin/actions/assign.kt.jinja2 tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2
 
+# ⚠ Re-aimed 2026-08-17: the payload these two sites write is now JSON
+# (§scxml-B-2-9), so the authored text is evaluated at send time and the
+# result serialised rather than embedded as a Lua expression. The reading is
+# still decided by the same filter, which is what these cases are about, so
+# only the site moved — the anchors follow it.
 mutation_case "rust hands the author's text over unread again" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     '''let event_data: &str = "{{ action.content | to_lua_data_content | escape_rust }}";''',
-     '''let event_data: &str = "{{ action.content | escape_rust }}";''')
+     '''        match se.evaluate_expression(&sid, "{{ action.content | to_lua_data_content | escape_rust }}") {''',
+     '''        match se.evaluate_expression(&sid, "{{ action.content | escape_rust }}") {''')
 PY
 
 mutation_case "go hands the author's text over unread again" <<'PY'
 edit("tools/codegen/templates/go/actions/send.go.jinja2",
-     '''eventDataStr := "{{ action.content | to_lua_data_content | escape_go }}"''',
-     '''eventDataStr := "{{ action.content | escape_go }}"''')
+     '''		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.content | to_lua_data_content }}`); contentErr == nil {''',
+     '''		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.content }}`); contentErr == nil {''')
 PY
 
 # Aimed at the helper rather than a call site: `send.py.jinja2` spells the

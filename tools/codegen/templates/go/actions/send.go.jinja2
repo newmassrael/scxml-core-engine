@@ -27,14 +27,18 @@
 {% endif %}
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
-		parts := make([]string, 0)
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
 {% if has_params %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
-		parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %q}", "{{ param.name | escape_go }}", "{{ param.static_value | escape_go }}"))
+		parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: "{{ param.static_value | escape_go }}"})
 {% elif param.expr %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %s}", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -42,7 +46,7 @@
 		}
 {% elif param.location %}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %s}", "{{ param.name | escape_go }}", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -60,7 +64,7 @@
 {% endif %}
 			sendAborted = true
 		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `{{ name }}`); nlErr == nil {
-			parts = append(parts, fmt.Sprintf("{{ '{' }}%q, %s}", "{{ name }}", sce.ToLuaLiteral(nlVal)))
+			parts = append(parts, sce.EventDataParam{Name: "{{ name }}", Value: nlVal})
 		} else {
 {% if 'error.execution' in model.events %}
 			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -72,22 +76,24 @@
 {% if has_namelist %}
 		eventDataStr := ""
 		if !sendAborted {
-			eventDataStr = "_scxml_params(" + strings.Join(parts, ",") + ")"
+			eventDataStr = sce.BuildJSONFromTypedParams(parts)
 		}
 {% else %}
-		eventDataStr := "_scxml_params(" + strings.Join(parts, ",") + ")"
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 {% endif %}
 		_ = eventDataStr
 {% elif has_params %}
 	{
-		// W3C SCXML B.2: All params are static literals.
-		// The author name/value cross two literal boundaries — the Lua
-		// table constructor this line assembles, then the Go string
-		// literal that carries it — so each is escaped once per
-		// boundary (`escape_lua | escape_go`). Applying only the host
-		// filter produces Go source that compiles and Lua source that
-		// does not parse.
-		eventDataStr := "_scxml_params({% for param in action.params %}{\"{{ param.name | escape_lua | escape_go }}\", \"{{ param.static_value | escape_lua | escape_go }}\"}{% if not loop.last %}, {% endif %}{% endfor %})"
+		// W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+		// finished at codegen time. It has to be — this arm is what a machine
+		// with no script engine emits, and the wire it used to write (a
+		// `_scxml_params(...)` call in Lua) could only be read back by an
+		// interpreter.
+		//
+		// The author name/value cross two literal boundaries, the JSON text
+		// the filter assembles and the Go string literal carrying it, so each
+		// is escaped once per boundary.
+		eventDataStr := "{{ action.params | static_params_json | escape_go }}"
 		_ = eventDataStr
 {% elif action.content %}
 	{
@@ -95,7 +101,23 @@
 		// the same filter inline `<data>` and `<donedata>` text goes
 		// through — see `rust/actions/send.rs.jinja2` for what reading it
 		// at run time instead did.
-		eventDataStr := "{{ action.content | to_lua_data_content | escape_go }}"
+{% if action.content | data_content_is_xml %}
+		// XML travels as the document text: §scxml-B-2-8-1 has the RECEIVER
+		// build the DOM (W3C test561).
+		eventDataStr := "{{ action.content | escape_go }}"
+{% elif model.needs_script_engine %}
+		// The reading was decided at codegen time; the VALUE is produced
+		// here, at send time, and serialized so the far end parses.
+		p.ensureScriptEngine()
+		eventDataStr := ""
+		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.content | to_lua_data_content }}`); contentErr == nil {
+			eventDataStr = sce.ScriptValueToJSON(contentVal)
+		}
+{% else %}
+		// No data model, so the text is the value — §scxml-B-2-8-1's last
+		// rung, taken at codegen time.
+		eventDataStr := "\"{{ action.content | normalize_ws | escape_json_string | escape_go }}\""
+{% endif %}
 		_ = eventDataStr
 {% else %}
 	{

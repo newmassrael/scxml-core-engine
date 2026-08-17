@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -611,7 +611,14 @@ impl StatePolicy for Test553Policy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let mut parts: Vec<String> = Vec::new();
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            let mut wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
                             // W3C SCXML C.1: namelist variables become top-level keys in the data table
                             // W3C SCXML B.2 (test 553): Check variable existence before evaluation
                             if !se.has_variable(&sid, "__undefined_variable_for_error__") {
@@ -625,11 +632,10 @@ impl StatePolicy for Test553Policy {
                                     .evaluate_expression(&sid, "__undefined_variable_for_error__")
                                 {
                                     Ok(val) => {
-                                        parts.push(format!(
-                                            "{{{:?}, {}}}",
-                                            "__undefined_variable_for_error__",
-                                            val.to_lua_literal()
-                                        ));
+                                        wire_params
+                                            .entry("__undefined_variable_for_error__".to_string())
+                                            .or_default()
+                                            .push(val);
                                     }
                                     Err(e) => {
                                         ::sce_rust_runtime::sce_log_error!("send namelist '__undefined_variable_for_error__' eval failed: {}", e);
@@ -643,7 +649,7 @@ impl StatePolicy for Test553Policy {
                             if _send_aborted {
                                 String::new()
                             } else {
-                                format!("_scxml_params({})", parts.join(","))
+                                ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(&wire_params)
                             }
                         };
                         // W3C SCXML 6.2: event_data defaults to empty if namelist failed

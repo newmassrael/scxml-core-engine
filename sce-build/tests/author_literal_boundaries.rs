@@ -162,8 +162,9 @@ enum Extractor {
         key_at: usize,
         value_at: usize,
     },
-    /// A Lua table constructor carried inside one host string literal.
-    LuaTable { marker: &'static str },
+    /// A whole JSON payload carried inside one host string literal —
+    /// §scxml-B-2-9's wire, which the receiver parses.
+    WirePayload { marker: &'static str },
 }
 
 struct Backend {
@@ -193,7 +194,7 @@ const PASTE_BACKENDS: &[Backend] = &[
         lang: Language::Rust,
         name: "rust",
         extractors: &[
-            Extractor::LuaTable {
+            Extractor::WirePayload {
                 marker: "let event_data",
             },
             Extractor::HostPairs {
@@ -201,12 +202,14 @@ const PASTE_BACKENDS: &[Backend] = &[
                 key_at: 0,
                 value_at: 1,
             },
-            // Runtime-assembled event data: the format string occupies
-            // literal 0, so key and value shift to 1 and 2.
+            // Runtime-assembled event data: the params are collected as
+            // typed values and serialised by the runtime helper, so the
+            // authored name and value are literals 0 and 1 of the line that
+            // enters one.
             Extractor::HostPairs {
-                marker: "parts.push(format!(",
-                key_at: 1,
-                value_at: 2,
+                marker: "wire_params.entry(",
+                key_at: 0,
+                value_at: 1,
             },
         ],
     },
@@ -214,7 +217,7 @@ const PASTE_BACKENDS: &[Backend] = &[
         lang: Language::Go,
         name: "go",
         extractors: &[
-            Extractor::LuaTable {
+            Extractor::WirePayload {
                 marker: "eventDataStr",
             },
             Extractor::HostPairs {
@@ -222,12 +225,13 @@ const PASTE_BACKENDS: &[Backend] = &[
                 key_at: 0,
                 value_at: 2,
             },
-            // Runtime-assembled event data: the format string occupies
-            // literal 0, so key and value shift to 1 and 2.
+            // Same shape as rust's `wire_params.entry(`: a struct literal
+            // carrying the authored name and value into the runtime
+            // serialiser.
             Extractor::HostPairs {
-                marker: "fmt.Sprintf(",
-                key_at: 1,
-                value_at: 2,
+                marker: "sce.EventDataParam{",
+                key_at: 0,
+                value_at: 1,
             },
         ],
     },
@@ -458,26 +462,28 @@ fn extract_host_pairs(
     (found, errors)
 }
 
-/// Extract every Lua table a backend embedded in a host literal, undo the
-/// host escaping, then evaluate each with the real Lua parser.
+/// Extract every payload a backend embedded in a host literal, undo the
+/// host escaping, then read each one the way the RECEIVER does.
 ///
-/// Per-table this is all-or-nothing by nature: the params of one `<send>`
-/// share a single constructor, so one bad value makes the whole thing
-/// unparseable and there is no per-param verdict to give. The error
-/// carries the emitted Lua so a failing run shows what was written.
-fn extract_lua_tables(source: &str, marker: &str) -> (Vec<(String, String)>, Vec<String>) {
+/// Per-payload this is all-or-nothing by nature: the params of one `<send>`
+/// share a single document, so one bad value makes the whole thing
+/// unparseable and there is no per-param verdict to give. The error carries
+/// the emitted text so a failing run shows what was written.
+fn extract_wire_payloads(source: &str, marker: &str) -> (Vec<(String, String)>, Vec<String>) {
     let mut errors: Vec<String> = Vec::new();
     let mut found = Vec::new();
     let lua = mlua::Lua::new();
-    // The emitted payload is `_scxml_params({"k", v}, …)` rather than a bare
-    // table constructor, because a constructor cannot express a repeated
-    // `<param>` name — Lua's last key wins and the first value is gone. So the
-    // builder has to be in scope to read the payload back, and loading the
-    // shared file rather than reimplementing it is what keeps this gate
-    // measuring what production assembles.
-    lua.load(sce_build::filters::ECMA_SEMANTICS_LUA)
+    // §scxml-B-2-9: the payload is JSON, so it is read back with the shared
+    // `JSON.parse` rather than by evaluating it. That is not only a change of
+    // format — it is the claim this test now makes. The payload used to be
+    // `_scxml_params({"k", v}, …)`, Lua SOURCE, and reading it back meant
+    // loading the shared semantics file and RUNNING what the sender wrote;
+    // the receiving engines did the same, which is how an event payload
+    // became executable. Using the production reader rather than a
+    // reimplementation is what keeps this gate measuring what ships.
+    lua.load(sce_build::filters::JSON_BUILTINS_LUA)
         .exec()
-        .expect("the shared semantics file loads");
+        .expect("the shared JSON file loads");
 
     for line in source.lines() {
         let Some(at) = line.find(marker) else {
@@ -490,29 +496,45 @@ fn extract_lua_tables(source: &str, marker: &str) -> (Vec<(String, String)>, Vec
         else {
             continue;
         };
-        let lua_source = match unescape_host(&raw) {
+        let wire = match unescape_host(&raw) {
             Ok(source) => source,
             Err(why) => {
                 errors.push(format!("host literal (raw {raw:?}): {why}"));
                 continue;
             }
         };
-        let trimmed = lua_source.trim();
-        let is_table = trimmed.starts_with('{') && trimmed.ends_with('}');
-        let is_params_call = trimmed.starts_with("_scxml_params(") && trimmed.ends_with(')');
-        if !(is_table || is_params_call) {
+        let trimmed = wire.trim();
+        if !(trimmed.starts_with('{') && trimmed.ends_with('}')) {
             continue;
         }
 
-        let table: mlua::Table = match lua.load(format!("return {lua_source}")).eval() {
-            Ok(table) => table,
+        // Handed over as a value, not spliced into the chunk: a test that
+        // pasted the payload into Lua source would be re-introducing the
+        // boundary it exists to check.
+        lua.globals()
+            .set("_wire", trimmed)
+            .expect("the payload binds");
+        let parsed: Option<mlua::Table> = match lua
+            // `_parse_document` rather than `JSON.parse`: the author-facing
+            // entry point answers with the value alone (ECMA-262 gives it one
+            // return), and this has to tell a refusal from a JSON `null`.
+            .load("local v, ok = JSON._parse_document(_wire); if ok then return v end return nil")
+            .eval()
+        {
+            Ok(parsed) => parsed,
             Err(e) => {
                 errors.push(format!(
-                    "the emitted Lua does not parse — host source may still compile: {e}\n  \
-                     Lua source was: {lua_source}"
+                    "the shared JSON reader raised: {e}\n  wire was: {wire}"
                 ));
                 continue;
             }
+        };
+        let Some(table) = parsed else {
+            errors.push(format!(
+                "the emitted payload is not JSON — host source may still compile\n  \
+                 wire was: {wire}"
+            ));
+            continue;
         };
         for pair in table.pairs::<String, String>() {
             match pair {
@@ -521,7 +543,7 @@ fn extract_lua_tables(source: &str, marker: &str) -> (Vec<(String, String)>, Vec
                         found.push((k, v));
                     }
                 }
-                Err(e) => errors.push(format!("Lua table entry is not string→string: {e}")),
+                Err(e) => errors.push(format!("payload entry is not string→string: {e}")),
             }
         }
     }
@@ -552,7 +574,7 @@ fn author_param_literals_survive_every_boundary() {
                         key_at,
                         value_at,
                     } => extract_host_pairs(&source, marker, *key_at, *value_at),
-                    Extractor::LuaTable { marker } => extract_lua_tables(&source, marker),
+                    Extractor::WirePayload { marker } => extract_wire_payloads(&source, marker),
                 };
                 violations.extend(
                     errors
@@ -704,11 +726,18 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
     // Kept as two rows rather than one because that independence is the
     // claim — if either fixture stops reaching the site, only the row
     // for that fixture goes red and says which.
+    //
+    // The marker is the codegen-time JSON literal (`*_lit = `) rather than
+    // the per-name buffer append it used to be: params that all fold are
+    // serialised whole at build time now, which is what lets a machine with
+    // no script engine still produce a readable payload. Both fixtures take
+    // that arm — measured, the "scripted" one included, because its
+    // parent-send params are literals even where its others are not.
     (
         Language::C11,
         "c11/parent-send-param",
         "send_param_adversarial_literals",
-        "*_pn = ",
+        "*_lit = ",
         "parent_",
         7,
     ),
@@ -716,7 +745,7 @@ const LUA_KEY_SITES: &[(Language, &str, &str, &str, &str, usize)] = &[
         Language::C11,
         "c11/parent-send-param-scripted",
         "send_param_adversarial_literals_scripted",
-        "*_pn = ",
+        "*_lit = ",
         "parent_",
         7,
     ),
@@ -743,19 +772,29 @@ fn extract_lua_keys(source: &str, marker: &str) -> (Vec<String>, Vec<String>) {
                 }
             };
             let mut rest = lua_source.as_str();
-            // Two spellings, because the payload is no longer always a table
-            // constructor: a `<param>` name reaches the Lua layer as the index
-            // `["name"] = v` where the emitter still writes a table, and as
-            // the pair `{"name", v}` where it writes `_scxml_params(...)` —
-            // which is what lets a repeated name become an Array instead of
-            // overwriting. Both put the name in a Lua string literal one
-            // character in, which is all this scan depends on.
-            let next_key = |s: &str| match (s.find("[\""), s.find("{\"")) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
+            // Three spellings, because a `<param>` name reaches the layer
+            // below in three shapes: the Lua index `["name"] = v` where the
+            // emitter still writes into a table (C11's `_pending_donedata`),
+            // the pair `{"name", v}` where it writes `_scxml_params(...)`,
+            // and the JSON member `"name":v` on the §scxml-B-2-9 wire that
+            // `<send>` and `<donedata>` now write. All three put the name in
+            // a quoted literal, which is all this scan depends on; each
+            // candidate below is the index OF THE QUOTE.
+            let next_key = |s: &str| {
+                [
+                    s.find("[\"").map(|i| i + 1),
+                    s.find("{\"").map(|i| i + 1),
+                    // A JSON payload opens with its first key, and a member
+                    // after the first follows a comma.
+                    if s.starts_with('"') { Some(0) } else { None },
+                    s.find(",\"").map(|i| i + 1),
+                ]
+                .into_iter()
+                .flatten()
+                .min()
             };
             while let Some(at) = next_key(rest) {
-                let tail: Vec<char> = rest[at + 1..].chars().collect();
+                let tail: Vec<char> = rest[at..].chars().collect();
                 match scan_literal(&tail, 0) {
                     Some((raw_key, _)) => {
                         // The key is a Lua literal, so Lua decides what it
@@ -773,7 +812,7 @@ fn extract_lua_keys(source: &str, marker: &str) -> (Vec<String>, Vec<String>) {
                         "unterminated Lua string in emitted source: {lua_source}"
                     )),
                 }
-                rest = &rest[at + 2..];
+                rest = &rest[at + 1..];
             }
         }
     }

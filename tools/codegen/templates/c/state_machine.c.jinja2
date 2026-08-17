@@ -51,6 +51,23 @@
    and still ships the truncated prefix — a stricter cancel-and-raise
    lands when a fixture forces it.                                        #}
 {% macro lua_table_from_params(params) %}
+{% if params | rejectattr("is_static_literal") | list | length == 0 %}
+                /* W3C SCXML 6.2 + B-2-9: every value is a literal, so the
+                   payload is finished at codegen time — and it has to be,
+                   because a machine whose params all fold may carry no
+                   script engine at all (`sm->L` does not exist on the
+                   `send_param_payload` synth-invoke emitter). The Lua-source
+                   wire could not do this: reading it back needed an
+                   interpreter at the far end even when the sender had none. */
+                char _ed[SCE_MAX_DATA_LEN];
+                {
+                    static const char *_lit = "{{ params | static_params_json | escape_c }}";
+                    size_t _ln = strlen(_lit);
+                    if (_ln >= sizeof(_ed)) { _ln = sizeof(_ed) - 1; }
+                    memcpy(_ed, _lit, _ln);
+                    _ed[_ln] = '\0';
+                }
+{% else %}
                 char _ed[SCE_MAX_DATA_LEN];
                 int _ed_len = 0;
                 /* W3C SCXML 6.2: the params go through `_scxml_params`, which
@@ -115,6 +132,33 @@
                 {% endfor %}
                 if (_ed_len < (int)SCE_MAX_DATA_LEN - 1) { _ed[_ed_len++] = ')'; }
                 _ed[_ed_len] = '\0';
+                /* §scxml-B-2-9: the call above is assembled from this
+                   document's own escaped literals and evaluated HERE, in the
+                   sending machine's engine; what crosses is its JSON. The
+                   call text itself used to be the wire, so the receiving
+                   machine had to run Lua source that arrived on an event —
+                   and every embedder that hands in a payload writes to that
+                   same field. `_scxml_params` stays because it owns the
+                   repeated-name rule (W3C test178); only its output is
+                   serialized rather than shipped as source. */
+                {
+                    char _edj[SCE_MAX_DATA_LEN + 32];
+                    (void)snprintf(_edj, sizeof(_edj), "return JSON.stringify(%s)", _ed);
+                    if (luaL_dostring(sm->L, _edj) == 0) {
+                        const char *_j = lua_tostring(sm->L, -1);
+                        if (_j != NULL) {
+                            int _jl = (int)strlen(_j);
+                            if (_jl >= (int)SCE_MAX_DATA_LEN) { _jl = (int)SCE_MAX_DATA_LEN - 1; }
+                            memcpy(_ed, _j, (size_t)_jl);
+                            _ed[_jl] = '\0';
+                        }
+                        lua_pop(sm->L, 1);
+                    } else {
+                        lua_pop(sm->L, 1);
+                        _ed[0] = '\0';
+                    }
+                }
+{% endif %}
 {% endmacro %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 implementation. Module-level form is a comment per
@@ -699,10 +743,17 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
 {% if action.params %}
             {
 {{ lua_table_from_params(action.params) }}
-                /* Truncating here would ship a table that does not parse,
-                   so the payload is copied only when it fits whole. */
-                if ((size_t)_ed_len < sizeof(_send_evt.data)) {
-                    memcpy(_send_evt.data, _ed, (size_t)_ed_len + 1u);
+                /* Truncating here would ship JSON that does not parse, so
+                   the payload is copied only when it fits whole. Measured
+                   from the buffer rather than from an assembly counter: the
+                   macro's two arms produce the string different ways (one
+                   serialises through the engine, the other embeds a codegen
+                   literal) and only the string itself is common to both. */
+                {
+                    size_t _ed_n = strlen(_ed);
+                    if (_ed_n < sizeof(_send_evt.data)) {
+                        memcpy(_send_evt.data, _ed, _ed_n + 1u);
+                    }
                 }
             }
 {% endif %}
@@ -3715,26 +3766,31 @@ SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
        And a payload is host input: as Lua SOURCE it was executed, so an event's
        data could run arbitrary code in the session.
 
-       `lua_pushstring` removes the source boundary entirely; the decode below
-       is the same best-effort shape `lua_send_content_literal` applies to a
-       `<content>` body — JSON key shim, `load` + `pcall`, raw string on
-       failure — so a Lua table literal from a cross-SM dispatch, a JSON object
-       from an embedder, and plain text all land the way they do everywhere
-       else. The chunk is now a fixed string with nothing interpolated, so its
-       result is checked: a failure here is this engine's own invariant
-       breaking, and W3C 4.9's `<log>` seam is where such a thing is said out
-       loud rather than swallowed. */
+       `lua_pushstring` removes the source boundary, and the decode below
+       removes the evaluation. The shape that stood here — a JSON key shim,
+       then `load('return (' .. text .. ')')` + `pcall` — still RAN the
+       payload: `2 + 3` from a host arrived as the number 5 (the string
+       "2 + 3" on cpp and Rhino, which read §scxml-B-2-8-1 instead), and a
+       payload that is a call executed, now inside a chunk rather than
+       inside interpolated source. What the clause gives the payload is
+       three readings — XML → DOM, JSON → value, otherwise a
+       space-normalized string — and `JSON.parse` is a parser as of the
+       same change, so this is those readings and nothing else. Its second
+       return distinguishes a successful `null` from a refusal.
+
+       The chunk is a fixed string with nothing interpolated, so its result
+       is checked: a failure here is this engine's own invariant breaking,
+       and W3C 4.9's `<log>` seam is where such a thing is said out loud
+       rather than swallowed. */
     if (evt->data[0] != '\0') {
         lua_pushstring(L, evt->data);
         lua_setglobal(L, "_sce_raw_event_data");
         if (luaL_dostring(L,
                           "do "
                           "local _c = _sce_raw_event_data; "
-                          "local _try = _c:gsub('\"([^\"]*)\"%s*:', '[\"%1\"]='); "
-                          "local _fn = load('return (' .. _try .. ')'); "
-                          "local _ok, _val = false, nil; "
-                          "if _fn then _ok, _val = pcall(_fn) end; "
-                          "if _ok then _event.data = _val else _event.data = _c end; "
+                          "local _val, _ok = JSON._parse_document(_c); "
+                          "if _ok then _event.data = _val "
+                          "else _event.data = _scxml_normalize_ws(_c) end; "
                           "_sce_raw_event_data = nil "
                           "end") != 0) {
             (void)fprintf(stderr, "SCE: event payload decode failed: %s\n",

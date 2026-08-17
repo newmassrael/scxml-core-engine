@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d307f64e2f440b5e64842da73b67f9e9208ee8c09e59399434add3727578f7cc
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 
@@ -317,14 +317,16 @@ func (p *SendParamPayloadSceSynthInvokeInvEmitterPolicy) ExecuteEntryActions(sta
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
-		// W3C SCXML B.2: All params are static literals.
-		// The author name/value cross two literal boundaries — the Lua
-		// table constructor this line assembles, then the Go string
-		// literal that carries it — so each is escaped once per
-		// boundary (`escape_lua | escape_go`). Applying only the host
-		// filter produces Go source that compiles and Lua source that
-		// does not parse.
-		eventDataStr := "_scxml_params({\"value\", \"42\"})"
+		// W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+		// finished at codegen time. It has to be — this arm is what a machine
+		// with no script engine emits, and the wire it used to write (a
+		// `_scxml_params(...)` call in Lua) could only be read back by an
+		// interpreter.
+		//
+		// The author name/value cross two literal boundaries, the JSON text
+		// the filter assembles and the Go string literal carrying it, so each
+		// is escaped once per boundary.
+		eventDataStr := "{\"value\":\"42\"}"
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {

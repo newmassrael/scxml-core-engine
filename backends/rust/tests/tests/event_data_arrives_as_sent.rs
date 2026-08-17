@@ -70,9 +70,28 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     let after_note = engine.get_active_states();
     assert!(
-        after_note.contains(&State::Settled),
+        !after_note.contains(&State::Garbled),
         "the host sent the text `hold the line` and `_event.data === 'hold the line'` \
          did not hold, so a payload that is not JSON did not arrive as the string it \
          was sent as (active: {after_note:?})"
+    );
+
+    // Text that happens to be a valid expression. §scxml-B-2-8-1 gives the
+    // payload three readings and none of them is "evaluate it": a payload is
+    // what a host, a peer session or an HTTP sender put there, and running it
+    // makes `_event.data` mean whatever the receiver's engine is written in.
+    engine.raise_external(Event::Arith, "2 + 3", "");
+    engine.step();
+
+    let after_arith = engine.get_active_states();
+    assert!(
+        !after_arith.contains(&State::Evaluated),
+        "the host sent the text `2 + 3` and it arrived as 5 — the payload was run \
+         rather than read (active: {after_arith:?})"
+    );
+    assert!(
+        after_arith.contains(&State::Settled),
+        "the arithmetic-shaped payload neither matched nor mismatched \
+         (active: {after_arith:?})"
     );
 }

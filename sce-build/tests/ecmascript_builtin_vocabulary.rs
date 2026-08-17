@@ -194,13 +194,22 @@ fn an_authors_own_method_is_still_a_field_call() {
 ///
 /// Both directions: a member the file lost would be emitted as a call
 /// into nil, and one it gained would be refused by a stale list.
+///
+/// `JSON._*` is excluded, and the underscore is why: it is this repository's
+/// marker for a global that exists to implement something rather than to be
+/// called from a document (`_scxml_tostring`, `_scxml_params`). `JSON.parse`
+/// is spread across `JSON._parse_value` and friends because the C11 backend
+/// loads this file in chunks split on blank lines and cannot hold a long
+/// function or a shared local — a packaging constraint, not vocabulary. An
+/// author writing `JSON._parse_value(...)` is still refused, which is what
+/// keeping them out of `JSON_MEMBERS` means.
 #[test]
 fn json_members_match_the_shared_library() {
     let defined = functions_defined_in(&shared_library("json_builtins.lua"));
     let declared: BTreeSet<String> = JSON_MEMBERS.iter().map(|m| format!("JSON.{m}")).collect();
     let from_file: BTreeSet<String> = defined
         .into_iter()
-        .filter(|f| f.starts_with("JSON."))
+        .filter(|f| f.starts_with("JSON.") && !f.starts_with("JSON._"))
         .collect();
     assert_eq!(
         from_file, declared,

@@ -74,16 +74,30 @@ int main(void) {
     // against, character for character.
     send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_NOTE, "hold the line");
 
-    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SETTLED)) {
-        fprintf(stderr,
-                "FAIL: the host sent the text `hold the line` and `_event.data === 'hold the "
-                "line'` did not hold, so a payload that is not JSON did not arrive as the string "
-                "it was sent as. Still inside: garbled=%d heard=%d\n",
-                event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_GARBLED),
-                event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_HEARD));
+    if (event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_GARBLED)) {
+        fprintf(stderr, "FAIL: the host sent the text `hold the line` and `_event.data === 'hold the "
+                        "line'` did not hold, so a payload that is not JSON did not arrive as the string "
+                        "it was sent as\n");
         return 1;
     }
 
-    printf("PASS: a host payload reached the datamodel as an object, and as text\n");
+    /* Text that happens to be a valid expression. W3C SCXML B.2.8.1 gives the
+       payload three readings and none of them is "evaluate it": a payload is
+       what a host, a peer session or an HTTP sender put there, and running it
+       makes `_event.data` mean whatever the receiver's engine is written in. */
+    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_ARITH, "2 + 3");
+
+    if (event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_EVALUATED)) {
+        fprintf(stderr, "FAIL: the host sent the text `2 + 3` and it arrived as 5 — the payload "
+                        "was run rather than read\n");
+        return 1;
+    }
+    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SETTLED)) {
+        fprintf(stderr, "FAIL: the arithmetic-shaped payload neither matched nor mismatched — the "
+                        "machine is not in `settled`\n");
+        return 1;
+    }
+
+    printf("PASS: a host payload reached the datamodel as an object, as text, and unevaluated\n");
     return 0;
 }

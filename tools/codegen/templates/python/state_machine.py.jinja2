@@ -133,20 +133,25 @@ class _ActionAbort(Exception):
 
 
 def _coerce_event_data_str(data: Any) -> str:
-    """W3C SCXML 5.10 — the script engine's `set_current_event` takes
-    `event_data` as a single string (the Lua-side parser then tries
-    `return <text>` → JSON-to-Lua → string fallback). Generated Python
-    code marshals `<send>` payloads as a dict of named params or a
-    bare scalar; we re-serialise them here so the script engine sees
-    the same wire format every other backend produces.
+    """W3C SCXML 5.10 + B-2-9 — the script engine's `set_current_event`
+    takes `event_data` as a single string, and that string is the WIRE:
+    the reader parses it under §scxml-B-2-8-1's three readings (XML →
+    DOM, JSON → value, otherwise a space-normalized string). Generated
+    Python code marshals `<send>` payloads as a dict of named params or
+    a bare scalar; we serialise them here into that wire.
 
     - dict / list → JSON encode (so `_event.data.foo` becomes a real
-      Lua table member at the engine's parse stage);
-    - str → returned unchanged (the script engine handles the
-      `return <text>` round-trip natively);
-    - int / float / bool → `str(value)` so a numeric payload still
-      parses back to a Lua number;
-    - None → `""` so the Lua side leaves `_event.data` unbound."""
+      table member at the receiving parse);
+    - str → returned unchanged, which the string reading gives back
+      whole;
+    - int / float / bool → the JSON spelling, so a numeric payload
+      arrives as a number rather than as its text;
+    - None → `""` so the Lua side leaves `_event.data` unbound.
+
+    What is deliberately absent is a spelling only the sender's own
+    engine could read back: the receiving side used to RUN this string
+    as Lua before parsing it, so a payload could execute at the far
+    end."""
     if data is None:
         return ""
     if isinstance(data, str):

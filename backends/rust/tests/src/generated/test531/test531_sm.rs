@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -606,13 +606,15 @@ impl StatePolicy for Test531Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
-                        // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time.
-                        // The author name/value cross two literal boundaries — the Lua table
-                        // constructor this line assembles, then the Rust string literal that
-                        // carries it — so each is escaped once per boundary
-                        // (`escape_lua | escape_rust`). Applying only the host filter produces
-                        // Rust source that compiles and Lua source that does not parse.
-                        let event_data: &str = "_scxml_params({\"_scxmleventname\", \"test\"})";
+                        // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+                        // finished here. It has to be: this arm is what a machine with no script
+                        // engine emits, and the wire it used to write — a `_scxml_params(...)`
+                        // call in Lua — could only be read back by an interpreter.
+                        //
+                        // The author name/value cross two literal boundaries, the JSON text this
+                        // filter assembles and the Rust string literal carrying it, so each is
+                        // escaped once per boundary (`static_params_json | escape_rust`).
+                        let event_data: &str = "{\"_scxmleventname\":\"test\"}";
 
                         // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
                         let _resolved_target: Option<String> = {

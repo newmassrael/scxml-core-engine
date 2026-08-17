@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 
@@ -482,7 +482,9 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvContentPolicy) ExecuteEntryActions(
 			se := p.ScriptEngine
 			if se != nil {
 				if val, err := se.EvaluateExpression(p.SessionID, `"hello_content"`); err == nil {
-					doneEventData = sce.ToLuaLiteral(val)
+					// §scxml-B-2-9: serialized, not spelled as Lua source —
+					// the reader is the parent's dequeue, which parses.
+					doneEventData = sce.ScriptValueToJSON(val)
 				} else {
 					engine.Raise(sce.NewPlatformEvent(DonedataLocalInvokeSceSynthInvokeInvContentEventErrorExecution))
 				}

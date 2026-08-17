@@ -416,16 +416,34 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             }
         }
 
-        // Step 2: Try as JS expression
-        val err1 = QuickJSNative.eval(handle, "_event.data = ($data)")
-        if (err1 == null) return
-
-        // Step 3: Try JSON
+        // Step 2: JSON
+        //
+        // §scxml-B-2-8-1 gives `_event.data` three readings and no fourth:
+        // XML becomes a DOM, JSON becomes the value, anything else becomes a
+        // space-normalized string. There used to be a rung between the two
+        // below — `_event.data = ($data)`, evaluating the payload as
+        // JavaScript before anything looked at it — and it decided all three
+        // of the following, measured 2026-08-17 on the sibling Lua engines
+        // that carried the same rung in their own language:
+        //
+        //   * `2 + 3` from a host arrived as the number 5 here, and as the
+        //     string "2 + 3" on the cpp engine and on Rhino, which read the
+        //     clause instead. One payload, two answers, from two engines
+        //     behind ONE backend.
+        //   * a payload that is a function call RAN, in the session's own
+        //     globals. `_event.data` is the one field a document takes from
+        //     outside itself.
+        //   * `2 + 3` on the Lua engines meant Lua's `2 + 3`, so the payload
+        //     was read in whatever language the receiver happened to be.
+        //
+        // Rhino never had the rung, and this engine's own sender ships
+        // `JSON.stringify` output (§scxml-B-2-9), so removing it makes the
+        // two engines of this backend answer the same question the same way.
         val err2 = QuickJSNative.eval(handle,
             "_event.data = JSON.parse(${jsStringLiteral(data)})")
         if (err2 == null) return
 
-        // Step 4: Normalized string
+        // Step 3: Normalized string
         QuickJSNative.eval(handle,
             "_event.data = ${jsStringLiteral(normalizeWhitespace(data))}")
     }

@@ -83,6 +83,7 @@ const RUST_KEYWORDS: &[&str] = &[
 pub fn register_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
+    register_event_wire_filters(env);
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_upper_snake_case", to_upper_snake_case);
@@ -139,6 +140,10 @@ fn register_ecmascript_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     // declares. See [`crate::ecmascript::to_lua_location`].
     env.add_filter("to_lua_location", to_lua_location);
     env.add_filter("escape_lua", escape_lua);
+    let for_xml = Arc::clone(scope);
+    env.add_filter("data_content_is_xml", move |content: String| {
+        data_content_is_xml(content, &for_xml)
+    });
 }
 
 /// Convert identifier to snake_case for Rust function/variable/module names.
@@ -772,6 +777,105 @@ fn filter_unsupported(value: Value) -> Result<Value, minijinja::Error> {
 /// Register the variant-filtering helpers shared by every backend.
 /// Called from each per-language `register_*_filters` function so the same
 /// filter names are available no matter which template engine is rendering.
+/// Does [`to_lua_data_content`] read this text as XML?
+///
+/// The three readings §scxml-B-2 orders are decided at codegen time, and a
+/// payload's wire form differs between them: an expression is evaluated and
+/// serialized, plain text becomes a JSON string, and XML travels as the
+/// document text so the RECEIVER builds the DOM (W3C test561 — a sender that
+/// serialized a parsed DOM would decide the reading for the far end).
+///
+/// Asking the same function rather than re-deriving the test is the point:
+/// two spellings of "is this XML" would eventually disagree about a document
+/// whose first non-space character is `<` but which parses as an expression.
+fn data_content_is_xml(content: String, scope: &DocumentScope) -> bool {
+    if content.is_empty() {
+        return false;
+    }
+    match to_lua_data_content(content.clone(), scope) {
+        // The XML arm is the one that hands the source text back unchanged.
+        Ok(lowered) => lowered == content && content.trim_start().starts_with('<'),
+        Err(_) => false,
+    }
+}
+
+/// The filters that build an event payload's **wire** form.
+///
+/// The clause cited in the body names JSON as the serialization for a value
+/// that leaves the ECMAScript data model, and an event payload always leaves
+/// it: the reader is another dequeue, often another session, and — in a mesh —
+/// another process running another backend. Every backend registers these
+/// because the wire is the one thing they must agree on; a backend that
+/// spelled the payload in its own engine's source language made `_event.data`
+/// mean whatever the *sender* was written in, and made the payload executable
+/// at the receiving end.
+pub fn register_event_wire_filters(env: &mut minijinja::Environment) {
+    // §scxml-B-2-9: a value that leaves the ECMAScript data model is
+    // serialized to JSON.
+    env.add_filter("escape_json_string", escape_json_string);
+    env.add_filter("static_params_json", static_params_json);
+}
+
+/// A `<send>`'s params, as JSON, when every value is a literal.
+///
+/// The dynamic path evaluates each param and hands the values to the runtime
+/// helper each backend ports from `EventDataHelper::buildJsonFromTypedParams`.
+/// This is the path where there is nothing to evaluate — and it exists
+/// because that machine may have no script engine at all (measured: the
+/// `send_param_payload` synth-invoke emitter has none), so the payload has to
+/// be finished here or not at all. The Lua-source wire could not do this: it
+/// left an interpreter's worth of work for the far end.
+///
+/// The duplicate-name rule is the same one the runtime helpers apply, and
+/// `static_params_json_matches_the_runtime_helper` in this crate's tests runs
+/// both against one param list rather than trusting the two prose copies.
+fn static_params_json(value: Value) -> Result<String, minijinja::Error> {
+    // §scxml-6.2: the `<param>` elements a `<send>` carries become the data
+    // the receiving event exposes.
+    //
+    // Sorted by name, which is what the runtime helpers do (`BTreeMap` there,
+    // `std::map` in the C++ original) — the two paths have to produce the same
+    // bytes for the same params or a machine's payload would depend on whether
+    // its values happened to fold. Within one name the values keep document
+    // order, because W3C test178 requires every value of a repeated name
+    // delivered and their order is the only thing distinguishing them.
+    let mut groups: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for item in value.try_iter()? {
+        let name = item
+            .get_attr("name")
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let literal = item
+            .get_attr("static_value")
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        groups.entry(name).or_default().push(literal);
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for (name, values) in &groups {
+        // A single occurrence is the value; more than one is an Array of
+        // them. An object cannot hold one name twice.
+        let published = if values.len() == 1 {
+            format!("\"{}\"", escape_json_string(values[0].clone()))
+        } else {
+            let items: Vec<String> = values
+                .iter()
+                .map(|v| format!("\"{}\"", escape_json_string(v.clone())))
+                .collect();
+            format!("[{}]", items.join(","))
+        };
+        parts.push(format!(
+            "\"{}\":{}",
+            escape_json_string(name.clone()),
+            published
+        ));
+    }
+    Ok(format!("{{{}}}", parts.join(",")))
+}
+
 pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("scxml", filter_scxml);
     env.add_filter("scxml_remote", filter_scxml_remote);
@@ -885,6 +989,7 @@ const GO_KEYWORDS: &[&str] = &[
 pub fn register_go_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
+    register_event_wire_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
     env.add_filter("to_snake_case", to_snake_case);
@@ -1003,6 +1108,7 @@ pub fn register_cpp_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     });
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
+    register_event_wire_filters(env);
     env.add_filter("capitalize", capitalize_state);
     env.add_filter("escape_cpp", escape_cpp);
     env.add_filter("split", filter_split);
@@ -1061,8 +1167,8 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     );
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
+    register_event_wire_filters(env);
     env.add_filter("escape_c", escape_c);
-    env.add_filter("escape_json_string", escape_json_string);
     register_ecmascript_filters(env, scope);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
     env.add_filter("normalize_ws", normalize_ws);
@@ -1266,6 +1372,7 @@ pub fn register_kotlin_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     });
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
+    register_event_wire_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_camel_case", to_camel_case);
     env.add_filter("escape_kotlin", escape_kotlin);
@@ -1372,6 +1479,7 @@ fn to_state_class_name(name: String) -> String {
 pub fn register_python_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
+    register_event_wire_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);
     env.add_filter("to_snake_case", to_snake_case);
     env.add_filter("to_python_const", to_python_const);

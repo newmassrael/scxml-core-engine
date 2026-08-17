@@ -487,41 +487,35 @@ class LuaScriptEngine(IScriptEngine):
 
 
 def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
-    """W3C SCXML 5.10 — turn the raw `event_data` string into the Lua
+    """W3C SCXML B.2.8.1 — turn the raw `event_data` string into the Lua
     value `_event.data` should expose.
 
-    Mirrors the Rust `set_current_event` parsing chain
-    (`sce_rust_lua::lib::set_current_event`): try `return <text>` as Lua
-    first (so a Lua/JSON-like table literal becomes a real table); when
-    that fails, fall back to JSON-to-Lua syntax rewriting (so payloads
-    that round-tripped through `json.dumps` still produce a table); when
-    that also fails, treat the bytes as a string with whitespace
-    normalised (W3C B.2 test562). The chain order is identical across
-    backends so `_event.data.foo` resolves consistently."""
+    The clause gives three readings and no fourth: XML becomes a DOM,
+    JSON becomes the value, anything else becomes a space-normalized
+    string. Mirrors `sce_rust_lua::lib::set_current_event` and the cpp
+    `parseEventData`, so `_event.data.foo` resolves the same everywhere.
+
+    There used to be a rung above all three — `runtime.eval(text)`,
+    running the payload as Lua source before anything looked at it — and
+    it decided all three of the following, measured 2026-08-17 on the
+    sibling Rust engine that carried the same rung:
+
+    * `2 + 3` from a host arrived as the number 5, and as the string
+      "2 + 3" on the cpp and Rhino engines that read the clause instead.
+      One payload, two answers.
+    * a payload that is a function call RAN, in the session's globals.
+      `_event.data` is the one field a document takes from outside.
+    * it was load-bearing: `<send>` shipped Lua source, so this rung was
+      the deserializer for every param a document sent.
+
+    The sender now ships JSON (§scxml-B-2-9: data that leaves the data
+    model is serialized to JSON), which is what cpp always shipped."""
     if not event_data:
         return None
     text = event_data.strip()
     if not text:
         return event_data
-    # Path 1 — Lua eval (covers `{a=1}` produced by a previous
-    # roundtrip + bare numbers + bare strings the user already
-    # quoted in the payload).
-    try:
-        return runtime.eval(text)
-    except Exception:
-        pass
-    # Path 2 — JSON-style `{"key": val}` rewritten into Lua
-    # syntax `{["key"] = val}`. The transform is intentionally
-    # narrow: it swaps `:` for `=` only inside object literals
-    # and quotes the key. Handles the common case where the
-    # event payload was serialised by `json.dumps(dict)`.
-    converted = _json_to_lua_table(text)
-    if converted is not None:
-        try:
-            return runtime.eval(converted)
-        except Exception:
-            pass
-    # Path 3 — XML payload (§scxml-B-2 ECMAScript data model).
+    # Path 1 — XML payload (§scxml-B-2-8-1's first reading).
     # `<send><content>XML</content></send>` lands `_event.data` as a
     # DOM-style object exposing `getElementsByTagName` / `getAttribute`
     # (test561). Mirrors the Rust `set_current_event` DOM path —
@@ -531,7 +525,16 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
         dom = _parse_xml_to_dom(text, runtime)
         if dom is not None:
             return dom
-    # Path 4 — whitespace-normalised string fallback (W3C B.2).
+    # Path 2 — JSON, rewritten into Lua table syntax. The transform is
+    # intentionally narrow: it swaps `:` for `=` only inside object
+    # literals and quotes the key.
+    converted = _json_to_lua_table(text)
+    if converted is not None:
+        try:
+            return runtime.eval(converted)
+        except Exception:
+            pass
+    # Path 3 — whitespace-normalised string fallback (W3C B.2 test562).
     return " ".join(event_data.split())
 
 
@@ -600,13 +603,22 @@ def _parse_xml_to_dom(xml_text: str, runtime: Any) -> Optional["_DomElement"]:
 
 
 def _json_to_lua_table(text: str) -> Optional[str]:
-    """Best-effort JSON→Lua table-literal rewriter. Returns None when
-    the input doesn't look like a JSON object/array, so the caller
-    knows to fall through to the string fallback."""
+    """JSON→Lua literal rewriter. Returns None when the input is not
+    JSON, so the caller falls through to the string reading.
+
+    Scalars count. §scxml-B-2-8-1's JSON rung is about the payload being
+    JSON, not about it being a container, and a `<donedata><content>'foo'
+    </content>` arrives here as the JSON document `"foo"` (W3C test294) —
+    while this only accepted `{`/`[`, that payload fell to the string
+    rung and reached the datamodel WITH its quotes, so a guard reading
+    `_event.data == 'foo'` was false. It was invisible while the sender
+    shipped Lua source, because the rung above ran the text instead.
+
+    A bare word like `hold the line` is still not JSON and still lands on
+    the string rung, which is what makes the two readings distinguishable
+    at all."""
     stripped = text.strip()
     if not stripped:
-        return None
-    if not (stripped.startswith("{") or stripped.startswith("[")):
         return None
     try:
         import json

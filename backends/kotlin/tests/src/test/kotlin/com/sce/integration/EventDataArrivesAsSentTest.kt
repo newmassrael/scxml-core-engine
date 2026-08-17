@@ -67,12 +67,32 @@ class EventDataArrivesAsSentTest {
         sm.send(EventDataArrivesAsSentEvent.Note, EventMetadata(data = "hold the line"))
         sm.tick()
 
-        assertEquals(
-            EventDataArrivesAsSentState.Settled,
+        assertNotEquals(
+            EventDataArrivesAsSentState.Garbled,
             sm.currentState.value,
             "the host sent the text `hold the line` and `_event.data === 'hold the line'` did " +
                 "not hold, so a payload that is not JSON did not arrive as the string it was " +
                 "sent as",
+        )
+
+        // Text that happens to be a valid expression. §scxml-B-2-8-1 gives the
+        // payload three readings and none of them is "evaluate it": a payload
+        // is what a host, a peer session or an HTTP sender put there, and
+        // running it makes `_event.data` mean whatever the receiver's engine
+        // is written in — this backend has two, and they disagreed.
+        sm.send(EventDataArrivesAsSentEvent.Arith, EventMetadata(data = "2 + 3"))
+        sm.tick()
+
+        assertNotEquals(
+            EventDataArrivesAsSentState.Evaluated,
+            sm.currentState.value,
+            "the host sent the text `2 + 3` and it arrived as 5 — the payload was run rather " +
+                "than read",
+        )
+        assertEquals(
+            EventDataArrivesAsSentState.Settled,
+            sm.currentState.value,
+            "the arithmetic-shaped payload neither matched nor mismatched",
         )
     }
 }

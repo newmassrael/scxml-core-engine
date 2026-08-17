@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 
@@ -482,12 +482,15 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(st
 			if se != nil {
 				var jsonParts []string
 				if val, err := se.EvaluateExpression(p.SessionID, "42"); err == nil {
-					jsonParts = append(jsonParts, "[\"result\"] = " + sce.ToLuaLiteral(val))
+					// §scxml-B-2-9: donedata rides an event, so it leaves the
+					// data model and travels as JSON — the same wire
+					// `<send>`'s params take.
+					jsonParts = append(jsonParts, "\"result\":" + sce.ScriptValueToJSON(val))
 				} else {
 					engine.Raise(sce.NewPlatformEvent(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution))
 				}
 				if doneDataOk {
-					doneEventData = "{" + strings.Join(jsonParts, ", ") + "}"
+					doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
 				}
 			}
 		}

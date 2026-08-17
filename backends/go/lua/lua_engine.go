@@ -241,22 +241,35 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 			e.pushDOMTable(sess, args.Data)
 			sess.l.SetField(-2, "data")
 		} else {
-			// Try to evaluate as Lua expression first
-			top := sess.l.Top()
-			if err := lua.DoString(sess.l, "return "+args.Data); err == nil {
+			// §scxml-B-2-8-1 gives `_event.data` three readings and no
+			// fourth: XML becomes a DOM, JSON becomes the value, and
+			// anything else becomes a space-normalized string. There used to
+			// be a rung above these two — `lua.DoString("return "+data)`,
+			// running the payload as Lua source before anything looked at it
+			// — and it decided all three of the following, measured
+			// 2026-08-17 on the sibling Rust engine that had the same rung:
+			//
+			//   * `2 + 3` from a host arrived as the number 5, and as the
+			//     string "2 + 3" on the cpp and Rhino engines that read the
+			//     clause instead. One payload, two answers.
+			//   * a payload `(function() ... end)()` RAN, in the session's
+			//     own globals. `_event.data` is the one field an SCXML
+			//     document takes from outside itself.
+			//   * it was load-bearing: `<send>` shipped `_scxml_params({...})`
+			//     — Lua source — so this rung was the deserializer.
+			//
+			// The sender now ships JSON (§scxml-B-2-9: data that leaves the
+			// data model is serialized to JSON), which is what the cpp engine
+			// has always shipped, so the two rungs the clause names are the
+			// two that are here.
+			if jsonVal, ok := decodeJSON(args.Data); ok {
+				pushJSONValue(sess.l, jsonVal)
 				sess.l.SetField(-2, "data")
 			} else {
-				sess.l.SetTop(top)
-				// W3C SCXML B.2 test 578: the payload is JSON, so decode it.
-				if jsonVal, ok := decodeJSON(args.Data); ok {
-					pushJSONValue(sess.l, jsonVal)
-					sess.l.SetField(-2, "data")
-				} else {
-					// W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
-					normalized := strings.Join(strings.Fields(args.Data), " ")
-					sess.l.PushString(normalized)
-					sess.l.SetField(-2, "data")
-				}
+				// W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
+				normalized := strings.Join(strings.Fields(args.Data), " ")
+				sess.l.PushString(normalized)
+				sess.l.SetField(-2, "data")
 			}
 		}
 	} else {

@@ -64,8 +64,24 @@ def test_event_data_arrives_as_sent_aot() -> None:
     engine.send_event(_Event.NOTE, EventMetadata(data="hold the line"))
 
     after_note = engine.active_configuration()
-    assert _State.SETTLED in after_note, (
+    assert _State.GARBLED not in after_note, (
         "the host sent the text `hold the line` and `_event.data === 'hold the line'` "
         "did not hold, so a payload that is not JSON did not arrive as the string it "
         f"was sent as (active: {after_note})"
+    )
+
+    # Text that happens to be a valid expression. §scxml-B-2-8-1 gives the
+    # payload three readings and none of them is "evaluate it": a payload is
+    # what a host, a peer session or an HTTP sender put there, and running it
+    # makes `_event.data` mean whatever the receiver's engine is written in.
+    engine.send_event(_Event.ARITH, EventMetadata(data="2 + 3"))
+
+    after_arith = engine.active_configuration()
+    assert _State.EVALUATED not in after_arith, (
+        "the host sent the text `2 + 3` and it arrived as 5 — the payload was run "
+        f"rather than read (active: {after_arith})"
+    )
+    assert _State.SETTLED in after_arith, (
+        "the arithmetic-shaped payload neither matched nor mismatched "
+        f"(active: {after_arith})"
     )

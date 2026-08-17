@@ -72,9 +72,26 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine.Step()
 
 	afterNote := engine.GetActiveStates()
-	if !active(afterNote, EventDataArrivesAsSentStateSettled) {
+	if active(afterNote, EventDataArrivesAsSentStateGarbled) {
 		t.Errorf("the host sent the text `hold the line` and "+
 			"`_event.data === 'hold the line'` did not hold, so a payload that is not "+
 			"JSON did not arrive as the string it was sent as (active: %v)", afterNote)
+	}
+
+	// Text that happens to be a valid expression. §scxml-B-2-8-1 gives the
+	// payload three readings and none of them is "evaluate it": a payload is
+	// what a host, a peer session or an HTTP sender put there, and running it
+	// makes `_event.data` mean whatever the receiver's engine is written in.
+	engine.RaiseExternal(EventDataArrivesAsSentEventArith, "2 + 3", "")
+	engine.Step()
+
+	afterArith := engine.GetActiveStates()
+	if active(afterArith, EventDataArrivesAsSentStateEvaluated) {
+		t.Errorf("the host sent the text `2 + 3` and it arrived as 5 — the payload "+
+			"was run rather than read (active: %v)", afterArith)
+	}
+	if !active(afterArith, EventDataArrivesAsSentStateSettled) {
+		t.Errorf("the arithmetic-shaped payload neither matched nor mismatched "+
+			"(active: %v)", afterArith)
 	}
 }

@@ -613,30 +613,40 @@ impl IScriptEngine for LuaEngine {
                     push_xml_as_userdata(&session.lua, event_data).map_err(map_lua_err)?;
                 event_table.set("data", dom_value).map_err(map_lua_err)?;
             } else {
-                // Try to evaluate as Lua expression first
-                let data_result = session
-                    .lua
-                    .load(format!("return {}", event_data))
-                    .eval::<LuaValue>();
-                match data_result {
-                    Ok(val) => {
+                // §scxml-B-2-8-1 gives `_event.data` three readings and no
+                // fourth: XML becomes a DOM, JSON becomes the value, and
+                // anything else becomes a space-normalized string. There used
+                // to be a rung above these two — `load("return " .. payload)`,
+                // evaluating the payload as Lua source before anything looked
+                // at it — and it decided all three of the following, measured
+                // 2026-08-17:
+                //
+                //   * `2 + 3` from a host arrived as the number 5 here and as
+                //     the string "2 + 3" on the cpp and Rhino engines, which
+                //     read the clause instead. One payload, two answers.
+                //   * a payload `(function() ... end)()` RAN, in the session's
+                //     own globals. `_event.data` is the one field an SCXML
+                //     document takes from outside itself.
+                //   * it was load-bearing: `<send>` shipped
+                //     `_scxml_params({...})` — Lua source — so this rung was
+                //     the deserializer, and 27 tests turned red when it was
+                //     removed without moving the sender.
+                //
+                // The sender now ships JSON (§scxml-B-2-9: data that leaves
+                // the data model is serialized to JSON), which is what the cpp
+                // engine has always shipped, so the two rungs the clause names
+                // are the two that are here.
+                match json_to_lua_value(&session.lua, event_data) {
+                    Some(val) => {
                         event_table.set("data", val).map_err(map_lua_err)?;
                     }
-                    Err(_) => {
-                        // W3C SCXML B.2 test 578: the payload is JSON, so decode it.
-                        match json_to_lua_value(&session.lua, event_data) {
-                            Some(val) => {
-                                event_table.set("data", val).map_err(map_lua_err)?;
-                            }
-                            None => {
-                                // W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
-                                let normalized: String = event_data
-                                    .split_whitespace()
-                                    .collect::<Vec<&str>>()
-                                    .join(" ");
-                                event_table.set("data", normalized).map_err(map_lua_err)?;
-                            }
-                        }
+                    None => {
+                        // W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
+                        let normalized: String = event_data
+                            .split_whitespace()
+                            .collect::<Vec<&str>>()
+                            .join(" ");
+                        event_table.set("data", normalized).map_err(map_lua_err)?;
                     }
                 }
             }

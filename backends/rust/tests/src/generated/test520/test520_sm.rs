@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -618,7 +618,23 @@ impl StatePolicy for Test520Policy {
                         // Lua*: `<content>t.length</content>` reached `_event.data` as nil where
                         // the datamodel reads 5, and whether the text was an expression at all
                         // was discovered by an evaluation that failed.
-                        let event_data: &str = "\"this is some content\"";
+                        // The reading is decided at codegen time; the VALUE is produced here, at
+                        // send time, and serialized so the far end parses instead of evaluating.
+                        let event_data_string: String =
+                            {
+                                self.ensure_script_engine();
+                                let sid = self.session_id.as_ref().unwrap().clone();
+                                let se = self.script_engine.clone();
+                                let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                                match se.evaluate_expression(&sid, "\"this is some content\"") {
+            Ok(val) => ::sce_rust_runtime::helpers::event_data::script_value_to_json(&val),
+            Err(e) => {
+                ::sce_rust_runtime::sce_log_error!("send content eval failed: {}", e);
+                String::new()
+            }
+        }
+                            };
+                        let event_data: &str = &event_data_string;
 
                         // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
                         let _resolved_target: Option<String> = {

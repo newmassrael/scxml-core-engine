@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d307f64e2f440b5e64842da73b67f9e9208ee8c09e59399434add3727578f7cc
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 
@@ -53,9 +53,10 @@ const (
 	SendParamPayloadStateFailDuplicateParams SendParamPayloadState = 2
 	SendParamPayloadStateFailInternalPayload SendParamPayloadState = 3
 	SendParamPayloadStateFailNumberType SendParamPayloadState = 4
-	SendParamPayloadStateInternalPhase SendParamPayloadState = 5
-	SendParamPayloadStatePass SendParamPayloadState = 6
-	SendParamPayloadStateTypedPhase SendParamPayloadState = 7
+	SendParamPayloadStateFailStringType SendParamPayloadState = 5
+	SendParamPayloadStateInternalPhase SendParamPayloadState = 6
+	SendParamPayloadStatePass SendParamPayloadState = 7
+	SendParamPayloadStateTypedPhase SendParamPayloadState = 8
 )
 
 func (s SendParamPayloadState) String() string {
@@ -70,6 +71,8 @@ func (s SendParamPayloadState) String() string {
 		return "failInternalPayload"
 	case SendParamPayloadStateFailNumberType:
 		return "failNumberType"
+	case SendParamPayloadStateFailStringType:
+		return "failStringType"
 	case SendParamPayloadStateInternalPhase:
 		return "internalPhase"
 	case SendParamPayloadStatePass:
@@ -167,6 +170,18 @@ func NewSendParamPayloadPolicy() SendParamPayloadPolicy {
 	}
 }
 
+// Tag reports what the `tag` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `tag` was assigned a value of another type, or the engine refused.
+func (p *SendParamPayloadPolicy) Tag() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "tag")
+}
+
 
 
 
@@ -215,6 +230,16 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 
 	// W3C SCXML 5.2.2: Initialize global datamodel variables
 
+	// W3C SCXML 5.3: Early binding - Initialize state typedPhase datamodel
+	{
+		result, err := engine.EvaluateExpression(sessionID, `"kept"`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "tag", result)
+		} else {
+			eng.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+			_ = engine.SetVariable(sessionID, "tag", nil)
+		}
+	}
 
 
 	// W3C SCXML 6.4.1: Apply deferred params from parent invoke (override defaults, skip undeclared)
@@ -459,6 +484,8 @@ func (p *SendParamPayloadPolicy) IsFinalState(state SendParamPayloadState) bool 
 		return true
 	case SendParamPayloadStateFailNumberType:
 		return true
+	case SendParamPayloadStateFailStringType:
+		return true
 	case SendParamPayloadStatePass:
 		return true
 	}
@@ -505,11 +532,13 @@ func (p *SendParamPayloadPolicy) GetDocumentOrder(state SendParamPayloadState) i
 	case SendParamPayloadStateFailChildPayload:
 		return 4
 	case SendParamPayloadStateFailDuplicateParams:
-		return 7
+		return 8
 	case SendParamPayloadStateFailInternalPayload:
 		return 5
 	case SendParamPayloadStateFailNumberType:
 		return 6
+	case SendParamPayloadStateFailStringType:
+		return 7
 	case SendParamPayloadStateInternalPhase:
 		return 1
 	case SendParamPayloadStatePass:
@@ -685,14 +714,16 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
-		// W3C SCXML B.2: All params are static literals.
-		// The author name/value cross two literal boundaries — the Lua
-		// table constructor this line assembles, then the Go string
-		// literal that carries it — so each is escaped once per
-		// boundary (`escape_lua | escape_go`). Applying only the host
-		// filter produces Go source that compiles and Lua source that
-		// does not parse.
-		eventDataStr := "_scxml_params({\"carried\", \"kept\"})"
+		// W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+		// finished at codegen time. It has to be — this arm is what a machine
+		// with no script engine emits, and the wire it used to write (a
+		// `_scxml_params(...)` call in Lua) could only be read back by an
+		// interpreter.
+		//
+		// The author name/value cross two literal boundaries, the JSON text
+		// the filter assembles and the Go string literal carrying it, so each
+		// is escaped once per boundary.
+		eventDataStr := "{\"carried\":\"kept\"}"
 		_ = eventDataStr
 	// W3C SCXML 6.2: Internal send (target="#_internal")
 	{
@@ -714,23 +745,32 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	{
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
-		parts := make([]string, 0)
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `7`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("{%q, %s}", "n", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, sce.EventDataParam{Name: "n", Value: paramVal})
+		} else {
+			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+		}
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `tag`); paramErr == nil {
+			parts = append(parts, sce.EventDataParam{Name: "s", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `1`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("{%q, %s}", "d", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, sce.EventDataParam{Name: "d", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `2`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("{%q, %s}", "d", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, sce.EventDataParam{Name: "d", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
 		}
-		eventDataStr := "_scxml_params(" + strings.Join(parts, ",") + ")"
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Internal send (target="#_internal")
 	{
@@ -833,6 +873,16 @@ func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloa
 		if event == SendParamPayloadEventTyped {
 			if p.evaluateGuard(`(_event.data.n ~= 7)`, engine) {
 			*currentState = SendParamPayloadStateFailNumberType
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = SendParamPayloadStateTypedPhase
+			return true
+			}
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == SendParamPayloadEventTyped {
+			if p.evaluateGuard(`(_event.data.s ~= "kept")`, engine) {
+			*currentState = SendParamPayloadStateFailStringType
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = SendParamPayloadStateTypedPhase
