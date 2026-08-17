@@ -16,7 +16,20 @@
 {% else %}
 {% if action.content %}
 	// W3C SCXML 5.3: <assign location="{{ loc }}"> (inline content)
-	if err := p.assignVariable(`{{ loc | to_lua_location }}`, `'{{ action.content | escape_go }}'`); err != nil {
+	{# W3C SCXML 5.4.2: the children specify the same legal data value
+	   `expr` would, read by the same filter `<data>` content goes
+	   through — quoting the text made `21` the string "21".
+
+	   An interpreted Go string, not the raw one the `expr` branch uses,
+	   and one `escape_go` for that one boundary. The value crosses two:
+	   `to_lua_assign_content` already produced Lua source, so text that
+	   is not an expression arrives here as `"…"` with its own quotes
+	   escaped Lua-side. Putting that inside backticks *and* running
+	   `escape_go` over it emitted `\"` into the Lua chunk, which is not
+	   a string opener — test530's serialised `<scxml>` document stopped
+	   assigning and the case reached `fail`. Same arrangement as
+	   `go/actions/send.go.jinja2`, for the same reason. #}
+	if err := p.assignVariable(`{{ loc | to_lua_location }}`, "{{ action.content | to_lua_assign_content | escape_go }}"); err != nil {
 {% if 'error.execution' in model.events %}
 		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
 {% endif %}

@@ -90,35 +90,6 @@
             self._raise_error_execution(engine)
             raise _ActionAbort
 
-    def _assign_content(
-        self, engine, location: str, lua_expr: str, fallback: str
-    ) -> None:
-        """W3C SCXML 5.4 — `<assign>` with inline content (XML body or
-        literal text). Mirrors `_init_data_with_content`: try Lua eval
-        first; on failure (XML element / freeform text) bind the
-        whitespace-normalised string. Read-only system vars + empty
-        location still raise `error.execution` like the expr-form
-        `_assign`."""
-        if not location or location in _READONLY_SYSTEM_VARS:
-            self._raise_error_execution(engine)
-            raise _ActionAbort
-        try:
-            engine._script_engine.execute_script(
-                self._session_id, f"{location} = {lua_expr}"
-            )
-            return
-        except _ScriptError:
-            pass
-        # W3C SCXML B.2 — fallback to whitespace-normalised string
-        # (covers XML element content per test530).
-        try:
-            engine._script_engine.set_variable(
-                self._session_id, location, _ScriptValue.of(fallback)
-            )
-        except _ScriptError:
-            self._raise_error_execution(engine)
-            raise _ActionAbort
-
     def _assign_runtime(self, engine, location: str, value) -> None:
         """W3C SCXML 4.6 / 5.3 — assign a runtime-computed value (e.g.
         a `<foreach>` iteration item/index) at `location`. An empty,
