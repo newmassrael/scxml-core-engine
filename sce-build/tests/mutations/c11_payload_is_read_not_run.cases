@@ -33,7 +33,7 @@ mutation_oracles backends/c/tests/integration/test_event_data_arrives_as_sent.c 
 
 mutation_case "the c11 receiver evaluates the payload as Lua again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     '''                          "local _val, _ok = JSON.parse(_c); "
+     '''                          "local _val, _ok = JSON._parse_document(_c); "
                           "if _ok then _event.data = _val "
                           "else _event.data = _scxml_normalize_ws(_c) end; "''',
      '''                          "local _try = _c:gsub('\\"([^\\"]*)\\"%s*:', '[\\"%1\\"]='); "
