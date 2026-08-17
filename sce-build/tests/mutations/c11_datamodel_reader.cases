@@ -16,6 +16,10 @@
 
 mutation_ctest --test-dir build -R '^c11_integration_session_ids_are_distinct$'
 mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+# The one authored file in that test: everything else the target compiles is
+# generated at CMake time (`sce_generate_static_integration_c_test`), so the
+# assertions all five cases red live here.
+mutation_oracles backends/c/tests/integration/test_session_ids_are_distinct.c
 
 # ── The reader answers the wrong variable's value ───────────────────
 #

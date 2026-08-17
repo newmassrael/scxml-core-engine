@@ -60,8 +60,16 @@ on:
         required: false
         default: ''
 
+# A dispatch gets a group of its own; pushes keep sharing one, so a newer push
+# still cancels the round an older one started.
+#
+# Measured 2026-08-17, within minutes of the dispatch input being added: asking
+# for a round over one casefile CANCELLED the push run for the same ref
+# (32034288611), because both landed in `<workflow>-refs/heads/main`. The
+# verdict CI reports on is the push's, so a dispatch was silently voiding it —
+# the opposite of what asking for an extra round is for.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
   cancel-in-progress: true
 
 jobs:

@@ -39,6 +39,14 @@
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
 mutation_targets sce/include/core/HistoryHelper.h
+# The file whose assertions actually caught these cases, measured rather than
+# guessed: the round reds `AiLoopAotTest.ResumeReturnsSomewhereTheHistory
+# DefaultDoesNot` and `AiLoopAotTest.HoldAndResumeReturnToExactlyWhereThe
+# CycleWas`, and that suite lives in one file. A ctest entry names a binary of
+# twenty-odd sources; naming the binary's whole source list here would put a
+# forty-minute round on half of all pushes (98 of the last 200 touched
+# `tests/integration` or `tests/states`), while this file moved twice.
+mutation_oracles tests/integration/AiLoopAotTest.cpp
 
 # ── Shallow history records nothing ────────────────────────────────
 #

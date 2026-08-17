@@ -91,7 +91,23 @@ fi
 
 # Every casefile's declaration, read once through the harness that owns the
 # casefile vocabulary. `runner` says whether a round needs a configured CMake
-# tree; `target` lines are what the change set is intersected against.
+# tree; `target` and `oracle` lines are what the change set is intersected
+# against.
+#
+# Both kinds, because a verdict has two sides and either one going stale
+# retires it. `target` is the subject — the source a case breaks on purpose.
+# `oracle` is the test that noticed, plus the casefile itself, which decides
+# which edit is applied and where.
+#
+# The second side was missing, and the shape of the loss is the one this gate
+# exists to stop. Measured 2026-08-17 on this corpus: a change to
+# `sce-build/tests/mutation_rounds_selection.rs` — the file holding every
+# assertion that makes those ten cases CAUGHT — selected 0 of 30 casefiles, and
+# so did a change to the casefile itself. Weaken the test and its cases keep
+# reporting the verdict they last earned, until somebody runs the corpus whole.
+# 19 of the 30 casefiles were exposed that way; the other 11 were covered only
+# by the accident that their cases mutate their own test file, which put it in
+# `mutation_targets` for an unrelated reason.
 declare -A RUNNER_OF=()
 declare -A TARGETS_OF=()
 for casefile in "${CASEFILES[@]}"; do
@@ -105,7 +121,7 @@ to remove."
     while IFS=$'\t' read -r key value; do
         case "$key" in
             runner) RUNNER_OF["$casefile"]="$value" ;;
-            target) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
+            target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
         esac
     done <<<"$declared"
 done
