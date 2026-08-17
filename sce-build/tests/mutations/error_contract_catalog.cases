@@ -19,6 +19,13 @@
 
 mutation_tests -p sce-build --features cli --lib
 mutation_targets sce-build/src/forge/diagnostic.rs SCE_ERROR_CONTRACT.md
+# `--lib` names no test target, so nothing here is derivable from the selector.
+# Measured instead: all four cases red
+# `forge::diagnostic::tests::error_contract_catalog_is_the_full_enumeration`,
+# whose module is the file already under study — the two sides of the verdict
+# happen to share a file here, which is why this casefile was never exposed to
+# the gap the declaration closes.
+mutation_oracles sce-build/src/forge/diagnostic.rs
 
 # ── The catalog is complete ────────────────────────────────────────
 

@@ -19,6 +19,10 @@
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
 mutation_targets sce/include/static/StaticExecutionEngine.h
+# Measured, not guessed: both cases red
+# `ParallelCurrentStateAotTest.CurrentStateIsAtomicAfterACompoundTarget`, and
+# that suite lives in one file.
+mutation_oracles tests/integration/ParallelCurrentStateAotTest.cpp
 
 # ── No descent at all ──────────────────────────────────────────────
 #

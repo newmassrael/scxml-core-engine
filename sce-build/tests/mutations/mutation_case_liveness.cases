@@ -58,9 +58,15 @@ PY
 # declaration that went stale.
 
 mutation_case "a missing declared target stops being refused" <<'PY'
+# Widened with the line below it, which names the TARGET side. The bare
+# existence test now reads twice in that file — the oracle side is checked the
+# same way — and an anchor matching two places mutates whichever comes first,
+# which is a case that no longer says what it studies.
 edit("scripts/mutate",
-     "        [[ -e \"$f\" ]] && continue",
-     "        [[ -e \"$f\" ]] || true; continue")
+     """        [[ -e "$f" ]] && continue
+        red "declared target does not exist: $f\"""",
+     """        [[ -e "$f" ]] || true; continue
+        red "declared target does not exist: $f\"""")
 PY
 
 # ── A casefile with no cases at all ────────────────────────────────

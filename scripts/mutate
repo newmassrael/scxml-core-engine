@@ -158,6 +158,7 @@ MUTATION_RUNNER_ARGS=()
 MUTATION_BUILD_DIR=""
 MUTATION_TARGET_FILES=()
 MUTATION_RUNTIME_FILES=()
+MUTATION_ORACLE_FILES=()
 MUTATION_ARTIFACTS=()
 # Which tests turned red on the last run, one name per line.
 #
@@ -252,6 +253,37 @@ mutation_targets() { MUTATION_TARGET_FILES+=("$@"); }
 # list named the file.
 mutation_runtime_targets() { MUTATION_RUNTIME_FILES+=("$@"); }
 
+# Files on the TEST side of a verdict: the ones whose assertions turned red.
+#
+# A verdict has two sides and either one going stale retires it. The targets
+# above are the subject — the source a case breaks on purpose. This is the
+# oracle: weaken the assertion that noticed, and every case in the file keeps
+# reporting the verdict it last earned while proving nothing.
+#
+# The gap that made this necessary, measured 2026-08-17: a change to
+# `sce-build/tests/mutation_rounds_selection.rs` — the file holding every
+# assertion behind that casefile's ten CAUGHT verdicts — selected 0 of 30
+# casefiles for a round, because a casefile declares a SELECTOR (`--test X`,
+# `-R '^IntegrationTests$'`) and a selector is not a path. 19 of the 30 were
+# exposed; the other 11 were covered only by the accident that their cases
+# mutate their own test file, which put it in `mutation_targets` for an
+# unrelated reason.
+#
+# A cargo selector does not need this — `--test X` resolves to a path through
+# `cargo metadata`, below, and a derived answer cannot drift. A ctest selector
+# cannot be resolved that way: `-R '^IntegrationTests$'` names a registered
+# test whose sources live in a CMake target, and the selection this feeds runs
+# before any tree is configured. So a ctest casefile declares it here, and what
+# it declares is what the round REDDED rather than what looked likely — the
+# distinction being that the round's own report names the failing test.
+#
+# Naming the binary's whole source list instead would be the safe-looking
+# answer and the wrong one: `integration_tests` compiles twenty-odd files, 98
+# of the last 200 commits touched `tests/integration` or `tests/states`, and a
+# forty-minute ctest round on half of all pushes is the shape of gate that gets
+# switched off. The files actually named moved 0-2 times in those 200.
+mutation_oracles() { MUTATION_ORACLE_FILES+=("$@"); }
+
 # ── Internals ──────────────────────────────────────────────────────
 
 # Every file a case may edit, of either kind.
@@ -265,6 +297,83 @@ mutation_all_targets() {
     printf '%s\n' ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"} \
                   ${MUTATION_RUNTIME_FILES[@]+"${MUTATION_RUNTIME_FILES[@]}"} |
         awk 'NF && !seen[$0]++'
+}
+
+# The test sources a cargo selector names, read out of the manifests.
+#
+# Derived rather than declared because it CAN be: `--test X` names a target and
+# a target has a `src_path`, so asking cargo is exact and cannot go stale the
+# way a second copy of the path in the casefile would. `cargo metadata` reads
+# manifests and compiles nothing — measured at 27ms on this workspace — which
+# is what makes it affordable in `--declares`, a mode whose whole point is that
+# a caller can ask before paying for a round.
+#
+# Silent on failure by design: `--declares` runs in places that are not a cargo
+# workspace at all (the selection fixture in `mutation_rounds_selection.rs`
+# copies `scripts/` and the corpus and nothing else), and the honest answer
+# there is "no paths resolved" rather than a refusal. Where it matters —
+# `--check` and a full round — `mutation_init` refuses a casefile whose oracle
+# side is empty, and `mutation_cargo_check_selector` reds a metadata failure by
+# name.
+mutation_cargo_oracles() {
+    local meta="$WORK/cargo-metadata-oracles.json"
+    cargo metadata --no-deps --format-version 1 >"$meta" 2>/dev/null || return 1
+    python3 - "$meta" "$SCE_REPO_ROOT" "${MUTATION_RUNNER_ARGS[@]}" <<'PY'
+import json
+import os
+import sys
+
+meta = json.load(open(sys.argv[1]))
+root = sys.argv[2]
+args = sys.argv[3:]
+
+named_pkgs, wanted_tests = [], []
+i = 0
+while i < len(args):
+    a = args[i]
+    if a in ("-p", "--package") and i + 1 < len(args):
+        named_pkgs.append(args[i + 1]); i += 2; continue
+    if a == "--test" and i + 1 < len(args):
+        wanted_tests.append(args[i + 1]); i += 2; continue
+    i += 1
+
+packages = {p["name"]: p for p in meta["packages"]}
+# Same scoping rule as the selector check: a selector with no `-p` reaches the
+# whole workspace, so a target it names may live in any member.
+scope = [packages[n] for n in named_pkgs if n in packages] or list(packages.values())
+
+for test in wanted_tests:
+    for p in scope:
+        for t in p["targets"]:
+            if t["name"] == test and "test" in t["kind"]:
+                print(os.path.relpath(t["src_path"], root))
+PY
+}
+
+# Every file whose change retires this casefile's verdicts from the test side.
+#
+# The casefile itself is NOT here — it is added by `mutation_all_oracles` —
+# because `mutation_init` uses this list to ask whether the oracle side was
+# named at all, and a casefile that named only itself would pass that question
+# by tautology.
+mutation_test_oracles() {
+    {
+        printf '%s\n' ${MUTATION_ORACLE_FILES[@]+"${MUTATION_ORACLE_FILES[@]}"}
+        if [[ "$MUTATION_RUNNER" == cargo ]]; then
+            mutation_cargo_oracles || true
+        fi
+    } | awk 'NF && !seen[$0]++'
+}
+
+# The oracle side plus the casefile.
+#
+# The casefile belongs here because its text decides which edit is applied and
+# where: replace a case's anchor with something the compiler removes, or its
+# replacement with a no-op, and the round that follows proves nothing while
+# still reporting CAUGHT. Measured 2026-08-17: editing a casefile selected 0 of
+# 30 casefiles — not even its own.
+mutation_all_oracles() {
+    { printf '%s\n' "$CASEFILE"; mutation_test_oracles; } | awk 'NF && !seen[$0]++'
 }
 
 # The compiled targets alone, under the same rule and for the same reason.
@@ -583,6 +692,34 @@ mutation_check_targets_exist() {
     (( missing == 0 ))
 }
 
+# The oracle side was named, and the names resolve.
+#
+# Required rather than optional, for the same reason the target side is: a
+# casefile that names no test is one whose verdicts nothing re-proves when the
+# assertions behind them change, and that silence reads exactly like a case
+# that is still evidence. Checked here rather than in `--declares` because that
+# mode runs where there is no cargo workspace to resolve a selector against,
+# and the honest answer there is "nothing resolved" rather than a refusal.
+mutation_check_oracles() {
+    local named missing=0 f
+    named="$(mutation_test_oracles)"
+    if [[ -z "$named" ]]; then
+        red "the casefile names no oracle — nothing says which test's assertions"
+        red "produced its verdicts, so weakening that test retires them in silence."
+        red "A cargo selector resolves this from '--test <name>'; anything else"
+        red "declares it: 'mutation_oracles <path>', naming the file whose tests"
+        red "the round actually reds rather than one that looks likely."
+        return 1
+    fi
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        [[ -e "$f" ]] && continue
+        red "declared oracle does not exist: $f"
+        missing=$((missing + 1))
+    done <<<"$named"
+    (( missing == 0 ))
+}
+
 mutation_check_selector() { "mutation_${MUTATION_RUNNER}_check_selector"; }
 
 # The cargo selector still names a package that exists, features that
@@ -722,11 +859,19 @@ mutation_init() {
         while IFS= read -r _target; do
             [[ -n "$_target" ]] && printf 'target\t%s\n' "$_target"
         done < <(mutation_all_targets)
+        # The oracle side, on its own key. A caller intersecting a change set
+        # wants both and treats them alike; the keys stay separate because the
+        # two answer different questions about a stale verdict, and a report
+        # that merged them could not say which side went.
+        while IFS= read -r _oracle; do
+            [[ -n "$_oracle" ]] && printf 'oracle\t%s\n' "$_oracle"
+        done < <(mutation_all_oracles)
         exit 0
     fi
     # Before the snapshot, which reads every declared file and would other-
     # wise die on the missing one with `cp`'s message instead of this one.
     mutation_check_targets_exist || exit 2
+    mutation_check_oracles || exit 2
     mutation_snapshot
 
     if [[ "$MUTATION_MODE" == "check" ]]; then

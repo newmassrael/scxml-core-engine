@@ -33,6 +33,11 @@ mutation_runtime_targets .github/workflows/mutation-rounds.yml
 # generator built first.
 mutation_runtime_targets scripts/prepare_ctest_tree.sh
 mutation_runtime_targets scripts/gates/lib.sh
+# The harness, because the oracle side of a selection is resolved there: the
+# casefile a change reaches, the test its selector names, and the casefile
+# itself. `mutation_case_liveness.cases` declares the same file for its own
+# half; a change to it selects both rounds, which is the point.
+mutation_runtime_targets scripts/mutate
 
 # ── The match stops being exact ────────────────────────────────────
 #
@@ -149,6 +154,47 @@ edit("scripts/gates/lib.sh",
      """    sce_gate_codegen >/dev/null \\
         || sce_gate_fail "could not provide sce-codegen, which configuring $SCE_MAIN_BUILD_DIR requires\"""",
      "    true")
+PY
+
+# ── The verdict's oracle side stops being watched ──────────────────
+#
+# A verdict has two sides: the source a case breaks, and the test that noticed.
+# The gate watched only the first, and the second is where a case dies quietly —
+# weaken the assertion and every case in the file keeps the verdict it last
+# earned. Measured 2026-08-17: a change to the file holding every assertion
+# behind this casefile's own ten CAUGHT verdicts selected 0 of 30 casefiles.
+
+mutation_case "the selection stops watching the test that produced the verdict" <<'PY'
+edit("scripts/gates/mutation-rounds.sh",
+     'target|oracle) TARGETS_OF["$casefile"]+="$value"',
+     'target) TARGETS_OF["$casefile"]+="$value"')
+PY
+
+# ── A casefile stops selecting its own round ────────────────────────
+#
+# Its text decides which edit is applied and where. Replace a case's anchor with
+# something the compiler drops, or its replacement with a no-op, and the round
+# reports CAUGHT over nothing — so the casefile is an oracle for itself.
+
+mutation_case "a casefile no longer selects its own round" <<'PY'
+edit("scripts/mutate",
+     """    { printf '%s\\n' "$CASEFILE"; mutation_test_oracles; } | awk 'NF && !seen[$0]++'""",
+     """    mutation_test_oracles | awk 'NF && !seen[$0]++'""")
+PY
+
+# ── The cargo test source stops being derived ───────────────────────
+#
+# 13 of the 24 cargo casefiles name their test file nowhere else, so a
+# derivation that stops resolving takes their oracle side with it — silently,
+# because a casefile with no oracle looks exactly like one whose test never
+# changes.
+
+mutation_case "the cargo selector's test source stops resolving" <<'PY'
+edit("scripts/mutate",
+     """        if [[ "$MUTATION_RUNNER" == cargo ]]; then
+            mutation_cargo_oracles || true
+        fi""",
+     "        true")
 PY
 
 # ── One step is narrowed and the other is not ──────────────────────

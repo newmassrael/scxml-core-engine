@@ -17,6 +17,20 @@
 mutation_ctest --test-dir build -R '^(StatesTests|IntegrationTests)$'
 mutation_targets sce/include/core/HierarchicalStateHelper.h sce/src/states/ConcurrentRegion.cpp
 mutation_targets sce/src/runtime/StateHierarchyManager.cpp
+# The suites the round reds, measured across the three cases: `AiLoopAotTest`,
+# `AncestorEntryIsNotDefaultEntryTest.AnAncestorEnteredOnTheWayToATargetTakes
+# NoDefaultChild`, `ParallelRegionsTakeOwnTransitionsTest.EveryRegionTakesItsOwn
+# Transition` and `ParallelSelfTransitionKeepsItsLeafTest.TheSelfTransitioned
+# RegionAnswersTheNextEvent`.
+#
+# ⚠ The first case reds ten tests and the report prints three of them, so this
+# list is what was seen rather than provably all of it. A file left out is a
+# file whose weakening does not select this round — stated because the
+# alternative is believing the list is complete.
+mutation_oracles tests/integration/AiLoopAotTest.cpp
+mutation_oracles tests/integration/AncestorEntryIsNotDefaultEntryTest.cpp
+mutation_oracles tests/integration/ParallelRegionsTakeOwnTransitionsTest.cpp
+mutation_oracles tests/integration/ParallelSelfTransitionKeepsItsLeafTest.cpp
 
 # ── The domain of a self-transition ────────────────────────────────
 #
