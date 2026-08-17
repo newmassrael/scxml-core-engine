@@ -118,11 +118,25 @@ TEST_F(EventDataArrivesAsSentTest, AHostsJsonPayloadIsAddressableAndItsTextStays
     ASSERT_TRUE(sm->raiseExternalEvent("note", "hold the line"));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_FALSE(sm->isStateActive("garbled"))
         << "the host sent the text `hold the line` and `_event.data === 'hold the line'` did not "
            "hold, so a payload that is not JSON did not arrive as the string it was sent as. "
            "active:"
         << describe();
+
+    // Text that happens to be a valid expression. §scxml-B-2-8-1 gives the
+    // payload three readings and none of them is "evaluate it": a payload is
+    // what a host, a peer session or an HTTP sender put there, and running it
+    // makes `_event.data` mean whatever the receiver's engine is written in.
+    ASSERT_TRUE(sm->raiseExternalEvent("arith", "2 + 3"));
+    eventRaiser->processQueuedEvents();
+
+    EXPECT_FALSE(sm->isStateActive("evaluated"))
+        << "the host sent the text `2 + 3` and it arrived as 5 — the payload was run rather than "
+           "read. active:"
+        << describe();
+    EXPECT_TRUE(sm->isStateActive("settled"))
+        << "the arithmetic-shaped payload neither matched nor mismatched. active:" << describe();
 }
 
 }  // namespace Tests

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 
@@ -505,13 +505,17 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 	{
 		p.ensureScriptEngine()
 		se := p.ScriptEngine
-		parts := make([]string, 0)
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `42`); paramErr == nil {
-			parts = append(parts, fmt.Sprintf("{%q, %s}", "value", sce.ToLuaLiteral(paramVal)))
+			parts = append(parts, sce.EventDataParam{Name: "value", Value: paramVal})
 		} else {
 			engine.Raise(sce.NewPlatformEvent(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution))
 		}
-		eventDataStr := "_scxml_params(" + strings.Join(parts, ",") + ")"
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
 	// W3C SCXML 6.2: Send to parent
 	if p.ParentExternalQueue != nil {

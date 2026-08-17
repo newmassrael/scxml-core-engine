@@ -107,7 +107,10 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
    two-boundary composition the other backends use: escape once for the
    Lua source being assembled, once for the Go literal carrying it. #}
 				if val, err := se.EvaluateExpression(p.SessionID, "{{ param_expr | to_lua_expr | escape_go }}"); err == nil {
-					jsonParts = append(jsonParts, "[\"{{ param.name | escape_lua | escape_go }}\"] = " + sce.ToLuaLiteral(val))
+					// §scxml-B-2-9: donedata rides an event, so it leaves the
+					// data model and travels as JSON — the same wire
+					// `<send>`'s params take.
+					jsonParts = append(jsonParts, "\"{{ param.name | escape_json_string | escape_go }}\":" + sce.ScriptValueToJSON(val))
 				} else {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
@@ -116,7 +119,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% endif %}
 {% endfor %}
 				if doneDataOk {
-					doneEventData = "{" + strings.Join(jsonParts, ", ") + "}"
+					doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
 				}
 			}
 		}
@@ -140,7 +143,9 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				   The bug was invisible while the emitted Lua quoted its
 				   strings with `'`. #}
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ donedata_content_lua }}`); err == nil {
-					doneEventData = sce.ToLuaLiteral(val)
+					// §scxml-B-2-9: serialized, not spelled as Lua source —
+					// the reader is the parent's dequeue, which parses.
+					doneEventData = sce.ScriptValueToJSON(val)
 				} else {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))

@@ -78,13 +78,13 @@
                     pass
 {% endif %}
 {% if _has_donedata %}
-            # W3C SCXML 5.5: Build donedata as Lua source text so the
-            # downstream `set_current_event` dispatch reconstructs an
-            # equivalent Lua value via its `return <text>` parse path —
-            # `to_lua_literal()` preserves string identity (`'foo'`
-            # round-trips, not the bare identifier `foo`). Mirrors the
-            # Rust template's `done_event_data = val.to_lua_literal()`
-            # at `tools/codegen/templates/rust/entry_exit_actions.rs.jinja2:180`.
+            # W3C SCXML 5.5 + B-2-9: donedata rides an event, so it leaves
+            # the data model and travels as JSON — the same wire `<send>`'s
+            # params take, and the one the downstream `set_current_event`
+            # PARSES rather than runs. It used to be Lua source text
+            # reconstructed by a `return <text>` eval at the far end, which
+            # is what made a payload executable there. Mirrors the Rust
+            # template's `script_value_to_json(&val)`.
             _done_data_ok = True
             _done_data: str = ""
 {% if state.donedata.params %}
@@ -99,18 +99,18 @@
 {% else %}
             try:
                 _done_parts.append(
-                    '[{{ param.name | py_string_literal }}] = '
+                    '"{{ param.name | escape_json_string }}":'
                     + engine._script_engine.evaluate_expression(
                         self._session_id,
                         {{ _pexpr | to_lua_expr | py_string_literal }},
-                    ).to_lua_literal()
+                    ).to_json_literal()
                 )
             except _ScriptError:
                 self._raise_error_execution(engine)
 {% endif %}
 {% endfor %}
             if _done_data_ok:
-                _done_data = "{" + ", ".join(_done_parts) + "}"
+                _done_data = "{" + ",".join(_done_parts) + "}"
 {% elif state.donedata.content.kind == "expression" or state.donedata.content.kind == "inline_text" %}
 {% if state.donedata.content.kind == "expression" %}
 {% set donedata_content_lua = state.donedata.content.text | to_lua_expr %}
@@ -124,20 +124,21 @@
                 _done_data = engine._script_engine.evaluate_expression(
                     self._session_id,
                     {{ donedata_content_lua | py_string_literal }},
-                ).to_lua_literal()
+                ).to_json_literal()
             except _ScriptError:
                 _done_data_ok = False
                 self._raise_error_execution(engine)
 {% elif state.donedata.content.kind == "literal" %}
             # W3C SCXML 5.5: `<content>` literal text is used as the
-            # raw `_event.data` value. Wrap the text in a Lua string
-            # literal at runtime via `_ScriptValue.of(...).to_lua_literal()`
-            # so the dispatch's `return <text>` eval reconstructs an
-            # identical string regardless of which characters the
-            # literal contains.
+            # raw `_event.data` value. Serialised via
+            # `_ScriptValue.of(...).to_json_literal()` so the dispatch's
+            # JSON reading reconstructs an identical string regardless of
+            # which characters the literal contains — a bare text that
+            # happened to parse as something else would otherwise change
+            # type on the way across.
             _done_data = _ScriptValue.of(
                 {{ state.donedata.content.text | py_string_literal }}
-            ).to_lua_literal()
+            ).to_json_literal()
 {% endif %}
 {% if state.parent and ('done.state.' ~ state.parent) in model.events %}
             # W3C SCXML 5.5 + 3.7: a donedata eval failure raises

@@ -16,12 +16,25 @@
   `_event.data.done`; the same shape reaches SCE from any embedder that has a
   JSON payload and a state machine to give it to.
 
-  Two claims, two clauses, and a `<final>` for each failure so a red says
-  which half broke rather than only that something did:
+  Three claims, three clauses, and a `<final>` for each failure so a red says
+  which one broke rather than only that something did:
 
-    settled   both — a JSON object arrived as an object, and text as text
-    mangled   the JSON payload did not become addressable properties
-    garbled   the plain-text payload did not arrive as that string
+    settled    all three — a JSON object arrived as an object, text as text,
+               and a payload shaped like an expression as that text
+    mangled    the JSON payload did not become addressable properties
+    garbled    the plain-text payload did not arrive as that string
+    evaluated  `2 + 3` arrived as 5 — the payload was RUN
+
+  The third is the one that separates reading the payload from running it,
+  and it is written to be decisive in both languages this datamodel is
+  lowered into: `2 + 3` is an expression in Lua and in JavaScript alike, and
+  evaluating it gives 5 in both. §scxml-B-2-8-1 gives the payload three
+  readings — XML becomes a DOM, JSON becomes the value, anything else becomes
+  a space-normalized string — and text that merely looks like arithmetic is
+  the third of those. Measured 2026-08-17, five of six backends took a fourth
+  reading: they ran the text first, so this event landed in `evaluated` on
+  Rust, Go, Python, C11 and Kotlin's QuickJS engine, and in `settled` on cpp
+  and Kotlin's Rhino. One document, two answers, and no test asked either.
 
   The first guard tests `_event.data` before indexing it. That is not defensive
   style: a backend that drops the payload leaves the variable nil, and
@@ -46,11 +59,17 @@
   </state>
 
   <state id="heard">
-    <transition event="note" cond="_event.data === 'hold the line'" target="settled"/>
+    <transition event="note" cond="_event.data === 'hold the line'" target="quoted"/>
     <transition event="note" target="garbled"/>
+  </state>
+
+  <state id="quoted">
+    <transition event="arith" cond="_event.data === '2 + 3'" target="settled"/>
+    <transition event="arith" target="evaluated"/>
   </state>
 
   <final id="settled"/>
   <final id="mangled"/>
   <final id="garbled"/>
+  <final id="evaluated"/>
 </scxml>

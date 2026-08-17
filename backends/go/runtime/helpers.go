@@ -5,7 +5,9 @@ package sce
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -129,6 +131,132 @@ func ToLuaLiteral(value interface{}) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// ScriptValueToJSON serialises a value that leaves the ECMAScript data model.
+//
+// The clause cited in the body names JSON as that serialisation — it is what
+// the BasicHTTP Event I/O Processor sends — and an event payload always leaves
+// the data model: the reader is another dequeue, often another session, and in
+// a mesh another process running another backend.
+//
+// This is the counterpart of [ToLuaLiteral], and the difference is the point.
+// A Lua literal is *source*: reading it back needs an interpreter for the
+// language the sender happened to be written in. That made `_event.data` mean
+// one thing on a Lua backend and another on a JavaScript one, and made a
+// payload executable at the receiving end. JSON is read by a parser.
+//
+// 1:1 port of the C++ `scriptValueToJson` static in
+// `sce/src/common/EventDataHelper.cpp`. Object keys are sorted: Go map
+// iteration order is deliberately randomised, and the wire form has to be
+// byte-identical for equal content.
+func ScriptValueToJSON(value interface{}) string {
+	// §scxml-B-2-9: a value that has to leave the ECMAScript data model is
+	// serialized to JSON, which reconstructs it in full rather than falling
+	// back to a lossy platform format.
+	if value == nil {
+		// JSON has no `undefined`; the C++ port maps both to null.
+		return "null"
+	}
+	switch v := value.(type) {
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			// RFC 8259 has no spelling for either.
+			return "null"
+		}
+		if v == float64(int64(v)) && math.Abs(v) < 1e15 {
+			return fmt.Sprintf("%d", int64(v))
+		}
+		return fmt.Sprintf("%g", v)
+	case string:
+		return `"` + EscapeJSONString(v) + `"`
+	case []interface{}:
+		items := make([]string, len(v))
+		for i, item := range v {
+			items[i] = ScriptValueToJSON(item)
+		}
+		return "[" + strings.Join(items, ",") + "]"
+	case map[string]interface{}:
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		items := make([]string, 0, len(keys))
+		for _, k := range keys {
+			items = append(items, `"`+EscapeJSONString(k)+`":`+ScriptValueToJSON(v[k]))
+		}
+		return "{" + strings.Join(items, ",") + "}"
+	default:
+		return `"` + EscapeJSONString(fmt.Sprintf("%v", v)) + `"`
+	}
+}
+
+// EscapeJSONString escapes a string for a JSON string literal.
+// Ports C++ `DoneDataHelper::escapeJsonString`.
+func EscapeJSONString(s string) string {
+	escaped := strings.ReplaceAll(s, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
+	escaped = strings.ReplaceAll(escaped, "\b", `\b`)
+	escaped = strings.ReplaceAll(escaped, "\f", `\f`)
+	return escaped
+}
+
+// EventDataParam is one evaluated `<send>` param, in document order.
+type EventDataParam struct {
+	Name  string
+	Value interface{}
+}
+
+// BuildJSONFromTypedParams builds the JSON `_event.data` a `<send>` ships.
+//
+// W3C test178: a name may repeat and every value must be delivered, so one
+// occurrence is the value itself and more than one is an Array of them in
+// document order — an object cannot hold one name twice.
+// Names are sorted, matching the C++ `std::map` original and the Rust port,
+// so the same params produce the same bytes on every backend.
+//
+// 1:1 port of C++ `EventDataHelper::buildJsonFromTypedParams`.
+func BuildJSONFromTypedParams(params []EventDataParam) string {
+	// §scxml-6.2: the `<param>` elements a `<send>` carries become the data
+	// the receiving event exposes, evaluated at send time.
+	grouped := make(map[string][]interface{})
+	names := make([]string, 0, len(params))
+	for _, p := range params {
+		if _, seen := grouped[p.Name]; !seen {
+			names = append(names, p.Name)
+		}
+		grouped[p.Name] = append(grouped[p.Name], p.Value)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		values := grouped[name]
+		published := ""
+		if len(values) == 1 {
+			published = ScriptValueToJSON(values[0])
+		} else {
+			items := make([]string, len(values))
+			for i, v := range values {
+				items[i] = ScriptValueToJSON(v)
+			}
+			published = "[" + strings.Join(items, ",") + "]"
+		}
+		parts = append(parts, `"`+EscapeJSONString(name)+`":`+published)
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 // LoadFileContent loads file content for datamodel src attributes (W3C SCXML 5.2.2).

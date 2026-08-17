@@ -141,6 +141,35 @@ function _scxml_tonumber(v)
     return 0 / 0
 end
 
+-- The last of the readings the ECMAScript data model gives an arriving
+-- payload: one that is neither XML nor JSON is the text, space-normalized.
+-- Runs of whitespace collapse to one space and the ends are trimmed
+-- (W3C test562).
+--
+-- Here rather than in each backend because the receiving decoders that reach
+-- it from Lua have to agree with the ones that do it in their host language
+-- (`split_whitespace().join(" ")` in Rust, `strings.Fields` in Go,
+-- `" ".join(text.split())` in Python) — one clause, one answer. Scanned by
+-- hand rather than with a pattern: go-lua ships no `gsub`.
+function _scxml_normalize_ws(text)
+    if type(text) ~= "string" then return text end
+    local out = {}
+    local in_ws = false
+    local started = false
+    for i = 1, #text do
+        local c = string.sub(text, i, i)
+        if c == " " or c == "\t" or c == "\n" or c == "\r" then
+            if started then in_ws = true end
+        else
+            if in_ws then out[#out + 1] = " " end
+            out[#out + 1] = c
+            in_ws = false
+            started = true
+        end
+    end
+    return table.concat(out)
+end
+
 -- ECMA-262 7.1.17 ToString. Lua 5.4 renders an integral float as "1.0" and
 -- go-lua renders every number as a float, so `1 + ''` would answer "1.0" on
 -- one engine and "1" on another; ECMAScript says "1" on both.

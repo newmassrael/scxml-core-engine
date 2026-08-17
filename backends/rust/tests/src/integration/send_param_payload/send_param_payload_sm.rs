@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d307f64e2f440b5e64842da73b67f9e9208ee8c09e59399434add3727578f7cc
-// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
+// source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
+// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -89,6 +89,7 @@ pub enum SendParamPayloadState {
     FailDuplicateParams,
     FailInternalPayload,
     FailNumberType,
+    FailStringType,
     InternalPhase,
     Pass,
     TypedPhase,
@@ -204,6 +205,21 @@ pub struct SendParamPayloadPolicy {
 }
 
 impl SendParamPayloadPolicy {
+    /// §scxml-5.3: what the `tag` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `tag` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn tag(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "tag",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -272,6 +288,14 @@ impl SendParamPayloadPolicy {
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
+        // W3C SCXML 5.3: Early binding - Initialize state typedPhase datamodel variables
+        // W3C SCXML 5.2/5.3: Initialize 'tag' from expr (typedPhase)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "tag", "\"kept\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("typedPhase: {}", e);
+        }
+
         self.script_engine_initialized = true;
     }
 
@@ -297,6 +321,17 @@ impl SendParamPayloadPolicy {
         }
 
         // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+
+        // W3C SCXML 5.3: Early binding - Initialize state typedPhase datamodel variables
+        // W3C SCXML 5.2/5.3: Initialize 'tag' from expr (typedPhase)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "tag", "\"kept\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("typedPhase: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                SendParamPayloadEvent::ErrorExecution,
+            ));
+        }
 
         self.script_engine_initialized = true;
     }
@@ -624,6 +659,7 @@ impl StatePolicy for SendParamPayloadPolicy {
             SendParamPayloadState::FailDuplicateParams => true,
             SendParamPayloadState::FailInternalPayload => true,
             SendParamPayloadState::FailNumberType => true,
+            SendParamPayloadState::FailStringType => true,
             SendParamPayloadState::Pass => true,
             _ => false,
         }
@@ -660,9 +696,10 @@ impl StatePolicy for SendParamPayloadPolicy {
         match state {
             SendParamPayloadState::AwaitChild => 0,
             SendParamPayloadState::FailChildPayload => 4,
-            SendParamPayloadState::FailDuplicateParams => 7,
+            SendParamPayloadState::FailDuplicateParams => 8,
             SendParamPayloadState::FailInternalPayload => 5,
             SendParamPayloadState::FailNumberType => 6,
+            SendParamPayloadState::FailStringType => 7,
             SendParamPayloadState::InternalPhase => 1,
             SendParamPayloadState::Pass => 3,
             SendParamPayloadState::TypedPhase => 2,
@@ -700,6 +737,7 @@ impl StatePolicy for SendParamPayloadPolicy {
             SendParamPayloadState::FailDuplicateParams => "failDuplicateParams",
             SendParamPayloadState::FailInternalPayload => "failInternalPayload",
             SendParamPayloadState::FailNumberType => "failNumberType",
+            SendParamPayloadState::FailStringType => "failStringType",
             SendParamPayloadState::InternalPhase => "internalPhase",
             SendParamPayloadState::Pass => "pass",
             SendParamPayloadState::TypedPhase => "typedPhase",
@@ -828,13 +866,15 @@ impl StatePolicy for SendParamPayloadPolicy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
-                        // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time.
-                        // The author name/value cross two literal boundaries — the Lua table
-                        // constructor this line assembles, then the Rust string literal that
-                        // carries it — so each is escaped once per boundary
-                        // (`escape_lua | escape_rust`). Applying only the host filter produces
-                        // Rust source that compiles and Lua source that does not parse.
-                        let event_data: &str = "_scxml_params({\"carried\", \"kept\"})";
+                        // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
+                        // finished here. It has to be: this arm is what a machine with no script
+                        // engine emits, and the wire it used to write — a `_scxml_params(...)`
+                        // call in Lua — could only be read back by an interpreter.
+                        //
+                        // The author name/value cross two literal boundaries, the JSON text this
+                        // filter assembles and the Rust string literal carrying it, so each is
+                        // escaped once per boundary (`static_params_json | escape_rust`).
+                        let event_data: &str = "{\"carried\":\"kept\"}";
 
                         // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
                         {
@@ -864,10 +904,17 @@ impl StatePolicy for SendParamPayloadPolicy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let mut parts: Vec<String> = Vec::new();
+                            // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                            // delivered, so each name carries a vector. The typed value is kept
+                            // rather than its text — a receiver reading `_event.data.value === 42`
+                            // finds the string "42" unequal.
+                            let mut wire_params: ::std::collections::BTreeMap<
+                                String,
+                                Vec<::sce_rust_runtime::ScriptValue>,
+                            > = ::std::collections::BTreeMap::new();
                             match se.evaluate_expression(&sid, "7") {
                                 Ok(val) => {
-                                    parts.push(format!("{{{:?}, {}}}", "n", val.to_lua_literal()));
+                                    wire_params.entry("n".to_string()).or_default().push(val);
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -879,9 +926,23 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     ));
                                 }
                             }
+                            match se.evaluate_expression(&sid, "tag") {
+                                Ok(val) => {
+                                    wire_params.entry("s".to_string()).or_default().push(val);
+                                }
+                                Err(e) => {
+                                    ::sce_rust_runtime::sce_log_error!(
+                                        "send param 's' eval failed: {}",
+                                        e
+                                    );
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        SendParamPayloadEvent::ErrorExecution,
+                                    ));
+                                }
+                            }
                             match se.evaluate_expression(&sid, "1") {
                                 Ok(val) => {
-                                    parts.push(format!("{{{:?}, {}}}", "d", val.to_lua_literal()));
+                                    wire_params.entry("d".to_string()).or_default().push(val);
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -895,7 +956,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                             }
                             match se.evaluate_expression(&sid, "2") {
                                 Ok(val) => {
-                                    parts.push(format!("{{{:?}, {}}}", "d", val.to_lua_literal()));
+                                    wire_params.entry("d".to_string()).or_default().push(val);
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
@@ -907,7 +968,9 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     ));
                                 }
                             }
-                            format!("_scxml_params({})", parts.join(","))
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                &wire_params,
+                            )
                         };
                         let event_data: &str = &event_data_string;
 
@@ -1098,6 +1161,7 @@ impl SendParamPayloadPolicy {
             SendParamPayloadState::FailDuplicateParams => false,
             SendParamPayloadState::FailInternalPayload => false,
             SendParamPayloadState::FailNumberType => false,
+            SendParamPayloadState::FailStringType => false,
             SendParamPayloadState::InternalPhase => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
@@ -1143,6 +1207,20 @@ impl SendParamPayloadPolicy {
                         self.last_transition_is_targetless = false;
 
                         *current_state = SendParamPayloadState::FailNumberType;
+                        *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == SendParamPayloadEvent::Typed {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("(_event.data.s ~= \"kept\")", engine) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
+
+                        *current_state = SendParamPayloadState::FailStringType;
                         *transition_taken = true;
                         return true;
                     }
