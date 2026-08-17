@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: c368ce80174f466d84e6185a3a865287545abdfeafb6bd04a27d03c8ef959c7a
+// template-hash: b987ea47cf7b98cc29f6a07fbb829bd85b24bd9991a16621d5e7458fb0482788
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -788,7 +788,7 @@ impl StatePolicy for Test530Policy {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let expr = "'<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\"><final></final></scxml>'";
+                        let expr = "\"<scxml xmlns=\\\"http://www.w3.org/2005/07/scxml\\\" version=\\\"1.0\\\"><final></final></scxml>\"";
                         // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                         // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                         // through evaluate_expression + set_variable would round-trip through ScriptValue

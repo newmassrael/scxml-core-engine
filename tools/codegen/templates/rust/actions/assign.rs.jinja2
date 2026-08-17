@@ -27,7 +27,10 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
 {% endif %}
 {% else %}
 {% if action.content %}
-    let expr = "'{{ action.content | escape_rust }}'";
+{# W3C SCXML 5.4.2: in-line children specify the same legal data value
+   `expr` would, so they arrive here already read — `21` is the number,
+   not the string "21", which is what quoting the text made of it. #}
+    let expr = "{{ action.content | to_lua_assign_content | escape_rust }}";
 {% else %}
     let expr = "{{ action.expr | default("") | to_lua_expr | escape_rust }}";
 {% endif %}

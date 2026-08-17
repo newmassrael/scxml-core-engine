@@ -105,11 +105,47 @@ fn document(content: &str) -> String {
     )
 }
 
+/// A document whose only payload is one `<assign>` in-line body.
+///
+/// §scxml-5.4.2 puts the same clause on these children that §scxml-5.6
+/// puts on `<content>`'s: they "provide an in-line specification of the
+/// legal data value (see 5.9.3 …) to be inserted into the data model".
+/// Same datamodel, same reading — the parent element is not what decides
+/// it, which is the whole subject of this file.
+fn assign_document(content: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="t" expr="'hello'"/>
+    <data id="v"/>
+  </datamodel>
+  <state id="s0">
+    <onentry><assign location="v">{content}</assign></onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#
+    )
+}
+
 /// Everything `language` emits for a document carrying `content`.
 fn emitted(content: &str, language: &str) -> String {
-    let out = ScratchDir::new(&format!("inline-content-{language}"));
+    emitted_for(&document(content), "inline-content", language)
+}
+
+/// The same, for the `<assign>` spelling of the same clause.
+fn assign_emitted(content: &str, language: &str) -> String {
+    emitted_for(&assign_document(content), "inline-assign", language)
+}
+
+/// Everything `language` emits for `document`.
+fn emitted_for(document: &str, label: &str, language: &str) -> String {
+    let out = ScratchDir::new(&format!("{label}-{language}"));
     let path = out.0.join("inline_content.scxml");
-    std::fs::write(&path, document(content)).expect("write document");
+    std::fs::write(&path, document).expect("write document");
     let run = Command::new(sce_codegen_bin())
         .args([
             "generate",
@@ -195,6 +231,21 @@ fn expected_spellings(language: &str) -> [&'static str; 1] {
     }
 }
 
+/// The authored text as a string literal, in either language a backend
+/// evaluates.
+///
+/// This is what a backend emits when it hands the author's text on
+/// *unread*, and it is why "does the artifact contain `t.length`?" is
+/// not the question: `'t.length'` contains it too, and means the
+/// nine-character string in Lua and in ECMAScript alike. Both quoting
+/// mutations SURVIVED the first round of the casefile against the
+/// presence check alone — C++ and Kotlin evaluate the authored spelling,
+/// so for them the unread form and the read form differ *only* by these
+/// two quotes.
+fn unread_form(authored: &str) -> String {
+    format!("'{authored}'")
+}
+
 /// The comparison spans every backend the tool serves.
 ///
 /// A loop cannot see its own list shrink, so the list is derived from
@@ -244,6 +295,13 @@ fn every_backend_reads_an_expression_the_same_way() {
             "{language} does not carry the reading `{spelling}` for \
              <content>t.length</content> — it is passing the author's text \
              on unread"
+        );
+        let unread = unread_form("t.length");
+        assert!(
+            !without_comments(&text).contains(&unread),
+            "{language} carries `{unread}` — the author's text quoted, which \
+             is the string and not the reading. Presence of `{spelling}` alone \
+             does not separate the two: the quoted form contains it."
         );
     }
 }
@@ -339,5 +397,138 @@ fn the_send_path_no_longer_searches_for_the_reading() {
                  `{evidence}` is absent"
             );
         }
+    }
+}
+
+// ── The other element the same clause reaches ────────────────────
+//
+// `<send><content>` was one of two places §scxml-5.9.3's reading is
+// owed. `<assign>` is the other, and it was worse off: the parser read
+// its children only when at least one of them was an *element*, so
+// `<assign location="v">21</assign>` — the shape §scxml-B-2-1's ladder
+// ends on — arrived at codegen as the empty string. Every backend then
+// assigned nothing, exit 0, no diagnostic. A generated Python machine
+// running that assignment under `cond="v == 21"` reached `fail`, and so
+// did `{ "k": 7 }` and `hello there`; only `<data id="v">21</data>`,
+// which already had the reading, reached `pass`.
+//
+// Had the text survived the parser, five of the six would still have
+// quoted it — `'21'`, the string — because the element-child case is the
+// only one the corpus has and serialised XML is a string in all six.
+// Corpus exposure for the text case is zero, which is why nothing said
+// so: 709 tracked documents, one `<assign>` with children, and it is
+// test530's XML.
+
+/// Every backend carries the same reading of an `<assign>`'s in-line
+/// expression.
+///
+/// The same probe as the `<content>` half, for the same reason:
+/// `t.length` is valid ECMAScript, valid Lua *syntax*, and means 5 in
+/// one and nil in the other, so a backend that passes the author's text
+/// through unread still compiles and still runs.
+#[test]
+fn every_backend_reads_an_assign_expression_the_same_way() {
+    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+        let text = assign_emitted("t.length", language);
+        let [spelling] = expected_spellings(language);
+        assert!(
+            text.contains(spelling),
+            "{language} does not carry the reading `{spelling}` for \
+             <assign location=\"v\">t.length</assign> — §scxml-5.4.2 gives \
+             those children the same in-line data value §scxml-5.6 gives \
+             <content>'s, and this backend is passing the author's text on \
+             unread"
+        );
+        let unread = unread_form("t.length");
+        assert!(
+            !without_comments(&text).contains(&unread),
+            "{language} assigns `{unread}` — the author's text quoted, which \
+             is the string and not the reading. That was the emitted shape in \
+             five of the six backends, and `<assign location=\"v\">21</assign>` \
+             put the string \"21\" where `cond=\"v == 21\"` looked for a number."
+        );
+    }
+}
+
+/// Text that is not an expression is the string, on every backend.
+#[test]
+fn every_backend_reads_assigned_prose_as_the_string() {
+    for language in Language::ALL.iter().map(|l| l.canonical_name()) {
+        for content in ["inline payload", "Date"] {
+            let text = assign_emitted(content, language);
+            let quoted_forms = [
+                format!("\"{content}\""),
+                format!("'{content}'"),
+                format!("\\\"{content}\\\""),
+            ];
+            assert!(
+                quoted_forms.iter().any(|form| text.contains(form.as_str())),
+                "{language} does not carry <assign>{content}</assign> as a \
+                 string literal — B.2 makes text that is not an expression \
+                 the string"
+            );
+        }
+    }
+}
+
+/// The children reach codegen at all.
+///
+/// Separate from the two above because it is a different failure: those
+/// ask whether the reading is right, and this asks whether there is
+/// anything to read. The parser dropped text children entirely, so every
+/// backend emitted a *well-formed* assignment of nothing and the reading
+/// assertions had no text to be wrong about.
+///
+/// `sce-rust-lua` decides what the lowering means, rather than this file
+/// arguing from its spelling — the same engine a generated Rust machine
+/// runs on.
+#[test]
+fn an_assigns_inline_text_reaches_the_datamodel_as_its_value() {
+    use sce_build::ecmascript::DocumentScope;
+    use sce_build::filters::to_lua_assign_content;
+    use sce_rust_lua::LuaEngine;
+    use sce_rust_runtime::scripting::{IScriptEngine, ScriptValue};
+
+    let scope = DocumentScope::declaring(["t", "v"]);
+    let engine = LuaEngine::new();
+    assert!(engine.initialize(), "the Lua engine must start");
+    let session = "assign_content".to_string();
+    engine.create_session(&session);
+
+    // Each row is what §scxml-B-2-1's ordering says the text means: an
+    // expression when it is one, otherwise the space-normalised string.
+    let cases: [(&str, ScriptValue); 3] = [
+        ("21", ScriptValue::Int(21)),
+        ("1 + 1", ScriptValue::Int(2)),
+        (
+            "hello  there",
+            ScriptValue::String("hello there".to_string()),
+        ),
+    ];
+    for (authored, expected) in cases {
+        let lowered = to_lua_assign_content(authored.to_string(), &scope).unwrap_or_else(|err| {
+            panic!("`{authored}` is a legal data value and was refused: {err}")
+        });
+        assert!(
+            !lowered.is_empty(),
+            "`{authored}` lowered to nothing — the children never reached the \
+             reading, which is the state that made a generated machine assign \
+             nothing at all"
+        );
+        engine
+            .execute_script(&session, &format!("v = {lowered}"))
+            .unwrap_or_else(|err| {
+                panic!("`{authored}` lowered to `{lowered}`, which did not run: {err}")
+            });
+        let seen = engine
+            .evaluate_expression(&session, "v")
+            .expect("the datamodel reads back");
+        assert_eq!(
+            seen, expected,
+            "<assign location=\"v\">{authored}</assign> lowered to `{lowered}` \
+             and put {seen:?} in the datamodel; §scxml-5.4.2 sends those \
+             children through §scxml-5.9.3, where {expected:?} is what they \
+             specify"
+        );
     }
 }

@@ -1,12 +1,13 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
-{# W3C SCXML 5.4 — `<assign>` may carry either `expr` (most common)
-   or inline content (XML body or literal text). When `expr` is set,
-   route through the standard `_assign` path; otherwise hand the
-   content to `_assign_content` which mirrors `_init_data_with_content`'s
-   eval-then-string fallback so XML payloads (W3C B.2 test530) and
-   literal-text content land in the datamodel correctly. #}
+{# W3C SCXML 5.4.2 — `<assign>` carries either `expr` or in-line children,
+   "but not both", and the children "provide an in-line specification of the
+   legal data value ... to be inserted into the data model at the specified
+   location". Two spellings of one value, so both reach the same `_assign`:
+   the reading is made by a filter (`to_lua_assign_content`), which is where
+   every other backend makes it too, instead of by an eval-and-see helper at
+   run time. #}
 {%- macro emit(action, indent, machine_name, model) -%}
 {# W3C SCXML B.2: the target is authored ECMAScript, so it is lowered by
    the same frontend the reads go through — `arr[0]` names one cell
@@ -14,6 +15,6 @@
 {% if action.expr -%}
 {{ indent }}self._assign(engine, {{ action.location | to_lua_location | py_string_literal }}, {{ action.expr | to_lua_expr | py_string_literal }})
 {% else -%}
-{{ indent }}self._assign_content(engine, {{ action.location | to_lua_location | py_string_literal }}, {{ action.content | to_lua_data_content | py_string_literal }}, {{ action.content | normalize_ws | py_string_literal }})
+{{ indent }}self._assign(engine, {{ action.location | to_lua_location | py_string_literal }}, {{ action.content | to_lua_assign_content | py_string_literal }})
 {% endif -%}
 {% endmacro -%}
