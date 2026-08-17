@@ -50,6 +50,35 @@ int getsockopt_int(int fd, int level, int name) {
     return value;
 }
 
+/// What this kernel reports for a requested `SO_RCVBUF`, measured on a
+/// throwaway socket of the same family rather than assumed.
+///
+/// The two receive-buffer tests below used to assert that the tuned
+/// socket's buffer was *larger* than an untuned one's. That reads as a
+/// statement about the applier and is a statement about the host: Linux
+/// reports back roughly twice what was asked and clamps to
+/// `net.core.rmem_max`, so whether the result exceeds the default
+/// depends entirely on what `net.core.rmem_default` happens to be. A
+/// GitHub runner defaults to 1 MB, where a 128 KB request lands *below*
+/// the default and the assertion failed for a socket the applier had set
+/// exactly as asked — the first CI run that ever reached this suite
+/// reported it.
+///
+/// Asking the kernel what it does with the request removes the
+/// assumption instead of loosening the check: the applier's contract is
+/// that it does what a direct `setsockopt` does, and that is what this
+/// compares against.
+int rcvbuf_after_setting(int domain, int requested) {
+    const int fd = ::socket(domain, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &requested, sizeof(requested));
+    const int reported = getsockopt_int(fd, SOL_SOCKET, SO_RCVBUF);
+    ::close(fd);
+    return reported;
+}
+
 /// Server on a kernel-assigned ephemeral port, so concurrent ctest jobs
 /// cannot collide on a fixed one.
 std::string ephemeral_server_endpoint(Server &server) {
@@ -121,10 +150,9 @@ TEST(CustomTcpSocketOptionsTest, NodelayTrueReachesTheDialedSocket) {
 
 TEST(CustomTcpSocketOptionsTest, ReceiveBufferSizeReachesTheDialedSocket) {
     // The Cyclone-parity option (`SocketReceiveBufferSize`). Linux
-    // reports back roughly twice the requested size — it reserves the
-    // other half for bookkeeping — so the assertion is "grew towards what
-    // was asked", not an equality that would encode one kernel's
-    // doubling rule.
+    // reports back roughly twice the requested size and clamps to
+    // `net.core.rmem_max`, so the expectation is measured from this
+    // kernel rather than written down — see `rcvbuf_after_setting`.
     SocketOptions opts;
     opts.recv_buffer_bytes = 256 * 1024;
 
@@ -142,7 +170,11 @@ TEST(CustomTcpSocketOptionsTest, ReceiveBufferSizeReachesTheDialedSocket) {
     const int tuned_size = getsockopt_int(tuned_fd, SOL_SOCKET, SO_RCVBUF);
 
     ASSERT_GT(default_size, 0) << "getsockopt(SO_RCVBUF) must succeed for the comparison to mean anything";
-    EXPECT_GT(tuned_size, default_size) << "a declared recv_buffer_bytes must move the socket off the kernel default";
+    const int expected = rcvbuf_after_setting(AF_INET, opts.recv_buffer_bytes);
+    ASSERT_GT(expected, 0) << "the reference socket must answer for the comparison to mean anything";
+    EXPECT_EQ(tuned_size, expected) << "a declared recv_buffer_bytes must reach the dialed socket — this kernel "
+                                       "answers "
+                                    << expected << " for that request";
 }
 
 TEST(CustomTcpSocketOptionsTest, BoundedRetryFailsFastOnARefusedPort) {
@@ -187,7 +219,10 @@ TEST(CustomTcpSocketOptionsTest, AcceptSideSharesTheSameApplier) {
     const int after = getsockopt_int(fds[0], SOL_SOCKET, SO_RCVBUF);
 
     ASSERT_GT(before, 0);
-    EXPECT_GT(after, before) << "the shared applier must honour recv_buffer_bytes";
+    const int expected = rcvbuf_after_setting(AF_UNIX, opts.recv_buffer_bytes);
+    ASSERT_GT(expected, 0) << "the reference socket must answer for the comparison to mean anything";
+    EXPECT_EQ(after, expected) << "the shared applier must honour recv_buffer_bytes — this kernel answers " << expected
+                               << " for that request, and the socket started at " << before;
 
     ::close(fds[0]);
     ::close(fds[1]);
