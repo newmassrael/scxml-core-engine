@@ -351,20 +351,17 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             break;  /* W3C 4.6: error inside <foreach> body breaks the loop */
 {% endif %}
 {% elif (not action.expr) and action.content %}
-            /* W3C SCXML 5.4 (test530-shape): `<assign location="{{ action.location }}">`
-               with inline XML child element (no `expr` attribute). The parser's
-               `parse_executable_content` arm c14n-serialises the children into
-               `action.content` (parser.rs:1383-1391). Mirror cpp
-               `actions/assign.jinja2:40-42`: wrap as a Lua single-quoted
-               string literal so the datamodel slot holds the SCXML text for
-               downstream `<content expr>` evaluation. Lua single-quoted
-               strings preserve embedded `"` verbatim — the W3C corpus's
-               c14n output for `<scxml ...><final/></scxml>` carries only
-               double-quotes in attribute values, no single-quote / backslash
-               on this path. The replace-chain stays in for defensive
-               escaping should a future fixture introduce them. */
+            /* W3C SCXML 5.4.2: `<assign location="{{ action.location }}">` with
+               in-line children. The children "provide an in-line specification
+               of the legal data value ... to be inserted into the data model at
+               the specified location" — the same reading `<data>` content gets,
+               so `to_lua_assign_content` makes it, once, for every backend.
+               This line used to quote the text unconditionally, which was right
+               for the serialised XML of test530 and wrong for everything else:
+               `<assign location="v">21</assign>` reached the datamodel as the
+               string "21" and a `cond="v == 21"` guarding it was false. */
             if (luaL_dostring(sm->L,
-                "{{ action.location | to_lua_location | escape_c }} = '{{ action.content | replace('\\', '\\\\') | replace("'", "\\'") | escape_c }}'") != 0) {
+                "{{ action.location | to_lua_location | escape_c }} = ({{ action.content | to_lua_assign_content | escape_c }})") != 0) {
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
                 memset(&_err_evt, 0, sizeof(_err_evt));

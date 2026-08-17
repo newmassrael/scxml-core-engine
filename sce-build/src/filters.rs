@@ -122,6 +122,10 @@ fn register_ecmascript_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     env.add_filter("to_lua_data_content", move |content: String| {
         to_lua_data_content(content, &for_content)
     });
+    let for_assign = Arc::clone(scope);
+    env.add_filter("to_lua_assign_content", move |content: String| {
+        to_lua_assign_content(content, &for_assign)
+    });
     let for_guard = Arc::clone(scope);
     env.add_filter("to_lua_guard", move |expr: String| {
         to_lua_guard(expr, &for_guard)
@@ -512,6 +516,73 @@ pub fn to_lua_data_content(
         return Ok(content);
     }
     Ok(lua_string_literal(&normalize_ws(content)))
+}
+
+/// The value an `<assign>`'s in-line children specify, as an expression.
+///
+/// The Recommendation gives those children the same reading it gives
+/// `<data>`'s in-line content, so the ordering is [`to_lua_data_content`]'s
+/// and only the last rung differs. `<data>` hands XML back unlowered
+/// because the initializer at the other end of that seam builds a DOM node
+/// from it; an assignment has no such end. Every backend already resolved
+/// that the same way — c11, cpp, kotlin, rust and go each wrapped the
+/// serialised XML in a single-quoted string literal, and python's runtime
+/// fallback arrived at the same string after its eval failed — so the rung
+/// is written down here once instead of being re-derived five times in
+/// Jinja.
+///
+/// ⚠ Stated rather than left to be discovered: that unanimous answer is
+/// *not* the one the ECMAScript data model appendix asks for. Its ladder
+/// reads XML as a DOM value, and `<data>` does. W3C test530 assigns a
+/// serialised `<scxml>` document and then invokes it through
+/// `<content expr>`, which wants the text back; making the write build a
+/// DOM would need that seam to serialise it again. The asymmetry is a debt
+/// with a name, not a reading.
+///
+/// What this removes is the rung *above* it. An `<assign>` whose child is
+/// text — `21`, `{ "k": 7 }`, `hello there` — was quoted by those same
+/// five backends, so `21` reached the datamodel as the string "21" and a
+/// `cond="v == 21"` guarding it was false. With the reading made here, the
+/// content branch and the `expr` branch produce the same kind of thing:
+/// two spellings of one value, which is what "either … but not both"
+/// means.
+pub fn to_lua_assign_content(
+    content: String,
+    scope: &DocumentScope,
+) -> Result<String, minijinja::Error> {
+    if content.is_empty() {
+        return Ok(String::new());
+    }
+    // §scxml-5.4: an `<assign>`'s children specify the value its 'expr'
+    // would have, so the expression reading is tried first and the text
+    // reading is what it falls to.
+    if let Ok(lua) = crate::ecmascript::to_lua_value(&content, scope) {
+        return Ok(lua);
+    }
+    Ok(lua_string_literal(&normalize_ws(content)))
+}
+
+/// The same value for the two backends that hand the author's ECMAScript
+/// to an ECMAScript engine rather than lowering it.
+///
+/// [`to_author_data_content`] is to [`to_lua_data_content`] what this is
+/// to [`to_lua_assign_content`], and for the reason stated there: whether
+/// the text is an expression at all is a question about the document, so
+/// it is asked once and answered the same way for every backend. Only the
+/// spelling of the answer is language-specific.
+pub fn to_author_assign_content(
+    content: String,
+    scope: &DocumentScope,
+) -> Result<String, minijinja::Error> {
+    if content.is_empty() {
+        return Ok(String::new());
+    }
+    // §scxml-5.4: the same question about the same children, answered in
+    // the language this backend's engine already speaks.
+    if crate::ecmascript::to_lua_value(&content, scope).is_ok() {
+        return Ok(content);
+    }
+    Ok(ecmascript_string_literal(&normalize_ws(content)))
 }
 
 /// Inline `<content>` text, kept in the author's own language.
@@ -926,6 +997,10 @@ pub fn register_cpp_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     env.add_filter("to_author_data_content", move |content: String| {
         to_author_data_content(content, &for_content)
     });
+    let for_assign = Arc::clone(scope);
+    env.add_filter("to_author_assign_content", move |content: String| {
+        to_author_assign_content(content, &for_assign)
+    });
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     env.add_filter("capitalize", capitalize_state);
@@ -1184,6 +1259,10 @@ pub fn register_kotlin_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
     let for_content = Arc::clone(scope);
     env.add_filter("to_author_data_content", move |content: String| {
         to_author_data_content(content, &for_content)
+    });
+    let for_assign = Arc::clone(scope);
+    env.add_filter("to_author_assign_content", move |content: String| {
+        to_author_assign_content(content, &for_assign)
     });
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);

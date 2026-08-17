@@ -20,8 +20,8 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test inline_content_has_one_reading
-mutation_targets sce-build/tests/inline_content_has_one_reading.rs
-mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/c/scriptengine.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2
+mutation_targets sce-build/tests/inline_content_has_one_reading.rs sce-build/src/parser.rs sce-build/src/filters.rs
+mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/c/scriptengine.jinja2 tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/python/scriptengine_helpers.py.jinja2 tools/codegen/templates/rust/actions/assign.rs.jinja2 tools/codegen/templates/go/actions/assign.go.jinja2 tools/codegen/templates/c/state_machine.c.jinja2 tools/codegen/templates/python/actions/assign.py.jinja2 tools/codegen/templates/actions/assign.jinja2 tools/codegen/templates/kotlin/actions/assign.kt.jinja2 tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2
 
 mutation_case "rust hands the author's text over unread again" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
@@ -67,6 +67,24 @@ edit("tools/codegen/templates/c/scriptengine.jinja2",
         "end");''')
 PY
 
+# The two backends that evaluate the authored spelling. For them the
+# unread form differs from the read one by two quotes and nothing else,
+# so the presence check alone said yes to both of these — they SURVIVED
+# the first round of this casefile, and the `unread_form` assertion is
+# what the gate grew in answer.
+
+mutation_case "cpp quotes the send content again" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     '''    "{{ action.content | to_author_data_content | escape_cpp }}",''',
+     '''    "'{{ action.content | escape_cpp }}'",''')
+PY
+
+mutation_case "kotlin quotes the send content again" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     """{% set content_data = 'evaluateSendContent("' ~ (action.content | to_author_data_content | escape_kotlin) ~ '")' %}""",
+     """{% set content_data = 'evaluateSendContent("\\'' ~ (action.content | escape_kotlin) ~ '\\'")' %}""")
+PY
+
 mutation_case "the comparison stops looking at four backends" <<'PY'
 edit("sce-build/tests/inline_content_has_one_reading.rs",
      """    let probed: Vec<&str> = Language::ALL.iter().map(|l| l.canonical_name()).collect();""",
@@ -86,4 +104,81 @@ mutation_case "the comment stripper stops stripping line comments" <<'PY'
 edit("sce-build/tests/inline_content_has_one_reading.rs",
      """        if (c == '/' && next == Some('/')) || (c == '#' && at_line_start) {""",
      """        if false && ((c == '/' && next == Some('/')) || (c == '#' && at_line_start)) {""")
+PY
+
+# ── The same clause at `<assign>` ──────────────────────────────────
+#
+# The parser case first, because it is the one that made every other
+# question unanswerable: with the text branch gone the children never
+# reach a template, so a backend can carry any reading at all and the
+# document still generates cleanly.
+
+mutation_case "the parser reads only an assign's element children again" <<'PY'
+edit("sce-build/src/parser.rs",
+     """    // element children serialise and everything else is the text.
+    if node.children().any(|c| c.is_element()) {""",
+     """    // element children serialise and everything else is the text.
+    if true {""")
+PY
+
+# The reading itself. `to_lua_assign_content` is one function for four
+# backends, so a single case covers what would otherwise be four —
+# whereas each *template* can still stop calling it on its own, which is
+# what the five below are for.
+
+mutation_case "the assign reading quotes every value again" <<'PY'
+edit("sce-build/src/filters.rs",
+     """    if let Ok(lua) = crate::ecmascript::to_lua_value(&content, scope) {
+        return Ok(lua);
+    }
+    Ok(lua_string_literal(&normalize_ws(content)))
+}
+
+/// The same value for the two backends that hand the author's ECMAScript""",
+     """    let _ = crate::ecmascript::to_lua_value(&content, scope);
+    Ok(lua_string_literal(&normalize_ws(content)))
+}
+
+/// The same value for the two backends that hand the author's ECMAScript""")
+PY
+
+mutation_case "rust quotes an assign's inline text again" <<'PY'
+edit("tools/codegen/templates/rust/actions/assign.rs.jinja2",
+     '''    let expr = "{{ action.content | to_lua_assign_content | escape_rust }}";''',
+     '''    let expr = "'{{ action.content | escape_rust }}'";''')
+PY
+
+mutation_case "go quotes an assign's inline text again" <<'PY'
+edit("tools/codegen/templates/go/actions/assign.go.jinja2",
+     '''"{{ action.content | to_lua_assign_content | escape_go }}"''',
+     '''`'{{ action.content | escape_go }}'`''')
+PY
+
+mutation_case "c11 quotes an assign's inline text again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     '''"{{ action.location | to_lua_location | escape_c }} = ({{ action.content | to_lua_assign_content | escape_c }})"''',
+     '''"{{ action.location | to_lua_location | escape_c }} = '{{ action.content | escape_c }}'"''')
+PY
+
+mutation_case "python quotes an assign's inline text again" <<'PY'
+edit("tools/codegen/templates/python/actions/assign.py.jinja2",
+     '''{{ action.content | to_lua_assign_content | py_string_literal }})''',
+     '''("'" ~ action.content ~ "'") | py_string_literal }})''')
+PY
+
+# cpp and kotlin share a case shape but not a filter: they hand the
+# author's own ECMAScript to an ECMAScript engine, so their reading is
+# `to_author_assign_content` and the spelling the gate looks for is the
+# authored one.
+
+mutation_case "cpp quotes an assign's inline text again" <<'PY'
+edit("tools/codegen/templates/actions/assign.jinja2",
+     '''    std::string expr = "{{ action.content | to_author_assign_content | replace('\\\\', '\\\\\\\\') | replace('"', '\\\\"') }}";''',
+     '''    std::string expr = "'{{ action.content | replace('"', '\\\\"') | replace("'", "\\\\'") }}'";''')
+PY
+
+mutation_case "kotlin quotes an assign's inline text again" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/assign.kt.jinja2",
+     '''            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | to_author_assign_content | escape_kotlin }}")''',
+     '''            executeAssign("{{ action.location | escape_kotlin }}", "'{{ action.content | escape_kotlin }}'")''')
 PY

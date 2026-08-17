@@ -5676,6 +5676,16 @@
           "file": "sce-build/src/filters.rs",
           "symbol": "lua_target_that_raises",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "to_lua_assign_content",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "to_author_assign_content",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

@@ -38,8 +38,13 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
     // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
     {% if action.content %}
-    // W3C SCXML 5.4: XML content assignments use string literal expression
-    std::string expr = "'{{ action.content | replace('"', '\\"') | replace("'", "\\'") }}'";
+    // W3C SCXML 5.4.2: the children "provide an in-line specification of the
+    // legal data value ... to be inserted into the data model at the specified
+    // location" — the same reading <data> content gets, made once by
+    // `to_author_assign_content` so this backend and the lowering ones cannot
+    // disagree about whether `21` is a number. Quoting it unconditionally, as
+    // this line did, made it the string "21".
+    std::string expr = "{{ action.content | to_author_assign_content | replace('\\', '\\\\') | replace('"', '\\"') }}";
     {% else %}
     std::string expr = "{{ action.expr.rstrip(';') }}";
     {% endif %}

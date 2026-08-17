@@ -1557,16 +1557,7 @@ impl SCXMLParser {
                 let src = data.attribute("src").unwrap_or("").to_string();
 
                 let content = if src.is_empty() {
-                    if data.children().any(|c| c.is_element()) {
-                        // Serialize child elements as XML string
-                        let mut xml = String::new();
-                        for c in data.children().filter(|c| c.is_element()) {
-                            xml.push_str(&serialize_node(&c));
-                        }
-                        xml
-                    } else {
-                        data.text().unwrap_or("").trim().to_string()
-                    }
+                    inline_data_value(&data)
                 } else {
                     String::new()
                 };
@@ -2721,15 +2712,27 @@ impl SCXMLParser {
             "assign" => {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
-                if child.children().any(|c| c.is_element()) {
-                    // §scxml-5.4: Serialize with c14n (canonical XML)
-                    let mut xml = String::new();
-                    for c in child.children().filter(|c| c.is_element()) {
-                        let part = serialize_node_c14n(&c);
-                        let normalized: Vec<&str> = part.split_whitespace().collect();
-                        xml.push_str(&normalized.join(" "));
-                    }
-                    action.content = xml;
+                // §scxml-5.4: "The children of the <assign> element provide
+                // an in-line specification of the legal data value ... to be
+                // inserted into the data model at the specified location."
+                // That is the same reading `<data>`'s in-line content gets,
+                // so it is read by the same function rather than by a second
+                // copy — and the second copy that used to be here had only
+                // half of it. See [`inline_data_value`] for what the missing
+                // half cost.
+                //
+                // Read only when 'expr' is absent, because the attribute
+                // "must not occur in an <assign> element that has children"
+                // and a conformant document specifies one "but not both". A
+                // document carrying both is non-conformant either way;
+                // letting the attribute win keeps every backend answering
+                // alike, where template-by-template precedence would not.
+                //
+                // ⚠ Neither is diagnosed today — a document that supplies
+                // both is accepted in silence. That is a missing check, not a
+                // decision.
+                if action.expr.is_empty() {
+                    action.content = inline_data_value(child);
                 }
                 // [`NeedsScriptEngineCause::AssignAction`] — every
                 // `<assign>` routes through the engine-bound helper.
@@ -4986,6 +4989,44 @@ pub fn validate_on_sample_link_references(
 /// Includes namespace declarations and uses self-closing for empty elements.
 fn serialize_node(node: &roxmltree::Node) -> String {
     serialize_node_inner(node, None, false)
+}
+
+/// The in-line data value an element's children specify.
+///
+/// The Recommendation gives that reading to two elements and describes it
+/// once: `<data>` takes its in-line content that way, and the children of
+/// `<assign>` "provide an in-line specification of the legal data value …
+/// to be inserted into the data model at the specified location". Same
+/// clause, same value — so one function reads it, and the two elements
+/// cannot come to disagree about what an author wrote between them.
+///
+/// They had. `<assign>` carried its own copy with the text branch missing:
+/// it read children only `if child.children().any(|c| c.is_element())`, so
+/// `<assign location="v">21</assign>` — the shape the ECMAScript data
+/// model's ladder ends on, and the one an author reaches for — arrived at
+/// codegen as the empty string. Every backend then assigned nothing, with
+/// exit 0 and no diagnostic. Measured on a generated Python machine:
+/// `<assign location="v">21</assign>` guarded by `cond="v == 21"` reached
+/// `fail`, and so did `{ "k": 7 }` and `hello there`. Corpus exposure is
+/// zero, which is why six green lanes never said so.
+///
+/// The XML branch serialises canonically (explicit close tags) for both.
+/// `<data>` used to self-close and `<assign>` did not; nothing stated a
+/// reason for the split, and canonical form is what the c14n the value is
+/// compared against elsewhere already produces.
+fn inline_data_value(node: &roxmltree::Node) -> String {
+    // §scxml-5.4: children are an in-line specification of the same legal
+    // data value the element's value-expression attribute would carry, so
+    // element children serialise and everything else is the text.
+    if node.children().any(|c| c.is_element()) {
+        let mut xml = String::new();
+        for child in node.children().filter(|c| c.is_element()) {
+            xml.push_str(&serialize_node_c14n(&child));
+        }
+        xml
+    } else {
+        node.text().unwrap_or("").trim().to_string()
+    }
 }
 
 /// XML node serialization matching Python lxml etree.tostring(method='c14n').

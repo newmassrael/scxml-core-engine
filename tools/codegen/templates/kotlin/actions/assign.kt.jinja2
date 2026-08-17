@@ -8,8 +8,11 @@
 {% if not action.location %}
             throw com.sce.runtime.ScriptEngineException("W3C SCXML 5.3: Empty assign location")
 {% elif action.content %}
-{# W3C SCXML 5.4: Inline XML content → JS string literal (C++ wraps in single quotes) #}
-            engine.assign(sid, "{{ action.location | escape_kotlin }}", "'{{ action.content | escape_kotlin }}'")
+{# W3C SCXML 5.4.2: the children specify the same legal data value `expr`
+   would, read once by `to_author_assign_content` so this backend and the
+   lowering ones agree about whether `21` is a number. Quoting it made it
+   the string "21". #}
+            engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.content | to_author_assign_content | escape_kotlin }}")
 {% elif action.expr %}
             engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
 {% endif %}
@@ -18,8 +21,11 @@
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
 {% elif action.content %}
-{# W3C SCXML 5.4: Inline XML content → JS string literal (C++ wraps in single quotes) #}
-            executeAssign("{{ action.location | escape_kotlin }}", "'{{ action.content | escape_kotlin }}'")
+{# W3C SCXML 5.4.2: the children specify the same legal data value `expr`
+   would, read once by `to_author_assign_content` so this backend and the
+   lowering ones agree about whether `21` is a number. Quoting it made it
+   the string "21". #}
+            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | to_author_assign_content | escape_kotlin }}")
 {% elif action.expr %}
             executeAssign("{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
 {% endif %}
