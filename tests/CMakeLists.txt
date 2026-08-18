@@ -315,6 +315,45 @@ apply_sce_test_policies(scheduler_driving_test)
 add_test(NAME SchedulerDriving COMMAND scheduler_driving_test)
 
 # ============================================================================
+# A shut-down script engine answers instead of hanging
+#
+# `JSEngine`'s five async entry points hand their work to the queued executor's
+# worker thread, and every caller waits on the returned future with `.get()`.
+# Queueing into an executor whose worker `shutdown()` has joined used to be
+# silent — the promise was never satisfied and the caller blocked forever, with
+# no log line and no timeout. A pre-push ctest reported that as
+# `IntegrationTests (Timeout 180.10 sec)` on 2026-08-19, naming only the test it
+# was sitting in.
+#
+# Its own target rather than a case inside `integration_tests`: this suite drives
+# the singleton engine through shutdown deliberately, and a hang here must not be
+# able to take a 180-second suite down with it. Each case bounds its wait with
+# `wait_for`, so the defect surfaces as a failure rather than as a timeout.
+# ============================================================================
+add_executable(shutdown_engine_answers_test
+    engine/ShutDownEngineAnswersTest.cpp
+)
+
+target_include_directories(shutdown_engine_answers_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(shutdown_engine_answers_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(shutdown_engine_answers_test)
+
+add_test(NAME ShutDownEngineAnswers COMMAND shutdown_engine_answers_test)
+set_tests_properties(ShutDownEngineAnswers PROPERTIES TIMEOUT 60)
+
+# ============================================================================
 # DOM read surface — §scxml-B-2-1's "corresponding DOM structure"
 #
 # Separate target from ecmascript_semantics_test on purpose: this one names
