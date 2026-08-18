@@ -956,6 +956,26 @@ rather than reusing it: that code's whole promise is that the name it
 reports holds a value, and a namespace holds none this datamodel hands
 out.
 
+The rule states one thing about three positions, and the third is the
+read. `<assign expr="Math"/>` used to generate on every backend and mean
+two different things: the four that lower to Lua answered it with a
+`ReferenceError` — `Math.<member>` is rewritten to Lua's own `math`, so
+the capitalised name is bound nowhere — and the two that hand the
+author's ECMAScript to an ECMAScript engine answered it with the object
+the language defines. One document, two meanings, nothing reported. That
+read is `expression/namespace-not-a-value`, and its member list carries
+both halves of the vocabulary because a read may legally name `Math.PI`
+where a call may not.
+
+The member reach itself is checked for every namespace now, not only for
+`Math`. `JSON` and `Object` are ordinary tables this repository installs,
+so `JSON.serialize` was emitted as a field access on one of them and read
+`nil` at runtime — the same silence the call form
+`JSON.serialize(x)` had already stopped answering with. Membership is a
+fact for all three namespaces, so it is asked in both positions for all
+three: an unknown member is `expression/unsupported-builtin` whether it
+was read or called.
+
 `sce_build::ecmascript::builtins` owns the five lists,
 `sce_build::ecmascript::parser` folds the two spellings, and
 `sce-build/tests/ecmascript_property_calls.rs` plus
@@ -1759,7 +1779,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (354 codes)
+## Appendix — `DiagnosticCode` index (355 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1968,6 +1988,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unknown-identifier` | Expression |
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
+| `expression/namespace-not-a-value` | Expression |
 | `expression/strict-equality` | Expression |
 | `expression/parse-mismatch` | Expression |
 | `expression/unexpected-token` | Expression |
