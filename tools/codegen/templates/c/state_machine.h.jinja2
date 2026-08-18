@@ -545,6 +545,12 @@ void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.name }}_t *
    `scheduler_.popReadyEvent()` in a loop. The caller drives the macrostep
    in its own loop: `while (!_is_in_final) { _tick(sm); _step(sm); }`. */
 void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML 6.2: How long until the next scheduled entry comes due, in
+   milliseconds; 0 when one is due now and -1 when the queue is empty. A host
+   sleeping on this wakes on the deadline instead of guessing an interval —
+   and an interval cannot straddle two fire times it was never told about. */
+int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */

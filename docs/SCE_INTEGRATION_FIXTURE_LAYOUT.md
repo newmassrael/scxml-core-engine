@@ -333,6 +333,33 @@ macrostep. That is deliberate: an event would pull in the `_event.data` payload
 path that `event_data_arrives_as_sent` owns, and a failure there would surface
 here as a DOM failure.
 
+`late_tick_honours_cancel` covers W3C SCXML 6.2 + 6.3: `<cancel>` drops a
+delayed `<send>` that has not been dispatched, and "not dispatched yet" is a
+fact about the engine's delivery order rather than about the host's clock.
+Every pull-driven backend keeps its scheduled sends in a queue ordered by fire
+time and drains that queue inside `tick` (Python: `advance_time`); draining it
+to exhaustion before running a macrostep puts everything past due on the
+external queue together, and the `<cancel>` the first entry's transitions
+execute then finds nothing left to drop. The fixture is the settle-timer shape
+a supervising host actually writes — arm a long timer, cancel it when the short
+signal arrives first — and every driver deliberately waits past BOTH fire times
+before its first tick, because a host that wakes between them passes under
+either dispatch order. That is why no existing suite saw it: measured
+2026-08-19 the document reached `cancelLost` on Rust, Go, Python and C11 alike,
+the Python one on a virtual clock where the host's step size alone decided it.
+
+It owns only the dispatch order. `donedata_late_completion` owns delayed
+completion detection, and this document reads no data model, hosts no
+`<invoke>` and has no `<parallel>`, so a regression in any of those cannot
+surface here. The verdict `finish` is itself scheduler-driven, so a channel
+whose tick loop stopped working entirely fails rather than passing by never
+leaving `waiting`. The Interpreter channel is asserted alongside the six
+pull-driven ones for a different reason than usual: `EventSchedulerImpl` owns a
+thread and fires each entry at its own deadline, so it cannot coalesce them —
+it pins the verdict the document is supposed to reach, and a pull-driven
+backend that disagrees is diverging from an engine in the same repository
+rather than from a rule written only in a test.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the

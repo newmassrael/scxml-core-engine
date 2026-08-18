@@ -798,12 +798,56 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun tick() {
         if (isInFinalState) return
-        pollScheduler()
+        // §scxml-6.2: dispatch the due sends one macrostep apart rather than
+        // queueing them together. `<cancel>` drops a send that has not been
+        // delivered yet, and a host that ticked late holds several past their
+        // fire times: queueing them all first makes every later one
+        // undroppable before the earlier one's transitions have run. That is
+        // how a settle timer — arm a long `<send delay>`, cancel it when the
+        // short signal arrives first — delivers the event it was told to
+        // cancel (measured 2026-08-19 on the Rust, Go and Python backends,
+        // whose scheduler this one mirrors).
+        while (promoteNextDueSend()) {
+            runMainEventLoop()
+            if (isInFinalState) {
+                cleanupCompletedInvokes()
+                return
+            }
+        }
+        pollScheduledHttpSends()
         tickChildren()
         // §scxml-6.4's invokes are part of the main event loop and run
         // there, ahead of the external dequeue rather than after it.
         runMainEventLoop()
         cleanupCompletedInvokes()
+    }
+
+    /**
+     * How long until this machine next needs [tick], in milliseconds. `0` means
+     * a send is due now; `null` means nothing is owed.
+     *
+     * `needsEventScheduler` tells a host *which* entry point to drive the
+     * machine with. This tells it *when*, and a host that cannot ask has only
+     * one move left: pick a polling interval — which cannot straddle two fire
+     * times it was never told about.
+     *
+     * Always `null` outside sync mode: there [scheduleSend] launches a coroutine
+     * that fires on its own, so the host is owed no wake-up at all. The two
+     * modes disagree about who owns the clock, and this answers for whichever
+     * one this engine is in.
+     */
+    fun timeUntilNextScheduledMs(): Long? {
+        if (!syncMode) return null
+        val next = (scheduledSends.firstOrNull()?.fireTimeMs)
+            .let { sends ->
+                val https = scheduledHttpSends.firstOrNull()?.fireTimeMs
+                when {
+                    sends == null -> https
+                    https == null -> sends
+                    else -> minOf(sends, https)
+                }
+            } ?: return null
+        return maxOf(0L, next - engineElapsedMs())
     }
 
     /**
@@ -826,24 +870,37 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
     }
 
-    /** C++ PullScheduler::popReadyEvent pattern — pop ready events from time-ordered queue. */
-    private fun pollScheduler() {
+    /**
+     * C++ PullScheduler::popReadyEvent pattern — take the single earliest due
+     * entry off the time-ordered queue, returning whether one was taken.
+     *
+     * One per call because [tick] runs a macrostep between them: a `<cancel>`
+     * performed by an earlier send's transitions must still reach a later one
+     * that has not been queued yet.
+     */
+    private fun promoteNextDueSend(): Boolean {
         val now = engineElapsedMs()
-        while (scheduledSends.isNotEmpty() && scheduledSends.first().fireTimeMs <= now) {
-            val entry = scheduledSends.removeAt(0)
-            if (entry.isParentSend) {
-                onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
-            } else {
-                // Justification (UNCHECKED_CAST): scheduledSends erases the
-                // event type to Any to share the queue across parent-send and
-                // self-send entries; the producer-side scheduleSend() only
-                // accepts E, so the cast back to E is type-safe by
-                // construction.
-                @Suppress("UNCHECKED_CAST")
-                externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
-            }
+        if (scheduledSends.isEmpty() || scheduledSends.first().fireTimeMs > now) {
+            return false
         }
-        // §scxml-C-2: Fire ready delayed HTTP sends
+        val entry = scheduledSends.removeAt(0)
+        if (entry.isParentSend) {
+            onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
+        } else {
+            // Justification (UNCHECKED_CAST): scheduledSends erases the
+            // event type to Any to share the queue across parent-send and
+            // self-send entries; the producer-side scheduleSend() only
+            // accepts E, so the cast back to E is type-safe by
+            // construction.
+            @Suppress("UNCHECKED_CAST")
+            externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
+        }
+        return true
+    }
+
+    /** Fire ready delayed HTTP sends (the spec's BasicHTTP event processor). */
+    private fun pollScheduledHttpSends() {
+        val now = engineElapsedMs()
         while (scheduledHttpSends.isNotEmpty() && scheduledHttpSends.first().fireTimeMs <= now) {
             val entry = scheduledHttpSends.removeAt(0)
             performHttpSend(

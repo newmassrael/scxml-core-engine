@@ -658,6 +658,8 @@ add_executable(integration_tests
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
+    integration/LateTickHonoursCancelTest.cpp
+    integration/LateTickHonoursCancelAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
     integration/NestedFinalNotTerminalAotTest.cpp
     integration/ParallelRegionsTakeOwnTransitionsTest.cpp
@@ -1029,6 +1031,14 @@ sce_generate_static_integration_test(invoke_precedes_external_dequeue ${STATIC_I
 sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_watch
 )
+
+# W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
+# dispatched, and a host that ticks after two fire times have passed must still
+# see them dispatched one macrostep apart. Draining the scheduler queue to
+# exhaustion first makes the later entry undroppable before the earlier one's
+# transitions have run, so the cancel executes against a queue the event has
+# already left.
+sce_generate_static_integration_test(late_tick_honours_cancel ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.7: a `<final>` nested inside a compound state completes that
 # state, not the session — Appendix D `enterStates` ends the session only when

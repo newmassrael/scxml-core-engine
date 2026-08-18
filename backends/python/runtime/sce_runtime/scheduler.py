@@ -75,7 +75,11 @@ class Scheduler(Generic[E]):
     def drain_due(self, now_ms: int) -> Iterator[ScheduledEvent[E]]:
         """Yield every scheduled event whose `due_ms <= now_ms`, popping
         them off the heap. Cancelled entries are silently discarded as
-        they would have been delivered."""
+        they would have been delivered.
+
+        Draining is a generator, so a caller that runs a macrostep per
+        entry sees each cancellation the previous one performed — see
+        `pop_due`, which is the one-at-a-time form the engine uses."""
         while self._heap and self._heap[0].due_ms <= now_ms:
             entry = heapq.heappop(self._heap)
             if entry.sendid and entry.sendid in self._cancelled:
@@ -83,10 +87,36 @@ class Scheduler(Generic[E]):
                 continue
             yield entry
 
+    def pop_due(self, now_ms: int) -> Optional[ScheduledEvent[E]]:
+        """Pop the single earliest entry due at `now_ms`, or None.
+
+        The engine dispatches one of these per macrostep so a `<cancel>`
+        performed by an earlier event still reaches a later one that has
+        not been delivered yet. Popping them all at once instead makes
+        every later entry undroppable, which is how a settle timer —
+        arm a long `<send delay>`, cancel it when the short signal
+        arrives first — delivers the event it was told to cancel."""
+        for entry in self.drain_due(now_ms):
+            return entry
+        return None
+
     def peek_next_due_ms(self) -> Optional[int]:
-        """The `due_ms` of the earliest entry, or None if empty.
-        Callers can use this to compute the next wake deadline."""
-        return self._heap[0].due_ms if self._heap else None
+        """The `due_ms` of the earliest entry that would actually be
+        delivered, or None if there is none.
+
+        Cancelled entries stay on the heap until a drain walks past
+        them, so the front of the heap is not necessarily a deadline
+        anyone will see; they are dropped here first. Callers use this
+        to compute the next wake deadline — see
+        `Engine.time_until_next_scheduled_ms`."""
+        while self._heap:
+            head = self._heap[0]
+            if head.sendid and head.sendid in self._cancelled:
+                heapq.heappop(self._heap)
+                self._cancelled.discard(head.sendid)
+                continue
+            return head.due_ms
+        return None
 
     def __len__(self) -> int:
         return len(self._heap)

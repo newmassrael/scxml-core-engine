@@ -1,0 +1,108 @@
+# Mutation cases for §scxml-6.2/6.3 on the two backends a cargo round cannot
+# see — the C++ engine header and the C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/late_tick_honours_cancel_ctest.cases`.
+#
+# Same axis as `late_tick_honours_cancel.cases`: a `<cancel>` drops a delayed
+# `<send>` that has not been dispatched, and dispatch is one entry per
+# macrostep rather than one queue-flush per tick. A host that wakes after both
+# fire times have passed is the only condition under which the two orders
+# differ, so every driver here deliberately waits past both before its first
+# tick.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree,
+# so the template is what the built binaries carry.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_late_tick_honours_cancel)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/LateTickHonoursCancelAotTest.cpp tests/integration/LateTickHonoursCancelTest.cpp backends/c/tests/integration/test_late_tick_honours_cancel.c
+
+# ── C++: dispatch order ────────────────────────────────────────────
+
+mutation_case "the cpp tick raises every ready entry before running a macrostep" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                raiseExternal(event, eventData);
+                // The macrostep this event drives may `<cancel>` a later one,
+                // so the next deadline is re-read after it rather than before.
+                runMainEventLoop();
+                if (!isRunning_ || isInFinalState()) {
+                    break;
+                }""",
+     """                raiseExternal(event, eventData);""")
+PY
+
+# ── C++: the deadline query ────────────────────────────────────────
+
+mutation_case "the cpp engine reports no deadline while entries are queued" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        auto next = scheduler_.nextFireTime();
+        if (!next.has_value()) {
+            return std::nullopt;
+        }""",
+     """        auto next = scheduler_.nextFireTime();
+        if (true) {
+            return std::nullopt;
+        }""")
+PY
+
+mutation_case "the cpp poll loop sleeps its interval instead of the nearer deadline" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """            auto nextDue = timeUntilNextScheduled();
+            std::this_thread::sleep_for(nextDue.has_value() ? std::min(pollInterval, *nextDue) : pollInterval);""",
+     """            std::this_thread::sleep_for(pollInterval);""")
+PY
+
+# ── C11: dispatch order ────────────────────────────────────────────
+
+mutation_case "the c11 tick promotes every elapsed entry before running a macrostep" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        /* The macrostep this entry drives may `<cancel>` a later one, so the
+           queue and the clock are both re-read after it rather than before. */
+        run_main_event_loop(sm);
+        if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+            break;
+        }
+        now_ms = _sce_clock_now_ms();
+    }""",
+     """    }""")
+PY
+
+# ── C11: the deadline query ────────────────────────────────────────
+
+# The whole body rather than a predicate flip: `count >= 0u` on a `uint8_t` is
+# what a reader reaches for first, and `-Werror=type-limits` refuses it — the
+# tree then fails to build and the harness can only report INCONCLUSIVE, which
+# is not a witness. A contract worth a mutation has to stay observable at run
+# time.
+mutation_case "the c11 machine reports no deadline while entries are queued" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm->scheduled_queue.count == 0u) {
+        return -1;
+    }
+    uint64_t now_ms = _sce_clock_now_ms();
+    uint64_t due = sm->scheduled_queue.buf[0].fire_time_ms;
+    if (due <= now_ms) {
+        return 0;
+    }
+    return (int64_t)(due - now_ms);""",
+     """    (void)sm;
+    return -1;""")
+PY
+
+# An answer of "due now" whenever anything is queued reads as a working query
+# and sends the host into a spin that never sleeps.
+mutation_case "the c11 deadline query always answers due-now" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (due <= now_ms) {
+        return 0;
+    }
+    return (int64_t)(due - now_ms);""",
+     """    if (due >= now_ms) {
+        return 0;
+    }
+    return (int64_t)(due - now_ms);""")
+PY

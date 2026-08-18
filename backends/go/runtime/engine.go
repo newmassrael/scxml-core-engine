@@ -146,13 +146,28 @@ func (e *Engine[S, E]) Tick() {
 		return
 	}
 
-	// §scxml-6.2: Pop all ready scheduled events into the external queue
+	// §scxml-6.2: dispatch the ready scheduled events, earliest deadline first
+	// and one macrostep apart.
+	//
+	// One at a time, not all at once. <cancel> drops an event that has not been
+	// dispatched yet, and a host that woke late holds several past their
+	// deadlines: promoting them together makes every later one undroppable
+	// before the earlier one's transitions have had a chance to run. That is
+	// how a settle timer — arm a long <send delay>, cancel it when the short
+	// signal arrives first — delivers the event it was told to cancel.
+	// Measured 2026-08-19 on the Go, Rust and Python backends alike.
 	for {
 		event, data, ok := e.scheduler.PopReadyEvent()
 		if !ok {
 			break
 		}
 		e.RaiseExternal(event, data, "")
+		// The macrostep this event drives may <cancel> a later one, so the
+		// next deadline is re-read after it rather than before.
+		e.runMainEventLoop()
+		if !e.isRunning || e.isInFinalState() {
+			break
+		}
 	}
 
 	// §scxml-6.4: Tick child state machines
@@ -383,6 +398,32 @@ func (e *Engine[S, E]) HasReadyEvents() bool {
 	return e.scheduler.HasReadyEvents()
 }
 
+// TimeUntilNextScheduled reports how long until this machine next needs Tick.
+// Zero means something is due now; the bool is false when the scheduler is
+// empty and no clock-driven wake-up is owed.
+//
+// NeedsEventScheduler tells a host *which* entry point to drive the machine
+// with. This tells it *when*, and a host that cannot ask has only one move
+// left: pick a polling interval. That guess is not free in either direction —
+// measured on a document whose <send delay="200ms"> is cancelled by a 100 ms
+// signal, a 1 ms interval spends 176 wasted ticks to be on time, a 500 ms one
+// fires 300 ms late, and a 250 ms one steps over both deadlines at once. An
+// interval cannot straddle two deadlines it was never told about.
+//
+// The answer feeds a host loop directly — a time.After in a select, a
+// context deadline, a ticker reset.
+func (e *Engine[S, E]) TimeUntilNextScheduled() (time.Duration, bool) {
+	next, ok := e.scheduler.NextReadyAt()
+	if !ok {
+		return 0, false
+	}
+	remaining := time.Until(next)
+	if remaining < 0 {
+		return 0, true
+	}
+	return remaining, true
+}
+
 // ================================================================
 // Callbacks
 // ================================================================
@@ -433,8 +474,13 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 // RunUntilCompletion runs the state machine to completion or timeout
 // (§scxml-6.2).
 //
-// Polls the scheduler and calls Tick() in a loop until either the final state
-// is reached or timeout elapses. Returns true on completion, false on timeout.
+// Calls Tick() in a loop until either the final state is reached or timeout
+// elapses. Returns true on completion, false on timeout.
+//
+// pollInterval is a ceiling on the wait between ticks, not the interval
+// actually slept: a nearer scheduler deadline (TimeUntilNextScheduled)
+// shortens it, so a caller passing an interval coarser than the document's
+// delays no longer steps over them.
 //
 // Matches Rust Engine::run_until_completion.
 func (e *Engine[S, E]) RunUntilCompletion(timeout, pollInterval time.Duration) bool {
@@ -448,7 +494,14 @@ func (e *Engine[S, E]) RunUntilCompletion(timeout, pollInterval time.Duration) b
 		if time.Since(start) > timeout {
 			return false
 		}
-		time.Sleep(pollInterval)
+		// The scheduler's own answer wins whenever it is nearer: sleeping past
+		// a deadline is what turns a coarse interval into a document that
+		// behaves differently, and waking on it costs nothing extra.
+		wait := pollInterval
+		if next, ok := e.TimeUntilNextScheduled(); ok && next < wait {
+			wait = next
+		}
+		time.Sleep(wait)
 		e.Tick()
 	}
 	return true

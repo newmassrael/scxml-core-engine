@@ -482,7 +482,19 @@ class Engine(Generic[S, E]):
         # parent's external queue on the same tick the parent processes
         # its own schedules.
         self._drive_active_children(ms)
-        for entry in self._scheduler.drain_due(self._now_ms):
+        # §scxml-6.2 — dispatch the due events one macrostep apart rather
+        # than appending them together. `<cancel>` drops an event that has
+        # not been delivered yet, and a step that jumped over several
+        # deadlines holds several: appending them all first makes every
+        # later one undroppable before the earlier one's transitions have
+        # run. On this virtual clock the host's step size alone decided it,
+        # so the same document reached a state it forbids at
+        # `advance_time(250)` and not at `advance_time(150)` (measured
+        # 2026-08-19).
+        while True:
+            entry = self._scheduler.pop_due(self._now_ms)
+            if entry is None:
+                break
             # §scxml-C-1: scheduler drain is the SCXML processor's
             # delayed-delivery path — origintype mirrors send_external.
             metadata = EventMetadata(
@@ -494,6 +506,11 @@ class Engine(Generic[S, E]):
             self._external_queue.append(
                 EventWithMetadata(event=entry.event, metadata=metadata)
             )
+            if not self._is_running or self._reached_final:
+                break
+            self._run_main_event_loop()
+            if not self._is_running or self._reached_final:
+                return
         # §scxml-6.2 — `_drive_active_children` and the scheduler
         # drain both append onto `_external_queue`; the parent's
         # macrostep must run whenever either produced an event so the
@@ -501,6 +518,24 @@ class Engine(Generic[S, E]):
         # `<send target="#_parent">` on the same tick (test347, test236).
         if self._is_running and not self._reached_final:
             self._run_main_event_loop()
+
+    def time_until_next_scheduled_ms(self) -> Optional[int]:
+        """How far virtual time must move for this machine's next
+        scheduled event to come due. `0` means one is due now; `None`
+        means the scheduler is empty and no clock movement is owed.
+
+        `needs_event_scheduler()` tells a host *which* entry point to
+        drive the machine with. This tells it *how far*, and a host that
+        cannot ask has only one move left: pick a step size. That guess
+        is not free — on this backend the host owns the clock outright,
+        so a step coarser than the document's delays does not merely
+        arrive late, it steps over deadlines the document distinguishes
+        between. The generated W3C wrappers move time in fixed 50 ms
+        steps for exactly this reason: nothing told them any better."""
+        next_due = self._scheduler.peek_next_due_ms()
+        if next_due is None:
+            return None
+        return max(0, next_due - self._now_ms)
 
     @property
     def now_ms(self) -> int:

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
+     dispatched yet, and "not dispatched yet" is a fact about the engine's
+     delivery order, not about the host's clock.
+
+     Every backend here keeps its scheduled sends in a queue ordered by fire
+     time and drains it inside `tick` (Python: `advance_time`). Draining it to
+     exhaustion before running a macrostep is the defect this fixture owns:
+     a host that wakes after two fire times have passed holds both entries,
+     and putting both on the external queue makes the second one undroppable
+     before the first one's transitions have had any chance to run. The
+     `<cancel>` then executes against a queue the event has already left.
+
+     The shape is the settle timer, which is what a supervising host actually
+     writes: arm a long timer, cancel it when the short signal arrives first.
+
+       one dispatch per macrostep   `poke` is delivered, `active` cancels
+                                    `s1`, `settle` is dropped -> pass
+       drain-then-macrostep         `poke` and `settle` are queued together,
+                                    the cancel finds nothing, `settle` is
+                                    delivered anyway -> cancelLost
+
+     The host in each channel deliberately sleeps past BOTH fire times before
+     its first tick, because that is the only condition under which the two
+     orders differ — a host that wakes between them passes either way, which
+     is why the defect survived every existing suite. Measured 2026-08-19:
+     with the drain-then-macrostep order this document reaches `cancelLost`
+     on the Rust, Go, Python and C11 backends alike, the Python one on a
+     virtual clock where the host's step size alone decided it.
+
+     Deliberately single-axis: no `<invoke>`, no `<parallel>`, no data model
+     reads. `donedata_late_completion` owns delayed completion detection;
+     this one owns only the dispatch order of the scheduler queue.
+
+     `finish` gives the machine a verdict that is itself scheduler-driven, so
+     a channel whose tick loop stopped working entirely fails here rather than
+     reporting a pass by never leaving `waiting`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="waiting"
+       name="late_tick_honours_cancel">
+    <state id="waiting">
+        <onentry>
+            <send event="settle" id="s1" delay="200ms"/>
+            <send event="poke" delay="100ms"/>
+        </onentry>
+        <transition event="poke" target="active"/>
+        <transition event="settle" target="cancelLost"/>
+    </state>
+    <state id="active">
+        <onentry>
+            <cancel sendid="s1"/>
+            <send event="finish" delay="100ms"/>
+        </onentry>
+        <transition event="settle" target="cancelLost"/>
+        <transition event="finish" target="pass"/>
+    </state>
+    <final id="pass"/>
+    <final id="cancelLost"/>
+</scxml>
