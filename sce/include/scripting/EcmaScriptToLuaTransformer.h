@@ -72,13 +72,24 @@ private:
     // === Transformation pipeline stages ===
 
     // Stage 1: Protect string literals from transformation
+    //
+    // The placeholder that stands in for a literal is identifier-shaped
+    // (`_SCESTR0_`), not a non-word marker. Every later pass finds the
+    // receiver of a member access by scanning word characters backwards, so a
+    // placeholder those scans stop at is a receiver no pass can see:
+    // `'abc'.length` reached Lua unrewritten and `'a,b'.split(',')` reached it
+    // as `'a,b'.#split(',')`, neither of which is Lua at all.
+    //
+    // `prefix` is chosen against the input rather than fixed, so an author
+    // identifier that happens to spell one cannot be mistaken for a literal.
     struct ProtectedString {
         std::string processed;
         std::vector<std::string> literals;
+        std::string prefix;
     };
 
     ProtectedString protectStringLiterals(const std::string &input) const;
-    std::string restoreStringLiterals(const std::string &processed, const std::vector<std::string> &literals) const;
+    std::string restoreStringLiterals(const std::string &processed, const ProtectedString &protectedInput) const;
 
     // Stage 2: Structural transforms (script-only, must see original JS syntax)
     std::string transformForInLoops(const std::string &input) const;
@@ -101,7 +112,10 @@ private:
     std::string transformVarDeclarations(const std::string &input) const;
     std::string transformNewExpression(const std::string &input) const;
     std::string transformTernaryOperator(const std::string &input) const;
-    std::string transformObjectLiterals(const std::string &input) const;
+    // Takes the placeholder prefix because a string key and a name key are
+    // both identifier-shaped once literals are protected, and only the
+    // prefix tells them apart.
+    std::string transformObjectLiterals(const std::string &input, const std::string &placeholderPrefix) const;
     std::string transformMathBuiltins(const std::string &input) const;
     std::string transformDOMMethods(const std::string &input) const;
     std::string transformSemicolons(const std::string &input) const;

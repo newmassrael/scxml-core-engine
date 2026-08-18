@@ -1,0 +1,167 @@
+# Mutation cases for what the `lua` selection of SCE_SCRIPT_ENGINE reads.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/lua_engine_reads_ecmascript.cases`.
+#
+# `SCE_SCRIPT_ENGINE=lua` is a listed, validated value of a cache entry, and no
+# gate configures it. The engine it selects is Lua 5.4 with
+# `EcmaScriptToLuaTransformer` rewriting the author's ECMAScript into Lua text,
+# so `EcmaScriptSemanticsOnLuaEngine` names that engine rather than asking the
+# provider — otherwise the transformer would be compiled by every build and
+# measured by none.
+#
+# Measured 2026-08-18 against the shared ECMA-262 table, that engine answered
+# 44 of 98 expressions differently from the language. Twenty-one of those were
+# not divergences of meaning at all: they were shared runtime definitions the
+# transformer never named, and text it emitted that is not Lua. Each case below
+# restores one of them. The remaining 23 are declared, case by case, in
+# `tests/ecmascript/lua_engine_divergences.json`, and the last two cases here
+# are what holds that file to both directions.
+
+mutation_ctest --test-dir build -R '^(ECMAScriptSemantics)$'
+mutation_targets sce/src/scripting/EcmaScriptToLuaTransformer.cpp
+# Read at run time rather than compiled in: the declared list is a fixture the
+# test opens by the path CMake injects.
+mutation_runtime_targets tests/ecmascript/lua_engine_divergences.json
+# The suite each case reds, measured: `EcmaScriptSemantics` and
+# `EcmaScriptSemanticsOnLuaEngine` are the two test suites in the one ctest
+# test this selector names.
+mutation_oracles tests/engine/EcmaScriptSemanticsTest.cpp
+
+# ── A string literal has to be visible as a receiver ────────────────
+#
+# Every pass finds the receiver of a member access by scanning word characters
+# backwards. A placeholder those scans stop at is a receiver no pass can see,
+# so `'abc'.length` reached Lua as itself and `'a,b'.split(',')` reached it as
+# `'a,b'.#split(',')` — neither of which Lua will parse.
+
+mutation_case "the string literal placeholder stops every receiver scan" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """std::string placeholderFor(const std::string &prefix, size_t index) {
+    return prefix + std::to_string(index) + "_";
+}""",
+     """std::string placeholderFor(const std::string &prefix, size_t index) {
+    return "\\x01" + prefix + std::to_string(index) + "\\x01";
+}""")
+PY
+
+# ── The definitions the shared library already carries ──────────────
+#
+# `ecma_semantics.lua` is loaded by this engine and called by the code
+# generator's Lua backends for the same source. A method missing from the table
+# below is not rewritten at all: the definition sits in the same interpreter,
+# unnamed.
+
+mutation_case "two string methods lose the shared definition that implements them" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """    {"substring", "_scxml_substring"},
+    {"charAt", "_scxml_charat"},
+""",
+     "")
+PY
+
+# ── concat appends every argument §15-4-4-4 ─────────────────────────
+#
+# The shared `_concat` takes one other value, so the arguments are folded
+# through it. Passing them to a single call drops all but the first, and
+# answers a shorter array rather than refusing.
+
+mutation_case "concat keeps only its first argument" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """                        folded = "_concat(" + folded + ", " + trim(argument) + ")";
+                    }""",
+     """                        folded = "_concat(" + folded + ", " + trim(argument) + ")";
+                        break;
+                    }""")
+PY
+
+# ── push answers the new length §15-4-4-7 ───────────────────────────
+#
+# `table.insert` answers nothing, so the receiver is held in a local and the
+# length returned. Inserting alone leaves the expression undefined.
+
+mutation_case "push answers nothing where the length was promised" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """                    result +=
+                        "(function() local __t = " + receiver + " table.insert(__t, " + args + ") return #__t end)()";""",
+     """                    result += "table.insert(" + receiver + ", " + args + ")";""")
+PY
+
+# ── A computed index is still zero-based §13-3-3 ────────────────────
+#
+# Only integer literals were shifted. Treating every other index as an
+# assignment target leaves the read alone, and Lua then answers a neighbouring
+# element — a wrong value, not an error.
+
+mutation_case "a computed index is read one element short" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """    if (next >= input.size() || input[next] != '=') {
+        return false;
+    }
+    return next + 1 >= input.size() || input[next + 1] != '=';""",
+     """    return true;""")
+PY
+
+# ── Math.round rounds half toward positive infinity §15-8-2-15 ──────
+
+mutation_case "rounding becomes Lua's rather than the language's" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """    replaceAll(result, "Math.round", "_scxml_round");""",
+     """    replaceAll(result, "Math.round", "math.floor");""")
+PY
+
+# ── A unicode escape names a character §12-9-4 ──────────────────────
+#
+# Lua 5.4 spells the escape with braces. Carrying the ECMAScript spelling
+# through unchanged produces a literal Lua refuses to parse.
+
+mutation_case "the unicode escape keeps a spelling Lua cannot read" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """    for (size_t offset = 2; offset < 6; ++offset) {
+        if (!std::isxdigit(static_cast<unsigned char>(input[pos + offset]))) {
+            return false;
+        }
+    }
+    return true;
+}""",
+     """    for (size_t offset = 2; offset < 6; ++offset) {
+        if (!std::isxdigit(static_cast<unsigned char>(input[pos + offset]))) {
+            return false;
+        }
+    }
+    return false;
+}""")
+PY
+
+# ── The declared list is held to BOTH directions ────────────────────
+#
+# A one-sided verdict rots. These two cases are the sides: one adds a
+# divergence that has been repaired, the other removes one that is still live.
+# The count reached 44 while a comment said 26 precisely because nothing asked
+# the second question.
+
+mutation_case "a repaired divergence stays on the declared list" <<'PY'
+edit("tests/ecmascript/lua_engine_divergences.json",
+     """  "divergences": [
+    {
+      "source": "!a",""",
+     """  "divergences": [
+    {
+      "source": "'abc'.charAt(1)",
+      "clause": "15.5.4.4 String.prototype.charAt",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "!a",""")
+PY
+
+mutation_case "a live divergence is left off the declared list" <<'PY'
+edit("tests/ecmascript/lua_engine_divergences.json",
+     """    {
+      "source": "5 ^ 3",
+      "clause": "13.12 bitwise XOR",
+      "needs": "operand-boundaries"
+    },
+""",
+     "")
+PY
