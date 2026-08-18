@@ -6,6 +6,8 @@
 // Each test: parse SCXML -> generate C++ -> compare against expected output.
 // Expected outputs are in tests/forge/expected/ and serve as golden references.
 
+mod common;
+
 use std::path::Path;
 
 /// Project root (sce-build is at <root>/sce-build).
@@ -11397,13 +11399,19 @@ warnings = "deny"
         .join("target")
         .join("sce_rustc_check");
 
-    let output = std::process::Command::new("cargo")
-        .arg(cargo_subcommand)
-        .arg("--quiet")
-        .current_dir(&proj_dir)
-        .env("CARGO_TARGET_DIR", &workspace_target)
-        .output()
-        .map_err(|e| format!("cargo {cargo_subcommand} invocation: {e}"))?;
+    // Offline first: this project has no lock file, so cargo would otherwise
+    // reach for the registry index on every run even though the local cache
+    // already holds every version — which is how a brief `index.crates.io`
+    // outage refused a push on 2026-08-19. See `common::run_cargo_offline_first`.
+    let run = common::run_cargo_offline_first(|| {
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg(cargo_subcommand)
+            .arg("--quiet")
+            .current_dir(&proj_dir)
+            .env("CARGO_TARGET_DIR", &workspace_target);
+        cmd
+    });
+    let output = run.output;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
