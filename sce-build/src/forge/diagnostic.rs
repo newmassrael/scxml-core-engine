@@ -800,6 +800,14 @@ pub enum DiagnosticCode {
     // in its place and the repair is to drop the call.
     #[serde(rename = "expression/property-not-callable")]
     ExpressionPropertyNotCallable,
+    // A namespace this datamodel installs, written as the call itself —
+    // `Math()`, `new Object()`. Distinct from `property-not-callable`,
+    // whose repair is to drop the call: a namespace is not a value
+    // either, so what is left after dropping it is a second refusal.
+    // The members that may stand there ride `expected` as metadata,
+    // because choosing one is choosing its arguments too.
+    #[serde(rename = "expression/namespace-not-callable")]
+    ExpressionNamespaceNotCallable,
     #[serde(rename = "expression/strict-equality")]
     ExpressionStrictEquality,
     #[serde(rename = "expression/parse-mismatch")]
@@ -2887,6 +2895,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
         ExpressionPropertyNotCallable,
+        ExpressionNamespaceNotCallable,
         ExpressionStrictEquality,
         ExpressionParseMismatch,
         ExpressionUnexpectedToken,
@@ -3380,6 +3389,11 @@ impl DiagnosticCode {
             // rules the datamodel's rules, and calling a value is one
             // ECMAScript answers for itself.
             ExpressionPropertyNotCallable => Some("W3C SCXML §B.2"),
+            // And once more: the appendix is what obliges the namespaces
+            // to exist at all, so it is also what decides that reaching
+            // one without naming a member is not an expression this
+            // datamodel evaluates.
+            ExpressionNamespaceNotCallable => Some("W3C SCXML §B.2"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4065,6 +4079,7 @@ impl DiagnosticCode {
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
+            ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
             ExpressionStrictEquality => "expression/strict-equality",
             ExpressionParseMismatch => "expression/parse-mismatch",
             ExpressionUnexpectedToken => "expression/unexpected-token",
@@ -7805,6 +7820,20 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: (*arguments == 0).then(|| Fix::ReplaceWith { to: name.clone() }),
             key_fragments: vec![name.clone()],
         },
+        // The namespace is what `actual` names, and the members that may
+        // stand in its place ride `expected` rather than `fix`. Dropping
+        // the call is not the repair here — `Math` alone is refused too —
+        // and naming a member without its arguments would be an edit the
+        // consumer cannot apply, so the producer states the position and
+        // stops there.
+        ExprError::NamespaceNotCallable { namespace, members } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionNamespaceNotCallable,
+            stage: Stage::Expression,
+            expected: Some(members.clone()),
+            actual: Some(format!("{namespace}()")),
+            fix: None,
+            key_fragments: vec![namespace.clone()],
+        },
         ExprError::StrictEquality { operator, strict } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
@@ -10089,6 +10118,20 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:87ec1b18624df1da","code":"expression/property-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"Math.PI holds a value, not a function. Write Math.PI without the call.","actual":"Math.PI"}"#,
+            ),
+            (
+                // A namespace called. Neither of the two entries above
+                // fits: the name is provided, so it is not a missing
+                // builtin, and it holds nothing, so dropping the call
+                // repairs nothing. `expected` carries the members and no
+                // `fix` rides.
+                "forge/expression-namespace-not-callable",
+                ExprError::NamespaceNotCallable {
+                    namespace: "JSON".into(),
+                    members: vec!["JSON.parse".into(), "JSON.stringify".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dbf47c756e89d56b","code":"expression/namespace-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"JSON is a namespace, not a function. Call one of its members: JSON.parse, JSON.stringify","expected":["JSON.parse","JSON.stringify"],"actual":"JSON()"}"#,
             ),
             (
                 "forge/expression-parse-mismatch",
@@ -13272,7 +13315,13 @@ mod tests {
             // `algorithm/append-type-mismatch`: `expected` is the fixed
             // accepted RHS type set ("uint8 or bytes"); the narrowing
             // repair is author-domain, no structured `Fix`.
+            // `expression/namespace-not-callable`: `expected` is the
+            // namespace's callable members. A repair means choosing one
+            // *and* the arguments it takes, which is the author's
+            // decision, so the set documents the position rather than
+            // proposing an edit.
             ExpressionParseMismatch
+            | ExpressionNamespaceNotCallable
             | MeshExternalAmbiguousEventGroup
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
@@ -14023,11 +14072,18 @@ mod tests {
     fn expected_is_metadata_emitters_obey_non_overlap() {
         use crate::mesh::error::{ExternalConfigError, MeshError};
 
-        let forge_samples: Vec<ForgeError> = vec![ExprError::ParseMismatch {
-            expected: "identifier".into(),
-            got: ";".into(),
-        }
-        .into()];
+        let forge_samples: Vec<ForgeError> = vec![
+            ExprError::ParseMismatch {
+                expected: "identifier".into(),
+                got: ";".into(),
+            }
+            .into(),
+            ExprError::NamespaceNotCallable {
+                namespace: "Math".into(),
+                members: vec!["Math.abs".into()],
+            }
+            .into(),
+        ];
 
         let mesh_samples: Vec<MeshError> = vec![ExternalConfigError::AmbiguousEventGroup {
             machine: "ecu_a".into(),
@@ -14188,6 +14244,7 @@ mod tests {
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
                 | ExpressionPropertyNotCallable
+                | ExpressionNamespaceNotCallable
                 | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
@@ -14446,9 +14503,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            353,
+            354,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 353 distinct variants to match the DiagnosticCode \
+             expected 354 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
