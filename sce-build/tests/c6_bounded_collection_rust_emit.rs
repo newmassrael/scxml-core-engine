@@ -18,6 +18,8 @@
 //! up rustc and catches the template-layer regressions that matter
 //! for codegen correctness.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -789,13 +791,19 @@ fn composite_element_bounded_collection_builds_without_an_allocator() {
     )
     .expect("write Cargo.toml");
 
-    let output = std::process::Command::new("cargo")
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(crate_dir.join("Cargo.toml"))
-        .env("CARGO_TARGET_DIR", dir.path().join("target"))
-        .output()
-        .expect("run cargo build");
+    // Offline first — see `common::run_cargo_offline_first`: this probe crate
+    // has no lock file, so cargo would reach the registry index on every run
+    // even when the local cache already answers.
+    let target_dir = dir.path().join("target");
+    let run = common::run_cargo_offline_first(|| {
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("build")
+            .arg("--manifest-path")
+            .arg(crate_dir.join("Cargo.toml"))
+            .env("CARGO_TARGET_DIR", &target_dir);
+        cmd
+    });
+    let output = run.output;
     assert!(
         output.status.success(),
         "no-alloc build of a bounded collection over a composite element failed\nstderr: {}",
