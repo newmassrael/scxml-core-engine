@@ -200,6 +200,184 @@ fn a_selector_naming_a_suite_that_does_not_exist_is_refused() {
     assert_rejected(&f, "names no test target");
 }
 
+// ── The ctest selector, and the tree it is resolved against ──────
+
+/// Whether `ninja` will answer for a directory at all.
+fn ninja_available() -> bool {
+    Command::new("ninja")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// A directory that looks configured to the harness, with a `build.ninja`
+/// whose generator would or would not re-run cmake.
+///
+/// `current` writes a build.ninja with nothing out of date; the other
+/// writes one whose only edge is out of date, which is the shape a tree
+/// takes when a `CMakeLists.txt` moved after the last configure.
+fn fake_build_tree(dir: &Path, current: bool) {
+    fs::create_dir_all(dir).expect("create the build dir");
+    fs::write(dir.join("CMakeCache.txt"), "// a configured tree\n").expect("write the cache");
+    fs::write(dir.join("CMakeLists.txt"), "# an input\n").expect("write the input");
+    fs::write(
+        dir.join("build.ninja"),
+        "rule RERUN_CMAKE\n  command = true\n  description = Re-running CMake...\n\
+         build build.ninja: RERUN_CMAKE CMakeLists.txt\n",
+    )
+    .expect("write the generator file");
+    // Ninja decides from mtimes, so the two trees differ in exactly that.
+    // A configured-then-edited tree has an input newer than the generator
+    // file; a freshly configured one has the generator file newer. Written
+    // rather than slept for: a test that waits on the clock is a test that
+    // is flaky on a fast filesystem and slow on every one.
+    let stamp = std::time::SystemTime::now();
+    let (generator_age, input_age) = if current {
+        (stamp, stamp - std::time::Duration::from_secs(60))
+    } else {
+        (stamp - std::time::Duration::from_secs(60), stamp)
+    };
+    for (name, age) in [
+        ("build.ninja", generator_age),
+        ("CMakeLists.txt", input_age),
+    ] {
+        let file = fs::File::options()
+            .write(true)
+            .open(dir.join(name))
+            .expect("open for stamping");
+        file.set_times(fs::FileTimes::new().set_modified(age))
+            .expect("stamp the file");
+    }
+    if current {
+        // Mtimes are not the whole of ninja's answer: it also remembers
+        // the command each edge last ran, and an edge it has never run is
+        // dirty however new its output is. A configured tree has been
+        // built at least once, so the fixture is too — measured, after
+        // the first version of this test wrote the files and expected
+        // ninja to call them current.
+        Command::new("ninja")
+            .args(["-C", dir.to_str().expect("utf-8 path"), "build.ninja"])
+            .output()
+            .expect("run the fixture's generator once");
+    }
+}
+
+/// A tree that is configured but not current cannot condemn a casefile.
+///
+/// The defect this pins was measured on the build machine: its `build/`
+/// was configured three days before the target a casefile names, so the
+/// selector matched nothing and the gate reported the casefile as one
+/// that "no longer applies to the tree" — a verdict about the author's
+/// text drawn from the checker's own stale input. The same happens to
+/// anyone who adds a ctest target and runs the gate before re-running
+/// cmake.
+#[test]
+fn a_configured_tree_that_predates_the_casefile_cannot_condemn_it() {
+    if !ninja_available() {
+        eprintln!("SKIP: ninja unavailable");
+        return;
+    }
+    let dir = tempdir().expect("temp dir");
+    let build = dir.path().join("build");
+    fake_build_tree(&build, false);
+
+    let f = fixture_with_selector(
+        &format!(
+            "mutation_ctest --test-dir {} -R ^NoSuchTestIsRegistered$",
+            build.display()
+        ),
+        "fn keep(x: u8) -> u8 {\n    x + 1\n}\n",
+        "mutation_case \"the arithmetic is wrong\" <<'PY'\n\
+         edit(TARGET, \"x + 1\", \"x - 1\")\n\
+         PY\n",
+    );
+
+    let (ok, output) = check(&f.casefile);
+    assert!(
+        ok,
+        "a tree whose test list predates the casefile was read as a dead case:\n{output}"
+    );
+    assert!(
+        output.contains("configured but not current"),
+        "the skip did not say why it could not judge:\n{output}"
+    );
+}
+
+/// A tree that has only drifted still checks a selector that matches.
+///
+/// The order the check asks its two questions in is the whole of this:
+/// staleness matters only when nothing matched. A developer's tree is
+/// drifted most of the time — a commit moves a CMake input and the
+/// generator would re-run — and it is still right about every test that
+/// existed before it. Asking about staleness first cost every ctest
+/// selector its check on such a tree, which is a coverage loss traded
+/// for a false red, measured on this repository's own `build/`.
+#[test]
+fn a_live_selector_is_still_checked_on_a_tree_that_has_only_drifted() {
+    if !ninja_available() {
+        eprintln!("SKIP: ninja unavailable");
+        return;
+    }
+    let dir = tempdir().expect("temp dir");
+    let build = dir.path().join("build");
+    fake_build_tree(&build, false);
+    // A test registry of one, which is what makes this tree drifted
+    // rather than ignorant: it knows the test the selector names.
+    fs::write(
+        build.join("CTestTestfile.cmake"),
+        "add_test(fixture_test \"/bin/true\")\n",
+    )
+    .expect("write the registry");
+
+    let f = fixture_with_selector(
+        &format!(
+            "mutation_ctest --test-dir {} -R ^fixture_test$",
+            build.display()
+        ),
+        "fn keep(x: u8) -> u8 {\n    x + 1\n}\n",
+        "mutation_case \"the arithmetic is wrong\" <<'PY'\n\
+         edit(TARGET, \"x + 1\", \"x - 1\")\n\
+         PY\n",
+    );
+
+    let (ok, output) = check(&f.casefile);
+    assert!(ok, "a live selector was refused:\n{output}");
+    assert!(
+        output.contains("selector matches 1 registered test"),
+        "the selector went unchecked on a tree that knows it:\n{output}"
+    );
+}
+
+/// A tree that *is* current still condemns a selector matching nothing.
+///
+/// The other half, and the one that keeps the check worth running: the
+/// discriminator above must not become a way for every ctest casefile to
+/// go unchecked.
+#[test]
+fn a_current_tree_still_refuses_a_selector_that_matches_nothing() {
+    if !ninja_available() {
+        eprintln!("SKIP: ninja unavailable");
+        return;
+    }
+    let dir = tempdir().expect("temp dir");
+    let build = dir.path().join("build");
+    fake_build_tree(&build, true);
+
+    let f = fixture_with_selector(
+        &format!(
+            "mutation_ctest --test-dir {} -R ^NoSuchTestIsRegistered$",
+            build.display()
+        ),
+        "fn keep(x: u8) -> u8 {\n    x + 1\n}\n",
+        "mutation_case \"the arithmetic is wrong\" <<'PY'\n\
+         edit(TARGET, \"x + 1\", \"x - 1\")\n\
+         PY\n",
+    );
+
+    assert_rejected(&f, "matches no registered test");
+}
+
 #[test]
 fn a_sound_case_passes_and_leaves_its_subject_where_it_found_it() {
     let body = "fn keep(x: u8) -> u8 {\n    x + 1\n}\n";
