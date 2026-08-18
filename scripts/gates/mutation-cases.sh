@@ -58,6 +58,7 @@ fi
 
 stale=()
 cases=0
+unchecked=0
 for casefile in "${CASEFILES[@]}"; do
     if output="$(scripts/mutate --check "$casefile" 2>&1)"; then
         # `|| true` because grep exits 1 on no match, and a casefile that
@@ -65,6 +66,14 @@ for casefile in "${CASEFILES[@]}"; do
         # floor below to judge, not one for `set -e` to end the sweep on.
         applied="$(grep -c '^applies' <<<"$output" || true)"
         cases=$(( cases + applied ))
+        # A ctest selector is only judged where the tree it names is
+        # configured and current, and the harness says so when it is
+        # neither. Said again here because this summary is what a reader
+        # sees: a count of cases that "still apply" reads as a count of
+        # cases that were checked, and on a machine with a stale build
+        # tree those are two different numbers.
+        skipped="$(grep -c 'selector NOT checked' <<<"$output" || true)"
+        unchecked=$(( unchecked + skipped ))
     else
         stale+=("$casefile")
         printf '\n  FAIL: %s\n' "$casefile" >&2
@@ -85,4 +94,9 @@ if (( cases < MIN_CASES )); then
     sce_gate_fail "only $cases case(s) checked across ${#CASEFILES[@]} casefile(s), expected at least $MIN_CASES — the harness is reporting fewer cases than the corpus holds"
 fi
 
-sce_gate_step "$cases case(s) in ${#CASEFILES[@]} casefile(s) still apply"
+if (( unchecked > 0 )); then
+    sce_gate_step "$cases case(s) in ${#CASEFILES[@]} casefile(s) still apply — \
+$unchecked selector(s) not checked (their ctest tree is absent or not current)"
+else
+    sce_gate_step "$cases case(s) in ${#CASEFILES[@]} casefile(s) still apply"
+fi
