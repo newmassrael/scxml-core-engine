@@ -6,6 +6,7 @@
 package com.sce.scripting
 
 import com.sce.runtime.IoProcessorDescriptor
+import com.sce.runtime.SceXmlDom
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -13,11 +14,7 @@ import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.Undefined
-import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
-import org.w3c.dom.Document
-import org.xml.sax.InputSource
-import java.io.StringReader
+import org.w3c.dom.Node
 
 /**
  * JVM ECMAScript engine using Mozilla Rhino.
@@ -425,73 +422,178 @@ class RhinoScriptEngine : ScxmlScriptEngine {
      * C++ DOMBinding::createDOMObject() pattern using Java javax.xml.
      */
     private fun createRhinoDOMObject(cx: Context, scope: ScriptableObject, xmlContent: String): Scriptable? {
-        return try {
-            val factory = DocumentBuilderFactory.newInstance()
-            factory.isNamespaceAware = true
-            val builder = factory.newDocumentBuilder()
-            val doc = builder.parse(InputSource(StringReader(xmlContent)))
-            val docElement = doc.documentElement
-
-            // Create Rhino object with getElementsByTagName() and getAttribute()
-            createRhinoElementWrapper(cx, scope, doc, docElement)
-        } catch (_: Exception) {
-            null
-        }
+        val document = SceXmlDom.parse(xmlContent) ?: return null
+        val root = document.documentElement ?: return null
+        // The variable holds the document: it answers the Node interface as
+        // a document and the Element vocabulary for its document element
+        // (§scxml-B-2-1).
+        return RhinoDomHandle(scope, root, isDocument = true)
     }
 
     /**
-     * Create a Rhino Scriptable wrapper for a DOM element.
-     * C++ DOMBinding::createElementObject() pattern.
+     * §scxml-B-2-1's DOM read surface, as a Rhino object.
      *
-     * @param topScope The session's top-level scope (for object/array creation)
+     * The Recommendation obliges the Processor to create *"the
+     * corresponding DOM structure"*, so what a handle answers is DOM Level
+     * 1 Core and not the two calls the W3C IRP suite happens to read.
+     * Measured 2026-08-18, two was all this engine carried — it had no
+     * `getTagName` either, which the frontend lowers and the other
+     * backends implement — so `d.tagName`, `d.firstChild` and
+     * `d.childNodes.length` were undefined here with every W3C fixture
+     * green.
+     *
+     * Members are resolved in [get] rather than installed as properties,
+     * and they have to be: `parentNode` and `childNodes` point at each
+     * other, so materialising either eagerly walks the tree until it runs
+     * out of stack. The [node] a document handle carries is its document
+     * element, which is what makes the Element vocabulary answer for the
+     * root the way `getAttribute` and `getTagName` always did.
      */
-    private fun createRhinoElementWrapper(
-        cx: Context,
-        topScope: ScriptableObject,
-        doc: Document?,
-        element: Element
-    ): Scriptable {
-        val obj = cx.newObject(topScope)
+    private class RhinoDomHandle(
+        private val topScope: Scriptable,
+        private val node: Node,
+        private val isDocument: Boolean
+    ) : ScriptableObject() {
 
-        // getElementsByTagName method (C++ dom_getElementsByTagName_wrapper)
-        val getElementsFunc = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(
-                cx: Context, scope: Scriptable, thisObj: Scriptable, args: Array<out Any?>
-            ): Any {
-                if (args.isEmpty()) return cx.newArray(topScope, 0)
-                val tagName = Context.toString(args[0])
-                val nodeList = if (doc != null) {
-                    doc.getElementsByTagName(tagName)
-                } else {
-                    element.getElementsByTagName(tagName)
-                }
-                // Rhino requires Object[] component type, not Scriptable[]
-                val arr = arrayOfNulls<Any>(nodeList.length)
-                for (i in 0 until nodeList.length) {
-                    arr[i] = createRhinoElementWrapper(cx, topScope, null, nodeList.item(i) as Element)
-                }
-                return cx.newArray(topScope, arr)
-            }
-            override fun getArity(): Int = 1
-            override fun getFunctionName(): String = "getElementsByTagName"
+        init {
+            parentScope = topScope
+            prototype = getObjectPrototype(topScope)
         }
-        ScriptableObject.putProperty(obj, "getElementsByTagName", getElementsFunc)
 
-        // getAttribute method (C++ dom_getAttribute_wrapper)
-        val getAttrFunc = object : org.mozilla.javascript.BaseFunction() {
-            override fun call(
-                cx: Context, scope: Scriptable, thisObj: Scriptable, args: Array<out Any?>
-            ): Any {
-                if (args.isEmpty()) return ""
-                val attrName = Context.toString(args[0])
-                return element.getAttribute(attrName) ?: ""
+        override fun getClassName(): String = "DOMNode"
+
+        override fun has(name: String, start: Scriptable): Boolean = get(name, start) != NOT_FOUND
+
+        override fun get(name: String, start: Scriptable): Any? =
+            when (name) {
+                // ── methods ──
+                "getElementsByTagName" -> method(name) { args ->
+                    val tag = if (args.isEmpty()) "" else Context.toString(args[0])
+                    // A document matches its root inclusively, an element
+                    // only descends: DOM Level 1 Core 1.2's split.
+                    val found = mutableListOf<Node>()
+                    if (isDocument && node.nodeName == tag) {
+                        found.add(node)
+                    }
+                    collect(node, tag, found)
+                    nodeList(found)
+                }
+                "getAttribute" -> method(name) { args ->
+                    if (args.isEmpty()) {
+                        ""
+                    } else {
+                        attribute(Context.toString(args[0])) ?: ""
+                    }
+                }
+                "hasAttribute" -> method(name) { args ->
+                    args.isNotEmpty() && attribute(Context.toString(args[0])) != null
+                }
+                "getTagName" -> method(name) { node.nodeName ?: "" }
+                "hasChildNodes" -> method(name) {
+                    isDocument || SceXmlDom.children(node).isNotEmpty()
+                }
+
+                // ── the Node interface, as properties ──
+                "nodeType" -> if (isDocument) SceXmlDom.TYPE_DOCUMENT else SceXmlDom.nodeType(node)
+                "nodeName" -> if (isDocument) "#document" else SceXmlDom.nodeName(node)
+                // DOM Level 1 Core gives an element and a document a null
+                // nodeValue; `data` is CharacterData's own name for it.
+                "nodeValue", "data" ->
+                    if (isDocument || !SceXmlDom.hasNodeValue(node)) null else node.nodeValue
+                "tagName" ->
+                    if (!isDocument && SceXmlDom.hasNodeValue(node)) null else (node.nodeName ?: "")
+                "textContent" -> SceXmlDom.textContent(node)
+                "childNodes" ->
+                    if (isDocument) nodeList(listOf(node)) else nodeList(SceXmlDom.children(node))
+                "firstChild" ->
+                    if (isDocument) wrap(node) else wrap(SceXmlDom.children(node).firstOrNull())
+                "lastChild" ->
+                    if (isDocument) wrap(node) else wrap(SceXmlDom.children(node).lastOrNull())
+                "nextSibling" -> if (isDocument) null else wrap(sibling(1))
+                "previousSibling" -> if (isDocument) null else wrap(sibling(-1))
+                "parentNode" -> when {
+                    isDocument -> null
+                    // The document element's parent is the document — DOM
+                    // Level 1 Core 1.3 — which is the handle the variable
+                    // already holds.
+                    node.parentNode == null ||
+                        SceXmlDom.nodeType(node.parentNode) == SceXmlDom.TYPE_DOCUMENT ->
+                        RhinoDomHandle(topScope, node, isDocument = true)
+                    else -> wrap(node.parentNode)
+                }
+                // Only the document handle carries this, which is how a
+                // document tells the two kinds apart.
+                "documentElement" -> if (isDocument) wrap(node) else null
+
+                else -> super.get(name, start)
             }
-            override fun getArity(): Int = 1
-            override fun getFunctionName(): String = "getAttribute"
-        }
-        ScriptableObject.putProperty(obj, "getAttribute", getAttrFunc)
 
-        return obj
+        /**
+         * The attribute's value, or null when the element does not carry
+         * it — the distinction `getAttribute`'s "" cannot make and
+         * `hasAttribute` exists for. Collapsing the two with `?: ""` made
+         * `hasAttribute('missing')` answer true.
+         */
+        private fun attribute(name: String): String? {
+            val attributes = node.attributes ?: return null
+            val item = attributes.getNamedItem(name) ?: return null
+            return item.nodeValue ?: ""
+        }
+
+        private fun sibling(step: Int): Node? {
+            val parent = node.parentNode ?: return null
+            val siblings = SceXmlDom.children(parent)
+            val index = siblings.indexOfFirst { it === node }
+            if (index < 0) {
+                return null
+            }
+            return siblings.getOrNull(index + step)
+        }
+
+        private fun collect(current: Node, tag: String, found: MutableList<Node>) {
+            for (child in SceXmlDom.children(current)) {
+                if (SceXmlDom.nodeType(child) != SceXmlDom.TYPE_ELEMENT) {
+                    continue
+                }
+                if (child.nodeName == tag) {
+                    found.add(child)
+                }
+                collect(child, tag, found)
+            }
+        }
+
+        private fun wrap(target: Node?): Any? =
+            if (target == null) null else RhinoDomHandle(topScope, target, isDocument = false)
+
+        /**
+         * A NodeList: Rhino's own array, because the frontend rewrites
+         * `[0]` to `[1]` upstream only for Lua and reads `length` here —
+         * which is why `item(i)` is refused by the frontend rather than
+         * implemented, in every backend.
+         */
+        private fun nodeList(nodes: List<Node>): Scriptable {
+            val cx = Context.getCurrentContext()
+            // Rhino requires Object[] component type, not Scriptable[]
+            val arr = arrayOfNulls<Any>(nodes.size)
+            for ((index, member) in nodes.withIndex()) {
+                arr[index] = RhinoDomHandle(topScope, member, isDocument = false)
+            }
+            return cx.newArray(topScope, arr)
+        }
+
+        private fun method(name: String, body: (Array<out Any?>) -> Any?): Scriptable =
+            object : org.mozilla.javascript.BaseFunction() {
+                override fun call(
+                    cx: Context,
+                    scope: Scriptable,
+                    thisObj: Scriptable,
+                    args: Array<out Any?>
+                ): Any? = body(args)
+
+                override fun getArity(): Int = 1
+
+                override fun getFunctionName(): String = name
+            }
     }
 
     /**

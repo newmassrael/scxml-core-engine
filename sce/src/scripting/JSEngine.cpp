@@ -311,8 +311,19 @@ std::future<ScriptResult> JSEngine::setVariableAsDOM(const std::string &sessionI
         int setResult = JS_SetPropertyStr(ctx, global, name.c_str(), domObject);
         JS_FreeValue(ctx, global);
 
-        return (setResult == 0) ? ScriptResult::createSuccess()
-                                : ScriptResult::createError("Failed to set DOM variable");
+        // QuickJS answers this with TRUE on success, FALSE when the write
+        // did not happen, and -1 with a pending exception — the reading
+        // `JSEngineImpl::setVariableInternal` sixty lines away already
+        // uses. Reading FALSE as success inverted the whole result:
+        // measured 2026-08-18, every `<data>` with XML content reported
+        // "Failed to set DOM variable" while the variable was in fact
+        // bound, so W3C test557 passed on this engine with an error
+        // logged for the initialization that had worked.
+        if (setResult < 0) {
+            return createErrorFromException(ctx);
+        }
+        return (setResult > 0) ? ScriptResult::createSuccess()
+                               : ScriptResult::createError("Failed to set DOM variable");
     });
 }
 

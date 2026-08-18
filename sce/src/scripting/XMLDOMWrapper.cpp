@@ -35,6 +35,105 @@ std::string XMLElement::getAttribute(const std::string &attrName) {
     return "";
 }
 
+bool XMLElement::hasAttribute(const std::string &attrName) const {
+    if (!node_) {
+        return false;
+    }
+    return static_cast<bool>(node_.attribute(attrName.c_str()));
+}
+
+// === DOM Level 1 Core: the Node interface's read surface ===
+//
+// pugixml keeps one handle type for every node kind, so this class does
+// too and getNodeType() is what separates them. The trees hold four
+// kinds (see DomNodeType): parse_default drops comments and PIs.
+
+int XMLElement::getNodeType() const {
+    switch (node_.type()) {
+    case pugi::node_pcdata:
+        return DomNodeType::Text;
+    case pugi::node_cdata:
+        return DomNodeType::CdataSection;
+    case pugi::node_document:
+        return DomNodeType::Document;
+    default:
+        return DomNodeType::Element;
+    }
+}
+
+std::string XMLElement::getNodeName() const {
+    switch (getNodeType()) {
+    case DomNodeType::Text:
+        return "#text";
+    case DomNodeType::CdataSection:
+        return "#cdata-section";
+    case DomNodeType::Document:
+        return "#document";
+    default:
+        return getTagName();
+    }
+}
+
+bool XMLElement::hasNodeValue() const {
+    const int type = getNodeType();
+    return type == DomNodeType::Text || type == DomNodeType::CdataSection;
+}
+
+std::string XMLElement::getNodeValue() const {
+    if (!hasNodeValue()) {
+        return "";
+    }
+    return std::string(node_.value());
+}
+
+std::string XMLElement::getTextContent() const {
+    if (hasNodeValue()) {
+        return std::string(node_.value());
+    }
+    std::string text;
+    for (const auto &child : node_.children()) {
+        text += XMLElement(child).getTextContent();
+    }
+    return text;
+}
+
+bool XMLElement::hasChildNodes() const {
+    return static_cast<bool>(node_.first_child());
+}
+
+std::vector<std::shared_ptr<XMLElement>> XMLElement::getChildNodes() const {
+    std::vector<std::shared_ptr<XMLElement>> children;
+    for (const auto &child : node_.children()) {
+        children.push_back(std::make_shared<XMLElement>(child));
+    }
+    return children;
+}
+
+std::shared_ptr<XMLElement> XMLElement::getFirstChild() const {
+    pugi::xml_node child = node_.first_child();
+    return child ? std::make_shared<XMLElement>(child) : nullptr;
+}
+
+std::shared_ptr<XMLElement> XMLElement::getLastChild() const {
+    pugi::xml_node child = node_.last_child();
+    return child ? std::make_shared<XMLElement>(child) : nullptr;
+}
+
+std::shared_ptr<XMLElement> XMLElement::getNextSibling() const {
+    pugi::xml_node sibling = node_.next_sibling();
+    return sibling ? std::make_shared<XMLElement>(sibling) : nullptr;
+}
+
+std::shared_ptr<XMLElement> XMLElement::getPreviousSibling() const {
+    pugi::xml_node sibling = node_.previous_sibling();
+    return sibling ? std::make_shared<XMLElement>(sibling) : nullptr;
+}
+
+std::shared_ptr<XMLElement> XMLElement::getParentNode() const {
+    pugi::xml_node parent = node_.parent();
+    return parent ? std::make_shared<XMLElement>(parent) : nullptr;
+}
+
 void XMLElement::findElementsByTagNameStatic(pugi::xml_node node, const std::string &tagName,
                                              std::vector<std::shared_ptr<XMLElement>> &result) {
     if (!node) {

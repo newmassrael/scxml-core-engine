@@ -1,0 +1,124 @@
+# Mutation cases for §scxml-B-2-1 / §scxml-B-2-8-1 — XML in the data model is
+# a DOM structure, not three method names.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/dom_read_surface.cases`.
+#
+# The defect these restore was live in this tree on 2026-08-18 and produced no
+# build error, no warning and no failing test: every backend carried
+# `getElementsByTagName`, `getAttribute` and a non-standard `getTagName` — the
+# two names the W3C IRP suite reads, plus one — so `d.tagName`, `d.childNodes`
+# and `d.firstChild` reached the engine as a nil index while 204/204 W3C
+# fixtures passed. The suite's DOM vocabulary is exactly the part that worked.
+#
+# Each case weakens the code that keeps one clause of the surface, rather than
+# editing a test or a byte offset: a case aimed at a position rather than at an
+# invariant is not a case (measured 2026-08-18, a whitespace-position case was
+# CAUGHT locally and SURVIVED in CI because the file had been reformatted
+# between the two runs).
+#
+# The oracle is the shared table — `tests/ecmascript/dom_read_surface.json` —
+# read here through the Rust binding and the frontend. The C++ half of the
+# surface has its own casefile beside this one, because the two runners are
+# declared per file.
+
+mutation_tests -p sce-rust-lua --test dom_read_surface
+mutation_targets backends/rust/lua/src/dom.rs
+
+# ── The tree the author walks ──────────────────────────────────────
+#
+# pugixml's `parse_default` omits `parse_ws_pcdata`, so the cpp reference
+# backend has no whitespace-only text node and neither may a mirror. Keeping
+# one cost nothing while `getElementsByTagName` was the only reader — that call
+# collects elements — and it decides every traversal now: `childNodes.length`
+# answers 4 instead of 2 and `firstChild` is a text node the document never
+# wrote.
+
+mutation_case "whitespace between elements becomes a node again" <<'PY'
+edit("backends/rust/lua/src/dom.rs",
+     """                if !text.is_empty() && !text.trim().is_empty() {""",
+     """                if !text.is_empty() {""")
+PY
+
+# ── The kinds a document can tell apart ────────────────────────────
+#
+# `nodeType` is a number rather than a boolean precisely so a CDATA section is
+# distinguishable from text. Answering every character-data node with TEXT is
+# the shape a reader falls into when the two are held in one arena.
+
+mutation_case "a CDATA section reports itself as text" <<'PY'
+edit("backends/rust/lua/src/dom.rs",
+     """            Some(XmlNodeType::Cdata) => NODE_TYPE_CDATA_SECTION,""",
+     """            Some(XmlNodeType::Cdata) => NODE_TYPE_TEXT,""")
+PY
+
+# ── What a document handle is ──────────────────────────────────────
+#
+# The variable holds the document (§scxml-B-2-1), which answers the Node
+# interface as a document and the Element vocabulary for its document element.
+# A handle that answers `nodeType` as its root is its document element wearing
+# the variable's name, and `documentElement` then hands back a second one.
+
+mutation_case "the document handle reports itself as its root element" <<'PY'
+edit("backends/rust/lua/src/dom.rs",
+     """        if self.kind == XmlRefKind::Document {
+            return NODE_TYPE_DOCUMENT;
+        }""",
+     "")
+PY
+
+# ── The parent of a document element ───────────────────────────────
+#
+# DOM Level 1 Core 1.3 makes the Document the parent of its documentElement, so
+# a climb from the root lands on the handle the variable already holds.
+# Answering `None` there is the reading that looks defensive and silently ends
+# every upward walk one node early.
+
+mutation_case "the root element's parent becomes nothing" <<'PY'
+edit("backends/rust/lua/src/dom.rs",
+     """            None => Some(Self {
+                doc: self.doc.clone(),
+                node_id: self.node_id,
+                kind: XmlRefKind::Document,
+            }),""",
+     """            None => None,""")
+PY
+
+# ── textContent is every descendant's, not the node's own ──────────
+#
+# A reader that stops at the first level answers `<book>first</book>` correctly
+# and `<p>plain<b>bold</b></p>` with half its text, which is why the table's
+# case spans an element boundary.
+
+mutation_case "textContent stops descending at the first level" <<'PY'
+edit("backends/rust/lua/src/dom.rs",
+     """            XmlNodeType::Element => {
+                let mut child = node.first_child;
+                while let Some(c) = child {
+                    self.append_text_content(c, out);
+                    child = self.nodes[c].next_sibling;
+                }
+            }""",
+     """            XmlNodeType::Element => {
+                if let Some(c) = node.first_child {
+                    if self.nodes[c].node_type != XmlNodeType::Element {
+                        self.append_text_content(c, out);
+                    }
+                }
+            }""")
+PY
+
+# ── The NodeList a document indexes ────────────────────────────────
+#
+# `childNodes` is read as `#list` and `list[1]` after the frontend's rewrites,
+# so a list built 0-based answers a length of one less than it holds and drops
+# its first member from every index.
+
+mutation_case "the NodeList is built 0-based" <<'PY'
+edit("backends/rust/lua/src/dom.rs",
+     """    for (i, &id) in ids.iter().enumerate() {
+        table.raw_set(i + 1, this.node_at(id))?;
+    }""",
+     """    for (i, &id) in ids.iter().enumerate() {
+        table.raw_set(i, this.node_at(id))?;
+    }""")
+PY

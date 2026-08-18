@@ -169,6 +169,89 @@ impl XmlDoc {
             .unwrap_or("")
     }
 
+    /// cpp `XMLElement::hasAttribute` — DOM Level 2 Core's answer to the
+    /// ambiguity in [`Self::get_attribute`], which cannot tell an absent
+    /// attribute from one present and empty.
+    pub fn has_attribute(&self, node_id: usize, name: &str) -> bool {
+        match self.nodes.get(node_id) {
+            Some(node) => node.attrs.iter().any(|(k, _)| k == name),
+            None => false,
+        }
+    }
+
+    /// The node's children in document order — DOM Level 1 Core's
+    /// `Node.childNodes`.
+    pub fn child_ids(&self, node_id: usize) -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut child = self.nodes.get(node_id).and_then(|n| n.first_child);
+        while let Some(c) = child {
+            out.push(c);
+            child = self.nodes[c].next_sibling;
+        }
+        out
+    }
+
+    /// `Node.lastChild`. The arena links forward only — cpp reads
+    /// pugixml's `last_child()` — so this is the walk that link
+    /// direction costs.
+    pub fn last_child(&self, node_id: usize) -> Option<usize> {
+        let mut child = self.nodes.get(node_id).and_then(|n| n.first_child)?;
+        while let Some(next) = self.nodes[child].next_sibling {
+            child = next;
+        }
+        Some(child)
+    }
+
+    /// `Node.previousSibling`, found by walking the parent's children —
+    /// the same cost, for the same reason, as [`Self::last_child`].
+    pub fn previous_sibling(&self, node_id: usize) -> Option<usize> {
+        let parent = self.nodes.get(node_id)?.parent?;
+        let mut child = self.nodes[parent].first_child?;
+        if child == node_id {
+            return None;
+        }
+        while let Some(next) = self.nodes[child].next_sibling {
+            if next == node_id {
+                return Some(child);
+            }
+            child = next;
+        }
+        None
+    }
+
+    /// `Node.textContent` (DOM Level 3 Core) — every descendant
+    /// character-data node's content, concatenated in document order.
+    ///
+    /// Element and document nodes have no `nodeValue` of their own, so
+    /// this is the only way a document can read the text an element
+    /// wraps. The whitespace it reports is the tree's: a run that is
+    /// nothing but whitespace never became a node (pugixml
+    /// `parse_default` omits `parse_ws_pcdata`), so
+    /// `<books>\n  <book/>\n</books>` has no text at all rather than
+    /// two runs of it.
+    pub fn text_content(&self, node_id: usize) -> String {
+        let mut out = String::new();
+        self.append_text_content(node_id, &mut out);
+        out
+    }
+
+    fn append_text_content(&self, node_id: usize, out: &mut String) {
+        let node = match self.nodes.get(node_id) {
+            Some(n) => n,
+            None => return,
+        };
+        match node.node_type {
+            XmlNodeType::Pcdata | XmlNodeType::Cdata => out.push_str(&node.text),
+            XmlNodeType::Element => {
+                let mut child = node.first_child;
+                while let Some(c) = child {
+                    self.append_text_content(c, out);
+                    child = self.nodes[c].next_sibling;
+                }
+            }
+        }
+    }
+
     fn collect(&self, node_id: usize, tag: &str, out: &mut Vec<usize>) {
         let node = match self.nodes.get(node_id) {
             Some(n) => n,
@@ -295,8 +378,22 @@ impl Parser<'_> {
         self.set_error("unterminated DOCTYPE");
     }
 
+    /// A PI / comment / DOCTYPE outside an element, where whitespace is
+    /// insignificant and skipping it is part of getting there.
     fn skip_misc(&mut self) -> bool {
         self.skip_ws();
+        self.skip_misc_here()
+    }
+
+    /// The same three, at the position the parser already stands on.
+    ///
+    /// Inside an element body the whitespace belongs to the text run that
+    /// follows it, so consuming it before deciding what comes next loses
+    /// it: measured 2026-08-18, `<p>a <b/> c</p>` reported its last text
+    /// node as `"c"` here and as `" c"` on the cpp reference backend, and
+    /// `textContent` came back a character short. It was unobservable for
+    /// as long as nothing could read text at all.
+    fn skip_misc_here(&mut self) -> bool {
         if self.pos + 1 < self.src.len() && self.src[self.pos] == b'<' {
             if self.src[self.pos + 1] == b'?' {
                 self.skip_pi();
@@ -468,7 +565,9 @@ impl Parser<'_> {
                 append_child(doc, cdata_id, &mut child_tail);
                 continue;
             }
-            if self.skip_misc() {
+            // The body form: whitespace here is the text run's, not the
+            // parser's to consume.
+            if self.skip_misc_here() {
                 continue;
             }
             if self.pos >= self.src.len() {
@@ -483,7 +582,15 @@ impl Parser<'_> {
                 append_child(doc, child_id, &mut child_tail);
             } else {
                 let text = self.consume_text()?;
-                if !text.is_empty() {
+                // A run that is nothing but whitespace becomes no node:
+                // `parse_ws_pcdata` is absent from pugixml's
+                // `parse_default`, so the cpp reference backend's tree
+                // does not have one either. It cost nothing to keep one
+                // while `getElementsByTagName` was the only reader —
+                // that call collects elements — and it is a divergence
+                // the moment `childNodes` and `firstChild` are readable,
+                // which is why the alignment lands with them.
+                if !text.is_empty() && !text.trim().is_empty() {
                     let mut text_node = XmlNode::new(XmlNodeType::Pcdata);
                     text_node.text = text;
                     text_node.parent = Some(node_id);
@@ -605,8 +712,22 @@ pub struct XmlRef {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum XmlRefKind {
     Document,
-    Element,
+    /// Any node reached from the document — an element, or a character
+    /// data node handed back by `childNodes` / `firstChild`.
+    Node,
 }
+
+/// DOM Level 1 Core node types, the numbers `nodeType` reports.
+///
+/// Four of the twelve, because four is what this surface's trees hold:
+/// comments and processing instructions are dropped at parse time
+/// (pugixml `parse_default` omits `parse_comments` and `parse_pi`) and
+/// the rest — attributes as nodes, entities, fragments — belong to
+/// interfaces this surface does not carry.
+pub const NODE_TYPE_ELEMENT: i64 = 1;
+pub const NODE_TYPE_TEXT: i64 = 3;
+pub const NODE_TYPE_CDATA_SECTION: i64 = 4;
+pub const NODE_TYPE_DOCUMENT: i64 = 9;
 
 impl XmlRef {
     pub fn document(doc: Arc<XmlDoc>) -> Option<Self> {
@@ -618,18 +739,20 @@ impl XmlRef {
         })
     }
 
-    pub fn child_element(&self, node_id: usize) -> Self {
+    /// A handle on another node of the same tree, keeping the `Arc` that
+    /// owns it alive.
+    pub fn node_at(&self, node_id: usize) -> Self {
         Self {
             doc: self.doc.clone(),
             node_id,
-            kind: XmlRefKind::Element,
+            kind: XmlRefKind::Node,
         }
     }
 
     pub fn get_elements_by_tag_name(&self, tag: &str) -> Vec<usize> {
         match self.kind {
             XmlRefKind::Document => self.doc.get_elements_by_tag_name(tag),
-            XmlRefKind::Element => self.doc.get_elements_by_tag_name_from(self.node_id, tag),
+            XmlRefKind::Node => self.doc.get_elements_by_tag_name_from(self.node_id, tag),
         }
     }
 
@@ -637,8 +760,145 @@ impl XmlRef {
         self.doc.get_attribute(self.node_id, name)
     }
 
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.doc.has_attribute(self.node_id, name)
+    }
+
     pub fn get_tag_name(&self) -> &str {
         self.doc.get_tag_name(self.node_id)
+    }
+
+    // ─── DOM Level 1 Core: the Node interface's read surface ─────────
+    //
+    // A `Document`-kind handle answers this interface as the document it
+    // is — `nodeType` 9, one child, no parent — while the three methods
+    // above keep answering for its document element, which is what they
+    // have always done and what the committed trees call. Those are the
+    // two halves of §scxml-B-2-1's "corresponding DOM structure": the
+    // variable holds the document, and the element vocabulary reaches
+    // the root without a hop nobody's document writes.
+
+    pub fn node_type(&self) -> i64 {
+        if self.kind == XmlRefKind::Document {
+            return NODE_TYPE_DOCUMENT;
+        }
+        match self.doc.nodes.get(self.node_id).map(|n| n.node_type) {
+            Some(XmlNodeType::Element) | None => NODE_TYPE_ELEMENT,
+            Some(XmlNodeType::Pcdata) => NODE_TYPE_TEXT,
+            Some(XmlNodeType::Cdata) => NODE_TYPE_CDATA_SECTION,
+        }
+    }
+
+    pub fn node_name(&self) -> String {
+        match self.node_type() {
+            NODE_TYPE_DOCUMENT => "#document".to_string(),
+            NODE_TYPE_TEXT => "#text".to_string(),
+            NODE_TYPE_CDATA_SECTION => "#cdata-section".to_string(),
+            _ => self.get_tag_name().to_string(),
+        }
+    }
+
+    /// `Node.nodeValue` — character data's content, and nothing for an
+    /// element or the document, which DOM Level 1 Core gives null.
+    pub fn node_value(&self) -> Option<String> {
+        match self.node_type() {
+            NODE_TYPE_TEXT | NODE_TYPE_CDATA_SECTION => self
+                .doc
+                .nodes
+                .get(self.node_id)
+                .map(|n| n.text.clone())
+                .or(Some(String::new())),
+            _ => None,
+        }
+    }
+
+    /// `Element.tagName` — the same string SCE's own `getTagName()`
+    /// returns, under the name DOM Level 1 Core gives it. Character data
+    /// has no tag name; the document answers for its document element,
+    /// as the method does.
+    pub fn tag_name(&self) -> Option<String> {
+        match self.node_type() {
+            NODE_TYPE_TEXT | NODE_TYPE_CDATA_SECTION => None,
+            _ => Some(self.get_tag_name().to_string()),
+        }
+    }
+
+    pub fn parent_node(&self) -> Option<Self> {
+        if self.kind == XmlRefKind::Document {
+            return None;
+        }
+        match self.doc.nodes.get(self.node_id).and_then(|n| n.parent) {
+            Some(parent_id) => Some(self.node_at(parent_id)),
+            // The root element's parent is the document — DOM Level 1
+            // Core 1.3's "Document" is the parent of its documentElement
+            // — and the handle for it is the one every `<data>` variable
+            // already holds.
+            None => Some(Self {
+                doc: self.doc.clone(),
+                node_id: self.node_id,
+                kind: XmlRefKind::Document,
+            }),
+        }
+    }
+
+    pub fn child_node_ids(&self) -> Vec<usize> {
+        if self.kind == XmlRefKind::Document {
+            return vec![self.node_id];
+        }
+        self.doc.child_ids(self.node_id)
+    }
+
+    pub fn first_child(&self) -> Option<Self> {
+        if self.kind == XmlRefKind::Document {
+            return Some(self.node_at(self.node_id));
+        }
+        let id = self.doc.nodes.get(self.node_id)?.first_child?;
+        Some(self.node_at(id))
+    }
+
+    pub fn last_child(&self) -> Option<Self> {
+        if self.kind == XmlRefKind::Document {
+            return Some(self.node_at(self.node_id));
+        }
+        Some(self.node_at(self.doc.last_child(self.node_id)?))
+    }
+
+    pub fn next_sibling(&self) -> Option<Self> {
+        if self.kind == XmlRefKind::Document {
+            return None;
+        }
+        let id = self.doc.nodes.get(self.node_id)?.next_sibling?;
+        Some(self.node_at(id))
+    }
+
+    pub fn previous_sibling(&self) -> Option<Self> {
+        if self.kind == XmlRefKind::Document {
+            return None;
+        }
+        Some(self.node_at(self.doc.previous_sibling(self.node_id)?))
+    }
+
+    pub fn has_child_nodes(&self) -> bool {
+        if self.kind == XmlRefKind::Document {
+            return true;
+        }
+        self.doc
+            .nodes
+            .get(self.node_id)
+            .is_some_and(|n| n.first_child.is_some())
+    }
+
+    /// `Document.documentElement` — nothing on a node that is not the
+    /// document, which is how a document can tell the two handles apart.
+    pub fn document_element(&self) -> Option<Self> {
+        if self.kind != XmlRefKind::Document {
+            return None;
+        }
+        Some(self.node_at(self.node_id))
+    }
+
+    pub fn text_content(&self) -> String {
+        self.doc.text_content(self.node_id)
     }
 }
 
@@ -656,20 +916,58 @@ impl mlua::UserData for XmlRef {
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("getElementsByTagName", |lua, this, tag: String| {
             let ids = this.get_elements_by_tag_name(&tag);
-            let table = lua.create_table()?;
-            for (i, &id) in ids.iter().enumerate() {
-                let elem = this.child_element(id);
-                table.raw_set(i + 1, elem)?;
-            }
-            Ok(table)
+            node_list(lua, this, &ids)
         });
         methods.add_method("getAttribute", |_, this, name: String| {
             Ok(this.get_attribute(&name).to_string())
         });
+        methods.add_method("hasAttribute", |_, this, name: String| {
+            Ok(this.has_attribute(&name))
+        });
         methods.add_method("getTagName", |_, this, ()| {
             Ok(this.get_tag_name().to_string())
         });
+        methods.add_method("hasChildNodes", |_, this, ()| Ok(this.has_child_nodes()));
     }
+
+    /// The Node interface's read surface, as fields.
+    ///
+    /// A property is what an author writes — `d.firstChild.nodeName`,
+    /// not `d.getFirstChild()` — and the frontend emits a member read as
+    /// a Lua field read, so a field is what has to answer. Before these,
+    /// every one of them was a nil index on this userdata.
+    fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
+        fields.add_field_method_get("nodeType", |_, this| Ok(this.node_type()));
+        fields.add_field_method_get("nodeName", |_, this| Ok(this.node_name()));
+        fields.add_field_method_get("nodeValue", |_, this| Ok(this.node_value()));
+        fields.add_field_method_get("data", |_, this| Ok(this.node_value()));
+        fields.add_field_method_get("tagName", |_, this| Ok(this.tag_name()));
+        fields.add_field_method_get("textContent", |_, this| Ok(this.text_content()));
+        fields.add_field_method_get("parentNode", |_, this| Ok(this.parent_node()));
+        fields.add_field_method_get("firstChild", |_, this| Ok(this.first_child()));
+        fields.add_field_method_get("lastChild", |_, this| Ok(this.last_child()));
+        fields.add_field_method_get("nextSibling", |_, this| Ok(this.next_sibling()));
+        fields.add_field_method_get("previousSibling", |_, this| Ok(this.previous_sibling()));
+        fields.add_field_method_get("documentElement", |_, this| Ok(this.document_element()));
+        fields.add_field_method_get("childNodes", |lua, this| {
+            let ids = this.child_node_ids();
+            node_list(lua, this, &ids)
+        });
+    }
+}
+
+/// A NodeList: the host language's own array, 1-based because the
+/// frontend rewrites `[0]` to `[1]` upstream and `length` to Lua's `#`.
+///
+/// Every one of the seven bindings hands back its language's array for
+/// the same reason, which is why `item(i)` is refused by the frontend
+/// rather than implemented here — there is no receiver for it to bind.
+fn node_list(lua: &mlua::Lua, this: &XmlRef, ids: &[usize]) -> mlua::Result<mlua::Table> {
+    let table = lua.create_table()?;
+    for (i, &id) in ids.iter().enumerate() {
+        table.raw_set(i + 1, this.node_at(id))?;
+    }
+    Ok(table)
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -776,6 +1074,117 @@ mod tests {
         assert_eq!(books.len(), 2);
         assert_eq!(xref.doc.get_attribute(books[0], "title"), "a");
         assert_eq!(xref.doc.get_attribute(books[1], "title"), "b");
+    }
+
+    // ─── DOM Level 1 Core read surface ──────────────────────────────
+
+    /// The tree the author walks has no whitespace-only text in it, so
+    /// `firstChild` of a pretty-printed document is its first element.
+    ///
+    /// This is the pugixml `parse_default` alignment: while
+    /// `getElementsByTagName` was the only reader the difference could
+    /// not be seen, and `<books>\n  <book/>` would otherwise answer
+    /// `firstChild.nodeName == "#text"` here and `"book"` on the cpp
+    /// reference backend.
+    #[test]
+    fn whitespace_between_elements_is_not_a_node() {
+        let doc = XmlDoc::parse("<books xmlns=\"\">\n  <book title=\"t1\"/>\n</books>");
+        assert!(doc.is_valid(), "{:?}", doc.error);
+        let root = XmlRef::document(Arc::new(doc)).unwrap();
+        let element = root.document_element().expect("document element");
+        let first = element.first_child().expect("a first child");
+        assert_eq!(first.node_name(), "book");
+        assert_eq!(first.node_type(), NODE_TYPE_ELEMENT);
+        assert_eq!(element.child_node_ids().len(), 1);
+        assert_eq!(element.text_content(), "");
+    }
+
+    /// The document handle answers the Node interface as a document and
+    /// the Element vocabulary for its document element.
+    #[test]
+    fn the_document_handle_answers_both_interfaces() {
+        let doc = XmlDoc::parse("<books count=\"2\"><book title=\"t1\"/></books>");
+        let root = XmlRef::document(Arc::new(doc)).unwrap();
+        assert_eq!(root.node_type(), NODE_TYPE_DOCUMENT);
+        assert_eq!(root.node_name(), "#document");
+        assert_eq!(root.node_value(), None);
+        assert!(root.parent_node().is_none(), "a document has no parent");
+        assert!(root.next_sibling().is_none());
+        assert!(root.has_child_nodes());
+        assert_eq!(root.child_node_ids().len(), 1);
+        // The element vocabulary the three shipped methods already
+        // delegated, plus the property that spells the same thing.
+        assert_eq!(root.get_tag_name(), "books");
+        assert_eq!(root.tag_name().as_deref(), Some("books"));
+        assert_eq!(root.get_attribute("count"), "2");
+        assert!(root.has_attribute("count"));
+        assert!(!root.has_attribute("title"));
+        let element = root.document_element().expect("document element");
+        assert_eq!(element.node_type(), NODE_TYPE_ELEMENT);
+        assert!(
+            element.document_element().is_none(),
+            "only the document handle carries documentElement"
+        );
+    }
+
+    /// Character data reports itself as DOM Level 1 Core does, and the
+    /// two kinds are distinguishable — which is what `nodeType` is for.
+    #[test]
+    fn character_data_reports_its_own_kind() {
+        let doc = XmlDoc::parse("<p>before<b>bold</b><![CDATA[raw & <kept>]]></p>");
+        assert!(doc.is_valid(), "{:?}", doc.error);
+        let root = XmlRef::document(Arc::new(doc)).unwrap();
+        let p = root.document_element().unwrap();
+        let text = p.first_child().unwrap();
+        assert_eq!(text.node_type(), NODE_TYPE_TEXT);
+        assert_eq!(text.node_name(), "#text");
+        assert_eq!(text.node_value().as_deref(), Some("before"));
+        assert_eq!(text.tag_name(), None, "character data has no tag name");
+        assert!(!text.has_child_nodes());
+
+        let bold = text.next_sibling().unwrap();
+        assert_eq!(bold.node_name(), "b");
+        assert_eq!(bold.text_content(), "bold");
+        assert_eq!(
+            bold.previous_sibling().map(|n| n.node_name()),
+            Some("#text".to_string())
+        );
+
+        let cdata = p.last_child().unwrap();
+        assert_eq!(cdata.node_type(), NODE_TYPE_CDATA_SECTION);
+        assert_eq!(cdata.node_name(), "#cdata-section");
+        assert_eq!(cdata.node_value().as_deref(), Some("raw & <kept>"));
+        assert!(cdata.next_sibling().is_none());
+
+        // §DOM-3 textContent is every descendant's character data in
+        // document order, CDATA included.
+        assert_eq!(p.text_content(), "beforeboldraw & <kept>");
+        // The root element's parent is the document, not nothing.
+        assert_eq!(
+            p.parent_node().map(|n| n.node_type()),
+            Some(NODE_TYPE_DOCUMENT)
+        );
+        assert_eq!(
+            bold.parent_node().map(|n| n.node_name()),
+            Some("p".to_string())
+        );
+    }
+
+    /// A node handle keeps its tree alive on its own.
+    ///
+    /// The `Arc` is what makes that true here; the cpp reference backend
+    /// stores only the element in `DOMObjectData` / `LuaDOMElementUD`,
+    /// which is the same shape without the ownership.
+    #[test]
+    fn a_node_handle_outlives_the_handle_it_came_from() {
+        let leaf = {
+            let doc = XmlDoc::parse("<root><leaf title=\"t\"/></root>");
+            let root = XmlRef::document(Arc::new(doc)).unwrap();
+            let ids = root.get_elements_by_tag_name("leaf");
+            root.node_at(ids[0])
+        };
+        assert_eq!(leaf.node_name(), "leaf");
+        assert_eq!(leaf.get_attribute("title"), "t");
     }
 
     #[test]

@@ -28,7 +28,8 @@
 // claim is made by lowering an expression and reading the answer.
 
 use sce_build::ecmascript::builtins::{
-    JSON_MEMBERS, LOWERED_METHODS, MATH_FUNCTIONS, OBJECT_MEMBERS, UNIMPLEMENTED_METHODS,
+    DOM_METHODS, DOM_UNIMPLEMENTED_METHODS, JSON_MEMBERS, LOWERED_METHODS, MATH_FUNCTIONS,
+    OBJECT_MEMBERS, UNIMPLEMENTED_METHODS,
 };
 use sce_build::ecmascript::{to_lua_value, DocumentScope, ExprError};
 use std::collections::BTreeSet;
@@ -112,6 +113,7 @@ fn both_vocabularies_are_sorted_and_unique() {
         ("JSON_MEMBERS", JSON_MEMBERS),
         ("OBJECT_MEMBERS", OBJECT_MEMBERS),
         ("MATH_FUNCTIONS", MATH_FUNCTIONS),
+        ("DOM_METHODS", DOM_METHODS),
     ] {
         let mut sorted = list.to_vec();
         sorted.sort_unstable();
@@ -122,17 +124,19 @@ fn both_vocabularies_are_sorted_and_unique() {
             "{label} is not sorted or has a duplicate"
         );
     }
-    // `UNIMPLEMENTED_METHODS` is grouped by owning prototype rather
-    // than sorted, so only uniqueness is asserted for it.
-    let mut unique = UNIMPLEMENTED_METHODS.to_vec();
-    unique.sort_unstable();
-    let before = unique.len();
-    unique.dedup();
-    assert_eq!(
-        before,
-        unique.len(),
-        "UNIMPLEMENTED_METHODS has a duplicate"
-    );
+    // `UNIMPLEMENTED_METHODS` is grouped by owning prototype and
+    // `DOM_UNIMPLEMENTED_METHODS` by owning interface, rather than
+    // sorted, so only uniqueness is asserted for those two.
+    for (label, list) in [
+        ("UNIMPLEMENTED_METHODS", UNIMPLEMENTED_METHODS),
+        ("DOM_UNIMPLEMENTED_METHODS", DOM_UNIMPLEMENTED_METHODS),
+    ] {
+        let mut unique = list.to_vec();
+        unique.sort_unstable();
+        let before = unique.len();
+        unique.dedup();
+        assert_eq!(before, unique.len(), "{label} has a duplicate");
+    }
 }
 
 // ── The emitter agrees ────────────────────────────────────────────
@@ -176,6 +180,117 @@ fn every_unimplemented_method_is_refused_with_its_alternatives() {
             Ok(lua) => panic!("`x.{method}()` lowered to {lua} instead of being refused"),
         }
     }
+}
+
+// ── The DOM vocabulary is one decision too ────────────────────────
+
+/// The four method vocabularies are pairwise disjoint.
+///
+/// A name lowered *and* refused is the silent-in-the-other-direction
+/// defect the sibling test above guards; a name in both refusal lists
+/// would carry whichever candidate set the reader of
+/// `unsupported_method` happened to check first, which is a coin toss
+/// dressed up as a fix.
+#[test]
+fn the_four_method_vocabularies_are_disjoint() {
+    let lists: [(&str, &[&str]); 4] = [
+        ("LOWERED_METHODS", LOWERED_METHODS),
+        ("UNIMPLEMENTED_METHODS", UNIMPLEMENTED_METHODS),
+        ("DOM_METHODS", DOM_METHODS),
+        ("DOM_UNIMPLEMENTED_METHODS", DOM_UNIMPLEMENTED_METHODS),
+    ];
+    for (i, (left_name, left)) in lists.iter().enumerate() {
+        for (right_name, right) in lists.iter().skip(i + 1) {
+            let right_set: BTreeSet<&str> = right.iter().copied().collect();
+            let overlap: Vec<&str> = left
+                .iter()
+                .copied()
+                .filter(|name| right_set.contains(name))
+                .collect();
+            assert!(
+                overlap.is_empty(),
+                "{left_name} and {right_name} both list {overlap:?}"
+            );
+        }
+    }
+}
+
+/// Every DOM method reaches the receiver-binding call the bindings
+/// expose, rather than the field call an unknown name produces.
+///
+/// The `:` is the whole assertion. A DOM handle is userdata with a
+/// metatable in five backends and a bound-method object in the other
+/// two, so `d.getAttribute(name)` — the field-call shape — passes the
+/// handle nowhere and dies at runtime, which is exactly how
+/// `words.map(...)` failed.
+#[test]
+fn every_dom_method_binds_its_receiver() {
+    for &method in DOM_METHODS {
+        let lua = to_lua_value(&format!("x.{method}()"), &probes())
+            .unwrap_or_else(|e| panic!("`x.{method}()` is a DOM method but was refused: {e}"));
+        assert_eq!(
+            lua,
+            format!("x:{method}()"),
+            "`x.{method}()` did not lower to a receiver-binding call"
+        );
+    }
+}
+
+/// Every DOM method SCE does not carry is refused, and the refusal
+/// offers the DOM vocabulary rather than the string vocabulary.
+#[test]
+fn every_unimplemented_dom_method_is_refused_against_the_dom_surface() {
+    let dom_candidates: BTreeSet<String> = DOM_METHODS.iter().map(|m| format!(".{m}()")).collect();
+    for &method in DOM_UNIMPLEMENTED_METHODS {
+        match lower_method(method) {
+            Err(ExprError::UnsupportedBuiltin { name, available }) => {
+                assert_eq!(name, format!(".{method}()"));
+                let offered: BTreeSet<String> = available.into_iter().collect();
+                assert_eq!(
+                    offered, dom_candidates,
+                    "`.{method}()` was refused against the wrong vocabulary"
+                );
+            }
+            Err(other) => panic!("`x.{method}()` was refused as {other} rather than as a builtin"),
+            Ok(lua) => panic!("`x.{method}()` lowered to {lua} instead of being refused"),
+        }
+    }
+}
+
+/// The DOM read surface is reachable as a property read on any handle.
+///
+/// This is the half that needed no emitter arm and had no backend:
+/// measured 2026-08-18, `var1.tagName` lowered to `var1.tagName` and
+/// every engine answered nil. The lowering is what this asserts; that
+/// each of the seven bindings answers it is asserted where the binding
+/// lives, and end to end by `integration_resources/dom_read_surface`.
+#[test]
+fn the_dom_read_surface_lowers_as_a_property_read() {
+    for property in [
+        "nodeName",
+        "nodeType",
+        "nodeValue",
+        "parentNode",
+        "childNodes",
+        "firstChild",
+        "lastChild",
+        "nextSibling",
+        "previousSibling",
+        "textContent",
+        "tagName",
+        "data",
+        "documentElement",
+    ] {
+        let lua = to_lua_value(&format!("x.{property}"), &probes())
+            .unwrap_or_else(|e| panic!("`x.{property}` is a DOM property but was refused: {e}"));
+        assert_eq!(lua, format!("x.{property}"));
+    }
+    // `length` is the one member of the surface this datamodel already
+    // owned: ECMA-262 gives it to strings and arrays, so it is lowered
+    // to Lua's `#` for every receiver and a NodeList is an array in
+    // each of the seven bindings for exactly that reason.
+    let lua = to_lua_value("x.childNodes.length", &probes()).expect("NodeList length");
+    assert_eq!(lua, "#x.childNodes");
 }
 
 /// A method the author's own object carries is still an ordinary field

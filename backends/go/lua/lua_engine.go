@@ -19,8 +19,8 @@ import (
 	"strings"
 	"sync"
 
-	sce "github.com/newmassrael/sce-go-runtime"
 	lua "github.com/Shopify/go-lua"
+	sce "github.com/newmassrael/sce-go-runtime"
 )
 
 //go:embed json_builtins.lua
@@ -36,9 +36,9 @@ var ecmaSemanticsLua string
 
 // session holds per-state-machine Lua state.
 type session struct {
-	l              *lua.State
-	declaredVars   map[string]bool
-	stateQueryCB   func(string) bool
+	l            *lua.State
+	declaredVars map[string]bool
+	stateQueryCB func(string) bool
 }
 
 // LuaEngine implements sce.IScriptEngine using Shopify/go-lua.
@@ -317,48 +317,176 @@ func (e *LuaEngine) pushDOMTable(sess *session, xml string) {
 	e.pushDOMNode(sess, doc, doc.Root, true)
 }
 
-// pushDOMNode pushes a Lua table for a single tree node (document or
+// pushDOMNode pushes a Lua handle for a single tree node (document or
 // element).  `isDocument` toggles cpp `XMLDocument`-vs-`XMLElement`
 // semantics: getElementsByTagName recurses from the root inclusively
 // for documents, descends into children only for elements.
+//
+// §scxml-B-2-1 obliges the Processor to create "the corresponding DOM
+// structure", so the handle carries DOM Level 1 Core's read surface and
+// not only the calls the W3C IRP suite happens to read.  The members are
+// served by an `__index` function rather than set as fields, and they
+// have to be: `parentNode` and `childNodes` point at each other, so
+// materialising either eagerly would walk the tree until the stack ran
+// out.  The closure captures (*XmlDoc, nodeID), which keeps the arena
+// alive for as long as any Lua reference exists — equivalent to cpp's
+// `shared_ptr` and Rust's `Arc<XmlDoc>`.
 func (e *LuaEngine) pushDOMNode(sess *session, doc *XmlDoc, nodeID int, isDocument bool) {
 	l := sess.l
-	l.NewTable()
+	l.NewTable() // the handle: identity lives in the metatable's closure
 
-	// getElementsByTagName(tag) -> 1-based array of element tables
-	// (ECMAScript [0]/[1] are lowered to Lua [1]/[2] by the
-	// transformer upstream).
+	l.NewTable() // its metatable
 	l.PushGoFunction(func(l *lua.State) int {
-		tag, _ := l.ToString(2)
-		var ids []int
-		if isDocument {
-			ids = doc.GetElementsByTagName(tag)
-		} else {
-			ids = doc.GetElementsByTagNameFrom(nodeID, tag)
+		key, _ := l.ToString(2)
+		switch key {
+		// ── methods ──
+		//
+		// Pushed as closures on demand, and each reads its argument at
+		// stack index 2 because a document writes `d:getAttribute(x)`:
+		// the transformer lowers the DOM vocabulary to a colon call, so
+		// the handle itself arrives as argument 1.
+		case "getElementsByTagName":
+			l.PushGoFunction(func(l *lua.State) int {
+				tag, _ := l.ToString(2)
+				var ids []int
+				if isDocument {
+					ids = doc.GetElementsByTagName(tag)
+				} else {
+					ids = doc.GetElementsByTagNameFrom(nodeID, tag)
+				}
+				e.pushDOMNodeList(sess, doc, ids)
+				return 1
+			})
+		case "getAttribute":
+			l.PushGoFunction(func(l *lua.State) int {
+				attrName, _ := l.ToString(2)
+				l.PushString(doc.GetAttribute(nodeID, attrName))
+				return 1
+			})
+		case "hasAttribute":
+			l.PushGoFunction(func(l *lua.State) int {
+				attrName, _ := l.ToString(2)
+				l.PushBoolean(doc.HasAttribute(nodeID, attrName))
+				return 1
+			})
+		case "getTagName":
+			l.PushGoFunction(func(l *lua.State) int {
+				l.PushString(doc.GetTagName(nodeID))
+				return 1
+			})
+		case "hasChildNodes":
+			l.PushGoFunction(func(l *lua.State) int {
+				// A document always has one child: its document element.
+				l.PushBoolean(isDocument || doc.FirstChild(nodeID) != xmlNoChild)
+				return 1
+			})
+
+		// ── the Node interface, as properties ──
+		case "nodeType":
+			if isDocument {
+				l.PushInteger(DomNodeTypeDocument)
+			} else {
+				l.PushInteger(doc.NodeType(nodeID))
+			}
+		case "nodeName":
+			if isDocument {
+				l.PushString("#document")
+			} else {
+				l.PushString(doc.NodeName(nodeID))
+			}
+		// DOM Level 1 Core gives an element and a document a null
+		// nodeValue; `data` is CharacterData's own name for the value.
+		case "nodeValue", "data":
+			if isDocument || !doc.HasNodeValue(nodeID) {
+				l.PushNil()
+			} else {
+				l.PushString(doc.NodeValue(nodeID))
+			}
+		case "tagName":
+			if !isDocument && doc.HasNodeValue(nodeID) {
+				l.PushNil() // character data has no tag name
+			} else {
+				l.PushString(doc.GetTagName(nodeID))
+			}
+		case "textContent":
+			l.PushString(doc.TextContent(nodeID))
+		case "childNodes":
+			if isDocument {
+				e.pushDOMNodeList(sess, doc, []int{nodeID})
+			} else {
+				e.pushDOMNodeList(sess, doc, doc.ChildIDs(nodeID))
+			}
+		case "firstChild":
+			if isDocument {
+				e.pushDOMNode(sess, doc, nodeID, false)
+			} else {
+				e.pushDOMNodeOrNil(sess, doc, doc.FirstChild(nodeID))
+			}
+		case "lastChild":
+			if isDocument {
+				e.pushDOMNode(sess, doc, nodeID, false)
+			} else {
+				e.pushDOMNodeOrNil(sess, doc, doc.LastChild(nodeID))
+			}
+		case "nextSibling":
+			if isDocument {
+				l.PushNil()
+			} else {
+				e.pushDOMNodeOrNil(sess, doc, doc.NextSibling(nodeID))
+			}
+		case "previousSibling":
+			if isDocument {
+				l.PushNil()
+			} else {
+				e.pushDOMNodeOrNil(sess, doc, doc.PreviousSibling(nodeID))
+			}
+		case "parentNode":
+			switch {
+			case isDocument:
+				l.PushNil()
+			case doc.Parent(nodeID) == xmlNoChild:
+				// The document element's parent is the document — DOM
+				// Level 1 Core 1.3 — which is the handle the variable
+				// already holds.
+				e.pushDOMNode(sess, doc, nodeID, true)
+			default:
+				e.pushDOMNode(sess, doc, doc.Parent(nodeID), false)
+			}
+		// Only the document handle carries documentElement, which is how
+		// a document can tell the two kinds apart without nodeType.
+		case "documentElement":
+			if isDocument {
+				e.pushDOMNode(sess, doc, nodeID, false)
+			} else {
+				l.PushNil()
+			}
+		default:
+			l.PushNil()
 		}
-		l.NewTable()
-		for i, id := range ids {
-			e.pushDOMNode(sess, doc, id, false)
-			l.RawSetInt(-2, i+1)
-		}
 		return 1
 	})
-	l.SetField(-2, "getElementsByTagName")
+	l.SetField(-2, "__index")
+	l.SetMetaTable(-2)
+}
 
-	// getAttribute(name) -> string ("" on miss, matches cpp)
-	l.PushGoFunction(func(l *lua.State) int {
-		attrName, _ := l.ToString(2)
-		l.PushString(doc.GetAttribute(nodeID, attrName))
-		return 1
-	})
-	l.SetField(-2, "getAttribute")
+// pushDOMNodeList pushes a NodeList: a 1-based Lua array, because the
+// frontend rewrites `[0]` to `[1]` and `length` to Lua's `#`.  That is
+// also why `item(i)` is refused by the frontend rather than implemented
+// here — a host-language array has no receiver for it to bind.
+func (e *LuaEngine) pushDOMNodeList(sess *session, doc *XmlDoc, ids []int) {
+	sess.l.NewTable()
+	for i, id := range ids {
+		e.pushDOMNode(sess, doc, id, false)
+		sess.l.RawSetInt(-2, i+1)
+	}
+}
 
-	// getTagName() -> string ("" on non-element, matches cpp)
-	l.PushGoFunction(func(l *lua.State) int {
-		l.PushString(doc.GetTagName(nodeID))
-		return 1
-	})
-	l.SetField(-2, "getTagName")
+func (e *LuaEngine) pushDOMNodeOrNil(sess *session, doc *XmlDoc, nodeID int) {
+	if nodeID == xmlNoChild {
+		sess.l.PushNil()
+		return
+	}
+	e.pushDOMNode(sess, doc, nodeID, false)
 }
 
 // SetVariableAsDOM sets a variable as an XML DOM table with getElementsByTagName/getAttribute methods.
@@ -411,7 +539,7 @@ func (e *LuaEngine) SetStateQueryCallback(sessionID string, cb func(stateID stri
 // `lua_isnumber`, and it is the same coercion `tonumber` performs — so asking
 // it first handed every numeric string back to the host as an integer. W3C
 // SCXML B.2 makes that a datamodel defect rather than a formatting one:
-// `1 + ''` is the string "1" in ECMAScript, and a host that receives 1 cannot
+// `1 + ”` is the string "1" in ECMAScript, and a host that receives 1 cannot
 // tell it from arithmetic. Measured 2026-08-16 against
 // `tests/ecmascript/ecma262_semantics.json`, which is also where it is pinned.
 func (e *LuaEngine) luaToGo(l *lua.State, idx int) interface{} {

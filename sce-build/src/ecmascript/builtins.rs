@@ -132,10 +132,108 @@ pub const LOWERED_METHODS: &[&str] = &[
     "toUpperCase",
 ];
 
-/// Methods SCE's XML DOM objects carry (`LuaDOMBinding`), lowered with
-/// Lua's `:` call syntax because they are the only values in this
-/// datamodel whose methods bind a receiver.
-pub const DOM_METHODS: &[&str] = &["getElementsByTagName", "getAttribute", "getTagName"];
+/// Methods SCE's XML DOM objects carry (`LuaDOMBinding` and its six
+/// mirrors), lowered with Lua's `:` call syntax because they are the only
+/// values in this datamodel whose methods bind a receiver.
+///
+/// The ECMAScript data model appendix obliges the Processor to *"create
+/// the corresponding DOM structure"* for XML — once for a `<data>`
+/// element's content and once for an arriving event payload — so the
+/// vocabulary a handle carries is DOM Level 1 Core's, not a set chosen
+/// from what the W3C IRP suite happens to read. Measured 2026-08-18, that suite reads exactly
+/// two of these names — which is why three of them were all any backend
+/// implemented while `d.tagName`, `d.childNodes` and `d.firstChild`
+/// reached the engine as a nil index with `status: "ok"` at generation
+/// time.
+///
+/// `getTagName` is SCE's own — DOM Level 1 spells the same thing as the
+/// `tagName` *property* — and stays because committed trees call it.
+/// The property is what an author writes, and the read surface a handle
+/// carries as properties (`nodeName`, `nodeType`, `nodeValue`,
+/// `parentNode`, `childNodes`, `firstChild`, `lastChild`,
+/// `nextSibling`, `previousSibling`, `textContent`, `tagName`, `data`,
+/// `documentElement`, `length`) needs no arm here: a member read is
+/// already emitted as a field read, so what those names needed was a
+/// backend that answers them. `docs/SCE_ACCEPTED_SUBSET.md` §1 states
+/// the whole surface once; this list is only the callable half of it.
+pub const DOM_METHODS: &[&str] = &[
+    "getAttribute",
+    "getElementsByTagName",
+    "getTagName",
+    "hasAttribute",
+    "hasChildNodes",
+];
+
+/// DOM interface methods SCE's handles do not carry.
+///
+/// [`UNIMPLEMENTED_METHODS`]' reasoning, one specification over: every
+/// entry is a method a DOM interface defines, so every entry is a name
+/// an author reading the appendix's *"corresponding DOM structure"* is
+/// entitled to expect, and answering it with a nil index teaches
+/// nothing. The candidates the refusal carries are [`DOM_METHODS`]
+/// rather than [`LOWERED_METHODS`], because a document that wrote
+/// `d.setAttribute(...)` is holding a DOM handle and the string
+/// vocabulary is no help to it.
+///
+/// Every entry is also a *write*, a *creation*, or a namespace-aware
+/// read — the three things this surface deliberately does not do. A DOM
+/// built from `<data>` content or from an arriving `_event.data` is the
+/// document that was parsed; the appendix's location expressions are how
+/// this datamodel changes values, and a mutation applied to a handle
+/// would change a tree nothing reads back. So the list is closed by that
+/// reasoning rather than by enumeration of a level: a *read* this
+/// surface lacks is a gap to fill in the seven bindings, and a write is
+/// a refusal.
+pub const DOM_UNIMPLEMENTED_METHODS: &[&str] = &[
+    // Node — DOM Level 1 Core 1.2
+    "appendChild",
+    "cloneNode",
+    "insertBefore",
+    "removeChild",
+    "replaceChild",
+    // Element / Attr — 1.2
+    "getAttributeNode",
+    "removeAttribute",
+    "removeAttributeNode",
+    "setAttribute",
+    "setAttributeNode",
+    // Document — 1.2, the factory half
+    "createAttribute",
+    "createCDATASection",
+    "createComment",
+    "createDocumentFragment",
+    "createElement",
+    "createProcessingInstruction",
+    "createTextNode",
+    "getElementById",
+    "importNode",
+    // CharacterData / Text — 1.2
+    "appendData",
+    "deleteData",
+    "insertData",
+    "replaceData",
+    "splitText",
+    "substringData",
+    // NodeList / NamedNodeMap — 1.2. `item` is here rather than
+    // implemented because a NodeList is the host language's own array in
+    // every one of the seven bindings — a Lua table in five, a JS array
+    // in two — so `[i]` reads it and `length` measures it, and there is
+    // nothing for a method to bind a receiver to.
+    "getNamedItem",
+    "item",
+    "removeNamedItem",
+    "setNamedItem",
+    // DOM Level 2 Core — the namespace-aware and feature-query surface
+    "getAttributeNS",
+    "getAttributeNodeNS",
+    "getElementsByTagNameNS",
+    "hasAttributeNS",
+    "hasAttributes",
+    "isSupported",
+    "removeAttributeNS",
+    "setAttributeNS",
+    "setAttributeNodeNS",
+];
 
 /// ECMA-262's standard prototype methods that this datamodel does not
 /// implement.
@@ -628,11 +726,21 @@ pub fn uncallable_property(
 
 /// The refusal for a bare method name, or `None` when the emitter can
 /// lower it or the name is the author's own.
+///
+/// Two vocabularies answer here, and which one matched decides the
+/// candidates. A document that wrote `.map()` is holding a value and
+/// wants to know what this datamodel does to values; one that wrote
+/// `.setAttribute()` is holding a DOM handle, and offering it
+/// `.substring()` would repair one refusal into another.
 pub fn unsupported_method(method: &str) -> Option<crate::forge::error::ExprError> {
-    if !UNIMPLEMENTED_METHODS.contains(&method) {
+    let vocabulary: &[&str] = if UNIMPLEMENTED_METHODS.contains(&method) {
+        LOWERED_METHODS
+    } else if DOM_UNIMPLEMENTED_METHODS.contains(&method) {
+        DOM_METHODS
+    } else {
         return None;
-    }
-    let mut available: Vec<String> = LOWERED_METHODS.iter().map(|m| format!(".{m}()")).collect();
+    };
+    let mut available: Vec<String> = vocabulary.iter().map(|m| format!(".{m}()")).collect();
     available.sort();
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
         name: format!(".{method}()"),
