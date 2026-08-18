@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c990b384ae6d27b45cff45f6fb75ecde882d112d0f07d342d547b178e6a4257
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -39,6 +39,11 @@ class XmlDataIsADomTreeStateMachine(
 ) : StateMachineEngine<XmlDataIsADomTreeState, XmlDataIsADomTreeEvent>(scriptEngine) {
 
     override val initialState: XmlDataIsADomTreeState = XmlDataIsADomTreeState.Reading
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
 
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {

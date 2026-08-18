@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -33,6 +33,11 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
 ) : StateMachineEngine<DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent>(scriptEngine) {
 
     override val initialState: DonedataLocalInvokeSceSynthInvokeInvParamState = DonedataLocalInvokeSceSynthInvokeInvParamState.Done
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
 
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {

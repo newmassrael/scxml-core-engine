@@ -10,11 +10,16 @@
 # published it only on the CLI generate manifest — `sce_build::compile_scxml`,
 # the route both downstream consumers use from `build.rs`, returns `()`.
 #
-# The repair is one verdict with three carriers: the analyzer writes
-# `needs_tick_driving` from the method that owns the union, the Rust template
-# emits it as `StatePolicy::NEEDS_EVENT_SCHEDULER`, and the engine counts the
-# macrosteps taken before any `tick`. Each case below removes one carrier, or
-# widens/narrows the verdict, and each must red.
+# The repair is one verdict with many carriers: the analyzer writes
+# `needs_tick_driving` from the method that owns the union, each backend's
+# template carries it into the emitted artifact in that language's spelling, and
+# the engine counts the macrosteps taken before any `tick`. Each case below
+# removes one carrier, or widens/narrows the verdict, and each must red.
+#
+# C11 is the one backend whose answer is a different question, and that is
+# asserted rather than assumed: it reaches an invoked child from inside its own
+# macrostep, so its parent needs a `_tick` only for the parent's own delayed
+# sends. The last case holds that apart from the union.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -23,9 +28,14 @@ mutation_tests --workspace --test tick_requirement_reaches_the_consumer --test d
 # The analyzer decides, the model owns the union, the template carries it into
 # the emitted policy, and the engine is where the silence was.
 mutation_targets sce-build/src/analyzer.rs sce-build/src/model.rs backends/rust/runtime/src/engine.rs
-# Read at generation time rather than compiled in: the template is a file the
-# codegen opens.
-mutation_runtime_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+# Read at generation time rather than compiled in: the templates are files the
+# codegen opens. One per backend a consumer can generate — the answer is only
+# useful where that consumer can read it.
+mutation_runtime_targets tools/codegen/templates/rust/state_machine.rs.jinja2 \
+    tools/codegen/templates/state_machine.jinja2 \
+    tools/codegen/templates/go/state_machine.go.jinja2 \
+    tools/codegen/templates/python/state_machine.py.jinja2 \
+    tools/codegen/templates/kotlin/state_machine.kt.jinja2
 
 # ── The requirement stops reaching the emitted policy ───────────────
 #
@@ -103,4 +113,52 @@ mutation_case "every machine is treated as scheduler-driven" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      "        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {",
      "        if !self.tick_has_run {")
+PY
+
+# ── The other five backends stop answering ─────────────────────────
+#
+# The defect this round repaid was the same in each: the generate manifest knew
+# and the generated artifact did not say. A backend that goes quiet again is a
+# consumer whose driving loop is back to guessing, so each carrier is its own
+# case rather than one case standing for five.
+
+mutation_case "the C++ policy stops declaring the requirement" <<'PY'
+edit("tools/codegen/templates/state_machine.jinja2",
+     "    static constexpr bool NEEDS_EVENT_SCHEDULER = {{ 'true' if model.needs_tick_driving else 'false' }};",
+     "    static constexpr bool NEEDS_EVENT_SCHEDULER = false;")
+PY
+
+mutation_case "the Go policy stops declaring the requirement" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     "\treturn {{ 'true' if model.needs_tick_driving else 'false' }}\n}",
+     "\treturn false\n}")
+PY
+
+mutation_case "the Python policy stops declaring the requirement" <<'PY'
+edit("tools/codegen/templates/python/state_machine.py.jinja2",
+     "        return {{ 'True' if model.needs_tick_driving else 'False' }}",
+     "        return False")
+PY
+
+mutation_case "the Kotlin machine stops declaring the requirement" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     "    override val needsEventScheduler: Boolean = {{ 'true' if model.needs_tick_driving else 'false' }}",
+     "    override val needsEventScheduler: Boolean = false")
+PY
+
+# ── …or answers the C11 question with the C++ one ───────────────────
+#
+# C11 reaches an invoked child from inside its own macrostep and picks the
+# child's `_step` or `_tick` accordingly, so its parent needs a `_tick` only for
+# its own delayed sends. Widening that to the union would emit an entry point
+# with nothing to do, which is the mirror of the defect: a declaration that does
+# not describe the machine.
+
+mutation_case "C11 emits a tick entry point for a parent that schedules nothing" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "    model.needs_tick_driving = model.needs_event_scheduler_driving();",
+     """    model.needs_tick_driving = model.needs_event_scheduler_driving();
+    if model.needs_tick_driving {
+        model.needs_event_scheduler = Some(true);
+    }""")
 PY

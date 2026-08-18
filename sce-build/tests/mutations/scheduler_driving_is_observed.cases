@@ -1,0 +1,78 @@
+# Mutation cases for "the C++ engine notices a host driving with the wrong
+# entry point".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/scheduler_driving_is_observed.cases`.
+#
+# Companion to `tick_requirement_reaches_the_consumer.cases`, which holds the
+# codegen side across all six backends. This file holds the C++ runtime: the
+# detection trait that lets a policy predating the constant keep compiling, and
+# the counter that turns a `step()`-only loop from a run that merely takes
+# forever into something a program can see.
+#
+# Measured 2026-08-18: the same delayed-send document driven with `step()` sits
+# in its initial state after two seconds and finishes immediately under
+# `tick()`, in C++ as in Go and Python.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^SchedulerDriving$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/include/core/StatePolicyConcepts.h
+# The suite each case reds — the round's own file, which drives real engines
+# rather than asserting over generated text.
+mutation_oracles tests/engine/SchedulerDrivingTest.cpp
+
+# ── The engine goes back to saying nothing ──────────────────────────
+
+mutation_case "the engine stops counting the unattended macrosteps" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "        if constexpr (::SCE::Core::NeedsEventScheduler<StatePolicy>) {\n            if (!tickHasRun_) {",
+     "        if constexpr (false) {\n            if (!tickHasRun_) {")
+PY
+
+# ── …or accuses a host that did nothing wrong ───────────────────────
+#
+# `tick()` is a superset of `step()`, so mixing them is a legitimate driving
+# loop. A counter that kept climbing after the first `tick()` would report every
+# such host as broken.
+
+mutation_case "a host that ticks is counted anyway" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        tickHasRun_ = true;
+        if (!isRunning_) {""",
+     """        if (!isRunning_) {""")
+PY
+
+mutation_case "every machine is treated as scheduler-driven" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     "        if constexpr (::SCE::Core::NeedsEventScheduler<StatePolicy>) {\n            if (!tickHasRun_) {",
+     "        if constexpr (true) {\n            if (!tickHasRun_) {")
+PY
+
+# ── The detection turns into a requirement ──────────────────────────
+#
+# `NEEDS_EVENT_SCHEDULER` is detected, not demanded, so a hand-written policy —
+# the mesh worker harnesses, any consumer's own — keeps compiling. A trait that
+# answered `true` for a policy that never declared anything would accuse every
+# one of them.
+#
+# The suite reads the trait through `EXPECT_*` rather than `static_assert` for
+# exactly these two cases: the compile-time form is stronger, but a mutation
+# that breaks the trait then stops the tree compiling, and a run that never
+# happened is reported INCONCLUSIVE rather than red. Measured — both of these
+# were INCONCLUSIVE until the assertions moved to run time.
+
+mutation_case "a policy that declares nothing is read as declaring the requirement" <<'PY'
+edit("sce/include/core/StatePolicyConcepts.h",
+     "template <typename P, typename = void> struct NeedsEventSchedulerTrait : std::false_type {};",
+     "template <typename P, typename = void> struct NeedsEventSchedulerTrait : std::true_type {};")
+PY
+
+mutation_case "the declared value is ignored in favour of its presence" <<'PY'
+edit("sce/include/core/StatePolicyConcepts.h",
+     """struct NeedsEventSchedulerTrait<P, std::void_t<decltype(P::NEEDS_EVENT_SCHEDULER)>>
+    : std::bool_constant<P::NEEDS_EVENT_SCHEDULER> {};""",
+     """struct NeedsEventSchedulerTrait<P, std::void_t<decltype(P::NEEDS_EVENT_SCHEDULER)>>
+    : std::true_type {};""")
+PY
