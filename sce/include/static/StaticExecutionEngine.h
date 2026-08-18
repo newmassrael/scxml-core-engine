@@ -798,6 +798,37 @@ public:
     }
 
     /**
+     * @brief How long until this machine next needs `tick()`
+     *
+     * `std::chrono::milliseconds::zero()` means something is due now;
+     * `std::nullopt` means the scheduler is empty and no clock-driven wake-up
+     * is owed.
+     *
+     * `NEEDS_EVENT_SCHEDULER` tells a host *which* entry point to drive the
+     * machine with. This tells it *when*, and a host that cannot ask has only
+     * one move left: pick a polling interval. That guess is not free in either
+     * direction — measured on a document whose `<send delay="200ms">` is
+     * cancelled by a 100 ms signal, a 1 ms interval spends 180 wasted ticks to
+     * be on time, a 500 ms one fires 300 ms late, and a 250 ms one steps over
+     * both deadlines at once. An interval cannot straddle two deadlines it was
+     * never told about.
+     *
+     * The answer feeds a host loop directly — a `condition_variable::wait_for`,
+     * an event-loop timeout, a frame budget.
+     */
+    std::optional<std::chrono::milliseconds> timeUntilNextScheduled() const {
+        auto next = scheduler_.nextFireTime();
+        if (!next.has_value()) {
+            return std::nullopt;
+        }
+        auto now = std::chrono::steady_clock::now();
+        if (*next <= now) {
+            return std::chrono::milliseconds::zero();
+        }
+        return std::chrono::duration_cast<std::chrono::milliseconds>(*next - now);
+    }
+
+    /**
      * @brief Macrosteps run on a scheduler-driven machine before any `tick()`
      *
      * Non-zero means the host is driving with `step()` a machine whose policy
@@ -846,6 +877,10 @@ public:
      * }
      * @endcode
      */
+    /// `pollInterval` is a ceiling on the wait between ticks, not the interval
+    /// actually slept: a nearer scheduler deadline shortens it, so a caller
+    /// passing an interval coarser than the document's delays no longer steps
+    /// over them.
     bool runUntilCompletion(std::chrono::milliseconds timeout,
                             std::chrono::milliseconds pollInterval = std::chrono::milliseconds(10)) {
         // W3C SCXML: If already stopped but reached final state during initialize(), return true
@@ -862,8 +897,12 @@ public:
                 return false;  // Timeout
             }
 
-            // Sleep briefly to allow scheduled events to become ready
-            std::this_thread::sleep_for(pollInterval);
+            // Sleep until the next deadline, or `pollInterval`, whichever comes
+            // first. The scheduler's own answer wins whenever it is nearer:
+            // sleeping past a deadline is what turns a coarse interval into a
+            // document that behaves differently, and waking on it costs nothing.
+            auto nextDue = timeUntilNextScheduled();
+            std::this_thread::sleep_for(nextDue.has_value() ? std::min(pollInterval, *nextDue) : pollInterval);
 
             // §scxml-6.2: Poll scheduler and process events
             tick();
@@ -1517,6 +1556,12 @@ public:
      * scheduler-only pulses with explicit `processEvent()` /
      * `step()` sequencing to exercise a specific ordering. If you
      * are writing a plain tick loop, prefer `tick()`.
+     *
+     * Draining without a macrostep between entries is precisely what makes it
+     * unsuitable for a plain loop: everything past its deadline lands on the
+     * external queue together, so a `<cancel>` executed by the first one's
+     * transitions can no longer reach the rest. `tick()` promotes them one at
+     * a time for that reason.
      */
     void pumpScheduledEvents() {
         std::string eventData;
@@ -1561,8 +1606,30 @@ public:
             return;
         }
 
-        // §scxml-6.2: Check for ready scheduled events and raise them
-        pumpScheduledEvents();
+        // §scxml-6.2: dispatch the ready scheduled events, earliest deadline
+        // first and one macrostep apart — not `pumpScheduledEvents()`, which
+        // drains them together by design.
+        //
+        // `<cancel>` drops an event that has not been dispatched yet, and a
+        // host that woke late holds several past their deadlines. Promoting
+        // them together makes every later one undroppable before the earlier
+        // one's transitions have run, which is how a settle timer — arm a long
+        // `<send delay>`, cancel it when the short signal arrives first —
+        // delivers the event it was told to cancel. Measured 2026-08-19 on the
+        // Rust, Go and Python backends alike; C++ shares the shape.
+        {
+            std::string eventData;
+            Event event;
+            while (scheduler_.popReadyEvent(event, eventData)) {
+                raiseExternal(event, eventData);
+                // The macrostep this event drives may `<cancel>` a later one,
+                // so the next deadline is re-read after it rather than before.
+                runMainEventLoop();
+                if (!isRunning_ || isInFinalState()) {
+                    break;
+                }
+            }
+        }
 
         // §scxml-6.4: Tick child state machines to process their events
         // Children need to run independently during parent's event loop

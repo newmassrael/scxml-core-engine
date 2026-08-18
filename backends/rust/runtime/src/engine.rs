@@ -247,8 +247,29 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         self.entries.iter().any(|e| e.ready_at <= now)
     }
 
-    /// Find-and-remove the next ready entry — the single source of the
-    /// scan/remove logic both `pop_ready_event_at` profiles project from.
+    /// When the earliest still-queued entry comes due, whether or not it is
+    /// ready yet. `None` when nothing is scheduled.
+    ///
+    /// The queue has always known this; nothing could ask. A host driving the
+    /// machine has to decide when to call [`Engine::tick`] again, and without
+    /// this it can only guess an interval — see
+    /// [`Engine::time_until_next_scheduled_ms`] for the wrapper that turns the
+    /// answer into a sleep, and for what guessing costs.
+    pub fn next_ready_at(&self) -> Option<SchedTimePoint> {
+        self.entries.iter().map(|e| e.ready_at).min()
+    }
+
+    /// Find-and-remove the ready entry that came due first — the single source
+    /// of the scan/remove logic both `pop_ready_event_at` profiles project from.
+    ///
+    /// Deadline order, not insertion order: the caller dispatches these one at
+    /// a time and runs a macrostep between them, so whichever comes out first
+    /// is the one whose transitions run first. Picking by insertion would let a
+    /// later-scheduled event be delivered ahead of an earlier one whenever the
+    /// host woke after both came due, which is the difference between a
+    /// `<cancel>` landing and being lost. `Iterator::min_by_key` keeps the
+    /// first of equal keys, so same-millisecond entries stay in insertion
+    /// order.
     ///
     /// `#[inline]` so each profile's projection compiles to the same code as a
     /// hand-inlined scan (no extra `ScheduledEntry` move on the timer-fire
@@ -257,7 +278,13 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// profiles.
     #[inline]
     fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<E, S>> {
-        let idx = self.entries.iter().position(|e| e.ready_at <= now)?;
+        let idx = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.ready_at <= now)
+            .min_by_key(|(_, e)| e.ready_at)
+            .map(|(idx, _)| idx)?;
         Some(self.entries.remove(idx))
     }
 
@@ -702,9 +729,20 @@ impl<P: StatePolicy> Engine<P> {
             return;
         }
 
-        // §scxml-6.2: Pop all ready scheduled events into the external queue.
-        // Read the clock once per iteration via the cfg-branched helper — keeps
-        // `PullScheduler` clock-source-agnostic (textbook DI split).
+        // §scxml-6.2: dispatch the ready scheduled events, earliest deadline
+        // first and one macrostep apart. Read the clock once per iteration via
+        // the cfg-branched helper — keeps `PullScheduler` clock-source-agnostic
+        // (textbook DI split).
+        //
+        // One at a time, not all at once. `<cancel>` drops an event that has
+        // not been dispatched yet, and a host that woke late holds several past
+        // their deadlines: promoting them together makes every later one
+        // undroppable before the earlier one's transitions have had a chance to
+        // run. That is how a settle timer — arm a long `<send delay>`, cancel
+        // it when the short signal arrives first — delivers the event it was
+        // told to cancel. Measured 2026-08-19 across the Rust, Go and Python
+        // backends alike, the Python one on a virtual clock where the host's
+        // step size alone decided it.
         loop {
             let now = self.sched_now();
             let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
@@ -719,6 +757,13 @@ impl<P: StatePolicy> Engine<P> {
             // `raise_external` discards it under no_std anyway.
             #[cfg(feature = "no_std")]
             self.raise_external(popped, "", "");
+
+            // The macrostep this event drives may `<cancel>` a later one, so
+            // the next deadline is re-read after it rather than before.
+            self.run_main_event_loop();
+            if !self.is_running || self.is_in_final_state() {
+                break;
+            }
         }
 
         // §scxml-6.4: Tick child state machines
@@ -1071,6 +1116,28 @@ impl<P: StatePolicy> Engine<P> {
         self.scheduler.has_ready_events_at(self.sched_now())
     }
 
+    /// How long until this machine next needs [`tick`](Self::tick), in
+    /// milliseconds. `Some(0)` means something is due now; `None` means the
+    /// scheduler is empty and no clock-driven wake-up is owed.
+    ///
+    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER) tells a
+    /// host *which* entry point to drive the machine with. This tells it
+    /// *when*, and a host that cannot ask has only one move left: pick a
+    /// polling interval. That guess is not free in either direction — measured
+    /// on a document whose `<send delay="200ms">` is cancelled by a 100 ms
+    /// signal, a 1 ms interval spends 180 wasted ticks to be on time, a 500 ms
+    /// one fires 300 ms late, and a 250 ms one steps over both deadlines at
+    /// once and reaches a state the document forbids. An interval cannot
+    /// straddle two deadlines it was never told about.
+    ///
+    /// The answer feeds a host loop directly: `std::thread::sleep`, a tokio
+    /// `sleep`, or an embassy `Timer::after` on the no_std profile, where the
+    /// alternative is a poll that never lets the core idle.
+    pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
+        let next = self.scheduler.next_ready_at()?;
+        Some(next.saturating_sub(self.sched_now()))
+    }
+
     // ════════════════════════════════════════
     // Callbacks
     // ════════════════════════════════════════
@@ -1147,16 +1214,24 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Run the state machine to completion or timeout (§scxml-6.2).
     ///
-    /// Matches C++ `runUntilCompletion(timeout, pollInterval)`. Polls the scheduler
-    /// and calls `tick()` in a loop until either the final state is reached or
-    /// `timeout` elapses. Returns `true` on completion, `false` on timeout.
+    /// Matches C++ `runUntilCompletion(timeout, pollInterval)`. Calls `tick()`
+    /// in a loop until either the final state is reached or `timeout` elapses.
+    /// Returns `true` on completion, `false` on timeout.
+    ///
+    /// `poll_interval` is a ceiling on how long this waits between ticks, not
+    /// the interval it actually sleeps: when the scheduler knows a nearer
+    /// deadline
+    /// ([`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)),
+    /// the sleep is shortened to land on it. A caller that passes an interval
+    /// coarser than the document's delays therefore no longer steps over them.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because the polling loop
     /// uses `std::thread::sleep` for cooperative blocking and `Instant::elapsed`
     /// for the timeout — both host-thread-coupled. no_std consumers drive their
-    /// own executor loop, calling [`tick`](Self::tick) plus
-    /// [`has_ready_events`](Self::has_ready_events) under their HAL waker
-    /// (e.g. embassy `Signal`).
+    /// own executor loop, calling [`tick`](Self::tick) under their HAL waker
+    /// (e.g. embassy `Timer::after` on the same
+    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
+    /// this uses).
     #[cfg(not(feature = "no_std"))]
     pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
         // W3C SCXML: if already stopped but reached final state during initialize(), return true
@@ -1169,7 +1244,14 @@ impl<P: StatePolicy> Engine<P> {
             if start.elapsed() > timeout {
                 return false;
             }
-            std::thread::sleep(poll_interval);
+            // The scheduler's own answer wins whenever it is nearer: sleeping
+            // past a deadline is what turns a coarse interval into a document
+            // that behaves differently, and waking on it costs nothing extra.
+            let wait = match self.time_until_next_scheduled_ms() {
+                Some(ms) => poll_interval.min(Duration::from_millis(ms)),
+                None => poll_interval,
+            };
+            std::thread::sleep(wait);
             self.tick();
         }
         true

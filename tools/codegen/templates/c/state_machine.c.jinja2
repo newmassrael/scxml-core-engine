@@ -4178,6 +4178,15 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         return;
     }
 
+    /* W3C SCXML 6.2/6.3: dispatch the elapsed entries one macrostep apart
+       rather than pumping them together. `<cancel>` drops an entry that has
+       not been dispatched yet, and a host that ticked late holds several past
+       their fire times: pumping them all first makes every later one
+       undroppable before the earlier one's transitions have run. That is how
+       a settle timer — arm a long `<send delay>`, cancel it when the short
+       signal arrives first — delivers the event it was told to cancel
+       (measured 2026-08-19 on the rust, go and python backends, whose
+       scheduler this one mirrors). */
     uint64_t now_ms = _sce_clock_now_ms();
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t ready;
     while (scheduled_pop_ready(sm, now_ms, &ready)) {
@@ -4225,9 +4234,37 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         }
 {% endif %}
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
+
+        /* The macrostep this entry drives may `<cancel>` a later one, so the
+           queue and the clock are both re-read after it rather than before. */
+        run_main_event_loop(sm);
+        if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
+            break;
+        }
+        now_ms = _sce_clock_now_ms();
     }
 
     {{ csym_prefix }}{{ model.name }}_step(sm);
+}
+
+/* W3C SCXML 6.2: how long until this machine next needs `_tick`, in
+   milliseconds; 0 when an entry is due now and -1 when nothing is scheduled.
+
+   `{{ csym_prefix }}{{ model.name }}_needs_event_scheduler` (the generated
+   policy constant) says *which* entry point to drive the machine with. This
+   says *when*, and a host that cannot ask has only one move left: pick a poll
+   interval — which cannot straddle two fire times it was never told about.
+   The queue is sorted by fire time, so the answer is its head. */
+SCE_SM_FN int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    if (sm->scheduled_queue.count == 0u) {
+        return -1;
+    }
+    uint64_t now_ms = _sce_clock_now_ms();
+    uint64_t due = sm->scheduled_queue.buf[0].fire_time_ms;
+    if (due <= now_ms) {
+        return 0;
+    }
+    return (int64_t)(due - now_ms);
 }
 {% endif %}
 
