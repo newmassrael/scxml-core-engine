@@ -383,13 +383,19 @@ if(SCE_HAS_SCRIPTING)
     # `datamodel="ecmascript"` — which W3C SCXML B.2 requires to be ECMAScript.
     #
     # This defaulted to `lua`, which reaches ECMAScript through a
-    # string-rewriting transformer. Measured 2026-08-14 against the shared
-    # ECMA-262 table (`tests/ecmascript/ecma262_semantics.json`): the lua
-    # selection answers 26 of 58 expressions wrong and the quickjs selection
-    # answers all 58 right. `0 && x` was true, `-7 % 3` was 2, `5 ^ 3` was
-    # 125, and a computed array index was off by one — all silently, with the
-    # whole W3C suite green, because no fixture in the corpus asked.
-    # `ecmascript_semantics_test` asks, on whichever engine is selected here.
+    # string-rewriting transformer. Measured against the shared ECMA-262 table
+    # (`tests/ecmascript/ecma262_semantics.json`), the quickjs selection
+    # answers every case and the lua selection does not: `0 && x` is true,
+    # `-7 % 3` is 2 and `5 ^ 3` is 125 there, silently, with the whole W3C
+    # suite green because no fixture in the corpus asks.
+    #
+    # How far the lua selection is from the language is NOT stated here. It
+    # was, as a hand-counted "26 of 58", and the table then grew to 98 cases
+    # while the sentence stayed — the real number that day was 44. It now
+    # lives in `tests/ecmascript/lua_engine_divergences.json`, case by case
+    # with the clause each one cites, and `ecmascript_semantics_test` fails if
+    # the engine diverges anywhere that file does not say it does, or agrees
+    # anywhere it says it will not.
     set(SCE_SCRIPT_ENGINE "quickjs" CACHE STRING "Script engine for ScriptEngineProvider")
     set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
 

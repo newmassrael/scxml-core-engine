@@ -266,6 +266,150 @@ bool isPureInPredicate(const std::string &expr) {
     return foundIn;
 }
 
+// === Member calls the shared runtime library defines ===
+
+// A method the shared `ecma_semantics.lua` implements, and the function that
+// implements it. The receiver becomes the first argument, which is the shape
+// that library declares and the shape the code generator's Lua backends emit
+// for the same source — so this table names those definitions rather than
+// restating what they mean.
+//
+// A method absent from here is not rewritten at all, which is how
+// `'abcdef'.substring(1, 3)` reached Lua as itself and failed to parse while
+// `_scxml_substring` sat loaded in the same interpreter.
+struct MemberCall {
+    const char *method;
+    const char *luaFunction;
+};
+
+constexpr MemberCall MEMBER_CALLS[] = {
+    {"indexOf", "_indexOf"},
+    {"substring", "_scxml_substring"},
+    {"charAt", "_scxml_charat"},
+    {"toLowerCase", "_scxml_tolowercase"},
+    {"toUpperCase", "_scxml_touppercase"},
+    {"split", "_scxml_split"},
+    {"replace", "_scxml_replace"},
+    {"slice", "_scxml_slice"},
+    {"sort", "_scxml_sort"},
+    {"reverse", "_scxml_reverse"},
+};
+
+// The arguments of a call, split where a comma separates them rather than
+// where one merely occurs: `f(g(a, b), c)` has two arguments, not three.
+std::vector<std::string> splitTopLevelArgs(const std::string &args) {
+    std::vector<std::string> parts;
+    int depth = 0;
+    size_t start = 0;
+    for (size_t i = 0; i < args.size(); ++i) {
+        const char c = args[i];
+        if (c == '(' || c == '[' || c == '{') {
+            ++depth;
+        } else if (c == ')' || c == ']' || c == '}') {
+            --depth;
+        } else if (c == ',' && depth == 0) {
+            parts.push_back(args.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    parts.push_back(args.substr(start));
+    return parts;
+}
+
+// The offset in `emitted` at which the receiver of a member access begins.
+//
+// Beyond the identifier chain `findPrecedingIdentifier` follows, a table
+// literal is a receiver too: `[].concat(xs)` has no name to find, and reading
+// it as "no receiver" is what left the call unrewritten.
+size_t findReceiverStart(const std::string &emitted) {
+    const size_t named = findPrecedingIdentifier(emitted, emitted.size());
+    if (named != std::string::npos) {
+        return named;
+    }
+    if (!emitted.empty() && emitted.back() == '}') {
+        return findMatchingOpenBackwards(emitted, emitted.size() - 1, '{', '}');
+    }
+    return std::string::npos;
+}
+
+// Whether what follows the `]` at `closePos` makes the index an assignment
+// target rather than a read: a single `=` that is not part of `==`, `~=`,
+// `<=` or `>=`.
+bool isAssignmentTargetAt(const std::string &input, size_t closePos) {
+    size_t next = closePos + 1;
+    while (next < input.size() && std::isspace(static_cast<unsigned char>(input[next]))) {
+        ++next;
+    }
+    if (next >= input.size() || input[next] != '=') {
+        return false;
+    }
+    return next + 1 >= input.size() || input[next + 1] != '=';
+}
+
+// Whether a `\uXXXX` escape begins at `pos`, four hex digits included. A
+// backslash that is itself escaped never reaches here: the caller consumes
+// escape pairs as it walks the literal.
+bool isUnicodeEscape(const std::string &input, size_t pos) {
+    if (pos + 6 > input.size() || input[pos] != '\\' || input[pos + 1] != 'u') {
+        return false;
+    }
+    for (size_t offset = 2; offset < 6; ++offset) {
+        if (!std::isxdigit(static_cast<unsigned char>(input[pos + offset]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// === String literal placeholders ===
+//
+// A protected literal is replaced by an identifier-shaped placeholder so that
+// the passes downstream, which recognise a receiver by scanning word
+// characters, can see a string literal where one stands. See the note on
+// `ProtectedString` for what a non-word marker cost.
+
+// The prefix a placeholder is built from, chosen so that it does not occur in
+// the expression being transformed. An author is free to name a variable
+// `_SCESTR0_`; restoring literals by textual search would then rewrite it,
+// so the input decides the spelling rather than a constant.
+std::string choosePlaceholderPrefix(const std::string &input) {
+    std::string prefix = "_SCESTR";
+    while (input.find(prefix) != std::string::npos) {
+        prefix += "_";
+    }
+    return prefix;
+}
+
+// The trailing underscore is what keeps `_SCESTR1_` from matching inside
+// `_SCESTR10_`: without it a search for the first placeholder would find the
+// eleventh and restore half of it.
+std::string placeholderFor(const std::string &prefix, size_t index) {
+    return prefix + std::to_string(index) + "_";
+}
+
+// The offset at which a placeholder ends at `end`, or npos when the token
+// ending there is an ordinary identifier. Used where a placeholder and an
+// identifier mean different things — an object key spelled `"a"` is a string
+// key and one spelled `a` is not — and both are now word-shaped.
+size_t placeholderEndingAt(const std::string &input, size_t end, const std::string &prefix) {
+    if (end < prefix.size() + 2 || input[end - 1] != '_') {
+        return std::string::npos;
+    }
+    size_t digitsEnd = end - 1;
+    size_t digitsStart = digitsEnd;
+    while (digitsStart > 0 && std::isdigit(static_cast<unsigned char>(input[digitsStart - 1]))) {
+        --digitsStart;
+    }
+    if (digitsStart == digitsEnd || digitsStart < prefix.size()) {
+        return std::string::npos;
+    }
+    size_t prefixStart = digitsStart - prefix.size();
+    if (input.compare(prefixStart, prefix.size(), prefix) != 0) {
+        return std::string::npos;
+    }
+    return prefixStart;
+}
+
 }  // anonymous namespace
 
 namespace SCE {
@@ -295,7 +439,8 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     std::string preProcessed = transformTypeofPatterns(ecmaScript);
 
     // Stage 1: Protect string literals from transformation
-    auto [processed, literals] = protectStringLiterals(preProcessed);
+    const ProtectedString protectedInput = protectStringLiterals(preProcessed);
+    std::string processed = protectedInput.processed;
 
     // Stage 2: Apply transformation pipeline (order matters)
     // Math builtins must run early (before operator transforms alter the expressions)
@@ -309,7 +454,7 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
     processed = transformArrayIndexing(processed);
-    processed = transformObjectLiterals(processed);
+    processed = transformObjectLiterals(processed, protectedInput.prefix);
     processed = transformTernaryOperator(processed);
     processed = transformOperators(processed);
     processed = transformStringConcat(processed);
@@ -318,7 +463,7 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     processed = transformSemicolons(processed);
 
     // Stage 3: Restore string literals
-    std::string result = restoreStringLiterals(processed, literals);
+    std::string result = restoreStringLiterals(processed, protectedInput);
 
     // Stage 4: Guard-specific truthiness wrapping
     if (context == ExpressionContext::Guard) {
@@ -343,7 +488,8 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     std::string preProcessed = transformTypeofPatterns(script);
 
     // Stage 1: Protect string literals
-    auto [processed, literals] = protectStringLiterals(preProcessed);
+    const ProtectedString protectedInput = protectStringLiterals(preProcessed);
+    std::string processed = protectedInput.processed;
 
     // Stage 2: Structural transforms (must see original JS syntax with semicolons)
     // For-in must be extracted before for-loops (which expect C-style for headers)
@@ -364,7 +510,7 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
     processed = transformArrayIndexing(processed);
-    processed = transformObjectLiterals(processed);
+    processed = transformObjectLiterals(processed, protectedInput.prefix);
     processed = transformTernaryOperator(processed);
     processed = transformOperators(processed);
     processed = transformStringConcat(processed);
@@ -375,7 +521,7 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformBareExpressions(processed);
 
     // Stage 3: Restore string literals
-    std::string result = restoreStringLiterals(processed, literals);
+    std::string result = restoreStringLiterals(processed, protectedInput);
     scriptCache_[script] = result;
     return result;
 }
@@ -387,6 +533,7 @@ EcmaScriptToLuaTransformer::protectStringLiterals(const std::string &input) cons
     ProtectedString result;
     std::vector<std::string> &literals = result.literals;
     std::string &output = result.processed;
+    result.prefix = choosePlaceholderPrefix(input);
     output.reserve(input.size());
 
     for (size_t i = 0; i < input.size(); ++i) {
@@ -422,6 +569,16 @@ EcmaScriptToLuaTransformer::protectStringLiterals(const std::string &input) cons
             literal += c;
             ++i;
             while (i < input.size()) {
+                // The ECMAScript data model appendix reaches ECMA-262 12.9.4,
+                // where `\uXXXX` names a character. Lua 5.4 spells the same
+                // escape `\u{XXXX}`, and carrying the ECMAScript spelling
+                // through unchanged produced a literal Lua refuses to parse
+                // rather than the character it names.
+                if (isUnicodeEscape(input, i)) {
+                    literal += "\\u{" + input.substr(i + 2, 4) + "}";
+                    i += 6;
+                    continue;
+                }
                 if (input[i] == '\\' && i + 1 < input.size()) {
                     literal += input[i];
                     literal += input[i + 1];
@@ -438,7 +595,7 @@ EcmaScriptToLuaTransformer::protectStringLiterals(const std::string &input) cons
 
             size_t idx = literals.size();
             literals.push_back(literal);
-            output += "\x01STR" + std::to_string(idx) + "\x01";
+            output += placeholderFor(result.prefix, idx);
         } else {
             output += c;
         }
@@ -448,11 +605,12 @@ EcmaScriptToLuaTransformer::protectStringLiterals(const std::string &input) cons
 }
 
 std::string EcmaScriptToLuaTransformer::restoreStringLiterals(const std::string &processed,
-                                                              const std::vector<std::string> &literals) const {
+                                                              const ProtectedString &protectedInput) const {
+    const std::vector<std::string> &literals = protectedInput.literals;
     std::string result = processed;
 
     for (size_t i = 0; i < literals.size(); ++i) {
-        std::string placeholder = "\x01STR" + std::to_string(i) + "\x01";
+        std::string placeholder = placeholderFor(protectedInput.prefix, i);
         size_t pos = result.find(placeholder);
         while (pos != std::string::npos) {
             result.replace(pos, placeholder.size(), literals[i]);
@@ -912,7 +1070,9 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
             bool isPropertyAccess = false;
             if (i > 0) {
                 char prev = input[i - 1];
-                if (std::isalnum(prev) || prev == '_' || prev == ')' || prev == ']' || prev == '\x01') {
+                // A protected string literal ends in `_`, so the identifier
+                // case covers it: `'a,b'[0]` is an access, not a literal.
+                if (std::isalnum(prev) || prev == '_' || prev == ')' || prev == ']') {
                     isPropertyAccess = true;
                 }
             }
@@ -951,8 +1111,9 @@ std::string EcmaScriptToLuaTransformer::transformArrayIndexing(const std::string
             bool isPropertyAccess = false;
             if (i > 0) {
                 char prev = input[i - 1];
-                if (std::isalnum(static_cast<unsigned char>(prev)) || prev == '_' || prev == ')' || prev == ']' ||
-                    prev == '\x01') {
+                // As above: a protected literal is identifier-shaped, so the
+                // `_` case is what recognises `'abc'[0]` as an access.
+                if (std::isalnum(static_cast<unsigned char>(prev)) || prev == '_' || prev == ')' || prev == ']') {
                     isPropertyAccess = true;
                 }
             }
@@ -974,8 +1135,27 @@ std::string EcmaScriptToLuaTransformer::transformArrayIndexing(const std::string
                     int idx = std::stoi(indexExpr);
                     result += "[" + std::to_string(idx + 1) + "]";
                     i = end;  // skip past ']'
-                } else {
+                } else if (isAssignmentTargetAt(input, end)) {
+                    // `a[i] = v` is a statement, and a call is not something
+                    // Lua assigns to. The read below is the only side that
+                    // can be lowered to a function.
                     result += input[i];
+                } else {
+                    // §13.3.3: the index is still zero-based when it is not a
+                    // literal. Only literals were being shifted, so `a[i]`
+                    // read one element short of what the author wrote — with
+                    // no error anywhere, since Lua answers a neighbouring
+                    // element rather than refusing. `_scxml_index` is the
+                    // shared definition of that read.
+                    size_t receiverStart = findReceiverStart(result);
+                    if (receiverStart == std::string::npos) {
+                        result += input[i];
+                    } else {
+                        std::string receiver = result.substr(receiverStart);
+                        result.erase(receiverStart);
+                        result += "_scxml_index(" + receiver + ", " + transformArrayIndexing(indexExpr) + ")";
+                        i = end;  // skip past ']'
+                    }
                 }
             } else {
                 result += input[i];
@@ -1010,57 +1190,72 @@ std::string EcmaScriptToLuaTransformer::transformArrayMethods(const std::string 
                 }
             }
 
-            // .indexOf( → _indexOf(var,
-            if (i + 9 <= input.size() && input.compare(i + 1, 8, "indexOf(") == 0) {
-                size_t idStart = findPrecedingIdentifier(result, result.size());
-                if (idStart != std::string::npos) {
-                    std::string varName = result.substr(idStart);
-                    result.erase(idStart);
-                    size_t parenOpen = i + 8;  // position of '('
+            // .concat( → _concat(receiver, arg), folded over every argument.
+            //
+            // §23.1.3.1 appends each argument in turn, and the shared
+            // `_concat` takes one: passing all of them to a single call
+            // dropped every argument after the first, silently.
+            if (i + 8 <= input.size() && input.compare(i + 1, 7, "concat(") == 0) {
+                size_t receiverStart = findReceiverStart(result);
+                if (receiverStart != std::string::npos) {
+                    std::string receiver = result.substr(receiverStart);
+                    result.erase(receiverStart);
+                    size_t parenOpen = i + 7;  // position of '('
                     size_t argEnd = findMatchingClose(input, parenOpen, '(', ')');
-                    std::string args = input.substr(parenOpen + 1, argEnd - parenOpen - 1);
-                    result += "_indexOf(" + varName + ", " + args + ")";
+                    std::string folded = receiver;
+                    for (const std::string &argument :
+                         splitTopLevelArgs(input.substr(parenOpen + 1, argEnd - parenOpen - 1))) {
+                        folded = "_concat(" + folded + ", " + trim(argument) + ")";
+                    }
+                    result += folded;
                     i = argEnd + 1;
                     continue;
                 }
             }
 
-            // .concat( → _concat(var,
-            if (i + 8 <= input.size() && input.compare(i + 1, 7, "concat(") == 0) {
-                size_t idStart = findPrecedingIdentifier(result, result.size());
-                if (idStart != std::string::npos) {
-                    std::string varName = result.substr(idStart);
-                    result.erase(idStart);
-                    result += "_concat(" + varName + ", ";
-                    i += 8;  // skip .concat(
-                    continue;
-                }
-                // Also handle {}.concat( or [].concat(
-                if (result.size() >= 2) {
-                    std::string last2 = result.substr(result.size() - 2);
-                    if (last2 == "{}" || last2 == "[]") {
-                        std::string obj = last2;
-                        result.erase(result.size() - 2);
-                        result += "_concat(" + obj + ", ";
-                        i += 8;
-                        continue;
-                    }
-                }
-            }
-
-            // .push( → table.insert(var,
+            // .push( → the insert, and then the length §15.4.4.7 says it
+            // answers. `table.insert` answers nothing, so the receiver is
+            // held in a local rather than evaluated twice.
             if (i + 6 <= input.size() && input.compare(i + 1, 5, "push(") == 0) {
-                size_t idStart = findPrecedingIdentifier(result, result.size());
-                if (idStart != std::string::npos) {
-                    std::string varName = result.substr(idStart);
-                    result.erase(idStart);
+                size_t receiverStart = findReceiverStart(result);
+                if (receiverStart != std::string::npos) {
+                    std::string receiver = result.substr(receiverStart);
+                    result.erase(receiverStart);
                     size_t parenOpen = i + 5;  // position of '('
                     size_t argEnd = findMatchingClose(input, parenOpen, '(', ')');
                     std::string args = input.substr(parenOpen + 1, argEnd - parenOpen - 1);
-                    result += "table.insert(" + varName + ", " + args + ")";
+                    result +=
+                        "(function() local __t = " + receiver + " table.insert(__t, " + args + ") return #__t end)()";
                     i = argEnd + 1;
                     continue;
                 }
+            }
+
+            // Everything the shared library defines: receiver.method(args)
+            // becomes luaFunction(receiver, args).
+            bool rewritten = false;
+            for (const MemberCall &call : MEMBER_CALLS) {
+                const size_t nameLength = std::strlen(call.method);
+                if (i + nameLength + 2 > input.size() || input.compare(i + 1, nameLength, call.method) != 0 ||
+                    input[i + 1 + nameLength] != '(') {
+                    continue;
+                }
+                size_t receiverStart = findReceiverStart(result);
+                if (receiverStart == std::string::npos) {
+                    break;
+                }
+                std::string receiver = result.substr(receiverStart);
+                result.erase(receiverStart);
+                size_t parenOpen = i + 1 + nameLength;
+                size_t argEnd = findMatchingClose(input, parenOpen, '(', ')');
+                std::string args = trim(input.substr(parenOpen + 1, argEnd - parenOpen - 1));
+                result += std::string(call.luaFunction) + "(" + receiver + (args.empty() ? "" : ", " + args) + ")";
+                i = argEnd + 1;
+                rewritten = true;
+                break;
+            }
+            if (rewritten) {
+                continue;
             }
 
             // .join( → table.concat(var,
@@ -1308,7 +1503,8 @@ std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &i
     return result;
 }
 
-std::string EcmaScriptToLuaTransformer::transformObjectLiterals(const std::string &input) const {
+std::string EcmaScriptToLuaTransformer::transformObjectLiterals(const std::string &input,
+                                                                const std::string &placeholderPrefix) const {
     // ECMAScript {key: value} → Lua {key = value}
     // Track ternary '?' operators per brace scope so their ':' colons are not
     // mistaken for object-key separators (runs before transformTernaryOperator).
@@ -1345,24 +1541,22 @@ std::string EcmaScriptToLuaTransformer::transformObjectLiterals(const std::strin
                 while (keyEnd > 0 && std::isspace(static_cast<unsigned char>(input[keyEnd - 1]))) {
                     --keyEnd;
                 }
-                if (keyEnd > 0 &&
-                    (std::isalnum(static_cast<unsigned char>(input[keyEnd - 1])) || input[keyEnd - 1] == '_')) {
-                    result += " =";
-                } else if (keyEnd > 0 && input[keyEnd - 1] == '\x01') {
-                    // JSON string key placeholder: \x01STR<n>\x01: value → [\x01STR<n>\x01] = value
-                    size_t placeholderEnd = keyEnd;
-                    size_t placeholderStart = keyEnd - 1;
-                    while (placeholderStart > 0 && input[placeholderStart - 1] != '\x01') {
-                        --placeholderStart;
-                    }
-                    if (placeholderStart > 0) {
-                        --placeholderStart;
-                    }
-                    std::string placeholder = input.substr(placeholderStart, placeholderEnd - placeholderStart);
+                // The placeholder is asked about first, because both spellings
+                // are now identifier-shaped and they mean different things: a
+                // key written `"a"` is a string key and one written `a` is a
+                // name. Reading the first as the second yields `_SCESTR0_ = 1`,
+                // a Lua table field named after the placeholder.
+                const size_t placeholderStart = placeholderEndingAt(input, keyEnd, placeholderPrefix);
+                if (placeholderStart != std::string::npos) {
+                    // String key: `"a": value` → `["a"] = value`
+                    std::string placeholder = input.substr(placeholderStart, keyEnd - placeholderStart);
                     size_t resultPlaceholderPos = result.rfind(placeholder);
                     if (resultPlaceholderPos != std::string::npos) {
                         result.replace(resultPlaceholderPos, placeholder.size(), "[" + placeholder + "]");
                     }
+                    result += " =";
+                } else if (keyEnd > 0 &&
+                           (std::isalnum(static_cast<unsigned char>(input[keyEnd - 1])) || input[keyEnd - 1] == '_')) {
                     result += " =";
                 } else {
                     result += input[i];
@@ -1466,6 +1660,10 @@ std::string EcmaScriptToLuaTransformer::transformMathBuiltins(const std::string 
     replaceAll(result, "Math.max", "math.max");
     replaceAll(result, "Math.min", "math.min");
     replaceAll(result, "Math.random", "math.random");
+    // Not `math.floor(x + 0.5)` and not Lua's own rounding: §15.8.2.15 rounds
+    // half toward positive infinity, so Math.round(-2.5) is -2. The shared
+    // library is where that is written down.
+    replaceAll(result, "Math.round", "_scxml_round");
     replaceAll(result, "Math.log", "math.log");
     replaceAll(result, "Math.exp", "math.exp");
     replaceAll(result, "Math.sin", "math.sin");

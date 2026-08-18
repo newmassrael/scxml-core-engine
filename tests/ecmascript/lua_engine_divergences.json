@@ -1,0 +1,157 @@
+{
+  "about": [
+    "What the `lua` selection of SCE_SCRIPT_ENGINE answers differently from",
+    "ECMA-262, case by case, against the shared table beside this file.",
+    "",
+    "The engine that selection reaches is Lua 5.4 with",
+    "`EcmaScriptToLuaTransformer` rewriting the author's ECMAScript into Lua",
+    "text. It is a listed, validated value of the cache entry, so a consumer",
+    "may build with it; the default is `quickjs`, which answers every case in",
+    "the shared table.",
+    "",
+    "This file exists because the count used to live in prose. A comment said",
+    "26 of 58 on the day someone measured it, the shared table then grew to 98",
+    "cases, and nothing re-answered the question: the real number on",
+    "2026-08-18 was 44. A list the test reads cannot drift that way. An entry",
+    "here that starts agreeing fails as loudly as a case that starts",
+    "disagreeing, so neither direction passes unnoticed.",
+    "",
+    "`needs` says what closing an entry would take, and it is nearly the same",
+    "answer every time:",
+    "",
+    "  operand-boundaries  A rewriting pass replaces text without knowing",
+    "                      where an operand ends. `a && b` cannot yield its",
+    "                      left operand, `1 == '1'` cannot coerce, and",
+    "                      `-7 % 3` cannot truncate, because no pass can say",
+    "                      what `a`, `1` or `-7` extend to. Closing these",
+    "                      means parsing the expression, which SCE already",
+    "                      does once, in the build-time frontend that every",
+    "                      generated backend shares.",
+    "  chain-operand       The operand of a prefix operator is the whole",
+    "                      member and call chain after it, not the first name",
+    "                      in it.",
+    "  statement-structure A statement form the script pipeline does not read.",
+    "",
+    "The divergences that were not of that kind have been repaired rather than",
+    "listed: member calls the shared runtime library already defined, a string",
+    "literal no pass could see as a receiver, a computed index that was never",
+    "shifted, `Math.round`, and `\\uXXXX`. Those took 44 disagreements to 23."
+  ],
+  "divergences": [
+    {
+      "source": "!a",
+      "clause": "12.5.9 logical NOT",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a && b",
+      "clause": "13.13.1 the AND yields its left operand when it is falsy",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a || b",
+      "clause": "13.13.1 the OR yields its right operand when the left is falsy",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a && b",
+      "clause": "13.13.1 the value is an operand, not a boolean",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a || b",
+      "clause": "13.13.1 the value is an operand, not a boolean",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a ? 'yes' : 'no'",
+      "clause": "13.14 conditional uses ToBoolean",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "true ? a : 'other'",
+      "clause": "13.14 a false consequent is still the result",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a + ''",
+      "clause": "7.1.1 ToPrimitive of an Array joins with commas",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "1 == '1'",
+      "clause": "7.2.15 number vs string coerces",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "0 == false",
+      "clause": "7.2.15 boolean is ToNumber'd",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "'' == 0",
+      "clause": "7.2.15 empty string is ToNumber 0",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "1 != '1'",
+      "clause": "7.2.15 negation of the above",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "a == null",
+      "clause": "7.2.15 null and undefined equal each other",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "-7 % 3",
+      "clause": "13.7 remainder truncates",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "typeof missingVariable !== 'undefined'",
+      "clause": "13.5.3 typeof of an unresolvable reference is 'undefined'",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "++v",
+      "clause": "13.4.4 the operand is ToNumber'd, so this is not concatenation",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "n",
+      "clause": "14.7.3 while, with continue skipping one iteration",
+      "needs": "statement-structure"
+    },
+    {
+      "source": "5 ^ 3",
+      "clause": "13.12 bitwise XOR",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "-8 >> 1",
+      "clause": "13.9.2 signed right shift",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "-8 >>> 28",
+      "clause": "13.9.3 unsigned right shift",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "(a == 1) | (b != 2)",
+      "clause": "13.12 booleans are ToInt32'd, so the result is a number",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "+'3'",
+      "clause": "13.5.4 unary plus is ToNumber",
+      "needs": "operand-boundaries"
+    },
+    {
+      "source": "typeof JSON.parse('{\"a\":1}')",
+      "clause": "15.12.2 the result of parsing a JSON object is an object",
+      "needs": "chain-operand"
+    }
+  ]
+}
