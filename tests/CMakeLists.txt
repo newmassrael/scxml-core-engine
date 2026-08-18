@@ -283,6 +283,43 @@ apply_sce_test_policies(ecmascript_semantics_test)
 add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
 
 # ============================================================================
+# DOM read surface — §scxml-B-2-1's "corresponding DOM structure"
+#
+# Separate target from ecmascript_semantics_test on purpose: this one names
+# LuaEngine as well as reading the provider, because no gate configures
+# -DSCE_SCRIPT_ENGINE=lua and LuaDOMBinding would otherwise be compiled by
+# every build and run by none.
+# ============================================================================
+add_executable(dom_read_surface_test
+    engine/DomReadSurfaceTest.cpp
+)
+
+target_include_directories(dom_read_surface_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(dom_read_surface_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# Injected rather than resolved from the working directory, so the test reads
+# the same shared table under ctest, CI and an IDE run.
+target_compile_definitions(dom_read_surface_test
+    PRIVATE
+        SCE_DOM_SURFACE_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/dom_read_surface.json"
+)
+
+apply_sce_test_policies(dom_read_surface_test)
+
+add_test(NAME DomReadSurface COMMAND dom_read_surface_test)
+
+# ============================================================================
 # 3. StateMachine Tests
 # ============================================================================
 add_executable(state_machine_tests

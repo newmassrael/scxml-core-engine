@@ -21,7 +21,7 @@ between Python values and Lua values is centralised in `_python_to_lua`
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as _ET
+import xml.dom.minidom as _minidom
 from threading import RLock
 from typing import Any, Callable, Dict, List, Optional
 
@@ -542,62 +542,228 @@ def _coerce_event_data_to_lua(runtime: Any, event_data: str) -> Any:
 
 
 class _DomElement:
-    """W3C SCXML B.2 — Lua-facing wrapper around an
-    `xml.etree.ElementTree.Element`. Exposes the three methods the
-    ECMAScript data-model contract requires:
+    """W3C SCXML B.2 — Lua-facing wrapper around a `xml.dom.minidom`
+    node, carrying DOM Level 1 Core's read surface.
 
-    * `getElementsByTagName(tag)` — Document refkind matches the root
-      inclusively (mirrors cpp `XMLDocument::getElementsByTagName`);
-      Element refkind only descends into proper descendants (mirrors
-      cpp `XMLElement::getElementsByTagName`).
-    * `getAttribute(name)` — attribute value or empty string.
-    * `getTagName()` — element local name.
+    §scxml-B-2-1 obliges the Processor to create *"the corresponding DOM
+    structure"*, so what a handle answers is that interface and not the
+    two calls the W3C IRP suite happens to read. Measured 2026-08-18,
+    three methods were all any backend had: `d.tagName`, `d.childNodes`
+    and `d.firstChild` reached the engine as a nil index, on all seven
+    backends, with the suite green.
+
+    * methods — `getElementsByTagName(tag)` (Document refkind matches the
+      root inclusively, mirroring cpp `XMLDocument::getElementsByTagName`;
+      Element refkind only descends into proper descendants, mirroring
+      cpp `XMLElement::getElementsByTagName`), `getAttribute(name)`,
+      `hasAttribute(name)`, `getTagName()`, `hasChildNodes()`.
+    * properties — `nodeType`, `nodeName`, `nodeValue`, `data`,
+      `tagName`, `textContent`, `childNodes`, `firstChild`, `lastChild`,
+      `nextSibling`, `previousSibling`, `parentNode`,
+      `documentElement`.
+
+    A Document refkind answers the Node interface as the document it is
+    and the Element vocabulary for its document element — the delegation
+    the three shipped methods already performed.
 
     Lupa's bound-method calling convention lets generated Lua text
-    `dom:getElementsByTagName('book')` resolve naturally to the
-    Python method (the colon-passed `self` is absorbed by the bound
-    method — verified across PUC Lua / mlua via the test557/561
-    fixtures). Mirrors `sce-rust-lua::dom::XmlRef`."""
+    `dom:getElementsByTagName('book')` resolve to the Python method (the
+    colon-passed `self` is absorbed by the bound method), and a
+    `@property` resolves to a Lua field read, which is what the frontend
+    emits for a member. Mirrors `sce-rust-lua::dom::XmlRef`."""
 
-    __slots__ = ("_elem", "_is_document", "_runtime")
+    __slots__ = ("_node", "_is_document", "_runtime")
 
-    def __init__(self, elem: _ET.Element, is_document: bool, runtime: Any) -> None:
-        self._elem = elem
+    # DOM Level 1 Core node types. Four of the twelve, because four is
+    # what these trees hold: comments and processing instructions are
+    # dropped by `_normalize_dom` to match pugixml's `parse_default`.
+    ELEMENT = 1
+    TEXT = 3
+    CDATA_SECTION = 4
+    DOCUMENT = 9
+
+    def __init__(self, node: Any, is_document: bool, runtime: Any) -> None:
+        self._node = node
         self._is_document = is_document
         self._runtime = runtime
 
+    # ── methods ────────────────────────────────────────────────────
+
     def getElementsByTagName(self, tag: str) -> Any:
         if self._is_document:
-            matches = list(self._elem.iter(tag))
+            matches = list(self._node.getElementsByTagName(tag))
         else:
-            matches: List[_ET.Element] = []
-            for child in self._elem:
-                matches.extend(child.iter(tag))
-        return self._runtime.table_from(
-            [_DomElement(e, False, self._runtime) for e in matches]
-        )
+            matches = [
+                found
+                for child in self._node.childNodes
+                if child.nodeType == self.ELEMENT
+                for found in ([child] if child.tagName == tag else [])
+                + list(child.getElementsByTagName(tag))
+            ]
+        return self._nodelist(matches)
 
     def getAttribute(self, name: str) -> str:
-        return self._elem.get(name) or ""
+        if self._node.nodeType != self.ELEMENT:
+            return ""
+        return self._node.getAttribute(name) or ""
+
+    def hasAttribute(self, name: str) -> bool:
+        return self._node.nodeType == self.ELEMENT and self._node.hasAttribute(name)
 
     def getTagName(self) -> str:
-        return self._elem.tag
+        return self._node.tagName if self._node.nodeType == self.ELEMENT else ""
+
+    def hasChildNodes(self) -> bool:
+        # A document always has one child: its document element.
+        return True if self._is_document else bool(self._node.childNodes)
+
+    # ── the Node interface, as properties ──────────────────────────
+
+    @property
+    def nodeType(self) -> int:
+        return self.DOCUMENT if self._is_document else int(self._node.nodeType)
+
+    @property
+    def nodeName(self) -> str:
+        return "#document" if self._is_document else str(self._node.nodeName)
+
+    @property
+    def nodeValue(self) -> Optional[str]:
+        # DOM Level 1 Core gives an element and a document a null
+        # nodeValue.
+        if self._is_document or self._node.nodeType == self.ELEMENT:
+            return None
+        return self._node.nodeValue
+
+    @property
+    def data(self) -> Optional[str]:
+        """CharacterData's own name for `nodeValue`."""
+        return self.nodeValue
+
+    @property
+    def tagName(self) -> Optional[str]:
+        if not self._is_document and self._node.nodeType != self.ELEMENT:
+            return None  # character data has no tag name
+        return self.getTagName()
+
+    @property
+    def textContent(self) -> str:
+        return self._text_content(self._node)
+
+    @property
+    def childNodes(self) -> Any:
+        if self._is_document:
+            return self._nodelist([self._node])
+        return self._nodelist(list(self._node.childNodes))
+
+    @property
+    def firstChild(self) -> Optional["_DomElement"]:
+        if self._is_document:
+            return self._wrap(self._node)
+        return self._wrap(self._node.firstChild)
+
+    @property
+    def lastChild(self) -> Optional["_DomElement"]:
+        if self._is_document:
+            return self._wrap(self._node)
+        return self._wrap(self._node.lastChild)
+
+    @property
+    def nextSibling(self) -> Optional["_DomElement"]:
+        return None if self._is_document else self._wrap(self._node.nextSibling)
+
+    @property
+    def previousSibling(self) -> Optional["_DomElement"]:
+        return None if self._is_document else self._wrap(self._node.previousSibling)
+
+    @property
+    def parentNode(self) -> Optional["_DomElement"]:
+        if self._is_document:
+            return None
+        parent = self._node.parentNode
+        if parent is None:
+            return None
+        # The document element's parent is the document — DOM Level 1
+        # Core 1.3 — which is the handle the variable already holds.
+        if parent.nodeType == self.DOCUMENT:
+            return _DomElement(self._node, True, self._runtime)
+        return self._wrap(parent)
+
+    @property
+    def documentElement(self) -> Optional["_DomElement"]:
+        # Only the document handle carries this, which is how a document
+        # can tell the two kinds apart without reading nodeType.
+        return self._wrap(self._node) if self._is_document else None
+
+    # ── helpers ────────────────────────────────────────────────────
+
+    def _wrap(self, node: Any) -> Optional["_DomElement"]:
+        return None if node is None else _DomElement(node, False, self._runtime)
+
+    def _nodelist(self, nodes: List[Any]) -> Any:
+        """A NodeList: a 1-based Lua array, because the frontend rewrites
+        `[0]` to `[1]` and `length` to Lua's `#`. Every backend hands
+        back its language's array for that reason, which is why `item(i)`
+        is refused by the frontend rather than implemented here."""
+        return self._runtime.table_from(
+            [_DomElement(node, False, self._runtime) for node in nodes]
+        )
+
+    def _text_content(self, node: Any) -> str:
+        """DOM Level 3 Core `textContent` — every descendant
+        character-data node's content, in document order."""
+        if node.nodeType in (self.TEXT, self.CDATA_SECTION):
+            return node.nodeValue or ""
+        return "".join(self._text_content(child) for child in node.childNodes)
+
+
+def _normalize_dom(node: Any) -> None:
+    """Drop what pugixml's `parse_default` never puts in the tree.
+
+    The cpp reference backend parses with `parse_default`, which omits
+    `parse_ws_pcdata`, `parse_comments` and `parse_pi` — so a
+    whitespace-only text run, a comment and a processing instruction are
+    not nodes there. minidom keeps all three. While
+    `getElementsByTagName` was the only reader the difference could not be
+    seen; it decides every traversal the moment `childNodes` and
+    `firstChild` are readable, so the trees are made to agree here."""
+    for child in list(node.childNodes):
+        if child.nodeType in (8, 7):  # Comment, ProcessingInstruction
+            node.removeChild(child)
+            child.unlink()
+            continue
+        if child.nodeType == _DomElement.TEXT and not (child.nodeValue or "").strip():
+            node.removeChild(child)
+            child.unlink()
+            continue
+        _normalize_dom(child)
 
 
 def _parse_xml_to_dom(xml_text: str, runtime: Any) -> Optional["_DomElement"]:
     """Parse `xml_text` and return a Document-refkind `_DomElement`
     wrapping the root, bound to `runtime` for downstream
-    `table_from` calls in `getElementsByTagName`. Returns `None` on
-    parse failure so callers fall through to the W3C B.2 string
-    fallback (matches cpp `XMLDocument::isValid()`-false behaviour)."""
+    `table_from` calls. Returns `None` on parse failure so callers fall
+    through to the W3C B.2 string fallback (matches cpp
+    `XMLDocument::isValid()`-false behaviour).
+
+    minidom rather than ElementTree, and the reason is `nodeType`:
+    ElementTree has no CDATA node at all — it folds a `<![CDATA[…]]>`
+    section into the surrounding text — so this backend could not tell
+    the two character-data kinds apart while every other backend can."""
     if not xml_text:
         return None
     stripped = xml_text.strip()
     if not stripped.startswith("<"):
         return None
     try:
-        root = _ET.fromstring(stripped)
-    except _ET.ParseError:
+        document = _minidom.parseString(stripped)
+    except Exception:
+        # ExpatError and its friends: a document that does not parse is
+        # the string reading's case, not an error to raise here.
+        return None
+    _normalize_dom(document)
+    root = document.documentElement
+    if root is None:
         return None
     return _DomElement(root, True, runtime)
 

@@ -1,0 +1,330 @@
+{
+  "about": [
+    "What a `<data>` element's XML content and an XML `_event.data` answer when",
+    "a document reads them, written out by hand against DOM Level 1 Core.",
+    "",
+    "W3C SCXML B.2.1 obliges the Processor to create \"the corresponding DOM",
+    "structure\" for XML content, and B.2.8.1 says the same for an arriving",
+    "payload. That is an interface, not a pair of method names — and a pair of",
+    "method names is what every SCE backend supplied. Measured 2026-08-18, all",
+    "seven carried `getElementsByTagName`, `getAttribute` and a non-standard",
+    "`getTagName`, which are exactly the two names the W3C IRP suite reads plus",
+    "one, so `d.tagName`, `d.childNodes` and `d.firstChild` reached every engine",
+    "as a nil index while 204/204 W3C fixtures passed.",
+    "",
+    "Every reader of this file is measured against it: the two C++ engines",
+    "(tests/engine/DomReadSurfaceTest.cpp), the three Kotlin engines, the Rust,",
+    "Go and Python bindings, and the frontend that lowers the expressions",
+    "(sce-build/tests/dom_read_surface_table.rs). A per-backend copy of a table",
+    "drifts toward the backend that reads it; one table cannot.",
+    "",
+    "Two spellings per case, because the readers divide by what they are handed.",
+    "`source` is the author's ECMAScript, which the engines that run ECMAScript",
+    "evaluate as written — the Kotlin Rhino and QuickJS engines, and both C++",
+    "engines (the C++ Lua engine rewrites it itself). `lua` is the same",
+    "expression after the frontend has lowered it, which is all the Rust, Go,",
+    "Python and Kotlin-Lua backends ever see, because their translation happens",
+    "at build time. The pair is not a guess: `dom_read_surface_table.rs` asserts",
+    "that the frontend's own lowering of `source` IS `lua`, so a case cannot",
+    "claim a lowering the emitter does not produce.",
+    "",
+    "The tree is the cpp reference backend's, which parses with pugixml's",
+    "`parse_default`. That flag set omits `parse_ws_pcdata`, `parse_comments`",
+    "and `parse_pi`, so a whitespace-only text run, a comment and a processing",
+    "instruction are not nodes — which is why `books` is pretty-printed and its",
+    "document element has exactly two children."
+  ],
+  "documents": {
+    "books": "<books xmlns=\"\" count=\"2\">\n  <book title=\"t1\">first</book>\n  <book title=\"t2\"/>\n</books>",
+    "mixed": "<p>plain<b>bold</b><![CDATA[raw & <kept>]]></p>",
+    "spaced": "<p>a <b/> c</p>"
+  },
+  "cases": [
+    {
+      "group": "document handle — the Node interface, as a document",
+      "note": "The variable holds the document, so it reports itself as one. A handle that answered 1 here would be its document element wearing the variable's name.",
+      "document": "books",
+      "source": "var1.nodeType",
+      "lua": "var1.nodeType",
+      "expect": { "number": 9 },
+      "clause": "DOM Level 1 Core 1.2 — Node.nodeType, DOCUMENT_NODE = 9"
+    },
+    {
+      "document": "books",
+      "source": "var1.nodeName",
+      "lua": "var1.nodeName",
+      "expect": { "string": "#document" },
+      "clause": "DOM Level 1 Core 1.2 — nodeName of a Document is \"#document\""
+    },
+    {
+      "document": "books",
+      "source": "var1.nodeValue",
+      "lua": "var1.nodeValue",
+      "expect": { "empty": true },
+      "clause": "DOM Level 1 Core 1.2 — nodeValue of a Document is null"
+    },
+    {
+      "document": "books",
+      "source": "var1.childNodes.length",
+      "lua": "#var1.childNodes",
+      "expect": { "number": 1 },
+      "clause": "DOM Level 1 Core 1.2 — a Document's one child is its document element"
+    },
+    {
+      "document": "books",
+      "source": "var1.hasChildNodes()",
+      "lua": "var1:hasChildNodes()",
+      "expect": { "bool": true },
+      "clause": "DOM Level 1 Core 1.2 — Node.hasChildNodes"
+    },
+    {
+      "group": "document handle — the Element vocabulary, for its document element",
+      "note": "getAttribute and getTagName delegated to the root before this surface existed, and every committed tree calls them that way. The Element properties answer the same way rather than a second one.",
+      "document": "books",
+      "source": "var1.getTagName()",
+      "lua": "var1:getTagName()",
+      "expect": { "string": "books" },
+      "clause": "SCE's own name for Element.tagName; kept because committed trees call it"
+    },
+    {
+      "document": "books",
+      "source": "var1.tagName",
+      "lua": "var1.tagName",
+      "expect": { "string": "books" },
+      "clause": "DOM Level 1 Core 1.2 — Element.tagName"
+    },
+    {
+      "document": "books",
+      "source": "var1.getAttribute('count')",
+      "lua": "var1:getAttribute(\"count\")",
+      "expect": { "string": "2" },
+      "clause": "DOM Level 1 Core 1.2 — Element.getAttribute"
+    },
+    {
+      "document": "books",
+      "source": "var1.hasAttribute('count')",
+      "lua": "var1:hasAttribute(\"count\")",
+      "expect": { "bool": true },
+      "clause": "DOM Level 2 Core — Element.hasAttribute"
+    },
+    {
+      "document": "books",
+      "source": "var1.hasAttribute('missing')",
+      "lua": "var1:hasAttribute(\"missing\")",
+      "expect": { "bool": false },
+      "clause": "DOM Level 2 Core — hasAttribute is what getAttribute's \"\" cannot answer"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.nodeName",
+      "lua": "var1.documentElement.nodeName",
+      "expect": { "string": "books" },
+      "clause": "DOM Level 1 Core 1.2 — Document.documentElement"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.nodeType",
+      "lua": "var1.documentElement.nodeType",
+      "expect": { "number": 1 },
+      "clause": "DOM Level 1 Core 1.2 — ELEMENT_NODE = 1"
+    },
+    {
+      "note": "Only the document handle carries documentElement, which is how a document tells the two kinds apart without reading nodeType.",
+      "document": "books",
+      "source": "var1.documentElement.documentElement",
+      "lua": "var1.documentElement.documentElement",
+      "expect": { "empty": true },
+      "clause": "DOM Level 1 Core 1.2 — documentElement belongs to Document"
+    },
+    {
+      "group": "traversal",
+      "note": "Two children, not four: the newlines and indentation between the <book> elements are whitespace-only text runs, which pugixml's parse_default does not put in a tree.",
+      "document": "books",
+      "source": "var1.documentElement.childNodes.length",
+      "lua": "#var1.documentElement.childNodes",
+      "expect": { "number": 2 },
+      "clause": "DOM Level 1 Core 1.2 — Node.childNodes; pugixml parse_default omits parse_ws_pcdata"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.firstChild.tagName",
+      "lua": "var1.documentElement.firstChild.tagName",
+      "expect": { "string": "book" },
+      "clause": "DOM Level 1 Core 1.2 — Node.firstChild"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.firstChild.getAttribute('title')",
+      "lua": "var1.documentElement.firstChild:getAttribute(\"title\")",
+      "expect": { "string": "t1" },
+      "clause": "DOM Level 1 Core 1.2 — a traversed node carries the Element vocabulary"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.lastChild.getAttribute('title')",
+      "lua": "var1.documentElement.lastChild:getAttribute(\"title\")",
+      "expect": { "string": "t2" },
+      "clause": "DOM Level 1 Core 1.2 — Node.lastChild"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.firstChild.nextSibling.getAttribute('title')",
+      "lua": "var1.documentElement.firstChild.nextSibling:getAttribute(\"title\")",
+      "expect": { "string": "t2" },
+      "clause": "DOM Level 1 Core 1.2 — Node.nextSibling"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.lastChild.previousSibling.getAttribute('title')",
+      "lua": "var1.documentElement.lastChild.previousSibling:getAttribute(\"title\")",
+      "expect": { "string": "t1" },
+      "clause": "DOM Level 1 Core 1.2 — Node.previousSibling"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.lastChild.nextSibling",
+      "lua": "var1.documentElement.lastChild.nextSibling",
+      "expect": { "empty": true },
+      "clause": "DOM Level 1 Core 1.2 — the last child has no next sibling"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.firstChild.previousSibling",
+      "lua": "var1.documentElement.firstChild.previousSibling",
+      "expect": { "empty": true },
+      "clause": "DOM Level 1 Core 1.2 — the first child has no previous sibling"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.firstChild.parentNode.tagName",
+      "lua": "var1.documentElement.firstChild.parentNode.tagName",
+      "expect": { "string": "books" },
+      "clause": "DOM Level 1 Core 1.2 — Node.parentNode"
+    },
+    {
+      "note": "The document element's parent is the document, which is the handle the variable already holds — not nothing, and not a third shape.",
+      "document": "books",
+      "source": "var1.documentElement.parentNode.nodeType",
+      "lua": "var1.documentElement.parentNode.nodeType",
+      "expect": { "number": 9 },
+      "clause": "DOM Level 1 Core 1.3 — a Document is the parent of its documentElement"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.lastChild.hasChildNodes()",
+      "lua": "var1.documentElement.lastChild:hasChildNodes()",
+      "expect": { "bool": false },
+      "clause": "DOM Level 1 Core 1.2 — a self-closed element has no children"
+    },
+    {
+      "document": "books",
+      "source": "var1.documentElement.firstChild.textContent",
+      "lua": "var1.documentElement.firstChild.textContent",
+      "expect": { "string": "first" },
+      "clause": "DOM Level 3 Core — Node.textContent"
+    },
+    {
+      "note": "The whitespace between the two books is not text, so the element's text content is its one book's, not that plus two runs of newline.",
+      "document": "books",
+      "source": "var1.documentElement.textContent",
+      "lua": "var1.documentElement.textContent",
+      "expect": { "string": "first" },
+      "clause": "DOM Level 3 Core — textContent over a tree with no whitespace nodes"
+    },
+    {
+      "group": "character data reports its own kind",
+      "document": "mixed",
+      "source": "var1.documentElement.firstChild.nodeType",
+      "lua": "var1.documentElement.firstChild.nodeType",
+      "expect": { "number": 3 },
+      "clause": "DOM Level 1 Core 1.2 — TEXT_NODE = 3"
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.firstChild.nodeName",
+      "lua": "var1.documentElement.firstChild.nodeName",
+      "expect": { "string": "#text" },
+      "clause": "DOM Level 1 Core 1.2 — nodeName of a Text node is \"#text\""
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.firstChild.nodeValue",
+      "lua": "var1.documentElement.firstChild.nodeValue",
+      "expect": { "string": "plain" },
+      "clause": "DOM Level 1 Core 1.2 — nodeValue of a Text node is its data"
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.firstChild.data",
+      "lua": "var1.documentElement.firstChild.data",
+      "expect": { "string": "plain" },
+      "clause": "DOM Level 1 Core 1.2 — CharacterData.data"
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.firstChild.tagName",
+      "lua": "var1.documentElement.firstChild.tagName",
+      "expect": { "empty": true },
+      "clause": "DOM Level 1 Core 1.2 — tagName belongs to Element, not to character data"
+    },
+    {
+      "note": "A CDATA section is its own node kind, and telling it from text is the whole reason nodeType is a number rather than a boolean.",
+      "document": "mixed",
+      "source": "var1.documentElement.lastChild.nodeType",
+      "lua": "var1.documentElement.lastChild.nodeType",
+      "expect": { "number": 4 },
+      "clause": "DOM Level 1 Core 1.2 — CDATA_SECTION_NODE = 4"
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.lastChild.nodeName",
+      "lua": "var1.documentElement.lastChild.nodeName",
+      "expect": { "string": "#cdata-section" },
+      "clause": "DOM Level 1 Core 1.2 — nodeName of a CDATASection is \"#cdata-section\""
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.lastChild.nodeValue",
+      "lua": "var1.documentElement.lastChild.nodeValue",
+      "expect": { "string": "raw & <kept>" },
+      "clause": "DOM Level 1 Core 1.2 — a CDATA section's content is not markup"
+    },
+    {
+      "document": "mixed",
+      "source": "var1.documentElement.textContent",
+      "lua": "var1.documentElement.textContent",
+      "expect": { "string": "plainboldraw & <kept>" },
+      "clause": "DOM Level 3 Core — textContent spans text, elements and CDATA alike"
+    },
+    {
+      "group": "whitespace that is not the only thing in its run",
+      "note": "The rule pugixml's parse_default applies is `whitespace-ONLY runs are not nodes`, and the two halves of that are easy to conflate: a run of `a ` keeps its trailing space and a run of ` c` keeps its leading one. Measured 2026-08-18, three of the seven bindings skipped whitespace before deciding whether text followed, so ` c` reached the datamodel as `c` — invisible while nothing could read text at all.",
+      "document": "spaced",
+      "source": "var1.documentElement.childNodes.length",
+      "lua": "#var1.documentElement.childNodes",
+      "expect": { "number": 3 },
+      "clause": "DOM Level 1 Core 1.2 — text, element, text"
+    },
+    {
+      "document": "spaced",
+      "source": "var1.documentElement.firstChild.nodeValue",
+      "lua": "var1.documentElement.firstChild.nodeValue",
+      "expect": { "string": "a " },
+      "clause": "DOM Level 1 Core 1.2 — a text node's data is the run, trailing space included"
+    },
+    {
+      "document": "spaced",
+      "source": "var1.documentElement.lastChild.nodeValue",
+      "lua": "var1.documentElement.lastChild.nodeValue",
+      "expect": { "string": " c" },
+      "clause": "DOM Level 1 Core 1.2 — leading space included, for the same reason"
+    },
+    {
+      "document": "spaced",
+      "source": "var1.documentElement.textContent",
+      "lua": "var1.documentElement.textContent",
+      "expect": { "string": "a  c" },
+      "clause": "DOM Level 3 Core — textContent is the document's text, markup removed"
+    }
+  ]
+}

@@ -13,13 +13,11 @@
 package com.sce.scripting.quickjs
 
 import com.sce.runtime.IoProcessorDescriptor
+import com.sce.runtime.SceXmlDom
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
-import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
-import org.xml.sax.InputSource
-import java.io.StringReader
+import org.w3c.dom.Node
 
 /**
  * QuickJS ECMAScript engine for W3C SCXML datamodel evaluation.
@@ -486,63 +484,62 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
      * Returns null if XML parsing fails.
      */
     private fun buildDOMExpression(xmlContent: String): String? {
-        return try {
-            val factory = DocumentBuilderFactory.newInstance()
-            factory.isNamespaceAware = true
-            val builder = factory.newDocumentBuilder()
-            val doc = builder.parse(InputSource(StringReader(xmlContent)))
-            buildElementExpression(doc.documentElement)
-        } catch (_: Exception) {
-            null
-        }
+        val document = SceXmlDom.parse(xmlContent) ?: return null
+        val root = document.documentElement ?: return null
+        // The variable holds the document, which answers the Node
+        // interface as a document and the Element vocabulary for its
+        // document element (§scxml-B-2-1).
+        return "__sce_dom_document(${buildElementExpression(root)})"
     }
 
     /**
-     * Recursively build a JS expression for a DOM element.
-     * Output: __sce_dom_create({__tagName:"...",__attrs:{...},__children:{...}})
+     * Recursively build a JS expression for one DOM node.
+     *
+     * Output: `__sce_dom_node({__type:1,__name:"book",__tagName:"book",
+     * __attrs:{…},__kids:[…]})`, and `__sce_dom_node` links each child's
+     * `__parent` as it goes — `parentNode` needs that link and a JS object
+     * literal cannot refer to itself.
+     *
+     * Children are in document order, and character data is among them:
+     * §scxml-B-2-1's "corresponding DOM structure" is DOM Level 1 Core's
+     * tree, so grouping the element children by tag name — which is what
+     * this built while `getElementsByTagName` was the only reader — cannot
+     * answer `firstChild`, `nextSibling` or `textContent` at all.
      */
-    private fun buildElementExpression(element: Element): String {
+    private fun buildElementExpression(node: Node): String {
         val sb = StringBuilder()
-        sb.append("__sce_dom_create({")
+        sb.append("__sce_dom_node({__type:").append(SceXmlDom.nodeType(node))
+        sb.append(",__name:").append(jsStringLiteral(SceXmlDom.nodeName(node)))
 
-        // __tagName
-        sb.append("__tagName:").append(jsStringLiteral(element.tagName)).append(",")
-
-        // __attrs
-        sb.append("__attrs:{")
-        val attrs = element.attributes
-        for (i in 0 until attrs.length) {
-            if (i > 0) sb.append(",")
-            val attr = attrs.item(i)
-            sb.append(jsStringLiteral(attr.nodeName))
-                .append(":")
-                .append(jsStringLiteral(attr.nodeValue ?: ""))
+        if (SceXmlDom.hasNodeValue(node)) {
+            sb.append(",__value:").append(jsStringLiteral(node.nodeValue ?: ""))
+            sb.append("})")
+            return sb.toString()
         }
-        sb.append("},")
 
-        // __children grouped by tag name
-        val childNodes = element.childNodes
-        val tagGroups = mutableMapOf<String, MutableList<Element>>()
-        for (i in 0 until childNodes.length) {
-            val child = childNodes.item(i)
-            if (child is Element) {
-                tagGroups.getOrPut(child.tagName) { mutableListOf() }.add(child)
+        sb.append(",__tagName:").append(jsStringLiteral(node.nodeName ?: ""))
+        sb.append(",__attrs:{")
+        val attrs = node.attributes
+        if (attrs != null) {
+            for (i in 0 until attrs.length) {
+                if (i > 0) sb.append(",")
+                val attr = attrs.item(i)
+                sb.append(jsStringLiteral(attr.nodeName))
+                    .append(":")
+                    .append(jsStringLiteral(attr.nodeValue ?: ""))
             }
         }
+        sb.append("}")
 
-        sb.append("__children:{")
-        var first = true
-        for ((tag, elements) in tagGroups) {
-            if (!first) sb.append(",")
-            first = false
-            sb.append(jsStringLiteral(tag)).append(":[")
-            for (j in elements.indices) {
-                if (j > 0) sb.append(",")
-                sb.append(buildElementExpression(elements[j]))
+        val kids = SceXmlDom.children(node)
+        if (kids.isNotEmpty()) {
+            sb.append(",__kids:[")
+            for ((index, child) in kids.withIndex()) {
+                if (index > 0) sb.append(",")
+                sb.append(buildElementExpression(child))
             }
             sb.append("]")
         }
-        sb.append("}")
 
         sb.append("})")
         return sb.toString()
@@ -657,44 +654,159 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             "Date", "RegExp", "Map", "Set", "Promise", "Symbol"
         )
 
-        // W3C DOM: Prototype and factory for XML element objects
-        // C++ parity: getElementsByTagName searches entire subtree
+        // §scxml-B-2-1's DOM read surface — DOM Level 1 Core, not the two
+        // calls the W3C IRP suite happens to read.
+        //
+        // The Node interface is defined with getters on the prototype so
+        // `parentNode` and `childNodes` can point at each other: eager
+        // properties would walk the tree until it ran out of stack. A
+        // document handle holds `__root` and answers the Node interface as
+        // the document it is, while answering the Element vocabulary for
+        // its document element — the delegation `getAttribute` and
+        // `getTagName` have always performed.
         private val DOM_PROTO_SETUP = """
+            var __SCE_DOM_ELEMENT = 1, __SCE_DOM_TEXT = 3, __SCE_DOM_CDATA = 4,
+                __SCE_DOM_DOCUMENT = 9;
+            function __sce_dom_node_of(handle) {
+                return handle.__root !== undefined ? handle.__root : handle;
+            }
+            function __sce_dom_is_document(handle) {
+                return handle.__root !== undefined;
+            }
+            function __sce_dom_has_value(node) {
+                return node.__type === __SCE_DOM_TEXT || node.__type === __SCE_DOM_CDATA;
+            }
+            function __sce_dom_text_content(node) {
+                if (__sce_dom_has_value(node)) return node.__value || "";
+                var kids = node.__kids || [], text = "";
+                for (var i = 0; i < kids.length; i++) text += __sce_dom_text_content(kids[i]);
+                return text;
+            }
+            function __sce_dom_sibling(node, step) {
+                var parent = node.__parent;
+                if (!parent || !parent.__kids) return null;
+                var kids = parent.__kids;
+                for (var i = 0; i < kids.length; i++) {
+                    if (kids[i] === node) return kids[i + step] || null;
+                }
+                return null;
+            }
             var __sce_dom_proto = {
                 getElementsByTagName: function(tagName) {
-                    var result = [];
-                    function collect(elem) {
-                        var children = elem.__children;
-                        if (!children) return;
-                        for (var tag in children) {
-                            var elems = children[tag];
-                            for (var i = 0; i < elems.length; i++) {
-                                if (tag === tagName) result.push(elems[i]);
-                                collect(elems[i]);
-                            }
+                    var node = __sce_dom_node_of(this), result = [];
+                    // A document matches its root inclusively, an element
+                    // only descends: DOM Level 1 Core 1.2's split.
+                    if (__sce_dom_is_document(this) && node.__tagName === tagName) {
+                        result.push(node);
+                    }
+                    function collect(current) {
+                        var kids = current.__kids || [];
+                        for (var i = 0; i < kids.length; i++) {
+                            if (kids[i].__type !== __SCE_DOM_ELEMENT) continue;
+                            if (kids[i].__tagName === tagName) result.push(kids[i]);
+                            collect(kids[i]);
                         }
                     }
-                    collect(this);
+                    collect(node);
                     return result;
                 },
                 getAttribute: function(attrName) {
-                    return (this.__attrs && this.__attrs[attrName]) || "";
+                    var node = __sce_dom_node_of(this);
+                    return (node.__attrs && node.__attrs[attrName]) || "";
+                },
+                hasAttribute: function(attrName) {
+                    var node = __sce_dom_node_of(this);
+                    return !!(node.__attrs && node.__attrs[attrName] !== undefined);
                 },
                 getTagName: function() {
-                    return this.__tagName || "";
+                    return __sce_dom_node_of(this).__tagName || "";
+                },
+                hasChildNodes: function() {
+                    if (__sce_dom_is_document(this)) return true;
+                    var kids = __sce_dom_node_of(this).__kids;
+                    return !!(kids && kids.length > 0);
                 }
             };
-            function __sce_dom_create(obj) {
+            function __sce_dom_getter(name, read) {
+                Object.defineProperty(__sce_dom_proto, name, {
+                    get: function() {
+                        return read(__sce_dom_node_of(this), __sce_dom_is_document(this));
+                    },
+                    configurable: true
+                });
+            }
+            __sce_dom_getter("nodeType", function(node, isDoc) {
+                return isDoc ? __SCE_DOM_DOCUMENT : node.__type;
+            });
+            __sce_dom_getter("nodeName", function(node, isDoc) {
+                return isDoc ? "#document" : node.__name;
+            });
+            // DOM Level 1 Core gives an element and a document a null
+            // nodeValue; `data` is CharacterData's own name for the value.
+            __sce_dom_getter("nodeValue", function(node, isDoc) {
+                return (isDoc || !__sce_dom_has_value(node)) ? null : node.__value;
+            });
+            __sce_dom_getter("data", function(node, isDoc) {
+                return (isDoc || !__sce_dom_has_value(node)) ? null : node.__value;
+            });
+            __sce_dom_getter("tagName", function(node, isDoc) {
+                if (!isDoc && __sce_dom_has_value(node)) return null;
+                return node.__tagName || "";
+            });
+            __sce_dom_getter("textContent", function(node) {
+                return __sce_dom_text_content(node);
+            });
+            __sce_dom_getter("childNodes", function(node, isDoc) {
+                if (isDoc) return [node];
+                return (node.__kids || []).slice(0);
+            });
+            __sce_dom_getter("firstChild", function(node, isDoc) {
+                if (isDoc) return node;
+                var kids = node.__kids || [];
+                return kids.length > 0 ? kids[0] : null;
+            });
+            __sce_dom_getter("lastChild", function(node, isDoc) {
+                if (isDoc) return node;
+                var kids = node.__kids || [];
+                return kids.length > 0 ? kids[kids.length - 1] : null;
+            });
+            __sce_dom_getter("nextSibling", function(node, isDoc) {
+                return isDoc ? null : __sce_dom_sibling(node, 1);
+            });
+            __sce_dom_getter("previousSibling", function(node, isDoc) {
+                return isDoc ? null : __sce_dom_sibling(node, -1);
+            });
+            __sce_dom_getter("parentNode", function(node, isDoc) {
+                if (isDoc) return null;
+                // The document element's parent is the document — DOM
+                // Level 1 Core 1.3 — which is the handle the variable
+                // already holds.
+                return node.__parent !== undefined ? node.__parent : (node.__doc || null);
+            });
+            __sce_dom_getter("documentElement", function(node, isDoc) {
+                // Only the document handle carries this, which is how a
+                // document tells the two kinds apart.
+                return isDoc ? node : null;
+            });
+            function __sce_dom_node(obj) {
                 Object.setPrototypeOf(obj, __sce_dom_proto);
-                if (obj.__children) {
-                    for (var tag in obj.__children) {
-                        var arr = obj.__children[tag];
-                        for (var i = 0; i < arr.length; i++) {
-                            __sce_dom_create(arr[i]);
-                        }
-                    }
+                var kids = obj.__kids || [];
+                for (var i = 0; i < kids.length; i++) {
+                    Object.defineProperty(kids[i], "__parent", {
+                        value: obj, enumerable: false, configurable: true
+                    });
                 }
                 return obj;
+            }
+            function __sce_dom_document(root) {
+                var doc = Object.create(__sce_dom_proto);
+                Object.defineProperty(doc, "__root", {
+                    value: root, enumerable: false, configurable: true
+                });
+                Object.defineProperty(root, "__doc", {
+                    value: doc, enumerable: false, configurable: true
+                });
+                return doc;
             }
         """.trimIndent()
     }

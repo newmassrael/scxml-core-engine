@@ -12,7 +12,20 @@ namespace SCE {
 
 /**
  * §scxml-B-2: QuickJS bindings for XML DOM API
- * Creates JavaScript-accessible DOM objects with getElementsByTagName() and getAttribute()
+ *
+ * Creates JavaScript-accessible DOM nodes carrying DOM Level 1 Core's
+ * read surface — `getElementsByTagName` / `getAttribute` /
+ * `hasAttribute` / `getTagName` / `hasChildNodes`, and the Node
+ * interface as properties (`nodeType`, `nodeName`, `nodeValue`,
+ * `childNodes`, `firstChild`, `lastChild`, `nextSibling`,
+ * `previousSibling`, `parentNode`, `textContent`, `tagName`, `data`,
+ * `documentElement`) — installed once on a per-context prototype.
+ *
+ * The class holds no members and declares no callbacks: the opaque
+ * payload, the finalizer and every callback live in DOMBinding.cpp's
+ * anonymous namespace, because a second declaration of the payload was a
+ * second *type* with the same layout, and the finalizer that deleted
+ * through it only worked while the layouts happened to agree.
  */
 class DOMBinding {
 public:
@@ -24,26 +37,14 @@ public:
 
     /**
      * Create a JavaScript DOM object from XML content
-     * Returns a JS object with getElementsByTagName() method
+     *
+     * Returns the document handle: it owns the parsed tree, answers the
+     * Node interface as a document, and answers the Element vocabulary
+     * for its document element. Every node reached from it carries the
+     * same owning document, so an element assigned to one variable stays
+     * readable after the variable the tree arrived in is overwritten.
      */
     static JSValue createDOMObject(JSContext *ctx, const std::string &xmlContent);
-
-private:
-    // Wrapper to store XMLDocument in JS opaque data
-    struct DOMObjectData {
-        std::shared_ptr<XMLDocument> document;
-        std::shared_ptr<XMLElement> element;
-    };
-
-    // Finalizer for DOM object
-    static void domObjectFinalizer(JSRuntime *rt, JSValue val);
-
-    // JavaScript method implementations
-    static JSValue js_getElementsByTagName(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv);
-    static JSValue js_getAttribute(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv);
-
-    // Helper to create element wrapper object
-    static JSValue createElementObject(JSContext *ctx, std::shared_ptr<XMLElement> element);
 };
 
 }  // namespace SCE

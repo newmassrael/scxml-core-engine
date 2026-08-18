@@ -525,24 +525,35 @@ pub fn to_lua_data_content(
 
 /// The value an `<assign>`'s in-line children specify, as an expression.
 ///
-/// The Recommendation gives those children the same reading it gives
-/// `<data>`'s in-line content, so the ordering is [`to_lua_data_content`]'s
-/// and only the last rung differs. `<data>` hands XML back unlowered
-/// because the initializer at the other end of that seam builds a DOM node
-/// from it; an assignment has no such end. Every backend already resolved
-/// that the same way — c11, cpp, kotlin, rust and go each wrapped the
-/// serialised XML in a single-quoted string literal, and python's runtime
-/// fallback arrived at the same string after its eval failed — so the rung
-/// is written down here once instead of being re-derived five times in
-/// Jinja.
+/// The ordering is [`to_lua_data_content`]'s and only the last rung
+/// differs. `<data>` hands XML back unlowered because the initializer at
+/// the other end of that seam builds a DOM node from it; an assignment has
+/// no such end. Every backend already resolved that the same way — c11,
+/// cpp, kotlin, rust and go each wrapped the serialised XML in a
+/// single-quoted string literal, and python's runtime fallback arrived at
+/// the same string after its eval failed — so the rung is written down
+/// here once instead of being re-derived five times in Jinja.
 ///
-/// ⚠ Stated rather than left to be discovered: that unanimous answer is
-/// *not* the one the ECMAScript data model appendix asks for. Its ladder
-/// reads XML as a DOM value, and `<data>` does. W3C test530 assigns a
-/// serialised `<scxml>` document and then invokes it through
-/// `<content expr>`, which wants the text back; making the write build a
-/// DOM would need that seam to serialise it again. The asymmetry is a debt
-/// with a name, not a reading.
+/// # Why the last rung is a string and not a DOM
+///
+/// Because the Recommendation asks for a DOM in exactly two places and
+/// this is neither of them. The ECMAScript data model appendix gives
+/// `<data>`'s in-line content and `src` the JSON → XML-DOM →
+/// space-normalized-string ladder, and gives an arriving `_event.data`
+/// the same one. An `<assign>`'s children are, in the words of the
+/// element's own clause, an "in-line specification of the legal data
+/// value" — which points at the section defining what a legal value *is*,
+/// and there is no ladder in it. The appendix's own `<assign>` entry names
+/// only `expr`.
+///
+/// So the string reading here is conformant, and W3C test530 depends on
+/// it: it assigns a serialised `<scxml>` document and invokes it through
+/// `<content expr>`, which wants the text back. An earlier revision of
+/// this comment asserted the opposite — that the appendix's ladder
+/// covered these children and the unanimous backend answer therefore
+/// violated it — and recorded the asymmetry as a debt. It was a
+/// misreading of the appendix, and it cost two rounds of registry
+/// priority before anyone read the `<assign>` entry there.
 ///
 /// What this removes is the rung *above* it. An `<assign>` whose child is
 /// text — `21`, `{ "k": 7 }`, `hello there` — was quoted by those same

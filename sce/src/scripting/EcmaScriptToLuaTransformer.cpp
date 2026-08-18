@@ -150,19 +150,78 @@ size_t findMatchingClose(const std::string &s, size_t openPos, char open, char c
     return (depth == 0) ? pos : (s.empty() ? 0 : s.size() - 1);
 }
 
-// Check if position is preceded only by \w characters going back to a word-char
-// Used to extract a preceding identifier for methods like .length, .indexOf, etc.
-// Returns start position of the identifier, or npos if none found.
+// The start of the bracketed group that closes at `closePos`, or npos when
+// it is unbalanced. Scans backwards, counting nesting.
+size_t findMatchingOpenBackwards(const std::string &s, size_t closePos, char open, char close) {
+    int depth = 0;
+    size_t pos = closePos;
+    while (true) {
+        if (s[pos] == close) {
+            ++depth;
+        } else if (s[pos] == open) {
+            --depth;
+            if (depth == 0) {
+                return pos;
+            }
+        }
+        if (pos == 0) {
+            return std::string::npos;
+        }
+        --pos;
+    }
+}
+
+// The start of the prefix expression ending at `pos` — the receiver a
+// member access binds to.
+//
+// ECMAScript's `.length` and `.indexOf(` apply to whatever precedes them,
+// and what precedes them is a *chain*: `var1.childNodes`, `books[0]`,
+// `f(x)`. Walking back over word characters alone found only the chain's
+// last link, so `var1.childNodes.length` became `var1.#childNodes` — which
+// is not Lua at all — and `a.b.indexOf(x)` became `a._indexOf(b, x)`,
+// which asked the wrong receiver without saying so. Measured 2026-08-18
+// against the DOM read surface, where every traversal is a chain.
+//
+// Returns npos when nothing precedes that a receiver could be, which
+// leaves the member access untransformed — a string literal receiver
+// (`'abc'.length`) is that case and stays as it was.
 size_t findPrecedingIdentifier(const std::string &s, size_t dotPos) {
     if (dotPos == 0) {
         return std::string::npos;
     }
-    size_t end = dotPos;
     size_t start = dotPos;
-    while (start > 0 && isWordChar(s[start - 1])) {
-        --start;
+    while (start > 0) {
+        const char previous = s[start - 1];
+        if (previous == ')' || previous == ']') {
+            const size_t openPos = previous == ')' ? findMatchingOpenBackwards(s, start - 1, '(', ')')
+                                                   : findMatchingOpenBackwards(s, start - 1, '[', ']');
+            if (openPos == std::string::npos) {
+                break;
+            }
+            // A group is a link, never the whole chain: `(a + b).length`
+            // has no receiver name, and `f(x)` / `xs[0]` continue into
+            // the callee or the indexed base on the next turn.
+            if (openPos == 0 || !(isWordChar(s[openPos - 1]) || s[openPos - 1] == ')' || s[openPos - 1] == ']')) {
+                break;
+            }
+            start = openPos;
+            continue;
+        }
+        if (isWordChar(previous)) {
+            while (start > 0 && isWordChar(s[start - 1])) {
+                --start;
+            }
+            // `.` continues the chain; anything else ends it.
+            if (start > 0 && s[start - 1] == '.' && start >= 2 &&
+                (isWordChar(s[start - 2]) || s[start - 2] == ')' || s[start - 2] == ']')) {
+                --start;
+                continue;
+            }
+            break;
+        }
+        break;
     }
-    return (start < end) ? start : std::string::npos;
+    return (start < dotPos) ? start : std::string::npos;
 }
 
 // Check if a pure In() predicate chain (no regex)
@@ -1224,27 +1283,25 @@ std::string EcmaScriptToLuaTransformer::transformTernaryOperator(const std::stri
 }
 
 std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &input) const {
-    std::string result = input;
+    // The methods a DOM handle binds a receiver for, as one list.
+    //
+    // The set is `sce_build::ecmascript::builtins::DOM_METHODS` — what a
+    // document may write whichever backend runs it — and it is spelled
+    // once here rather than as a block per name: the previous shape
+    // carried a hand-counted skip length beside each name, so adding
+    // `hasAttribute` meant adding a fourth block and a fourth number, and
+    // a method the frontend lowered while this list did not know it was
+    // emitted as a field call that reached the binding with no receiver.
+    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName", "getTagName", "hasAttribute",
+                                                  "hasChildNodes"};
 
-    {
+    std::string result = input;
+    for (const char *method : kDomMethods) {
+        const std::string needle = std::string(".") + method + "(";
         size_t pos = 0;
-        while ((pos = result.find(".getElementsByTagName(", pos)) != std::string::npos) {
+        while ((pos = result.find(needle, pos)) != std::string::npos) {
             result.replace(pos, 1, ":");
-            pos += 21;
-        }
-    }
-    {
-        size_t pos = 0;
-        while ((pos = result.find(".getAttribute(", pos)) != std::string::npos) {
-            result.replace(pos, 1, ":");
-            pos += 14;
-        }
-    }
-    {
-        size_t pos = 0;
-        while ((pos = result.find(".getTagName(", pos)) != std::string::npos) {
-            result.replace(pos, 1, ":");
-            pos += 12;
+            pos += needle.size();
         }
     }
 
