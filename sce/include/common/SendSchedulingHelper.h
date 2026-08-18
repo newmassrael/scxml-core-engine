@@ -20,6 +20,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <string>
 #include <unordered_map>
@@ -229,6 +230,23 @@ public:
         return !queue_.empty();
     }
 
+    /**
+     * @brief When the earliest still-queued entry comes due
+     *
+     * `std::nullopt` when nothing is scheduled. The queue is ordered by
+     * (fireTime, sequence), so this is its front — the answer has always been
+     * here and nothing could ask for it. A host deciding when to call `tick()`
+     * again had to guess an interval instead; see
+     * `StaticExecutionEngine::timeUntilNextScheduled()` for what the guess
+     * costs.
+     */
+    std::optional<TimePoint> nextFireTime() const {
+        if (queue_.empty()) {
+            return std::nullopt;
+        }
+        return queue_.begin()->first.fireTime;
+    }
+
     size_t size() const {
         return queue_.size();
     }
@@ -304,6 +322,13 @@ public:
 
     bool hasPendingEvents() const {
         return core_.hasPendingEvents();
+    }
+
+    /**
+     * @brief When the earliest still-queued entry comes due (`std::nullopt` if none)
+     */
+    std::optional<std::chrono::steady_clock::time_point> nextFireTime() const {
+        return core_.nextFireTime();
     }
 
     bool cancelEvent(const std::string &sendId) {

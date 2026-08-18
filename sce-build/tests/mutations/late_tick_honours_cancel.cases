@@ -1,0 +1,107 @@
+# Mutation cases for §scxml-6.2/6.3 — a `<cancel>` still lands when the host
+# ticked late, and the engine can say when it is next due.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/late_tick_honours_cancel.cases`.
+#
+# Every backend keeps its scheduled sends in a queue ordered by fire time and
+# drains that queue inside `tick`. Draining it to exhaustion before running a
+# macrostep puts everything past due on the external queue together, so a
+# `<cancel>` performed by the first entry's transitions executes against a queue
+# the later event has already left. Measured 2026-08-19 the settle-timer
+# document then reached `cancelLost` on rust, go, python and c11 alike.
+#
+# The second half is the query that lets a host stop guessing: the deadline was
+# in the queue all along — `ScheduledEntry::ready_at`, Go's `readyAt`, Python's
+# `due_ms` heap key, the C++ map's `OrderKey`, the C11 array's `fire_time_ms` —
+# and nothing exposed it. `Scheduler.peek_next_due_ms` on the Python side had
+# even been written, with a doc sentence pointing at this exact use, and had
+# zero callers.
+#
+# The ctest half of the same axis (C++ engine, C11 template, both channels of
+# the shared fixture) lives in `late_tick_honours_cancel_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test late_tick_honours_cancel -p sce-rust-tests --test delayed_sends_need_tick_not_step
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/late_tick_honours_cancel.rs backends/rust/tests/tests/delayed_sends_need_tick_not_step.rs
+
+# ── Dispatch order: one entry per macrostep ────────────────────────
+#
+# The whole defect in one edit. Both entries reach the external queue before
+# the first one's transitions run, so `active`'s `<cancel sendid="s1">` has
+# nothing left to drop.
+
+mutation_case "the tick drains every ready entry before running a macrostep" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            // The macrostep this event drives may `<cancel>` a later one, so
+            // the next deadline is re-read after it rather than before.
+            self.run_main_event_loop();
+            if !self.is_running || self.is_in_final_state() {
+                break;
+            }
+        }""",
+     """        }""")
+PY
+
+# ── Which entry comes out first ────────────────────────────────────
+#
+# With one dispatch per macrostep, the choice of entry becomes load-bearing.
+# Insertion order delivers `settle` (scheduled first, due later) ahead of
+# `poke`, and `waiting`'s `settle` transition goes straight to `cancelLost`.
+
+mutation_case "the scheduler pops in insertion order rather than by deadline" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let idx = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.ready_at <= now)
+            .min_by_key(|(_, e)| e.ready_at)
+            .map(|(idx, _)| idx)?;""",
+     """        let idx = self.entries.iter().position(|e| e.ready_at <= now)?;""")
+PY
+
+# ── The deadline query ─────────────────────────────────────────────
+
+mutation_case "the scheduler reports no deadline while entries are queued" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """    pub fn next_ready_at(&self) -> Option<SchedTimePoint> {
+        self.entries.iter().map(|e| e.ready_at).min()
+    }""",
+     """    pub fn next_ready_at(&self) -> Option<SchedTimePoint> {
+        None
+    }""")
+PY
+
+# A constant that is always "due now" is as useless as one that never answers,
+# and it looks like it works on the machine that needs it — the host wakes,
+# finds nothing ready, and spins.
+mutation_case "the deadline query answers the latest entry rather than the earliest" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.entries.iter().map(|e| e.ready_at).min()""",
+     """        self.entries.iter().map(|e| e.ready_at).max()""")
+PY
+
+mutation_case "the deadline is measured from the wrong end of the interval" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        Some(next.saturating_sub(self.sched_now()))""",
+     """        Some(self.sched_now().saturating_sub(next))""")
+PY
+
+# ── The polling loop uses the answer ───────────────────────────────
+#
+# `run_until_completion` takes a poll interval as a CEILING. Sleeping the
+# caller's interval regardless is what lets a coarse one step over the two
+# deadlines the document distinguishes between.
+
+mutation_case "the poll loop sleeps its interval instead of the nearer deadline" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            let wait = match self.time_until_next_scheduled_ms() {
+                Some(ms) => poll_interval.min(Duration::from_millis(ms)),
+                None => poll_interval,
+            };
+            std::thread::sleep(wait);""",
+     """            std::thread::sleep(poll_interval);""")
+PY

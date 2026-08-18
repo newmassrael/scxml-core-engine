@@ -36,6 +36,7 @@ pub mod event_schema_native;
 pub mod invoke_precedes_dequeue_midrun;
 pub mod invoke_precedes_external_dequeue;
 pub mod invoke_unsupported_type;
+pub mod late_tick_honours_cancel;
 pub mod native_action;
 pub mod nested_final_not_terminal;
 pub mod parallel_completion_raises_done_state;

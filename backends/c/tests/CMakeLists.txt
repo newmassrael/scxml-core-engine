@@ -611,6 +611,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.2 + 6.3: <cancel> drops a delayed <send> that has not been
+    # dispatched, and a host that ticks after two fire times have passed must
+    # still see them dispatched one macrostep apart. Draining the scheduled
+    # queue to exhaustion first makes the later entry undroppable before the
+    # earlier one's transitions have run, so the cancel executes against a
+    # queue the event has already left.
+    sce_generate_static_integration_c_test(late_tick_honours_cancel "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_late_tick_honours_cancel
+        integration/test_late_tick_honours_cancel.c
+        ${INTEGRATION_C_TEST_late_tick_honours_cancel_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_late_tick_honours_cancel PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_late_tick_honours_cancel PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_late_tick_honours_cancel PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_late_tick_honours_cancel
+        COMMAND sce_c_integration_late_tick_honours_cancel
+    )
+    set_tests_properties(c11_integration_late_tick_honours_cancel PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.7: a <final> nested inside a compound state completes that
     # state, not the session — Appendix D enterStates ends the session only when
     # the final's parent is the <scxml> element. The fixture rests in the nested

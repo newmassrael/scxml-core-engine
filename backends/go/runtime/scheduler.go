@@ -83,24 +83,58 @@ func (s *PullScheduler[E]) HasReadyEvents() bool {
 	return false
 }
 
-// PopReadyEvent pops the next ready event and its data. Returns (event, data, true)
-// if an event is ready, or (zero, "", false) if nothing is ready.
+// PopReadyEvent pops the ready event that came due first and its data. Returns
+// (event, data, true) if an event is ready, or (zero, "", false) if nothing is.
+//
+// Deadline order, not insertion order: the caller dispatches these one at a
+// time and runs a macrostep between them, so whichever comes out first is the
+// one whose transitions run first. Picking by insertion would let a
+// later-scheduled event be delivered ahead of an earlier one whenever the host
+// woke after both came due, which is the difference between a <cancel> landing
+// and being lost. Ties keep insertion order.
 //
 // Matches Rust PullScheduler::pop_ready_event.
 func (s *PullScheduler[E]) PopReadyEvent() (E, string, bool) {
 	now := time.Now()
+	best := -1
 	for i, e := range s.entries {
-		if !e.readyAt.After(now) {
-			// Remove entry at index i
-			s.entries = append(s.entries[:i], s.entries[i+1:]...)
-			return e.event, e.eventData, true
+		if e.readyAt.After(now) {
+			continue
+		}
+		if best < 0 || e.readyAt.Before(s.entries[best].readyAt) {
+			best = i
 		}
 	}
-	var zero E
-	return zero, "", false
+	if best < 0 {
+		var zero E
+		return zero, "", false
+	}
+	entry := s.entries[best]
+	s.entries = append(s.entries[:best], s.entries[best+1:]...)
+	return entry.event, entry.eventData, true
 }
 
 // HasPendingEvents returns whether there are any scheduled events (ready or not).
 func (s *PullScheduler[E]) HasPendingEvents() bool {
 	return len(s.entries) > 0
+}
+
+// NextReadyAt reports when the earliest still-queued entry comes due, whether
+// or not it is ready yet. The bool is false when nothing is scheduled.
+//
+// The queue has always known this; nothing could ask. A host driving the
+// machine has to decide when to call Tick again, and without this it can only
+// guess an interval — see Engine.TimeUntilNextScheduled for what guessing
+// costs. Matches Rust PullScheduler::next_ready_at.
+func (s *PullScheduler[E]) NextReadyAt() (time.Time, bool) {
+	if len(s.entries) == 0 {
+		return time.Time{}, false
+	}
+	next := s.entries[0].readyAt
+	for _, e := range s.entries[1:] {
+		if e.readyAt.Before(next) {
+			next = e.readyAt
+		}
+	}
+	return next, true
 }
