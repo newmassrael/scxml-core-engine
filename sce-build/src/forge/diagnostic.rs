@@ -808,6 +808,12 @@ pub enum DiagnosticCode {
     // because choosing one is choosing its arguments too.
     #[serde(rename = "expression/namespace-not-callable")]
     ExpressionNamespaceNotCallable,
+    // The same namespace read as a value — `v = Math`, `Math[key]`.
+    // Distinct from `namespace-not-callable` because the positions are
+    // distinct and so are the members that may stand in them: a read may
+    // name `Math.PI`, a call may not.
+    #[serde(rename = "expression/namespace-not-a-value")]
+    ExpressionNamespaceNotAValue,
     #[serde(rename = "expression/strict-equality")]
     ExpressionStrictEquality,
     #[serde(rename = "expression/parse-mismatch")]
@@ -2896,6 +2902,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnknownIdentifier,
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
+        ExpressionNamespaceNotAValue,
         ExpressionStrictEquality,
         ExpressionParseMismatch,
         ExpressionUnexpectedToken,
@@ -3394,6 +3401,10 @@ impl DiagnosticCode {
             // one without naming a member is not an expression this
             // datamodel evaluates.
             ExpressionNamespaceNotCallable => Some("W3C SCXML §B.2"),
+            // The read half answers to the same appendix, and to the
+            // same sentence in it: the datamodel is ECMAScript's, and
+            // what SCE hands out for these names is a member set.
+            ExpressionNamespaceNotAValue => Some("W3C SCXML §B.2"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4080,6 +4091,7 @@ impl DiagnosticCode {
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
+            ExpressionNamespaceNotAValue => "expression/namespace-not-a-value",
             ExpressionStrictEquality => "expression/strict-equality",
             ExpressionParseMismatch => "expression/parse-mismatch",
             ExpressionUnexpectedToken => "expression/unexpected-token",
@@ -7834,6 +7846,18 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![namespace.clone()],
         },
+        // `actual` is the bare name this time, because the bare name is
+        // what the consumer edits: there are no parentheses beside it to
+        // remove, and what has to appear is a member the document has
+        // not written yet.
+        ExprError::NamespaceNotAValue { namespace, members } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionNamespaceNotAValue,
+            stage: Stage::Expression,
+            expected: Some(members.clone()),
+            actual: Some(namespace.clone()),
+            fix: None,
+            key_fragments: vec![namespace.clone()],
+        },
         ExprError::StrictEquality { operator, strict } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionStrictEquality,
             stage: Stage::Expression,
@@ -10132,6 +10156,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:dbf47c756e89d56b","code":"expression/namespace-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"JSON is a namespace, not a function. Call one of its members: JSON.parse, JSON.stringify","expected":["JSON.parse","JSON.stringify"],"actual":"JSON()"}"#,
+            ),
+            (
+                // The read half. `actual` is the bare name and the
+                // members carry both halves of the vocabulary, which is
+                // what separates this record from the one above.
+                "forge/expression-namespace-not-a-value",
+                ExprError::NamespaceNotAValue {
+                    namespace: "Math".into(),
+                    members: vec!["Math.PI".into(), "Math.abs".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:234d162120386eee","code":"expression/namespace-not-a-value","stage":"expression","spec":"W3C SCXML §B.2","message":"Math is a namespace, not a value. Reach one of its members: Math.PI, Math.abs","expected":["Math.PI","Math.abs"],"actual":"Math"}"#,
             ),
             (
                 "forge/expression-parse-mismatch",
@@ -13322,6 +13358,10 @@ mod tests {
             // proposing an edit.
             ExpressionParseMismatch
             | ExpressionNamespaceNotCallable
+            // `expression/namespace-not-a-value`: the same, one position
+            // over. There is no edit to propose — the name has to become
+            // a member reach, and which member is the document's meaning.
+            | ExpressionNamespaceNotAValue
             | MeshExternalAmbiguousEventGroup
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
@@ -14245,6 +14285,7 @@ mod tests {
                 | ExpressionUnknownIdentifier
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
+                | ExpressionNamespaceNotAValue
                 | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
@@ -14503,9 +14544,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            354,
+            355,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 354 distinct variants to match the DiagnosticCode \
+             expected 355 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

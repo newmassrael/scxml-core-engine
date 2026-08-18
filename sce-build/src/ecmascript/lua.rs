@@ -99,7 +99,15 @@ fn value(expr: &Expr) -> Result<String, ExprError> {
         // value for it and `undefined` both — which is why the engines bind
         // `_NULL` and `_UNDEFINED` to the same thing.
         Expr::Nullish => "nil".to_string(),
-        Expr::Ident(name) => lua_ident_read(name),
+        // A namespace reaches here only when it stands somewhere a
+        // member expression does not put it — on its own, under a
+        // computed key, as an operand. `member` and `call` answer the
+        // positions where the name is legal before recursing, so this
+        // arm is the whole of the rest.
+        Expr::Ident(name) => match builtins::namespace_not_a_value(name) {
+            Some(refusal) => return Err(refusal),
+            None => lua_ident_read(name),
+        },
         // Bound by the constructor emission in `function_literal`.
         Expr::This => "self".to_string(),
         Expr::Array(items) => {
@@ -393,6 +401,19 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
                 other => Err(builtins::unknown_member(builtins::Namespace::Math, other)
                     .expect("a member in neither list is unknown")),
             };
+        }
+        // The other two namespaces are ordinary Lua tables, so a member
+        // read is an ordinary field access — but the membership question
+        // is the same one, and only `Math` was being asked it. A read of
+        // `JSON.serialize` reached the engine as a field of the table
+        // this repository installs itself, where it is `nil`: the
+        // vocabulary is a fact here, exactly as it is for the call form
+        // `unsupported_member` already answers.
+        if let Some(namespace) = builtins::Namespace::from_ident(name) {
+            if let Some(refusal) = builtins::unknown_member(namespace, property) {
+                return Err(refusal);
+            }
+            return Ok(format!("{name}.{property}"));
         }
     }
     // ECMAScript's `.length` is Lua's `#` for both strings and arrays,

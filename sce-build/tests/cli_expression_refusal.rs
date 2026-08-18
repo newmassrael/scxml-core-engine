@@ -455,6 +455,80 @@ fn a_namespace_written_as_a_call_is_reported_with_the_members_that_may_stand_the
     );
 }
 
+/// The namespace read as a value, in the position where the six
+/// backends stopped agreeing about what the document means.
+const READING_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="held" expr="0"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="held" expr="Math"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+#[test]
+fn a_namespace_read_as_a_value_is_reported_with_both_halves_of_its_vocabulary() {
+    let out = ScratchDir::new("namespace-read");
+    let document = out.path().join("reading.scxml");
+    std::fs::write(&document, READING_DOCUMENT).expect("write document");
+
+    let generated = run(&[
+        "generate",
+        document.to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        out.path().to_str().unwrap(),
+        "--error-format=json",
+    ]);
+
+    assert_eq!(generated.exit, Some(0), "stderr:\n{}", generated.stderr);
+    let diagnostics = records(&generated.stderr);
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "expected exactly one refusal record, got:\n{}",
+        generated.stderr
+    );
+    let record = &diagnostics[0];
+    assert_eq!(record["code"], "expression/namespace-not-a-value");
+    assert_eq!(
+        record["actual"], "Math",
+        "the bare name is what the consumer edits: {record}"
+    );
+    let expected: Vec<String> = record["expected"]
+        .as_array()
+        .expect("expected carries the members")
+        .iter()
+        .map(|c| c.as_str().expect("member is a string").to_string())
+        .collect();
+    assert!(
+        expected.contains(&"Math.PI".to_string()),
+        "a read may name a constant, so the list carries both halves: {expected:?}"
+    );
+    assert!(record["fix"].is_null(), "fix must stay absent: {record}");
+
+    let linted = run(&[
+        "check",
+        document.to_str().unwrap(),
+        "--lint",
+        "--error-format=json",
+    ]);
+    assert_ne!(
+        linted.exit,
+        Some(0),
+        "--lint must refuse: {}",
+        linted.stderr
+    );
+}
+
 /// The corpus this repository authors is lint-clean, which is what
 /// `scripts/gates/example-codegen.sh` now enforces for refusals too.
 ///

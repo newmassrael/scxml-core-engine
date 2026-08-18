@@ -3782,6 +3782,33 @@ pub enum ExprError {
         members: Vec<String>,
     },
 
+    /// A namespace this datamodel installs, read as a value — `Math`,
+    /// `JSON` on their own, or `Math[key]` with a key no literal folds
+    /// into a member.
+    ///
+    /// The read half of [`ExprError::NamespaceNotCallable`]. Written as
+    /// the call it is a TypeError on every engine; read as a value it is
+    /// worse than that, because the engines disagree. The four backends
+    /// that lower to Lua answer `Math` with a `ReferenceError` — the
+    /// emitter rewrites `Math.<member>` to Lua's own `math`, so the
+    /// capitalised name is bound nowhere — while the two that hand the
+    /// author's ECMAScript to an ECMAScript engine answer with the
+    /// object the language defines. One document, two meanings, and
+    /// nothing said at build time.
+    ///
+    /// So the name is legal in one position: as the receiver of a
+    /// member. `members` documents that position and no `fix` rides,
+    /// for the reason its sibling gives.
+    #[error("{namespace} is a namespace, not a value. Reach one of its members: {}", .members.join(", "))]
+    NamespaceNotAValue {
+        /// The namespace as the author wrote it.
+        namespace: String,
+        /// The members that may be reached, qualified. Both halves this
+        /// time — a read may legally name a constant, which is what
+        /// separates this list from the one a call is offered.
+        members: Vec<String>,
+    },
+
     /// A free identifier nothing declares — `conut + 1` where the
     /// document declares `count`.
     ///

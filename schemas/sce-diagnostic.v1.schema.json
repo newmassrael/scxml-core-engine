@@ -119,6 +119,7 @@
         "expression/unknown-identifier",
         "expression/property-not-callable",
         "expression/namespace-not-callable",
+        "expression/namespace-not-a-value",
         "expression/strict-equality",
         "expression/parse-mismatch",
         "expression/unexpected-token",
