@@ -1,0 +1,68 @@
+# Mutation cases for a call into a shut-down script engine.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/shutdown_engine_answers.cases`.
+#
+# `JSEngine`'s five async entry points hand their work to the queued executor's
+# worker thread, and every caller in this repository waits on the returned
+# future with `.get()`. `shutdown()` joins that worker. Queueing into a joined
+# executor was silent: the promise was never satisfied and the caller blocked
+# forever — no log line, no error, no timeout.
+#
+# Measured 2026-08-19: a pre-push `ctest` reported that as `IntegrationTests
+# (Timeout 180.10 sec)`, and the only clue in 180 seconds of silence was the
+# name of the test it happened to be sitting in. Two gates after it never ran.
+# The same shape reaches a consumer — an application that calls `shutdown()`
+# and then executes one more script hangs instead of being told why.
+#
+# The first case restores exactly that. It is why every case in the oracle
+# bounds its wait with `wait_for` instead of `.get()`: a test that reproduces a
+# hang by hanging is the defect again, wearing the harness's timeout, and the
+# harness would report a 60-second ctest timeout rather than a red assertion.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^ShutDownEngineAnswers$'
+mutation_targets sce/src/scripting/PlatformExecutionHelper.cpp
+mutation_oracles tests/engine/ShutDownEngineAnswersTest.cpp
+
+# ── The defect itself ──────────────────────────────────────────────
+
+mutation_case "a stopped executor accepts work nothing will ever run" <<'PY'
+edit("sce/src/scripting/PlatformExecutionHelper.cpp",
+     """            if (shouldStop_.load()) {
+                SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; "
+                              "the operation was refused rather than queued to a stopped worker");
+                queuedOp->promise.set_value(ScriptResult::createError(
+                    "script engine is shut down; call reset() or initialize() before executing"));
+                return future;
+            }
+""",
+     "")
+PY
+
+# ── The refusal must not swallow the engine's real work ────────────
+#
+# "Refuse always" passes every case about the shut-down state while breaking
+# every real caller — the shape a fix degenerates into when only one side is
+# measured.
+
+mutation_case "the executor refuses work even when its worker is running" <<'PY'
+edit("sce/src/scripting/PlatformExecutionHelper.cpp",
+     """            if (shouldStop_.load()) {
+                SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; """,
+     """            if (true) {
+                SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; """)
+PY
+
+# ── A refusal has to read as a refusal ────────────────────────────
+#
+# Answering promptly with `success` is worse than hanging: the caller proceeds
+# on a result the engine never computed.
+
+mutation_case "a refused operation reports success" <<'PY'
+edit("sce/src/scripting/PlatformExecutionHelper.cpp",
+     """                queuedOp->promise.set_value(ScriptResult::createError(
+                    "script engine is shut down; call reset() or initialize() before executing"));""",
+     """                queuedOp->promise.set_value(ScriptResult::createSuccess());""")
+PY
