@@ -3809,6 +3809,34 @@ pub enum ExprError {
         members: Vec<String>,
     },
 
+    /// A literal written as the thing being called — `1()`, `'abc'()`,
+    /// `null()`.
+    ///
+    /// The third shape of ECMA-262 11.2.3's TypeError, after
+    /// [`ExprError::PropertyNotCallable`] and
+    /// [`ExprError::NamespaceNotCallable`], and the only one whose
+    /// callee the frontend can type without consulting anything: a
+    /// literal is what it is written as.
+    ///
+    /// It carries no repair, and that is the whole difference from
+    /// `PropertyNotCallable`. Dropping the call from `t.length()` leaves
+    /// the value the author was after; dropping it from `1()` leaves the
+    /// number 1, which nobody wrote that expression to obtain. Offering
+    /// it would be inventing an intention.
+    ///
+    /// The rule stops at literals deliberately. `(1 + 2)()` is a call on
+    /// something this datamodel also knows is not a function, but
+    /// knowing that means inferring a type, and
+    /// [`crate::ecmascript`] has no inference pass between its AST and
+    /// its emitter — by design, because the W3C datamodel is untyped and
+    /// the engine underneath is too.
+    #[error("{what} is not a function")]
+    LiteralNotCallable {
+        /// The literal as the record names it: `the number literal`,
+        /// `the literal null or undefined`.
+        what: String,
+    },
+
     /// A free identifier nothing declares — `conut + 1` where the
     /// document declares `count`.
     ///

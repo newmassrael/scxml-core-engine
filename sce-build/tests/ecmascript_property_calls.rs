@@ -476,6 +476,80 @@ fn every_namespace_this_datamodel_installs_is_reachable_by_ident() {
     }
 }
 
+// ── The literal written as the call ──────────────────────────────
+
+/// Every literal this grammar admits is refused in callee position.
+///
+/// The list is the AST's literal nodes rather than a sample: each one
+/// used to be emitted as a Lua call on itself, and three of the six —
+/// `1()`, `true()`, `nil()` — are not Lua at all, so what the artifact
+/// carried failed to *load*. A rule covering only the two that happened
+/// to parse would leave the worse half in place.
+#[test]
+fn every_literal_is_refused_where_the_call_is() {
+    // A lower bound on the sweep: the three spellings that were not
+    // valid Lua are the half that mattered most, and a list that quietly
+    // kept only the ones that parsed would report the same green.
+    const SPELLINGS: &[&str] = &[
+        "1()",
+        "'abc'()",
+        "true()",
+        "false()",
+        "null()",
+        "undefined()",
+        "[1, 2]()",
+        "({a: 1})()",
+    ];
+    assert!(
+        SPELLINGS.len() >= 8,
+        "the sweep has stopped covering the literals this grammar admits"
+    );
+    for source in SPELLINGS.iter().copied() {
+        match refusal(source) {
+            ExprError::LiteralNotCallable { what } => assert!(
+                what.starts_with("the "),
+                "{source} was refused as {what}, which does not read as a phrase"
+            ),
+            other => panic!("{source} was refused as {other:?} rather than a literal call"),
+        }
+    }
+}
+
+/// The two spellings this AST folds together are named as two.
+///
+/// `null` and `undefined` are one node, so a record naming only `null`
+/// would be a claim about which the author wrote — and it would be wrong
+/// half the time.
+#[test]
+fn the_nullish_refusal_names_both_spellings() {
+    for source in ["null()", "undefined()"] {
+        match refusal(source) {
+            ExprError::LiteralNotCallable { what } => assert_eq!(
+                what, "the literal null or undefined",
+                "{source} was named as one spelling"
+            ),
+            other => panic!("{source} was refused as {other:?}"),
+        }
+    }
+}
+
+/// A call on a function expression is still lowered.
+///
+/// The counterweight, and the one the rule could plausibly have taken:
+/// an immediately-called function expression is a call whose callee is
+/// written out in full, exactly like the literals above, and it is the
+/// one such callee that *is* a function.
+#[test]
+fn an_immediately_called_function_expression_still_lowers() {
+    for source in [
+        "(function() { return 1; })()",
+        "(function(x) { return x; })(2)",
+    ] {
+        to_lua_value(source, &probes())
+            .unwrap_or_else(|err| panic!("{source} calls a function and was refused: {err}"));
+    }
+}
+
 /// Every name declared uncallable is a name this datamodel binds.
 ///
 /// The containment is the claim that keeps the list honest: a name
