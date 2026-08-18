@@ -72,10 +72,54 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
   cancel-in-progress: true
 
+# ## One job per casefile, and why the lane is shaped that way
+#
+# A round is a rebuild and a test run per case, and the corpus is 247 cases
+# across 39 casefiles. Run one after another in a single job, the arithmetic
+# is what decides whether this lane ever answers: measured from the run of
+# 2026-08-17T20:24Z, six selected casefiles took 5,826s — 280s, 623s, 309s,
+# 1,875s, 412s and 2,327s — for 1h37m of wall clock, and a push that selects
+# widely takes longer still (4h30m on 2026-08-17T15:40Z).
+#
+# Pushes to this repository arrive closer together than that. The concurrency
+# group above cancels an in-progress run when a newer push starts, which is
+# right — the verdict that matters is the newest commit's — but it means a
+# lane slower than the push interval never reaches one at all. Measured
+# 2026-08-18: the three most recent COMPLETED runs were `cancelled`,
+# `cancelled` and `cancelled`, at 1h41m, 1h21m and 3h31m of work discarded,
+# and a fourth push cancelled the third. Three consecutive commits went
+# without a mutation verdict, and nothing said so, because a cancelled lane is
+# not a red one.
+#
+# So the casefiles run as a matrix rather than a loop. Wall clock becomes the
+# slowest single casefile instead of their sum — 39m rather than 1h37m on the
+# measured run — which is inside the interval the lane has to answer within.
+#
+# What it costs, said plainly rather than left to be discovered: a setup per
+# casefile instead of per push, and for a ctest casefile that setup includes
+# the CMake configure-and-build. Two ctest casefiles in one selection now pay
+# for two trees where they used to share one. The per-case rebuilds, which are
+# the bulk of the time either way, are unchanged. The cache below is keyed so
+# the second and later runs restore rather than rebuild, and the trade the
+# whole change makes is a lane that answers for one that did not.
+#
+# `fail-fast: false`, for the reason the gate itself runs every round before
+# reporting: a lane that stops at the first failing casefile has not measured
+# the rest, and the author would fix one and rediscover the next on the
+# following push.
 jobs:
-  mutation-rounds:
-    name: Mutation rounds for changed targets
+  select:
+    name: Which casefiles does this change reach
     runs-on: ubuntu-latest
+
+    outputs:
+      count: ${{ steps.select.outputs.count }}
+      # One entry per selected casefile, carrying the runner column the gate
+      # already computes, so the rounds below decide whether they need a CMake
+      # tree from the same answer this job printed rather than re-deriving it.
+      # Re-deriving it in a second place is precisely the defect this lane
+      # spent 34 commits on.
+      matrix: ${{ steps.select.outputs.matrix }}
 
     steps:
     # `fetch-depth: 0` because the change set is a range: the gate is handed
@@ -165,19 +209,57 @@ jobs:
         SCE_MUTATION_ROUNDS_DRY_RUN=1 scripts/gate mutation-rounds > "$selected"
         cat "$selected"
         echo "count=$(grep -c . "$selected" || true)" >> "$GITHUB_OUTPUT"
-        if awk -F'\t' '$2 == "ctest" { found = 1 } END { exit !found }' "$selected"; then
-          needs_ctest=yes
-        else
-          needs_ctest=no
-        fi
-        echo "needs_ctest=$needs_ctest" >> "$GITHUB_OUTPUT"
-        echo "ctest tree required: $needs_ctest"
+        # The same two columns, as the matrix the rounds job expands. Built
+        # here rather than in a second scan of the corpus, so a casefile can
+        # only be run by a job the selection above actually named.
+        #
+        # `include:` takes an array of objects and gives one job per entry,
+        # which is why the runner travels with the casefile instead of being
+        # a lane-wide yes/no: a cargo casefile in a selection that also holds
+        # a ctest one would otherwise pay for a CMake tree it never opens.
+        matrix="$(awk -F'\t' '
+          BEGIN { printf "{\"include\":[" }
+          NF >= 2 { printf "%s{\"casefile\":\"%s\",\"runner\":\"%s\"}", sep, $1, $2; sep = "," }
+          END { printf "]}\n" }
+        ' "$selected")"
+        echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+        echo "matrix: $matrix"
 
-    # Only what the selection actually needs. A cargo-only round wants no
-    # CMake, and paying for one on every push is what would make an
-    # unfiltered workflow expensive.
+    - name: Nothing to run
+      if: steps.select.outputs.count == '0'
+      run: echo "No declared mutation target changed; mutation-cases checked every anchor."
+
+  rounds:
+    name: "round: ${{ matrix.casefile }}"
+    needs: select
+    if: needs.select.outputs.count != '0'
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Every casefile is measured, not just the ones before the first
+      # failure. The gate makes the same choice inside a job, and for the same
+      # reason: a lane that stops early has not measured the rest.
+      fail-fast: false
+      # The whole matrix from the selection, in the shape the runner documents
+      # for a generated one: an object carrying `include`, one entry per job.
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    # Only what this casefile actually needs. A cargo round wants no CMake,
+    # and the runner column travelled here from the selection so a cargo
+    # casefile in a mixed selection does not pay for a tree it never opens.
     - name: Install Dependencies
-      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
+      if: matrix.runner == 'ctest'
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -185,13 +267,12 @@ jobs:
           pkg-config libxml2-dev libspdlog-dev libfmt-dev libboost-dev
 
     - name: Install libxml2 for sce-build
-      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest != 'yes'
+      if: matrix.runner != 'ctest'
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config libxml2-dev
 
     - name: Cache Cargo
-      if: steps.select.outputs.count != '0'
       uses: actions/cache@v5
       with:
         path: |
@@ -210,7 +291,7 @@ jobs:
     # tree whose recorded build type is not the one the gates judge, so the
     # lane would go red on a cache rather than on anything in the tree.
     - name: Cache CMake Build
-      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
+      if: matrix.runner == 'ctest'
       uses: actions/cache@v5
       with:
         path: |
@@ -238,22 +319,20 @@ jobs:
     # `scripts/prepare_ctest_tree.sh` is the one recipe, and the gate's refusal
     # names it too, so a developer configuring by hand gets the tree CI gets.
     - name: Configure and build the CMake tree
-      if: steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'
+      if: matrix.runner == 'ctest'
       run: scripts/prepare_ctest_tree.sh
 
-    # Delegated rather than restated: the selection, the per-round verdict and
-    # the floors all live in the gate, so this lane and a developer running
-    # `scripts/gate mutation-rounds` by hand judge the corpus by one set of
+    # Delegated rather than restated: the per-round verdict and the floors all
+    # live in the gate, so this lane and a developer running
+    # `scripts/gate mutation-rounds` by hand judge a casefile by one set of
     # rules.
-    - name: Run the rounds
-      if: steps.select.outputs.count != '0'
+    #
+    # The casefile comes from the matrix and nowhere else. `SCE_MUTATION_ROUNDS`
+    # is the gate's own channel for a named subset, so the job runs exactly the
+    # casefile the selection named — there is no change set in this job to
+    # re-derive one from, and that is deliberate: two derivations are how this
+    # lane came to answer for a different set than it had selected.
+    - name: Run the round
       env:
-        SCE_GATE_CHANGED_FILE: ${{ steps.changed.outputs.file }}
-        # Both steps, or the selection and the run would answer for different
-        # sets — the shape of defect this lane already paid for once.
-        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
       run: scripts/gate mutation-rounds
-
-    - name: Nothing to run
-      if: steps.select.outputs.count == '0'
-      run: echo "No declared mutation target changed; mutation-cases checked every anchor."
