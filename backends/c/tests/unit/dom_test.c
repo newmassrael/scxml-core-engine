@@ -182,6 +182,119 @@ static int test_get_elements_skips_text_nodes(void) {
     return 0;
 }
 
+// ─── DOM Level 1 Core read surface ──────────────────────────────────
+
+// The tree an author walks has no whitespace-only text in it, so
+// `firstChild` of a pretty-printed document is its first element.
+//
+// This is the pugixml `parse_default` alignment: while
+// getElementsByTagName was the only reader the difference could not be
+// seen — that call collects elements — and it decides every traversal
+// once `childNodes` and `firstChild` are readable.
+static int test_whitespace_between_elements_is_not_a_node(void) {
+    const char *xml = "<books xmlns=\"\">\n  <book title=\"t1\"/>\n</books>";
+    sce_xml_doc_t *doc = sce_xml_parse(xml);
+    ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid");
+    sce_xml_node_t *root = sce_xml_doc_root(doc);
+    ASSERT_TRUE(root != NULL, "root exists");
+    ASSERT_TRUE(root->first_child != NULL, "root has a child");
+    ASSERT_STREQ(sce_xml_node_name(root->first_child), "book", "first child is the element");
+    ASSERT_TRUE(root->first_child->next_sibling == NULL, "and it is the only child");
+    char *text = sce_xml_text_content(root);
+    ASSERT_TRUE(text != NULL, "textContent allocates");
+    ASSERT_STREQ(text, "", "a pretty-printed element has no text content");
+    free(text);
+    sce_xml_doc_free(doc);
+    return 0;
+}
+
+// Character data reports itself the way DOM Level 1 Core does, and the
+// two kinds stay distinguishable — which is what nodeType is for.
+static int test_character_data_reports_its_own_kind(void) {
+    const char *xml = "<p>plain<b>bold</b><![CDATA[raw & <kept>]]></p>";
+    sce_xml_doc_t *doc = sce_xml_parse(xml);
+    ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid");
+    sce_xml_node_t *p = sce_xml_doc_root(doc);
+
+    sce_xml_node_t *first = p->first_child;
+    ASSERT_TRUE(first != NULL, "<p> has a first child");
+    ASSERT_TRUE(sce_xml_node_type(first) == SCE_XML_DOM_TYPE_TEXT, "first child is text");
+    ASSERT_STREQ(sce_xml_node_name(first), "#text", "text node name");
+    ASSERT_STREQ(sce_xml_node_value(first), "plain", "text node value");
+    ASSERT_TRUE(sce_xml_has_node_value(first), "text has a nodeValue");
+
+    sce_xml_node_t *bold = first->next_sibling;
+    ASSERT_TRUE(bold != NULL, "<b> follows the text");
+    ASSERT_TRUE(sce_xml_node_type(bold) == SCE_XML_DOM_TYPE_ELEMENT, "<b> is an element");
+    ASSERT_TRUE(!sce_xml_has_node_value(bold), "an element has no nodeValue");
+    ASSERT_TRUE(sce_xml_previous_sibling(bold) == first, "previousSibling walks back");
+
+    sce_xml_node_t *cdata = sce_xml_last_child(p);
+    ASSERT_TRUE(cdata != NULL, "<p> has a last child");
+    ASSERT_TRUE(sce_xml_node_type(cdata) == SCE_XML_DOM_TYPE_CDATA_SECTION, "last child is CDATA");
+    ASSERT_STREQ(sce_xml_node_name(cdata), "#cdata-section", "CDATA node name");
+    ASSERT_STREQ(sce_xml_node_value(cdata), "raw & <kept>", "CDATA value");
+    ASSERT_TRUE(sce_xml_previous_sibling(p->first_child) == NULL, "the first child has none");
+
+    char *text = sce_xml_text_content(p);
+    ASSERT_TRUE(text != NULL, "textContent allocates");
+    ASSERT_STREQ(text, "plainboldraw & <kept>", "textContent is every descendant's data");
+    free(text);
+
+    ASSERT_TRUE(sce_xml_has_attribute(p, "missing") == 0, "hasAttribute on an absent name");
+    sce_xml_doc_free(doc);
+    return 0;
+}
+
+// The rule is "whitespace-ONLY runs are not nodes", and the two halves of
+// that are easy to conflate: a run of `a ` keeps its trailing space and a
+// run of ` c` keeps its leading one.
+//
+// This is the case the parser used to lose. Its element-body loop called
+// the misc skipper, which begins by skipping whitespace, so a run's
+// leading whitespace was consumed before anything decided text followed —
+// ` c` became `c` and textContent came back a character short of the cpp
+// reference backend's.
+static int test_leading_whitespace_belongs_to_its_text_run(void) {
+    sce_xml_doc_t *doc = sce_xml_parse("<p>a <b/> c</p>");
+    ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid");
+    sce_xml_node_t *p = sce_xml_doc_root(doc);
+
+    sce_xml_node_t *first = p->first_child;
+    ASSERT_TRUE(first != NULL, "<p> has a first child");
+    ASSERT_STREQ(sce_xml_node_value(first), "a ", "trailing space kept");
+
+    sce_xml_node_t *element = first->next_sibling;
+    ASSERT_TRUE(element != NULL, "<b/> follows it");
+    ASSERT_STREQ(sce_xml_node_name(element), "b", "and it is the element");
+
+    sce_xml_node_t *last = sce_xml_last_child(p);
+    ASSERT_TRUE(last != NULL && last != element, "a third child follows");
+    ASSERT_STREQ(sce_xml_node_value(last), " c", "leading space kept");
+
+    char *text = sce_xml_text_content(p);
+    ASSERT_TRUE(text != NULL, "textContent allocates");
+    ASSERT_STREQ(text, "a  c", "textContent is the document's text, markup removed");
+    free(text);
+    sce_xml_doc_free(doc);
+    return 0;
+}
+
+// hasAttribute answers what getAttribute's "" cannot: an attribute that
+// is present and empty.
+static int test_has_attribute_separates_absent_from_empty(void) {
+    sce_xml_doc_t *doc = sce_xml_parse("<node empty=\"\" set=\"v\"/>");
+    ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid");
+    sce_xml_node_t *node = sce_xml_doc_root(doc);
+    ASSERT_TRUE(sce_xml_has_attribute(node, "empty") == 1, "present and empty");
+    ASSERT_STREQ(sce_xml_get_attribute(node, "empty"), "", "reads as empty");
+    ASSERT_TRUE(sce_xml_has_attribute(node, "set") == 1, "present");
+    ASSERT_TRUE(sce_xml_has_attribute(node, "absent") == 0, "absent");
+    ASSERT_STREQ(sce_xml_get_attribute(node, "absent"), "", "also reads as empty");
+    sce_xml_doc_free(doc);
+    return 0;
+}
+
 // ─── Driver ─────────────────────────────────────────────────────────
 
 typedef int (*test_fn_t)(void);
@@ -202,6 +315,10 @@ int main(void) {
         {"mixed_text_pcdata", test_mixed_text_pcdata},
         {"comment_in_element_body", test_comment_in_element_body},
         {"get_elements_skips_text_nodes", test_get_elements_skips_text_nodes},
+        {"whitespace_between_elements_is_not_a_node", test_whitespace_between_elements_is_not_a_node},
+        {"character_data_reports_its_own_kind", test_character_data_reports_its_own_kind},
+        {"leading_whitespace_belongs_to_its_text_run", test_leading_whitespace_belongs_to_its_text_run},
+        {"has_attribute_separates_absent_from_empty", test_has_attribute_separates_absent_from_empty},
     };
     const size_t n = sizeof(tests) / sizeof(tests[0]);
     size_t failed = 0;

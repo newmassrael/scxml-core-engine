@@ -210,6 +210,59 @@ backend's engine loads. `sce-build/tests/ecmascript_semantics.rs` pins
 each against the ECMA-262 clause it comes from, by evaluating the
 emitted Lua in the production engine rather than in a test-local one.
 
+**XML is a DOM structure, and DOM Level 1 Core is the vocabulary.**
+§B.2.1 obliges the Processor to *"create the corresponding DOM
+structure"* for a `<data>` element's XML content or `src`, and §B.2.8.1
+says the same for an XML `_event.data`. Those two are the only places
+the Recommendation asks for a DOM — an `<assign>`'s children are
+§5.4.2's "in-line specification of a legal data value" and §B.2.7 names
+only `expr`, so the string reading they get is not a gap.
+
+What a handle answers:
+
+| | Members |
+|---|---|
+| Node | `nodeType` (1 element, 3 text, 4 CDATA section, 9 document), `nodeName`, `nodeValue`, `parentNode`, `childNodes`, `firstChild`, `lastChild`, `nextSibling`, `previousSibling`, `hasChildNodes()`, `textContent` (DOM Level 3) |
+| Element | `tagName`, `getAttribute()`, `hasAttribute()` (DOM Level 2), `getElementsByTagName()`, and SCE's own `getTagName()` |
+| CharacterData | `data` |
+| Document | `documentElement`, plus the Element vocabulary for its document element |
+| NodeList | the host language's array: `length` and `[i]` |
+
+The variable holds the *document*, which reports `nodeType` 9 and
+answers the Element vocabulary for its document element — the delegation
+`getAttribute()` and `getTagName()` performed before this surface
+existed, widened rather than narrowed. `getTagName()` is SCE's own name
+for the `tagName` property and stays because committed trees call it.
+
+Three narrowings, all of them the reference backend's:
+
+- **A whitespace-only text run is not a node**, and neither is a comment
+  or a processing instruction — pugixml's `parse_default`, which the C++
+  backend parses with, omits `parse_ws_pcdata`, `parse_comments` and
+  `parse_pi`. Whitespace that is *not* the whole run is kept: `<p>a <b/>
+  c</p>` has three children and a `textContent` of `"a  c"`.
+- **The surface is read-only.** `setAttribute`, `appendChild`,
+  `createElement`, the namespace-aware getters and the rest of DOM's
+  mutation and factory vocabulary are refused by name
+  (`expression/unsupported-builtin`, §3.5's rule applied to a second
+  specification): a DOM built from `<data>` content or an arriving
+  `_event.data` is the document that was parsed, and §B.2.4's location
+  expressions are how this datamodel changes values.
+- **`item(i)` is refused too**, because a NodeList is the host
+  language's own array in every backend — `[i]` reads it and `length`
+  measures it, and there is no receiver for a method to bind.
+
+Seven bindings implement this — two C++ engines, three Kotlin engines,
+Rust, Go, Python and C11 — and they are measured against one table,
+`tests/ecmascript/dom_read_surface.json`, which carries every case twice:
+the author's ECMAScript and the Lua the frontend lowers it to.
+`sce-build/tests/dom_read_surface_table.rs` asserts the second IS the
+frontend's own lowering of the first, so a reader cannot be asked a
+spelling the emitter does not produce. Before that table, all seven
+carried `getElementsByTagName`, `getAttribute` and `getTagName` and
+nothing else, which is exactly the vocabulary the W3C IRP suite reads:
+`d.tagName` answered nil on every backend with 204/204 fixtures green.
+
 ---
 
 ## §2 SCE extensions grammar

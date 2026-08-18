@@ -336,10 +336,16 @@ static void sce_xml_skip_doctype(sce_xml_parser_t *p) {
     sce_xml_parser_set_error(p, "unterminated DOCTYPE");
 }
 
-// Read one of <?xml?> / <!-- --> / <!DOCTYPE ...> if present at the
-// current position.
-static int sce_xml_skip_misc(sce_xml_parser_t *p) {
-    sce_xml_skip_ws(p);
+// Read one of <?xml?> / <!-- --> / <!DOCTYPE ...> at the position the
+// parser already stands on.
+//
+// Inside an element body the whitespace belongs to the text run that
+// follows it, so consuming it before deciding what comes next loses it:
+// measured 2026-08-18, `<p>a <b/> c</p>` reported its last text node as
+// "c" here and as " c" on the cpp reference backend, and `textContent`
+// came back a character short. It was unobservable for as long as nothing
+// could read text at all — hence the two entry points.
+static int sce_xml_skip_misc_here(sce_xml_parser_t *p) {
     if (p->pos + 1u < p->len && p->src[p->pos] == '<') {
         if (p->src[p->pos + 1u] == '?') {
             sce_xml_skip_pi(p);
@@ -356,6 +362,13 @@ static int sce_xml_skip_misc(sce_xml_parser_t *p) {
         }
     }
     return 0;
+}
+
+// The prologue / epilogue form: whitespace out there is insignificant and
+// skipping it is part of getting to the next construct.
+static int sce_xml_skip_misc(sce_xml_parser_t *p) {
+    sce_xml_skip_ws(p);
+    return sce_xml_skip_misc_here(p);
 }
 
 static char *sce_xml_parse_name(sce_xml_parser_t *p) {
@@ -496,17 +509,23 @@ static int sce_xml_parse_cdata(sce_xml_parser_t *p, sce_xml_node_t *parent, sce_
 
 // Capture text content up to the next `<` and append as PCDATA.  The
 // raw bytes are entity-decoded so `&amp;` etc. round-trip to their
-// literal form (parse_escapes default).  An empty text run produces no
-// node — pugixml's `parse_ws_pcdata_single` would emit one, but we
-// don't surface a runtime difference: the W3C corpus reads attribute
-// values, not text content, and `getElementsByTagName` only collects
-// element nodes anyway.
+// literal form (parse_escapes default).  A run that is empty — or that
+// is nothing but whitespace — produces no node, which is what pugixml's
+// `parse_default` does: `parse_ws_pcdata` is absent from it, so the cpp
+// reference backend's tree has no such node either.  It cost nothing
+// while `getElementsByTagName` was the only reader — that call collects
+// elements — and it is a divergence the moment `childNodes` and
+// `firstChild` are readable, which is why the alignment lands with them.
 static int sce_xml_consume_text(sce_xml_parser_t *p, sce_xml_node_t *parent, sce_xml_node_t **tail_inout) {
     size_t start = p->pos;
+    int only_whitespace = 1;
     while (p->pos < p->len && p->src[p->pos] != '<') {
+        if (!isspace((unsigned char)p->src[p->pos])) {
+            only_whitespace = 0;
+        }
         p->pos++;
     }
-    if (p->pos == start) {
+    if (p->pos == start || only_whitespace) {
         return 1;
     }
     char *decoded = sce_xml_decode_entities(p->src + start, p->pos - start);
@@ -583,7 +602,9 @@ static sce_xml_node_t *sce_xml_parse_element(sce_xml_parser_t *p) {
             }
             continue;
         }
-        if (sce_xml_skip_misc(p)) {
+        // The body form: whitespace here is the text run's, not the
+        // parser's to consume.
+        if (sce_xml_skip_misc_here(p)) {
             continue;
         }
         if (p->pos >= p->len) {
@@ -728,6 +749,132 @@ const char *sce_xml_get_attribute(const sce_xml_node_t *node, const char *attr) 
         a = a->next;
     }
     return "";
+}
+
+int sce_xml_has_attribute(const sce_xml_node_t *node, const char *attr) {
+    if (!node || !attr) {
+        return 0;
+    }
+    sce_xml_attr_t *a = node->attrs;
+    while (a) {
+        if (strcmp(a->name, attr) == 0) {
+            return 1;
+        }
+        a = a->next;
+    }
+    return 0;
+}
+
+// ─── DOM Level 1 Core: the Node interface's read surface ─────────────
+
+int sce_xml_node_type(const sce_xml_node_t *node) {
+    if (!node) {
+        return SCE_XML_DOM_TYPE_ELEMENT;
+    }
+    switch (node->type) {
+    case SCE_XML_NODE_PCDATA:
+        return SCE_XML_DOM_TYPE_TEXT;
+    case SCE_XML_NODE_CDATA:
+        return SCE_XML_DOM_TYPE_CDATA_SECTION;
+    default:
+        return SCE_XML_DOM_TYPE_ELEMENT;
+    }
+}
+
+const char *sce_xml_node_name(const sce_xml_node_t *node) {
+    switch (sce_xml_node_type(node)) {
+    case SCE_XML_DOM_TYPE_TEXT:
+        return "#text";
+    case SCE_XML_DOM_TYPE_CDATA_SECTION:
+        return "#cdata-section";
+    default:
+        return sce_xml_get_tag_name(node);
+    }
+}
+
+int sce_xml_has_node_value(const sce_xml_node_t *node) {
+    const int type = sce_xml_node_type(node);
+    return (type == SCE_XML_DOM_TYPE_TEXT || type == SCE_XML_DOM_TYPE_CDATA_SECTION) ? 1 : 0;
+}
+
+const char *sce_xml_node_value(const sce_xml_node_t *node) {
+    if (!sce_xml_has_node_value(node) || !node->text) {
+        return "";
+    }
+    return node->text;
+}
+
+// Measure first, then fill: two walks of the same subtree cost less than
+// growing a buffer inside a recursion that cannot report a failure.
+static size_t sce_xml_text_content_length(const sce_xml_node_t *node) {
+    if (!node) {
+        return 0u;
+    }
+    if (sce_xml_has_node_value(node)) {
+        return node->text ? strlen(node->text) : 0u;
+    }
+    size_t total = 0u;
+    for (const sce_xml_node_t *child = node->first_child; child; child = child->next_sibling) {
+        total += sce_xml_text_content_length(child);
+    }
+    return total;
+}
+
+static void sce_xml_text_content_fill(const sce_xml_node_t *node, char *out, size_t *offset) {
+    if (!node) {
+        return;
+    }
+    if (sce_xml_has_node_value(node)) {
+        if (node->text) {
+            const size_t length = strlen(node->text);
+            memcpy(out + *offset, node->text, length);
+            *offset += length;
+        }
+        return;
+    }
+    for (const sce_xml_node_t *child = node->first_child; child; child = child->next_sibling) {
+        sce_xml_text_content_fill(child, out, offset);
+    }
+}
+
+char *sce_xml_text_content(const sce_xml_node_t *node) {
+    const size_t length = sce_xml_text_content_length(node);
+    char *out = (char *)malloc(length + 1u);
+    if (!out) {
+        return NULL;
+    }
+    size_t offset = 0u;
+    sce_xml_text_content_fill(node, out, &offset);
+    out[offset] = '\0';
+    return out;
+}
+
+sce_xml_node_t *sce_xml_last_child(sce_xml_node_t *node) {
+    if (!node || !node->first_child) {
+        return NULL;
+    }
+    sce_xml_node_t *child = node->first_child;
+    while (child->next_sibling) {
+        child = child->next_sibling;
+    }
+    return child;
+}
+
+sce_xml_node_t *sce_xml_previous_sibling(sce_xml_node_t *node) {
+    if (!node || !node->parent) {
+        return NULL;
+    }
+    sce_xml_node_t *child = node->parent->first_child;
+    if (child == node) {
+        return NULL;
+    }
+    while (child) {
+        if (child->next_sibling == node) {
+            return child;
+        }
+        child = child->next_sibling;
+    }
+    return NULL;
 }
 
 // cpp findElementsByTagNameStatic 1:1 — element-only match, then

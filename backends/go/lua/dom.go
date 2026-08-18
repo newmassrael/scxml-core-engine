@@ -32,6 +32,7 @@ package scelua
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type XmlNodeType int
@@ -49,8 +50,8 @@ type XmlAttr struct {
 
 type XmlNode struct {
 	Type        XmlNodeType
-	Tag         string  // element: tag name; else empty
-	Text        string  // pcdata/cdata: content; else empty
+	Tag         string // element: tag name; else empty
+	Text        string // pcdata/cdata: content; else empty
 	Attrs       []XmlAttr
 	FirstChild  int // -1 = none
 	NextSibling int
@@ -116,6 +117,170 @@ func (d *XmlDoc) GetTagName(nodeID int) string {
 		return ""
 	}
 	return d.Nodes[nodeID].Tag
+}
+
+// HasAttribute — DOM Level 2 Core. Tells an absent attribute from one
+// present and empty, which GetAttribute's "" cannot.
+func (d *XmlDoc) HasAttribute(nodeID int, name string) bool {
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return false
+	}
+	for _, a := range d.Nodes[nodeID].Attrs {
+		if a.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// DOM Level 1 Core node types — the numbers `nodeType` reports. Four of
+// the twelve, because four is what these trees hold: comments and
+// processing instructions never become nodes (pugixml's `parse_default`
+// omits `parse_comments` and `parse_pi`) and the rest belong to
+// interfaces this surface does not carry.
+const (
+	DomNodeTypeElement      = 1
+	DomNodeTypeText         = 3
+	DomNodeTypeCdataSection = 4
+	DomNodeTypeDocument     = 9
+)
+
+// NodeType — `Node.nodeType`, as the number DOM Level 1 Core gives it.
+func (d *XmlDoc) NodeType(nodeID int) int {
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return DomNodeTypeElement
+	}
+	switch d.Nodes[nodeID].Type {
+	case XmlNodePcdata:
+		return DomNodeTypeText
+	case XmlNodeCdata:
+		return DomNodeTypeCdataSection
+	default:
+		return DomNodeTypeElement
+	}
+}
+
+// NodeName — the tag for an element, and DOM Level 1 Core's reserved
+// spelling for the two character-data kinds.
+func (d *XmlDoc) NodeName(nodeID int) string {
+	switch d.NodeType(nodeID) {
+	case DomNodeTypeText:
+		return "#text"
+	case DomNodeTypeCdataSection:
+		return "#cdata-section"
+	default:
+		return d.GetTagName(nodeID)
+	}
+}
+
+// HasNodeValue reports whether this node kind has a nodeValue at all —
+// character data does, an element does not (DOM Level 1 Core gives it
+// null).
+func (d *XmlDoc) HasNodeValue(nodeID int) bool {
+	t := d.NodeType(nodeID)
+	return t == DomNodeTypeText || t == DomNodeTypeCdataSection
+}
+
+// NodeValue — character data's content, and "" for a node that has none.
+func (d *XmlDoc) NodeValue(nodeID int) string {
+	if !d.HasNodeValue(nodeID) {
+		return ""
+	}
+	return d.Nodes[nodeID].Text
+}
+
+// TextContent — DOM Level 3 Core: every descendant character-data node's
+// content, concatenated in document order.
+func (d *XmlDoc) TextContent(nodeID int) string {
+	var sb strings.Builder
+	d.appendTextContent(nodeID, &sb)
+	return sb.String()
+}
+
+func (d *XmlDoc) appendTextContent(nodeID int, sb *strings.Builder) {
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return
+	}
+	if d.HasNodeValue(nodeID) {
+		sb.WriteString(d.Nodes[nodeID].Text)
+		return
+	}
+	c := d.Nodes[nodeID].FirstChild
+	for c != xmlNoChild {
+		d.appendTextContent(c, sb)
+		c = d.Nodes[c].NextSibling
+	}
+}
+
+// ChildIDs — `Node.childNodes`, in document order.
+func (d *XmlDoc) ChildIDs(nodeID int) []int {
+	out := []int{}
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return out
+	}
+	c := d.Nodes[nodeID].FirstChild
+	for c != xmlNoChild {
+		out = append(out, c)
+		c = d.Nodes[c].NextSibling
+	}
+	return out
+}
+
+// FirstChild — `Node.firstChild`, or xmlNoChild.
+func (d *XmlDoc) FirstChild(nodeID int) int {
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return xmlNoChild
+	}
+	return d.Nodes[nodeID].FirstChild
+}
+
+// LastChild — `Node.lastChild`. The arena links forward only (cpp reads
+// pugixml's `last_child()`), so this is the walk that costs.
+func (d *XmlDoc) LastChild(nodeID int) int {
+	child := d.FirstChild(nodeID)
+	if child == xmlNoChild {
+		return xmlNoChild
+	}
+	for d.Nodes[child].NextSibling != xmlNoChild {
+		child = d.Nodes[child].NextSibling
+	}
+	return child
+}
+
+// NextSibling — `Node.nextSibling`, or xmlNoChild.
+func (d *XmlDoc) NextSibling(nodeID int) int {
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return xmlNoChild
+	}
+	return d.Nodes[nodeID].NextSibling
+}
+
+// PreviousSibling — `Node.previousSibling`, found by walking the
+// parent's children for the same reason LastChild walks.
+func (d *XmlDoc) PreviousSibling(nodeID int) int {
+	parent := d.Parent(nodeID)
+	if parent == xmlNoChild {
+		return xmlNoChild
+	}
+	child := d.Nodes[parent].FirstChild
+	if child == nodeID {
+		return xmlNoChild
+	}
+	for child != xmlNoChild {
+		if d.Nodes[child].NextSibling == nodeID {
+			return child
+		}
+		child = d.Nodes[child].NextSibling
+	}
+	return xmlNoChild
+}
+
+// Parent — `Node.parentNode`'s node id, or xmlNoChild for the root.
+func (d *XmlDoc) Parent(nodeID int) int {
+	if nodeID < 0 || nodeID >= len(d.Nodes) {
+		return xmlNoChild
+	}
+	return d.Nodes[nodeID].Parent
 }
 
 func (d *XmlDoc) collect(nodeID int, tag string, out *[]int) {
@@ -240,8 +405,23 @@ func (p *xmlParser) skipDoctype() {
 	p.setError("unterminated DOCTYPE")
 }
 
+// skipMisc skips a PI / comment / DOCTYPE outside an element, where
+// whitespace is insignificant and skipping it is part of getting there.
 func (p *xmlParser) skipMisc() bool {
 	p.skipWS()
+	return p.skipMiscHere()
+}
+
+// skipMiscHere skips the same three at the position the parser already
+// stands on.
+//
+// Inside an element body the whitespace belongs to the text run that
+// follows it, so consuming it before deciding what comes next loses it:
+// measured 2026-08-18, `<p>a <b/> c</p>` reported its last text node as
+// "c" here and as " c" on the cpp reference backend, and `textContent`
+// came back a character short. It was unobservable for as long as nothing
+// could read text at all.
+func (p *xmlParser) skipMiscHere() bool {
 	if p.pos+1 < len(p.src) && p.src[p.pos] == '<' {
 		if p.src[p.pos+1] == '?' {
 			p.skipPI()
@@ -413,7 +593,9 @@ func (p *xmlParser) parseElement(doc *XmlDoc, parent int) (int, bool) {
 			appendChild(cdataID)
 			continue
 		}
-		if p.skipMisc() {
+		// The body form: whitespace here is the text run's, not the
+		// parser's to consume.
+		if p.skipMiscHere() {
 			continue
 		}
 		if p.pos >= len(p.src) {
@@ -434,7 +616,15 @@ func (p *xmlParser) parseElement(doc *XmlDoc, parent int) (int, bool) {
 			if !ok {
 				return -1, false
 			}
-			if text != "" {
+			// A run that is nothing but whitespace becomes no node:
+			// `parse_ws_pcdata` is absent from pugixml's `parse_default`,
+			// so the cpp reference backend's tree does not have one
+			// either. It cost nothing to keep one while
+			// getElementsByTagName was the only reader — that call
+			// collects elements — and it is a divergence the moment
+			// childNodes and firstChild are readable, which is why the
+			// alignment lands with them.
+			if strings.TrimSpace(text) != "" {
 				textID := len(doc.Nodes)
 				doc.Nodes = append(doc.Nodes, XmlNode{
 					Type:        XmlNodePcdata,

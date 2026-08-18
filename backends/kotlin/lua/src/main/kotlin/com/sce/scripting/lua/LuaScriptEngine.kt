@@ -12,13 +12,11 @@
 package com.sce.scripting.lua
 
 import com.sce.runtime.IoProcessorDescriptor
+import com.sce.runtime.SceXmlDom
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
-import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
-import org.xml.sax.InputSource
-import java.io.StringReader
+import org.w3c.dom.Node
 
 /**
  * Lua 5.4, running SCXML expressions that were rewritten from ECMAScript.
@@ -534,9 +532,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
         return when {
             LuaNative.isNil(L, index) -> null
             LuaNative.isBoolean(L, index) -> LuaNative.toBoolean(L, index)
+            // A string is asked about BEFORE a number, and by its type
+            // rather than by `lua_isnumber`. Lua's `isnumber` answers true
+            // for a string that could be converted to one, so the numeric
+            // arms used to swallow strings: measured 2026-08-18, a DOM
+            // attribute `count="2"` reached the datamodel as the number 2
+            // on this backend and as the string "2" on the other six, and
+            // a `cond` comparing it to "2" was false.
+            LuaNative.type(L, index) == LuaNative.typeString() -> LuaNative.toJString(L, index)
             LuaNative.isInteger(L, index) -> LuaNative.toInteger(L, index)
             LuaNative.isNumber(L, index) -> LuaNative.toNumber(L, index)
-            LuaNative.isString(L, index) -> LuaNative.toJString(L, index)
             LuaNative.isTable(L, index) -> {
                 val len = LuaNative.rawLen(L, index)
                 if (len > 0) {
@@ -634,59 +639,81 @@ class LuaScriptEngine : ScxmlScriptEngine {
         return true
     }
 
+    /**
+     * §scxml-B-2-1 — push "the corresponding DOM structure" for [xmlContent].
+     *
+     * Built as one Lua expression and evaluated, the way the QuickJS
+     * backend builds one JS expression: the raw stack API here has no
+     * `lua_pushvalue`, so a child cannot be handed a reference to the
+     * parent table while both are on the stack — and `parentNode` needs
+     * exactly that. `__sce_dom_node` links the parents as it constructs.
+     */
     private fun pushDOMObject(L: Long, xmlContent: String): Boolean {
-        return try {
-            val factory = DocumentBuilderFactory.newInstance()
-            factory.isNamespaceAware = true
-            val builder = factory.newDocumentBuilder()
-            val doc = builder.parse(InputSource(StringReader(xmlContent)))
-            pushDOMElement(L, doc.documentElement)
-            true
-        } catch (_: Exception) {
-            false
-        }
+        val document = SceXmlDom.parse(xmlContent) ?: return false
+        val root = document.documentElement ?: return false
+        val expression = "return __sce_dom_document(${nodeExpression(root)})"
+        return LuaNative.loadAndCall(L, expression, 1) == 0
     }
 
-    private fun pushDOMElement(L: Long, element: Element) {
-        LuaNative.createTable(L, 0, 3)
-
-        // Store attributes as a sub-table
-        val attrs = element.attributes
-        LuaNative.createTable(L, 0, attrs.length)
-        for (i in 0 until attrs.length) {
-            val attr = attrs.item(i)
-            LuaNative.pushString(L, attr.nodeValue ?: "")
-            LuaNative.setField(L, -2, attr.nodeName)
-        }
-        LuaNative.setField(L, -2, "__attrs")
-
-        // Store tag name
-        LuaNative.pushString(L, element.tagName)
-        LuaNative.setField(L, -2, "__tagName")
-
-        // Store child elements grouped by tag name
-        val childNodes = element.childNodes
-        val tagGroups = mutableMapOf<String, MutableList<Element>>()
-        for (i in 0 until childNodes.length) {
-            val child = childNodes.item(i)
-            if (child is Element) {
-                tagGroups.getOrPut(child.tagName) { mutableListOf() }.add(child)
+    /**
+     * One node as a Lua table constructor, children in document order.
+     *
+     * Whitespace-only text, comments and processing instructions are not
+     * nodes: the cpp reference backend parses with pugixml's
+     * `parse_default`, which omits `parse_ws_pcdata`, `parse_comments`
+     * and `parse_pi`, and `javax.xml` keeps all three. While
+     * `getElementsByTagName` was the only reader the difference could not
+     * be seen — that call collects elements — and it decides every
+     * traversal now that `childNodes` and `firstChild` are readable.
+     */
+    private fun nodeExpression(node: Node): String {
+        val sb = StringBuilder()
+        sb.append("__sce_dom_node({__type=").append(SceXmlDom.nodeType(node))
+        sb.append(",__name=").append(luaStringLiteral(SceXmlDom.nodeName(node)))
+        if (SceXmlDom.hasNodeValue(node)) {
+            sb.append(",__value=").append(luaStringLiteral(node.nodeValue ?: ""))
+        } else {
+            sb.append(",__tagName=").append(luaStringLiteral(node.nodeName ?: ""))
+            sb.append(",__attrs={")
+            val attrs = node.attributes
+            if (attrs != null) {
+                for (i in 0 until attrs.length) {
+                    if (i > 0) sb.append(",")
+                    val attr = attrs.item(i)
+                    sb.append("[").append(luaStringLiteral(attr.nodeName)).append("]=")
+                        .append(luaStringLiteral(attr.nodeValue ?: ""))
+                }
+            }
+            sb.append("}")
+            val kids = SceXmlDom.children(node)
+            if (kids.isNotEmpty()) {
+                sb.append(",__kids={")
+                for ((index, child) in kids.withIndex()) {
+                    if (index > 0) sb.append(",")
+                    sb.append(nodeExpression(child))
+                }
+                sb.append("}")
             }
         }
-        LuaNative.createTable(L, 0, tagGroups.size)
-        for ((tag, elements) in tagGroups) {
-            LuaNative.createTable(L, elements.size, 0)
-            for (j in elements.indices) {
-                pushDOMElement(L, elements[j])
-                LuaNative.rawSetI(L, -2, (j + 1).toLong())
-            }
-            LuaNative.setField(L, -2, tag)
-        }
-        LuaNative.setField(L, -2, "__children")
+        sb.append("})")
+        return sb.toString()
+    }
 
-        // Metatable registered at session init; apply to this element
-        LuaNative.getGlobal(L, "__sce_dom_mt")
-        LuaNative.setMetatable(L, -2)
+    private fun luaStringLiteral(value: String): String {
+        val sb = StringBuilder(value.length + 2)
+        sb.append('"')
+        for (c in value) {
+            when (c) {
+                '\\' -> sb.append("\\\\")
+                '"' -> sb.append("\\\"")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> if (c.code < 0x20) sb.append("\\").append(c.code) else sb.append(c)
+            }
+        }
+        sb.append('"')
+        return sb.toString()
     }
 
     private fun normalizeWhitespace(data: String): String {
@@ -730,39 +757,161 @@ class LuaScriptEngine : ScxmlScriptEngine {
             "parseInt", "parseFloat", "JSON", "_NULL", "_UNDEFINED", "Object", "debug"
         )
 
-        // DOM metatable — C++ parity: getElementsByTagName searches entire subtree
+        // §scxml-B-2-1's DOM read surface — DOM Level 1 Core, not the two
+        // calls the W3C IRP suite happens to read. `__index` is a function
+        // because the surface is properties and `parentNode`/`childNodes`
+        // point at each other: any eager materialisation of either walks
+        // the tree until it runs out of stack.
+        //
+        // A document handle holds `__root` and answers the Node interface
+        // as the document it is, while answering the Element vocabulary
+        // for its document element — the delegation `getAttribute` and
+        // `getTagName` have always performed.
         private val DOM_METATABLE_SETUP = """
             __sce_dom_mt = {}
-            local function collectByTagName(elem, tagName, result)
-                local children = rawget(elem, "__children")
-                if not children then return end
-                for tag, elems in pairs(children) do
-                    for i = 1, #elems do
-                        if not getmetatable(elems[i]) then
-                            setmetatable(elems[i], __sce_dom_mt)
+            local ELEMENT, TEXT, CDATA, DOCUMENT = 1, 3, 4, 9
+            local function resolve(self)
+                local root = rawget(self, "__root")
+                if root ~= nil then return root, true end
+                return self, false
+            end
+            local function collectByTagName(node, tagName, result)
+                local kids = rawget(node, "__kids")
+                if not kids then return end
+                for i = 1, #kids do
+                    local kid = kids[i]
+                    if rawget(kid, "__type") == ELEMENT then
+                        if rawget(kid, "__tagName") == tagName then
+                            result[#result+1] = kid
                         end
-                        if tag == tagName then
-                            result[#result+1] = elems[i]
-                        end
-                        collectByTagName(elems[i], tagName, result)
+                        collectByTagName(kid, tagName, result)
                     end
                 end
             end
-            __sce_dom_mt.__index = {
+            local function hasNodeValue(node)
+                local t = rawget(node, "__type")
+                return t == TEXT or t == CDATA
+            end
+            local function textContent(node)
+                if hasNodeValue(node) then return rawget(node, "__value") or "" end
+                local kids = rawget(node, "__kids")
+                if not kids then return "" end
+                local parts = {}
+                for i = 1, #kids do parts[#parts+1] = textContent(kids[i]) end
+                return table.concat(parts)
+            end
+            local function siblingOf(node, step)
+                local parent = rawget(node, "__parent")
+                if parent == nil then return nil end
+                local kids = rawget(parent, "__kids")
+                if not kids then return nil end
+                for i = 1, #kids do
+                    if kids[i] == node then return kids[i + step] end
+                end
+                return nil
+            end
+            local methods = {
                 getElementsByTagName = function(self, tagName)
+                    local node, isDocument = resolve(self)
                     local result = {}
-                    collectByTagName(self, tagName, result)
+                    -- A document matches its root inclusively, an element
+                    -- only descends: DOM Level 1 Core 1.2's split.
+                    if isDocument and rawget(node, "__tagName") == tagName then
+                        result[1] = node
+                    end
+                    collectByTagName(node, tagName, result)
                     return result
                 end,
                 getAttribute = function(self, attrName)
-                    local attrs = rawget(self, "__attrs")
+                    local node = resolve(self)
+                    local attrs = rawget(node, "__attrs")
                     if attrs then return attrs[attrName] or "" end
                     return ""
                 end,
+                hasAttribute = function(self, attrName)
+                    local node = resolve(self)
+                    local attrs = rawget(node, "__attrs")
+                    return attrs ~= nil and attrs[attrName] ~= nil
+                end,
                 getTagName = function(self)
-                    return rawget(self, "__tagName") or ""
+                    local node = resolve(self)
+                    return rawget(node, "__tagName") or ""
+                end,
+                hasChildNodes = function(self)
+                    local node, isDocument = resolve(self)
+                    if isDocument then return true end
+                    local kids = rawget(node, "__kids")
+                    return kids ~= nil and #kids > 0
                 end
             }
+            __sce_dom_mt.__index = function(self, key)
+                local method = methods[key]
+                if method ~= nil then return method end
+                local node, isDocument = resolve(self)
+                if key == "nodeType" then
+                    if isDocument then return DOCUMENT end
+                    return rawget(node, "__type")
+                elseif key == "nodeName" then
+                    if isDocument then return "#document" end
+                    return rawget(node, "__name")
+                elseif key == "nodeValue" or key == "data" then
+                    if isDocument or not hasNodeValue(node) then return nil end
+                    return rawget(node, "__value")
+                elseif key == "tagName" then
+                    if not isDocument and hasNodeValue(node) then return nil end
+                    return rawget(node, "__tagName")
+                elseif key == "textContent" then
+                    return textContent(node)
+                elseif key == "childNodes" then
+                    if isDocument then return { node } end
+                    local kids = rawget(node, "__kids")
+                    if kids == nil then return {} end
+                    local copy = {}
+                    for i = 1, #kids do copy[i] = kids[i] end
+                    return copy
+                elseif key == "firstChild" then
+                    if isDocument then return node end
+                    local kids = rawget(node, "__kids")
+                    return kids and kids[1] or nil
+                elseif key == "lastChild" then
+                    if isDocument then return node end
+                    local kids = rawget(node, "__kids")
+                    return kids and kids[#kids] or nil
+                elseif key == "nextSibling" then
+                    if isDocument then return nil end
+                    return siblingOf(node, 1)
+                elseif key == "previousSibling" then
+                    if isDocument then return nil end
+                    return siblingOf(node, -1)
+                elseif key == "parentNode" then
+                    if isDocument then return nil end
+                    local parent = rawget(node, "__parent")
+                    -- The document element's parent is the document — DOM
+                    -- Level 1 Core 1.3 — which is the handle the variable
+                    -- already holds.
+                    if parent == nil then return rawget(node, "__doc") end
+                    return parent
+                elseif key == "documentElement" then
+                    -- Only the document handle carries this, which is how
+                    -- a document tells the two kinds apart.
+                    if isDocument then return node end
+                    return nil
+                end
+                return nil
+            end
+            function __sce_dom_node(spec)
+                setmetatable(spec, __sce_dom_mt)
+                local kids = rawget(spec, "__kids")
+                if kids then
+                    for i = 1, #kids do rawset(kids[i], "__parent", spec) end
+                end
+                return spec
+            end
+            function __sce_dom_document(root)
+                local doc = setmetatable({ __root = root }, __sce_dom_mt)
+                rawset(root, "__doc", doc)
+                return doc
+            end
         """.trimIndent()
     }
 }

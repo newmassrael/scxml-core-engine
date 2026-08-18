@@ -72,6 +72,41 @@ sce_xml_node_t **sce_xml_doc_get_elements_by_tag_name(sce_xml_doc_t *doc, const 
 // cpp XMLElement 1:1 mirror.
 const char *sce_xml_get_tag_name(const sce_xml_node_t *node);
 const char *sce_xml_get_attribute(const sce_xml_node_t *node, const char *attr);
+// DOM Level 2 Core: tells an absent attribute from one present and empty,
+// which sce_xml_get_attribute's "" cannot.
+int sce_xml_has_attribute(const sce_xml_node_t *node, const char *attr);
+
+// The ECMAScript data model appendix obliges the Processor to create "the
+// corresponding DOM structure", so the tree carries DOM Level 1 Core's
+// Node interface and not only the two calls the W3C IRP suite reads.
+// These mirror `XMLElement::getNodeType` and friends in the cpp reference
+// backend.
+//
+// The four node types are four of DOM's twelve, because four is what
+// these trees hold: comments and processing instructions never become
+// nodes (pugixml's `parse_default` omits `parse_comments` / `parse_pi`)
+// and the rest belong to interfaces this surface does not carry. Document
+// is reported by the Lua binding's document handle rather than by a node.
+#define SCE_XML_DOM_TYPE_ELEMENT 1
+#define SCE_XML_DOM_TYPE_TEXT 3
+#define SCE_XML_DOM_TYPE_CDATA_SECTION 4
+#define SCE_XML_DOM_TYPE_DOCUMENT 9
+
+int sce_xml_node_type(const sce_xml_node_t *node);
+// The tag for an element, and DOM Level 1 Core's reserved spelling for
+// the two character-data kinds. Never NULL.
+const char *sce_xml_node_name(const sce_xml_node_t *node);
+// Whether this node kind has a nodeValue at all — character data does, an
+// element does not (DOM Level 1 Core gives it null).
+int sce_xml_has_node_value(const sce_xml_node_t *node);
+const char *sce_xml_node_value(const sce_xml_node_t *node);
+// DOM Level 3 Core `textContent`: every descendant character-data node's
+// content, concatenated in document order. Heap-allocated; the caller
+// frees it. NULL only on allocation failure.
+char *sce_xml_text_content(const sce_xml_node_t *node);
+// The two the forward-only sibling links cost a walk.
+sce_xml_node_t *sce_xml_last_child(sce_xml_node_t *node);
+sce_xml_node_t *sce_xml_previous_sibling(sce_xml_node_t *node);
 
 // cpp XMLElement::getElementsByTagName — descends children (self not
 // matched), recursive DFS via findElementsByTagNameStatic on each child.

@@ -1,0 +1,136 @@
+# Mutation cases for the C++ half of §scxml-B-2-1's DOM read surface.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/dom_read_surface_cpp.cases`.
+#
+# The sibling file beside this one covers the Rust binding and is declared with
+# the cargo runner; the two runners are per casefile, which is why the surface
+# has two. What is only reachable here is the pair of things the C++ tree owns
+# and no other backend has: the QuickJS binding's per-context prototype, and
+# the ECMAScript-to-Lua transformer that decides what a member access even
+# lowers to before the Lua binding ever sees it.
+#
+# Every case restores a defect that was live on 2026-08-18 and produced no
+# build error, no warning and no failing test:
+#
+#   * the QuickJS binding carried two of the surface's members — not even the
+#     third one the frontend lowers — while 204/204 W3C fixtures passed,
+#     because the suite reads exactly the two that worked;
+#   * `setVariableAsDOM` read QuickJS's TRUE as a failure, so every `<data>`
+#     with XML content logged "Failed to set DOM variable" for an
+#     initialization that had in fact succeeded;
+#   * the transformer's receiver walk-back stopped at the last link of a
+#     member chain, so `d.childNodes.length` became `d.#childNodes`, which is
+#     not Lua at all.
+
+mutation_ctest --test-dir build -R '^(DomReadSurface)$'
+mutation_targets sce/src/scripting/XMLDOMWrapper.cpp sce/src/scripting/DOMBinding.cpp
+mutation_targets sce/src/scripting/LuaDOMBinding.cpp sce/src/scripting/JSEngine.cpp
+mutation_targets sce/src/scripting/EcmaScriptToLuaTransformer.cpp
+# The suite each case reds, measured: `DomReadSurface`,
+# `DomReadSurfaceOnLuaEngine` and `LuaTransformerReceiver` are the three test
+# suites in the one ctest test this selector names.
+mutation_oracles tests/engine/DomReadSurfaceTest.cpp
+
+# ── What the seam reports ──────────────────────────────────────────
+#
+# QuickJS answers `JS_SetPropertyStr` with TRUE on success, FALSE when the
+# write did not happen and -1 with a pending exception — the reading
+# `JSEngineImpl::setVariableInternal` sixty lines away already uses. Reading
+# FALSE as success inverts the whole result.
+
+mutation_case "the DOM write reads its own success as a failure" <<'PY'
+edit("sce/src/scripting/JSEngine.cpp",
+     """        if (setResult < 0) {
+            return createErrorFromException(ctx);
+        }
+        return (setResult > 0) ? ScriptResult::createSuccess()
+                               : ScriptResult::createError("Failed to set DOM variable");""",
+     """        return (setResult == 0) ? ScriptResult::createSuccess()
+                                : ScriptResult::createError("Failed to set DOM variable");""")
+PY
+
+# ── The kinds a document can tell apart ────────────────────────────
+
+mutation_case "a CDATA section reports itself as text" <<'PY'
+edit("sce/src/scripting/XMLDOMWrapper.cpp",
+     """    case pugi::node_cdata:
+        return DomNodeType::CdataSection;""",
+     """    case pugi::node_cdata:
+        return DomNodeType::Text;""")
+PY
+
+# ── textContent is every descendant's ──────────────────────────────
+
+mutation_case "textContent stops at the node's own value" <<'PY'
+edit("sce/src/scripting/XMLDOMWrapper.cpp",
+     """    std::string text;
+    for (const auto &child : node_.children()) {
+        text += XMLElement(child).getTextContent();
+    }
+    return text;""",
+     """    return "";""")
+PY
+
+# ── What a document handle is ──────────────────────────────────────
+#
+# The variable holds the document (§scxml-B-2-1), which answers the Node
+# interface as a document and the Element vocabulary for its document element.
+# A handle that reports its root's type is its document element wearing the
+# variable's name.
+
+mutation_case "the QuickJS document handle reports itself as its root" <<'PY'
+edit("sce/src/scripting/DOMBinding.cpp",
+     """    case PropNodeType:
+        return JS_NewInt32(ctx, isDocument ? DomNodeType::Document : node.getNodeType());""",
+     """    case PropNodeType:
+        return JS_NewInt32(ctx, node.getNodeType());""")
+PY
+
+# ── The Lua binding's property dispatch ────────────────────────────
+#
+# `__index` is a function because the surface is properties; pointing it back
+# at the metatable is the shape it had when the three methods were all there
+# was, and it answers every property with nil.
+
+mutation_case "the Lua metatable answers only its methods again" <<'PY'
+edit("sce/src/scripting/LuaDOMBinding.cpp",
+     """            lua_pushcfunction(L, lua_index);
+            lua_setfield(L, -2, "__index");""",
+     """            lua_pushvalue(L, -1);
+            lua_setfield(L, -2, "__index");""")
+PY
+
+# ── The receiver a member access binds ─────────────────────────────
+#
+# ECMAScript's `.length` and `.indexOf(` apply to the whole chain before them.
+# Walking back over word characters alone finds only the last link, which is
+# what made `var1.childNodes.length` come out as `var1.#childNodes`.
+
+mutation_case "the receiver walk-back stops at the last link" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """        if (isWordChar(previous)) {
+            while (start > 0 && isWordChar(s[start - 1])) {
+                --start;
+            }""",
+     """        if (isWordChar(previous)) {
+            while (start > 0 && isWordChar(s[start - 1])) {
+                --start;
+            }
+            break;""")
+PY
+
+# ── The methods the frontend lowers ────────────────────────────────
+#
+# The transformer's list and `sce_build::ecmascript::builtins::DOM_METHODS` are
+# one vocabulary: a name the frontend lowers to a colon call and this list does
+# not know is emitted as a field call, which reaches the binding with no
+# receiver and dies at run time.
+
+mutation_case "the transformer forgets two of the DOM methods" <<'PY'
+edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
+     """    static constexpr const char *kDomMethods[] = {
+        "getAttribute", "getElementsByTagName", "getTagName", "hasAttribute", "hasChildNodes"};""",
+     """    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName",
+                                                  "getTagName"};""")
+PY
