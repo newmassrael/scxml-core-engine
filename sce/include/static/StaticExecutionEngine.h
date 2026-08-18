@@ -557,6 +557,14 @@ private:
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
     bool isRunning_ = false;
+    // Whether `tick()` has ever run. A machine whose policy declares
+    // NEEDS_EVENT_SCHEDULER has delayed events only `tick()` can deliver, so a
+    // host driving it with `step()` alone waits forever with nothing said.
+    // Once `tick()` has run the host owns a clock and its `step()` calls are
+    // its own business, so the count below stops.
+    bool tickHasRun_ = false;
+    // Macrosteps taken on a scheduler-driven machine before any `tick()`.
+    uint32_t unattendedSchedulerSteps_ = 0;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
@@ -787,6 +795,24 @@ public:
      */
     bool hasReadyEvents() const {
         return scheduler_.hasReadyEvents();
+    }
+
+    /**
+     * @brief Macrosteps run on a scheduler-driven machine before any `tick()`
+     *
+     * Non-zero means the host is driving with `step()` a machine whose policy
+     * declares `NEEDS_EVENT_SCHEDULER`: the delayed events sitting in the
+     * scheduler have had no opportunity to fire. It stops counting once
+     * `tick()` has run, so a host that mixes the two reads its start-up and
+     * nothing after. Always 0 for a machine with no delayed send, whatever the
+     * host calls.
+     *
+     * A test harness can assert on it; a supervising host can log it. Either
+     * way the wiring mistake becomes something a program can see, which is what
+     * a `step()`-only loop otherwise never offers.
+     */
+    uint32_t unattendedSchedulerSteps() const {
+        return unattendedSchedulerSteps_;
     }
 
     /**
@@ -1258,6 +1284,20 @@ public:
      * This method processes all pending events in both internal and external queues.
      */
     void step() {
+        // A machine with delayed sends hands `step()` a queue it cannot reach:
+        // `runMainEventLoop()` never consults the scheduler, so the event is
+        // neither delivered nor refused. Say it once — the host is driving with
+        // the wrong call, and every later macrostep would repeat the same word.
+        if constexpr (::SCE::Core::NeedsEventScheduler<StatePolicy>) {
+            if (!tickHasRun_) {
+                ++unattendedSchedulerSteps_;
+                if (unattendedSchedulerSteps_ == 1) {
+                    SCE_LOG_ERROR("AOT step: this machine has delayed sends and no tick() has run; "
+                                  "delayed events will never fire - drive it with tick()");
+                }
+            }
+        }
+
         runMainEventLoop();
 
         // §scxml-6.4: Invoke completion callback only at top-level final.
@@ -1498,6 +1538,10 @@ public:
      * then processes event queues and checks for eventless transitions.
      */
     void tick() {
+        // Recorded before the running check: a host that calls `tick()` owns a
+        // clock whatever the engine's lifecycle says, and the count exists to
+        // find hosts that never call it at all.
+        tickHasRun_ = true;
         if (!isRunning_) {
             return;
         }

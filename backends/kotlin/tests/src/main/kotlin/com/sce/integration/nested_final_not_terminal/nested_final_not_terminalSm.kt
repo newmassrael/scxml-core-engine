@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 1b92577399a02f25bad414acd653ef70d1b84a060adcb161fcce7266e21da4f7
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -38,6 +38,11 @@ class NestedFinalNotTerminalStateMachine(
 ) : StateMachineEngine<NestedFinalNotTerminalState, NestedFinalNotTerminalEvent>() {
 
     override val initialState: NestedFinalNotTerminalState = NestedFinalNotTerminalState.Running
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
 
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: NestedFinalNotTerminalState): NestedFinalNotTerminalState? = when (state) {

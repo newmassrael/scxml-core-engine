@@ -79,6 +79,13 @@ struct inline_codecPolicy {
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = false;
 
+    // W3C SCXML 6.2: which entry point a host must drive this machine with.
+    // `step()` runs a macrostep and never drains the delayed-send scheduler
+    // nor ticks an invoked child, so a host that only ever calls it waits
+    // forever with nothing said. The same verdict the generate manifest
+    // publishes as `needs_event_scheduler`.
+    static constexpr bool NEEDS_EVENT_SCHEDULER = false;
+
     // ── SCE Forge: Inline kind member functions ──────────────
     // SCE Forge: Inline codec 'frame'
     struct Frame {

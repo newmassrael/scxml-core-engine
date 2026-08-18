@@ -284,6 +284,37 @@ apply_sce_test_policies(ecmascript_semantics_test)
 add_test(NAME ECMAScriptSemantics COMMAND ecmascript_semantics_test)
 
 # ============================================================================
+# Which entry point a host must drive a machine with (§scxml-6.2)
+#
+# `step()` never consults the delayed-send scheduler, so a host that only ever
+# calls it on a scheduler-driven machine waits forever with nothing said. The
+# engine now counts those macrosteps. Its own target because the policies are
+# hand-written: two of the cases are about a policy that predates the constant
+# still compiling, which a generated fixture cannot express.
+# ============================================================================
+add_executable(scheduler_driving_test
+    engine/SchedulerDrivingTest.cpp
+)
+
+target_include_directories(scheduler_driving_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(scheduler_driving_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(scheduler_driving_test)
+
+add_test(NAME SchedulerDriving COMMAND scheduler_driving_test)
+
+# ============================================================================
 # DOM read surface — §scxml-B-2-1's "corresponding DOM structure"
 #
 # Separate target from ecmascript_semantics_test on purpose: this one names

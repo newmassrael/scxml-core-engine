@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -45,6 +45,11 @@ class AutoforwardInternalQueueStateMachine(
 ) : StateMachineEngine<AutoforwardInternalQueueState, AutoforwardInternalQueueEvent>() {
 
     override val initialState: AutoforwardInternalQueueState = AutoforwardInternalQueueState.Phase
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = true
 
 
 

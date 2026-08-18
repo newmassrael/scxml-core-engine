@@ -421,6 +421,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
     abstract val initialState: S
 
     /**
+     * Whether driving this machine needs the scheduler to be polled.
+     *
+     * `true` when the document carries a delayed `<send>` — which the spec's
+     * send section routes through the event scheduler — or an `<invoke>`d child
+     * that does. It matters only in the synchronous mode
+     * ([initialize] + [tick]): there `scheduleSend` records into a time-ordered
+     * queue that nothing drains unless the host calls [tick], so a host that
+     * never does waits forever with no error and no warning. Under
+     * [start] each delayed send is its own coroutine and fires on its own, so
+     * the host has nothing to arrange.
+     *
+     * `open` with a `false` default rather than `abstract` so a hand-written
+     * machine keeps compiling; every generated machine declares it.
+     */
+    open val needsEventScheduler: Boolean = false
+
+    /**
      * Pure function: determine transition result for (state, event) pair.
      *
      * Generated as exhaustive `when` expressions over state and event types.

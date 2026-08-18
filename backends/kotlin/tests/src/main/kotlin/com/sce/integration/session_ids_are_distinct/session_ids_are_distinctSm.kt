@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -73,6 +73,11 @@ class SessionIdsAreDistinctStateMachine(
         com.sce.runtime.DatamodelRead.readJson(scriptEngine, scriptSessionId, "readBackProbe")
 
     override val initialState: SessionIdsAreDistinctState = SessionIdsAreDistinctState.Waiting
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = true
 
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
