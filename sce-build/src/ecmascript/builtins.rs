@@ -546,6 +546,15 @@ pub enum Namespace {
 }
 
 impl Namespace {
+    /// Every namespace this datamodel installs.
+    ///
+    /// A list rather than a derive so the rules that must hold for all
+    /// three — a call on the namespace itself is refused, a call on a
+    /// member is not — can be asserted over the whole set. A fourth
+    /// namespace added to [`Namespace::from_ident`] and forgotten here
+    /// reds `every_namespace_this_datamodel_installs_is_reachable_by_ident`.
+    pub const ALL: &'static [Namespace] = &[Namespace::Math, Namespace::Json, Namespace::Object];
+
     /// The identifier an author writes.
     pub fn name(self) -> &'static str {
         match self {
@@ -667,6 +676,35 @@ pub fn uncallable_global(name: &str, arguments: usize) -> Option<crate::forge::e
     Some(crate::forge::error::ExprError::PropertyNotCallable {
         name: name.to_string(),
         arguments,
+    })
+}
+
+/// The refusal for a call on a namespace itself, or `None` when the
+/// identifier names no namespace this datamodel installs.
+///
+/// The other half of the rule [`unsupported_member`] keeps. That one
+/// closes the member set of `Math`, `JSON` and `Object`; this one closes
+/// the position the namespace name may stand in at all. Both halves are
+/// needed for the same reason: the member set is a fact this repository
+/// owns, and so is the fact that none of the three is a function.
+///
+/// `Math()` used to reach Lua verbatim, where `Math` is not bound at
+/// all — the emitter rewrites `Math.<member>` to Lua's `math`, so the
+/// capitalised name exists nowhere — and the machine died calling a
+/// `nil`. `JSON()` and `Object()` reached tables that no engine makes
+/// callable, with the same result and the same silence.
+pub fn uncallable_namespace(name: &str) -> Option<crate::forge::error::ExprError> {
+    let namespace = Namespace::from_ident(name)?;
+    Some(crate::forge::error::ExprError::NamespaceNotCallable {
+        namespace: namespace.name().to_string(),
+        // The callable members alone, for the reason `unsupported_member`
+        // gives: this record stands where a call was written, and
+        // `Math.PI` cannot stand there.
+        members: namespace
+            .callable_members()
+            .iter()
+            .map(|member| format!("{}.{member}", namespace.name()))
+            .collect(),
     })
 }
 

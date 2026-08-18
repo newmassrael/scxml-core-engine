@@ -357,6 +357,104 @@ fn an_unimplemented_standard_method_is_reported_with_the_vocabulary_that_exists(
     );
 }
 
+/// A namespace written as the call itself, in the shape a document
+/// reaching for a constructor writes it.
+///
+/// `new Object()` rather than `Object()` on purpose: the operator was
+/// dropped before the callee was read, so the constructor form reached
+/// Lua as `Object()` and the plain form reached it unchanged. One rule
+/// has to answer both.
+const CONSTRUCTING_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="bag" expr="0"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="bag" expr="new Object()"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+#[test]
+fn a_namespace_written_as_a_call_is_reported_with_the_members_that_may_stand_there() {
+    let out = ScratchDir::new("namespace-refusal");
+    let document = out.path().join("constructing.scxml");
+    std::fs::write(&document, CONSTRUCTING_DOCUMENT).expect("write document");
+
+    let generated = run(&[
+        "generate",
+        document.to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        out.path().to_str().unwrap(),
+        "--error-format=json",
+    ]);
+
+    assert_eq!(generated.exit, Some(0), "stderr:\n{}", generated.stderr);
+    let diagnostics = records(&generated.stderr);
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "expected exactly one refusal record, got:\n{}",
+        generated.stderr
+    );
+    let record = &diagnostics[0];
+    assert_eq!(record["code"], "expression/namespace-not-callable");
+    assert_eq!(record["stage"], "expression");
+    assert_eq!(record["spec"], "W3C SCXML §B.2");
+    assert_eq!(
+        record["actual"], "Object()",
+        "the namespace reached for rides `actual`: {record}"
+    );
+    let expected: Vec<String> = record["expected"]
+        .as_array()
+        .expect("expected carries the members")
+        .iter()
+        .map(|c| c.as_str().expect("member is a string").to_string())
+        .collect();
+    assert!(
+        expected.contains(&"Object.keys".to_string()),
+        "the members that may stand there are missing: {expected:?}"
+    );
+    // Non-overlap (SCE_ERROR_CONTRACT.md §3.2): this code's home for a
+    // candidate set is `expected`, so no `fix` may ride. The claim is
+    // not decoration — dropping the call is what a `fix` would say, and
+    // `Object` alone is refused too.
+    assert!(record["fix"].is_null(), "fix must stay absent: {record}");
+    assert_eq!(
+        record["location"]["line"].as_u64(),
+        Some(9),
+        "the record points at the `<assign>` that wrote it: {record}"
+    );
+
+    // §5.9.1 still applies: refused expressions generate and raise at
+    // evaluation rather than failing the build.
+    assert!(
+        out.entries().iter().any(|n| n.ends_with("_sm.rs")),
+        "no artifact written: {:?}",
+        out.entries()
+    );
+
+    let linted = run(&[
+        "check",
+        document.to_str().unwrap(),
+        "--lint",
+        "--error-format=json",
+    ]);
+    assert_ne!(
+        linted.exit,
+        Some(0),
+        "--lint must refuse: {}",
+        linted.stderr
+    );
+}
+
 /// The corpus this repository authors is lint-clean, which is what
 /// `scripts/gates/example-codegen.sh` now enforces for refusals too.
 ///
