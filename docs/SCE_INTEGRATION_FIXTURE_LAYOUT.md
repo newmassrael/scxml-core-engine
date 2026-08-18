@@ -305,6 +305,34 @@ Rust passed a generated-source assertion while still resting in `probe` at
 runtime, so the emit-site check and the runtime channel are not
 substitutes for one another.
 
+`xml_data_is_a_dom_tree` covers W3C §B.2: a `<data>` element's XML content is
+"the corresponding DOM structure" the appendix obliges the Processor to create,
+and a document walks it with DOM Level 1 Core's vocabulary. Every backend
+carried three methods instead — `getElementsByTagName`, `getAttribute` and a
+non-standard `getTagName`, which are the two names the W3C IRP suite reads plus
+one — so `doc.tagName`, `doc.firstChild` and `doc.childNodes.length` answered
+nil on all seven channels with 204/204 W3C fixtures green.
+
+What this fixture owns that the per-binding tests do not is the SEAM. Each
+binding is measured directly against `tests/ecmascript/dom_read_surface.json`,
+which every channel's unit test reads; a binding being right does not say a
+document reaches it, because the path from document to binding is the generated
+`<data>` initializer plus the guards the frontend lowered. For the C11 channel
+the fixture is the ONLY witness there can be: `sce_lua_dom_push_object` and its
+metatable have no caller but generated code.
+
+It found one immediately. The C11 Lua binding's element metatable still pointed
+`__index` at itself while the document metatable had been moved to the property
+dispatcher, so a document handle answered every member and a node reached by
+`documentElement` answered none — invisible to the unit tests, which measure the
+tree layer, and to the W3C suite, whose two methods live on the metatable
+either way.
+
+Every transition in it is eventless, so the verdict is reached in the first
+macrostep. That is deliberate: an event would pull in the `_event.data` payload
+path that `event_data_arrives_as_sent` owns, and a failure there would surface
+here as a DOM failure.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the
