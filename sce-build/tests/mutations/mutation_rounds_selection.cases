@@ -197,20 +197,73 @@ edit("scripts/mutate",
      "        true")
 PY
 
-# ── One step is narrowed and the other is not ──────────────────────
+# ── Narrowing happens once, where the selection is made ────────────
 #
-# The selection decides whether a CMake tree gets configured; the rounds decide
-# what runs in it. An input that reaches one and not the other makes the lane
-# prepare for one set and judge another — the asymmetry this lane already paid
-# for, in its other direction.
+# The selection decides which casefiles run and hands each one a job; a round
+# obeys the matrix entry it was given. An input that reaches only one of them
+# makes the lane prepare for one set and judge another — the asymmetry this
+# lane already paid for, and the reason a round is handed exactly one thing.
 
-mutation_case "the dispatch narrows the rounds but not the selection" <<'PY'
+mutation_case "the dispatch narrows nothing because the selection stops reading it" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """        # Both steps, or the selection and the run would answer for different
-        # sets — the shape of defect this lane already paid for once.
-        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+     """        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+      run: |
+        set -euo pipefail""",
+     """      run: |
+        set -euo pipefail""")
+PY
+
+mutation_case "the round narrows a second time, on an input its job lacks" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """      env:
+        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
       run: scripts/gate mutation-rounds""",
-     "      run: scripts/gate mutation-rounds")
+     """      env:
+        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+        SCE_GATE_CHANGED_FILE: changed.txt
+      run: scripts/gate mutation-rounds""")
+PY
+
+mutation_case "the round runs the dispatch's subset instead of its own entry" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """        SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}
+      run: scripts/gate mutation-rounds""",
+     """        SCE_MUTATION_ROUNDS: ${{ inputs.casefiles }}
+      run: scripts/gate mutation-rounds""")
+PY
+
+# ── The matrix is the only channel between the two jobs ────────────
+#
+# A round job holds no change set — `changed.txt` is written in the selection's
+# workspace — so everything it needs travels in its matrix entry. An entry that
+# loses a column does not fail loudly: it produces a job that builds no tree
+# for a ctest casefile, and the round then refuses for the want of one.
+
+mutation_case "the matrix carries casefiles without saying which runner they need" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """          NF >= 2 { printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", sep, $1, $2; sep = "," }""",
+     """          NF >= 2 { printf "%s{\\"casefile\\":\\"%s\\"}", sep, $1; sep = "," }""")
+PY
+
+mutation_case "the matrix and the count answer for different sets" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """          BEGIN { printf "{\\"include\\":[" }""",
+     """          BEGIN { printf "{\\"include\\":[" }
+          NR == 1 { next }""")
+PY
+
+# ── A tree is built for the casefile that needs one ────────────────
+#
+# The runner column travels with the casefile so the answer is per job. A
+# lane-wide answer is the version that makes every cargo casefile in a mixed
+# selection pay for a tree it never opens, and it reads as a saving nowhere.
+
+mutation_case "the tree is built for every job or for none" <<'PY'
+edit(".github/workflows/mutation-rounds.yml",
+     """    - name: Configure and build the CMake tree
+      if: matrix.runner == 'ctest'""",
+     """    - name: Configure and build the CMake tree
+      if: needs.select.outputs.count != '0'""")
 PY
 
 # ── The tree is configured and never built ─────────────────────────
@@ -229,16 +282,11 @@ PY
 
 mutation_case "the lane derives the runner in its own shell again" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """        if awk -F'\\t' '$2 == "ctest" { found = 1 } END { exit !found }' "$selected"; then
-          needs_ctest=yes
-        else
-          needs_ctest=no
-        fi""",
-     """        needs_ctest=no
-        while read -r casefile _; do
-          [ -n "$casefile" ] || continue
-          if scripts/mutate --declares "$casefile" | grep -qx $'runner\\tctest'; then
-            needs_ctest=yes
-          fi
-        done < "$selected\"""")
+     """          NF >= 2 { printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", sep, $1, $2; sep = "," }
+          END { printf "]}\\n" }
+        ' "$selected")\"""",
+     """          NF >= 1 { printf "%s{\\"casefile\\":\\"%s\\",\\"runner\\":\\"%s\\"}", sep, $1,
+                            (system("scripts/mutate --declares " $1 " | grep -qx runner\\tctest") == 0 ? "ctest" : "cargo"); sep = "," }
+          END { printf "]}\\n" }
+        ' "$selected")\"""")
 PY
