@@ -20,6 +20,7 @@
 //! **associated `const bool` flags** on [`StatePolicy`]:
 //!
 //! - `StatePolicy::NEEDS_DATA_MODEL_INIT`
+//! - `StatePolicy::NEEDS_EVENT_SCHEDULER`
 //! - `StatePolicy::HAS_INVOKE_SUPPORT`
 //! - `StatePolicy::HAS_FINALIZE`
 //! - `StatePolicy::HAS_PARALLEL_STATES`
@@ -43,6 +44,14 @@ use crate::policy::StatePolicy;
 /// C++ `SCE::Core::HasDataModelInit<StatePolicy, Engine>` equivalent.
 pub const fn has_data_model_init<P: StatePolicy>() -> bool {
     P::NEEDS_DATA_MODEL_INIT
+}
+
+/// Whether driving the machine needs `Engine::tick` rather than `Engine::step`.
+///
+/// It has no C++ concept twin: the C++ engine owns its own scheduler polling,
+/// while a Rust host writes the driving loop itself and so must be able to ask.
+pub const fn needs_event_scheduler<P: StatePolicy>() -> bool {
+    P::NEEDS_EVENT_SCHEDULER
 }
 
 /// C++ `SCE::Core::HasInvokeSupport<StatePolicy, Engine>` equivalent.

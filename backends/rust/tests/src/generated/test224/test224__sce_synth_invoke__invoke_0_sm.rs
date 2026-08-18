@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
+// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -205,6 +205,11 @@ impl StatePolicy for Test224SceSynthInvokeInvoke0Policy {
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
     const NEEDS_DATA_MODEL_INIT: bool = false;
+    // The same fact the generate manifest publishes as `needs_event_scheduler`.
+    // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
+    // `()` — so without this constant a host had no route to the knowledge that
+    // its driving loop must call `tick()` rather than `step()`.
+    const NEEDS_EVENT_SCHEDULER: bool = false;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)

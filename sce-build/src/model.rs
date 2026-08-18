@@ -1632,6 +1632,17 @@ pub struct SCXMLModel {
     pub needs_event_type_helper: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,
+    /// [`Self::needs_event_scheduler_driving`] as a field, so a template can
+    /// read the union without re-spelling its three terms.
+    ///
+    /// Set by the analyzer beside the other derived gates
+    /// (`needs_parent_template`, `needs_nonstatic_method`). It answers a
+    /// different question from [`Self::needs_event_scheduler`], which is about
+    /// this machine owning a scheduler queue: a parent that schedules nothing
+    /// itself still needs `tick()` to reach an invoked child's queue, so the
+    /// two must not be conflated into one flag.
+    #[serde(default)]
+    pub needs_tick_driving: bool,
     /// §scxml-B-2: any reachable `<data>` content / `<data src=...>`
     /// loaded payload / `<send><content>` literal whose first non-WS
     /// character is `<` triggers the host-side XML DOM helper (C11

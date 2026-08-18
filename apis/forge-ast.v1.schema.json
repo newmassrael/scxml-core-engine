@@ -2117,6 +2117,11 @@
                 "null"
               ]
             },
+            "needs_tick_driving": {
+              "default": false,
+              "description": "[`Self::needs_event_scheduler_driving`] as a field, so a template can read the union without re-spelling its three terms.\n\nSet by the analyzer beside the other derived gates (`needs_parent_template`, `needs_nonstatic_method`). It answers a different question from [`Self::needs_event_scheduler`], which is about this machine owning a scheduler queue: a parent that schedules nothing itself still needs `tick()` to reach an invoked child's queue, so the two must not be conflated into one flag.",
+              "type": "boolean"
+            },
             "needs_transition_helper": {
               "type": [
                 "boolean",

@@ -1,0 +1,106 @@
+# Mutation cases for "which entry point a machine needs reaches the host that
+# has to pick one".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/tick_requirement_reaches_the_consumer.cases`.
+#
+# `Engine::step` never consults the delayed-send scheduler and never ticks an
+# invoked child, so a host driving such a machine with it alone gets no delayed
+# event, no error and no warning. SCE decided that requirement at parse time and
+# published it only on the CLI generate manifest — `sce_build::compile_scxml`,
+# the route both downstream consumers use from `build.rs`, returns `()`.
+#
+# The repair is one verdict with three carriers: the analyzer writes
+# `needs_tick_driving` from the method that owns the union, the Rust template
+# emits it as `StatePolicy::NEEDS_EVENT_SCHEDULER`, and the engine counts the
+# macrosteps taken before any `tick`. Each case below removes one carrier, or
+# widens/narrows the verdict, and each must red.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests --workspace --test tick_requirement_reaches_the_consumer --test delayed_sends_need_tick_not_step
+# The analyzer decides, the model owns the union, the template carries it into
+# the emitted policy, and the engine is where the silence was.
+mutation_targets sce-build/src/analyzer.rs sce-build/src/model.rs backends/rust/runtime/src/engine.rs
+# Read at generation time rather than compiled in: the template is a file the
+# codegen opens.
+mutation_runtime_targets tools/codegen/templates/rust/state_machine.rs.jinja2
+
+# ── The requirement stops reaching the emitted policy ───────────────
+#
+# The defect exactly as it was: SCE knows, and the generated code does not say.
+
+mutation_case "the analyzer stops writing the verdict the templates read" <<'PY'
+edit("sce-build/src/analyzer.rs",
+     "    model.needs_tick_driving = model.needs_event_scheduler_driving();",
+     "    model.needs_tick_driving = false;")
+PY
+
+mutation_case "the template emits the constant as a fixed false" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "    const NEEDS_EVENT_SCHEDULER: bool = {{ 'true' if model.needs_tick_driving else 'false' }};",
+     "    const NEEDS_EVENT_SCHEDULER: bool = false;")
+PY
+
+# ── …or reaches it as a word that means nothing ─────────────────────
+#
+# A constant that is always `true` looks like it works on every machine that
+# needs the scheduler. It tells a consumer as little as always `false`, because
+# a host cannot use it to decide anything.
+
+mutation_case "the template emits the constant as a fixed true" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     "    const NEEDS_EVENT_SCHEDULER: bool = {{ 'true' if model.needs_tick_driving else 'false' }};",
+     "    const NEEDS_EVENT_SCHEDULER: bool = true;")
+PY
+
+# ── The union narrows to the flag it is not ─────────────────────────
+#
+# `needs_event_scheduler` is about this machine owning scheduler entries. A
+# parent that schedules nothing still reaches its child's queue only through
+# `tick_children`, which `step` does not call — which is why the verdict is a
+# union and not that flag on its own.
+
+mutation_case "the verdict forgets the child sessions it has to tick" <<'PY'
+edit("sce-build/src/model.rs",
+     """    pub fn needs_event_scheduler_driving(&self) -> bool {
+        self.needs_event_scheduler.unwrap_or(false)
+            || self.has_scxml_invoke()
+            || self.has_hybrid_invoke()
+    }""",
+     """    pub fn needs_event_scheduler_driving(&self) -> bool {
+        self.needs_event_scheduler.unwrap_or(false)
+    }""")
+PY
+
+# ── The engine goes back to saying nothing ──────────────────────────
+#
+# The count is what turns a wiring mistake into something a program can see. A
+# run that merely takes forever is the failure mode this replaces.
+
+mutation_case "the engine stops counting the unattended macrosteps" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {",
+     "        if false {")
+PY
+
+# ── …or accuses a host that did nothing wrong ───────────────────────
+#
+# `tick` is a superset of `step`, so mixing them is a legitimate driving loop.
+# A counter that kept climbing after the first `tick` would report every such
+# host as broken, and a counter that climbs on a machine with no delayed send
+# would report all of them.
+
+mutation_case "a host that ticks is counted anyway" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.tick_has_run = true;
+        if !self.is_running {""",
+     """        if !self.is_running {""")
+PY
+
+mutation_case "every machine is treated as scheduler-driven" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {",
+     "        if !self.tick_has_run {")
+PY
