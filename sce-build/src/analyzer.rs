@@ -30,6 +30,12 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     // entry_exit_actions.jinja2 / actions/send.jinja2.
     model.needs_parent_template = model.has_parent_communication && !model.is_remote_invoke_target;
 
+    // Which entry point a host must drive this machine with. Derived from the
+    // one method that owns the union so the manifest's answer and the constant
+    // the policy emits cannot disagree — the templates read the field, the
+    // manifest reads the method, and both come from the same three terms.
+    model.needs_tick_driving = model.needs_event_scheduler_driving();
+
     // Named Context: set needs_nonstatic_method
     model.needs_nonstatic_method = model.needs_script_engine
         || model.has_scxml_invoke()

@@ -534,6 +534,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
     const NEEDS_SCRIPT_ENGINE: bool = {{ 'true' if model.needs_script_engine else 'false' }};
     const NEEDS_DATA_MODEL_INIT: bool = {{ 'true' if model.needs_script_engine else 'false' }};
+    // The same fact the generate manifest publishes as `needs_event_scheduler`.
+    // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
+    // `()` — so without this constant a host had no route to the knowledge that
+    // its driving loop must call `tick()` rather than `step()`.
+    const NEEDS_EVENT_SCHEDULER: bool = {{ 'true' if model.needs_tick_driving else 'false' }};
 {% if model.has_parallel_states or model.uses_in_predicate %}
     const HAS_ACTIVE_STATES: bool = true;
 {% endif %}

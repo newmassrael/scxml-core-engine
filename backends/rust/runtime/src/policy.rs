@@ -165,6 +165,25 @@ pub trait StatePolicy: Sized + 'static {
     /// before entering the initial configuration (§scxml-5.3).
     const NEEDS_DATA_MODEL_INIT: bool = false;
 
+    /// Whether driving this machine requires [`Engine::tick`](crate::Engine::tick)
+    /// rather than [`Engine::step`](crate::Engine::step) alone.
+    ///
+    /// `true` when the document carries a delayed `<send>` — which the spec's
+    /// send section routes through the event scheduler — or an `<invoke>`d
+    /// child that does. `step` runs a macrostep and never consults
+    /// the scheduler, so a host that only ever calls it gets no delayed event,
+    /// no error and no warning. That silence is what this constant exists to
+    /// end: a consumer can branch on it to decide whether its driving loop
+    /// needs a clock, and the engine counts the macrosteps taken while nothing
+    /// polled the scheduler (see
+    /// [`unattended_scheduler_steps`](crate::Engine::unattended_scheduler_steps)).
+    ///
+    /// The same fact reaches CLI consumers as the generate manifest's
+    /// `needs_event_scheduler`; before this constant, a `build.rs` consumer of
+    /// [`compile_scxml`](https://docs.rs/sce-build) had no route to it at all,
+    /// because that function returns `()`.
+    const NEEDS_EVENT_SCHEDULER: bool = false;
+
     /// Whether the document has any static `<invoke>` children (§scxml-6.4).
     ///
     /// When `true`, [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)
