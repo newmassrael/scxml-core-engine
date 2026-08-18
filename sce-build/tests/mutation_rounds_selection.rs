@@ -520,10 +520,22 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
     );
     assert_eq!(
         step_condition(&workflow, "Configure and build the CMake tree").trim(),
-        "steps.select.outputs.count != '0' && steps.select.outputs.needs_ctest == 'yes'",
-        "⚠ the step that builds the tree must key off the output the selection \
-         step records. A verdict nothing reads is the same silence as no \
-         verdict at all."
+        "matrix.runner == 'ctest'",
+        "⚠ the step that builds the tree must key off the runner the selection \
+         step recorded for THIS casefile. A verdict nothing reads is the same \
+         silence as no verdict at all, and a lane-wide answer would make every \
+         cargo casefile in a mixed selection pay for a tree it never opens."
+    );
+    assert_eq!(
+        run_body_named(&workflow, "Run the round").trim(),
+        "scripts/gate mutation-rounds",
+        "⚠ the round must be the gate, not a recipe restated in the lane."
+    );
+    assert!(
+        workflow.contains("SCE_MUTATION_ROUNDS: ${{ matrix.casefile }}"),
+        "⚠ the round must run the casefile the matrix named, through the gate's \
+         own subset channel. Any second derivation here is the shape of defect \
+         that had this lane answering for a different set than it selected."
     );
 
     // Which runner each casefile drives its round through, from the
@@ -552,13 +564,13 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
         .expect("the corpus declares no cargo-only target, so the negative half is vacuous");
 
     let (chose_ctest, ctest_log) = lane_selection(&script, &ctest_target);
-    assert_eq!(
-        chose_ctest.get("needs_ctest").map(String::as_str),
-        Some("yes"),
+    let ctest_matrix = matrix_of(&chose_ctest, &ctest_log);
+    assert!(
+        ctest_matrix.iter().any(|(_, runner)| runner == "ctest"),
         "⚠ touching `{ctest_target}` selects a casefile whose round runs through \
-         ctest, so the lane must configure a CMake tree. Answering `no` here is \
-         not a skipped round — the rounds step then refuses (exit 3) for the \
-         want of that tree and the lane goes red.\n{ctest_log}"
+         ctest, so its job must configure a CMake tree. A matrix that says \
+         `cargo` here does not skip a round — the round then refuses (exit 3) \
+         for the want of that tree and the lane goes red.\n{ctest_log}"
     );
     assert_ne!(
         chose_ctest.get("count").map(String::as_str),
@@ -568,11 +580,11 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
     );
 
     let (chose_cargo, cargo_log) = lane_selection(&script, &cargo_target);
-    assert_eq!(
-        chose_cargo.get("needs_ctest").map(String::as_str),
-        Some("no"),
+    let cargo_matrix = matrix_of(&chose_cargo, &cargo_log);
+    assert!(
+        cargo_matrix.iter().all(|(_, runner)| runner != "ctest"),
         "⚠ touching `{cargo_target}` selects only cargo rounds, and paying for a \
-         CMake configure-and-build on those pushes is what makes an unfiltered \
+         CMake configure-and-build on those jobs is what makes an unfiltered \
          workflow expensive enough to be switched off.\n{cargo_log}"
     );
     assert_ne!(
@@ -581,6 +593,65 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
         "the cargo change set selected nothing, so the answer above says \
          nothing:\n{cargo_log}"
     );
+}
+
+/// The `matrix` output, read the way `fromJSON` in the workflow reads it.
+///
+/// Parsed rather than pattern-matched: the value is expanded by the runner
+/// into `strategy.matrix.include`, and a string that merely *looks* like an
+/// array fails there — at which point the lane reports a configuration error
+/// and every round it was going to run silently does not happen. So the test
+/// requires the same thing the runner does, on output the step really wrote.
+fn matrix_of(outputs: &BTreeMap<String, String>, log: &str) -> Vec<(String, String)> {
+    let raw = outputs
+        .get("matrix")
+        .unwrap_or_else(|| panic!("⚠ the selection step recorded no `matrix` output:\n{log}"));
+    let parsed: serde_json::Value = serde_json::from_str(raw).unwrap_or_else(|error| {
+        panic!("⚠ `matrix` is not JSON the runner could expand ({error}): {raw}\n{log}")
+    });
+    let entries = parsed
+        .get("include")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| {
+            panic!("⚠ `matrix` must carry an `include` array, which is the shape the runner expands a generated matrix from: {raw}\n{log}")
+        });
+
+    let count: usize = outputs
+        .get("count")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| panic!("⚠ the selection step recorded no usable `count`:\n{log}"));
+    assert_eq!(
+        entries.len(),
+        count,
+        "⚠ the matrix and the count answer for different sets: {count} casefile(s) \
+         selected, {} job(s) would run. One of them is what a reader believes.\n{log}",
+        entries.len()
+    );
+
+    let tracked = casefiles().into_iter().collect::<BTreeSet<_>>();
+    entries
+        .iter()
+        .map(|entry| {
+            let casefile = entry
+                .get("casefile")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| panic!("⚠ a matrix entry names no casefile: {entry}\n{log}"))
+                .to_string();
+            assert!(
+                tracked.contains(&casefile),
+                "⚠ the matrix names `{casefile}`, which is not a casefile in the \
+                 corpus — a job that would fail on its own argument.\n{log}"
+            );
+            let runner = entry
+                .get("runner")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| {
+                    panic!("⚠ a matrix entry carries no runner, so its job cannot know whether to build a tree: {entry}\n{log}")
+                })
+                .to_string();
+            (casefile, runner)
+        })
+        .collect()
 }
 
 /// The `run:` body of the workflow step carrying the given `name:`, whether it
@@ -766,28 +837,48 @@ fn step_env(workflow: &str, step_name: &str) -> BTreeMap<String, String> {
 /// asymmetry once, when the selection answered "no tree needed" for a push
 /// whose rounds then needed one.
 ///
-/// Asserted as equality between the two mappings rather than against a list
-/// written here, so an input added later is covered the day it is added.
+/// That was asserted as equality between the two `env:` mappings while both
+/// steps lived in one job and the rounds re-applied the selection themselves.
+/// They no longer do: the casefiles are a matrix, one job each, and the
+/// selection is applied once — in the job that computed it. So the property
+/// is now that there is exactly ONE channel between them, and the round takes
+/// its subset from that channel and from nothing else.
+///
+/// Which is the same invariant stated where it now lives. A round that also
+/// read a change set would be narrowing a second time, on an input its job
+/// does not even have (`changed.txt` is written in the selection's workspace),
+/// and a round that read `inputs.casefiles` would be answering the dispatch
+/// again after the selection already had.
 #[test]
-fn the_selection_and_the_rounds_are_handed_the_same_inputs() {
+fn the_selection_narrows_and_the_round_only_obeys() {
     let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
         .expect("read the mutation-rounds workflow");
 
     let select = step_env(&workflow, "Which casefiles does this change reach");
-    let run = step_env(&workflow, "Run the rounds");
-
-    assert!(
-        !run.is_empty(),
-        "⚠ the rounds step declares no `env:` at all, so the comparison below \
-         would hold only by both sides being empty"
+    assert_eq!(
+        select.get("SCE_GATE_CHANGED_FILE").map(String::as_str),
+        Some("${{ steps.changed.outputs.file }}"),
+        "⚠ the selection must be handed the push's range, or it answers for the \
+         whole corpus on every push"
     );
     assert_eq!(
-        select, run,
-        "⚠ the two steps are handed different inputs. A key on only one side \
-         is the asymmetry itself: reaching only the selection makes the lane \
-         install a CMake tree for a set it will not run, and reaching only the \
-         rounds makes it run a set it never prepared for. Whichever key it is, \
-         it belongs in both `env:` blocks or in neither."
+        select.get("SCE_MUTATION_ROUNDS").map(String::as_str),
+        Some("${{ inputs.casefiles }}"),
+        "⚠ the selection must be handed the dispatch's subset, or asking for one \
+         casefile runs all of them"
+    );
+
+    let run = step_env(&workflow, "Run the round");
+    assert_eq!(
+        run,
+        BTreeMap::from([(
+            "SCE_MUTATION_ROUNDS".to_string(),
+            "${{ matrix.casefile }}".to_string()
+        )]),
+        "⚠ the round is handed something other than exactly the casefile its \
+         matrix entry names. Every extra key here is a second narrowing, made \
+         in a job that does not hold the inputs the first one used — which is \
+         the asymmetry this lane already paid for once, in the other direction."
     );
 }
 
