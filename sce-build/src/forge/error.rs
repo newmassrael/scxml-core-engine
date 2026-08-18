@@ -3754,6 +3754,34 @@ pub enum ExprError {
         arguments: usize,
     },
 
+    /// A namespace this datamodel installs, written as a call —
+    /// `Math()`, `JSON()`, `Object()`, `new Object()`.
+    ///
+    /// Separate from [`ExprError::PropertyNotCallable`] because the
+    /// repair that variant offers is false here. That one says the name
+    /// holds a value and dropping the call is the whole repair; a
+    /// namespace holds no value this datamodel hands out. `Math` is not
+    /// even a table on the engines — [`crate::ecmascript::lua`] rewrites
+    /// `Math.<member>` to Lua's own `math`, so the identifier never
+    /// reaches one — and answering `Math()` with *"write Math without
+    /// the call"* would repair a refusal into a silent `nil`.
+    ///
+    /// So there is no single replacement, and none is offered. The
+    /// members that may stand in that position are the whole of what the
+    /// producer knows, and they ride `expected` as metadata rather than
+    /// `fix`: choosing one of them is choosing its arguments too, which
+    /// is the author's decision and not a local edit.
+    #[error("{namespace} is a namespace, not a function. Call one of its members: {}", .members.join(", "))]
+    NamespaceNotCallable {
+        /// The namespace as the author wrote it: `Math`, `JSON`,
+        /// `Object`.
+        namespace: String,
+        /// The members a call may name, qualified — `Math.abs`,
+        /// `JSON.parse`. Callable members alone: a constant such as
+        /// `Math.PI` cannot stand where a call was written.
+        members: Vec<String>,
+    },
+
     /// A free identifier nothing declares — `conut + 1` where the
     /// document declares `count`.
     ///

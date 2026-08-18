@@ -1,0 +1,109 @@
+# Mutation cases for "a namespace is reached through a member, and
+# written as the call itself it is refused".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/namespace_not_callable.cases`.
+#
+# The first two restore the defect exactly as it was: `Math()` and
+# `new Object()` reached Lua verbatim, `check` answered exit 0 with no
+# record on any stream, and the machine died on evaluation. They are two
+# cases because they were two paths — the constructor form dropped its
+# operator before anything read the callee.
+#
+# The third and fourth are the *opposite* failure, a rule that reaches
+# too far: a check placed where the member call passes takes the whole
+# standard library with it, and a member list that includes the
+# constants offers `Math.PI` where a call was written, repairing one
+# refusal into another.
+#
+# The last two break the gates themselves. The probe loop is driven by
+# `Namespace::ALL`, so a list that loses a member runs fewer probes and
+# passes; the members assertion reads one namespace's list, so a rule
+# that answered every namespace with the same members would satisfy it
+# unless the second namespace is read too. Both go green exactly the way
+# a clean run does.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test ecmascript_property_calls --test cli_expression_refusal
+# Both binaries link the frontend: the first calls `to_lua_value`
+# directly and the second drives `sce-codegen` as a subprocess, which is
+# the surface an authoring consumer actually reads.
+mutation_targets sce-build/src/ecmascript/builtins.rs sce-build/src/ecmascript/lua.rs sce-build/tests/ecmascript_property_calls.rs
+
+mutation_case "the namespace falls through to a Lua call again" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """        if let Some(refusal) = builtins::uncallable_namespace(name) {
+            return Err(refusal);
+        }
+    }
+
+    if let Expr::Member { object, property } = callee {""",
+     """    }
+
+    if let Expr::Member { object, property } = callee {""")
+PY
+
+mutation_case "the constructor form drops its operator before anything reads the callee" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """            if let Expr::Ident(name) = callee.as_ref() {
+                if let Some(refusal) = builtins::uncallable_namespace(name) {
+                    return Err(refusal);
+                }
+            }
+            let mut parts = Vec::with_capacity(args.len());""",
+     """            let mut parts = Vec::with_capacity(args.len());""")
+PY
+
+mutation_case "the namespace is consulted but only one of them answers" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """pub fn uncallable_namespace(name: &str) -> Option<crate::forge::error::ExprError> {
+    let namespace = Namespace::from_ident(name)?;""",
+     """pub fn uncallable_namespace(name: &str) -> Option<crate::forge::error::ExprError> {
+    let namespace = Namespace::from_ident(name)?;
+    if namespace != Namespace::Math {
+        return None;
+    }""")
+PY
+
+mutation_case "the refusal offers the constants a call cannot name" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """        members: namespace
+            .callable_members()
+            .iter()
+            .map(|member| format!("{}.{member}", namespace.name()))
+            .collect(),""",
+     """        members: namespace
+            .callable_members()
+            .iter()
+            .chain(namespace.value_members())
+            .map(|member| format!("{}.{member}", namespace.name()))
+            .collect(),""")
+PY
+
+mutation_case "the rule reaches the member call as well" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """    if let Expr::Member { object, property } = callee {
+        if let Expr::Ident(name) = object.as_ref() {
+            if let Some(namespace) = builtins::Namespace::from_ident(name) {""",
+     """    if let Expr::Member { object, property } = callee {
+        if let Expr::Ident(name) = object.as_ref() {
+            if let Some(refusal) = builtins::uncallable_namespace(name) {
+                return Err(refusal);
+            }
+            if let Some(namespace) = builtins::Namespace::from_ident(name) {""")
+PY
+
+mutation_case "the probe loop is driven by a list that lost two namespaces" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """    pub const ALL: &'static [Namespace] = &[Namespace::Math, Namespace::Json, Namespace::Object];""",
+     """    pub const ALL: &'static [Namespace] = &[Namespace::Math];""")
+PY
+
+mutation_case "every namespace is answered with the members of the first" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """        members: namespace
+            .callable_members()""",
+     """        members: Namespace::Math
+            .callable_members()""")
+PY

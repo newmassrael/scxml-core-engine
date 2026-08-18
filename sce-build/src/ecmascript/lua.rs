@@ -122,6 +122,15 @@ fn value(expr: &Expr) -> Result<String, ExprError> {
         // A constructor is a function that fills `this` and returns it, so
         // `new F(a)` is `F(a)`. See `function_literal` for the other half.
         Expr::New { callee, args } => {
+            // `new` changes what a call means, not what may be called:
+            // `new Object()` reached Lua as `Object()` once the operator
+            // was dropped, so the constructor form has to ask the same
+            // question the plain call does.
+            if let Expr::Ident(name) = callee.as_ref() {
+                if let Some(refusal) = builtins::uncallable_namespace(name) {
+                    return Err(refusal);
+                }
+            }
             let mut parts = Vec::with_capacity(args.len());
             for arg in args {
                 parts.push(value(arg)?);
@@ -434,6 +443,14 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
     // up, so neither name can be reaching an author's function here.
     if let Expr::Ident(name) = callee {
         if let Some(refusal) = builtins::uncallable_global(name, args.len()) {
+            return Err(refusal);
+        }
+        // A namespace stands in callee position only as the receiver of
+        // a member call, which the arm below answers. Written as the
+        // call itself it is neither a function nor a value this
+        // datamodel hands out, and passing it through emitted `Math()`
+        // into Lua, where nothing binds the name.
+        if let Some(refusal) = builtins::uncallable_namespace(name) {
             return Err(refusal);
         }
     }

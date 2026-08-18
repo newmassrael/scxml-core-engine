@@ -933,7 +933,30 @@ table this datamodel does not install, and `_event['name']()` generated
 cleanly one token away from a refusal. A key that names nothing this
 datamodel knows lowers exactly as it did.
 
-`sce_build::ecmascript::builtins` owns the four lists,
+A fifth list decides the other position the same mistake reaches: the
+namespace itself. `Math`, `JSON` and `Object` are reached through a
+member — `Math.abs(x)`, `JSON.parse(s)` — and written as the call
+itself none of them is a function. `Math()`, `Object()` and
+`new Object()` used to reach the engine verbatim, where `Math` is not
+bound at all (the emitter rewrites `Math.<member>` to Lua's own `math`,
+so the capitalised name exists nowhere) and the other two are tables no
+engine makes callable. All three died on evaluation with `status: "ok"`
+at generation time.
+
+The refusal is `expression/namespace-not-callable`, and it carries no
+`fix`. Dropping the call is not the repair — `Math` alone is refused
+too, so that edit turns one refusal into another — and naming a member
+means naming its arguments, which is the author's decision. The members
+that may stand there ride `expected` as metadata instead, which is the
+non-overlap shape §3.2 of `SCE_ERROR_CONTRACT.md` gives a producer with
+no structured repair to propose.
+
+This is why the code is distinct from `expression/property-not-callable`
+rather than reusing it: that code's whole promise is that the name it
+reports holds a value, and a namespace holds none this datamodel hands
+out.
+
+`sce_build::ecmascript::builtins` owns the five lists,
 `sce_build::ecmascript::parser` folds the two spellings, and
 `sce-build/tests/ecmascript_property_calls.rs` plus
 `sce-build/tests/ecmascript_member_access.rs` bind each rule to the
@@ -1736,7 +1759,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (352 codes)
+## Appendix — `DiagnosticCode` index (354 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1944,6 +1967,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |
 | `expression/property-not-callable` | Expression |
+| `expression/namespace-not-callable` | Expression |
 | `expression/strict-equality` | Expression |
 | `expression/parse-mismatch` | Expression |
 | `expression/unexpected-token` | Expression |

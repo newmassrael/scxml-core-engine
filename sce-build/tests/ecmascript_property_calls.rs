@@ -21,7 +21,7 @@
 // fail here.
 
 use sce_build::ecmascript::builtins::{
-    INSTALLED_GLOBALS, MATH_CONSTANTS, MATH_FUNCTIONS, VALUE_GLOBALS, VALUE_PROPERTIES,
+    Namespace, INSTALLED_GLOBALS, MATH_CONSTANTS, MATH_FUNCTIONS, VALUE_GLOBALS, VALUE_PROPERTIES,
 };
 use sce_build::ecmascript::{to_lua_value, DocumentScope, ExprError};
 use sce_rust_lua::LuaEngine;
@@ -244,6 +244,134 @@ fn a_system_variable_called_as_a_function_is_refused() {
             global,
             "{source} was not answered as a property call"
         );
+    }
+}
+
+// ── The namespace written as the call ────────────────────────────
+
+/// The members a `NamespaceNotCallable` refusal says may stand there.
+fn namespace_refused(source: &str) -> (String, Vec<String>) {
+    match refusal(source) {
+        ExprError::NamespaceNotCallable { namespace, members } => (namespace, members),
+        other => panic!("{source} was refused, but as {other:?} rather than a namespace call"),
+    }
+}
+
+/// Every namespace this datamodel installs is refused in the position
+/// where it is the call rather than the receiver of one.
+///
+/// Driven from `Namespace::ALL` rather than a written-out list: the
+/// three differ in what they are at runtime — `Math` is not bound on the
+/// engines at all, `JSON` and `Object` are tables — and a rule written
+/// against one of those facts would leave the other two silent.
+#[test]
+fn every_namespace_is_refused_when_it_is_the_call_itself() {
+    for namespace in Namespace::ALL {
+        let name = namespace.name();
+        for source in [
+            format!("{name}()"),
+            format!("{name}(1, 2)"),
+            format!("new {name}()"),
+            // The receiver position of an author's own expression, so a
+            // rule that only read the top-level callee would miss it.
+            format!("handlers.retry({name}())"),
+        ] {
+            let (refused, _) = namespace_refused(&source);
+            assert_eq!(refused, name, "{source} named the wrong namespace");
+        }
+    }
+}
+
+/// The refusal names the members that may stand where the call was
+/// written, and names the callable half only.
+///
+/// `Math.PI` is a member of `Math` and cannot stand where a call was
+/// written, so offering it would repair one refusal into another — the
+/// same reasoning `an_unknown_math_call_is_offered_only_the_callable_members`
+/// pins one AST node down.
+#[test]
+fn the_namespace_refusal_offers_the_callable_members_qualified() {
+    let (_, members) = namespace_refused("Math()");
+    assert!(
+        members.contains(&"Math.abs".to_string()),
+        "the members are not qualified by their namespace: {members:?}"
+    );
+    for constant in MATH_CONSTANTS {
+        assert!(
+            !members.contains(&format!("Math.{constant}")),
+            "Math.{constant} cannot stand where a call was written: {members:?}"
+        );
+    }
+    let (_, json) = namespace_refused("JSON()");
+    assert_eq!(
+        json,
+        vec!["JSON.parse".to_string(), "JSON.stringify".to_string()],
+        "the JSON members drifted from the library that installs them"
+    );
+}
+
+/// Dropping the call — the repair `PropertyNotCallable` offers — is not
+/// a repair here, which is why the two are different codes.
+///
+/// Asserted on the engine rather than argued: `Math` on its own lowers
+/// to a name nothing binds there, so a consumer that applied "write it
+/// without the call" would trade a reported refusal for a failure at
+/// evaluation. A record that carried that as its `fix` would be telling
+/// an author to make the document worse.
+#[test]
+fn dropping_the_call_would_not_repair_the_namespace() {
+    let lowered = to_lua_value("Math", &probes()).expect("a bare namespace still lowers");
+    let (engine, session) = engine_with(&[]);
+    let evaluated = engine.evaluate_expression(&session, &lowered);
+    assert!(
+        evaluated.is_err(),
+        "Math evaluated to {evaluated:?} — if the engine binds it after all, \
+         the refusal could offer dropping the call as its repair"
+    );
+}
+
+/// A member call on every namespace still lowers and still evaluates.
+///
+/// The counterweight the rule above needs: the refusal is decided from
+/// the callee position alone, and a rule that read the identifier
+/// without reading its position would take the whole standard library
+/// with it.
+#[test]
+fn a_member_call_on_each_namespace_still_evaluates() {
+    let session = engine_with(&[("arr", "{1, 2, 3}"), ("handlers", "{}")]);
+    assert_eq!(evaluate(&session, "Math.abs(-3)"), 3.0);
+    assert_eq!(evaluate(&session, "JSON.parse('[1,2]').length"), 2.0);
+    assert_eq!(evaluate(&session, "Object.keys(handlers).length"), 0.0);
+}
+
+/// Every namespace `Namespace::ALL` lists is one an author can reach by
+/// name, and every name that reaches one is listed.
+///
+/// The two-way binding is what keeps a fourth namespace from being
+/// installed into `from_ident` and forgotten by every rule written over
+/// the list.
+#[test]
+fn every_namespace_this_datamodel_installs_is_reachable_by_ident() {
+    for namespace in Namespace::ALL {
+        assert_eq!(
+            Namespace::from_ident(namespace.name()),
+            Some(*namespace),
+            "{} is listed but no identifier reaches it",
+            namespace.name()
+        );
+        assert!(
+            INSTALLED_GLOBALS.contains(&namespace.name()),
+            "{} is a namespace this datamodel does not bind",
+            namespace.name()
+        );
+    }
+    for &global in INSTALLED_GLOBALS {
+        if let Some(namespace) = Namespace::from_ident(global) {
+            assert!(
+                Namespace::ALL.contains(&namespace),
+                "{global} reaches a namespace missing from Namespace::ALL"
+            );
+        }
     }
 }
 
