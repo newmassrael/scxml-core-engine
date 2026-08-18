@@ -819,11 +819,46 @@ mutation_ctest_check_selector() {
     n="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null |
          python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("tests", [])))' 2>/dev/null)" \
         || n=0
-    if [[ "${n:-0}" -eq 0 ]]; then
-        red "the ctest selector matches no registered test: ${MUTATION_RUNNER_ARGS[*]}"
-        return 1
+    if [[ "${n:-0}" -gt 0 ]]; then
+        dim "selector matches $n registered test(s)"
+        return 0
     fi
-    dim "selector matches $n registered test(s)"
+    # Nothing matched, and only now does it matter how old the tree is. A
+    # configured tree lists the tests of the day it was configured, so an
+    # empty answer has two readings: the casefile names a test that no
+    # longer exists, or the list predates the test it names. Blaming the
+    # casefile for the second is a claim about the author's text drawn
+    # from the checker's own stale input — measured on the build machine,
+    # whose `build/` was three days older than the target a casefile
+    # named, and reported as a dead casefile against a tree where that
+    # test is registered.
+    #
+    # The generator knows: it re-runs cmake when an input moved. So the
+    # accusation is made only where ninja positively says there is
+    # nothing to do. A tree it cannot answer for — another generator, no
+    # ninja on the PATH, a build directory it will not read — leaves the
+    # question unjudgeable rather than damning, the same distinction
+    # `sce_gate_cannot_run` draws for a gate missing its tool.
+    #
+    # Asked here rather than before the match so that a live selector is
+    # still checked on a tree that has merely drifted, which is what a
+    # developer's tree is most of the time: a commit moves a CMake input,
+    # and the test list is still right about every test that existed
+    # before it.
+    #
+    # Read into a variable rather than piped into a matcher: a pipeline
+    # ends at its last command, and closing the reader early is how this
+    # repository's CI lane came to answer 20 of 20 questions wrongly.
+    local generator_says
+    generator_says="$(ninja -C "$build_dir" -n build.ninja 2>/dev/null)" || generator_says=""
+    if [[ "$generator_says" != *"no work to do"* ]]; then
+        dim "selector NOT checked: $build_dir is configured but not current —"
+        dim "cmake would re-run, so its test list predates this casefile."
+        dim "Re-configure it (scripts/prepare_ctest_tree.sh) to have this checked."
+        return 0
+    fi
+    red "the ctest selector matches no registered test: ${MUTATION_RUNNER_ARGS[*]}"
+    return 1
 }
 
 mutation_init() {

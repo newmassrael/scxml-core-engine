@@ -1,0 +1,57 @@
+# Mutation cases for "an empty ctest test list is only the casefile's
+# fault when the tree could have known better".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/ctest_selector_attribution.cases`.
+#
+# The defect was the harness blaming the author: a build tree configured
+# three days before the target a casefile names listed no such test, and
+# the check reported the casefile as one that no longer applies. The
+# repair is not to stop checking — it is to ask the generator whether the
+# tree could have known, and to say so out loud when it could not.
+#
+# The first case restores the accusation. The second and third are the
+# ways the repair goes wrong in opposite directions: asking about
+# staleness before asking whether anything matched costs every selector
+# its check on a tree that has merely drifted, which is what a
+# developer's tree is most of the time; and a discriminator that accepts
+# any answer from the generator never claims a verdict at all.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test mutation_case_liveness
+# A runtime target rather than a compiled one: the tests execute this
+# script as a subprocess, so no binary changes when it does, and the
+# changed-binary rule would report every case here INCONCLUSIVE — which
+# it did, on the first round of this file, exactly as the declaration's
+# own comment says it would.
+mutation_runtime_targets scripts/mutate
+mutation_oracles sce-build/tests/mutation_case_liveness.rs
+
+mutation_case "an empty list is the casefile's fault again" <<'PY'
+edit("scripts/mutate",
+     """    local generator_says
+    generator_says="$(ninja -C "$build_dir" -n build.ninja 2>/dev/null)" || generator_says=""
+    if [[ "$generator_says" != *"no work to do"* ]]; then""",
+     """    local generator_says
+    generator_says="$(ninja -C "$build_dir" -n build.ninja 2>/dev/null)" || generator_says=""
+    if false; then""")
+PY
+
+mutation_case "staleness is asked before anything has matched" <<'PY'
+edit("scripts/mutate",
+     """    if [[ "${n:-0}" -gt 0 ]]; then
+        dim "selector matches $n registered test(s)"
+        return 0
+    fi""",
+     """    if [[ "${n:-0}" -gt 0 ]] && [[ -f "$build_dir/.never" ]]; then
+        dim "selector matches $n registered test(s)"
+        return 0
+    fi""")
+PY
+
+mutation_case "the generator is asked and answered in reverse" <<'PY'
+edit("scripts/mutate",
+     """    if [[ "$generator_says" != *"no work to do"* ]]; then""",
+     """    if [[ "$generator_says" == *"no work to do"* ]]; then""")
+PY
