@@ -1,0 +1,81 @@
+# Mutation cases for "a literal written as the call is refused".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/literal_not_callable.cases`.
+#
+# The first restores the defect: `1()` and `true()` were emitted as Lua
+# calls on themselves, which is not Lua at all — the chunk carrying one
+# failed to load — while `check` answered ok on all six backends.
+#
+# The second and third are the opposite failure, a rule that reaches too
+# far. Taking the function expression with it would refuse
+# `(function() … end)()`, the one written-out callee that *is* a
+# function; folding `null` in with the rest makes the record name one
+# spelling of a node that carries two, which is a claim about which the
+# author wrote and wrong half the time.
+#
+# The last breaks the gate itself: the sweep is a list of literal
+# spellings, and a list that keeps only the two that happened to parse as
+# Lua would leave the worse half of the defect uncovered.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test ecmascript_property_calls --test cli_expression_refusal
+mutation_targets sce-build/src/ecmascript/lua.rs sce-build/tests/ecmascript_property_calls.rs
+
+# Written as "computed and discarded" rather than as a deletion: the
+# callee is typed by a function with one caller, so removing the arm
+# leaves that function unused and the tree does not compile under
+# `warnings = deny`. A case that cannot build produces INCONCLUSIVE,
+# which is not evidence — measured on the first round of this file.
+mutation_case "the literal is typed and the answer thrown away" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """    if let Some(what) = literal_description(callee) {
+        return Err(ExprError::LiteralNotCallable { what });
+    }""",
+     """    if let Some(what) = literal_description(callee) {
+        let _ = what;
+    }""")
+PY
+
+mutation_case "the rule takes the function expression with it" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """        Expr::Nullish => Some("the literal null or undefined".to_string()),
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_) | Expr::Object(_) => {
+            Some(format!("the {}", describe(expr)))
+        }""",
+     """        Expr::Nullish => Some("the literal null or undefined".to_string()),
+        Expr::Number(_)
+        | Expr::Str(_)
+        | Expr::Bool(_)
+        | Expr::Array(_)
+        | Expr::Object(_)
+        | Expr::Function { .. } => Some(format!("the {}", describe(expr))),""")
+PY
+
+mutation_case "the two spellings this AST folds together are named as one" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """        Expr::Nullish => Some("the literal null or undefined".to_string()),
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_) | Expr::Object(_) => {""",
+     """        Expr::Number(_)
+        | Expr::Str(_)
+        | Expr::Bool(_)
+        | Expr::Array(_)
+        | Expr::Object(_)
+        | Expr::Nullish => {""")
+PY
+
+mutation_case "the sweep keeps only the spellings that were valid Lua" <<'PY'
+edit("sce-build/tests/ecmascript_property_calls.rs",
+     """    const SPELLINGS: &[&str] = &[
+        "1()",
+        "'abc'()",
+        "true()",
+        "false()",
+        "null()",
+        "undefined()",
+        "[1, 2]()",
+        "({a: 1})()",
+    ];""",
+     """    const SPELLINGS: &[&str] = &["'abc'()", "[1, 2]()"];""")
+PY

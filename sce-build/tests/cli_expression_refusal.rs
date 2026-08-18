@@ -529,6 +529,73 @@ fn a_namespace_read_as_a_value_is_reported_with_both_halves_of_its_vocabulary() 
     );
 }
 
+/// A literal called, in the shape a mis-typed expression reaches — and
+/// the one whose lowering was not merely wrong but unparseable.
+const CALLING_A_LITERAL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="s0">
+  <datamodel>
+    <data id="n" expr="0"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <assign location="n" expr="1()"/>
+    </onentry>
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+#[test]
+fn a_literal_written_as_a_call_is_reported_with_neither_a_choice_nor_a_fix() {
+    let out = ScratchDir::new("literal-call");
+    let document = out.path().join("calling.scxml");
+    std::fs::write(&document, CALLING_A_LITERAL).expect("write document");
+
+    let generated = run(&[
+        "generate",
+        document.to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        out.path().to_str().unwrap(),
+        "--error-format=json",
+    ]);
+
+    assert_eq!(generated.exit, Some(0), "stderr:\n{}", generated.stderr);
+    let diagnostics = records(&generated.stderr);
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "expected exactly one refusal record, got:\n{}",
+        generated.stderr
+    );
+    let record = &diagnostics[0];
+    assert_eq!(record["code"], "expression/literal-not-callable");
+    assert_eq!(record["actual"], "the number literal");
+    // Both fields absent is this record's whole shape: the producer
+    // knows what was written and nothing about what belongs instead.
+    assert!(record["fix"].is_null(), "fix must stay absent: {record}");
+    assert!(
+        record["expected"].is_null(),
+        "expected must stay absent: {record}"
+    );
+
+    let linted = run(&[
+        "check",
+        document.to_str().unwrap(),
+        "--lint",
+        "--error-format=json",
+    ]);
+    assert_ne!(
+        linted.exit,
+        Some(0),
+        "--lint must refuse: {}",
+        linted.stderr
+    );
+}
+
 /// The corpus this repository authors is lint-clean, which is what
 /// `scripts/gates/example-codegen.sh` now enforces for refusals too.
 ///

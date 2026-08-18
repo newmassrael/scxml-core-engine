@@ -967,6 +967,22 @@ read is `expression/namespace-not-a-value`, and its member list carries
 both halves of the vocabulary because a read may legally name `Math.PI`
 where a call may not.
 
+A literal written as the thing being called is the third position, and
+the only one whose callee needs no list at all: `1()`, `'abc'()` and
+`null()` are typed by having been written. What they produced was worse
+than a wrong lowering — `1()` and `true()` are not Lua at all, so the
+chunk carrying one failed to load rather than failing to run, while
+`check` answered ok. The refusal is `expression/literal-not-callable`
+and it carries neither `expected` nor `fix`: dropping the call leaves
+the literal, which is not what the author was reaching for, and nothing
+else follows from what was written.
+
+The rule stops at literals. `(1 + 2)()` is a call on something this
+datamodel could also prove is not a function, but proving it means
+inferring a type, and the ECMAScript frontend has no inference pass
+between its AST and its emitter — the W3C datamodel is untyped and so is
+the engine underneath.
+
 The member reach itself is checked for every namespace now, not only for
 `Math`. `JSON` and `Object` are ordinary tables this repository installs,
 so `JSON.serialize` was emitted as a field access on one of them and read
@@ -1779,7 +1795,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (355 codes)
+## Appendix — `DiagnosticCode` index (356 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1989,6 +2005,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
 | `expression/namespace-not-a-value` | Expression |
+| `expression/literal-not-callable` | Expression |
 | `expression/strict-equality` | Expression |
 | `expression/parse-mismatch` | Expression |
 | `expression/unexpected-token` | Expression |

@@ -120,6 +120,7 @@
         "expression/property-not-callable",
         "expression/namespace-not-callable",
         "expression/namespace-not-a-value",
+        "expression/literal-not-callable",
         "expression/strict-equality",
         "expression/parse-mismatch",
         "expression/unexpected-token",
