@@ -190,6 +190,26 @@ public:
 
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
+            // Nothing will ever run this once the worker has been joined, and
+            // every caller of this class waits on the future with `.get()`.
+            // Queueing into a stopped executor therefore hangs the caller
+            // forever, with no log line, no error and no timeout — measured
+            // 2026-08-19 as a 180-second ctest timeout whose only clue was the
+            // name of the test it was sitting in. Answer instead: a caller that
+            // reached a shut-down engine gets to see that it did.
+            //
+            // A `shutdown()` racing with this call is not the dangerous case.
+            // The worker breaks only when `shouldStop_` is set AND the queue is
+            // empty, so anything pushed before the join still runs. What cannot
+            // be served is a push that arrives after it — and after the join
+            // `shouldStop_` is true, which is what this reads.
+            if (shouldStop_.load()) {
+                SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; "
+                              "the operation was refused rather than queued to a stopped worker");
+                queuedOp->promise.set_value(ScriptResult::createError(
+                    "script engine is shut down; call reset() or initialize() before executing"));
+                return future;
+            }
             operationQueue_.push(std::move(queuedOp));
         }
         queueCondition_.notify_one();
