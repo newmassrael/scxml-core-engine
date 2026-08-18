@@ -71,7 +71,7 @@ use crate::http::{HttpSendRequest, HttpSendResponse};
 use crate::policy::StatePolicy;
 #[cfg(feature = "no_std")]
 use crate::MAX_SCHEDULED_EVENTS;
-use crate::{sce_log_debug, SceString};
+use crate::{sce_log_debug, sce_log_error, SceString};
 
 // ─────────────────────────────────────────────────────────────────────
 // Scheduler time point alias (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984 HAL)
@@ -382,6 +382,18 @@ pub struct Engine<P: StatePolicy> {
     /// for cancel-free machines (no_std ring shrinks by the per-entry
     /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
     pub(crate) scheduler: PullScheduler<P::Event, P::ScheduledSendId>,
+    /// Whether [`tick`](Self::tick) has ever run on this engine.
+    ///
+    /// A machine whose policy sets
+    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER) has delayed
+    /// events that only `tick` can deliver, so a host driving it with `step`
+    /// alone waits forever with nothing said. This flag is what tells the two
+    /// cases apart: once `tick` has run the host owns a clock and its `step`
+    /// calls are its own business, so the count below stops.
+    pub(crate) tick_has_run: bool,
+    /// Macrosteps taken on a scheduler-driven machine before any
+    /// [`tick`](Self::tick) — see [`unattended_scheduler_steps`](Self::unattended_scheduler_steps).
+    pub(crate) unattended_scheduler_steps: u32,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -417,6 +429,8 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
+            tick_has_run: false,
+            unattended_scheduler_steps: 0,
             donedata_at_final: SceString::new(),
         }
     }
@@ -640,6 +654,20 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `StaticExecutionEngine::step()`. Used by parent SMs to
     /// explicitly drive children after sending them events (§scxml-6.4).
     pub fn step(&mut self) {
+        // A machine with delayed sends hands `step` a queue it cannot reach:
+        // `run_main_event_loop` never consults the scheduler, so the event is
+        // neither delivered nor refused. Say it once — the host is driving with
+        // the wrong call, and every later macrostep would repeat the same word.
+        if concepts::needs_event_scheduler::<P>() && !self.tick_has_run {
+            self.unattended_scheduler_steps = self.unattended_scheduler_steps.saturating_add(1);
+            if self.unattended_scheduler_steps == 1 {
+                sce_log_error!(
+                    "Engine::step: this machine has delayed sends and no tick() has run; \
+                     delayed events will never fire — drive it with Engine::tick()"
+                );
+            }
+        }
+
         self.run_main_event_loop();
 
         #[cfg(not(feature = "no_std"))]
@@ -656,6 +684,10 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `StaticExecutionEngine::tick()`. Called periodically by
     /// callers that have delayed `<send>` operations.
     pub fn tick(&mut self) {
+        // Recorded before the running check: a host that calls `tick` owns a
+        // clock whatever the engine's lifecycle says, and the count exists to
+        // find hosts that never call it at all.
+        self.tick_has_run = true;
         if !self.is_running {
             return;
         }
@@ -712,6 +744,24 @@ impl<P: StatePolicy> Engine<P> {
     /// Whether the engine is running (not stopped or awaiting completion).
     pub fn is_running(&self) -> bool {
         self.is_running
+    }
+
+    /// How many macrosteps ran on a scheduler-driven machine before any
+    /// [`tick`](Self::tick).
+    ///
+    /// Non-zero means the host is driving with [`step`](Self::step) a machine
+    /// whose policy sets
+    /// [`NEEDS_EVENT_SCHEDULER`](StatePolicy::NEEDS_EVENT_SCHEDULER): the
+    /// delayed events sitting in the scheduler have had no opportunity to fire.
+    /// It stops counting once `tick` has run, so a host that mixes the two
+    /// reads zero-or-more from its start-up and nothing after. Always `0` for a
+    /// machine with no delayed send, whatever the host calls.
+    ///
+    /// A test harness can assert on it; a supervising host can log it. Either
+    /// way the wiring mistake becomes something a program can see, which is
+    /// what a `step`-only loop otherwise never offers.
+    pub fn unattended_scheduler_steps(&self) -> u32 {
+        self.unattended_scheduler_steps
     }
 
     /// Current active (leaf) state.

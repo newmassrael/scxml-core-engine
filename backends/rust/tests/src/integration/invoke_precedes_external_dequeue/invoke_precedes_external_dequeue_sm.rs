@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
+// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -440,6 +440,11 @@ impl StatePolicy for InvokePrecedesExternalDequeuePolicy {
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
     const NEEDS_DATA_MODEL_INIT: bool = false;
+    // The same fact the generate manifest publishes as `needs_event_scheduler`.
+    // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
+    // `()` — so without this constant a host had no route to the knowledge that
+    // its driving loop must call `tick()` rather than `step()`.
+    const NEEDS_EVENT_SCHEDULER: bool = true;
     // §scxml-6.4: gates the engine's macrostep-end call into
     // `execute_pending_invokes`. §scxml-6.4.1 unsupported-type invokes need
     // it too — that call site is where their error.execution is raised.

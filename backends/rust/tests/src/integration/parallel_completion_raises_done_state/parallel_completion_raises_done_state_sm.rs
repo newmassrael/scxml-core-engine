@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 280975c88158c1a2612c8726a71e4ae581a1e42f8ef6d030924e99800aff8d10
-// template-hash: e4db48621f9961b90c5af89337aad8d33d4505a169c6468912558965970158e9
+// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -259,6 +259,11 @@ impl StatePolicy for ParallelCompletionRaisesDoneStatePolicy {
     const HAS_PARALLEL_STATES: bool = true;
     const NEEDS_SCRIPT_ENGINE: bool = false;
     const NEEDS_DATA_MODEL_INIT: bool = false;
+    // The same fact the generate manifest publishes as `needs_event_scheduler`.
+    // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
+    // `()` — so without this constant a host had no route to the knowledge that
+    // its driving loop must call `tick()` rather than `step()`.
+    const NEEDS_EVENT_SCHEDULER: bool = false;
     const HAS_ACTIVE_STATES: bool = true;
 
     // ======================================================================
