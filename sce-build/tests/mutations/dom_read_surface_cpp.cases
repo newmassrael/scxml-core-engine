@@ -127,10 +127,13 @@ PY
 # not know is emitted as a field call, which reaches the binding with no
 # receiver and dies at run time.
 
+# ⚠ The anchor is the clang-formatted text, because the commit hook reformats
+# this file and an anchor written before that ran is stale by the time a gate
+# reads it — measured 2026-08-18, this casefile was reported INCONCLUSIVE by
+# `mutation-cases` and the push was rejected for it.
 mutation_case "the transformer forgets two of the DOM methods" <<'PY'
 edit("sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-     """    static constexpr const char *kDomMethods[] = {
-        "getAttribute", "getElementsByTagName", "getTagName", "hasAttribute", "hasChildNodes"};""",
-     """    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName",
-                                                  "getTagName"};""")
+     """    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName", "getTagName", "hasAttribute",
+                                                  "hasChildNodes"};""",
+     """    static constexpr const char *kDomMethods[] = {"getAttribute", "getElementsByTagName", "getTagName"};""")
 PY
