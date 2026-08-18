@@ -118,6 +118,11 @@ class {{ machine_name }}StateMachine(
 {% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = {{ 'true' if model.needs_tick_driving else 'false' }}
 {% if model.needs_script_engine %}
 
     // W3C SCXML B.1: Initialize script engine before entering initial state

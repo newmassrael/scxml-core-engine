@@ -79,6 +79,22 @@ template <typename P, typename = void> struct HasExternalEventFlagTrait : std::f
 template <typename P>
 struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextEventIsExternal_)>> : std::true_type {};
 
+/// Policy declares that driving it needs `tick()` rather than `step()` alone.
+///
+/// `step()` runs a macrostep and never drains the delayed-send scheduler or
+/// ticks an invoked child, so a host that only ever calls it gets no delayed
+/// event, no error and no warning. The generator knows which machines are in
+/// that position and now says so on the policy; this detects the answer.
+///
+/// Detected rather than required so a hand-written policy — the mesh worker
+/// harnesses, and any consumer's own — keeps compiling. Absent means `false`,
+/// which is what a policy with no delayed send would have declared anyway.
+template <typename P, typename = void> struct NeedsEventSchedulerTrait : std::false_type {};
+
+template <typename P>
+struct NeedsEventSchedulerTrait<P, std::void_t<decltype(P::NEEDS_EVENT_SCHEDULER)>>
+    : std::bool_constant<P::NEEDS_EVENT_SCHEDULER> {};
+
 /// Policy can hand an event to a live `<invoke>` child named by session id.
 ///
 /// A session's published location is a usable `<send>` target,
@@ -247,6 +263,10 @@ concept HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 template <typename P>
 concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 
+/// Driving the policy's machine needs `tick()`, not `step()` alone
+template <typename P>
+concept NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
+
 #else  // C++17 fallback
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,6 +292,8 @@ template <typename P> inline constexpr bool HasActiveStates = HasActiveStatesTra
 template <typename P> inline constexpr bool HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 
 template <typename P> inline constexpr bool HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
+
+template <typename P> inline constexpr bool NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
 
 #endif  // __cpp_concepts >= 202002L
 

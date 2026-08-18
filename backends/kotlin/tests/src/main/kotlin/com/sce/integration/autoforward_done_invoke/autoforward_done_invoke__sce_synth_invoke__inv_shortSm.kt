@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -30,6 +30,11 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 ) : StateMachineEngine<AutoforwardDoneInvokeSceSynthInvokeInvShortState, AutoforwardDoneInvokeSceSynthInvokeInvShortEvent>() {
 
     override val initialState: AutoforwardDoneInvokeSceSynthInvokeInvShortState = AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
 
 
 

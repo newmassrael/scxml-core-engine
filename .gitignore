@@ -218,3 +218,12 @@ MODULE.bazel.lock
 # the commit that produced it: the binary embedded a template list that
 # the template tree had outgrown, and nothing could rebuild it to notice.
 /web/visualizer/wasm/
+
+# The push verdict, written beside the log by
+# `git push > push.log 2>&1; echo "rc=$?" > push.rc`.
+# A background job's completion notification reports the compound command's
+# status rather than the push's, and a push rejected by a gate has twice been
+# announced as "exit code 0" while origin had not moved — so the verdict is read
+# from this file and confirmed with `git ls-remote`. It is a per-run scratch
+# artifact, not a tracked one (`*.log` above already covers its sibling).
+/push.rc

@@ -100,6 +100,13 @@ struct inline_mixedPolicy {
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = true;
 
+    // W3C SCXML 6.2: which entry point a host must drive this machine with.
+    // `step()` runs a macrostep and never drains the delayed-send scheduler
+    // nor ticks an invoked child, so a host that only ever calls it waits
+    // forever with nothing said. The same verdict the generate manifest
+    // publishes as `needs_event_scheduler`.
+    static constexpr bool NEEDS_EVENT_SCHEDULER = false;
+
     // ── §scxml-5.3: read the datamodel this machine is holding ──────────
     /**
      * @brief §scxml-5.3: what the `rpm` datamodel variable is holding now.

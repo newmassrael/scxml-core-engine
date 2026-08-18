@@ -269,6 +269,17 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 
     # ── Structural metadata ────────────────────────────────────────
 
+    def needs_event_scheduler(self) -> bool:
+        """Whether a host must move this machine's clock for it to finish.
+
+        W3C SCXML 6.2 — the delayed sends this document carries (or an
+        `<invoke>`d child's) reach the external queue only through
+        `Engine.advance_time(...)`. A host that never calls it sees no
+        delayed event, no error and no warning. Same verdict the generate
+        manifest publishes as `needs_event_scheduler`.
+        """
+        return {{ 'True' if model.needs_tick_driving else 'False' }}
+
     def initial_state(self) -> {{ machine_name }}State:
 {% if model.initial %}
         return {{ machine_name }}State.{{ model.initial | to_python_const }}

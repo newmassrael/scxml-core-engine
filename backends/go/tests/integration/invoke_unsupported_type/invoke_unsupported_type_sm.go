@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: b282d63ae523573aa0c92c912a0dda6cb9508b9193d3508ff15b98a4ec52a48a
+// template-hash: 123759fa1515134527b83cfd094acff4a38d0e67d776745e7939fe5a5955e20a
 // generated-at: 0
 
 
@@ -288,6 +288,17 @@ func (p *InvokeUnsupportedTypePolicy) HasParallelStates() bool {
 
 // NeedsScriptEngine returns whether the SM needs a script engine.
 func (p *InvokeUnsupportedTypePolicy) NeedsScriptEngine() bool {
+	return false
+}
+
+// NeedsEventScheduler reports whether a host must drive this machine with
+// Tick rather than Step alone.
+//
+// W3C SCXML 6.2: Step runs a macrostep and never drains the delayed-send
+// scheduler nor ticks an invoked child, so a host that only ever calls it
+// waits forever with nothing said. Same verdict the generate manifest
+// publishes as needs_event_scheduler.
+func (p *InvokeUnsupportedTypePolicy) NeedsEventScheduler() bool {
 	return false
 }
 
