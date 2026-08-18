@@ -814,6 +814,13 @@ pub enum DiagnosticCode {
     // name `Math.PI`, a call may not.
     #[serde(rename = "expression/namespace-not-a-value")]
     ExpressionNamespaceNotAValue,
+    // A literal written as the thing being called — `1()`, `null()`.
+    // Distinct from `property-not-callable` because that code's repair
+    // is to keep the name and drop the call, and there is no name here
+    // worth keeping: what is left is a literal nobody wrote the
+    // expression to obtain.
+    #[serde(rename = "expression/literal-not-callable")]
+    ExpressionLiteralNotCallable,
     #[serde(rename = "expression/strict-equality")]
     ExpressionStrictEquality,
     #[serde(rename = "expression/parse-mismatch")]
@@ -2903,6 +2910,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
         ExpressionNamespaceNotAValue,
+        ExpressionLiteralNotCallable,
         ExpressionStrictEquality,
         ExpressionParseMismatch,
         ExpressionUnexpectedToken,
@@ -3405,6 +3413,11 @@ impl DiagnosticCode {
             // same sentence in it: the datamodel is ECMAScript's, and
             // what SCE hands out for these names is a member set.
             ExpressionNamespaceNotAValue => Some("W3C SCXML §B.2"),
+            // The same appendix decides this one too: a call on a value
+            // that is not a function is what ECMAScript answers with a
+            // TypeError, and the appendix is what makes ECMAScript's
+            // answers this datamodel's.
+            ExpressionLiteralNotCallable => Some("W3C SCXML §B.2"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4092,6 +4105,7 @@ impl DiagnosticCode {
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
             ExpressionNamespaceNotAValue => "expression/namespace-not-a-value",
+            ExpressionLiteralNotCallable => "expression/literal-not-callable",
             ExpressionStrictEquality => "expression/strict-equality",
             ExpressionParseMismatch => "expression/parse-mismatch",
             ExpressionUnexpectedToken => "expression/unexpected-token",
@@ -7850,6 +7864,17 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
         // what the consumer edits: there are no parentheses beside it to
         // remove, and what has to appear is a member the document has
         // not written yet.
+        // No `expected` and no `fix`: the producer knows what was
+        // written and nothing about what should have been. The record's
+        // work is the location and the sentence.
+        ExprError::LiteralNotCallable { what } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionLiteralNotCallable,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(what.clone()),
+            fix: None,
+            key_fragments: vec![what.clone()],
+        },
         ExprError::NamespaceNotAValue { namespace, members } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionNamespaceNotAValue,
             stage: Stage::Expression,
@@ -10168,6 +10193,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:234d162120386eee","code":"expression/namespace-not-a-value","stage":"expression","spec":"W3C SCXML §B.2","message":"Math is a namespace, not a value. Reach one of its members: Math.PI, Math.abs","expected":["Math.PI","Math.abs"],"actual":"Math"}"#,
+            ),
+            (
+                // Neither field carries a set: the producer can name
+                // what was written and nothing that should replace it.
+                "forge/expression-literal-not-callable",
+                ExprError::LiteralNotCallable {
+                    what: "the number literal".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9dd8d2ff05d2b95e","code":"expression/literal-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"the number literal is not a function","actual":"the number literal"}"#,
             ),
             (
                 "forge/expression-parse-mismatch",
@@ -13618,6 +13653,10 @@ mod tests {
             | ExpressionEmpty
             | ExpressionLex
             | ExpressionUnsupportedConstruct
+            // The callee was typed by having been written, and nothing
+            // that could stand in its place follows from that — so no
+            // fix, and `expected` stays absent with it.
+            | ExpressionLiteralNotCallable
             | ExpressionStrictEquality
             // The name that was called is the name that repairs it, so
             // there is one replacement rather than a set — and none at
@@ -14286,6 +14325,7 @@ mod tests {
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
                 | ExpressionNamespaceNotAValue
+                | ExpressionLiteralNotCallable
                 | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
@@ -14544,9 +14584,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            355,
+            356,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 355 distinct variants to match the DiagnosticCode \
+             expected 356 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \

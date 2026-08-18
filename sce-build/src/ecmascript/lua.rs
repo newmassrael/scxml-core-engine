@@ -458,6 +458,15 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
         emitted.push(value(arg)?);
     }
 
+    // A call on a literal. The callee is typed by having been written,
+    // so no list and no inference is involved — and what was emitted
+    // before this arm was not merely wrong but unparseable: `1()` and
+    // `true()` are Lua syntax errors, so the chunk carrying them failed
+    // to load rather than failing to run.
+    if let Some(what) = literal_description(callee) {
+        return Err(ExprError::LiteralNotCallable { what });
+    }
+
     // A call on a name that holds a value. The receiver is not consulted
     // and does not need to be: `_sessionid` is bound by the session and
     // `.length` is lowered as a property for every receiver a few lines
@@ -1026,6 +1035,24 @@ fn lua_number(text: &str) -> Result<String, ExprError> {
         Err(_) => Err(ExprError::UnsupportedConstruct {
             construct: format!("numeric literal '{text}'"),
         }),
+    }
+}
+
+/// How a refusal names `expr` when it is a literal, or `None` when it is
+/// anything else.
+///
+/// `describe` is the vocabulary; this is the phrase, and the two are
+/// separate because a refusal is a sentence. `null` takes no article and
+/// carries two spellings that this AST does not tell apart — the parser
+/// folds `undefined` into the same node — so the phrase says both rather
+/// than picking one and reading as a claim about which was written.
+fn literal_description(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Nullish => Some("the literal null or undefined".to_string()),
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_) | Expr::Object(_) => {
+            Some(format!("the {}", describe(expr)))
+        }
+        _ => None,
     }
 }
 
