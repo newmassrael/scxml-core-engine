@@ -155,7 +155,9 @@ void sce_lua_dom_register_metatable(lua_State *L) {
     }
     lua_pop(L, 1);
 
-    // DOMElement metatable
+    // DOMElement metatable. It carries the same members as the document's:
+    // a node reached by traversal answers the whole surface, and the two
+    // metatables differ only in which `__gc` frees what.
     if (luaL_newmetatable(L, SCE_LUA_DOM_ELEMENT_MT)) {
         lua_pushcfunction(L, sce_lua_dom_get_elements_by_tag_name);
         lua_setfield(L, -2, "getElementsByTagName");
@@ -163,8 +165,12 @@ void sce_lua_dom_register_metatable(lua_State *L) {
         lua_setfield(L, -2, "getAttribute");
         lua_pushcfunction(L, sce_lua_dom_get_tag_name);
         lua_setfield(L, -2, "getTagName");
+        lua_pushcfunction(L, sce_lua_dom_has_attribute);
+        lua_setfield(L, -2, "hasAttribute");
+        lua_pushcfunction(L, sce_lua_dom_has_child_nodes);
+        lua_setfield(L, -2, "hasChildNodes");
 
-        lua_pushvalue(L, -1);
+        lua_pushcfunction(L, sce_lua_dom_index);
         lua_setfield(L, -2, "__index");
 
         lua_pushcfunction(L, sce_lua_dom_gc_element);

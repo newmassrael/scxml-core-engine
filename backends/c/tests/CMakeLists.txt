@@ -832,6 +832,42 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML B.2: a `<data>` element's XML content is "the corresponding DOM
+    # structure" the appendix asks for, and a document walks it with DOM Level 1
+    # Core's vocabulary. Measured 2026-08-18, every backend supplied three
+    # methods instead — the two the W3C IRP suite reads plus a non-standard
+    # `getTagName`. This channel is the one where the fixture is the ONLY
+    # witness: `sce_lua_dom_push_object` and its metatable have no caller other
+    # than generated code, so a unit test cannot reach them at all.
+    sce_generate_static_integration_c_test(xml_data_is_a_dom_tree "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_xml_data_is_a_dom_tree
+        integration/test_xml_data_is_a_dom_tree.c
+        ${INTEGRATION_C_TEST_xml_data_is_a_dom_tree_SOURCES}
+    )
+    # sce_c_base carries the freestanding DOM parser and sce_c_scripting its
+    # Lua binding — named here because this is the one integration fixture
+    # whose `<data>` content is XML, which is what makes the generated
+    # initializer call `sce_lua_dom_push_object` at all.
+    target_link_libraries(sce_c_integration_xml_data_is_a_dom_tree PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_xml_data_is_a_dom_tree PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_xml_data_is_a_dom_tree PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_xml_data_is_a_dom_tree
+        COMMAND sce_c_integration_xml_data_is_a_dom_tree
+    )
+    set_tests_properties(c11_integration_xml_data_is_a_dom_tree PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.4.1: an <invoke> whose `type` names no processor this platform
     # implements is valid SCXML that must raise error.execution — not a document to
     # reject at build time. C11 reaches that raise through three gates the other
