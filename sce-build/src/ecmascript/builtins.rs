@@ -708,6 +708,33 @@ pub fn uncallable_namespace(name: &str) -> Option<crate::forge::error::ExprError
     })
 }
 
+/// The refusal for a namespace read as a value, or `None` when the
+/// identifier names no namespace this datamodel installs.
+///
+/// The third face of the same fact, after [`unsupported_member`] and
+/// [`uncallable_namespace`]: `Math`, `JSON` and `Object` are reached
+/// through a member and nowhere else. A read is the position where the
+/// backends stopped agreeing — Lua answers `Math` with a
+/// `ReferenceError` and an ECMAScript engine answers with an object — so
+/// this is the arm that keeps one document from having two meanings.
+///
+/// Both halves of the vocabulary ride, unlike the call refusal: a read
+/// may legally name `Math.PI`.
+pub fn namespace_not_a_value(name: &str) -> Option<crate::forge::error::ExprError> {
+    let namespace = Namespace::from_ident(name)?;
+    let mut members: Vec<String> = namespace
+        .callable_members()
+        .iter()
+        .chain(namespace.value_members())
+        .map(|member| format!("{}.{member}", namespace.name()))
+        .collect();
+    members.sort();
+    Some(crate::forge::error::ExprError::NamespaceNotAValue {
+        namespace: namespace.name().to_string(),
+        members,
+    })
+}
+
 /// The value fields a system variable carries, or an empty slice when
 /// the specification names none.
 ///

@@ -1,0 +1,85 @@
+# Mutation cases for the other two positions of "a namespace is reached
+# through a member": the read of the namespace itself, and the read of a
+# member it does not carry.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/namespace_is_reached_by_a_member.cases`.
+#
+# Its sibling `namespace_not_callable.cases` covers the call. These two
+# defects were measured in the same round and are the same shape one node
+# over: `<assign expr="Math"/>` generated on all six backends and meant
+# two different things — a ReferenceError where the datamodel lowers to
+# Lua, the language's own object where it hands the text to an ECMAScript
+# engine — and `JSON.serialize` was emitted as a field of the table this
+# repository installs itself, where it is nil.
+#
+# The third and fourth are the opposite failure, a rule that reaches too
+# far: refusing the member reach takes `JSON.parse` and `Object.keys`
+# with it, and a read refusal that offers only the callable half withholds
+# `Math.PI` from the one position where it is legal.
+#
+# The last breaks the gate itself: the read sweep is driven by a list of
+# positions, and a list that shrinks to the bare name lets a rule written
+# for one position read as a rule for all of them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test ecmascript_property_calls --test cli_expression_refusal
+mutation_targets sce-build/src/ecmascript/builtins.rs sce-build/src/ecmascript/lua.rs sce-build/tests/ecmascript_property_calls.rs
+
+mutation_case "the namespace is read as a value again" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """        Expr::Ident(name) => match builtins::namespace_not_a_value(name) {
+            Some(refusal) => return Err(refusal),
+            None => lua_ident_read(name),
+        },""",
+     """        Expr::Ident(name) => lua_ident_read(name),""")
+PY
+
+mutation_case "only Math is asked whether it carries the member being read" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """        if let Some(namespace) = builtins::Namespace::from_ident(name) {
+            if let Some(refusal) = builtins::unknown_member(namespace, property) {
+                return Err(refusal);
+            }
+            return Ok(format!("{name}.{property}"));
+        }
+    }""",
+     """    }""")
+PY
+
+mutation_case "the member reach is refused along with the namespace" <<'PY'
+edit("sce-build/src/ecmascript/lua.rs",
+     """        if let Some(namespace) = builtins::Namespace::from_ident(name) {
+            if let Some(refusal) = builtins::unknown_member(namespace, property) {
+                return Err(refusal);
+            }
+            return Ok(format!("{name}.{property}"));
+        }""",
+     """        if let Some(refusal) = builtins::namespace_not_a_value(name) {
+            return Err(refusal);
+        }""")
+PY
+
+mutation_case "the read refusal withholds the constants a read may name" <<'PY'
+edit("sce-build/src/ecmascript/builtins.rs",
+     """    let mut members: Vec<String> = namespace
+        .callable_members()
+        .iter()
+        .chain(namespace.value_members())""",
+     """    let mut members: Vec<String> = namespace
+        .callable_members()
+        .iter()""")
+PY
+
+mutation_case "the read sweep shrinks to the bare name" <<'PY'
+edit("sce-build/tests/ecmascript_property_calls.rs",
+     """    const POSITIONS: &[&str] = &[
+        "{n}",
+        "{n} !== null",
+        "handlers.retry({n})",
+        "{n}[t]",
+        "typeof {n}",
+    ];""",
+     """    const POSITIONS: &[&str] = &["{n}"];""")
+PY

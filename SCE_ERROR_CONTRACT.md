@@ -406,6 +406,7 @@ references against a real document and drift silently.
 | `expression/go-ternary-unsupported` | `expression` | no | SCE Forge §3.4 |
 | `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
 | `expression/lex` | `expression` | no | SCE Forge §3.4 |
+| `expression/namespace-not-a-value` | `expression` | no | W3C SCXML §B.2 |
 | `expression/namespace-not-callable` | `expression` | no | W3C SCXML §B.2 |
 | `expression/parse-mismatch` | `expression` | no | SCE Forge §3.4 |
 | `expression/property-not-callable` | `expression` | `replace_with` / no | W3C SCXML §B.2 |

@@ -313,21 +313,122 @@ fn the_namespace_refusal_offers_the_callable_members_qualified() {
 /// Dropping the call — the repair `PropertyNotCallable` offers — is not
 /// a repair here, which is why the two are different codes.
 ///
-/// Asserted on the engine rather than argued: `Math` on its own lowers
-/// to a name nothing binds there, so a consumer that applied "write it
-/// without the call" would trade a reported refusal for a failure at
-/// evaluation. A record that carried that as its `fix` would be telling
-/// an author to make the document worse.
+/// Two claims, and the second is what makes the first matter. The
+/// frontend refuses the bare name as well, so the edit would trade one
+/// refusal for another; and the engine a generated machine runs does not
+/// bind the name at all, so a consumer that applied the edit anyway
+/// would trade a reported refusal for a failure at evaluation. A record
+/// carrying that as its `fix` would be telling an author to make the
+/// document worse.
 #[test]
 fn dropping_the_call_would_not_repair_the_namespace() {
-    let lowered = to_lua_value("Math", &probes()).expect("a bare namespace still lowers");
+    assert!(
+        matches!(refusal("Math"), ExprError::NamespaceNotAValue { .. }),
+        "the bare namespace is accepted, so dropping the call would be a repair"
+    );
     let (engine, session) = engine_with(&[]);
-    let evaluated = engine.evaluate_expression(&session, &lowered);
+    let evaluated = engine.evaluate_expression(&session, "Math");
     assert!(
         evaluated.is_err(),
         "Math evaluated to {evaluated:?} — if the engine binds it after all, \
          the refusal could offer dropping the call as its repair"
     );
+}
+
+/// A namespace read as a value is refused wherever the read stands.
+///
+/// The positions are varied because the rule is decided in one arm that
+/// every read reaches: on its own, as an operand, under a computed key,
+/// inside a guard. A rule written only for the assignment would let the
+/// others through, and each of them is a place `Math` reaches the engine
+/// as a name it does not bind.
+#[test]
+fn every_namespace_is_refused_where_it_stands_as_a_value() {
+    // A lower bound on the sweep, not on the language: these are read
+    // positions that reach the same arm by different routes, and a list
+    // that quietly shrank to the bare name would let a rule written for
+    // one position read as a rule for all of them.
+    const POSITIONS: &[&str] = &[
+        "{n}",
+        "{n} !== null",
+        "handlers.retry({n})",
+        "{n}[t]",
+        "typeof {n}",
+    ];
+    assert!(
+        POSITIONS.len() >= 5,
+        "the sweep has stopped covering the positions a read reaches"
+    );
+    for namespace in Namespace::ALL {
+        let name = namespace.name();
+        for source in POSITIONS.iter().map(|p| p.replace("{n}", name)) {
+            match refusal(&source) {
+                ExprError::NamespaceNotAValue { namespace: got, .. } => {
+                    assert_eq!(got, name, "{source} named the wrong namespace")
+                }
+                other => panic!("{source} was refused as {other:?} rather than a namespace read"),
+            }
+        }
+    }
+}
+
+/// The read refusal offers both halves of the vocabulary, unlike the
+/// call refusal.
+///
+/// `Math.PI` cannot stand where a call was written and can stand where a
+/// read was, so the two lists differ. If they ever became one list, one
+/// of the two records would be offering a repair that does not apply.
+#[test]
+fn the_read_refusal_offers_the_constants_the_call_refusal_withholds() {
+    let members = match refusal("Math") {
+        ExprError::NamespaceNotAValue { members, .. } => members,
+        other => panic!("Math was refused as {other:?}"),
+    };
+    assert!(
+        members.contains(&"Math.PI".to_string()) && members.contains(&"Math.abs".to_string()),
+        "a read may name either half, so both belong in the list: {members:?}"
+    );
+    let (_, call_members) = namespace_refused("Math()");
+    assert!(
+        !call_members.contains(&"Math.PI".to_string()),
+        "the call refusal must keep withholding the constants: {call_members:?}"
+    );
+}
+
+/// A member this datamodel does not carry is refused when it is read,
+/// not only when it is called — on every namespace.
+///
+/// Only `Math` used to be asked. `JSON` and `Object` are tables this
+/// repository installs, so a member outside their vocabulary was emitted
+/// as a field access on the real table and read `nil` at runtime, with
+/// `check` answering ok. The membership is a fact for all three.
+#[test]
+fn an_unknown_member_is_refused_when_it_is_read_on_every_namespace() {
+    for source in ["Math.tanh", "JSON.serialize", "Object.freeze"] {
+        match refusal(source) {
+            ExprError::UnsupportedBuiltin { name, available } => {
+                assert_eq!(name, source, "the record names the member reached for");
+                assert!(
+                    !available.is_empty(),
+                    "{source} was refused with no vocabulary to offer"
+                );
+            }
+            other => panic!("{source} was refused as {other:?} rather than a missing name"),
+        }
+    }
+}
+
+/// A member the namespace does carry still reads as a value.
+///
+/// The counterweight: `JSON.parse` and `Object.keys` are functions the
+/// engines bind, and reading one is legal on every backend. The rule
+/// above must not take them with it.
+#[test]
+fn a_member_the_namespace_carries_still_reads() {
+    for source in ["JSON.parse", "Object.keys", "Math.PI"] {
+        to_lua_value(source, &probes())
+            .unwrap_or_else(|err| panic!("{source} names a member this datamodel has: {err}"));
+    }
 }
 
 /// A member call on every namespace still lowers and still evaluates.
