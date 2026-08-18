@@ -34,6 +34,8 @@
 // consumer that compiles clean because nothing warns proves nothing
 // about whose suppression is doing the work.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -133,17 +135,26 @@ fn write_probe_crate(crate_dir: &Path, artifacts: &Path, deny_warnings: bool) ->
 }
 
 fn cargo_build(manifest: &Path) -> std::process::Output {
+    cargo_build_run(manifest).output
+}
+
+/// The same build, with the route it took — see
+/// `common::run_cargo_offline_first`. This probe crate has no lock file, so
+/// cargo would reach the registry index on every run even when the local
+/// cache already answers, which is how a brief outage refused a push.
+fn cargo_build_run(manifest: &Path) -> common::ProbeRun {
     // Shared across runs so the runtime's tree is built once, and
     // separate from the outer build's target dir so the two cargo
     // processes never contend for the same lock.
     let target_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("include-route-probe-target");
-    std::process::Command::new("cargo")
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(manifest)
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .output()
-        .expect("run cargo build")
+    common::run_cargo_offline_first(|| {
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("build")
+            .arg("--manifest-path")
+            .arg(manifest)
+            .env("CARGO_TARGET_DIR", &target_dir);
+        cmd
+    })
 }
 
 /// Serialises the `OUT_DIR` write below. The variable is process-wide

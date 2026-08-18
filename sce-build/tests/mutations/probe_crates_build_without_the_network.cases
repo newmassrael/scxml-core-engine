@@ -1,0 +1,83 @@
+# Mutation cases for the probe crates' route to cargo.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/probe_crates_build_without_the_network.cases`.
+#
+# Four suites compile a generated probe crate by writing a throwaway Cargo
+# project and running cargo inside it. That project carries no `Cargo.lock`,
+# so cargo resolves from scratch and reaches for the registry index even when
+# the local cache already holds every version it needs.
+#
+# Measured 2026-08-19: a push carrying two commits was refused after ten
+# minutes of gates because `index.crates.io` was briefly unreachable inside
+# `regen-reproduces`; the same test passed in 26 seconds under
+# `CARGO_NET_OFFLINE=true`, from the cache it already had. Two further gates
+# never ran, so nothing was claimed about them.
+#
+# The repair is one shared helper that tries offline first. These cases are
+# what keeps it — including the two halves that are easy to get backwards: a
+# real compile error must NOT be retried online, and a fifth call site must
+# not be able to appear unrouted.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test probe_crates_build_without_the_network
+mutation_targets sce-build/tests/common/mod.rs
+mutation_oracles sce-build/tests/probe_crates_build_without_the_network.rs
+
+# ── Offline has to come first ──────────────────────────────────────
+#
+# The whole defect in one edit: the offline attempt is dropped and every probe
+# crate build reaches the network again, which is exactly the state the push
+# was refused in.
+
+mutation_case "the offline attempt is dropped and every run reaches the network" <<'PY'
+edit("sce-build/tests/common/mod.rs",
+     """    offline_cmd.arg("--offline");""",
+     """    let _ = &mut offline_cmd;""")
+PY
+
+# ── A real failure is not a network failure ────────────────────────
+#
+# Retrying every failure online doubles a genuine compile error's wall-clock
+# and leaves the reader unsure which attempt produced the diagnostic in front
+# of them.
+
+mutation_case "any failure is retried online, not only a cache miss" <<'PY'
+edit("sce-build/tests/common/mod.rs",
+     """    let needs_network = !offline.status.success() && failed_for_want_of_network(&offline);""",
+     """    let _ = failed_for_want_of_network(&offline);
+    let needs_network = !offline.status.success();""")
+PY
+
+mutation_case "the network-failure test accepts every failure" <<'PY'
+edit("sce-build/tests/common/mod.rs",
+     """    stderr.contains("--offline")
+        || stderr.contains("offline mode")
+        || stderr.contains("net.offline")""",
+     """    !stderr.is_empty()""")
+PY
+
+# ── The route has to be reported honestly ──────────────────────────
+#
+# A helper that always claims it stayed offline makes the assertion above
+# vacuous while the runs themselves go to the network.
+
+mutation_case "the run reports an offline route it did not take" <<'PY'
+edit("sce-build/tests/common/mod.rs",
+     """    if offline_failed_for_want_of_network {
+        vec!["offline", "online"]
+    } else {
+        vec!["offline"]
+    }""",
+     """    let _ = offline_failed_for_want_of_network;
+    vec!["offline"]""")
+PY
+
+# ⚠ Not covered here, and stated rather than left to be rediscovered: an edit
+# that hard-codes `first_attempt_args` instead of reading them off the command
+# is invisible to any test. It changes nothing a consumer can observe — the
+# same command still runs — so it fails the rule that a contract worth a
+# mutation must be observable at run time. What the record buys is that the
+# LABEL cannot drift from the command while both are derived from it; the
+# flag's presence is what the first case above defends.

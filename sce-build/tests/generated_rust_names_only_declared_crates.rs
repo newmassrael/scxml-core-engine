@@ -36,6 +36,8 @@
 // fixture below is chosen for its expressions, not for its datamodel
 // string.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -348,13 +350,19 @@ fn a_consumer_declaring_only_the_runtime_compiles_a_datamodel_machine() {
     // dir so the two cargo processes never contend for the same lock.
     let target_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("lone-dep-consumer-target");
 
-    let output = std::process::Command::new("cargo")
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(crate_dir.join("Cargo.toml"))
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .output()
-        .expect("run cargo build");
+    // Offline first — see `common::run_cargo_offline_first`: this probe crate
+    // has no lock file, so cargo would reach the registry index on every run
+    // even when the local cache already answers.
+    let manifest = crate_dir.join("Cargo.toml");
+    let run = common::run_cargo_offline_first(|| {
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("build")
+            .arg("--manifest-path")
+            .arg(&manifest)
+            .env("CARGO_TARGET_DIR", &target_dir);
+        cmd
+    });
+    let output = run.output;
 
     assert!(
         output.status.success(),
