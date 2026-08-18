@@ -276,6 +276,7 @@ target_link_libraries(ecmascript_semantics_test
 target_compile_definitions(ecmascript_semantics_test
     PRIVATE
         SCE_ECMA262_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/ecma262_semantics.json"
+        SCE_LUA_DIVERGENCES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/lua_engine_divergences.json"
 )
 
 apply_sce_test_policies(ecmascript_semantics_test)

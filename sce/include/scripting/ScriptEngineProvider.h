@@ -22,10 +22,15 @@ namespace SCE {
  * document declaring `datamodel="ecmascript"` is evaluated by QuickJS as
  * ECMAScript and by LuaEngine as Lua-after-rewriting, so which engine a build
  * selects decides what an expression MEANS. That is why the default is
- * QuickJS: measured against `tests/ecmascript/ecma262_semantics.json`, the
- * lua selection answers 26 of 58 ECMA-262 expressions wrong. Selecting it is
- * still allowed and still builds — `ecmascript_semantics_test` is what stops
- * the wrong answers from being silent.
+ * QuickJS: measured against `tests/ecmascript/ecma262_semantics.json`, it
+ * answers every case, and the lua selection does not.
+ *
+ * Selecting lua is still allowed and still builds. What it costs is written
+ * down case by case in `tests/ecmascript/lua_engine_divergences.json`, which
+ * `ecmascript_semantics_test` holds to in both directions — so the cost
+ * cannot quietly grow, and cannot quietly be overstated either. Do not
+ * restate the count here: the sentence that used to had gone stale by 18
+ * cases before anyone noticed.
  *
  * Keep this comment and the cache entry in `sce/CMakeLists.txt` in step. They
  * disagreed once, and a reader then concluded an expression had been checked
