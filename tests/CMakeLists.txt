@@ -636,6 +636,8 @@ add_executable(integration_tests
     integration/AncestorEntryIsNotDefaultEntryAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
+    integration/XmlDataIsADomTreeTest.cpp
+    integration/XmlDataIsADomTreeAotTest.cpp
     integration/AiLoopAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelCompletionRaisesDoneStateTest.cpp
@@ -1045,6 +1047,16 @@ sce_generate_static_integration_test(ancestor_entry_is_not_default_entry ${STATI
 # paths the W3C suite does cover all originate inside the document and are
 # lowered separately.
 sce_generate_static_integration_test(event_data_arrives_as_sent ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML B.2: a `<data>` element's XML content is "the corresponding DOM
+# structure" the appendix asks for, and a document walks it with DOM Level 1
+# Core's vocabulary. Measured 2026-08-18, every backend supplied three methods
+# instead — the two the W3C IRP suite reads plus a non-standard `getTagName` —
+# so `doc.tagName`, `doc.firstChild` and `doc.childNodes.length` answered nil on
+# all seven channels with the whole suite green. The per-binding tests measure
+# the engines directly; this fixture is what asks whether a DOCUMENT reaches
+# them, through the generated `<data>` initializer and the lowered guards.
+sce_generate_static_integration_test(xml_data_is_a_dom_tree ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.4 + 3.7: a `<parallel>` completes when every region has reached a
 # `<final>`, and that raises `done.state.<parallel>`. A parallel owns no

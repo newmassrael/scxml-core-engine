@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML B.2: a `<data>` element's XML content is a DOM structure, and a
+  document walks it with the vocabulary DOM Level 1 Core gives.
+
+  The appendix obliges the Processor to create "the corresponding DOM
+  structure". Measured 2026-08-18, every backend created an object with three
+  methods on it — `getElementsByTagName`, `getAttribute` and a non-standard
+  `getTagName` — which are exactly the two names the W3C IRP suite reads, plus
+  one. So `doc.tagName` answered nil, `doc.firstChild` answered nil, and
+  `doc.childNodes.length` was a length taken of nil, on all seven channels,
+  with 204/204 W3C fixtures green. The suite's DOM vocabulary is the part that
+  worked.
+
+  What this fixture owns that the per-binding tests do not: the seam. Each
+  backend's binding is measured directly against
+  `tests/ecmascript/dom_read_surface.json`, but a binding is reached through
+  generated code — the `<data>` initializer that calls `setVariableAsDOM`, and
+  the guards the frontend lowered — and nothing asked whether a document
+  reaches it. For the C11 channel that seam is the only path there is: its DOM
+  binding has no other caller.
+
+  Three claims, three clauses, and a `<final>` per failure so a red says which
+  one broke rather than only that something did:
+
+    settled       all three
+    notADocument  the variable did not hold a document
+    wrongTree     the children are not the two elements in document order
+    noText        character data did not report itself, or textContent lost it
+
+  Every transition is eventless, so the machine runs to its verdict in the
+  first macrostep and a driver needs no event to ask the question. That is
+  deliberate: an event would add the payload path (`_event.data`), which
+  `event_data_arrives_as_sent` owns, and a failure there would surface here as
+  a DOM failure.
+
+  The pretty-printing inside `<data>` is load-bearing. pugixml's
+  `parse_default` — which the cpp reference backend parses with — omits
+  `parse_ws_pcdata`, so the newlines and indentation between the two `<book>`
+  elements are not nodes: `childNodes.length` is 2, not 5, and `textContent`
+  is the one book's text rather than that plus three runs of whitespace. Three
+  of the seven backends answered otherwise until this fixture's table did.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="xml_data_is_a_dom_tree" datamodel="ecmascript" initial="reading">
+
+  <datamodel>
+    <data id="doc">
+      <!-- `xmlns=""` resets the SCXML namespace the inline children would
+           otherwise inherit, so the serialised content is the document an
+           author meant rather than one carrying the host grammar's
+           namespace. W3C test557 writes it for the same reason. -->
+      <books xmlns="" count="2">
+        <book title="t1">first</book>
+        <book title="t2"/>
+      </books>
+    </data>
+  </datamodel>
+
+  <!-- Claim 1: the variable holds the DOCUMENT, which reports itself as one
+       and hands out its document element. A handle that answered 1 here would
+       be the document element wearing the variable's name. -->
+  <state id="reading">
+    <transition cond="doc.nodeType === 9 &amp;&amp; doc.nodeName === '#document' &amp;&amp; doc.documentElement.tagName === 'books' &amp;&amp; doc.hasAttribute('count')"
+                target="traversing"/>
+    <transition target="notADocument"/>
+  </state>
+
+  <!-- Claim 2: the children are the two elements, in document order, reachable
+       in both directions. -->
+  <state id="traversing">
+    <transition cond="doc.documentElement.childNodes.length === 2 &amp;&amp; doc.documentElement.firstChild.getAttribute('title') === 't1' &amp;&amp; doc.documentElement.lastChild.getAttribute('title') === 't2' &amp;&amp; doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' &amp;&amp; doc.documentElement.firstChild.parentNode.tagName === 'books'"
+                target="readingText"/>
+    <transition target="wrongTree"/>
+  </state>
+
+  <!-- Claim 3: character data reports its own kind and its text is readable
+       from the element above it. -->
+  <state id="readingText">
+    <transition cond="doc.documentElement.firstChild.firstChild.nodeType === 3 &amp;&amp; doc.documentElement.firstChild.firstChild.nodeValue === 'first' &amp;&amp; doc.documentElement.textContent === 'first' &amp;&amp; doc.documentElement.lastChild.hasChildNodes() === false"
+                target="settled"/>
+    <transition target="noText"/>
+  </state>
+
+  <final id="settled"/>
+  <final id="notADocument"/>
+  <final id="wrongTree"/>
+  <final id="noText"/>
+</scxml>
