@@ -561,12 +561,30 @@ mutation_ctest_build_dir() {
 # not land. Paths outside the repository are dropped for the same reason —
 # a mutation here cannot change them, so they can only dilute the check.
 mutation_ctest_resolve() {
-    local build_dir json
+    local build_dir json uncovered
     build_dir="$(mutation_ctest_build_dir)" || {
         red "mutation_ctest needs --test-dir <dir>: it names the tree to rebuild"
         exit 2
     }
     MUTATION_BUILD_DIR="$build_dir"
+
+    # Build BEFORE resolving, because resolution below is a file-existence test
+    # and a test registered in this same change has no binary yet.
+    #
+    # Measured 2026-08-19. A round whose casefile had just added a C11 target
+    # reported `resolved 1 test artifact(s)` and then called four cases
+    # INCONCLUSIVE — "every test binary is byte-identical to the baseline" —
+    # which is exactly what it should say about a binary it never hashed. The
+    # C11 one was created by the round's OWN baseline build, one second after
+    # resolution had already decided it did not exist. Re-running the identical
+    # command afterwards resolved 2 and caught all ten. So the harness had
+    # reported a covered backend as uncovered, in one dim line, and the failure
+    # mode is silent by construction: every NEW backend test hits it once.
+    #
+    # Failure is ignored here on purpose — a tree that cannot build is the
+    # baseline's verdict to give, with its diagnostics, a few lines below.
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(mutation_build_jobs)" >/dev/null 2>&1 || true
+
     json="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null)" || {
         red "ctest could not enumerate the suite: ${MUTATION_RUNNER_ARGS[*]}"
         ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>&1 | tail -20
@@ -589,6 +607,31 @@ for test in json.load(sys.stdin).get("tests", []):
 for path in sorted(seen):
     print(path)
 ' "$SCE_REPO_ROOT")
+
+    # A test the selector matched but no in-repository file backs is a test this
+    # round cannot see change. Naming it is the whole point: the count alone read
+    # as success for as long as it took someone to compare it against the
+    # selector by hand.
+    uncovered="$(printf '%s\n' "$json" | python3 -c '
+import json, os, sys
+
+repo = os.path.realpath(sys.argv[1])
+for test in json.load(sys.stdin).get("tests", []):
+    for token in test.get("command") or []:
+        path = os.path.realpath(token)
+        if os.path.isfile(path) and os.path.commonpath([repo, path]) == repo:
+            break
+    else:
+        print(test.get("name", "<unnamed>"))
+' "$SCE_REPO_ROOT")"
+    if [[ -n "$uncovered" ]]; then
+        red "the selector matched test(s) backed by no in-repository file, so a mutation"
+        red "could not be observed through them:"
+        printf '  %s\n' $uncovered >&2
+        red "build the tree first, or narrow the selector to the tests this casefile means"
+        exit 2
+    fi
+
     if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
         red "the selector matched no in-repository test artifacts: ${MUTATION_RUNNER_ARGS[*]}"
         exit 2
