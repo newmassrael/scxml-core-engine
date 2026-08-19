@@ -1052,7 +1052,9 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// How many macrosteps this engine stopped short because their eventless
-    /// chain was still going after [`MAX_EVENTLESS_MICROSTEPS`] microsteps.
+    /// chain was still going after `MAX_EVENTLESS_MICROSTEPS` microsteps
+    /// (internal — the number is the engine's to choose and the count is what
+    /// a host reads).
     ///
     /// The specification says a macrostep ends in a configuration where
     /// nothing is enabled by NULL, and its Principles and Constraints add that
