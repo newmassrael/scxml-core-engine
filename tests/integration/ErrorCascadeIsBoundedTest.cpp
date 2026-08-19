@@ -91,6 +91,10 @@ TEST_F(ErrorCascadeIsBoundedTest, AHandlerThatCannotHandleItsErrorGivesTheCaller
     EXPECT_EQ(counter("runs"), "100")
         << "`runaway`'s handler must run exactly as many times as the raiser allows links in a chain — fewer means "
            "the document was cut off early, more means the ceiling moved";
+    EXPECT_EQ(counter("ticks"), "100")
+        << "every link's handler also raises the author's own `tick`, and every one of them must be delivered. An "
+           "engine that counted those as links would refuse at half the depth; one that let them end the chain "
+           "would never refuse at all — and a handler that logs before it fails is an ordinary document";
     const auto stats = sm_->getStatistics();
     EXPECT_EQ(stats.errorCascadeEvents, 1u)
         << "the handler's <assign> failed again on the last allowed link, and the error it raised is the one the "
@@ -127,6 +131,24 @@ TEST_F(ErrorCascadeIsBoundedTest, TheMachineStillAnswersAfterItsChainIsCut) {
     EXPECT_EQ(counter("pokes"), "1")
         << "`runaway` answers `poke` with a targetless transition. An engine that ended the chain by ending the "
            "machine would leave the host with a dead document instead of a bounded one";
+}
+
+/// A second chain starts from zero. The depth is a property of the chain, not
+/// of the machine's whole life — and on this engine the boundary is the host's
+/// own call, because the dispatches that make up a chain come back through
+/// `processEvent` one at a time rather than nesting.
+TEST_F(ErrorCascadeIsBoundedTest, ASecondChainStartsFromZero) {
+    sm_->processEvent("spin");
+    sm_->processEvent("reset");
+    ASSERT_EQ(sm_->getCurrentState(), "idle") << "`reset` is the fixture's way back out of the chain";
+
+    sm_->processEvent("spin");
+
+    EXPECT_EQ(counter("runs"), "200")
+        << "the second entry into `runaway` must buy the document a full chain again. A depth carried across the "
+           "host's calls would stop this one at its first link and leave the counter at 100";
+    EXPECT_EQ(sm_->getStatistics().errorCascadeEvents, 2u)
+        << "two chains, two refusals — a count that saturates at one would read as a machine that recovered";
 }
 
 /// The control, on this engine: one failure with nobody to answer it is the

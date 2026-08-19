@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ff0b5c086300231a7d39e506e4ad1c27066a2d50ea7fbc3d805ddccedf780d62
-// template-hash: 10c5bb56d60f6d5bc4121611a1230324eaf61d1a5524b71d52c6010f279d5ffd
+// source-hash: 4731a6ba40787ab928e39e6fce63f290cd233b0d7081f439713483c0324e40fe
+// template-hash: 08524b6e9f06ec235417da53ac7c80c6bfd4ac29c2f21bcfec9a9e720a464526
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -32,6 +32,7 @@ sealed interface ErrorCascadeIsBoundedEvent : Event {
     data object Reset : ErrorCascadeIsBoundedEvent
     data object Settle : ErrorCascadeIsBoundedEvent
     data object Spin : ErrorCascadeIsBoundedEvent
+    data object Tick : ErrorCascadeIsBoundedEvent
 }
 // --- State Machine (W3C SCXML) ---
 
@@ -76,6 +77,18 @@ class ErrorCascadeIsBoundedStateMachine(
      */
     fun runs(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "runs")
+
+    /**
+     * §scxml-5.3: what the `ticks` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `ticks` was assigned a value of another type, or the engine refused.
+     */
+    fun ticks(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "ticks")
 
     override val initialState: ErrorCascadeIsBoundedState = ErrorCascadeIsBoundedState.Idle
 
@@ -128,6 +141,7 @@ class ErrorCascadeIsBoundedStateMachine(
         "reset" -> ErrorCascadeIsBoundedEvent.Reset
         "settle" -> ErrorCascadeIsBoundedEvent.Settle
         "spin" -> ErrorCascadeIsBoundedEvent.Spin
+        "tick" -> ErrorCascadeIsBoundedEvent.Tick
         else -> null
     }
 
@@ -139,6 +153,7 @@ class ErrorCascadeIsBoundedStateMachine(
         is ErrorCascadeIsBoundedEvent.Reset -> "reset"
         is ErrorCascadeIsBoundedEvent.Settle -> "settle"
         is ErrorCascadeIsBoundedEvent.Spin -> "spin"
+        is ErrorCascadeIsBoundedEvent.Tick -> "tick"
     }
 
 
@@ -181,6 +196,13 @@ class ErrorCascadeIsBoundedStateMachine(
             engine.setVariable(sid, "runs", initResult_runs)
         } catch (e: Exception) {
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='runs'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'ticks' with expr
+        try {
+            val initResult_ticks = engine.evaluateExpr(sid, "0")
+            engine.setVariable(sid, "ticks", initResult_ticks)
+        } catch (e: Exception) {
+            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
         }
 
 
@@ -343,6 +365,8 @@ class ErrorCascadeIsBoundedStateMachine(
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is ErrorCascadeIsBoundedEvent.Error.Execution -> TransitionResult.Internal
         // W3C SCXML 3.13: Targetless transition (actions only)
+        event is ErrorCascadeIsBoundedEvent.Tick -> TransitionResult.Internal
+        // W3C SCXML 3.13: Targetless transition (actions only)
         event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal
         event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Runaway)
 
@@ -367,12 +391,12 @@ class ErrorCascadeIsBoundedStateMachine(
     override fun onEntry(state: ErrorCascadeIsBoundedState, pathChild: ErrorCascadeIsBoundedState?) {
         when (state) {
             is ErrorCascadeIsBoundedState.Idle -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:59 :: idle :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("idle")) return
             }
             is ErrorCascadeIsBoundedState.Runaway -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:95 :: runaway :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("runaway")) return
 
@@ -381,7 +405,7 @@ class ErrorCascadeIsBoundedStateMachine(
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
             is ErrorCascadeIsBoundedState.Settling -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:77 :: settling :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("settling")) return
 
@@ -397,15 +421,15 @@ class ErrorCascadeIsBoundedStateMachine(
     override fun onExit(state: ErrorCascadeIsBoundedState) {
         when (state) {
             is ErrorCascadeIsBoundedState.Idle -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:59 :: idle :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
                 activeStateIds.remove("idle")
             }
             is ErrorCascadeIsBoundedState.Runaway -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:95 :: runaway :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
                 activeStateIds.remove("runaway")
             }
             is ErrorCascadeIsBoundedState.Settling -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:77 :: settling :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
                 activeStateIds.remove("settling")
             }
         }
@@ -421,13 +445,13 @@ class ErrorCascadeIsBoundedStateMachine(
         when (source) {
         is ErrorCascadeIsBoundedState.Idle -> when {
             event is ErrorCascadeIsBoundedEvent.Poke -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:60 :: idle :: _transition_0
+                // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
 
 
             executeAssign("pokes", "pokes + 1")
             }
             event is ErrorCascadeIsBoundedEvent.Boom -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:66 :: idle :: _transition_1
+                // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -437,17 +461,25 @@ class ErrorCascadeIsBoundedStateMachine(
         }
         is ErrorCascadeIsBoundedState.Runaway -> when {
             event is ErrorCascadeIsBoundedEvent.Error.Execution -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:99 :: runaway :: _transition_0
+                // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
             executeAssign("runs", "runs + 1")
+
+            raiseInternal(ErrorCascadeIsBoundedEvent.Tick)
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
+            event is ErrorCascadeIsBoundedEvent.Tick -> {
+                // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
+
+
+            executeAssign("ticks", "ticks + 1")
+            }
             event is ErrorCascadeIsBoundedEvent.Poke -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _transition_1
+                // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
             executeAssign("pokes", "pokes + 1")
@@ -456,7 +488,7 @@ class ErrorCascadeIsBoundedStateMachine(
         }
         is ErrorCascadeIsBoundedState.Settling -> when {
             event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard("repairs < 3") -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:81 :: settling :: _transition_0
+                // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
             executeAssign("repairs", "repairs + 1")
@@ -466,7 +498,7 @@ class ErrorCascadeIsBoundedStateMachine(
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
             event is ErrorCascadeIsBoundedEvent.Poke -> {
-                // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _transition_1
+                // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 
             executeAssign("pokes", "pokes + 1")

@@ -580,7 +580,20 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         EventContextGuard &operator=(const EventContextGuard &) = delete;
     };
 
+    // §scxml-3.12.2: a call from the host starts a new piece of work, so any
+    // `error.*` chain the last one built is over. This is where the five
+    // queue-draining engines reset it as the internal queue empties; here the
+    // dispatches that make up a chain are serialized rather than nested — the
+    // handler's raises go on the raiser's queue and come back through this
+    // same entry point — so "the outermost dispatch returned" is every
+    // dispatch, and only the host's own call marks the boundary. Measured:
+    // resetting per dispatch, or on the outermost one, left the chain
+    // unbounded for a handler that raises its own event before failing.
+    const bool topLevelEvent = !isProcessingEvent_;
     ProcessingEventGuard eventGuard(isProcessingEvent_);
+    if (topLevelEvent && eventRaiser_) {
+        eventRaiser_->resetErrorCascadeDepth();
+    }
 
     // §scxml-5.10: Protect _event during nested event processing with RAII guard (Test 230)
     EventMetadata currentEventMetadata(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);

@@ -86,15 +86,31 @@ edit("sce/include/static/StaticExecutionEngine.h",
         // zero, and the count of what was refused stays where the host reads it.
         errorCascadeDepth_ = 0;""",
      """        // MUTANT: the depth outlives the drain that built it.""")
+PY
+
+# ── C++ AOT: the chain the document's own raises must not end ──────
+#
+# The pair two SURVIVED mutations found. The fixture's handler raises the
+# author's `tick` on every link: an engine that counts it as a link refuses at
+# half the depth (`runs == 50`), and one that lets it end the chain never
+# refuses at all — the second is the shape a document that logs before it fails
+# would have hit in production.
+
+mutation_case "the cpp engine counts the author's own raise as a link" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (handlingErrorEvent_ && SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(metadata.event))) {""",
+     """        if (handlingErrorEvent_) {""")
+PY
+
+mutation_case "an unrelated internal event ends the cpp chain again" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                handlingErrorEvent_ = isError;
+                const EventOutcome outcome = executeTransition(event);""",
      """                if (!isError) {
-                    // The drain did something else, so whatever chain was
-                    // building is over. Counting links across an unrelated
-                    // internal event would report a document that merely fails
-                    // often as one that cannot stop failing.
                     errorCascadeDepth_ = 0;
-                }""",
-     """                // MUTANT: an unrelated internal event no longer ends the chain.""")
+                }
+                handlingErrorEvent_ = isError;
+                const EventOutcome outcome = executeTransition(event);""")
 PY
 
 # ── Interpreter: the refusal ───────────────────────────────────────
@@ -112,20 +128,34 @@ edit("sce/src/runtime/EventRaiserImpl.cpp",
      """            // MUTANT: the chain is counted and then fed anyway.""")
 PY
 
-# ── Interpreter: the scope that says a handler is running ──────────
+# ── Interpreter: where the chain ends ──────────────────────────────
 #
-# Restoring rather than clearing is what makes the nested dispatch work: an
-# inner frame that cleared the flag would tell the outer frame's raise it was a
-# first failure, and the chain would never reach the ceiling.
+# On this engine the dispatches that make up a chain are SERIALIZED through
+# `StateMachine::processEvent` rather than nested, so "the outermost dispatch
+# returned" is every dispatch and only the host's own call marks a boundary.
+# Both halves are measured, not argued: resetting per dispatch left the chain
+# unbounded (the round timed out), and never resetting refuses the second
+# chain on its first link.
+#
+# A case that was here and is not is worth its line: "the destructor clears the
+# handler flag instead of restoring it" SURVIVED, and it survived honestly —
+# with dispatches serialized, every one sets the flag on entry, so restoring is
+# defensive correctness for a nesting that the drain does not currently
+# produce. A mutation that no test can notice is not evidence, and keeping it
+# would have made the round's tally read as coverage it does not have.
 
-mutation_case "the interpreter clears the handler flag instead of restoring it" <<'PY'
+mutation_case "the interpreter never forgets a finished chain" <<'PY'
 edit("sce/src/runtime/EventRaiserImpl.cpp",
-     """EventRaiserImpl::ErrorChainScope::~ErrorChainScope() {
-    raiser_.handlingErrorEvent_.store(previous_);
+     """    errorCascadeDepth_.store(0);
 }""",
-     """EventRaiserImpl::ErrorChainScope::~ErrorChainScope() {
-    raiser_.handlingErrorEvent_.store(false);
+     """    // MUTANT: the depth outlives the host call that built it.
 }""")
+PY
+
+mutation_case "the interpreter counts the author's own raise as a link" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """    if (handlingErrorEvent_.load() && SCE::Core::EventMatchingHelper::isErrorEvent(eventName)) {""",
+     """    if (handlingErrorEvent_.load()) {""")
 PY
 
 # ── Interpreter: the published count ───────────────────────────────
@@ -193,10 +223,17 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
        zero, and the count of what was refused stays where the host reads it. */
     sm->error_cascade_depth = 0u;""",
      """    /* MUTANT: the depth outlives the drain that built it. */""")
+PY
+
+# ── C11: the chain the document's own raises must not end ──────────
+
+mutation_case "an unrelated internal event ends the c11 chain again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        sm->handling_error_event = event_is_error(evt.event);
+{% endif %}""",
      """        sm->handling_error_event = event_is_error(evt.event);
         if (!sm->handling_error_event) {
             sm->error_cascade_depth = 0u;
-        }""",
-     """        sm->handling_error_event = event_is_error(evt.event);""")
+        }
+{% endif %}""")
 PY

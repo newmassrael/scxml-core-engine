@@ -432,17 +432,27 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 EventRaiserImpl::ErrorChainScope::ErrorChainScope(EventRaiserImpl &raiser, const std::string &eventName)
     : raiser_(raiser) {
     const bool isError = SCE::Core::EventMatchingHelper::isErrorEvent(eventName);
+    // Dispatching anything else does NOT end the chain. An earlier draft reset
+    // the depth here on every non-error event, which reads as the careful
+    // choice and is the opposite: a handler that raises its own event before
+    // failing — a document that logs, then fails, which is most of them —
+    // leaves the queue alternating `tick, error, tick, error…`, and each
+    // `tick` put the ceiling back out of reach. The count needs no such guard,
+    // because it only ever rises while an error handler is running.
+    raiser_.dispatchDepth_.fetch_add(1);
     previous_ = raiser_.handlingErrorEvent_.exchange(isError);
-    if (!isError) {
-        // Dispatching anything else ends whatever chain was building. Counting
-        // links across an unrelated event would report a document that merely
-        // fails often as one that cannot stop failing.
-        raiser_.errorCascadeDepth_.store(0);
-    }
 }
 
 EventRaiserImpl::ErrorChainScope::~ErrorChainScope() {
     raiser_.handlingErrorEvent_.store(previous_);
+    raiser_.dispatchDepth_.fetch_sub(1);
+}
+
+void EventRaiserImpl::resetErrorCascadeDepth() {
+    // §scxml-3.12.2: the host has called in again, so the chain the last call
+    // built is over. Only the depth — `errorCascadeEvents_` is what the host
+    // reads and is a fact about the past.
+    errorCascadeDepth_.store(0);
 }
 
 uint32_t EventRaiserImpl::getErrorCascadeEvents() const {
