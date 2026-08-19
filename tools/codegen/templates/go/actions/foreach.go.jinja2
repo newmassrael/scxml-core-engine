@@ -11,13 +11,13 @@
 		foreachItemName := "{{ action.item | default("") | to_lua_location | escape_go }}"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach item='{{ action.item | default("") }}'> is missing or not a legal variable name"))
 {% endif %}
 		} else {
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.array | to_lua_expr }}`)
 			if foreachErr != nil {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array }}'> failed to evaluate"))
 {% endif %}
 			} else if foreachArr, foreachOk := sce.ToSlice(foreachArrVal); foreachOk {
 				foreachSuccess := true
@@ -48,13 +48,13 @@
 				}
 				if !foreachSuccess {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "an action inside <foreach> failed"))
 {% endif %}
 				}
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 5.6)
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array }}'> is not an array"))
 {% endif %}
 			}
 		}

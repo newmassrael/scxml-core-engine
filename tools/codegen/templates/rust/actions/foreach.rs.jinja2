@@ -20,8 +20,10 @@
     // identifier.
 {% if not action.item %}
     ::sce_rust_runtime::sce_log_error!("Foreach validation failed: missing 'item' attribute");
+{# The message below names the construct, not the engine's text: it has to be a
+   literal that survives no_std. Same reasoning at every platform_error site. #}
 {% if 'error.execution' in model.events %}
-    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach> has no 'item' attribute"));
 {% endif %}
 {% else %}
     {# W3C SCXML 4.6: `item` is a location expression, so it is lowered by
@@ -31,7 +33,7 @@
     if !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
         ::sce_rust_runtime::sce_log_error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
 {% if 'error.execution' in model.events %}
-        engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach item='{{ action.item }}'> is not a legal variable name"));
 {% endif %}
     } else {
         // Evaluate array expression
@@ -77,7 +79,7 @@
                 }
                 if !foreach_success {
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "an action inside <foreach> failed"));
 {% endif %}
                 }
             }
@@ -85,13 +87,13 @@
                 // Not an array — raise error.execution (W3C SCXML 5.6)
                 ::sce_rust_runtime::sce_log_error!("Foreach: '{{ action.array | default("") }}' is not an array");
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array | default("") }}'> is not an array"));
 {% endif %}
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Foreach: failed to evaluate array '{{ action.array | default("") }}': {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array | default("") }}'> failed to evaluate"));
 {% endif %}
             }
         }

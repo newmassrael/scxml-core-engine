@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 81122ad2948de905cca893a2deba08718427c23db5002a6afe76af18964ac3b4
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
-// generated-at: 0
+// source-hash: acaad3b5f36dbb13dd7950dc62eaf45598406091abc6d5d773732ce4b31e8fa1
+// template-hash: 5ab4fe5e632f09bc625e90490cc671914b0a9c6800e14611ad33b836843d5e79
+// generated-at: 1787136682
 
 
 // SPDX-License-Identifier: MIT
@@ -188,6 +188,18 @@ func (p *UnhandledErrorIsObservablePolicy) Caught() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "caught")
 }
 
+// Detail reports what the `detail` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `detail` was assigned a value of another type, or the engine refused.
+func (p *UnhandledErrorIsObservablePolicy) Detail() (string, bool) {
+	return sce.ReadDatamodelString(p.ScriptEngine, p.SessionID, "detail")
+}
+
 // Heards reports what the `heards` datamodel variable is holding now
 // (W3C SCXML 5.3).
 //
@@ -253,7 +265,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -263,7 +275,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "booms", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='booms'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "booms", nil)
 		}
 	}
@@ -273,8 +285,18 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "caught", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='caught'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "caught", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize detail from expr="''"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `""`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "detail", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='detail'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "detail", nil)
 		}
 	}
 	// W3C SCXML 5.2/5.3: Initialize heards from expr="0"
@@ -283,7 +305,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "heards", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='heards'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "heards", nil)
 		}
 	}
@@ -313,7 +335,7 @@ func (p *UnhandledErrorIsObservablePolicy) evaluateGuard(guard string, eng *sce.
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -734,41 +756,47 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == UnhandledErrorIsObservableStateGuarded && idx == 0 {
-		//line unhandled_error_is_observable.scxml:85
+		//line unhandled_error_is_observable.scxml:86
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'booms' failed"))
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
 		return
 	}
 	if source == UnhandledErrorIsObservableStateGuarded && idx == 1 {
-		//line unhandled_error_is_observable.scxml:89
+		//line unhandled_error_is_observable.scxml:90
 
 	// W3C SCXML 5.3: <assign location="caught" expr="caught + 1">
 	if err := p.assignVariable(`caught`, `_scxml_add(caught, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'caught' failed"))
+	}
+
+
+	// W3C SCXML 5.3: <assign location="detail" expr="_event.data">
+	if err := p.assignVariable(`detail`, `_event.data`); err != nil {
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'detail' failed"))
 	}
 
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 0 {
-		//line unhandled_error_is_observable.scxml:50
+		//line unhandled_error_is_observable.scxml:51
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 1 {
-		//line unhandled_error_is_observable.scxml:53
+		//line unhandled_error_is_observable.scxml:54
 
 	engine.Raise(sce.NewEventWithMetadata(UnhandledErrorIsObservableEventUnheard))
 
@@ -781,26 +809,26 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 2 {
-		//line unhandled_error_is_observable.scxml:75
+		//line unhandled_error_is_observable.scxml:76
 
 	// W3C SCXML 5.3: <assign location="heards" expr="heards + 1">
 	if err := p.assignVariable(`heards`, `_scxml_add(heards, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'heards' failed"))
 	}
 
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 3 {
-		//line unhandled_error_is_observable.scxml:78
+		//line unhandled_error_is_observable.scxml:79
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'booms' failed"))
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformEvent(UnhandledErrorIsObservableEventErrorExecution))
+	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
 		return
 	}

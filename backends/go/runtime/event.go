@@ -127,6 +127,35 @@ func NewPlatformEvent[E any](event E) EventWithMetadata[E] {
 	}
 }
 
+// NewPlatformError constructs an error.* event the processor itself raised,
+// carrying a description of what failed.
+//
+// The single way generated code raises a platform error, so what a reader is
+// owed gets filled in one place rather than at each site that happens to
+// remember. NewPlatformEvent above sets EventType correctly and leaves Data
+// empty, which handed a document that answers error.execution an undefined
+// _event.data: it could see THAT something failed and never WHAT. The clause
+// closes with "platforms MAY include additional information about the nature of
+// the error in the 'data' field", and the C++ Interpreter shipped from this
+// same repository has passed the failing construct all along — measured
+// 2026-08-19, five of six generated backends passed nothing.
+//
+// message describes the failing construct and is a literal formed at generation
+// time, not the engine's own error text. The dynamic detail stays on the log
+// line beside the call, which is where it can afford to be built.
+func NewPlatformError[E any](event E, message string) EventWithMetadata[E] {
+	// §scxml-3.12.2: the processor signals its own failures as error.*, and
+	// "platforms MAY include additional information about the nature of the
+	// error in the 'data' field". Cited in the body rather than the doc comment
+	// so the ledger binds it to this symbol.
+	meta := PlatformMetadata()
+	meta.Data = message
+	return EventWithMetadata[E]{
+		Event:    event,
+		Metadata: meta,
+	}
+}
+
 // NewEventWithFields constructs an EventWithMetadata with full metadata.
 //
 // Parameter order matches the Rust with_fields constructor.

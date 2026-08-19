@@ -191,7 +191,7 @@
                     // W3C SCXML 5.7: Empty location raises error.execution (structural error)
                     ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}': empty location (structural error)");
 {% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> has an empty location"));
 {% endif %}
                     done_data_ok = false;
 {% else %}
@@ -207,7 +207,7 @@
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata param '{{ param.name | escape_rust }}' eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_rust }}'> failed to evaluate"));
 {% endif %}
                         }
                     }
@@ -242,7 +242,7 @@
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata content expr eval failed: {}", e);
 {% if 'error.execution' in model.events %}
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"));
 {% endif %}
                         }
                     }
