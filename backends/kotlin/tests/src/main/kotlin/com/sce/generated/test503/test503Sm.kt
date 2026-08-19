@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -153,14 +153,14 @@ class Test503StateMachine(
             val initResult_Var1 = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
-            raiseInternal(Test503Event.Error.Execution)
+            raisePlatformError(Test503Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var2' with expr
         try {
             val initResult_Var2 = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
-            raiseInternal(Test503Event.Error.Execution)
+            raisePlatformError(Test503Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
         }
 
 
@@ -188,7 +188,7 @@ class Test503StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test503Event.Error.Execution)
+            raisePlatformError(Test503Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -213,7 +213,7 @@ class Test503StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test503Event.Error.Execution)
+            raisePlatformError(Test503Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -226,7 +226,7 @@ class Test503StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test503Event.Error.Execution)
+            raisePlatformError(Test503Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -238,7 +238,7 @@ class Test503StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test503Event.Error.Execution)
+            raisePlatformError(Test503Event.Error.Execution, "<script> failed to execute")
         }
     }
 

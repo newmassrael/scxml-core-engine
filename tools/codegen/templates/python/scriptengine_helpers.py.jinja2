@@ -16,7 +16,7 @@
 
     # ── Script helpers ─────────────────────────────────────────────
 
-    def _raise_error_execution(self, engine) -> None:
+    def _raise_error_execution(self, engine, message: str) -> None:
         """W3C SCXML 3.8 — push `error.execution` onto the internal queue
         when the running document declares the descriptor. The event is
         platform-generated (`<assign>` or `<script>` eval failure), so
@@ -26,10 +26,23 @@
         transition still need block-abort (W3C 3.8 "subsequent siblings
         in the same block are skipped"), so the calling helper raises
         `_ActionAbort` independently of whether this method enqueues
-        anything."""
+        anything.
+
+        `message` names the failing construct and rides in `_event.data`.
+        It was absent until 2026-08-19, so a document that answered
+        `error.execution` got an empty string: it could see THAT
+        something failed and never WHAT. The parameter is required
+        rather than defaulted — a raise site that forgets it should not
+        compile quietly, which is the whole reason the other five
+        backends had drifted apart on this."""
+        # §scxml-3.12.2: the processor signals its own failures as
+        # `error.*`, and "platforms MAY include additional information
+        # about the nature of the error in the 'data' field".
         evt = self.get_event_from_name("error.execution")
         if evt is not None:
-            engine.raise_internal(evt, EventMetadata(event_type="platform"))
+            engine.raise_internal(
+                evt, EventMetadata(data=message, event_type="platform")
+            )
 
     def _exec(self, engine, lua_script: str) -> None:
         """W3C SCXML 5.5 — execute a `<script>` body. The text was
@@ -42,7 +55,7 @@
         try:
             engine._script_engine.execute_script(self._session_id, lua_script)
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(engine, "<script> failed to execute")
             raise _ActionAbort
 
     def _guard(self, engine, lua_expr: str) -> bool:
@@ -58,7 +71,9 @@
                 self._session_id, lua_expr
             )
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, "a <transition> cond failed to evaluate"
+            )
             return False
         return result.to_bool()
 
@@ -77,17 +92,22 @@
         _event` keeps `Var2` and `_event` pointing at the same Lua
         table (W3C SCXML test 329 depends on this)."""
         if not location or location in _READONLY_SYSTEM_VARS:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine,
+                f"<assign> has an invalid or read-only location '{location}'",
+            )
             raise _ActionAbort
         if not lua_expr:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<assign> to '{location}' has no expr to evaluate"
+            )
             raise _ActionAbort
         try:
             engine._script_engine.execute_script(
                 self._session_id, f"{location} = {lua_expr}"
             )
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(engine, f"<assign> to '{location}' failed")
             raise _ActionAbort
 
     def _assign_runtime(self, engine, location: str, value) -> None:
@@ -103,7 +123,9 @@
             or location in _READONLY_SYSTEM_VARS
             or not self._is_legal_identifier(location)
         ):
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach item='{location}'> is not a legal variable name"
+            )
             raise _ActionAbort
         engine._script_engine.set_variable(
             self._session_id, location, _ScriptValue.of(value)
@@ -203,24 +225,30 @@
         array raises `error.execution` and aborts the surrounding
         executable-content block (the test 152 case)."""
         if not lua_array_expr:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(engine, "<foreach> has no 'array' attribute")
             raise _ActionAbort
         try:
             collection = engine._script_engine.evaluate_expression(
                 self._session_id, lua_array_expr
             ).to_python()
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach array='{lua_array_expr}'> failed to evaluate"
+            )
             raise _ActionAbort
         if collection is None:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach array='{lua_array_expr}'> is not an array"
+            )
             raise _ActionAbort
         if isinstance(collection, dict):
             return enumerate(collection.items())
         try:
             return enumerate(collection)
         except TypeError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach array='{lua_array_expr}'> is not iterable"
+            )
             raise _ActionAbort
 
     def _foreach_values(self, engine, lua_array_expr: str):
@@ -228,22 +256,28 @@
         each value in turn. Invalid array semantics match `_foreach`
         (raises `error.execution` + block-abort)."""
         if not lua_array_expr:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(engine, "<foreach> has no 'array' attribute")
             raise _ActionAbort
         try:
             collection = engine._script_engine.evaluate_expression(
                 self._session_id, lua_array_expr
             ).to_python()
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach array='{lua_array_expr}'> failed to evaluate"
+            )
             raise _ActionAbort
         if collection is None:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach array='{lua_array_expr}'> is not an array"
+            )
             raise _ActionAbort
         try:
             return iter(collection)
         except TypeError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, f"<foreach array='{lua_array_expr}'> is not iterable"
+            )
             raise _ActionAbort
 
     def _eval_sendid(self, engine, lua_sendid_expr: str) -> str:
@@ -363,7 +397,9 @@
                     self._session_id, lua_content_expr
                 ).to_python()
             except _ScriptError:
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine, "<send> contentexpr failed to evaluate"
+                )
                 raise _ActionAbort
         if content:
             # W3C SCXML B.2: `content` arrives already read — the caller
@@ -385,7 +421,9 @@
                     self._session_id, content
                 ).to_python()
             except _ScriptError:
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine, "<send> <content> failed to evaluate"
+                )
                 raise _ActionAbort
         if not params and not namelist:
             return ""
@@ -395,14 +433,19 @@
                 if not engine._script_engine.has_variable(
                     self._session_id, var
                 ):
-                    self._raise_error_execution(engine)
+                    self._raise_error_execution(
+                        engine,
+                        f"<send> namelist names '{var}', which is not declared",
+                    )
                     raise _ActionAbort
                 try:
                     marshalled[var] = engine._script_engine.get_variable(
                         self._session_id, var
                     ).to_python()
                 except _ScriptError:
-                    self._raise_error_execution(engine)
+                    self._raise_error_execution(
+                        engine, f"<send> namelist entry '{var}' failed to evaluate"
+                    )
                     raise _ActionAbort
         # W3C SCXML 6.2: a `<param>` name may repeat, and test178 in the IRP
         # requires both pairs to be delivered. A dict cannot hold one key
@@ -425,7 +468,9 @@
                 else:
                     marshalled[name].append(_value)
             except _ScriptError:
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine, f"<send> <param name='{name}'> expr failed to evaluate"
+                )
                 raise _ActionAbort
         return marshalled
 
@@ -561,7 +606,10 @@
                 {{ (var.id ~ ' = ' ~ var.expr) | to_lua_script | py_string_literal }},
             )
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine,
+                "<data id='{{ var.id }}'> function expression failed",
+            )
 {% else %}
         try:
             _init_val = engine._script_engine.evaluate_expression(
@@ -569,7 +617,9 @@
             )
         except _ScriptError:
             _init_val = _ScriptValue.undefined()
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+            )
         engine._script_engine.declare_variable(
             self._session_id, {{ var.id | py_string_literal }}, _init_val
         )
@@ -613,7 +663,9 @@
             )
         except _ScriptError:
             _init_val = _ScriptValue.undefined()
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+            )
         engine._script_engine.declare_variable(
             self._session_id, {{ var.id | py_string_literal }}, _init_val
         )
@@ -659,7 +711,9 @@
                 {{ script.content | to_lua_script | py_string_literal }},
             )
         except _ScriptError:
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine, "a top-level <script> failed to execute"
+            )
 {% endfor %}
 {% endif %}
         # W3C SCXML 6.4.1 — invoke `<param>` / `namelist` overlay. The
@@ -689,7 +743,9 @@
                 )
             except _ScriptError:
                 _init_val = _ScriptValue.undefined()
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+                )
             engine._script_engine.declare_variable(
                 self._session_id, {{ var.id | py_string_literal }}, _init_val
             )

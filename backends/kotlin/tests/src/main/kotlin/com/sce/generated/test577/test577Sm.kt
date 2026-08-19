@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -128,7 +128,7 @@ class Test577StateMachine(
 
 
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
-            raiseInternal(Test577Event.Error.Communication, EventMetadata.platform())
+            raisePlatformError(Test577Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to")
             return  // W3C SCXML 5.10: Stop subsequent executable content
             }
         }

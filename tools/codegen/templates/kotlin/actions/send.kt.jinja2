@@ -29,17 +29,17 @@
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata(type = "platform", sendId = "{{ action.auto_send_id }}"))
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "{{ action.auto_send_id }}")
                         return@resolveTarget
                     }
                     // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
                     if (target.isEmpty() || target == "undefined") {
-                        raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
+                        raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
                         return@resolveTarget
                     }
                     _resolvedTarget = target
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> targetexpr failed to evaluate")
                 }
             }
 {% endif %}
@@ -48,7 +48,7 @@
 {% endif %}
 {% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
-            raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata(type = "platform", sendId = "{{ action.auto_send_id }}"))
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ action.auto_send_id }}")
 {% if in_run_block is defined and in_run_block %}
             return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
 {% else %}
@@ -56,7 +56,7 @@
 {% endif %}
 {% elif not action.targetexpr and action.target and action.target.startswith('!') %}
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
-            raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata(type = "platform", sendId = "{{ action.auto_send_id }}"))
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<send target='{{ action.target }}'> is not a target this processor can address", "{{ action.auto_send_id }}")
 {% if in_run_block is defined and in_run_block %}
             return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
 {% else %}
@@ -64,7 +64,7 @@
 {% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
-            raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
+            raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to")
 {% if in_run_block is defined and in_run_block %}
             return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
 {% else %}
@@ -81,7 +81,7 @@
                     val v = engine.evaluateExpr(sid, "{{ action.eventexpr | escape_kotlin }}")
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> eventexpr failed to evaluate")
                     return@run
                 }
                 val resolvedEvent = resolveEventByName(dynamicEventName)
@@ -117,11 +117,11 @@
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
 {% for var_name in action.namelist.split() %}
                 if (!engineI.hasVariable(sidI, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
                     return@run
                 }
                 try { paramsI["{{ var_name }}"] = engineI.getVariable(sidI, "{{ var_name }}") } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
                     return@run
                 }
 {% endfor %}
@@ -163,11 +163,11 @@
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
 {% for var_name in action.namelist.split() %}
                 if (!engineP.hasVariable(sidP, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
                     return@run
                 }
                 try { paramsP["{{ var_name }}"] = engineP.getVariable(sidP, "{{ var_name }}") } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
                     return@run
                 }
 {% endfor %}
@@ -199,7 +199,7 @@
 {% set http_in_run_block = false %}
             // W3C SCXML C.2: Validate dynamic target is HTTP URL
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
+                raisePlatformError({{ machine_name }}Event.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL")
             } else {
 {% set http_engine = 'engineH' %}
 {% set http_sid = 'sidH' %}
@@ -233,11 +233,11 @@
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
 {% for var_name in action.namelist.split() %}
                 if (!engineT.hasVariable(sidT, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
                     return@run
                 }
                 try { paramsT["{{ var_name }}"] = engineT.getVariable(sidT, "{{ var_name }}") } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
                     return@run
                 }
 {% endfor %}
@@ -251,7 +251,7 @@
                     val v = engineT.evaluateExpr(sidT, "{{ action.delayexpr | escape_kotlin }}")
                     delayStrT = v?.toString() ?: "0s"
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
                     return@run
                 }
                 val delayMsT = parseDelay(delayStrT)
@@ -292,7 +292,7 @@
                     val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")
                     delayStrT = v?.toString() ?: "0s"
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
                     return@run
                 }
                 val delayMsT = parseDelay(delayStrT)
@@ -345,11 +345,11 @@
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
 {% for var_name in action.namelist.split() %}
                 if (!engineE.hasVariable(sidE, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
                     return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
                 }
                 try { paramsE["{{ var_name }}"] = engineE.getVariable(sidE, "{{ var_name }}") } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
                     return@run
                 }
 {% endfor %}
@@ -394,7 +394,7 @@
                     val v = engineC.evaluateExpr(sidC, "{{ action.contentexpr | escape_kotlin }}")
                     contentData = if (v != null) valueToJson(v) else ""
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate")
                     return@run
                 }
 {% if action.delay or action.delayexpr %}
@@ -416,7 +416,7 @@
                     val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
                     return@run
                 }
                 val delayMsE = parseDelay(delayStrE)

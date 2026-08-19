@@ -41,7 +41,7 @@
             val initResult_{{ var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ var.expr | escape_kotlin }}")
             engine.setVariable(sid, "{{ var.id }}", initResult_{{ var.id | to_camel_case }})
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> expr failed to evaluate")
         }
 {% elif var.src %}
         // W3C SCXML 5.2.2: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
@@ -52,7 +52,7 @@
                 engine.setVariable(sid, "{{ var.id }}", srcValue_{{ var.id | to_camel_case }})
             }
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}' src='{{ var.src }}'> could not be loaded")
         }
 {% elif var.content %}
         // W3C SCXML B.2: Initialize variable '{{ var.id }}' with inline content (C++ parseEventData pattern)
@@ -60,7 +60,7 @@
             val initResult_{{ var.id | to_camel_case }} = engine.parseDataValue(sid, "{{ var.content | escape_kotlin }}")
             engine.setVariable(sid, "{{ var.id }}", initResult_{{ var.id | to_camel_case }})
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> content failed to initialise")
         }
 {% elif var.type == 'runtime' %}
         // W3C SCXML 5.2: Runtime variable '{{ var.id }}' (late binding, undefined)
@@ -83,7 +83,7 @@
             val initResult_{{ dm_var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
             engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
         }
 {% elif dm_var.content %}
         // State '{{ state_id }}' variable '{{ dm_var.id }}' (inline content, C++ parseEventData pattern)
@@ -91,7 +91,7 @@
             val initResult_{{ dm_var.id | to_camel_case }} = engine.parseDataValue(sid, "{{ dm_var.content | escape_kotlin }}")
             engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> content failed to initialise")
         }
 {% else %}
         engine.setVariable(sid, "{{ dm_var.id }}", null)
@@ -108,7 +108,7 @@
         try {
             engine.executeScript(sid, "{{ script.content | escape_kotlin }}")
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "a top-level <script> failed to execute")
         }
 {% endfor %}
 {% endif %}
@@ -140,7 +140,7 @@
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -165,7 +165,7 @@
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -178,7 +178,7 @@
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -190,7 +190,7 @@
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal({{ machine_name }}Event.Error.Execution)
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "<script> failed to execute")
         }
     }
 

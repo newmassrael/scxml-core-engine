@@ -114,7 +114,10 @@
                 if not engine._script_engine.has_variable(
                     self._session_id, {{ vname | py_string_literal }}
                 ):
-                    self._raise_error_execution(engine)
+                    self._raise_error_execution(
+                        engine,
+                        "<invoke> namelist names '{{ vname }}', which the parent does not declare",
+                    )
                     _namelist_ok = False
 {% endfor %}
                 if not _namelist_ok:
@@ -233,7 +236,10 @@
             if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
                 # W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 # on the internal queue and start nothing.
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine,
+                    "<invoke> declares a type this processor does not support",
+                )
                 continue
 {% endfor %}
 {% endfor %}
@@ -334,7 +340,9 @@
                     {{ inv.finalize_content | to_lua_script | py_string_literal }},
                 )
             except _ScriptError:
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine, "<finalize> failed to execute"
+                )
             return
 {% endif %}
 {% endfor %}
