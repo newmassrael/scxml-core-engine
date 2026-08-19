@@ -441,6 +441,35 @@ run whether or not the document declares a handler.
 It owns only what a host learns about an error its machine raised and dropped:
 no delayed `<send>`, no `<invoke>`, no `<parallel>`.
 
+`error_cascade_is_bounded` covers the other side of the same clause. W3C SCXML
+3.12.2 bounds what happens to an error event nothing matches; it says nothing
+about one that **is** matched, by a handler that fails the same way every time.
+The failure raises `error.execution`, the same transition answers it, the
+handler fails again, and the drain never empties. Measured 2026-08-19, that is
+not a hang: the Python engine turned 37,000 links a second on a two-line
+document while its configuration never moved and the machine reported itself
+running, and the C++ Interpreter did not return from `processEvent` at all
+(its executable content dispatches into the raiser again, so each link was a
+stack frame). An unattended supervisor reads a healthy idle machine and a
+pinned core.
+
+Four outcomes again, and the third is the one that makes the count mean
+something — `poke` (handled, no error), `boom` (one error, unmatched: the
+sibling entry's own case, and the cascade count must **not** move for it),
+`settle` (a chain that ends by itself after three links, when its
+`repairs < 3` guard stops matching) and `spin` (a chain that cannot end). A
+ceiling that could not tell `settle` from `spin` would report every document
+that fails often as one that cannot stop failing, so the chain is measured
+handler-to-handler rather than failure-to-failure: any other internal event
+resets it, and a second entry into `runaway` buys a full chain again.
+
+Both error states answer `poke` with a **targetless** transition on purpose —
+a self transition would re-run `<onentry>`, start a fresh chain, and leave the
+driver measuring its own probe instead of the engine.
+
+It owns only the error a handler answers with the same failure forever: no
+delayed `<send>`, no `<invoke>`, no `<parallel>`.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the

@@ -83,6 +83,19 @@
 #define SCE_MAX_EVENT_TYPE_LEN 16
 #endif
 
+// §scxml-3.12.2 — how many links an `error.*` chain may have before the
+// engine stops feeding it. The clause says what to do with an error event
+// nothing matches; it does not say what to do when something DOES match it
+// and that handler fails too, so the failure raises the same error, the same
+// transition answers it, and the drain never empties. Nothing in the
+// specification bounds that, so the number is this engine's to choose, and it
+// is the hundred the Rust, Go, Kotlin and C++ engines use for the sibling case
+// of a macrostep that cannot finish. Overridable per build for a document
+// whose repair strategy is genuinely deeper, which no plausible one is.
+#ifndef SCE_MAX_ERROR_CASCADE_DEPTH
+#define SCE_MAX_ERROR_CASCADE_DEPTH 100u
+#endif
+
 // Static helpers (state hierarchy queries, history filters, …) are
 // emitted unconditionally so generated code stays compilable as fixtures
 // climb the W3C category ladder. The flat / datamodel-less subset used

@@ -1754,6 +1754,27 @@ SCE_SM_FN static bool event_queue_pop({{ csym_prefix }}{{ model.name }}_event_qu
     return true;
 }
 
+{% set error_events = model.events | select('startingwith', 'error.') | list %}
+{% if error_events %}
+/* W3C SCXML 3.12.2: is this one of the `error.*` events the processor raises?
+
+   The membership test is the generated enum comparison rather than a string
+   prefix: this backend has no event-name table to consult at run time, and the
+   set of `error.*` names in THIS document is known at generation time. The
+   other five backends ask the same question of a name they already carry.
+
+   One function, two callers: the drain counts an error nobody answered with
+   it, and `_raise` refuses a chain link with it. Spelling the comparison twice
+   is how the two would drift into disagreeing about what an error event is. */
+SCE_SM_FN static SCE_C_UNUSED bool event_is_error({{ csym_prefix }}{{ model.name }}_event_t event) {
+    return
+{% for event_name in error_events | sort %}
+        event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ " ||" if not loop.last }}
+{% endfor %}
+    ;
+}
+{% endif %}
+
 /* ── W3C SCXML 3.3: Static state policy ───────────────────────────── */
 
 {# W3C SCXML 3.6/3.7: `_initial_state()` returns the resolved initial
@@ -3261,6 +3282,25 @@ SCE_SM_FN static void handle_microstep({{ csym_prefix }}{{ model.name }}_t *sm,
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,
                             const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+{% if error_events %}
+    /* W3C SCXML 3.12.2: the clause bounds what happens to an error event
+       nothing matches. It says nothing about one a handler DOES match and
+       answers with the same failure -- that failure raises the error, the same
+       transition answers it, and this queue never empties. The chain is cut
+       here, and `_error_cascade_events` is how the host learns it was.
+
+       Only the engine's own error events are refused: an author's `<raise>`
+       inside an error handler is the document doing its job. */
+    if (sm->handling_error_event && event_is_error(evt->event)) {
+        sm->error_cascade_depth++;
+        if (sm->error_cascade_depth >= SCE_MAX_ERROR_CASCADE_DEPTH) {
+            sm->error_cascade_events++;
+            sm->last_error_cascade_event = evt->event;
+            sm->has_error_cascade_event = true;
+            return;
+        }
+    }
+{% endif %}
     event_queue_push(&sm->internal_queue, evt);
 }
 
@@ -3899,11 +3939,25 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
             return;
         }
 
+{% if error_events %}
+        /* W3C SCXML 3.12.2: an error raised from here on is raised BY an error
+           handler, which is the one situation the engine cannot leave to the
+           document -- the handler that failed is the same one that will answer
+           the failure. `_raise` reads this flag to tell that apart from a
+           first failure, and it is cleared before anything else runs so a
+           chain cannot be attributed to the wrong event. A dispatch that is
+           not an error ends whatever chain was building: counting links across
+           an unrelated internal event would report a document that merely
+           fails often as one that cannot stop failing. */
+        sm->handling_error_event = event_is_error(evt.event);
+        if (!sm->handling_error_event) {
+            sm->error_cascade_depth = 0u;
+        }
+{% endif %}
         if (process_transition(sm, evt.event, enabled, &count)) {
             count = remove_conflicting_transitions(enabled, count);
             handle_microstep(sm, enabled, count);
         }
-{% set error_events = model.events | select('startingwith', 'error.') | list %}
 {% if error_events %}
         /* W3C SCXML 3.12.2: the processor raises `error.*` into this queue and
            the clause says they "are ignored if no transition is found that
@@ -3913,22 +3967,15 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            the document -- but the sender of an error event is this engine, so
            that reasoning does not reach it. The host never wrote the document,
            cannot see the failure in the configuration, and is the only party
-           able to act on it.
-
-           The membership test is the generated enum comparison rather than a
-           string prefix: this backend has no event-name table to consult at
-           run time, and the set of `error.*` names in THIS document is known
-           at generation time. The other five backends ask the same question of
-           a name they already carry. */
-        else if (
-{% for event_name in error_events | sort %}
-            evt.event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ " ||" if not loop.last }}
-{% endfor %}
-        ) {
+           able to act on it. */
+        else if (event_is_error(evt.event)) {
             sm->unhandled_error_events++;
             sm->last_unhandled_error = evt.event;
             sm->has_unhandled_error = true;
         }
+        /* The dispatch is over, so an error raised after this line is a first
+           failure again rather than a link in this event's chain. */
+        sm->handling_error_event = false;
 {% endif %}
 
         /* W3C App.D.2: re-evaluate eventless transitions before the next
@@ -3937,6 +3984,12 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            reference) fire while the binding still holds. */
         check_eventless_transitions(sm);
     }
+{% if error_events %}
+    /* The queue emptied, so the chain -- refused or merely finished -- is
+       over. A machine whose next macrostep starts a new one starts it from
+       zero, and the count of what was refused stays where the host reads it. */
+    sm->error_cascade_depth = 0u;
+{% endif %}
 }
 
 /* W3C SCXML Appendix D `mainEventLoop`: take exactly one event off the
@@ -4457,6 +4510,25 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_unhandled_error(const {{ c
         return false;
     }
     *out = sm->last_unhandled_error;
+    return true;
+}
+
+/* W3C SCXML 3.12.2: `error.*` events refused because the handler that raised
+   them had been failing for SCE_MAX_ERROR_CASCADE_DEPTH links running. The
+   clause bounds the error nobody answers; this is the error a handler answers
+   with the same failure every time, which the clause does not reach and which
+   used to mean the drain never emptied. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_error_cascade_events(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->error_cascade_events;
+}
+
+/* W3C SCXML 5.10.1: which error event the count above last refused. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_error_cascade_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_error_cascade_event) {
+        return false;
+    }
+    *out = sm->last_error_cascade_event;
     return true;
 }
 {% for var in model.readable_variables %}

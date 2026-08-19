@@ -50,6 +50,21 @@ E = TypeVar("E")
 SCXML_EVENT_PROCESSOR_URI = io_processors.SCXML_EVENT_PROCESSOR_URI
 BASIC_HTTP_EVENT_PROCESSOR_URI = io_processors.BASIC_HTTP_EVENT_PROCESSOR_URI
 
+# How many links an `error.*` chain may have before the engine stops feeding
+# it — see `Engine.error_cascade_events`.
+#
+# §scxml-3.12.2 says what to do with an error event nothing matches. It does
+# not say what to do when something *does* match it and that handler fails too:
+# the failure raises the same error, the same transition answers it, and the
+# machine has no way out. Nothing in the specification bounds that, so the
+# number is this engine's to choose, and it is the same hundred the Rust, Go
+# and C++ engines use for the sibling case of a macrostep that cannot finish.
+#
+# This engine is where the cost was measured, on 2026-08-19: a two-line
+# document turned 37,000 links a second, `initialize()` never returned, the
+# configuration never moved and `is_running()` stayed true.
+MAX_ERROR_CASCADE_DEPTH = 100
+
 
 class Engine(Generic[S, E]):
     """Generic SCXML engine bound to a concrete StatePolicy.
@@ -112,6 +127,14 @@ class Engine(Generic[S, E]):
         # `unhandled_error_events`.
         self._unhandled_error_events: int = 0
         self._last_unhandled_error: Optional[E] = None
+        # §scxml-3.12.2 — the drain is executing a transition an `error.*`
+        # event selected, which is the state in which a newly raised error
+        # is a link in a chain rather than a first failure. See
+        # `error_cascade_events`.
+        self._handling_error_event: bool = False
+        self._error_cascade_depth: int = 0
+        self._error_cascade_events: int = 0
+        self._last_error_cascade_event: Optional[E] = None
         # §scxml-3.7 — set of `<parallel>` states for which a
         # `done.state.<id>` event has already been raised this run, so a
         # second region reaching `<final>` does not re-fire it.
@@ -360,6 +383,41 @@ class Engine(Generic[S, E]):
         """
         return self._last_unhandled_error
 
+    def error_cascade_events(self) -> int:
+        """How many `error.*` events this engine refused to queue because the
+        error handler that raised them had been failing for
+        `MAX_ERROR_CASCADE_DEPTH` links running.
+
+        §scxml-3.12.2 says an unmatched error event is ignored, and
+        `unhandled_error_events` is that case. This is its opposite and its
+        worse half: the document *does* match the error, and the handler fails
+        the same way every time. The failure raises `error.execution`, the same
+        transition answers it, and the drain never empties. Nothing in the
+        clause covers it — it bounds what happens to an error nobody wants, not
+        an error everybody wants and nobody can handle.
+
+        Left to run, that is not a hang: it is a core at 100% forever. This
+        engine is where it was measured, on 2026-08-19 — 37,000 links a second
+        while the configuration never moved and `is_running()` stayed true,
+        which is the exact reading an unattended supervisor takes as healthy.
+
+        A document that fails five hundred times cleanly counts zero here: the
+        chain is measured from *handler to handler*, not from failure to
+        failure, and any other internal event resets it. Nothing is discarded
+        that a working document would have processed.
+        """
+        return self._error_cascade_events
+
+    def last_error_cascade_event(self) -> Optional[E]:
+        """The most recent `error.*` event `error_cascade_events` refused, or
+        `None` while that count is zero.
+
+        Which error it was names the repair: `error.execution` is a handler
+        whose own executable content fails, `error.communication` one that
+        answers an unreachable target by talking to it again.
+        """
+        return self._last_error_cascade_event
+
     def active_configuration(self) -> Set[S]:
         """W3C SCXML 3.3 — every active state (atomic + ancestors)."""
         result: Set[S] = set()
@@ -386,7 +444,29 @@ class Engine(Generic[S, E]):
         before externals). When no metadata is supplied the event type
         defaults to `"internal"` so guards reading `_event.type` see
         the correct W3C 5.10 classification (`<raise>` events are
-        internal-origin, distinct from `external` and `platform`)."""
+        internal-origin, distinct from `external` and `platform`).
+
+        An `error.*` event raised while an error handler is running is refused
+        once the chain reaches `MAX_ERROR_CASCADE_DEPTH` — see
+        `error_cascade_events` for why the engine is the one that has to stop
+        it. Only the engine's own error events are refused: an author's
+        `<raise>` inside an error handler is the document doing its job and
+        rides the queue like any other."""
+        # §scxml-3.12.2 names the error events this refuses; the clause itself
+        # is silent on a handler that fails, which is why the ceiling is a
+        # choice this engine documents rather than a rule it implements.
+        if self._handling_error_event and is_error_event(
+            self._policy.get_event_name(event)
+        ):
+            self._error_cascade_depth += 1
+            if self._error_cascade_depth >= MAX_ERROR_CASCADE_DEPTH:
+                # No log line: this runtime has no logging surface at all, and
+                # the sibling engines' one-time message is a convenience over
+                # the counter, not the signal. `error_cascade_events` is the
+                # signal, and it is readable here exactly as it is there.
+                self._error_cascade_events += 1
+                self._last_error_cascade_event = event
+                return
         self._internal_queue.append(
             EventWithMetadata(
                 event=event,
@@ -693,6 +773,11 @@ class Engine(Generic[S, E]):
             if self._reached_final or not self._is_running:
                 return
             if not self._internal_queue:
+                # The queue emptied, so the chain — refused or merely finished
+                # — is over. A machine whose next macrostep starts a new one
+                # starts it from zero, and the count of what was refused stays
+                # where the host reads it.
+                self._error_cascade_depth = 0
                 return
             # §scxml-3.12.2 — the processor raises `error.*` into this queue
             # and the clause says they "are ignored if no transition is found
@@ -708,8 +793,24 @@ class Engine(Generic[S, E]):
             # every internal event, and folding it into the condition below
             # would skip it for everything that is not an error.
             evt = self._internal_queue.popleft()
+            # An error raised from here on is raised *by an error handler*,
+            # which is the one situation the engine cannot leave to the
+            # document: the handler that failed is the same one that will
+            # answer the failure. The flag is what `raise_internal` reads to
+            # tell that apart from a first failure, and it is cleared before
+            # anything else can run so a chain cannot be attributed to the
+            # wrong event.
+            is_error = is_error_event(self._policy.get_event_name(evt.event))
+            if not is_error:
+                # The drain did something else, so whatever chain was building
+                # is over. Counting links across an unrelated internal event
+                # would report a document that merely fails often as one that
+                # cannot stop failing.
+                self._error_cascade_depth = 0
+            self._handling_error_event = is_error
             selected = self._dispatch(evt)
-            if not selected and is_error_event(self._policy.get_event_name(evt.event)):
+            self._handling_error_event = False
+            if not selected and is_error:
                 self._unhandled_error_events += 1
                 self._last_unhandled_error = evt.event
 

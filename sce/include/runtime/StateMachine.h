@@ -384,6 +384,14 @@ public:
         int failedTransitions = 0;
         std::string currentState;
         bool isRunning = false;
+        /// §scxml-3.12.2: `error.*` events the raiser refused because an error
+        /// handler kept raising them. The clause bounds what happens to an
+        /// error nobody answers; this is the one a handler answers with the
+        /// same failure every time, which nothing in the specification bounds
+        /// and which used to mean `processEvent` never came back.
+        uint32_t errorCascadeEvents = 0;
+        /// The most recent event that count refused, empty while it is zero.
+        std::string lastErrorCascadeEvent;
     };
 
     Statistics getStatistics() const;

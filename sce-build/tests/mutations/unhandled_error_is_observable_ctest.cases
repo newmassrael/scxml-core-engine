@@ -99,9 +99,11 @@ PY
 mutation_case "the cpp drain records before it selects" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
      """                const EventOutcome outcome = executeTransition(event);
+                handlingErrorEvent_ = false;
                 recordInternalEventOutcome(event, outcome);""",
      """                const EventOutcome outcome{};
                 recordInternalEventOutcome(event, outcome);
+                handlingErrorEvent_ = false;
                 executeTransition(event);""")
 PY
 
@@ -123,15 +125,18 @@ PY
 #
 # The enum comparison IS this backend's membership test. Replacing it with
 # `true` counts `unheard` — the author's raise — as an engine error.
+#
+# The comparison moved into `event_is_error` when the cascade axis gave it a
+# second caller, so the mutation names the branch that reads it rather than the
+# comparison itself: widening the helper would also change what `_raise`
+# refuses, which is a different fixture's claim.
 
 mutation_case "the c11 template treats any unmatched internal event as an error" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        else if (
-{% for event_name in error_events | sort %}
-            evt.event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ " ||" if not loop.last }}
-{% endfor %}
-        ) {""",
-     """        else if (true) {""")
+     """        else if (event_is_error(evt.event)) {
+            sm->unhandled_error_events++;""",
+     """        else if (true) {
+            sm->unhandled_error_events++;""")
 PY
 
 # ── C11: naming the error ──────────────────────────────────────────
@@ -150,8 +155,8 @@ PY
 
 mutation_case "the c11 template records alongside a selected transition" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        else if (
-{% for event_name in error_events | sort %}""",
-     """        if (
-{% for event_name in error_events | sort %}""")
+     """        else if (event_is_error(evt.event)) {
+            sm->unhandled_error_events++;""",
+     """        if (event_is_error(evt.event)) {
+            sm->unhandled_error_events++;""")
 PY

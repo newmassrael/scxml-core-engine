@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.12.2 says what a processor does with an error event nothing
+     matches: it is ignored. It does not say what happens when something DOES
+     match it and that handler fails the same way — the failure raises
+     `error.execution`, the same transition answers it, the handler fails
+     again, and the drain never empties. The clause has no sentence for that
+     case, and neither did any engine in this repository.
+
+     Left alone it is not a hang. Measured 2026-08-19 on a two-line document,
+     the Python engine turned 37,000 links a second: `initialize()` never
+     returned, the configuration never moved, `is_running` stayed true. An
+     unattended supervisor reads a healthy machine and a pinned core.
+
+     Outcomes this document separates:
+
+       poke      handled, no error at all      control: proves a run fired
+       boom      one error, unmatched          `unhandled_error_events` +1,
+                                               cascade count stays 0
+       settle    a chain that STOPS by itself  three links, then the guard
+                                               `repairs < 3` stops matching:
+                                               cascade count stays 0
+       spin      a chain that cannot stop      the engine refuses the 101st
+                                               link and says so
+
+     `settle` is the half that makes the count mean something. A ceiling that
+     fired on any long run of errors would report every document that fails
+     often as one that cannot stop failing; this chain is three links deep and
+     must pass through untouched. The chain is measured handler-to-handler,
+     not failure-to-failure.
+
+     `<assign location="">` is W3C 5.3's invalid location, which every backend
+     rejects at generation time rather than through its script engine (test331
+     and `unhandled_error_is_observable` use the same construct), so the error
+     is raised identically in all seven channels without depending on any one
+     engine's expression semantics.
+
+     Both error states answer `poke` with a TARGETLESS transition on purpose:
+     a self transition would re-run `<onentry>`, start a fresh chain, and the
+     driver would be measuring its own probe instead of the engine.
+
+     Deliberately single-axis: no delayed <send>, no <invoke>, no <parallel>.
+     `unhandled_error_is_observable` owns the error nobody answered; this one
+     owns the error answered by a handler that fails the same way forever.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="error_cascade_is_bounded">
+    <datamodel>
+        <data id="pokes" expr="0"/>
+        <!-- Incremented FIRST in each handler body. W3C 4.1: when executable
+             content fails the processor MUST NOT run the rest of the block, so
+             a counter written after the failing assign counts nothing. These
+             two counters are the only witness of how many times a handler ran
+             — every outcome here leaves the configuration where it was. -->
+        <data id="repairs" expr="0"/>
+        <data id="runs" expr="0"/>
+    </datamodel>
+
+    <state id="idle">
+        <transition event="poke" target="idle">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <!-- One failure, answered by nobody: the case
+             `unhandled_error_is_observable` owns. It is here so this document
+             can show that the cascade count does NOT move for it. -->
+        <transition event="boom" target="idle">
+            <assign location="" expr="1"/>
+        </transition>
+        <transition event="settle" target="settling"/>
+        <transition event="spin" target="runaway"/>
+    </state>
+
+    <!-- A chain that ends on its own: the handler repairs three times and then
+         stops matching, so the fourth error goes unanswered like any other.
+         Three links is what a real repair strategy looks like (try a fallback,
+         then another); the ceiling must be nowhere near it. -->
+    <state id="settling">
+        <onentry>
+            <assign location="" expr="1"/>
+        </onentry>
+        <transition event="error.execution" cond="repairs &lt; 3">
+            <assign location="repairs" expr="repairs + 1"/>
+            <assign location="" expr="1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="reset" target="idle"/>
+    </state>
+
+    <!-- A chain that cannot end: the handler answers every `error.execution`
+         with the same failing assign, which raises the next one. Nothing in
+         the document stops it and nothing in the specification says what
+         should, so the engine is the only party left. -->
+    <state id="runaway">
+        <onentry>
+            <assign location="" expr="1"/>
+        </onentry>
+        <transition event="error.execution">
+            <assign location="runs" expr="runs + 1"/>
+            <assign location="" expr="1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <!-- The way back out, so a driver can run the chain TWICE. A second
+             chain must cost the same as the first: an engine that counted
+             links without ever resetting them would refuse the second one
+             immediately, and the handler count is what says which happened. -->
+        <transition event="reset" target="idle"/>
+    </state>
+</scxml>

@@ -47,6 +47,24 @@ class EventRaiserImpl : public IEventRaiser {
                                                                                       std::shared_ptr<IEventScheduler>);
 
 public:
+    /**
+     * @brief How many links an `error.*` chain may have before this raiser
+     *        stops feeding it — see `getErrorCascadeEvents()`
+     *
+     * §scxml-3.12.2 says what to do with an error event nothing matches. It
+     * does not say what to do when something *does* match it and that handler
+     * fails too, so the number is this engine's to choose, and it matches the
+     * ceiling `EventProcessingAlgorithms::checkEventlessTransitions` uses for
+     * the sibling case of a macrostep that cannot finish.
+     *
+     * A hundred links is far past any repair strategy a document plausibly
+     * spells (a handler that tries a fallback, then a second one, is three)
+     * and far short of a number a host would wait through. Here it also caps
+     * recursion: executable content runs a nested drain, so each link is a
+     * stack frame.
+     */
+    static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = 100;
+
     using EventCallback = std::function<bool(const std::string &, const std::string &)>;
     using EventCallbackWithOrigin = std::function<bool(const std::string &, const std::string &, const std::string &)>;
 
@@ -206,6 +224,19 @@ public:
      * @return Number of events that were cancelled
      */
     size_t cancelEventsForSession(const std::string &originSessionId) override;
+
+    /**
+     * @brief §scxml-3.12.2: `error.*` events refused because an error handler kept raising them
+     *
+     * See `IEventRaiser::getErrorCascadeEvents`. This raiser owns the queue the
+     * chain feeds, so it is where the chain is counted and cut.
+     */
+    uint32_t getErrorCascadeEvents() const override;
+
+    /**
+     * @brief The most recent event `getErrorCascadeEvents()` refused, empty when none
+     */
+    std::string getLastErrorCascadeEvent() const override;
 
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
@@ -409,6 +440,42 @@ public:
     std::string lastProcessedEventName_;
     std::string lastProcessedEventData_;
     mutable std::mutex lastProcessedEventMutex_;
+
+    // §scxml-3.12.2: this raiser is dispatching an `error.*` event, which is
+    // the state in which a newly raised error is a link in a chain rather than
+    // a first failure; how long that chain is; and what was refused because of
+    // it. See `getErrorCascadeEvents()`.
+    //
+    // Dispatch here is re-entrant — executable content runs a nested drain —
+    // so the flag is saved and restored around each dispatch rather than
+    // cleared, and every field is atomic because the async worker thread
+    // dispatches through the same path.
+    std::atomic<bool> handlingErrorEvent_{false};
+    std::atomic<uint32_t> errorCascadeDepth_{0};
+    std::atomic<uint32_t> errorCascadeEvents_{0};
+    std::string lastErrorCascadeEvent_;
+    mutable std::mutex lastErrorCascadeEventMutex_;
+
+    /**
+     * @brief Marks one dispatch as "an error handler is running" for the raise
+     *        path to read, and ends the chain when the dispatch is anything else
+     *
+     * Restores the previous value rather than clearing it: a transition's
+     * executable content dispatches through this raiser again, so the scopes
+     * nest, and clearing would tell the inner frame's raise that it is a first
+     * failure.
+     */
+    struct ErrorChainScope {
+        ErrorChainScope(EventRaiserImpl &raiser, const std::string &eventName);
+        ~ErrorChainScope();
+
+        ErrorChainScope(const ErrorChainScope &) = delete;
+        ErrorChainScope &operator=(const ErrorChainScope &) = delete;
+
+    private:
+        EventRaiserImpl &raiser_;
+        bool previous_;
+    };
 };
 
 }  // namespace SCE
