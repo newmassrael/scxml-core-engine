@@ -1,0 +1,202 @@
+# Mutation cases for the error-chain ceiling on the three backends a cargo
+# round cannot see — the C++ AOT engine header, the Interpreter's raiser, and
+# the C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/error_cascade_is_bounded_ctest.cases`.
+#
+# Same axis as `error_cascade_is_bounded.cases`: §scxml-3.12.2 bounds what
+# happens to an error event nothing matches and says nothing about one a
+# handler DOES match and answers with the same failure every time. The
+# Interpreter is the sharpest case — its executable content dispatches into the
+# raiser again, so each link is a stack frame and `processEvent` never came
+# back at all (measured 2026-08-19, a 180-second timeout with the machine still
+# recursing).
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry. It also answers the membership
+# question differently on purpose — a generated enum comparison rather than a
+# name test — because it has no event-name table at run time.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_error_cascade_is_bounded)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/src/runtime/EventRaiserImpl.cpp tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/ErrorCascadeIsBoundedAotTest.cpp tests/integration/ErrorCascadeIsBoundedTest.cpp backends/c/tests/integration/test_error_cascade_is_bounded.c
+
+# ── C++ AOT: the refusal itself ────────────────────────────────────
+#
+# The engine goes back to feeding the chain, which is the shipped behaviour
+# this axis replaced. Every ctest entry carries a TIMEOUT, so a mutant that
+# never ends comes back as an ordinary red rather than a hung round.
+
+mutation_case "the cpp engine queues the refused link anyway" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                if (errorCascadeEvents_ == 1) {""",
+     """                if (false) {""")
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                                  MAX_ERROR_CASCADE_DEPTH);
+                }
+                return;""",
+     """                                  MAX_ERROR_CASCADE_DEPTH);
+                }""")
+PY
+
+# ── C++ AOT: the chain that ends on its own ────────────────────────
+#
+# Dropping the handler test makes every raise a link, so the count becomes "how
+# many errors in one drain" and the three-link `settle` chain — what a real
+# repair strategy looks like — gets reported as a machine that cannot stop
+# failing. `AChainThatEndsOnItsOwnIsNotRefused` is the assertion that separates
+# them.
+
+mutation_case "the cpp engine treats any error as a chain link" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (handlingErrorEvent_ && SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(metadata.event))) {""",
+     """        if (SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(metadata.event))) {""")
+PY
+
+# ── C++ AOT: the count ─────────────────────────────────────────────
+#
+# The chain is still cut, so nothing hangs and every configuration assertion
+# still passes — the machine simply stops saying its document's error handling
+# cannot work. This is the case that fails if a driver checks only that the
+# call came back.
+
+mutation_case "the cpp refusal is silent" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                ++errorCascadeEvents_;
+                lastErrorCascadeEvent_ = metadata.event;""",
+     """                lastErrorCascadeEvent_ = metadata.event;""")
+PY
+
+# ── C++ AOT: the reset ─────────────────────────────────────────────
+#
+# A depth that outlives its drain makes the ceiling a property of the machine's
+# whole life: the second `spin` is refused on its first link and the document's
+# handler never runs again. `ASecondChainStartsFromZero` reads `runs == 200`,
+# which is the only assertion that tells "bounded twice" from "bounded once,
+# then silent".
+
+mutation_case "the cpp chain depth outlives the drain" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        // The queue emptied, so the chain — refused or merely finished — is
+        // over. A machine whose next macrostep starts a new one starts it from
+        // zero, and the count of what was refused stays where the host reads it.
+        errorCascadeDepth_ = 0;""",
+     """        // MUTANT: the depth outlives the drain that built it.""")
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                if (!isError) {
+                    // The drain did something else, so whatever chain was
+                    // building is over. Counting links across an unrelated
+                    // internal event would report a document that merely fails
+                    // often as one that cannot stop failing.
+                    errorCascadeDepth_ = 0;
+                }""",
+     """                // MUTANT: an unrelated internal event no longer ends the chain.""")
+PY
+
+# ── Interpreter: the refusal ───────────────────────────────────────
+#
+# This engine recursed rather than looped, so the mutant does not merely spin —
+# it grows the stack a frame per link. The ctest TIMEOUT is what turns that
+# back into a verdict.
+
+mutation_case "the interpreter queues the refused link anyway" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """            // Fire-and-forget, exactly as a queued raise reports: the caller
+            // asked for an event to be delivered and this raiser owns whether
+            // it is, which is the same contract every other refusal here has.
+            return true;""",
+     """            // MUTANT: the chain is counted and then fed anyway.""")
+PY
+
+# ── Interpreter: the scope that says a handler is running ──────────
+#
+# Restoring rather than clearing is what makes the nested dispatch work: an
+# inner frame that cleared the flag would tell the outer frame's raise it was a
+# first failure, and the chain would never reach the ceiling.
+
+mutation_case "the interpreter clears the handler flag instead of restoring it" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """EventRaiserImpl::ErrorChainScope::~ErrorChainScope() {
+    raiser_.handlingErrorEvent_.store(previous_);
+}""",
+     """EventRaiserImpl::ErrorChainScope::~ErrorChainScope() {
+    raiser_.handlingErrorEvent_.store(false);
+}""")
+PY
+
+# ── Interpreter: the published count ───────────────────────────────
+#
+# `getStatistics()` is where a host driving the Interpreter already looks, and
+# the count is the only thing there that separates "this machine is idle" from
+# "this machine's error handling cannot work".
+
+mutation_case "the interpreter refusal is silent" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """            const uint32_t refused = errorCascadeEvents_.fetch_add(1) + 1;""",
+     """            const uint32_t refused = errorCascadeEvents_.load() + 1;""")
+PY
+
+# ── C11: the refusal ───────────────────────────────────────────────
+#
+# The ring buffer that holds this backend's queue is fixed, so an unbounded
+# chain also fills it — the mutant is the shape that made the C11 target the
+# one with the least room to survive the defect.
+
+mutation_case "the c11 template queues the refused link anyway" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->has_error_cascade_event = true;
+            return;""",
+     """            sm->has_error_cascade_event = true;""")
+PY
+
+# ── C11: the membership test on the raise side ─────────────────────
+#
+# `event_is_error` has two callers: the drain counts an unanswered error with
+# it, and `_raise` refuses a chain link with it. Widening it on the raise side
+# alone makes every internal raise a link, so `poke` — the event that proves
+# the machine still works — starts feeding the count.
+
+mutation_case "the c11 template treats any raise as a chain link" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm->handling_error_event && event_is_error(evt->event)) {""",
+     """    if (sm->handling_error_event) {""")
+PY
+
+# ── C11: the count ─────────────────────────────────────────────────
+
+mutation_case "the c11 refusal is silent" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->error_cascade_events++;
+            sm->last_error_cascade_event = evt->event;""",
+     """            sm->last_error_cascade_event = evt->event;""")
+PY
+
+# ── C11: naming what was refused ───────────────────────────────────
+
+mutation_case "the c11 template counts the refusal but never names it" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->last_error_cascade_event = evt->event;
+            sm->has_error_cascade_event = true;""",
+     """            sm->has_error_cascade_event = false;""")
+PY
+
+# ── C11: the reset ─────────────────────────────────────────────────
+
+mutation_case "the c11 chain depth outlives the drain" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    /* The queue emptied, so the chain -- refused or merely finished -- is
+       over. A machine whose next macrostep starts a new one starts it from
+       zero, and the count of what was refused stays where the host reads it. */
+    sm->error_cascade_depth = 0u;""",
+     """    /* MUTANT: the depth outlives the drain that built it. */""")
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        sm->handling_error_event = event_is_error(evt.event);
+        if (!sm->handling_error_event) {
+            sm->error_cascade_depth = 0u;
+        }""",
+     """        sm->handling_error_event = event_is_error(evt.event);""")
+PY

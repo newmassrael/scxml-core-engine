@@ -83,6 +83,27 @@ type Engine[S comparable, E comparable] struct {
 	lastUnhandledError E
 	hasUnhandledError  bool
 
+	// handlingErrorEvent says the drain is currently executing a transition
+	// selected by an error.* event — the state in which a newly raised error
+	// is a link in a chain rather than a first failure. It is the whole
+	// discriminator behind ErrorCascadeEvents: a document answering five
+	// hundred separate failures cleanly never sets it twice in a row.
+	handlingErrorEvent bool
+
+	// errorCascadeDepth is how many links the current chain has, reset the
+	// moment the drain does anything else — see ErrorCascadeEvents.
+	errorCascadeDepth uint32
+
+	// errorCascadeEvents counts error.* events refused because the chain that
+	// raised them had reached maxErrorCascadeDepth — see ErrorCascadeEvents.
+	errorCascadeEvents uint32
+
+	// lastErrorCascadeEvent is the most recent error event refused that way;
+	// hasErrorCascadeEvent says whether there is one, because the zero value
+	// of E is a real event.
+	lastErrorCascadeEvent E
+	hasErrorCascadeEvent  bool
+
 	// donedataAtFinal is the §scxml-5.5 + 6.3.1 stashed donedata payload
 	// for a top-level <final>. Entry actions stash it here; an invoking
 	// parent reads it back via DonedataAtFinal() to lift onto
@@ -289,11 +310,52 @@ func (e *Engine[S, E]) Policy() StatePolicy[S, E] {
 // Event submission (matches Rust raise / raiseExternal overloads)
 // ================================================================
 
+// maxErrorCascadeDepth is how many links an error.* chain may have before the
+// engine stops feeding it — see ErrorCascadeEvents.
+//
+// §scxml-3.12.2 says what to do with an error event nothing matches. It does
+// not say what to do when something does match it and that handler fails too:
+// the failure raises the same error, the same transition answers it, and the
+// machine has no way out. Nothing in the specification bounds that, so the
+// number is this engine's to choose, and it matches checkEventlessTransitions'
+// ceiling — the sibling case of a document that cannot finish a macrostep,
+// decided the same way for the same reason.
+//
+// A hundred links is far past any repair strategy a document plausibly spells
+// (a handler that tries a fallback, then a second one, is three) and far short
+// of a number a host would wait through: measured 2026-08-19, the Python
+// engine ran 37,000 links a second on a two-line document, so an unattended
+// supervisor did not hang — it burned a core until it was killed.
+const maxErrorCascadeDepth uint32 = 100
+
 // Raise enqueues an internal event with full metadata (high priority)
 // (§scxml-C-1).
 //
 // Matches Rust Engine::raise.
+//
+// An error.* event raised while an error handler is running is refused once
+// the chain reaches maxErrorCascadeDepth — see ErrorCascadeEvents for why the
+// engine is the one that has to stop it. Only the engine's own error events
+// are refused: an author's <raise> inside an error handler is the document
+// doing its job and rides the queue like any other.
 func (e *Engine[S, E]) Raise(event EventWithMetadata[E]) {
+	// §scxml-3.12.2 names the error events this refuses; the clause itself is
+	// silent on a handler that fails, which is why the ceiling is a choice
+	// this engine documents rather than a rule it implements.
+	if e.handlingErrorEvent && IsErrorEvent(e.policy.GetEventName(event.Event)) {
+		e.errorCascadeDepth++
+		if e.errorCascadeDepth >= maxErrorCascadeDepth {
+			e.errorCascadeEvents++
+			e.lastErrorCascadeEvent = event.Event
+			e.hasErrorCascadeEvent = true
+			if e.errorCascadeEvents == 1 {
+				log.Printf("[sce] Engine::Raise: an error handler has raised an error %d times over; "+
+					"refusing to feed the chain — the document's error handling is failing",
+					maxErrorCascadeDepth)
+			}
+			return
+		}
+	}
 	e.internalQueue.Raise(event)
 }
 
@@ -533,6 +595,45 @@ func (e *Engine[S, E]) LastUnhandledError() (E, bool) {
 	return e.lastUnhandledError, e.hasUnhandledError
 }
 
+// ErrorCascadeEvents reports how many error.* events this engine refused to
+// queue because the error handler that raised them had been failing for
+// maxErrorCascadeDepth links running.
+//
+// §scxml-3.12.2 says an unmatched error event is ignored, and
+// UnhandledErrorEvents is that case. This is its opposite and its worse half:
+// the document does match the error, and the handler fails the same way every
+// time. The failure raises error.execution, the same transition answers it,
+// and the drain never empties. Nothing in the clause covers it — it bounds
+// what happens to an error nobody wants, not an error everybody wants and
+// nobody can handle.
+//
+// Left to run, that is not a hang: it is a core at 100% forever. Measured
+// 2026-08-19 on a two-line document, the Python engine turned 37,000 links a
+// second while its configuration never moved and IsRunning() stayed true — the
+// exact reading an unattended supervisor takes as healthy. So the engine stops
+// feeding the chain and says how often it had to, which is the one fact that
+// separates "this machine is idle" from "this machine's error handling is
+// broken".
+//
+// A document that fails five hundred times cleanly counts zero here: the chain
+// is measured from handler to handler, not from failure to failure, and any
+// other internal event resets it. Nothing is discarded that a working document
+// would have processed.
+func (e *Engine[S, E]) ErrorCascadeEvents() uint32 {
+	return e.errorCascadeEvents
+}
+
+// LastErrorCascadeEvent reports the most recent error event ErrorCascadeEvents
+// refused. The bool is false while that count is zero — the zero value of E is
+// a real event, so it cannot stand in for "none".
+//
+// Which error it was names the repair: error.execution is a handler whose own
+// executable content fails, error.communication one that answers an
+// unreachable target by talking to it again.
+func (e *Engine[S, E]) LastErrorCascadeEvent() (E, bool) {
+	return e.lastErrorCascadeEvent, e.hasErrorCascadeEvent
+}
+
 // ================================================================
 // Callbacks
 // ================================================================
@@ -712,8 +813,24 @@ func (e *Engine[S, E]) processInternalQueue() {
 		// The selection runs first and unconditionally: it is what processes
 		// every internal event, and folding it into the condition below would
 		// skip it for everything that is not an error.
+		// An error raised from here on is raised by an error handler, which is
+		// the one situation the engine cannot leave to the document: the
+		// handler that failed is the same one that will answer the failure.
+		// The flag is what Raise reads to tell that apart from a first
+		// failure, and it is cleared before anything else can run so a chain
+		// cannot be attributed to the wrong event.
+		isError := IsErrorEvent(e.policy.GetEventName(eventWithMeta.Event))
+		if !isError {
+			// The drain did something else, so whatever chain was building is
+			// over. Counting links across an unrelated internal event would
+			// report a document that merely fails often as one that cannot
+			// stop failing.
+			e.errorCascadeDepth = 0
+		}
+		e.handlingErrorEvent = isError
 		outcome := e.executeTransition(eventWithMeta.Event)
-		if !outcome.selected && IsErrorEvent(e.policy.GetEventName(eventWithMeta.Event)) {
+		e.handlingErrorEvent = false
+		if !outcome.selected && isError {
 			e.unhandledErrorEvents++
 			e.lastUnhandledError = eventWithMeta.Event
 			e.hasUnhandledError = true
@@ -721,6 +838,10 @@ func (e *Engine[S, E]) processInternalQueue() {
 		}
 		e.policy.ClearEventMetadata()
 	}
+	// The queue emptied, so the chain — refused or merely finished — is over.
+	// A machine whose next macrostep starts a new one starts it from zero, and
+	// the count of what was refused stays where the host reads it.
+	e.errorCascadeDepth = 0
 }
 
 // processNextExternalEvent takes exactly one event off the external queue, runs

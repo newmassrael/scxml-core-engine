@@ -168,6 +168,17 @@ MUTATION_ARTIFACTS=()
 # harness under `GTEST_FILTER=<suite>` — a workaround for a fact the runner
 # already had in front of it and threw away.
 MUTATION_FAILING="$WORK/failing.txt"
+# Wall-clock cap on one test binary, so a mutant that does not TERMINATE is a
+# verdict rather than a hung round.
+#
+# Some contracts are about termination: `error_cascade_is_bounded` guards an
+# `error.*` chain that feeds itself, and the mutation that removes the guard
+# leaves the binary running tens of thousands of iterations a second with no
+# end. Without a clock here the round stops at that case forever and the author
+# reads a frozen terminal instead of CAUGHT. Five minutes is far past this
+# repository's slowest test binary (the workspace's longest single artifact
+# runs about two) and far short of a wait anyone would sit through.
+MUTATION_ARTIFACT_TIMEOUT="${MUTATION_ARTIFACT_TIMEOUT:-300}"
 MUTATION_CAUGHT=0
 MUTATION_SURVIVED=0
 MUTATION_INCONCLUSIVE=0
@@ -527,17 +538,33 @@ mutation_hash_artifacts() {
 
 # Run every executable; print "<tests_run> <failed>" totalled across them.
 mutation_cargo_run() {
-    local exe out run failed total_run=0 total_failed=0
+    local exe out rc run failed total_run=0 total_failed=0 timed_out=0
     : > "$MUTATION_FAILING"
     for exe in "${MUTATION_ARTIFACTS[@]}"; do
-        out="$("$exe" 2>&1 || true)"
+        # Capped, because some contracts are about TERMINATION and a harness
+        # with no clock cannot witness those. A mutation that puts back an
+        # unbounded `error.*` chain (§scxml-3.12.2, `error_cascade_is_bounded`)
+        # leaves the binary spinning at tens of thousands of iterations a
+        # second forever: without this the round never reaches its next case,
+        # and the author reads a hung terminal rather than a verdict.
+        rc=0
+        out="$(timeout "$MUTATION_ARTIFACT_TIMEOUT" "$exe" 2>&1)" || rc=$?
+        if [[ "$rc" == "124" ]]; then
+            # Reported as a field rather than a global: this function runs in a
+            # command substitution, and a variable set in that subshell never
+            # reaches the caller that has to render the verdict.
+            timed_out=1
+            printf '%s (did not terminate within %ss)\n' "$(basename "$exe")" \
+                "$MUTATION_ARTIFACT_TIMEOUT" >> "$MUTATION_FAILING"
+            continue
+        fi
         run="$(printf '%s\n' "$out" | sed -n 's/^running \([0-9]*\) test.*/\1/p' | awk '{s+=$1} END {print s+0}')"
         failed="$(printf '%s\n' "$out" | sed -n 's/.*[0-9]* passed; \([0-9]*\) failed.*/\1/p' | awk '{s+=$1} END {print s+0}')"
         printf '%s\n' "$out" | mutation_failures_from_cargo >> "$MUTATION_FAILING"
         total_run=$((total_run + ${run:-0}))
         total_failed=$((total_failed + ${failed:-0}))
     done
-    printf '%s %s\n' "$total_run" "$total_failed"
+    printf '%s %s %s\n' "$total_run" "$total_failed" "$timed_out"
 }
 
 # The build tree the ctest selector names, read out of the selector itself
@@ -726,7 +753,7 @@ mutation_ctest_run() {
         --output-on-failure --output-junit "$report" >"$console" 2>&1 || true
     mutation_failures_from_gtest < "$console" > "$MUTATION_FAILING"
     if [[ ! -f "$report" ]]; then
-        printf '0 0\n'
+        printf '0 0 0\n'
         return
     fi
     python3 - "$report" "$MUTATION_FAILING" <<'PY'
@@ -755,7 +782,11 @@ names = sys.argv[2]
 if red and not open(names).read().strip():
     with open(names, "w") as fh:
         fh.write("\n".join(red) + "\n")
-print(f"{run} {failed}")
+# Third field: whether a mutant failed to TERMINATE. Zero here always — every
+# ctest entry carries its own `TIMEOUT` property, so a mutant that never ends
+# comes back as an ordinary red rather than a hung round. The cargo runner has
+# no such per-test clock and reports its own.
+print(f"{run} {failed} 0")
 PY
 }
 
@@ -1017,7 +1048,13 @@ mutation_init() {
         mutation_build_diagnostics >&2
         exit 2
     }
-    read -r BASELINE_RUN BASELINE_FAILED <<<"$(mutation_run_artifacts)"
+    local baseline_timed_out
+    read -r BASELINE_RUN BASELINE_FAILED baseline_timed_out <<<"$(mutation_run_artifacts)"
+    if [[ "$baseline_timed_out" == "1" ]]; then
+        red "baseline did not terminate within ${MUTATION_ARTIFACT_TIMEOUT}s — the round"
+        red "cannot start, because every case below would time out for that reason"
+        exit 2
+    fi
     if [[ "$BASELINE_FAILED" != "0" ]]; then
         red "baseline is not green ($BASELINE_FAILED failing) — fix that before mutating,"
         red "or every case below will read as CAUGHT for the wrong reason"
@@ -1162,8 +1199,22 @@ PY
         return
     fi
 
-    local run failed
-    read -r run failed <<<"$(mutation_run_artifacts)"
+    local run failed timed_out
+    read -r run failed timed_out <<<"$(mutation_run_artifacts)"
+
+    # A mutant that never finishes has been noticed in the strongest way a test
+    # can notice anything, so it is CAUGHT rather than INCONCLUSIVE — and the
+    # run-count guard below is moot when the binary did not come back to report
+    # a count. Contracts about termination exist (an `error.*` chain that feeds
+    # itself is one), and without this the only verdict such a case could reach
+    # was a round that never ended.
+    if [[ "$timed_out" == "1" ]]; then
+        green "CAUGHT        $label  (a test binary did not terminate)"
+        mutation_name_failures
+        MUTATION_CAUGHT=$((MUTATION_CAUGHT + 1))
+        mutation_restore
+        return
+    fi
 
     if [[ "$run" != "$BASELINE_RUN" ]]; then
         red "INCONCLUSIVE  $label"

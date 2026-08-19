@@ -996,6 +996,115 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "raisePlatformError",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "maxErrorCascadeDepth",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Raise",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ErrorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "MAX_ERROR_CASCADE_DEPTH",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "handlingErrorEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "errorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "enqueueInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "raise_internal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "MAX_ERROR_CASCADE_DEPTH",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "handlingErrorEvent_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raise",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "errorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::raiseEventWithPriority",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::getErrorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "MAX_ERROR_CASCADE_DEPTH",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "getErrorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "handlingErrorEvent_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "getErrorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "errorCascadeEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::getStatistics",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

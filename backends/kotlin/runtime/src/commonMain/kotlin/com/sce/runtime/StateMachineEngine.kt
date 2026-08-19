@@ -100,6 +100,26 @@ data class EventMetadata(
  * @param S State sealed interface type
  * @param E Event sealed interface type
  */
+/**
+ * How many links an `error.*` chain may have before the engine stops feeding
+ * it — see [StateMachineEngine.errorCascadeEvents].
+ *
+ * §scxml-3.12.2 says what to do with an error event nothing matches. It does
+ * not say what to do when something *does* match it and that handler fails
+ * too: the failure raises the same error, the same transition answers it, and
+ * the machine has no way out. Nothing in the specification bounds that, so the
+ * number is this engine's to choose, and it is the same hundred
+ * [StateMachineEngine.drainEventlessAndInternal] already uses for the sibling
+ * case of a macrostep that cannot finish.
+ *
+ * A hundred links is far past any repair strategy a document plausibly spells
+ * (a handler that tries a fallback, then a second one, is three) and far short
+ * of a number a host would wait through: measured 2026-08-19, the Python
+ * engine ran 37,000 links a second on a two-line document, so an unattended
+ * supervisor did not hang — it burned a core until it was killed.
+ */
+private const val MAX_ERROR_CASCADE_DEPTH = 100
+
 abstract class StateMachineEngine<S : State, E : Event>(
     protected val scriptEngine: ScxmlScriptEngine? = null
 ) {
@@ -385,6 +405,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private var unhandledErrorEventCount: Int = 0
     private var lastUnhandledErrorEvent: E? = null
+
+    /**
+     * §scxml-3.12.2: the drain is executing a transition an `error.*` event
+     * selected, which is the state in which a newly raised error is a link in
+     * a chain rather than a first failure, plus how long that chain is and
+     * what the engine refused because of it. See [errorCascadeEvents].
+     */
+    private var handlingErrorEvent: Boolean = false
+    private var errorCascadeDepth: Int = 0
+    private var errorCascadeEventCount: Int = 0
+    private var lastErrorCascade: E? = null
 
     /**
      * §scxml-3.7: Mark that a top-level final state has been entered.
@@ -943,6 +974,43 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun lastUnhandledError(): E? = lastUnhandledErrorEvent
 
     /**
+     * §scxml-3.12.2: how many `error.*` events this engine refused to queue
+     * because the error handler that raised them had been failing for
+     * [MAX_ERROR_CASCADE_DEPTH] links running.
+     *
+     * The clause says an unmatched error event is ignored, and
+     * [unhandledErrorEvents] is that case. This is its opposite and its worse
+     * half: the document *does* match the error, and the handler fails the
+     * same way every time. The failure raises `error.execution`, the same
+     * transition answers it, and the drain never empties. Nothing in the
+     * clause covers it — it bounds what happens to an error nobody wants, not
+     * an error everybody wants and nobody can handle.
+     *
+     * Left to run, that is not a hang: it is a core at 100% forever. Measured
+     * 2026-08-19 on a two-line document, the Python engine turned 37,000 links
+     * a second while its configuration never moved — the exact reading an
+     * unattended supervisor takes as healthy. This engine stopped at
+     * [drainEventlessAndInternal]'s iteration ceiling instead of spinning, and
+     * said nothing about it: bounded and silent is the same signal as
+     * unbounded to the host reading it.
+     *
+     * A document that fails five hundred times cleanly counts zero here: the
+     * chain is measured from *handler to handler*, not from failure to
+     * failure, and any other internal event resets it.
+     */
+    fun errorCascadeEvents(): Int = errorCascadeEventCount
+
+    /**
+     * The most recent `error.*` event [errorCascadeEvents] refused, or `null`
+     * while that count is zero.
+     *
+     * Which error it was names the repair: `error.execution` is a handler
+     * whose own executable content fails, `error.communication` one that
+     * answers an unreachable target by talking to it again.
+     */
+    fun lastErrorCascadeEvent(): E? = lastErrorCascade
+
+    /**
      * Destroy script engine session and release resources (sync mode cleanup).
      * Call after test assertions. Does not reset state — [currentState] remains readable.
      */
@@ -1135,7 +1203,34 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Default metadata type = "internal" per §scxml-5.10.
      */
     protected fun raiseInternal(event: E) {
-        internalEventQueue.addLast(QueuedEvent(event, EventMetadata.internal()))
+        enqueueInternal(event, EventMetadata.internal())
+    }
+
+    /**
+     * The single point every internal event passes through, so the one
+     * decision the engine makes about them is made once.
+     *
+     * An `error.*` event raised while an error handler is running is refused
+     * once the chain reaches [MAX_ERROR_CASCADE_DEPTH] — see
+     * [errorCascadeEvents] for why the engine is the one that has to stop it.
+     * Only the engine's own error events are refused: an author's `<raise>`
+     * inside an error handler is the document doing its job and rides the
+     * queue like any other.
+     */
+    private fun enqueueInternal(event: E, metadata: EventMetadata) {
+        // §scxml-3.12.2 names the error events this refuses; the clause itself
+        // is silent on a handler that fails, which is why the ceiling is a
+        // choice this engine documents rather than a rule it implements.
+        val name = eventNameOf(event)
+        if (handlingErrorEvent && name != null && isErrorEvent(name)) {
+            errorCascadeDepth++
+            if (errorCascadeDepth >= MAX_ERROR_CASCADE_DEPTH) {
+                errorCascadeEventCount++
+                lastErrorCascade = event
+                return
+            }
+        }
+        internalEventQueue.addLast(QueuedEvent(event, metadata))
     }
 
     /**
@@ -1144,7 +1239,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Used for platform events (done.state, error.*) and events carrying data.
      */
     protected fun raiseInternal(event: E, metadata: EventMetadata) {
-        internalEventQueue.addLast(QueuedEvent(event, metadata))
+        enqueueInternal(event, metadata)
     }
 
     /**
@@ -1174,8 +1269,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // and "platforms MAY include additional information about the nature of
         // the error in the 'data' field". Cited in the body so the ledger binds
         // it to this symbol.
-        internalEventQueue.addLast(
-            QueuedEvent(event, EventMetadata(data = message, type = "platform", sendId = sendId))
+        enqueueInternal(
+            event,
+            EventMetadata(data = message, type = "platform", sendId = sendId)
         )
     }
 
@@ -1826,19 +1922,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // condition below would skip it for everything that is not an
                 // error. This drain is the machine's only internal-queue path,
                 // so unlike the external count there is one site, not two.
+                // An error raised from here on is raised *by an error
+                // handler*, which is the one situation the engine cannot leave
+                // to the document: the handler that failed is the same one
+                // that will answer the failure. The flag is what
+                // [enqueueInternal] reads to tell that apart from a first
+                // failure, and it is cleared before anything else can run so a
+                // chain cannot be attributed to the wrong event.
+                val name = eventNameOf(queued.event)
+                val isError = name != null && isErrorEvent(name)
+                if (!isError) {
+                    // The drain did something else, so whatever chain was
+                    // building is over. Counting links across an unrelated
+                    // internal event would report a document that merely fails
+                    // often as one that cannot stop failing.
+                    errorCascadeDepth = 0
+                }
+                handlingErrorEvent = isError
                 val selected = processOneEvent(queued.event)
-                if (!selected) {
-                    val name = eventNameOf(queued.event)
-                    if (name != null && isErrorEvent(name)) {
-                        unhandledErrorEventCount++
-                        lastUnhandledErrorEvent = queued.event
-                    }
+                handlingErrorEvent = false
+                if (!selected && isError) {
+                    unhandledErrorEventCount++
+                    lastUnhandledErrorEvent = queued.event
                 }
                 flushPendingFinalState()
                 continue
             }
 
-            // Stable: no eventless transitions, no internal events
+            // Stable: no eventless transitions, no internal events. The chain
+            // — refused or merely finished — is over with the queue: a machine
+            // whose next macrostep starts a new one starts it from zero, and
+            // the count of what was refused stays where the host reads it.
+            errorCascadeDepth = 0
             break
         }
     }

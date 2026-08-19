@@ -2129,7 +2129,14 @@ std::shared_ptr<SCXMLModel> StateMachine::getModel() const {
 }
 
 StateMachine::Statistics StateMachine::getStatistics() const {
-    return stats_;
+    Statistics stats = stats_;
+    // §scxml-3.12.2: the raiser owns the queue an error chain feeds, so it is
+    // where the chain is cut and counted; this is where a host already looks.
+    if (eventRaiser_) {
+        stats.errorCascadeEvents = eventRaiser_->getErrorCascadeEvents();
+        stats.lastErrorCascadeEvent = eventRaiser_->getLastErrorCascadeEvent();
+    }
+    return stats;
 }
 
 bool StateMachine::initializeFromModel() {

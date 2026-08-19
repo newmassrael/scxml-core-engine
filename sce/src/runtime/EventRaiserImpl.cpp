@@ -6,6 +6,7 @@
 #include "common/EventTypeHelper.h"
 #include "common/IOProcessorHelper.h"
 #include "common/StringUtils.h"
+#include "core/EventMatchingHelper.h"
 #include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
 #include "events/PlatformEventRaiserHelper.h"
@@ -275,6 +276,35 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
         return false;
     }
 
+    // §scxml-3.12.2: the processor raises `error.*` events, and the clause
+    // bounds what happens to one nothing matches. It says nothing about one a
+    // handler DOES match and answers with the same failure — the failure
+    // raises the error, the same transition answers it, and this raiser is
+    // dispatched into again from inside its own dispatch, forever. Measured
+    // 2026-08-19: `processEvent` never came back. So the chain is cut here,
+    // and `getErrorCascadeEvents()` is how the host learns it was.
+    //
+    // Only the engine's own error events are refused: an author's `<raise>`
+    // inside an error handler is the document doing its job.
+    if (handlingErrorEvent_.load() && SCE::Core::EventMatchingHelper::isErrorEvent(eventName)) {
+        if (errorCascadeDepth_.fetch_add(1) + 1 >= MAX_ERROR_CASCADE_DEPTH) {
+            const uint32_t refused = errorCascadeEvents_.fetch_add(1) + 1;
+            {
+                std::lock_guard<std::mutex> lock(lastErrorCascadeEventMutex_);
+                lastErrorCascadeEvent_ = eventName;
+            }
+            if (refused == 1) {
+                SCE_LOG_ERROR("EventRaiserImpl: an error handler has raised an error {} times over; refusing to "
+                              "feed the chain - the document's error handling is failing",
+                              MAX_ERROR_CASCADE_DEPTH);
+            }
+            // Fire-and-forget, exactly as a queued raise reports: the caller
+            // asked for an event to be delivered and this raiser owns whether
+            // it is, which is the same contract every other refusal here has.
+            return true;
+        }
+    }
+
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser IS RUNNING - proceeding with event routing");
 
     // W3C SCXML compliance: Check if immediate mode is enabled
@@ -335,6 +365,12 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                     ctx.isExternalQueue = !isInternal;
                     EventContextGuard guard(ctx);
 
+                    // The same chain bookkeeping the queued path does below:
+                    // an error raised while this dispatch runs was raised by
+                    // the handler answering an error. Saved and restored
+                    // rather than cleared — executable content dispatches into
+                    // this raiser again, so these calls nest.
+                    ErrorChainScope chain(*this, eventName);
                     bool result = callback(eventName, eventData);
                     return result;
                 } catch (const std::exception &e) {
@@ -391,6 +427,34 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 
     // SCXML "fire and forget" - always return true for queuing
     return true;
+}
+
+EventRaiserImpl::ErrorChainScope::ErrorChainScope(EventRaiserImpl &raiser, const std::string &eventName)
+    : raiser_(raiser) {
+    const bool isError = SCE::Core::EventMatchingHelper::isErrorEvent(eventName);
+    previous_ = raiser_.handlingErrorEvent_.exchange(isError);
+    if (!isError) {
+        // Dispatching anything else ends whatever chain was building. Counting
+        // links across an unrelated event would report a document that merely
+        // fails often as one that cannot stop failing.
+        raiser_.errorCascadeDepth_.store(0);
+    }
+}
+
+EventRaiserImpl::ErrorChainScope::~ErrorChainScope() {
+    raiser_.handlingErrorEvent_.store(previous_);
+}
+
+uint32_t EventRaiserImpl::getErrorCascadeEvents() const {
+    // §scxml-3.12.2: the clause covers the error nobody answers; this counts
+    // the error answered by a handler that fails the same way every time,
+    // which the clause does not reach and which this raiser had to end.
+    return errorCascadeEvents_.load();
+}
+
+std::string EventRaiserImpl::getLastErrorCascadeEvent() const {
+    std::lock_guard<std::mutex> lock(lastErrorCascadeEventMutex_);
+    return lastErrorCascadeEvent_;
 }
 
 bool EventRaiserImpl::isReady() const {
@@ -596,6 +660,13 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
             lastProcessedEventData_ = event.eventData;
         }
 
+        // An error raised from here on is raised *by an error handler*, which
+        // is the one situation this raiser cannot leave to the document: the
+        // handler that failed is the same one that will answer the failure.
+        // The scope is what `raiseEventWithPriority` reads to tell that apart
+        // from a first failure, and it restores rather than clears because a
+        // transition's executable content dispatches through here again.
+        ErrorChainScope chain(*this, event.eventName);
         bool result = callback(event.eventName, event.eventData);
         SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
         return result;  // Return actual callback result (transition success/failure)

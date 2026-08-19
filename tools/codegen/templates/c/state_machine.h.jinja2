@@ -343,6 +343,16 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t unhandled_error_events;
     {{ csym_prefix }}{{ model.name }}_event_t last_unhandled_error;
     bool has_unhandled_error;
+    /* W3C SCXML 3.12.2 from the other side: the drain is running a transition
+       an `error.*` event selected, which is the state in which a newly raised
+       error is a link in a chain rather than a first failure; how long that
+       chain is; and what was refused because of it. See
+       `_error_cascade_events` below. */
+    bool handling_error_event;
+    uint32_t error_cascade_depth;
+    uint32_t error_cascade_events;
+    {{ csym_prefix }}{{ model.name }}_event_t last_error_cascade_event;
+    bool has_error_cascade_event;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
        session, and the address that reaches it. Issued in `_init` rather
@@ -613,6 +623,38 @@ uint32_t {{ csym_prefix }}{{ model.name }}_unhandled_error_events(const {{ csym_
    `<send>` or `<invoke>` that could not reach its target — two different
    repairs, and a count alone separates neither. */
 bool {{ csym_prefix }}{{ model.name }}_last_unhandled_error(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
+
+/* W3C SCXML 3.12.2 from the other side: `error.*` events this engine refused
+   to queue because the handler that raised them had been failing for
+   SCE_MAX_ERROR_CASCADE_DEPTH links running.
+
+   The clause says an error event nothing matches is ignored, and
+   `_unhandled_error_events` above is that case. This is its opposite and its
+   worse half: the document DOES match the error, and the handler fails the
+   same way every time. The failure raises `error.execution`, the same
+   transition answers it, and the drain never empties. Nothing in the clause
+   covers it — it bounds what happens to an error nobody wants, not an error
+   everybody wants and nobody can handle.
+
+   Left to run, that is not a hang: it is a core at 100% forever. Measured
+   2026-08-19 on a two-line document, the Python engine turned 37,000 links a
+   second while its configuration never moved and the machine still reported
+   itself running — the exact reading an unattended supervisor takes as
+   healthy.
+
+   A document that fails five hundred times cleanly counts zero here: the chain
+   is measured from handler to handler, not from failure to failure, and any
+   other internal event resets it. */
+uint32_t {{ csym_prefix }}{{ model.name }}_error_cascade_events(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML 3.12.2: the most recent error event the count above refused.
+   Returns false, leaving `*out` untouched, while that count is zero.
+
+   Which error it was names the repair: `error.execution` is a handler whose
+   own executable content fails, `error.communication` one that answers an
+   unreachable target by talking to it again. */
+bool {{ csym_prefix }}{{ model.name }}_last_error_cascade_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */

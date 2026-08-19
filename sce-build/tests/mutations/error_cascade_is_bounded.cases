@@ -1,0 +1,147 @@
+# Mutation cases for §scxml-3.12.2 read from the other side — an `error.*`
+# event a handler DOES answer, with a failure that raises the same error again.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/error_cascade_is_bounded.cases`.
+#
+# The clause bounds what happens to an error event nothing matches. It says
+# nothing about one that is matched by a handler failing the same way every
+# time: the failure raises `error.execution`, the same transition answers it,
+# and the drain never empties. Measured 2026-08-19, that is not a hang — the
+# Python engine turned 37,000 links a second while its configuration never
+# moved and `is_running()` stayed true, which is the reading an unattended
+# supervisor takes as a healthy idle machine.
+#
+# The trap these cases exist for is the second one: a ceiling that fires on any
+# long run of errors reports every document that fails often as broken. The
+# fixture's `settle` chain is three links deep and must pass through untouched,
+# and `runs`/`repairs` are what say which of the two the engine did.
+#
+# The C++ engine and C11 template halves live in
+# `error_cascade_is_bounded_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test error_cascade_is_bounded
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/error_cascade_is_bounded.rs
+
+# ── The refusal itself ─────────────────────────────────────────────
+#
+# The engine goes back to feeding the chain. This is the mutation that used to
+# be the shipped behaviour, so the case is also the regression: it must not be
+# possible for the test to pass while the link is queued.
+#
+# `return` is what this removes rather than the whole branch — leaving the
+# counters in place keeps the mutant compiling, and the surviving increment is
+# what proves the assertion is reading the refusal rather than the count.
+
+mutation_case "the refused link is queued anyway" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                if self.error_cascade_events == 1 {
+                    sce_log_error!(""",
+     """                if false {
+                    sce_log_error!(""")
+edit("backends/rust/runtime/src/engine.rs",
+     """                        MAX_ERROR_CASCADE_DEPTH
+                    );
+                }
+                return;""",
+     """                        MAX_ERROR_CASCADE_DEPTH
+                    );
+                }""")
+PY
+
+# ── The chain that ends on its own ─────────────────────────────────
+#
+# Dropping the handler test makes every raise a link, so the count is really
+# "how many errors has this document produced in one drain" — and the three-link
+# `settle` chain, which is what a real repair strategy looks like, gets cut at
+# its third link with a refusal the host is told about.
+# `a_chain_that_ends_on_its_own_is_not_refused` is the assertion that separates
+# them, and it is why the fixture has two error states rather than one.
+
+mutation_case "any error is a link, handler or not" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if self.handling_error_event
+            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))""",
+     """        if crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))""")
+PY
+
+# ── The reset ──────────────────────────────────────────────────────
+#
+# A depth that is never reset makes the ceiling a property of the machine's
+# whole life rather than of one chain: the second `spin` is refused on its first
+# link and the document's handler never runs again.
+# `a_second_chain_starts_from_zero` reads `runs == 200`, which is the only
+# assertion that can tell "bounded twice" from "bounded once, then silent".
+
+mutation_case "the chain depth is never reset between drains" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        // The queue emptied, so the chain — refused or merely finished — is
+        // over. A machine whose next macrostep starts a new one starts it from
+        // zero, and the count of what was refused stays where the host reads it.
+        self.error_cascade_depth = 0;""",
+     """        // MUTANT: the depth outlives the drain that built it.""")
+edit("backends/rust/runtime/src/engine.rs",
+     """            if !is_error {
+                // The drain did something else, so whatever chain was building
+                // is over. Counting links across an unrelated internal event
+                // would report a document that merely fails often as one that
+                // cannot stop failing.
+                self.error_cascade_depth = 0;
+            }""",
+     """            // MUTANT: an unrelated internal event no longer ends the chain.""")
+PY
+
+# ── The count ──────────────────────────────────────────────────────
+#
+# The chain is still cut, so nothing hangs and every configuration assertion
+# still passes — the machine simply stops saying that its document's error
+# handling cannot work, which is the whole finding. This is the case that fails
+# if a driver checks only that the call came back.
+
+mutation_case "the refusal is silent" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.error_cascade_events = self.error_cascade_events.saturating_add(1);""",
+     """                self.error_cascade_events = self.error_cascade_events.saturating_add(0);""")
+PY
+
+# ── Naming what was refused ────────────────────────────────────────
+#
+# A count says a handler is broken; the name says which repair. Leaving it
+# `None` is invisible to every assertion except the one that asks.
+
+mutation_case "the engine counts the refusal but never names it" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.last_error_cascade_event = Some(event.event);""",
+     """                self.last_error_cascade_event = None;""")
+PY
+
+# ── The ceiling ────────────────────────────────────────────────────
+#
+# Moving the ceiling by three orders of magnitude still terminates, so a driver
+# that only asserts "it came back" reads a pass while the document runs a
+# hundred thousand handler bodies per macrostep. `runs == 100` is the assertion
+# that notices, and it is why the number is spelled in every channel's driver
+# rather than read back from the engine.
+
+mutation_case "the ceiling is raised a thousandfold" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100;""",
+     """pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100_000;""")
+PY
+
+# ── The flag's lifetime ────────────────────────────────────────────
+#
+# Leaving the flag set after the dispatch makes every later raise look like a
+# link — including the errors raised by `<onentry>` on the way into a state,
+# which are first failures. The visible effect is the `settle` chain being
+# attributed to whatever ran before it.
+
+mutation_case "the handler flag outlives the dispatch" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            let outcome = self.execute_transition(event_with_meta.event);
+            self.handling_error_event = false;""",
+     """            let outcome = self.execute_transition(event_with_meta.event);""")
+PY

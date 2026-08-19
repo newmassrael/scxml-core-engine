@@ -223,6 +223,39 @@ public:
      * @return Number of events that were cancelled
      */
     virtual size_t cancelEventsForSession(const std::string &originSessionId) = 0;
+
+    /**
+     * @brief §scxml-3.12.2: `error.*` events refused because an error handler kept raising them
+     *
+     * The clause says an error event nothing matches is ignored. It says nothing
+     * about one that IS matched by a handler that fails the same way every time:
+     * the failure raises the error, the same transition answers it, and the
+     * processing never comes back to its caller. Nothing in the specification
+     * bounds that, so the raiser that owns the queue is the party that has to.
+     *
+     * Defaulted rather than pure: a raiser that never refuses anything — every
+     * test double here is one — answers zero truthfully, and making this pure
+     * would put the same `return 0;` in each of them.
+     *
+     * @return Count of refused error events, zero when none were
+     */
+    virtual uint32_t getErrorCascadeEvents() const {
+        return 0;
+    }
+
+    /**
+     * @brief The most recent event `getErrorCascadeEvents()` refused
+     *
+     * Empty while that count is zero. Which error it was names the repair:
+     * `error.execution` is a handler whose own executable content fails,
+     * `error.communication` one that answers an unreachable target by talking
+     * to it again.
+     *
+     * @return Name of the last refused error event, empty when there is none
+     */
+    virtual std::string getLastErrorCascadeEvent() const {
+        return {};
+    }
 };
 
 }  // namespace SCE
