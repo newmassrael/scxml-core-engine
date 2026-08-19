@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -320,8 +320,9 @@ impl Test152Policy {
             se, &sid, "Var1", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test152Event::ErrorExecution,
+                "<data id='Var1'> expr failed to evaluate",
             ));
         }
 
@@ -343,8 +344,9 @@ impl Test152Policy {
             "[1,2,3]",
         ) {
             ::sce_rust_runtime::sce_log_error!("Failed to init 'Var5' in global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test152Event::ErrorExecution,
+                "<data id='Var5'> content failed to initialise",
             ));
         }
 
@@ -361,8 +363,9 @@ impl Test152Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test152Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -685,8 +688,9 @@ impl StatePolicy for Test152Policy {
                                 "Foreach validation failed: '{}' is not a legal variable name",
                                 item_name
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test152Event::ErrorExecution,
+                                "<foreach item='Var2'> is not a legal variable name",
                             ));
                         } else {
                             // Evaluate array expression
@@ -745,11 +749,7 @@ impl StatePolicy for Test152Policy {
                                                         "Assign failed for 'Var1': {}",
                                                         e
                                                     );
-                                                    engine.raise(
-                                                        sce_rust_runtime::EventWithMetadata::new(
-                                                            Test152Event::ErrorExecution,
-                                                        ),
-                                                    );
+                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test152Event::ErrorExecution, "<assign> to 'Var1' failed"));
                                                     // W3C SCXML 4.6: Stop current foreach iteration and loop on error
                                                     iteration_success = false;
                                                     break 'foreach_body;
@@ -763,9 +763,12 @@ impl StatePolicy for Test152Policy {
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test152Event::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test152Event::ErrorExecution,
+                                                "an action inside <foreach> failed",
+                                            ),
+                                        );
                                     }
                                 }
                                 Ok(_) => {
@@ -773,18 +776,24 @@ impl StatePolicy for Test152Policy {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: '' is not an array"
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test152Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test152Event::ErrorExecution,
+                                            "<foreach array=''> is not an array",
+                                        ),
+                                    );
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: failed to evaluate array '': {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test152Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test152Event::ErrorExecution,
+                                            "<foreach array=''> failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -814,8 +823,9 @@ impl StatePolicy for Test152Policy {
                         ::sce_rust_runtime::sce_log_error!(
                             "Foreach validation failed: missing 'item' attribute"
                         );
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test152Event::ErrorExecution,
+                            "<foreach> has no 'item' attribute",
                         ));
                     }
 

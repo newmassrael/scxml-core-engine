@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -314,8 +314,9 @@ impl Test350Policy {
             "\"#_scxml_\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test350Event::ErrorExecution,
+                "<data id='Var1'> expr failed to evaluate",
             ));
         }
 
@@ -327,8 +328,9 @@ impl Test350Policy {
             "_sessionid",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test350Event::ErrorExecution,
+                "<data id='Var2'> expr failed to evaluate",
             ));
         }
 
@@ -345,8 +347,9 @@ impl Test350Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test350Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }

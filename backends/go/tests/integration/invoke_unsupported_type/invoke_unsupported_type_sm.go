@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -139,7 +139,7 @@ func (p *InvokeUnsupportedTypePolicy) ExecutePendingInvokes(engine *sce.Engine[I
 		if strings.Contains(pending.InvokeID, "._invoke_0") {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
-			engine.Raise(sce.NewPlatformEvent(InvokeUnsupportedTypeEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(InvokeUnsupportedTypeEventErrorExecution, "<invoke> declares a type this processor does not support"))
 			continue
 		}
 	}

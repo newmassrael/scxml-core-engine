@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -328,8 +328,9 @@ impl SendParamPayloadPolicy {
             se, &sid, "tag", "\"kept\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("typedPhase: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 SendParamPayloadEvent::ErrorExecution,
+                "<data id='tag'> expr failed to evaluate",
             ));
         }
 
@@ -346,8 +347,9 @@ impl SendParamPayloadPolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendParamPayloadEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -926,9 +928,12 @@ impl StatePolicy for SendParamPayloadPolicy {
                                         "send param 'n' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        SendParamPayloadEvent::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            SendParamPayloadEvent::ErrorExecution,
+                                            "<send> <param name='n'> expr failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                             match se.evaluate_expression(&sid, "tag") {
@@ -940,9 +945,12 @@ impl StatePolicy for SendParamPayloadPolicy {
                                         "send param 's' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        SendParamPayloadEvent::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            SendParamPayloadEvent::ErrorExecution,
+                                            "<send> <param name='s'> expr failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                             match se.evaluate_expression(&sid, "1") {
@@ -954,9 +962,12 @@ impl StatePolicy for SendParamPayloadPolicy {
                                         "send param 'd' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        SendParamPayloadEvent::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            SendParamPayloadEvent::ErrorExecution,
+                                            "<send> <param name='d'> expr failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                             match se.evaluate_expression(&sid, "2") {
@@ -968,9 +979,12 @@ impl StatePolicy for SendParamPayloadPolicy {
                                         "send param 'd' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        SendParamPayloadEvent::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            SendParamPayloadEvent::ErrorExecution,
+                                            "<send> <param name='d'> expr failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(

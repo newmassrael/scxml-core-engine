@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: df2ef2c591564c7e52022e112ae9c5e384db80574b200165584f410ac8201d24
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -336,8 +336,9 @@ impl DiscardedEventIsObservablePolicy {
             se, &sid, "pokes", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 DiscardedEventIsObservableEvent::ErrorExecution,
+                "<data id='pokes'> expr failed to evaluate",
             ));
         }
 
@@ -346,8 +347,9 @@ impl DiscardedEventIsObservablePolicy {
             se, &sid, "nudges", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 DiscardedEventIsObservableEvent::ErrorExecution,
+                "<data id='nudges'> expr failed to evaluate",
             ));
         }
 
@@ -364,8 +366,9 @@ impl DiscardedEventIsObservablePolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DiscardedEventIsObservableEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -765,8 +768,9 @@ impl StatePolicy for DiscardedEventIsObservablePolicy {
                                     "Assign failed for 'pokes': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     DiscardedEventIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'pokes' failed",
                                 ));
                             }
                         }
@@ -792,8 +796,9 @@ impl StatePolicy for DiscardedEventIsObservablePolicy {
                                     "Assign failed for 'nudges': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     DiscardedEventIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'nudges' failed",
                                 ));
                             }
                         }

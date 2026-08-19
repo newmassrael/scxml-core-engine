@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: df2ef2c591564c7e52022e112ae9c5e384db80574b200165584f410ac8201d24
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -151,14 +151,14 @@ class DiscardedEventIsObservableStateMachine(
             val initResult_pokes = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
-            raiseInternal(DiscardedEventIsObservableEvent.Error.Execution)
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'nudges' with expr
         try {
             val initResult_nudges = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "nudges", initResult_nudges)
         } catch (e: Exception) {
-            raiseInternal(DiscardedEventIsObservableEvent.Error.Execution)
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<data id='nudges'> expr failed to evaluate")
         }
 
 
@@ -186,7 +186,7 @@ class DiscardedEventIsObservableStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(DiscardedEventIsObservableEvent.Error.Execution)
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -211,7 +211,7 @@ class DiscardedEventIsObservableStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(DiscardedEventIsObservableEvent.Error.Execution)
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -224,7 +224,7 @@ class DiscardedEventIsObservableStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(DiscardedEventIsObservableEvent.Error.Execution)
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -236,7 +236,7 @@ class DiscardedEventIsObservableStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(DiscardedEventIsObservableEvent.Error.Execution)
+            raisePlatformError(DiscardedEventIsObservableEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

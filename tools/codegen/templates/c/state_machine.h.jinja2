@@ -619,6 +619,50 @@ bool {{ csym_prefix }}{{ model.name }}_last_unhandled_error(const {{ csym_prefix
 void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,
                             const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt);
 
+/* W3C SCXML 3.12.2: raise an `error.*` event this engine itself produced,
+   carrying what failed.
+
+   The single way generated code raises a platform error, so the two things
+   such an event owes its reader are filled in one place rather than at each
+   site that happens to remember:
+
+     * `_event.type` is "platform". Every raise site here `memset` the carrier
+       and set only `.event`, leaving the type field empty — an event the
+       PROCESSOR raised carried no classification at all.
+     * `_event.data` carries `message`. A document that answers error.execution
+       was handed an empty string, so it could see THAT something failed and
+       never WHAT.
+
+   `message` names the failing construct and is a literal formed at generation
+   time, never the script engine's own error text — this backend has no
+   allocator to build one with.
+
+   `send_id` is for the `<send>` failures W3C SCXML 6.2.4 requires it on
+   (test 332); it is the empty string everywhere else. C has no default
+   arguments, so the plain form below forwards to this one rather than the
+   two spelling the body twice. */
+SCE_C_UNUSED static inline void {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+        {{ csym_prefix }}{{ model.name }}_t *sm,
+        {{ csym_prefix }}{{ model.name }}_event_t event,
+        const char *message,
+        const char *send_id) {
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _pe;
+    memset(&_pe, 0, sizeof(_pe));
+    _pe.event = event;
+    sce_copy_bounded_data(_pe.data, message);
+    sce_copy_bounded_n(_pe.type, "platform", (size_t)SCE_MAX_EVENT_TYPE_LEN);
+    sce_copy_bounded_id(_pe.send_id, send_id);
+    {{ csym_prefix }}{{ model.name }}_raise(sm, &_pe);
+}
+
+/* The common form: no sendid to carry. */
+SCE_C_UNUSED static inline void {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+        {{ csym_prefix }}{{ model.name }}_t *sm,
+        {{ csym_prefix }}{{ model.name }}_event_t event,
+        const char *message) {
+    {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(sm, event, message, "");
+}
+
 /* W3C SCXML 6.2: Enqueue an event onto the external (low-priority) queue. */
 void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
                                      const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt);

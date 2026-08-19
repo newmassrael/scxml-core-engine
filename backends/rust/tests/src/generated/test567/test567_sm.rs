@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -305,8 +305,9 @@ impl Test567Policy {
             se, &sid, "Var1", "2",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test567Event::ErrorExecution,
+                "<data id='Var1'> expr failed to evaluate",
             ));
         }
 
@@ -323,8 +324,9 @@ impl Test567Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test567Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -675,9 +677,12 @@ impl StatePolicy for Test567Policy {
                                         "send param 'param1' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test567Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test567Event::ErrorExecution,
+                                            "<send> <param name='param1'> expr failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
@@ -701,9 +706,7 @@ impl StatePolicy for Test567Policy {
                                     ) =>
                                 {
                                     // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test567Event::ErrorCommunication,
-                                    ));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
                                     None
                                 }
                                 Ok(val) => {
@@ -713,10 +716,7 @@ impl StatePolicy for Test567Policy {
                                     if trimmed.starts_with("!") {
                                         // W3C SCXML 6.2: Invalid target raises error.execution
                                         {
-                                            let mut err_meta =
-                                                sce_rust_runtime::EventWithMetadata::new(
-                                                    Test567Event::ErrorExecution,
-                                                );
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
                                             err_meta.metadata.send_id = send_id.clone();
                                             engine.raise(err_meta);
                                         }
@@ -730,9 +730,12 @@ impl StatePolicy for Test567Policy {
                                         "targetexpr eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test567Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test567Event::ErrorExecution,
+                                            "<send> targetexpr failed to evaluate",
+                                        ),
+                                    );
                                     None
                                 }
                             }
@@ -743,9 +746,7 @@ impl StatePolicy for Test567Policy {
                             {
                                 // W3C SCXML C.2: Validate dynamic target is HTTP URL
                                 if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test567Event::ErrorCommunication,
-                                    ));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test567Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
                                 } else {
                                     let mut http_params =
                                         std::collections::HashMap::<String, Vec<String>>::new();
@@ -887,8 +888,9 @@ impl StatePolicy for Test567Policy {
                                     "Assign failed for 'Var1': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test567Event::ErrorExecution,
+                                    "<assign> to 'Var1' failed",
                                 ));
                             }
                         }

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -198,14 +198,14 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
             val initResult_n = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "n", initResult_n)
         } catch (e: Exception) {
-            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'm' with expr
         try {
             val initResult_m = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "m", initResult_m)
         } catch (e: Exception) {
-            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
         }
 
 
@@ -235,7 +235,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -260,7 +260,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -273,7 +273,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -285,7 +285,7 @@ class ParallelSelfTransitionKeepsItsLeafStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution)
+            raisePlatformError(ParallelSelfTransitionKeepsItsLeafEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

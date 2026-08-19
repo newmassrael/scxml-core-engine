@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -213,7 +213,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) evaluateGuard(guard 
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -524,7 +524,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_ioprocessors.scxml.location`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "myLocation", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, "<send> <param name='myLocation'> expr failed to evaluate"))
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr

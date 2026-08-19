@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -172,7 +172,7 @@ class SendParamPayloadStateMachine(
             val initResult_tag = engine.evaluateExpr(sid, "'kept'")
             engine.setVariable(sid, "tag", initResult_tag)
         } catch (e: Exception) {
-            raiseInternal(SendParamPayloadEvent.Error.Execution)
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='tag'> expr failed to evaluate")
         }
 
 
@@ -199,7 +199,7 @@ class SendParamPayloadStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(SendParamPayloadEvent.Error.Execution)
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -224,7 +224,7 @@ class SendParamPayloadStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(SendParamPayloadEvent.Error.Execution)
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -237,7 +237,7 @@ class SendParamPayloadStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(SendParamPayloadEvent.Error.Execution)
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -249,7 +249,7 @@ class SendParamPayloadStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(SendParamPayloadEvent.Error.Execution)
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

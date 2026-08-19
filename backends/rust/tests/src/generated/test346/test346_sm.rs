@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -291,8 +291,9 @@ impl Test346Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test346Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -613,8 +614,9 @@ impl StatePolicy for Test346Policy {
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_sessionid'"
                         );
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test346Event::ErrorExecution,
+                            "<assign> has an invalid or read-only location '_sessionid'",
                         ));
                     }
 
@@ -639,8 +641,9 @@ impl StatePolicy for Test346Policy {
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_event'"
                         );
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test346Event::ErrorExecution,
+                            "<assign> has an invalid or read-only location '_event'",
                         ));
                     }
 
@@ -665,8 +668,9 @@ impl StatePolicy for Test346Policy {
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_ioprocessors'"
                         );
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test346Event::ErrorExecution,
+                            "<assign> has an invalid or read-only location '_ioprocessors'",
                         ));
                     }
 
@@ -691,8 +695,9 @@ impl StatePolicy for Test346Policy {
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_name'"
                         );
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test346Event::ErrorExecution,
+                            "<assign> has an invalid or read-only location '_name'",
                         ));
                     }
 

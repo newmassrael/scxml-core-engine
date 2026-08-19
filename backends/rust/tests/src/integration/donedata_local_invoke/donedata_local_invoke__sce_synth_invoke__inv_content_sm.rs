@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -291,8 +291,9 @@ impl DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DonedataLocalInvokeSceSynthInvokeInvContentEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -604,8 +605,9 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
                                 "Donedata content expr eval failed: {}",
                                 e
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 DonedataLocalInvokeSceSynthInvokeInvContentEvent::ErrorExecution,
+                                "<donedata> <content expr> failed to evaluate",
                             ));
                         }
                     }

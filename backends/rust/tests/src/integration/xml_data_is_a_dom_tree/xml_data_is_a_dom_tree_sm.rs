@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c990b384ae6d27b45cff45f6fb75ecde882d112d0f07d342d547b178e6a4257
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -295,8 +295,9 @@ impl XmlDataIsADomTreePolicy {
       </books>"#,
         ) {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'doc' in global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 XmlDataIsADomTreeEvent::ErrorExecution,
+                "<data id='doc'> XML content could not be parsed",
             ));
         }
 
@@ -313,8 +314,9 @@ impl XmlDataIsADomTreePolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     XmlDataIsADomTreeEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }

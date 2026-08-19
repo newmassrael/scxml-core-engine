@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -620,7 +620,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionActions(engine *sce.En
 		_ = eventDataStr
 	// W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
 	{
-		errEvt := sce.NewPlatformEvent(AutoforwardInternalQueueEventErrorExecution)
+		errEvt := sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 	}

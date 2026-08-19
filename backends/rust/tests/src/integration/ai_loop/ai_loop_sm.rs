@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 195556f7381b7d98e015a576c984a3d37618cbcc845bd17300f1f7caca179032
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -797,8 +797,9 @@ impl AiLoopPolicy {
             "\"(edit me) the outcome this loop exists to reach\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='north_star'> expr failed to evaluate",
             ));
         }
 
@@ -810,8 +811,9 @@ impl AiLoopPolicy {
             "\"(edit me) the next checkpoint on the way there\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='milestone'> expr failed to evaluate",
             ));
         }
 
@@ -823,8 +825,9 @@ impl AiLoopPolicy {
             "\"(edit me) paths, URLs or repos to consult\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='reference'> expr failed to evaluate",
             ));
         }
 
@@ -832,14 +835,14 @@ impl AiLoopPolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "start_prompt", "(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<data id='start_prompt'> expr failed to evaluate"));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'turn_prompt' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "turn_prompt", "(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<data id='turn_prompt'> expr failed to evaluate"));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'end_prompt' from expr (global)
@@ -850,8 +853,9 @@ impl AiLoopPolicy {
             "\"Summarise what changed, what was verified, and what is left open.\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='end_prompt'> expr failed to evaluate",
             ));
         }
 
@@ -863,8 +867,9 @@ impl AiLoopPolicy {
             "\"MILESTONE REACHED\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='done_marker'> expr failed to evaluate",
             ));
         }
 
@@ -872,7 +877,7 @@ impl AiLoopPolicy {
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "screen_rules", "{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(AiLoopEvent::ErrorExecution));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<data id='screen_rules'> expr failed to evaluate"));
         }
 
         // W3C SCXML 5.2/5.3: Initialize 'screen_permissions' from expr (global)
@@ -883,8 +888,9 @@ impl AiLoopPolicy {
             "false",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='screen_permissions'> expr failed to evaluate",
             ));
         }
 
@@ -896,8 +902,9 @@ impl AiLoopPolicy {
             "40",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='max_turns'> expr failed to evaluate",
             ));
         }
 
@@ -909,8 +916,9 @@ impl AiLoopPolicy {
             "8",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='reflect_every'> expr failed to evaluate",
             ));
         }
 
@@ -922,8 +930,9 @@ impl AiLoopPolicy {
             "6",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='max_restarts'> expr failed to evaluate",
             ));
         }
 
@@ -932,8 +941,9 @@ impl AiLoopPolicy {
             se, &sid, "turns", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='turns'> expr failed to evaluate",
             ));
         }
 
@@ -945,8 +955,9 @@ impl AiLoopPolicy {
             "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='turns_since_reflect'> expr failed to evaluate",
             ));
         }
 
@@ -955,8 +966,9 @@ impl AiLoopPolicy {
             se, &sid, "screened", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='screened'> expr failed to evaluate",
             ));
         }
 
@@ -965,8 +977,9 @@ impl AiLoopPolicy {
             se, &sid, "restarts", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AiLoopEvent::ErrorExecution,
+                "<data id='restarts'> expr failed to evaluate",
             ));
         }
 
@@ -999,8 +1012,9 @@ impl AiLoopPolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -1615,8 +1629,9 @@ impl StatePolicy for AiLoopPolicy {
                                 "Assign failed for 'turns_since_reflect': {}",
                                 e
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                "<assign> to 'turns_since_reflect' failed",
                             ));
                             // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
                             break 'action_block;
@@ -1683,8 +1698,9 @@ impl StatePolicy for AiLoopPolicy {
                                 "Assign failed for 'restarts': {}",
                                 e
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                "<assign> to 'restarts' failed",
                             ));
                             // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
                             break 'action_block;
@@ -1737,8 +1753,9 @@ impl StatePolicy for AiLoopPolicy {
                                 "Assign failed for 'screened': {}",
                                 e
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                "<assign> to 'screened' failed",
                             ));
                             // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
                             break 'action_block;
@@ -2139,8 +2156,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'turns_since_reflect': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'turns_since_reflect' failed",
                                 ));
                             }
                         }
@@ -2171,8 +2189,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'start_prompt': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'start_prompt' failed",
                                 ));
                             }
                         }
@@ -2194,8 +2213,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'turn_prompt': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'turn_prompt' failed",
                                 ));
                             }
                         }
@@ -2217,8 +2237,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'milestone': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'milestone' failed",
                                 ));
                             }
                         }
@@ -2276,8 +2297,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'turns': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'turns' failed",
                                 ));
                             }
                         }
@@ -2303,8 +2325,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'turns': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'turns' failed",
                                 ));
                             }
                         }
@@ -2335,8 +2358,9 @@ impl StatePolicy for AiLoopPolicy {
                                     "Assign failed for 'turns_since_reflect': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AiLoopEvent::ErrorExecution,
+                                    "<assign> to 'turns_since_reflect' failed",
                                 ));
                             }
                         }

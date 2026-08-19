@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 215c3b8c048d546a929c95bb520cc0c508e71ce4c95c9630e94bb32b22528dc2
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -253,28 +253,28 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
             val initResult_defaulted = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "defaulted", initResult_defaulted)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='defaulted'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'lobbied' with expr
         try {
             val initResult_lobbied = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "lobbied", initResult_lobbied)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='lobbied'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'idled' with expr
         try {
             val initResult_idled = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "idled", initResult_idled)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='idled'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'targeted' with expr
         try {
             val initResult_targeted = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "targeted", initResult_targeted)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<data id='targeted'> expr failed to evaluate")
         }
 
 
@@ -304,7 +304,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -329,7 +329,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -342,7 +342,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -354,7 +354,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(AncestorEntryIsNotDefaultEntryEvent.Error.Execution)
+            raisePlatformError(AncestorEntryIsNotDefaultEntryEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -153,7 +153,7 @@ class AutoforwardEventFieldsStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(AutoforwardEventFieldsEvent.Error.Execution)
+            raisePlatformError(AutoforwardEventFieldsEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -178,7 +178,7 @@ class AutoforwardEventFieldsStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(AutoforwardEventFieldsEvent.Error.Execution)
+            raisePlatformError(AutoforwardEventFieldsEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -191,7 +191,7 @@ class AutoforwardEventFieldsStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(AutoforwardEventFieldsEvent.Error.Execution)
+            raisePlatformError(AutoforwardEventFieldsEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -203,7 +203,7 @@ class AutoforwardEventFieldsStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(AutoforwardEventFieldsEvent.Error.Execution)
+            raisePlatformError(AutoforwardEventFieldsEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -302,8 +302,9 @@ impl Test332Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test332Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -623,9 +624,7 @@ impl StatePolicy for Test332Policy {
                         // W3C SCXML 6.2: Invalid target "!invalid" raises error.execution
                         {
                             // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::new(
-                                Test332Event::ErrorExecution,
-                            );
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test332Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
                             err_meta.metadata.send_id = send_id.clone();
                             engine.raise(err_meta);
                         }
@@ -740,8 +739,9 @@ impl StatePolicy for Test332Policy {
                                     "Assign failed for 'Var2': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test332Event::ErrorExecution,
+                                    "<assign> to 'Var2' failed",
                                 ));
                             }
                         }
