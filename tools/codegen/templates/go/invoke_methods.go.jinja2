@@ -38,7 +38,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% for var_name in invoke_info.namelist | split %}
 				if !se.HasVariable(p.SessionID, "{{ var_name }}") {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names '{{ var_name }}', which the parent does not declare"))
 {% endif %}
 					namelistValid = false
 				}
@@ -145,7 +145,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> declares a type this processor does not support"))
 			continue
 		}
 {% endfor %}
@@ -162,7 +162,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> srcexpr '{{ invoke_info.srcexpr }}' failed to evaluate"))
 {% endif %}
 					continue
 				}
@@ -174,7 +174,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> contentexpr '{{ invoke_info.contentexpr }}' failed to evaluate"))
 {% endif %}
 					continue
 				}

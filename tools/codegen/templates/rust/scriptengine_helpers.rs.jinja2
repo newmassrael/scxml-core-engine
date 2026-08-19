@@ -134,7 +134,7 @@
         if let Err(e) = se.execute_script(&sid, "{{ script.content | to_lua_script | escape_rust }}") {
             ::sce_rust_runtime::sce_log_error!("Global script execution failed: {}", e);
 {% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "a top-level <script> failed to execute"));
 {% endif %}
         }
 {% endfor %}
@@ -155,7 +155,7 @@
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "a <transition> cond failed to evaluate"));
 {% endif %}
                 false
             }

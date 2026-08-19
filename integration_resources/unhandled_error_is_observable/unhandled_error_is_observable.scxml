@@ -44,6 +44,7 @@
         <data id="pokes" expr="0"/>
         <data id="booms" expr="0"/>
         <data id="caught" expr="0"/>
+        <data id="detail" expr="''"/>
         <data id="heards" expr="0"/>
     </datamodel>
     <state id="idle">
@@ -88,6 +89,23 @@
         </transition>
         <transition event="error.execution" target="guarded">
             <assign location="caught" expr="caught + 1"/>
+            <!-- The other half of the same clause. W3C SCXML 3.12.2 closes with
+                 "platforms MAY include additional information about the nature
+                 of the error in the 'data' field", and a document that answers
+                 the error is the party that reads it. Every engine here used to
+                 hand this handler `undefined`, so a document could see THAT
+                 something failed and never WHAT — while the C++ Interpreter,
+                 shipped from this same repository, passed the failing construct
+                 all along.
+
+                 ⚠ THE EXPRESSION MUST NOT BE ABLE TO FAIL. The first draft read
+                 `_event.data.length`, and a handler that raises while handling
+                 is a self-feeding loop: the failed assign raises error.execution,
+                 `guarded` answers it with the same failing assign, forever. It
+                 hung the Rust channel for over a minute before the harness was
+                 stopped. A bare copy cannot fail, and the driver asserts on the
+                 string it lands rather than on any one backend's wording. -->
+            <assign location="detail" expr="_event.data"/>
         </transition>
     </state>
 </scxml>
