@@ -102,6 +102,11 @@ class Engine(Generic[S, E]):
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         self._is_running: bool = False
         self._reached_final: bool = False
+        # §scxml-3.1.2 — events taken off the external queue that no
+        # transition matched, and the most recent of them. See
+        # `discarded_external_events`.
+        self._discarded_external_events: int = 0
+        self._last_discarded_event: Optional[E] = None
         # §scxml-3.7 — set of `<parallel>` states for which a
         # `done.state.<id>` event has already been raised this run, so a
         # second region reaching `<final>` does not re-fire it.
@@ -271,6 +276,39 @@ class Engine(Generic[S, E]):
         engine's name→Event lookup. Stays read-only from outside the
         engine; the runtime never mutates the policy itself."""
         return self._policy
+
+    def discarded_external_events(self) -> int:
+        """W3C SCXML 3.1.2 — how many events this engine took off the
+        external queue and discarded because no transition in any active
+        state matched them.
+
+        Discarding is what the clause requires. This is the part the
+        clause does not cover: the host that queued the event cannot
+        otherwise tell that outcome from a handled one, because a self
+        transition, a targetless internal transition and a discard all
+        leave the configuration alone. Comparing the count across a drive
+        turns "the machine ignored what I sent" into something the
+        program can see.
+
+        The C++ Interpreter has answered this all along
+        (`processEvent`'s `TransitionResult.success` and
+        `getStatistics().failedTransitions`); this is the generated
+        engines' side of the same question.
+
+        Counts external-queue events only — an internal `<raise>` that
+        matches nothing has both its ends inside the document.
+        """
+        return self._discarded_external_events
+
+    def last_discarded_event(self) -> Optional[E]:
+        """The most recent event `discarded_external_events` counted, or
+        `None` while that count is zero.
+
+        A count says something went nowhere; this says which thing did,
+        which is the question a host debugging a stalled supervisor
+        actually has.
+        """
+        return self._last_discarded_event
 
     def active_configuration(self) -> Set[S]:
         """W3C SCXML 3.3 — every active state (atomic + ancestors)."""
@@ -631,7 +669,16 @@ class Engine(Generic[S, E]):
         # `autoforward="true"`, before transition selection, so the child
         # observes the event in the same iteration the parent does.
         self._route_to_child(evt)
-        self._dispatch(evt)
+        # §scxml-3.1.2 — discarding an event no transition matched is the
+        # rule; being unable to say so is not part of the rule. The host
+        # that queued this event is the one party that cannot see the
+        # outcome (a discard leaves the configuration exactly as a self
+        # transition does) and the party that got the event wrong.
+        # Counted for the external queue only: an internal `<raise>` that
+        # matches nothing has both its ends inside the document.
+        if not self._dispatch(evt):
+            self._discarded_external_events += 1
+            self._last_discarded_event = evt.event
 
     def _drain_eventless(self) -> None:
         """W3C SCXML 3.13: fire all enabled eventless transitions until none remain."""
@@ -642,7 +689,7 @@ class Engine(Generic[S, E]):
                 return
             self._take_transitions(transitions)
 
-    def _dispatch(self, evt: EventWithMetadata[E]) -> None:
+    def _dispatch(self, evt: EventWithMetadata[E]) -> bool:
         # §scxml-5.10 — bind `_event` into the datamodel before the
         # microstep so transition guards and action expressions can
         # read `_event.name`, `_event.data`, etc. Eventless transitions
@@ -657,8 +704,13 @@ class Engine(Generic[S, E]):
         # can know the event came off that queue.
         transitions = self._select_transitions(evt.event)
         if not transitions:
-            return
+            # §scxml-3.1.2 — "If no transition matches in any state, the
+            # event is discarded." Reported rather than merely done, so
+            # the external dequeue can count it; see
+            # `discarded_external_events`.
+            return False
         self._take_transitions(transitions)
+        return True
 
     # ── Transition selection ──────────────────────────────────────
 

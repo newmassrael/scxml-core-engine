@@ -1,0 +1,121 @@
+# Mutation cases for §scxml-3.1.2 on the two backends a cargo round cannot see
+# — the C++ engine header and the C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/discarded_event_is_observable_ctest.cases`.
+#
+# Same axis as `discarded_event_is_observable.cases`: an event no transition
+# matched is discarded, and the host that fed it in can find out. A self
+# transition, a targetless internal transition and a discard all leave the
+# configuration alone, so nothing else a host can call separates them.
+#
+# The C++ half also covers the entry point this backend does not share with the
+# others: `processEvent` reaches `executeTransition` directly rather than
+# through the external queue, so the fact is recorded at both sites and a case
+# below removes each one.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_discarded_event_is_observable)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/DiscardedEventIsObservableAotTest.cpp tests/integration/DiscardedEventIsObservableTest.cpp backends/c/tests/integration/test_discarded_event_is_observable.c
+
+# ── C++: the count itself ──────────────────────────────────────────
+
+mutation_case "the cpp engine records nothing for an unmatched event" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (outcome.selected) {
+            return;
+        }
+        ++discardedExternalEvents_;""",
+     """        if (outcome.selected) {
+            return;
+        }
+        if (false) ++discardedExternalEvents_;""")
+PY
+
+# ── C++: counting the wrong fact ───────────────────────────────────
+#
+# The trap the outcome type exists for. `configurationChanged` is false for a
+# targetless internal transition as well, so `nudge` — handled, actions run —
+# is reported as an event that went nowhere.
+
+mutation_case "the cpp count is keyed off whether the configuration changed" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (outcome.selected) {
+            return;
+        }""",
+     """        if (outcome.configurationChanged) {
+            return;
+        }""")
+PY
+
+# ── C++: the direct entry point ────────────────────────────────────
+#
+# `processEvent` does not go through the external queue on this backend, so a
+# fix applied only at the dequeue leaves the host API silent — which is the
+# whole failure this axis is about, one call shallower.
+
+mutation_case "the cpp direct processEvent path stops recording" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        recordEventOutcome(event, outcome);
+        const bool stateChanged = outcome.configurationChanged;""",
+     """        const bool stateChanged = outcome.configurationChanged;""")
+PY
+
+# ── C++: naming the event ──────────────────────────────────────────
+
+mutation_case "the cpp engine counts a discard but never names it" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        ++discardedExternalEvents_;
+        lastDiscardedEvent_ = event;
+        hasDiscardedEvent_ = true;""",
+     """        ++discardedExternalEvents_;
+        lastDiscardedEvent_ = event;""")
+PY
+
+# ── C11: the else branch that did not exist ────────────────────────
+
+mutation_case "the c11 dequeue drops the unmatched case again" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->discarded_external_events++;
+            sm->last_discarded_event = evt.event;
+            sm->has_discarded_event = true;""",
+     """            (void)0;""")
+PY
+
+# ── C11: counting the handled case ─────────────────────────────────
+
+mutation_case "the c11 machine counts the events it did handle" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        if (process_transition(sm, evt.event, enabled, &count)) {
+            count = remove_conflicting_transitions(enabled, count);
+            handle_microstep(sm, enabled, count);
+        } else {""",
+     """        if (process_transition(sm, evt.event, enabled, &count)) {
+            count = remove_conflicting_transitions(enabled, count);
+            handle_microstep(sm, enabled, count);
+            sm->discarded_external_events++;
+            sm->last_discarded_event = evt.event;
+            sm->has_discarded_event = true;
+        } else {""")
+PY
+
+# ── C11: naming an event that was never discarded ──────────────────
+#
+# The "nothing has been discarded yet" arm is what catches an accessor that
+# always answers, and it is the arm a reader is most likely to drop.
+
+mutation_case "the c11 accessor answers before anything was discarded" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm == NULL || out == NULL || !sm->has_discarded_event) {
+        return false;
+    }""",
+     """    if (sm == NULL || out == NULL) {
+        return false;
+    }""")
+PY

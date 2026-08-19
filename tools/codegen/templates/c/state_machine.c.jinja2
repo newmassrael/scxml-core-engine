@@ -4047,6 +4047,18 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         if (process_transition(sm, evt.event, enabled, &count)) {
             count = remove_conflicting_transitions(enabled, count);
             handle_microstep(sm, enabled, count);
+        } else {
+            /* W3C SCXML 3.1.2: "If no transition matches in any state, the
+               event is discarded." Discarding it is the rule; being unable to
+               say so is not part of the rule. The host that queued this event
+               is the one party that cannot see the outcome -- a discard leaves
+               the configuration exactly as a self transition does -- and the
+               party that got the event wrong. Recorded for the external queue
+               only: an internal `<raise>` that matches nothing has both its
+               ends inside the document. */
+            sm->discarded_external_events++;
+            sm->last_discarded_event = evt.event;
+            sm->has_discarded_event = true;
         }
 
         check_eventless_transitions(sm);
@@ -4389,6 +4401,24 @@ SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym
 
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? NULL : sm->scxml_location;
+}
+
+/* W3C SCXML 3.1.2: external events this machine discarded because nothing
+   matched them. The count is the host's only way to tell that outcome from a
+   handled one — a self transition, a targetless internal transition and a
+   discard all leave the configuration alone. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_discarded_external_events(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->discarded_external_events;
+}
+
+/* W3C SCXML 3.1.2: which event the count above last recorded. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_discarded_event) {
+        return false;
+    }
+    *out = sm->last_discarded_event;
+    return true;
 }
 {% for var in model.readable_variables %}
 

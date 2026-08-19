@@ -40,6 +40,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -163,6 +164,28 @@ using ScxmlInvokeCancelCallback = std::function<bool(const std::string &target, 
  *         Must satisfy SCE::Core::EventNamingPolicy concept (C++20) or duck typing (C++17).
  *         See core/StatePolicyConcepts.h for the full interface contract.
  */
+
+/**
+ * @brief What the engine did with one event it offered to the active configuration
+ *
+ * This used to be a bare `bool` meaning "the configuration changed", which
+ * answers false for two unrelated outcomes: an event no transition matched at
+ * all, and a targetless internal transition that ran its actions in place.
+ * Only the first is the discard §scxml-3.1.2 describes, and a
+ * count keyed off the old bool would have reported a handled event as one, so
+ * the two facts are spelled apart rather than inferred from each other.
+ *
+ * The Interpreter's `StateMachine::TransitionResult` is the same distinction on
+ * the other engine; this is the AOT side, kept to two bools because the
+ * generated engine carries no `std::string` on this path.
+ */
+struct EventOutcome {
+    /// Whether any transition matched the event.
+    bool selected = false;
+    /// False for a targetless internal transition, which leaves the
+    /// configuration alone after running its actions.
+    bool configurationChanged = false;
+};
 #if __cpp_concepts >= 202002L
 template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine {
 #else
@@ -410,9 +433,9 @@ private:
      * @brief Execute a state transition with default handlers (for event queue processing)
      *
      * @param event Event to process
-     * @return true if a hierarchical state change occurred
+     * @return what the event did — see EventOutcome
      */
-    bool executeTransition(Event event) {
+    EventOutcome executeTransition(Event event) {
         return executeTransition(event, [] {});
     }
 
@@ -445,11 +468,12 @@ private:
      * @param postTransition Post-hierarchical work before eventless check
      * @return true if a hierarchical state change occurred
      */
-    template <typename PostTransitionFn> bool executeTransition(Event event, PostTransitionFn &&postTransition) {
+    template <typename PostTransitionFn>
+    EventOutcome executeTransition(Event event, PostTransitionFn &&postTransition) {
         State oldState = currentState_;
         std::vector<State> preTransitionStates = getActiveStates();
         if (!policy_.processTransition(currentState_, event, *this)) {
-            return false;
+            return EventOutcome{};
         }
 
         // §scxml-3.13: Self-transitions (target = source) exit and re-enter the state
@@ -461,7 +485,7 @@ private:
         if (!needsHierarchicalHandling) {
             // §scxml-3.13: Targetless transition - execute actions without state change
             policy_.executeTransitionActions(*this);
-            return false;
+            return EventOutcome{/*selected=*/true, /*configurationChanged=*/false};
         }
 
         // §scxml-3.13: State transition requires hierarchical exit/entry
@@ -479,7 +503,7 @@ private:
         }
         postTransition();
         checkEventlessTransitions();
-        return true;
+        return EventOutcome{/*selected=*/true, /*configurationChanged=*/true};
     }
 
     /**
@@ -540,7 +564,14 @@ private:
      * @param event Event to process
      */
     void processEventImpl(Event event) {
-        bool stateChanged = executeTransition(event, [this] { runMainEventLoop(); });
+        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });
+        // §scxml-3.1.2: this entry point takes an event straight from the host,
+        // so it is the same fact `processNextExternalEvent` records — unlike
+        // the Rust and Go engines, whose `process_event` enqueues and lets the
+        // dequeue do it. Recorded in both places so a host calling
+        // `processEvent` reads the same count on every backend.
+        recordEventOutcome(event, outcome);
+        const bool stateChanged = outcome.configurationChanged;
         // §scxml-6.4: Notify parent only when the machine has globally
         // terminated. `isInFinalState()` adds the parent-presence check to
         // the structural `StatePolicy::isFinalState`, excluding a regional
@@ -550,6 +581,28 @@ private:
         if (stateChanged && isInFinalState() && completionCallback_) {
             completionCallback_();
         }
+    }
+
+    /**
+     * @brief Record what an external event did, for the host that queued it
+     *
+     * §scxml-3.1.2: "If no transition matches in any state, the event is
+     * discarded." Discarding it is the rule; being unable to say so is not part
+     * of the rule. The host is the one party that cannot see the outcome — a
+     * discard leaves the configuration exactly as a self transition does — and
+     * it is the party that got the event wrong.
+     *
+     * Called for external events only. An internal `<raise>` that matches
+     * nothing is discarded too, but both ends of that are inside the document.
+     */
+    void recordEventOutcome(Event event, const EventOutcome &outcome) {
+        if (outcome.selected) {
+            return;
+        }
+        ++discardedExternalEvents_;
+        lastDiscardedEvent_ = event;
+        hasDiscardedEvent_ = true;
+        SCE_LOG_DEBUG("AOT: no transition matched external event '{}'; discarded", policy_.getEventName(event));
     }
 
     State currentState_;
@@ -565,6 +618,12 @@ private:
     bool tickHasRun_ = false;
     // Macrosteps taken on a scheduler-driven machine before any `tick()`.
     uint32_t unattendedSchedulerSteps_ = 0;
+    // §scxml-3.1.2: external events no transition matched, and the most recent
+    // of them. `hasDiscardedEvent_` is separate because the zero value of the
+    // generated `Event` enum is a real event and cannot stand in for "none".
+    uint32_t discardedExternalEvents_ = 0;
+    Event lastDiscardedEvent_{};
+    bool hasDiscardedEvent_ = false;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
@@ -844,6 +903,45 @@ public:
      */
     uint32_t unattendedSchedulerSteps() const {
         return unattendedSchedulerSteps_;
+    }
+
+    /**
+     * @brief External events this engine discarded because nothing matched them
+     *
+     * §scxml-3.1.2: "If no transition matches in any state, the event is
+     * discarded." Discarding is what the clause requires. This is the part the
+     * clause does not cover: the host that fed the event in cannot otherwise
+     * tell that outcome from a handled one, because a self transition, a
+     * targetless internal transition and a discard all leave the configuration
+     * alone. Comparing the count across a drive turns "the machine ignored what
+     * I sent" into something the program can see.
+     *
+     * The Interpreter has answered this all along — `StateMachine::processEvent`
+     * returns a `TransitionResult` whose `success` is false, and
+     * `getStatistics().failedTransitions` counts them. This is the AOT side of
+     * the same question, so a document moving from one engine to the other
+     * keeps it.
+     *
+     * External events only: an internal `<raise>` that matches nothing is
+     * discarded too, but both ends of that are inside the document.
+     */
+    uint32_t discardedExternalEvents() const {
+        return discardedExternalEvents_;
+    }
+
+    /**
+     * @brief The most recent event `discardedExternalEvents()` counted
+     *
+     * `std::nullopt` while that count is zero — the generated `Event` enum's
+     * zero value is a real event and cannot stand in for "none". A count says
+     * something went nowhere; this says which thing did, which is the question
+     * a host debugging a stalled supervisor actually has.
+     */
+    std::optional<Event> lastDiscardedEvent() const {
+        if (!hasDiscardedEvent_) {
+            return std::nullopt;
+        }
+        return lastDiscardedEvent_;
     }
 
     /**
@@ -1147,7 +1245,7 @@ protected:
                 policy_.forwardToAutoforwardChildren(forwarded, *this);
             }
 
-            executeTransition(event);
+            recordEventOutcome(event, executeTransition(event));
         }
         return true;
     }

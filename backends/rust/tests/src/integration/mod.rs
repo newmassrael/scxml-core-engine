@@ -28,6 +28,7 @@ pub mod autoforward_dequeue_point;
 pub mod autoforward_done_invoke;
 pub mod autoforward_event_fields;
 pub mod autoforward_internal_queue;
+pub mod discarded_event_is_observable;
 pub mod donedata_late_completion;
 pub mod donedata_local_invoke;
 pub mod event_data_arrives_as_sent;
