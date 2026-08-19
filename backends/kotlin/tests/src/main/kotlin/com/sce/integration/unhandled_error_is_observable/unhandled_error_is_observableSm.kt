@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: acaad3b5f36dbb13dd7950dc62eaf45598406091abc6d5d773732ce4b31e8fa1
-// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
-// generated-at: 0
+// source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
+// template-hash: e1ef1a80ec6f1d98421ed2b76701aed66a2f64164d943082fb9a22d750e546a9
+// generated-at: 1787142491
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml
@@ -214,7 +214,7 @@ class UnhandledErrorIsObservableStateMachine(
         }
         // W3C SCXML 5.3: Initialize variable 'detail' with expr
         try {
-            val initResult_detail = engine.evaluateExpr(sid, "''")
+            val initResult_detail = engine.evaluateExpr(sid, "'none'")
             engine.setVariable(sid, "detail", initResult_detail)
         } catch (e: Exception) {
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='detail'> expr failed to evaluate")
@@ -399,12 +399,12 @@ class UnhandledErrorIsObservableStateMachine(
     override fun onEntry(state: UnhandledErrorIsObservableState, pathChild: UnhandledErrorIsObservableState?) {
         when (state) {
             is UnhandledErrorIsObservableState.Guarded -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:85 :: guarded :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("guarded")) return
             }
             is UnhandledErrorIsObservableState.Idle -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:50 :: idle :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("idle")) return
             }
@@ -416,11 +416,11 @@ class UnhandledErrorIsObservableStateMachine(
     override fun onExit(state: UnhandledErrorIsObservableState) {
         when (state) {
             is UnhandledErrorIsObservableState.Guarded -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:85 :: guarded :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _state_body
                 activeStateIds.remove("guarded")
             }
             is UnhandledErrorIsObservableState.Idle -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:50 :: idle :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _state_body
                 activeStateIds.remove("idle")
             }
         }
@@ -436,7 +436,7 @@ class UnhandledErrorIsObservableStateMachine(
         when (source) {
         is UnhandledErrorIsObservableState.Guarded -> when {
             event is UnhandledErrorIsObservableEvent.Boom -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:86 :: guarded :: _transition_0
+                // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
 
 
             executeAssign("booms", "booms + 1")
@@ -446,25 +446,25 @@ class UnhandledErrorIsObservableStateMachine(
             raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
             event is UnhandledErrorIsObservableEvent.Error.Execution -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_1
+                // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
 
 
             executeAssign("caught", "caught + 1")
 
 
-            executeAssign("detail", "_event.data")
+            executeAssign("detail", "_event.name")
             }
             else -> {}
         }
         is UnhandledErrorIsObservableState.Idle -> when {
             event is UnhandledErrorIsObservableEvent.Poke -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:51 :: idle :: _transition_0
+                // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
 
 
             executeAssign("pokes", "pokes + 1")
             }
             event is UnhandledErrorIsObservableEvent.Whisper -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _transition_1
+                // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
 
             raiseInternal(UnhandledErrorIsObservableEvent.Unheard)
 
@@ -473,13 +473,13 @@ class UnhandledErrorIsObservableStateMachine(
             raiseInternal(UnhandledErrorIsObservableEvent.Heard)
             }
             event is UnhandledErrorIsObservableEvent.Heard -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:76 :: idle :: _transition_2
+                // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
 
 
             executeAssign("heards", "heards + 1")
             }
             event is UnhandledErrorIsObservableEvent.Boom -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:79 :: idle :: _transition_3
+                // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
 
 
             executeAssign("booms", "booms + 1")
