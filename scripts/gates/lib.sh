@@ -53,9 +53,109 @@ sce_gate_cannot_run() {
     exit 3
 }
 
+# How many parallel jobs a build inside a gate may ask this machine for.
+#
+# NOT `$(nproc)`, which is what seven gate scripts asked for and which means
+# "every core, whatever else is on the box". These gates do not run on a
+# dedicated runner: this workstation carries sixteen concurrent sessions and
+# six repositories at once, and a push here runs twenty-seven gates back to
+# back.
+#
+# MEASURED 2026-08-19. One push gate reached `cargo test --workspace` while the
+# machine was otherwise idle and produced eight concurrent rustc processes plus
+# a linker at 335% CPU, driving 600MB/s of reads and 400MB/s of writes through
+# the build cache; forty processes sat blocked on disk and CPU idle fell to
+# 43%. Earlier the same day an uncapped build in a sibling repository pushed
+# 13GB into swap and took the box to load 29 while 82% of its CPU sat idle —
+# every bit of that load was processes waiting on the paging disk. Asking for
+# all thirty-two cores does not make a gate finish sooner once the disk is the
+# thing that is short.
+#
+# ⚠ THIS IS A SECOND SPELLING of the rule the build wrapper uses when it sizes
+# a remote run (cores minus the current run queue, never below one), and it is
+# kept to four lines for exactly that reason — a longer one would drift from
+# the original and nothing would notice. The gates cannot simply call that
+# wrapper: several of them link against artifacts an earlier gate left at a
+# local path, so they cannot leave this machine at all.
+#
+# ⚠ Linux load counts uninterruptible sleep, so a box thrashing its disk reads
+# as busier than its idle CPU suggests. That error is in the safe direction
+# here: a machine already waiting on a disk is precisely the one that should
+# not be handed thirty-two more compile jobs.
+#
+# `$SCE_BUILD_JOBS` overrides, for a runner that really does own its cores.
+sce_build_jobs() {
+    if [ -n "${SCE_BUILD_JOBS:-}" ]; then
+        printf '%s' "$SCE_BUILD_JOBS"
+        return 0
+    fi
+    local cores queued jobs
+    cores="$(nproc)"
+    queued="$(awk '{printf "%d", ($1 == int($1)) ? $1 : int($1) + 1}' /proc/loadavg)"
+    jobs=$(( cores - queued ))
+    if [ "$jobs" -lt 1 ]; then jobs=1; fi
+    printf '%s' "$jobs"
+}
+
 # Progress line within a gate that runs several commands.
 sce_gate_step() {
     printf '  [%s] %s\n' "$SCE_GATE_SLUG" "$1" >&2
+}
+
+# Build a configured tree, and when the build fails, SAY WHY.
+#
+# NOT `cmake --build … >/dev/null`, which is what five gates asked for and
+# which is a diagnosis-proof redirection: ninja prints the compiler's own
+# output on STDOUT, so a build that dies leaves the gate log holding nothing
+# but the gate's five-word failure line. MEASURED 2026-08-19 on the build
+# machine: a GCC internal compiler error inside a mesh test translation unit
+# took three separate probes to name, because `cpp-suite` reported "main tree
+# build" and the error itself had gone to /dev/null. The failure was real, the
+# gate was right to stop, and the log could not say what had happened.
+#
+# Quiet on success for the reason the redirection was there in the first place
+# — a passing gate's log is read by someone looking for the ONE failure in it,
+# and a full compile log buries that. The output is captured either way and the
+# tail is emitted only when the build fails, which is the shape `scripts/mutate`
+# already uses (a quiet build plus a verbose replay) and the shape this file's
+# ctest callers use (`tee` + `PIPESTATUS[0]`).
+#
+# Usage: sce_gate_build <build-dir> [extra cmake --build args...]
+#        || sce_gate_fail "<what was being built>"
+# `--parallel` is supplied here so the job-count rule stays in one place.
+sce_gate_build() {
+    local dir="$1"
+    shift
+    local log
+    log="$(mktemp)"
+    sce_gate_on_exit "rm -f '$log'"
+
+    if cmake --build "$dir" "$@" --parallel "$(sce_build_jobs)" >"$log" 2>&1; then
+        return 0
+    fi
+
+    # stderr, not stdout: the caller's `sce_gate_fail` writes there too, so the
+    # cause and the verdict land in the same stream in the order they happened.
+    #
+    # From ninja's own `FAILED:` marker rather than from the end of the log.
+    # A tail is the obvious choice and it was the wrong one: this tree's build
+    # emits a JSON manifest line per generated file, and ninja keeps running its
+    # other edges after one fails, so the last sixty lines were sixty manifests
+    # and the compiler's message sat above the window. Measured 2026-08-19, the
+    # first use of this helper in anger — a `sce-codegen` crash whose one line
+    # of evidence ("Illegal instruction") had to be grepped out by hand.
+    local first_failed
+    first_failed="$(grep -n '^FAILED:' "$log" | head -1 | cut -d: -f1)"
+    if [[ -n "$first_failed" ]]; then
+        printf '  [%s] build failed; from the first FAILED edge:\n' "$SCE_GATE_SLUG" >&2
+        sed -n "${first_failed},\$p" "$log" | head -80 >&2
+    else
+        # No marker: the failure was cmake's own (a bad argument, a missing
+        # generator), and those speak at the end.
+        printf '  [%s] build failed; last 60 lines of its output:\n' "$SCE_GATE_SLUG" >&2
+        tail -60 "$log" >&2
+    fi
+    return 1
 }
 
 # Register a cleanup command to run when the gate exits, for any reason.

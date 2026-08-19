@@ -30,7 +30,7 @@ BUILD_DIR="$SCE_MAIN_BUILD_DIR"
 # the build is explicit: without it this gate would happily judge whatever
 # binary was last produced, which is how a stale artifact reads as a pass.
 sce_gate_step "building w3c_test_cli"
-cmake --build "$BUILD_DIR" --target w3c_test_cli --parallel "$(nproc)" >/dev/null \
+sce_gate_build "$BUILD_DIR" --target w3c_test_cli \
     || sce_gate_fail "w3c_test_cli build"
 
 # The JUnit report is a scratch file for a local run and an artifact for the

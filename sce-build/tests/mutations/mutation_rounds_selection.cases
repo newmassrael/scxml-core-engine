@@ -275,7 +275,7 @@ PY
 
 mutation_case "the prepared tree is never built" <<'PY'
 edit("scripts/prepare_ctest_tree.sh",
-     """cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(nproc)" \\
+     """cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(sce_build_jobs)" \\
     || sce_gate_fail "the main tree does not build; the rounds below it would have nothing to judge\"""",
      "true")
 PY

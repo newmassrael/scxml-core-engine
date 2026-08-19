@@ -42,7 +42,7 @@ cmake -S backends/cpp/forge-runtime/tests/conformance \
       -DSCE_CODEGEN="$CODEGEN" \
       -Wno-dev >/dev/null \
     || sce_gate_fail "C++ forge conformance configure"
-cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
+sce_gate_build "$BUILD_DIR" \
     || sce_gate_fail "C++ forge conformance build"
 ctest --test-dir "$BUILD_DIR" --output-on-failure \
     || sce_gate_fail "C++ forge conformance"
