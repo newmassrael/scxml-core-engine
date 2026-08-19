@@ -238,6 +238,14 @@ public:
      */
     std::string getLastErrorCascadeEvent() const override;
 
+    /**
+     * @brief §scxml-3.12.2: forget the chain, because the host has called in again
+     *
+     * See `IEventRaiser::resetErrorCascadeDepth`. The count of what was refused
+     * is untouched — that is a fact about the past, not a mode.
+     */
+    void resetErrorCascadeDepth() override;
+
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
     bool raiseEvent(const std::string &eventName, const std::string &eventData,
@@ -451,6 +459,11 @@ public:
     // cleared, and every field is atomic because the async worker thread
     // dispatches through the same path.
     std::atomic<bool> handlingErrorEvent_{false};
+    // How many dispatches are on the stack. The five queue-draining engines
+    // end a chain when the internal queue empties; this raiser has no such
+    // moment — executable content dispatches into it again — so the equivalent
+    // is the OUTERMOST dispatch returning, which is what this counts.
+    std::atomic<uint32_t> dispatchDepth_{0};
     std::atomic<uint32_t> errorCascadeDepth_{0};
     std::atomic<uint32_t> errorCascadeEvents_{0};
     std::string lastErrorCascadeEvent_;

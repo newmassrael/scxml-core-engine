@@ -81,6 +81,15 @@ fn a_handler_that_cannot_handle_its_error_is_stopped() {
          more means the ceiling moved"
     );
     assert_eq!(
+        counter(&engine, &se, "ticks"),
+        MAX_LINKS,
+        "every link's handler also raises the author's own `tick`, and every \
+         one of them was delivered. An engine that counted those as links \
+         would refuse at half the depth; one that let them end the chain would \
+         never refuse at all — and a handler that logs before it fails is an \
+         ordinary document, not a corner case"
+    );
+    assert_eq!(
         engine.error_cascade_events(),
         1,
         "the handler's <assign> failed again on the last allowed link, and the \

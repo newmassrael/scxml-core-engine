@@ -1105,6 +1105,26 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::getStatistics",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "resetErrorCascadeDepth",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::resetErrorCascadeDepth",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "resetErrorCascadeDepth",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

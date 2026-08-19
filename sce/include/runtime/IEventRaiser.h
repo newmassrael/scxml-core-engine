@@ -256,6 +256,21 @@ public:
     virtual std::string getLastErrorCascadeEvent() const {
         return {};
     }
+
+    /**
+     * @brief §scxml-3.12.2: a new piece of host work begins, so any error chain is over
+     *
+     * The queue-draining engines reset this as the internal queue empties. A
+     * raiser whose dispatches are serialized through the state machine's own
+     * entry point has no such moment — every dispatch looks like the outermost
+     * one — so the boundary is the host's call. Refusing to reset at all would
+     * make the ceiling a property of the machine's whole life rather than of
+     * one chain.
+     *
+     * Defaulted to nothing: a raiser that never counts a chain has none to
+     * forget.
+     */
+    virtual void resetErrorCascadeDepth() {}
 };
 
 }  // namespace SCE

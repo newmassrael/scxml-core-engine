@@ -801,12 +801,14 @@ class Engine(Generic[S, E]):
             # anything else can run so a chain cannot be attributed to the
             # wrong event.
             is_error = is_error_event(self._policy.get_event_name(evt.event))
-            if not is_error:
-                # The drain did something else, so whatever chain was building
-                # is over. Counting links across an unrelated internal event
-                # would report a document that merely fails often as one that
-                # cannot stop failing.
-                self._error_cascade_depth = 0
+            # The chain is not ended by the drain doing something else. An
+            # earlier draft reset the depth on every non-error event, which
+            # reads as the careful choice and is the opposite: a handler that
+            # raises its own event before failing — a document that logs, then
+            # fails, which is most of them — leaves the queue alternating
+            # `tick, error, tick, error…`, and each `tick` put the ceiling back
+            # out of reach. The count needs no such guard, because it only ever
+            # rises while an error handler is running.
             self._handling_error_event = is_error
             selected = self._dispatch(evt)
             self._handling_error_event = False

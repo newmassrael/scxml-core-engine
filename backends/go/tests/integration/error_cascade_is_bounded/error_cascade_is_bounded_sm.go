@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ff0b5c086300231a7d39e506e4ad1c27066a2d50ea7fbc3d805ddccedf780d62
-// template-hash: 10c5bb56d60f6d5bc4121611a1230324eaf61d1a5524b71d52c6010f279d5ffd
+// source-hash: 4731a6ba40787ab928e39e6fce63f290cd233b0d7081f439713483c0324e40fe
+// template-hash: 08524b6e9f06ec235417da53ac7c80c6bfd4ac29c2f21bcfec9a9e720a464526
 // generated-at: 0
 
 
@@ -78,8 +78,9 @@ const (
 	ErrorCascadeIsBoundedEventReset ErrorCascadeIsBoundedEvent = 3
 	ErrorCascadeIsBoundedEventSettle ErrorCascadeIsBoundedEvent = 4
 	ErrorCascadeIsBoundedEventSpin ErrorCascadeIsBoundedEvent = 5
+	ErrorCascadeIsBoundedEventTick ErrorCascadeIsBoundedEvent = 6
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	ErrorCascadeIsBoundedEventNull ErrorCascadeIsBoundedEvent = 6
+	ErrorCascadeIsBoundedEventNull ErrorCascadeIsBoundedEvent = 7
 )
 
 func (e ErrorCascadeIsBoundedEvent) String() string {
@@ -96,6 +97,8 @@ func (e ErrorCascadeIsBoundedEvent) String() string {
 		return "settle"
 	case ErrorCascadeIsBoundedEventSpin:
 		return "spin"
+	case ErrorCascadeIsBoundedEventTick:
+		return "tick"
 	case ErrorCascadeIsBoundedEventNull:
 		return ""
 	}
@@ -185,6 +188,18 @@ func (p *ErrorCascadeIsBoundedPolicy) Runs() (int64, bool) {
 	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "runs")
 }
 
+// Ticks reports what the `ticks` datamodel variable is holding now
+// (W3C SCXML 5.3).
+//
+// The live value, not the authored one: `<assign>` writes into the session, so
+// a reader frozen at generation time would answer the document's literal for
+// the whole run. The second return value is false when the machine cannot
+// answer — no script engine is set, the session is not initialised yet,
+// `ticks` was assigned a value of another type, or the engine refused.
+func (p *ErrorCascadeIsBoundedPolicy) Ticks() (int64, bool) {
+	return sce.ReadDatamodelInt(p.ScriptEngine, p.SessionID, "ticks")
+}
+
 
 
 
@@ -260,6 +275,16 @@ func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorC
 		} else {
 			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='runs'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "runs", nil)
+		}
+	}
+	// W3C SCXML 5.2/5.3: Initialize ticks from expr="0"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `0`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "ticks", result)
+		} else {
+			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='ticks'> expr failed to evaluate"))
+			_ = engine.SetVariable(sessionID, "ticks", nil)
 		}
 	}
 
@@ -448,6 +473,8 @@ func (p *ErrorCascadeIsBoundedPolicy) GetEventFromName(name string) (ErrorCascad
 		return ErrorCascadeIsBoundedEventSettle, true
 	case "spin":
 		return ErrorCascadeIsBoundedEventSpin, true
+	case "tick":
+		return ErrorCascadeIsBoundedEventTick, true
 	}
 	return ErrorCascadeIsBoundedEventNull, false
 }
@@ -585,7 +612,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 	p.ensureScriptEngine()
 	switch state {
 	case ErrorCascadeIsBoundedStateRunaway:
-		//line error_cascade_is_bounded.scxml:95
+		//line error_cascade_is_bounded.scxml:103
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -596,7 +623,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 
 		}
 	case ErrorCascadeIsBoundedStateSettling:
-		//line error_cascade_is_bounded.scxml:77
+		//line error_cascade_is_bounded.scxml:85
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
 		for actionBlock0 := 0; actionBlock0 < 1; actionBlock0++ {
 			_ = actionBlock0
@@ -696,11 +723,20 @@ func (p *ErrorCascadeIsBoundedPolicy) tryTransitionInState(checkState ErrorCasca
 			return true
 		}
 		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventPoke {
+		if event == ErrorCascadeIsBoundedEventTick {
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = true
 			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
 			p.lastTransitionIndex = 1
+			p.hasTransitionActions = true
+			return true
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == ErrorCascadeIsBoundedEventPoke {
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = true
+			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
+			p.lastTransitionIndex = 2
 			p.hasTransitionActions = true
 			return true
 		}
@@ -710,7 +746,7 @@ func (p *ErrorCascadeIsBoundedPolicy) tryTransitionInState(checkState ErrorCasca
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
-			p.lastTransitionIndex = 2
+			p.lastTransitionIndex = 3
 			p.hasTransitionActions = false
 			return true
 		}
@@ -759,7 +795,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == ErrorCascadeIsBoundedStateIdle && idx == 0 {
-		//line error_cascade_is_bounded.scxml:60
+		//line error_cascade_is_bounded.scxml:68
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -769,7 +805,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 		return
 	}
 	if source == ErrorCascadeIsBoundedStateIdle && idx == 1 {
-		//line error_cascade_is_bounded.scxml:66
+		//line error_cascade_is_bounded.scxml:74
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
@@ -777,12 +813,15 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 		return
 	}
 	if source == ErrorCascadeIsBoundedStateRunaway && idx == 0 {
-		//line error_cascade_is_bounded.scxml:99
+		//line error_cascade_is_bounded.scxml:107
 
 	// W3C SCXML 5.3: <assign location="runs" expr="runs + 1">
 	if err := p.assignVariable(`runs`, `_scxml_add(runs, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'runs' failed"))
 	}
+
+
+	engine.Raise(sce.NewEventWithMetadata(ErrorCascadeIsBoundedEventTick))
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
@@ -791,7 +830,17 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 		return
 	}
 	if source == ErrorCascadeIsBoundedStateRunaway && idx == 1 {
-		//line error_cascade_is_bounded.scxml:103
+		//line error_cascade_is_bounded.scxml:120
+
+	// W3C SCXML 5.3: <assign location="ticks" expr="ticks + 1">
+	if err := p.assignVariable(`ticks`, `_scxml_add(ticks, 1)`); err != nil {
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'ticks' failed"))
+	}
+
+		return
+	}
+	if source == ErrorCascadeIsBoundedStateRunaway && idx == 2 {
+		//line error_cascade_is_bounded.scxml:123
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -801,7 +850,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 		return
 	}
 	if source == ErrorCascadeIsBoundedStateSettling && idx == 0 {
-		//line error_cascade_is_bounded.scxml:81
+		//line error_cascade_is_bounded.scxml:89
 
 	// W3C SCXML 5.3: <assign location="repairs" expr="repairs + 1">
 	if err := p.assignVariable(`repairs`, `_scxml_add(repairs, 1)`); err != nil {
@@ -815,7 +864,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 		return
 	}
 	if source == ErrorCascadeIsBoundedStateSettling && idx == 1 {
-		//line error_cascade_is_bounded.scxml:85
+		//line error_cascade_is_bounded.scxml:93
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {

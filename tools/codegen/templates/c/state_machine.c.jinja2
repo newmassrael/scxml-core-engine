@@ -3945,14 +3945,17 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            document -- the handler that failed is the same one that will answer
            the failure. `_raise` reads this flag to tell that apart from a
            first failure, and it is cleared before anything else runs so a
-           chain cannot be attributed to the wrong event. A dispatch that is
-           not an error ends whatever chain was building: counting links across
-           an unrelated internal event would report a document that merely
-           fails often as one that cannot stop failing. */
+           chain cannot be attributed to the wrong event.
+
+           A dispatch that is not an error does NOT end the chain. An earlier
+           draft reset the depth on every non-error event, which reads as the
+           careful choice and is the opposite: a handler that raises its own
+           event before failing -- a document that logs, then fails, which is
+           most of them -- leaves the queue alternating tick, error, tick,
+           error..., and each tick put the ceiling back out of reach. The count
+           needs no such guard, because it only ever rises while an error
+           handler is running. */
         sm->handling_error_event = event_is_error(evt.event);
-        if (!sm->handling_error_event) {
-            sm->error_cascade_depth = 0u;
-        }
 {% endif %}
         if (process_transition(sm, evt.event, enabled, &count)) {
             count = remove_conflicting_transitions(enabled, count);
