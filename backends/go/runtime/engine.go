@@ -17,6 +17,24 @@ import (
 //
 // # Threading Model
 //
+// eventOutcome is what the engine did with one event it offered to the active
+// configuration.
+//
+// This used to be a bare bool meaning "the configuration changed", which
+// answers false for two unrelated outcomes: an event no transition matched at
+// all, and a targetless internal transition that ran its actions in place.
+// Only the first is the discard §scxml-3.1.2 describes, and a
+// count keyed off the old bool would have reported a handled event as one, so
+// the two facts are spelled apart rather than inferred from each other.
+// Mirrors the Rust runtime's EventOutcome.
+type eventOutcome struct {
+	// selected is whether any transition matched the event.
+	selected bool
+	// configurationChanged is false for a targetless internal transition,
+	// which leaves the configuration alone.
+	configurationChanged bool
+}
+
 // Engine is NOT safe for concurrent use. Callers needing multi-goroutine access
 // must protect with sync.Mutex. This matches the C++ and Rust single-threaded
 // microstep loop design.
@@ -45,6 +63,15 @@ type Engine[S comparable, E comparable] struct {
 
 	// scheduler is the §scxml-6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
+
+	// discardedExternalEvents counts events taken off the external queue that
+	// no transition matched (§scxml-3.1.2) — see DiscardedExternalEvents.
+	discardedExternalEvents uint32
+
+	// lastDiscardedEvent is the most recent event counted above; hasDiscarded
+	// says whether there is one, because the zero value of E is a real event.
+	lastDiscardedEvent E
+	hasDiscarded       bool
 
 	// donedataAtFinal is the §scxml-5.5 + 6.3.1 stashed donedata payload
 	// for a top-level <final>. Entry actions stash it here; an invoking
@@ -424,6 +451,37 @@ func (e *Engine[S, E]) TimeUntilNextScheduled() (time.Duration, bool) {
 	return remaining, true
 }
 
+// DiscardedExternalEvents reports how many events this engine took off the
+// external queue and discarded because no transition in any active state
+// matched them (§scxml-3.1.2).
+//
+// Discarding is what the clause requires. This is the part the clause does not
+// cover: the host that queued the event cannot otherwise tell that outcome
+// from a handled one, because a self transition, a targetless internal
+// transition and a discard all leave the configuration alone. Comparing the
+// count across a drive is what turns "the machine ignored what I sent" into
+// something the program can see.
+//
+// The C++ Interpreter has answered this all along (processEvent's
+// TransitionResult.success, and getStatistics().failedTransitions); this is the
+// generated engines' side of the same question.
+//
+// Counts external-queue events only. An internal <raise> that matches nothing
+// is discarded too, but both ends of that are inside the document.
+func (e *Engine[S, E]) DiscardedExternalEvents() uint32 {
+	return e.discardedExternalEvents
+}
+
+// LastDiscardedEvent reports the most recent event DiscardedExternalEvents
+// counted. The bool is false while that count is zero — the zero value of E is
+// a real event, so it cannot stand in for "none".
+//
+// A count says something went nowhere; this says which thing did, which is the
+// question a host debugging a stalled supervisor actually has.
+func (e *Engine[S, E]) LastDiscardedEvent() (E, bool) {
+	return e.lastDiscardedEvent, e.hasDiscarded
+}
+
 // ================================================================
 // Callbacks
 // ================================================================
@@ -641,7 +699,19 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		}
 		// §scxml-5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
-		e.executeTransition(eventWithMeta.Event)
+		// §scxml-3.1.2: "If no transition matches in any state, the event is
+		// discarded." Discarding it is the rule; being unable to say so is not
+		// part of the rule. The host that put this event on the queue is the
+		// one party that cannot see the outcome -- a discard leaves the
+		// configuration exactly as a self transition does -- and it is the
+		// party that got the event wrong. Recorded for the external queue
+		// only: an internal <raise> that matches nothing is the document's own
+		// business, and both ends of it are in the document.
+		if !e.executeTransition(eventWithMeta.Event).selected {
+			e.discardedExternalEvents++
+			e.lastDiscardedEvent = eventWithMeta.Event
+			e.hasDiscarded = true
+		}
 		e.policy.ClearEventMetadata()
 	}
 	return true
@@ -701,14 +771,14 @@ func (e *Engine[S, E]) checkEventlessTransitions() {
 // Calls ProcessTransition on the policy; if it returns true, performs the
 // hierarchical exit/entry dance via handleHierarchicalTransition.
 // Matches Rust Engine::execute_transition.
-func (e *Engine[S, E]) executeTransition(event E) bool {
+func (e *Engine[S, E]) executeTransition(event E) eventOutcome {
 	oldState := e.currentState
 	preTransitionStates := e.GetActiveStates()
 	newState := e.currentState
 
 	tookTransition := e.policy.ProcessTransition(&newState, event, e)
 	if !tookTransition {
-		return false
+		return eventOutcome{}
 	}
 
 	e.currentState = newState
@@ -719,7 +789,7 @@ func (e *Engine[S, E]) executeTransition(event E) bool {
 	if !needsHierarchical {
 		// §scxml-3.4: targetless transition -- execute actions only
 		e.policy.ExecuteTransitionActions(e)
-		return false
+		return eventOutcome{selected: true}
 	}
 
 	// §scxml-3.12: Hierarchical exit/entry
@@ -734,7 +804,7 @@ func (e *Engine[S, E]) executeTransition(event E) bool {
 		e.resolveCurrentStateToLeaf()
 	}
 	e.checkEventlessTransitions()
-	return true
+	return eventOutcome{selected: true, configurationChanged: true}
 }
 
 // handleHierarchicalTransition executes hierarchical exit/entry between two

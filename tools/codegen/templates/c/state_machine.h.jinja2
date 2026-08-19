@@ -330,6 +330,12 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
     bool is_running;
     bool transition_taken;
+    /* W3C SCXML 3.1.2: external events no transition matched, and the most
+       recent of them. `has_discarded_event` is separate because the event
+       enum's zero value is a real event and cannot stand in for "none". */
+    uint32_t discarded_external_events;
+    {{ csym_prefix }}{{ model.name }}_event_t last_discarded_event;
+    bool has_discarded_event;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
        session, and the address that reaches it. Issued in `_init` rather
@@ -552,6 +558,26 @@ void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.name }}_t 
    and an interval cannot straddle two fire times it was never told about. */
 int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
+
+/* W3C SCXML 3.1.2: how many events this machine took off the external queue
+   and discarded because no transition in any active state matched them.
+
+   Discarding is what the clause requires. This is the part the clause does not
+   cover: the host that queued the event cannot otherwise tell that outcome from
+   a handled one, because a self transition, a targetless internal transition
+   and a discard all leave the configuration alone. Comparing the count across a
+   drive turns "the machine ignored what I sent" into something the program can
+   see.
+
+   External queue only: an internal `<raise>` that matches nothing is discarded
+   too, but both ends of that are inside the document. */
+uint32_t {{ csym_prefix }}{{ model.name }}_discarded_external_events(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML 3.1.2: the most recent event the count above recorded. Returns
+   false, leaving `*out` untouched, while that count is zero — a count says
+   something went nowhere; this says which thing did. */
+bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */
 void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,

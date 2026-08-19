@@ -372,6 +372,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var pendingFinalState: Boolean = false
 
     /**
+     * §scxml-3.1.2: external events no transition matched, and the most recent
+     * of them. See [discardedExternalEvents] and [lastDiscardedEvent].
+     */
+    private var discardedExternalEventCount: Int = 0
+    private var lastDiscarded: E? = null
+
+    /**
      * §scxml-3.7: Mark that a top-level final state has been entered.
      *
      * Called from generated [onEntry] code. The actual [isInFinalState] flag
@@ -851,6 +858,37 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
+     * §scxml-3.1.2: how many events this engine took off the external queue
+     * and discarded because no transition in any active state matched them.
+     *
+     * Discarding is what the clause requires. This is the part the clause does
+     * not cover: the host that queued the event cannot otherwise tell that
+     * outcome from a handled one, because a self transition, a targetless
+     * internal transition and a discard all leave the configuration alone.
+     * Comparing the count across a drive turns "the machine ignored what I
+     * sent" into something the program can see.
+     *
+     * The C++ Interpreter has answered this all along (`processEvent`'s
+     * `TransitionResult.success` and `getStatistics().failedTransitions`); this
+     * is the generated engines' side of the same question. Unlike
+     * [timeUntilNextScheduledMs] it answers in both modes — the coroutine mode
+     * owns the clock, but neither mode owns the host's choice of event.
+     *
+     * Counts external-queue events only: an internal `<raise>` that matches
+     * nothing has both its ends inside the document.
+     */
+    fun discardedExternalEvents(): Int = discardedExternalEventCount
+
+    /**
+     * The most recent event [discardedExternalEvents] counted, or `null` while
+     * that count is zero.
+     *
+     * A count says something went nowhere; this says which thing did, which is
+     * the question a host debugging a stalled supervisor actually has.
+     */
+    fun lastDiscardedEvent(): E? = lastDiscarded
+
+    /**
      * Destroy script engine session and release resources (sync mode cleanup).
      * Call after test assertions. Does not reset state — [currentState] remains readable.
      */
@@ -982,7 +1020,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
         populateTypedPayload(queued.metadata)
         executeFinalizeForChildEvent(queued.event)
         autoForwardEvent(queued.event, queued.metadata)
-        processOneEvent(queued.event)
+        // §scxml-3.1.2: discarding an event no transition matched is the rule;
+        // being unable to say so is not part of the rule. The host that queued
+        // this event is the one party that cannot see the outcome — a discard
+        // leaves the configuration exactly as a self transition does — and the
+        // party that got the event wrong. Counted for the external queue only:
+        // an internal `<raise>` that matches nothing has both its ends inside
+        // the document.
+        if (!processOneEvent(queued.event)) {
+            discardedExternalEventCount++
+            lastDiscarded = queued.event
+        }
         flushPendingFinalState()
     }
 
@@ -1557,7 +1605,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // internal events from <raise> are processed in drainEventlessAndInternal
         // and must NOT be forwarded per spec.
         autoForwardEvent(event, metadata)
-        processOneEvent(event)
+        // §scxml-3.1.2: the coroutine mode's external events arrive here rather
+        // than through [processNextExternalEvent], and a host driving that mode
+        // is owed the same answer — this engine has two entry points for one
+        // queue, so a count recorded at only one of them would be right for
+        // half its callers.
+        if (!processOneEvent(event)) {
+            discardedExternalEventCount++
+            lastDiscarded = event
+        }
         drainEventlessAndInternal()
         // §scxml-6.4: Execute deferred invokes at macrostep end
         executePendingInvokes()
@@ -1754,7 +1810,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * For non-parallel (single active leaf), first match wins.
      */
-    private fun processOneEvent(event: E) {
+    private fun processOneEvent(event: E): Boolean {
         val leaves = activeLeafStatesInDocumentOrder()
 
         if (leaves.size <= 1) {
@@ -1763,10 +1819,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val result = processEvent(state, event)
                 if (result !is TransitionResult.Ignored) {
                     applyTransitionFrom(state, result, event)
-                    return
+                    return true
                 }
             }
-            return
+            // §scxml-3.1.2: no transition matched, so the event is discarded.
+            // Reported rather than merely done, so the external dequeue can
+            // count it — see [discardedExternalEvents].
+            return false
         }
 
         // §scxml-D-selectTransitions: Collect transitions from all active leaf states.
@@ -1786,7 +1845,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
         }
 
-        if (enabledTransitions.isEmpty() && internalTransitions.isEmpty()) return
+        // §scxml-3.1.2: nothing in any region answered, so the event is discarded.
+        if (enabledTransitions.isEmpty() && internalTransitions.isEmpty()) return false
 
         // §scxml-3.13: Internal (targetless) transitions execute actions only.
         // For parallel states, execute each unique Internal transition's actions.
@@ -1800,7 +1860,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val (source, result) = internalTransitions[0]
                 applyTransitionFrom(source, result, event)
             }
-            return
+            return true
         }
 
         // Mix of External and Internal transitions
@@ -1813,6 +1873,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         } else if (filtered.size > 1) {
             applySimultaneousTransitions(filtered, event)
         }
+        return true
     }
 
     /**

@@ -1,0 +1,111 @@
+# Mutation cases for §scxml-3.1.2 — an event no transition matched is
+# discarded, and the host that fed it in can find out.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/discarded_event_is_observable.cases`.
+#
+# Discarding is the clause; staying silent about it is not part of the clause.
+# A self transition, a targetless internal transition and a discard all leave
+# the configuration alone, so a host had no accessor that separated them — while
+# the C++ Interpreter has reported the same fact all along through
+# `processEvent`'s `TransitionResult::success` and
+# `getStatistics().failedTransitions`.
+#
+# The trap these cases exist for is the second one below: the engines already
+# computed a bool at this exact point, and it means "the configuration changed",
+# not "a transition was selected". A targetless internal transition answers
+# false after running its actions, so a count keyed off it reports a HANDLED
+# event as discarded. That is why `execute_transition` now returns
+# `EventOutcome` and why the fixture has a `nudge` transition at all.
+#
+# The C++ engine and the C11 template halves of the same axis live in
+# `discarded_event_is_observable_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test discarded_event_is_observable
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/discarded_event_is_observable.rs
+
+# ── The count itself ───────────────────────────────────────────────
+#
+# The engine goes back to knowing and not saying. Every driver's first
+# assertion is this one.
+
+mutation_case "the external dequeue drops the outcome again" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {
+                self.discarded_external_events = self.discarded_external_events.saturating_add(1);
+                self.last_discarded_event = Some(event_with_meta.event);""",
+     """            if false {
+                self.discarded_external_events = self.discarded_external_events.saturating_add(1);
+                self.last_discarded_event = Some(event_with_meta.event);""")
+PY
+
+# ── Counting the wrong fact ────────────────────────────────────────
+#
+# The defect this axis is really about: `configuration_changed` is false for a
+# targetless internal transition too, so `nudge` — handled, actions run — is
+# reported as an event that went nowhere.
+
+mutation_case "the count is keyed off whether the configuration changed" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {""",
+     """            if self.execute_transition(event_with_meta.event)
+                != (EventOutcome::Taken {
+                    configuration_changed: true,
+                })
+            {""")
+PY
+
+# ── An always-true count ───────────────────────────────────────────
+#
+# A count that fires for every event is exactly as useless as one that never
+# fires, and only the handled-event assertions catch it.
+
+mutation_case "every dequeued external event is counted" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {""",
+     """            self.execute_transition(event_with_meta.event);
+            if true {""")
+PY
+
+# ── The outcome type's own arms ────────────────────────────────────
+#
+# `execute_transition` reporting "taken" when nothing matched puts the engine
+# back where it started, one layer deeper than the call site.
+
+mutation_case "no-match reports itself as a taken transition" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let took_transition = self.process_transition_dispatch(&mut new_state, event);
+        if !took_transition {
+            return EventOutcome::Discarded;
+        }""",
+     """        let took_transition = self.process_transition_dispatch(&mut new_state, event);
+        if !took_transition {
+            return EventOutcome::Taken {
+                configuration_changed: false,
+            };
+        }""")
+PY
+
+mutation_case "a targetless transition reports itself as discarded" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.execute_transition_actions_dispatch();
+            return EventOutcome::Taken {
+                configuration_changed: false,
+            };""",
+     """            self.execute_transition_actions_dispatch();
+            return EventOutcome::Discarded;""")
+PY
+
+# ── Naming the event ───────────────────────────────────────────────
+#
+# The count says something went nowhere; a host debugging a stalled supervisor
+# needs the name. Leaving it at `None` still counts correctly.
+
+mutation_case "the discarded event is counted but never named" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.last_discarded_event = Some(event_with_meta.event);""",
+     """                self.last_discarded_event = None;""")
+PY

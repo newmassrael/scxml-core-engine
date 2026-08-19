@@ -695,6 +695,8 @@ add_executable(integration_tests
     integration/InvokePrecedesExternalDequeueAotTest.cpp
     integration/InvokePrecedesDequeueMidrunTest.cpp
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
+    integration/DiscardedEventIsObservableTest.cpp
+    integration/DiscardedEventIsObservableAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
@@ -1070,6 +1072,13 @@ sce_generate_static_integration_test(invoke_precedes_external_dequeue ${STATIC_I
 sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_watch
 )
+
+# W3C SCXML 3.1.2: an event no transition matches is discarded, and the host
+# that fed it in can find out. A self transition, a targetless internal
+# transition and a discard all leave the configuration alone, so the outcome is
+# not derivable from any other accessor — the Interpreter has reported it all
+# along and the generated engines were silent.
+sce_generate_static_integration_test(discarded_event_is_observable ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
 # dispatched, and a host that ticks after two fire times have passed must still

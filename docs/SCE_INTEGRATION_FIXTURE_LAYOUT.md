@@ -360,6 +360,33 @@ it pins the verdict the document is supposed to reach, and a pull-driven
 backend that disagrees is diverging from an engine in the same repository
 rather than from a rule written only in a test.
 
+`discarded_event_is_observable` covers W3C SCXML 3.1.2: "If no transition
+matches in any state, the event is discarded." Discarding is the clause;
+being unable to say that it happened is what the fixture is about. Three
+outcomes leave the configuration byte-identical — a self transition (`poke`), a
+targetless internal transition (`nudge`, which exits and enters nothing at all)
+and a discard (`settle`, declared in `busy` and therefore nameable by the host
+but unmatched in `idle`) — so a host that feeds a machine external events, which
+is every host that supervises one, cannot tell them apart through any accessor
+that existed before. Each driver asserts that indistinguishability directly, so
+the fixture fails if it ever stops measuring what it claims.
+
+The Interpreter channel is not a mirror here, it is the reason the axis exists:
+`StateMachine::processEvent` has always returned a `TransitionResult` whose
+`success` is false for the third case, and `getStatistics().failedTransitions`
+has always counted them, while the six generated engines computed the same fact
+at the same point of Appendix D's `mainEventLoop` and dropped it — so a document
+that grew up on the Interpreter and shipped as AOT lost a signal its host was
+reading. `nudge` is in the document because the generated engines' own
+"did anything happen" bool means "the configuration changed": a count keyed off
+it would report a handled event as discarded. Kotlin is asserted through its
+sync entry point, and the coroutine mode's channel path records the same fact,
+because that engine has two external-event entry points for one queue.
+
+It owns only what the host learns about an event it injected: no delayed
+`<send>`, no `<invoke>`, no `<parallel>`. `late_tick_honours_cancel` owns
+scheduler dispatch order.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the

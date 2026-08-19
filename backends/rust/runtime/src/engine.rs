@@ -341,6 +341,24 @@ impl<E: Clone, S: ScheduledSendIdLike> Default for PullScheduler<E, S> {
     }
 }
 
+/// What the engine did with one event it offered to the active configuration.
+///
+/// This used to be a bare `bool` meaning "the configuration changed", which
+/// answers `false` for two unrelated outcomes: an event no transition matched
+/// at all, and a targetless internal transition that ran its actions in place.
+/// Only the first is the discard the spec's compound-state clause describes —
+/// cited at the dequeue that records it — and a count keyed off the old bool
+/// would have reported a handled event as one, so the two facts are spelled
+/// apart rather than inferred from each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EventOutcome {
+    /// No transition matched the event in any active state, so it is discarded.
+    Discarded,
+    /// A transition was selected. `configuration_changed` is `false` for a
+    /// targetless internal transition, which leaves the configuration alone.
+    Taken { configuration_changed: bool },
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Engine<P>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -421,6 +439,12 @@ pub struct Engine<P: StatePolicy> {
     /// Macrosteps taken on a scheduler-driven machine before any
     /// [`tick`](Self::tick) — see [`unattended_scheduler_steps`](Self::unattended_scheduler_steps).
     pub(crate) unattended_scheduler_steps: u32,
+    /// Events taken off the external queue that no transition matched — see
+    /// [`discarded_external_events`](Self::discarded_external_events).
+    pub(crate) discarded_external_events: u32,
+    /// The most recent event this engine discarded — see
+    /// [`last_discarded_event`](Self::last_discarded_event).
+    pub(crate) last_discarded_event: Option<P::Event>,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -458,6 +482,8 @@ impl<P: StatePolicy> Engine<P> {
             scheduler: PullScheduler::new(),
             tick_has_run: false,
             unattended_scheduler_steps: 0,
+            discarded_external_events: 0,
+            last_discarded_event: None,
             donedata_at_final: SceString::new(),
         }
     }
@@ -807,6 +833,42 @@ impl<P: StatePolicy> Engine<P> {
     /// what a `step`-only loop otherwise never offers.
     pub fn unattended_scheduler_steps(&self) -> u32 {
         self.unattended_scheduler_steps
+    }
+
+    /// How many events this engine took off the external queue and discarded
+    /// because no transition in any active state matched them.
+    ///
+    /// Discarding is what the clause requires. This is the part the clause does
+    /// not cover: the host that queued the event cannot otherwise tell that
+    /// outcome from a handled one, because a self transition, a targetless
+    /// internal transition and a discard all leave the configuration alone.
+    /// Comparing the count across a drive is what turns "the machine ignored
+    /// what I sent" into something the program can see — the event name the
+    /// host used may simply not be one this configuration answers.
+    ///
+    /// The Interpreter has answered this all along
+    /// (`StateMachine::processEvent`'s `TransitionResult::success`, and
+    /// `getStatistics().failedTransitions`); this is the generated engines'
+    /// side of the same question, so a document moving to AOT keeps it.
+    ///
+    /// Counts external-queue events only. An internal `<raise>` that matches
+    /// nothing is discarded too, but both ends of that are inside the document.
+    pub fn discarded_external_events(&self) -> u32 {
+        // §scxml-3.1.2 is the clause: an event no transition matches is
+        // discarded. Cited in the body rather than the doc comment because the
+        // ledger's Rust resolver binds a citation to the symbol that encloses
+        // it, and a `///` line encloses nothing.
+        self.discarded_external_events
+    }
+
+    /// The most recent event [`discarded_external_events`](Self::discarded_external_events)
+    /// counted, or `None` while that count is zero.
+    ///
+    /// A count says something went nowhere; this says which thing did, which is
+    /// the question a host debugging a stalled supervisor actually has. Copy,
+    /// so reading it costs nothing on the no_std profile.
+    pub fn last_discarded_event(&self) -> Option<P::Event> {
+        self.last_discarded_event
     }
 
     /// Current active (leaf) state.
@@ -1412,7 +1474,22 @@ impl<P: StatePolicy> Engine<P> {
             // that rode with this event so `_event.data.<field>` guards read it
             // natively. No-op for schemaless policies (`Payload = ()`).
             self.policy.populate_event_payload(&event_with_meta.payload);
-            self.execute_transition(event_with_meta.event);
+            // §scxml-3.1.2: "If no transition matches in any state, the event
+            // is discarded." Discarding it is the rule; being unable to say so
+            // is not part of the rule. The host that put this event on the
+            // queue is the one party that cannot see the outcome — a discard
+            // leaves the configuration exactly as a self transition does — and
+            // it is the party that got the event wrong. Recorded on the
+            // external queue only: an internal `<raise>` that matches nothing
+            // is the document's own business, and both ends of it are in the
+            // document.
+            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {
+                self.discarded_external_events = self.discarded_external_events.saturating_add(1);
+                self.last_discarded_event = Some(event_with_meta.event);
+                sce_log_debug!(
+                    "Engine::process_next_external_event: no transition matched; discarded"
+                );
+            }
             self.policy.clear_event_metadata();
         }
         true
@@ -1475,14 +1552,14 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Calls `process_transition` on the policy; if it returns `true`, performs
     /// the hierarchical exit/entry dance via `handle_hierarchical_transition`.
-    pub(crate) fn execute_transition(&mut self, event: P::Event) -> bool {
+    pub(crate) fn execute_transition(&mut self, event: P::Event) -> EventOutcome {
         let old_state = self.current_state;
         let pre_transition_states = self.get_active_states();
         let mut new_state = self.current_state;
 
         let took_transition = self.process_transition_dispatch(&mut new_state, event);
         if !took_transition {
-            return false;
+            return EventOutcome::Discarded;
         }
 
         self.current_state = new_state;
@@ -1493,7 +1570,9 @@ impl<P: StatePolicy> Engine<P> {
         if !needs_hierarchical {
             // §scxml-3.4: targetless transition — execute actions only
             self.execute_transition_actions_dispatch();
-            return false;
+            return EventOutcome::Taken {
+                configuration_changed: false,
+            };
         }
 
         // §scxml-3.12: Hierarchical exit/entry
@@ -1513,7 +1592,9 @@ impl<P: StatePolicy> Engine<P> {
             self.resolve_current_state_to_leaf();
         }
         self.check_eventless_transitions();
-        true
+        EventOutcome::Taken {
+            configuration_changed: true,
+        }
     }
 
     /// §scxml-3.12 / §scxml-3.13: Execute hierarchical exit/entry between two states.
