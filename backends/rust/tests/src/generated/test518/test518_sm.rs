@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -299,8 +299,9 @@ impl Test518Policy {
             se, &sid, "Var1", "2",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test518Event::ErrorExecution,
+                "<data id='Var1'> expr failed to evaluate",
             ));
         }
 
@@ -317,8 +318,9 @@ impl Test518Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test518Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -662,8 +664,9 @@ impl StatePolicy for Test518Policy {
                                 ::sce_rust_runtime::sce_log_error!(
                                     "send namelist 'Var1': variable not declared"
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test518Event::ErrorExecution,
+                                    "<send> namelist names 'Var1', which is not declared",
                                 ));
                                 _send_aborted = true;
                             } else {
@@ -679,9 +682,12 @@ impl StatePolicy for Test518Policy {
                                             "send namelist 'Var1' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test518Event::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test518Event::ErrorExecution,
+                                                "<send> namelist entry 'Var1' failed to evaluate",
+                                            ),
+                                        );
                                         _send_aborted = true;
                                     }
                                 }
@@ -714,9 +720,7 @@ impl StatePolicy for Test518Policy {
                                     ) =>
                                 {
                                     // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test518Event::ErrorCommunication,
-                                    ));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test518Event::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
                                     None
                                 }
                                 Ok(val) => {
@@ -726,10 +730,7 @@ impl StatePolicy for Test518Policy {
                                     if trimmed.starts_with("!") {
                                         // W3C SCXML 6.2: Invalid target raises error.execution
                                         {
-                                            let mut err_meta =
-                                                sce_rust_runtime::EventWithMetadata::new(
-                                                    Test518Event::ErrorExecution,
-                                                );
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test518Event::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
                                             err_meta.metadata.send_id = send_id.clone();
                                             engine.raise(err_meta);
                                         }
@@ -743,9 +744,12 @@ impl StatePolicy for Test518Policy {
                                         "targetexpr eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test518Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test518Event::ErrorExecution,
+                                            "<send> targetexpr failed to evaluate",
+                                        ),
+                                    );
                                     None
                                 }
                             }
@@ -757,9 +761,7 @@ impl StatePolicy for Test518Policy {
                                 {
                                     // W3C SCXML C.2: Validate dynamic target is HTTP URL
                                     if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test518Event::ErrorCommunication,
-                                        ));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test518Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
                                     } else {
                                         let mut http_params =
                                             std::collections::HashMap::<String, Vec<String>>::new();

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e67e22f50324628b768bd45c270ec785da7ac8d8eb5d881012137ffe720d345e
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -125,7 +125,7 @@ class InvokeUnsupportedTypeStateMachine(
                 run {
                     val generatedInvokeId = "probe.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        raiseInternal(InvokeUnsupportedTypeEvent.Error.Execution)
+                        raisePlatformError(InvokeUnsupportedTypeEvent.Error.Execution, "<invoke> declares a type this processor does not support")
                     }
                 }
             }

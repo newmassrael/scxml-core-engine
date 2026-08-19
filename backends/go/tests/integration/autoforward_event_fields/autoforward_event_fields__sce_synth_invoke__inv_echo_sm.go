@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -213,7 +213,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) evaluateGuard(guard 
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -524,7 +524,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ExecuteEntryActions(
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `42`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "value", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(AutoforwardEventFieldsSceSynthInvokeInvEchoEventErrorExecution, "<send> <param name='value'> expr failed to evaluate"))
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr

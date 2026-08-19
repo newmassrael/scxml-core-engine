@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 215c3b8c048d546a929c95bb520cc0c508e71ce4c95c9630e94bb32b22528dc2
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -297,7 +297,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "defaulted", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<data id='defaulted'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "defaulted", nil)
 		}
 	}
@@ -307,7 +307,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "lobbied", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<data id='lobbied'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "lobbied", nil)
 		}
 	}
@@ -317,7 +317,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "idled", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<data id='idled'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "idled", nil)
 		}
 	}
@@ -327,7 +327,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "targeted", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<data id='targeted'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "targeted", nil)
 		}
 	}
@@ -357,7 +357,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) evaluateGuard(guard string, eng *
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -748,7 +748,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 	// W3C SCXML 5.3: <assign location="defaulted" expr="defaulted + 1">
 	if err := p.assignVariable(`defaulted`, `_scxml_add(defaulted, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'defaulted' failed"))
 		break
 	}
 
@@ -761,7 +761,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 	// W3C SCXML 5.3: <assign location="targeted" expr="targeted + 1">
 	if err := p.assignVariable(`targeted`, `_scxml_add(targeted, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'targeted' failed"))
 		break
 	}
 
@@ -774,7 +774,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 	// W3C SCXML 5.3: <assign location="idled" expr="idled + 1">
 	if err := p.assignVariable(`idled`, `_scxml_add(idled, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'idled' failed"))
 		break
 	}
 
@@ -787,7 +787,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ExecuteEntryActions(state Ancesto
 
 	// W3C SCXML 5.3: <assign location="lobbied" expr="lobbied + 1">
 	if err := p.assignVariable(`lobbied`, `_scxml_add(lobbied, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(AncestorEntryIsNotDefaultEntryEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(AncestorEntryIsNotDefaultEntryEventErrorExecution, "<assign> to 'lobbied' failed"))
 		break
 	}
 

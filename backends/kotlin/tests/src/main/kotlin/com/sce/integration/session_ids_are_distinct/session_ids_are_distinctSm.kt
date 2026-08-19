@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -175,14 +175,14 @@ class SessionIdsAreDistinctStateMachine(
             val initResult_firstSid = engine.evaluateExpr(sid, "''")
             engine.setVariable(sid, "firstSid", initResult_firstSid)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='firstSid'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'readBackProbe' with expr
         try {
             val initResult_readBackProbe = engine.evaluateExpr(sid, "[{ name: 'first', keys: 'Escape' }, { name: 'second' }]")
             engine.setVariable(sid, "readBackProbe", initResult_readBackProbe)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<data id='readBackProbe'> expr failed to evaluate")
         }
 
 
@@ -210,7 +210,7 @@ class SessionIdsAreDistinctStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -235,7 +235,7 @@ class SessionIdsAreDistinctStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -248,7 +248,7 @@ class SessionIdsAreDistinctStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -260,7 +260,7 @@ class SessionIdsAreDistinctStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

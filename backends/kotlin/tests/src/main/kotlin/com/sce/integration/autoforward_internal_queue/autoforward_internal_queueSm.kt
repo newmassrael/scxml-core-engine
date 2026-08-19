@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -210,7 +210,7 @@ class AutoforwardInternalQueueStateMachine(
 
 
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
-            raiseInternal(AutoforwardInternalQueueEvent.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
+            raisePlatformError(AutoforwardInternalQueueEvent.Error.Execution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support", "__send_0")
             return  // W3C SCXML 5.10: Stop subsequent executable content
             }
             event is AutoforwardInternalQueueEvent.Error.Execution -> {

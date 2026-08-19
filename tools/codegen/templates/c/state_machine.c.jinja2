@@ -387,10 +387,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                whenever this path runs because <assign> sets
                needs_script_engine, which injects "error.execution" into
                model.events via analyzer.rs. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<assign> has an invalid or read-only location '{{ action.location | escape_c }}'");
 {% if in_foreach %}
             break;  /* W3C 4.6: error inside <foreach> body breaks the loop */
 {% endif %}
@@ -407,10 +406,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             if (luaL_dostring(sm->L,
                 "{{ action.location | to_lua_location | escape_c }} = ({{ action.content | to_lua_assign_content | escape_c }})") != 0) {
                 lua_pop(sm->L, 1);
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<assign> to '{{ action.location | escape_c }}' failed");
 {% if in_foreach %}
                 break;
 {% endif %}
@@ -436,12 +434,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                emit path runs because <foreach> sets needs_script_engine, which
                injects "error.execution" into model.events via analyzer.rs's
                apply_script_engine_implications. */
-            {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
-                memset(&evt, 0, sizeof(evt));
-                evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
-            }
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<foreach> is missing its 'array' or 'item' attribute");
 {% elif action.actions and action.actions | length > 0 %}
 {{ se.lua_foreach_body_prologue(action.array, action.item, action.index) }}
             if (_sce_n < 0) {
@@ -454,10 +449,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                    The `return;` terminates only the surrounding entry/exit
                    block helper (axis I separation), so the next block
                    still runs. */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _foreach_err_evt;
-                memset(&_foreach_err_evt, 0, sizeof(_foreach_err_evt));
-                _foreach_err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_foreach_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<foreach array='{{ action.array | escape_c }}'> is not an array");
                 return;
             }
             for (int _i = 0; _i < _sce_n; ++_i) {
@@ -488,10 +482,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             bool _send_evt_ok;
 {{ se.lua_eval_to_string(action.eventexpr, '_send_evt_name', '64', '_send_evt_ok') }}
             if (!_send_evt_ok) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> eventexpr failed to evaluate");
             } else {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
                 memset(&_send_evt, 0, sizeof(_send_evt));
@@ -505,10 +498,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 if (_send_evt_matched) {
                     {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
                 } else {
-                    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                    memset(&_err_evt, 0, sizeof(_err_evt));
-                    _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                    {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send> eventexpr named an event this machine does not declare");
                 }
             }
 {% elif action.event and action.delay and action.params and not action.delayexpr and not action.target and not action.eventexpr and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation and (not in_foreach) %}
@@ -576,11 +568,10 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                literal is safe without escape handling. */
             (void)luaL_dostring(sm->L,
                 "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            sce_copy_bounded_id(_err_evt.send_id, "{{ action.auto_send_id | escape_c }}");
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
+                "{{ action.auto_send_id | escape_c }}");
             return;
 {% elif action.event and action.idlocation and not action.target and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr %}
             /* W3C SCXML 6.2.4 (test183): bare-external static event with
@@ -618,10 +609,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                cpp ships (its `in_entry_exit` flag is unset inside foreach
                bodies) — invalid-target send inside a `<foreach>` body lands
                with its own force fixture. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<send target='{{ action.target | escape_c }}'> is not a target this processor can address");
             return;
 {% elif action.event and action.target == '#_parent' and action.delay and not action.delayexpr and not action.eventexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 + 6.4 (test187): static-event + target="#_parent"
@@ -948,10 +938,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             bool _send_target_ok;
 {{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
             if (!_send_target_ok) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> targetexpr failed to evaluate");
                 return;
             }
             if (_send_target_buf[0] == '\0') {
@@ -969,10 +958,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             } else if (_send_target_buf[0] == '!') {
                 /* `!`-prefix → invalid target → error.execution and stop
                    subsequent content. */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> targetexpr produced a target this processor cannot address");
                 return;
             } else if (strcmp(_send_target_buf, "undefined") == 0 ||
                        strcmp(_send_target_buf, "nil") == 0) {
@@ -986,10 +974,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                    counterpart (`"nil"` from `tostring((nil))`). cpp's
                    `target.empty()` arm of the same helper is already
                    covered by the empty-buffer branch above. */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                    "<send> targetexpr evaluated to nothing, so there is no target to reach");
                 return;
 {% for invoke_info in model.invokes | scxml %}
             } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
@@ -1063,10 +1050,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             if (_send_type_buf[0] != '\0'
                 && strcmp(_send_type_buf,
                           "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> typeexpr names a processor this platform does not support");
                 return;
             }
             {
@@ -1105,10 +1091,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             if (_send_type_buf[0] != '\0'
                 && strcmp(_send_type_buf,
                           "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> typeexpr names a processor this platform does not support");
                 return;
             }
             /* W3C SCXML C.1: a resolved target can be an `_ioprocessors`
@@ -1121,10 +1106,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             bool _send_target_ok;
 {{ se.lua_eval_to_string(action.targetexpr, '_send_target_buf', 'SCE_MAX_URI_LEN', '_send_target_ok') }}
             if (!_send_target_ok) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> targetexpr failed to evaluate");
                 return;
             }
             if (_send_target_buf[0] == '\0') {
@@ -1138,10 +1122,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
                 {{ csym_prefix }}{{ model.name }}_raise(sm, &_send_evt);
             } else if (_send_target_buf[0] == '!') {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> targetexpr produced a target this processor cannot address");
                 return;
             } else if (strcmp(_send_target_buf, "undefined") == 0 ||
                        strcmp(_send_target_buf, "nil") == 0) {
@@ -1150,10 +1133,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                    `SendHelper::isUnreachableTarget`. Same shape as the
                    targetexpr-only arm above (kept synchronised: any
                    future relaxation must touch both). */
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                    "<send> targetexpr evaluated to nothing, so there is no target to reach");
                 return;
 {% for invoke_info in model.invokes | scxml %}
             } else if (sm->child_{{ invoke_info.field_suffix }}.scxml_location[0] != '\0' &&
@@ -1198,10 +1180,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             bool _send_delay_ok;
 {{ se.lua_eval_delayexpr(action.delayexpr, '_send_delay_ms', '_send_delay_ok') }}
             if (!_send_delay_ok) {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> delayexpr failed to evaluate");
                 return;
             }
             scheduled_push(sm,
@@ -1249,10 +1230,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                addition to the existing namelist + dynamic-params lifts);
                the targetless BasicHTTP arm is the next sibling and
                handles test577 in isolation. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<send type='{{ action.send_type | escape_c }}'> names a processor this platform does not support");
             return;
 {% elif (not in_foreach) and action.event and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
             /* W3C SCXML C.2 (test577): BasicHTTPEventProcessor send_type
@@ -1271,10 +1251,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                arms with a target/targetexpr (with optional params /
                namelist / content / contentexpr / typeexpr / idlocation)
                are served by the lifted arm below per RFC §2.1. */
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                "<send> over BasicHTTPEventProcessor has no target to post to");
             return;
 {% elif (not in_foreach) and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) and not action.eventexpr and not action.delay and not action.delayexpr %}
             /* W3C SCXML C.2: BasicHTTP send to HTTP target (literal `target`
@@ -1363,10 +1342,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                     if (!_type_ok ||
                         strcmp(_type_buf,
                                "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") != 0) {
-                        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                        memset(&_err_evt, 0, sizeof(_err_evt));
-                        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send> typeexpr names a processor this platform does not support");
                         return;
                     }
                 }
@@ -1385,10 +1363,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                     if (!_target_ok ||
                         (strncmp(_target_buf, "http://", 7) != 0 &&
                          strncmp(_target_buf, "https://", 8) != 0)) {
-                        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                        memset(&_err_evt, 0, sizeof(_err_evt));
-                        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION;
-                        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
+                            "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
                         return;
                     }
                 }
@@ -1467,10 +1444,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                         bool _content_ok = false;
                         {{ se.lua_eval_to_string(action.contentexpr, "_content_buf", "1024", "_content_ok") }}
                         if (!_content_ok) {
-                            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                            memset(&_err_evt, 0, sizeof(_err_evt));
-                            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                                "<send> contentexpr failed to evaluate");
                             return;
                         }
                         size_t _content_len = strlen(_content_buf);
@@ -1559,10 +1535,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                never blocks on a fixture the SM author can fix at the
                SCXML layer. */
             {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<send> uses a combination of attributes this backend cannot emit");
                 return;
             }
 {% endif %}
@@ -1744,10 +1719,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             if (luaL_dostring(sm->L,
                 "{{ action.content | to_lua_script | escape_c }}") != 0) {
                 lua_pop(sm->L, 1);
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<script> failed to execute");
             }
 {% endif %}
         }
@@ -2391,12 +2365,9 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
            and skip the done.state.{{ state.parent }} event entirely
            (cpp DoneDataHelper::evaluateParams returns false → the
            caller's `if (!success) break;` short-circuit). */
-        {
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
-        }
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<donedata> has a <param> with an empty location");
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
         break;
         {% else %}
@@ -3421,10 +3392,9 @@ SCE_SM_FN static void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
             luaL_unref(sm->L, LUA_REGISTRYINDEX, payload_lua_ref);
         }
 {% endif %}
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "the scheduled-send queue is full, so this <send delay> was dropped");
         return;
     }
 
@@ -3472,10 +3442,9 @@ SCE_SM_FN static void scheduled_push_parent({{ csym_prefix }}{{ model.name }}_t 
                                   const char *event_name,
                                   const char *send_id) {
     if (sm->scheduled_queue.count >= (uint8_t)SCE_MAX_SCHEDULED) {
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "the scheduled-send queue is full, so this <send delay> was dropped");
         return;
     }
 

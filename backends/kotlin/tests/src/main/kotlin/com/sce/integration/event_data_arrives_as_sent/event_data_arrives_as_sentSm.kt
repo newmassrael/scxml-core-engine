@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: dc158df534067da964bd1c6f80973e1679ee7c64e201d638b706cd25b18535cd
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -159,7 +159,7 @@ class EventDataArrivesAsSentStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(EventDataArrivesAsSentEvent.Error.Execution)
+            raisePlatformError(EventDataArrivesAsSentEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -184,7 +184,7 @@ class EventDataArrivesAsSentStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(EventDataArrivesAsSentEvent.Error.Execution)
+            raisePlatformError(EventDataArrivesAsSentEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -197,7 +197,7 @@ class EventDataArrivesAsSentStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(EventDataArrivesAsSentEvent.Error.Execution)
+            raisePlatformError(EventDataArrivesAsSentEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -209,7 +209,7 @@ class EventDataArrivesAsSentStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(EventDataArrivesAsSentEvent.Error.Execution)
+            raisePlatformError(EventDataArrivesAsSentEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

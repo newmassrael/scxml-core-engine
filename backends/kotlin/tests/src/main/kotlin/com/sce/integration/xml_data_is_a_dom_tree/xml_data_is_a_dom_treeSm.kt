@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c990b384ae6d27b45cff45f6fb75ecde882d112d0f07d342d547b178e6a4257
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -129,7 +129,7 @@ class XmlDataIsADomTreeStateMachine(
             val initResult_doc = engine.parseDataValue(sid, "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>")
             engine.setVariable(sid, "doc", initResult_doc)
         } catch (e: Exception) {
-            raiseInternal(XmlDataIsADomTreeEvent.Error.Execution)
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "<data id='doc'> content failed to initialise")
         }
 
 
@@ -157,7 +157,7 @@ class XmlDataIsADomTreeStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(XmlDataIsADomTreeEvent.Error.Execution)
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -182,7 +182,7 @@ class XmlDataIsADomTreeStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(XmlDataIsADomTreeEvent.Error.Execution)
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -195,7 +195,7 @@ class XmlDataIsADomTreeStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(XmlDataIsADomTreeEvent.Error.Execution)
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -207,7 +207,7 @@ class XmlDataIsADomTreeStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(XmlDataIsADomTreeEvent.Error.Execution)
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -237,7 +237,7 @@ func (p *EventOriginIsALocationPolicy) evaluateGuard(guard string, eng *sce.Engi
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(EventOriginIsALocationEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(EventOriginIsALocationEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -813,7 +813,7 @@ func (p *EventOriginIsALocationPolicy) ExecuteTransitionActions(engine *sce.Engi
 		if sendTargetErr != nil || sendTargetVal == nil || fmt.Sprintf("%v", sendTargetVal) == "<nil>" {
 			// W3C SCXML 6.2.4: If target is not valid, raise error.communication
 			{
-				errEvt := sce.NewPlatformEvent(EventOriginIsALocationEventErrorCommunication)
+				errEvt := sce.NewPlatformError(EventOriginIsALocationEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 				errEvt.Metadata.SendID = "__send_0"
 				engine.Raise(errEvt)
 			}

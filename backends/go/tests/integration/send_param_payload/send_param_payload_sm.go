@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f524cef2066d73e88ffccad2cc701b342488a62174d08ce0c0f5b45b36ac885f
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -236,7 +236,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tag", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='tag'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "tag", nil)
 		}
 	}
@@ -265,7 +265,7 @@ func (p *SendParamPayloadPolicy) evaluateGuard(guard string, eng *sce.Engine[Sen
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -764,22 +764,22 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `7`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "n", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='n'> expr failed to evaluate"))
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `tag`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "s", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='s'> expr failed to evaluate"))
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `1`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "d", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='d'> expr failed to evaluate"))
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `2`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "d", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(SendParamPayloadEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='d'> expr failed to evaluate"))
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr

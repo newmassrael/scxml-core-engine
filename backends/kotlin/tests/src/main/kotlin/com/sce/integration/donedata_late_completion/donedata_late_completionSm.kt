@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -155,7 +155,7 @@ class DonedataLateCompletionStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -180,7 +180,7 @@ class DonedataLateCompletionStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -193,7 +193,7 @@ class DonedataLateCompletionStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -205,7 +205,7 @@ class DonedataLateCompletionStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

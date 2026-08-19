@@ -19,7 +19,9 @@ ensureSessionId();
 // W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
 if (!::SCE::SendHelper::isSupportedSendType("{{ action.send_type }}")) {
     // W3C SCXML 6.2: Unsupported send type raises error.execution on internal queue
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_execution,
+        "<send type='{{ action.send_type }}'> names a processor this platform does not support"));
 {% if in_entry_exit is defined and in_entry_exit %}
     return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
 {% endif %}
@@ -60,7 +62,9 @@ std::string dynamicType;
 // W3C SCXML 6.2: Validate send type using SendHelper (Zero Duplication)
 if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
     // W3C SCXML 6.2: Unsupported send type raises error.execution on internal queue
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_execution,
+        "<send> typeexpr names a processor this platform does not support"));
 {% if in_entry_exit is defined and in_entry_exit %}
     return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
 {% endif %}
@@ -77,7 +81,8 @@ auto& scriptEngine = getScriptEngine();
 auto targetResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ action.targetexpr | escape_cpp }}").get();
 if (!::SCE::ScriptResultUtils::isSuccess(targetResult)) {
     SCE_LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr }}");
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                    "<send> targetexpr failed to evaluate"));
 }
 dynamicTarget = ::SCE::ScriptResultUtils::resultToString(targetResult, &scriptEngine, sessionId_.value(), "{{ action.targetexpr | escape_cpp }}");
 {% else %}
@@ -105,7 +110,8 @@ if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
 // W3C SCXML C.1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
 if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     SCE_LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached"));
     return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
 }
 {% elif action.target %}
@@ -353,7 +359,8 @@ if (::SCE::SendHelper::isInvalidTarget("{{ action.target }}")) {
 {% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.event %}
 // W3C SCXML C.2 (test 577): Validate BasicHTTP target requirement using SendHelper (Zero Duplication)
 if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to"));
     return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
 }
 {% endif %}
@@ -366,7 +373,9 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {% if action.targetexpr %}
 // W3C SCXML C.2: Validate dynamic target is HTTP URL (error.communication if not)
 if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    engine.raise(typename Engine::EventWithMetadata(
+        Event::Error_communication,
+        "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL"));
     return;
 }
 {% endif %}
@@ -400,7 +409,8 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
         namelistParams,
         [&engine](const std::string& msg) {
             SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+            engine.raise(typename Engine::EventWithMetadata(
+                Event::Error_execution, "<send> namelist: " + msg));
         }
     );
     if (!namelistOk) return;
@@ -415,7 +425,8 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
     if (::SCE::ScriptResultUtils::isSuccess(contentResult)) {
         httpContent = ::SCE::ScriptResultUtils::resultToString(contentResult, &scriptEngine, sessionId_.value(), "{{ action.contentexpr | escape_cpp }}");
     } else {
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<send> contentexpr failed to evaluate"));
         return;
     }
 {% else %}
@@ -451,7 +462,8 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
     auto eventResult = scriptEngine.getVariable(sessionId_.value(), "{{ action.eventexpr }}").get();
     if (!::SCE::ScriptResultUtils::isSuccess(eventResult)) {
         SCE_LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr }}");
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<send> eventexpr failed to evaluate"));
     } else {
     std::string eventName = ::SCE::ScriptResultUtils::resultToString(eventResult);
 {% else %}
@@ -491,7 +503,8 @@ engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
             params,
             [&engine](const std::string& msg) {
                 SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+                engine.raise(typename Engine::EventWithMetadata(
+                    Event::Error_execution, "<send> namelist: " + msg));
             },
             &typedParams
         );
@@ -569,7 +582,8 @@ std::map<std::string, std::vector<ScriptValue>> typedParams;
         params,
         [&engine](const std::string& msg) {
             SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+            engine.raise(typename Engine::EventWithMetadata(
+                Event::Error_execution, "<send> namelist: " + msg));
         },
         &typedParams
     );
@@ -782,7 +796,8 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
         eventData = ::SCE::ScriptResultUtils::resultToString(contentResult);
     } else {
         SCE_LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr }}");
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                                        "<send> contentexpr failed to evaluate"));
         eventData = "";
     }
 {% if action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' %}

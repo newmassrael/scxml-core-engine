@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -287,8 +287,9 @@ impl Test553Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test553Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -628,9 +629,7 @@ impl StatePolicy for Test553Policy {
                             // W3C SCXML B.2 (test 553): Check variable existence before evaluation
                             if !se.has_variable(&sid, "__undefined_variable_for_error__") {
                                 ::sce_rust_runtime::sce_log_error!("send namelist '__undefined_variable_for_error__': variable not declared");
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                    Test553Event::ErrorExecution,
-                                ));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test553Event::ErrorExecution, "<send> namelist names '__undefined_variable_for_error__', which is not declared"));
                                 _send_aborted = true;
                             } else {
                                 match se
@@ -644,9 +643,7 @@ impl StatePolicy for Test553Policy {
                                     }
                                     Err(e) => {
                                         ::sce_rust_runtime::sce_log_error!("send namelist '__undefined_variable_for_error__' eval failed: {}", e);
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test553Event::ErrorExecution,
-                                        ));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test553Event::ErrorExecution, "<send> namelist entry '__undefined_variable_for_error__' failed to evaluate"));
                                         _send_aborted = true;
                                     }
                                 }

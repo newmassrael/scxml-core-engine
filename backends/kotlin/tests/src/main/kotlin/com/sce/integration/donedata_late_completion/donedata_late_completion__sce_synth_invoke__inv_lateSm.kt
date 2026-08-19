@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -136,7 +136,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -161,7 +161,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -174,7 +174,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -186,7 +186,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution)
+            raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -281,7 +281,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                         doneParams["result"] = engineDD.evaluateExpr(sidDD, "42")
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
-                        raiseInternal(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, EventMetadata.platform())
+                        raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "<donedata> <param name='result'> failed to evaluate")
                     }
                     // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
                     if (doneParamStructuralError) return@run

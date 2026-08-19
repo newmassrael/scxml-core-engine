@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -252,7 +252,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "n", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<data id='n'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "n", nil)
 		}
 	}
@@ -262,7 +262,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "m", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<data id='m'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "m", nil)
 		}
 	}
@@ -292,7 +292,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) evaluateGuard(guard string, en
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -953,7 +953,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionActions(engin
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
 	if err := p.assignVariable(`m`, `_scxml_add(m, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<assign> to 'm' failed"))
 	}
 
 		return
@@ -963,7 +963,7 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionActions(engin
 
 	// W3C SCXML 5.3: <assign location="n" expr="n + 1">
 	if err := p.assignVariable(`n`, `_scxml_add(n, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(ParallelRegionsTakeOwnTransitionsEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<assign> to 'n' failed"))
 	}
 
 		return

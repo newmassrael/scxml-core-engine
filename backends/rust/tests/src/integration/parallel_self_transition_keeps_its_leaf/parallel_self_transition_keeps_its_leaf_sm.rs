@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 09b7454cf9165bde8e92b3225905fad8bae3b40d103c1bd2ce5da264bfe36345
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -399,8 +399,9 @@ impl ParallelSelfTransitionKeepsItsLeafPolicy {
             se, &sid, "n", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 ParallelSelfTransitionKeepsItsLeafEvent::ErrorExecution,
+                "<data id='n'> expr failed to evaluate",
             ));
         }
 
@@ -409,8 +410,9 @@ impl ParallelSelfTransitionKeepsItsLeafPolicy {
             se, &sid, "m", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 ParallelSelfTransitionKeepsItsLeafEvent::ErrorExecution,
+                "<data id='m'> expr failed to evaluate",
             ));
         }
 
@@ -443,8 +445,9 @@ impl ParallelSelfTransitionKeepsItsLeafPolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ParallelSelfTransitionKeepsItsLeafEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -1129,8 +1132,9 @@ impl StatePolicy for ParallelSelfTransitionKeepsItsLeafPolicy {
                             let assign_script = format!("{} = {}", "m", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
                                 ::sce_rust_runtime::sce_log_error!("Assign failed for 'm': {}", e);
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     ParallelSelfTransitionKeepsItsLeafEvent::ErrorExecution,
+                                    "<assign> to 'm' failed",
                                 ));
                             }
                         }
@@ -1158,8 +1162,9 @@ impl StatePolicy for ParallelSelfTransitionKeepsItsLeafPolicy {
                             let assign_script = format!("{} = {}", "n", expr);
                             if let Err(e) = se.execute_script(&sid, &assign_script) {
                                 ::sce_rust_runtime::sce_log_error!("Assign failed for 'n': {}", e);
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     ParallelSelfTransitionKeepsItsLeafEvent::ErrorExecution,
+                                    "<assign> to 'n' failed",
                                 ));
                             }
                         }
