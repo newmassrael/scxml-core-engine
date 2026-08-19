@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "9ee721c1d7",
+  "embed_version": "17f0bfe448",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 244,
+  "symbol_count": 246,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -645,6 +645,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasInvokeSupportTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::NeedsEventSchedulerTrait<T>"
     },
     {
       "header": "core/TransitionHelper.h",
@@ -2015,6 +2021,16 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Static::StaticExecutionEngine<T>"
+    },
+    {
+      "header": "static/StaticExecutionEngine.h",
+      "kind": "struct",
+      "members": [
+        "field bool configurationChanged",
+        "field bool selected",
+        "method void () noexcept ~EventOutcome"
+      ],
+      "name": "SCE::Static::EventOutcome"
     },
     {
       "header": "static/StaticExecutionEngine.h",
