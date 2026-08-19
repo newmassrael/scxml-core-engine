@@ -1,0 +1,157 @@
+# Mutation cases for §scxml-3.12.2 on the two backends a cargo round cannot see
+# — the C++ engine header and the C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/unhandled_error_is_observable_ctest.cases`.
+#
+# Same axis as `unhandled_error_is_observable.cases`: an `error.*` event the
+# processor raised that no transition answered, and the host that is driving
+# the machine can find out. The sibling axis stops at the external queue
+# because an author's unmatched `<raise>` has both ends inside the document;
+# the sender of an error event is the engine, so that reasoning does not reach
+# it — and the boundary between the two is what most of these cases attack.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry. It also answers the membership
+# question differently on purpose — a generated enum comparison rather than a
+# name test — because it has no event-name table at run time, so its cases
+# below are not translations of the C++ ones.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_unhandled_error_is_observable)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/include/core/EventMatchingHelper.h tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/UnhandledErrorIsObservableAotTest.cpp tests/integration/UnhandledErrorIsObservableTest.cpp backends/c/tests/integration/test_unhandled_error_is_observable.c
+
+# ── C++: the count itself ──────────────────────────────────────────
+
+mutation_case "the cpp engine records nothing for an unanswered error" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        ++unhandledErrorEvents_;
+        lastUnhandledError_ = event;""",
+     """        if (false) ++unhandledErrorEvents_;
+        lastUnhandledError_ = event;""")
+PY
+
+# ── C++: counting an error the document DID answer ─────────────────
+#
+# Dropping the outcome test leaves the name test, which is true for the
+# `guarded` run as well — so the document's own error handling is reported as a
+# silent failure.
+
+mutation_case "the cpp count ignores whether a transition was selected" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        // binds a citation to the symbol enclosing it.
+        if (outcome.selected) {
+            return;
+        }""",
+     """        // binds a citation to the symbol enclosing it.
+        if (outcome.selected && false) {
+            return;
+        }""")
+PY
+
+# ── C++: counting the author's own unmatched raise ─────────────────
+#
+# The boundary this axis is really about. Dropping the name test counts every
+# unmatched internal event, which is exactly what the sibling axis deliberately
+# does not count — `whisper` raises `unheard`, nothing answers it, and both
+# ends of that are in the document.
+
+mutation_case "the cpp count treats any unmatched internal event as an error" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (!SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(event))) {
+            return;
+        }""",
+     """        if (false) {
+            return;
+        }""")
+PY
+
+# ── C++: the shared classifier ─────────────────────────────────────
+#
+# §scxml-3.12.2 reserves the whole `error.` prefix, and the helper is shared
+# with the Interpreter. A prefix test written as a substring search claims
+# `retry.error.execution`, which the fixture raises for exactly this reason.
+
+mutation_case "the cpp classifier matches the error prefix anywhere" <<'PY'
+edit("sce/include/core/EventMatchingHelper.h",
+     """    return eventName.rfind("error.", 0) == 0;""",
+     """    return eventName.find("error.") != std::string::npos;""")
+PY
+
+# ── C++: naming the error ──────────────────────────────────────────
+
+mutation_case "the cpp engine counts the error but never names it" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        lastUnhandledError_ = event;
+        hasUnhandledError_ = true;""",
+     """        lastUnhandledError_ = event;
+        hasUnhandledError_ = false;""")
+PY
+
+# ── C++: the drain this count is a byproduct of ────────────────────
+#
+# The internal drain's job is selecting transitions; the count rides along.
+# Recording before the selection runs reads the outcome of the PREVIOUS event.
+
+mutation_case "the cpp drain records before it selects" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                const EventOutcome outcome = executeTransition(event);
+                recordInternalEventOutcome(event, outcome);""",
+     """                const EventOutcome outcome{};
+                recordInternalEventOutcome(event, outcome);
+                executeTransition(event);""")
+PY
+
+# ── C11: the count itself ──────────────────────────────────────────
+#
+# This backend had no `else` on `process_transition` at all, which is how the
+# fact was lost here; the mutation puts the branch back to doing nothing.
+
+mutation_case "the c11 template records nothing for an unanswered error" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->unhandled_error_events++;
+            sm->last_unhandled_error = evt.event;
+            sm->has_unhandled_error = true;""",
+     """            sm->last_unhandled_error = evt.event;
+            sm->has_unhandled_error = true;""")
+PY
+
+# ── C11: counting the author's own unmatched raise ─────────────────
+#
+# The enum comparison IS this backend's membership test. Replacing it with
+# `true` counts `unheard` — the author's raise — as an engine error.
+
+mutation_case "the c11 template treats any unmatched internal event as an error" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        else if (
+{% for event_name in error_events | sort %}
+            evt.event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ " ||" if not loop.last }}
+{% endfor %}
+        ) {""",
+     """        else if (true) {""")
+PY
+
+# ── C11: naming the error ──────────────────────────────────────────
+
+mutation_case "the c11 template counts the error but never names it" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->last_unhandled_error = evt.event;
+            sm->has_unhandled_error = true;""",
+     """            sm->has_unhandled_error = false;""")
+PY
+
+# ── C11: the branch this rides on ──────────────────────────────────
+#
+# `else if` is what makes this the no-transition-matched case. An `if` records
+# alongside a transition that DID fire, which is the `guarded` run.
+
+mutation_case "the c11 template records alongside a selected transition" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        else if (
+{% for event_name in error_events | sort %}""",
+     """        if (
+{% for event_name in error_events | sort %}""")
+PY

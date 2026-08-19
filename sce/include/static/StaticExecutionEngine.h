@@ -25,6 +25,7 @@
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/AOTEventQueue.h"
+#include "core/EventMatchingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "core/EventQueueManager.h"
@@ -605,6 +606,37 @@ private:
         SCE_LOG_DEBUG("AOT: no transition matched external event '{}'; discarded", policy_.getEventName(event));
     }
 
+    /**
+     * @brief §scxml-3.12.2: record an `error.*` event no transition answered
+     *
+     * The internal-queue twin of `recordEventOutcome` above, and deliberately a
+     * separate count rather than the same one. That count stops at the external
+     * queue because an author's unmatched `<raise>` has both ends inside the
+     * document; the sender of an error event is this engine, so the same
+     * reasoning does not reach it — the host never wrote the document and
+     * cannot see the failure in the configuration.
+     *
+     * An author's own `<raise>` that matches nothing is still not counted:
+     * the name is what separates the two, and the clause reserves the
+     * `error.` prefix for the processor's own errors.
+     */
+    void recordInternalEventOutcome(Event event, const EventOutcome &outcome) {
+        // §scxml-3.12.2: error events go on the internal queue and "are
+        // ignored if no transition is found that matches them". Cited in the
+        // body rather than the doc comment because the ledger's C++ resolver
+        // binds a citation to the symbol enclosing it.
+        if (outcome.selected) {
+            return;
+        }
+        if (!SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(event))) {
+            return;
+        }
+        ++unhandledErrorEvents_;
+        lastUnhandledError_ = event;
+        hasUnhandledError_ = true;
+        SCE_LOG_DEBUG("AOT: no transition matched error event '{}'; unhandled", policy_.getEventName(event));
+    }
+
     State currentState_;
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
@@ -624,6 +656,13 @@ private:
     uint32_t discardedExternalEvents_ = 0;
     Event lastDiscardedEvent_{};
     bool hasDiscardedEvent_ = false;
+    // §scxml-3.12.2: `error.*` events this engine raised that no transition
+    // matched, and the most recent of them. `hasUnhandledError_` is separate
+    // for the same reason as above: the zero value of the generated `Event`
+    // enum is a real event and cannot stand in for "none".
+    uint32_t unhandledErrorEvents_ = 0;
+    Event lastUnhandledError_{};
+    bool hasUnhandledError_ = false;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
@@ -945,6 +984,57 @@ public:
     }
 
     /**
+     * @brief `error.*` events this engine raised that no transition answered
+     *
+     * §scxml-3.12.2 requires the processor to signal its own failures as
+     * `error.*` events on the internal queue, and says in the same breath that
+     * "they are ignored if no transition is found that matches them". Being
+     * ignored is the clause. Being unable to say it happened is not, and the
+     * difference matters to exactly one party: the host, which did not write the
+     * document, cannot see the failure anywhere in the configuration, and is the
+     * only one positioned to do something about it. A supervisor driving a
+     * machine whose `<assign>` silently fails every round reads `isRunning() ==
+     * true` and a plausible state forever.
+     *
+     * The sibling of `discardedExternalEvents()`, and deliberately a separate
+     * count. That one stops at the external queue because an author's unmatched
+     * `<raise>` has both ends inside the document; an error event's sender is
+     * the engine, so the same reasoning does not reach it. An author's `<raise>`
+     * that matches nothing is still not counted here.
+     *
+     * An error the document *did* answer is not counted either — the document
+     * dealt with it, and its handling is visible in the configuration the host
+     * can already read. What this counts is only the silent case.
+     *
+     * The Interpreter has answered this all along, through
+     * `getLastStateMachineError()` and the message it passes to
+     * `raiseEvent("error.execution", msg)`. This is the AOT side of the same
+     * question, so a document moving from one engine to the other keeps it.
+     */
+    uint32_t unhandledErrorEvents() const {
+        return unhandledErrorEvents_;
+    }
+
+    /**
+     * @brief The most recent `error.*` event `unhandledErrorEvents()` counted
+     *
+     * `std::nullopt` while that count is zero — the generated `Event` enum's
+     * zero value is a real event and cannot stand in for "none".
+     *
+     * Which error it was narrows a silent failure from "something in this
+     * machine is broken" to a class: `error.execution` is the document's own
+     * executable content failing, `error.communication` is a `<send>` or
+     * `<invoke>` that could not reach its target — two different repairs, and a
+     * count alone separates neither.
+     */
+    std::optional<Event> lastUnhandledError() const {
+        if (!hasUnhandledError_) {
+            return std::nullopt;
+        }
+        return lastUnhandledError_;
+    }
+
+    /**
      * @brief Run state machine until completion or timeout (§scxml-6.2)
      *
      * Convenience API for running state machines with delayed send operations.
@@ -1174,7 +1264,23 @@ protected:
                                   static_cast<int>(currentState_));
                 }
 
-                executeTransition(event);
+                // §scxml-3.12.2: the processor raises `error.*` into this queue
+                // and the clause says they "are ignored if no transition is
+                // found that matches them". Ignoring them is the clause;
+                // staying silent about it is not. `discardedExternalEvents()`
+                // deliberately stops at the external queue because an unmatched
+                // `<raise>` has both ends inside the document — but the sender
+                // of an error event is this engine, so that reasoning does not
+                // reach it. The host never wrote the document, cannot see the
+                // failure in the configuration, and is the only party able to
+                // act on it.
+                //
+                // The selection runs first and unconditionally: it is what
+                // processes every internal event, and folding it into the
+                // condition below would skip it for everything that is not an
+                // error.
+                const EventOutcome outcome = executeTransition(event);
+                recordInternalEventOutcome(event, outcome);
                 return true;  // Continue processing
             });
     }

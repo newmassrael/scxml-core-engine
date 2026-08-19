@@ -336,6 +336,13 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t discarded_external_events;
     {{ csym_prefix }}{{ model.name }}_event_t last_discarded_event;
     bool has_discarded_event;
+    /* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition
+       matched, and the most recent of them. `has_unhandled_error` is separate
+       for the same reason as above: the event enum's zero value is a real
+       event and cannot stand in for "none". */
+    uint32_t unhandled_error_events;
+    {{ csym_prefix }}{{ model.name }}_event_t last_unhandled_error;
+    bool has_unhandled_error;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
        session, and the address that reaches it. Issued in `_init` rather
@@ -577,6 +584,35 @@ uint32_t {{ csym_prefix }}{{ model.name }}_discarded_external_events(const {{ cs
    false, leaving `*out` untouched, while that count is zero — a count says
    something went nowhere; this says which thing did. */
 bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
+
+/* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition in
+   any active state answered.
+
+   The clause requires the processor to signal its own failures as `error.*`
+   events on the internal queue, and says in the same breath that "they are
+   ignored if no transition is found that matches them". Being ignored is the
+   clause. Being unable to say it happened is not, and the difference matters
+   to exactly one party: the host, which did not write the document, cannot see
+   the failure anywhere in the configuration, and is the only one positioned to
+   do something about it.
+
+   The sibling of `_discarded_external_events` above, and deliberately a
+   separate count. That one stops at the external queue because an author's
+   unmatched `<raise>` has both ends inside the document; an error event's
+   sender is this engine, so the same reasoning does not reach it. An author's
+   `<raise>` that matches nothing is still not counted here, and neither is an
+   error the document did answer. */
+uint32_t {{ csym_prefix }}{{ model.name }}_unhandled_error_events(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* W3C SCXML 3.12.2: the most recent error event the count above recorded.
+   Returns false, leaving `*out` untouched, while that count is zero.
+
+   Which error it was narrows a silent failure to a class: `error.execution` is
+   the document's own executable content failing, `error.communication` is a
+   `<send>` or `<invoke>` that could not reach its target — two different
+   repairs, and a count alone separates neither. */
+bool {{ csym_prefix }}{{ model.name }}_last_unhandled_error(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */

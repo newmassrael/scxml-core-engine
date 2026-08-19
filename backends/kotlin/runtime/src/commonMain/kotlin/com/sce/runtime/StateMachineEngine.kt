@@ -379,6 +379,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var lastDiscarded: E? = null
 
     /**
+     * §scxml-3.12.2: `error.*` events this engine raised that no transition
+     * matched, and the most recent of them. See [unhandledErrorEvents] and
+     * [lastUnhandledError].
+     */
+    private var unhandledErrorEventCount: Int = 0
+    private var lastUnhandledErrorEvent: E? = null
+
+    /**
      * §scxml-3.7: Mark that a top-level final state has been entered.
      *
      * Called from generated [onEntry] code. The actual [isInFinalState] flag
@@ -887,6 +895,52 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * the question a host debugging a stalled supervisor actually has.
      */
     fun lastDiscardedEvent(): E? = lastDiscarded
+
+    /**
+     * §scxml-3.12.2: how many `error.*` events this engine raised that no
+     * transition in any active state answered.
+     *
+     * The clause requires the processor to signal its own failures as `error.*`
+     * events on the internal queue, and says in the same breath that "they are
+     * ignored if no transition is found that matches them". Being ignored is
+     * the clause. Being unable to say it happened is not, and the difference
+     * matters to exactly one party: the host, which did not write the document,
+     * cannot see the failure anywhere in the configuration, and is the only one
+     * positioned to do something about it. A supervisor driving a machine whose
+     * `<assign>` silently fails every round reads a plausible state forever.
+     *
+     * This is the sibling of [discardedExternalEvents], and the two are
+     * deliberately separate counts rather than one. That one stops at the
+     * external queue because an author's unmatched `<raise>` has both ends
+     * inside the document; an error event's sender is the engine, so the same
+     * reasoning does not reach it. An author's `<raise>` that matches nothing
+     * is still not counted here.
+     *
+     * An error the document *did* answer is not counted either — the document
+     * dealt with it, and its handling is visible in the configuration the host
+     * can already read. What this counts is only the silent case.
+     *
+     * Answers in both drive modes: unlike the external queue, which
+     * [processMicrostep] and [processNextExternalEvent] each feed, the internal
+     * queue has a single drain that both modes run.
+     *
+     * The C++ Interpreter has answered this all along, through
+     * `getLastStateMachineError()` and the message it raises `error.execution`
+     * with; this is the generated engines' side of it.
+     */
+    fun unhandledErrorEvents(): Int = unhandledErrorEventCount
+
+    /**
+     * The most recent `error.*` event [unhandledErrorEvents] counted, or `null`
+     * while that count is zero.
+     *
+     * Which error it was narrows a silent failure from "something in this
+     * machine is broken" to a class: `error.execution` is the document's own
+     * executable content failing, `error.communication` is a `<send>` or
+     * `<invoke>` that could not reach its target — two different repairs, and a
+     * count alone separates neither.
+     */
+    fun lastUnhandledError(): E? = lastUnhandledErrorEvent
 
     /**
      * Destroy script engine session and release resources (sync mode cleanup).
@@ -1724,7 +1778,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val queued = internalEventQueue.removeFirst()
                 currentEventMetadata = queued.metadata
                 populateTypedPayload(queued.metadata)
-                processOneEvent(queued.event)
+                // §scxml-3.12.2: the processor raises `error.*` into this
+                // queue and the clause says they "are ignored if no transition
+                // is found that matches them". Ignoring them is the clause;
+                // staying silent about it is not.
+                // [discardedExternalEvents] deliberately stops at the external
+                // queue because an unmatched `<raise>` has both ends inside
+                // the document — but the sender of an error event is this
+                // engine, so that reasoning does not reach it. The host never
+                // wrote the document, cannot see the failure in the
+                // configuration, and is the only party able to act on it.
+                //
+                // The dispatch runs first and unconditionally: it is what
+                // processes every internal event, and folding it into the
+                // condition below would skip it for everything that is not an
+                // error. This drain is the machine's only internal-queue path,
+                // so unlike the external count there is one site, not two.
+                val selected = processOneEvent(queued.event)
+                if (!selected) {
+                    val name = eventNameOf(queued.event)
+                    if (name != null && isErrorEvent(name)) {
+                        unhandledErrorEventCount++
+                        lastUnhandledErrorEvent = queued.event
+                    }
+                }
                 flushPendingFinalState()
                 continue
             }
