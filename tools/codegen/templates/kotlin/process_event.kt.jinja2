@@ -115,7 +115,15 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {# else: no event transitions anywhere -> falls to else -> Ignored #}
 {% endif %}
 {% endfor %}
+{# The `else` arm exists for the states the loop above emitted no branch for:
+   a `<parallel>` (skipped by `not state.is_parallel`) and a state with neither
+   its own event transitions nor an ancestor's. A document where every state
+   gets a branch leaves the `when` exhaustive over the sealed state hierarchy,
+   and Kotlin rejects a redundant `else` under -Werror — which is how a fixture
+   with no `<final>` and a transition on every state failed to compile. #}
+{% if process_event_needs_else %}
         else -> TransitionResult.Ignored
+{% endif %}
     }
 {% if model.needs_script_engine %}
     }

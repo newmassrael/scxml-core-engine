@@ -117,6 +117,13 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
         }
 {% endif %}
 {% endfor %}
+{# The `else` arm answers for the states the loop above emitted no branch for —
+   the ones whose effective transitions all carry no actions. A document where
+   every state has at least one action-bearing transition leaves this `when`
+   exhaustive over the sealed state hierarchy, and Kotlin rejects a redundant
+   `else` under -Werror. Twin of `process_event_needs_else`. #}
+{% if transition_actions_needs_else %}
         else -> {}
+{% endif %}
         }
     }
