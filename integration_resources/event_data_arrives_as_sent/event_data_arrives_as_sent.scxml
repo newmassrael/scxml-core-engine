@@ -16,14 +16,36 @@
   `_event.data.done`; the same shape reaches SCE from any embedder that has a
   JSON payload and a state machine to give it to.
 
-  Three claims, three clauses, and a `<final>` for each failure so a red says
-  which one broke rather than only that something did:
+  Five claims, and a `<final>` for each failure so a red says which one broke
+  rather than only that something did:
 
-    settled    all three — a JSON object arrived as an object, text as text,
-               and a payload shaped like an expression as that text
+    settled    all five
     mangled    the JSON payload did not become addressable properties
     garbled    the plain-text payload did not arrive as that string
     evaluated  `2 + 3` arrived as 5 — the payload was RUN
+    flattened  an XML payload did not become a DOM
+    swallowed  a payload that OPENS like XML but is not a document did not
+               reach the document at all
+
+  The last two are §scxml-B-2-8-1's XML rung and the sentence that closes the
+  clause, and they are one question asked twice: the rung is conditioned on
+  the content being a document — "if the Processor can interpret the content
+  as a valid XML document, it MUST create the corresponding DOM structure" —
+  and what happens when it is not is a MUST of its own, "Otherwise, the
+  Processor MUST treat the content as a space-normalized string literal".
+  Measured 2026-08-19, nine script engines gave four different answers, and
+  every one of the four was some backend's answer to `flattened` or
+  `swallowed`: Rust and Go answered nil, the two C++ engines built a DOM out
+  of whatever fragment happened to parse (`XMLDocument::isValid` asked whether
+  the tree was non-empty rather than whether the parse succeeded), and C11 had
+  no XML rung on the event path at all, so it answered a string where its six
+  siblings answered a document.
+
+  It is not a corner. Every `error.*` event this repository raises carries a
+  message that names the SCXML construct that failed — `<assign> to detail
+  failed` — so every platform error opens with `<` and is not a document. The
+  field was filled in at 192 raise sites in the round before this one, and
+  three backends delivered nothing.
 
   The third is the one that separates reading the payload from running it,
   and it is written to be decisive in both languages this datamodel is
@@ -64,12 +86,40 @@
   </state>
 
   <state id="quoted">
-    <transition event="arith" cond="_event.data === '2 + 3'" target="settled"/>
+    <transition event="arith" cond="_event.data === '2 + 3'" target="documented"/>
     <transition event="arith" target="evaluated"/>
+  </state>
+
+  <!-- §scxml-B-2-8-1's XML rung, reached through the EVENT path. The
+       `<data>` path is `xml_data_is_a_dom_tree`'s, and it says in its own
+       comment that it leaves this one alone; the two rungs are lowered on
+       separate code in every backend, and this is the half nothing asked.
+       `nodeName` rather than `getElementsByTagName`, because a pair of
+       methods is what every backend supplied when the surface was last
+       measured — the document's own vocabulary is what proves a DOM. -->
+  <state id="documented">
+    <transition event="doc"
+                cond="_event.data &amp;&amp; _event.data.documentElement &amp;&amp; _event.data.documentElement.nodeName === 'books'"
+                target="opening"/>
+    <transition event="doc" target="flattened"/>
+  </state>
+
+  <!-- The sentence that closes the clause. A leading `<` is a GUESS about
+       which reading applies, and this payload is what the guess gets wrong:
+       it opens like a document and is not one, which is the shape of every
+       `error.*` message the engine raises. The comparison is against the
+       SPACE-NORMALIZED text, so a backend that fell through by handing the
+       bytes over untouched is not passing either — normalization is a
+       reading, not a passthrough. -->
+  <state id="opening">
+    <transition event="broken" cond="_event.data === '&lt;assign&gt; to detail failed'" target="settled"/>
+    <transition event="broken" target="swallowed"/>
   </state>
 
   <final id="settled"/>
   <final id="mangled"/>
   <final id="garbled"/>
   <final id="evaluated"/>
+  <final id="flattened"/>
+  <final id="swallowed"/>
 </scxml>

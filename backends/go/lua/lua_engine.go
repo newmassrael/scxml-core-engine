@@ -236,9 +236,19 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 
 	if args.Data != "" {
 		trimmed := strings.TrimSpace(args.Data)
-		if strings.HasPrefix(trimmed, "<") {
-			// W3C SCXML B.2: XML data -> DOM object (test 561)
-			e.pushDOMTable(sess, args.Data)
+		// W3C SCXML B.2: XML data -> DOM object (test 561).
+		//
+		// The leading `<` is a GUESS about which reading applies, not the
+		// reading itself. §scxml-B-2-8-1 conditions this rung on the content
+		// being one — "if the Processor can interpret the content as a valid
+		// XML document, it MUST create the corresponding DOM structure" — and
+		// closes with "Otherwise, the Processor MUST treat the content as a
+		// space-normalized string literal". So a guess that turns out wrong
+		// falls through to the rungs below rather than answering nil, which is
+		// what this did until the repository started sending `error.*`
+		// messages that name the failing construct: `<assign> to detail
+		// failed` opens with `<` and is not a document.
+		if strings.HasPrefix(trimmed, "<") && e.pushDOMTable(sess, args.Data) {
 			sess.l.SetField(-2, "data")
 		} else {
 			// §scxml-B-2-8-1 gives `_event.data` three readings and no
@@ -304,17 +314,24 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 // method is a closure that captures (*XmlDoc, nodeID), which keeps the
 // arena alive for as long as any Lua reference exists — equivalent to
 // cpp's `shared_ptr<XMLElement>` semantics and Rust's `Arc<XmlDoc>`
-// UserData.  Parse failure leaves the stack empty and pushes nil so
-// callers (W3C SCXML B.2 paths) get the spec's "leave variable
-// undefined on parse error" behaviour.  Mirrors cpp
-// `LuaDOMBinding::pushDOMObject` (sce/src/scripting/LuaDOMBinding.cpp:74).
-func (e *LuaEngine) pushDOMTable(sess *session, xml string) {
+// UserData.  Mirrors cpp `LuaDOMBinding::pushDOMObject`
+// (sce/src/scripting/LuaDOMBinding.cpp:74).
+//
+// Reports whether the content WAS a document, and pushes nothing when it was
+// not.  It used to push nil and say nothing, which could only serve one of its
+// two callers: the `<data>` path wants the variable left unbound, and the
+// `_event.data` path has readings below this one.  §scxml-B-2-8-1 conditions
+// the DOM reading on the content being valid XML and closes with "Otherwise,
+// the Processor MUST treat the content as a space-normalized string literal",
+// so a payload that merely opens with `<` must fall through rather than
+// arrive as nil.
+func (e *LuaEngine) pushDOMTable(sess *session, xml string) bool {
 	doc := ParseXml(xml)
 	if !doc.IsValid() {
-		sess.l.PushNil()
-		return
+		return false
 	}
 	e.pushDOMNode(sess, doc, doc.Root, true)
+	return true
 }
 
 // pushDOMNode pushes a Lua handle for a single tree node (document or
@@ -497,7 +514,11 @@ func (e *LuaEngine) SetVariableAsDOM(sessionID, name, xmlContent string) error {
 	if err != nil {
 		return err
 	}
-	e.pushDOMTable(sess, xmlContent)
+	// A caller that already decided the content is a document, so a refusal
+	// leaves the variable unbound exactly as before.
+	if !e.pushDOMTable(sess, xmlContent) {
+		sess.l.PushNil()
+	}
 	sess.l.SetGlobal(name)
 	sess.declaredVars[name] = true
 	return nil

@@ -612,11 +612,27 @@ for path in sorted(seen):
     # round cannot see change. Naming it is the whole point: the count alone read
     # as success for as long as it took someone to compare it against the
     # selector by hand.
+    #
+    # Fixture tests are exempt, and not as a convenience. CTest ADDS them to a
+    # selection on its own — any test declaring `FIXTURES_REQUIRED` drags its
+    # setup in, whatever the `-R` says — and a fixture's command is a build or a
+    # cleanup step by construction, so "backed by no repository file" is its
+    # normal shape rather than a gap. Without this, the check fired on
+    # `sce_build_is_current` (FIXTURES_SETUP sce_built, command `cmake --build`)
+    # for the first casefile whose tests happened to require it, and the advice
+    # it gave — narrow the selector — could not be followed: the selector had
+    # not named it.
     uncovered="$(printf '%s\n' "$json" | python3 -c '
 import json, os, sys
 
 repo = os.path.realpath(sys.argv[1])
 for test in json.load(sys.stdin).get("tests", []):
+    properties = {
+        entry.get("name"): entry.get("value")
+        for entry in test.get("properties") or []
+    }
+    if properties.get("FIXTURES_SETUP") or properties.get("FIXTURES_CLEANUP"):
+        continue
     for token in test.get("command") or []:
         path = os.path.realpath(token)
         if os.path.isfile(path) and os.path.commonpath([repo, path]) == repo:

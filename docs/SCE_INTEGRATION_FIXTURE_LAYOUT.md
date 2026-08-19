@@ -179,10 +179,32 @@ covered by nothing, while the payload paths the W3C IRP suite does exercise
 (`<send><content>`, `<param>`, `<donedata>`) all originate INSIDE the document
 and are lowered on separate code.
 
-The document asks two claims and lands each failure in a `<final>` of its own:
+The document asks five claims and lands each failure in a `<final>` of its own:
 `mangled` when a JSON object did not become addressable properties, `garbled`
-when text did not arrive as that string, `settled` when both held. The first
-guard tests `_event.data` before indexing it, which is not defensive style: a
+when text did not arrive as that string, `evaluated` when a payload shaped like
+an expression was RUN, `flattened` when a well-formed XML payload did not become
+a DOM, `swallowed` when a payload that opens like XML but is not a document did
+not reach the document at all, and `settled` when all five held.
+
+The last two arrived on 2026-08-19 and are one question asked twice.
+§scxml-B-2-8-1 conditions the DOM reading on the content BEING a document and
+then closes with a MUST of its own — "Otherwise, the Processor MUST treat the
+content as a space-normalized string literal" — so a leading `<` is a guess
+about which reading applies rather than the reading itself. Nine script engines
+gave four answers to that guess going wrong: Rust and Go answered nil, the two
+C++ engines built a DOM out of whatever fragment happened to parse
+(`XMLDocument::isValid` asked whether the tree was non-empty rather than whether
+the parse succeeded), and C11 had no XML rung on the event path at all, so it
+answered a string where its six siblings answered a document. Nothing sent such
+a payload until the round before, which filled `_event.data` in at 192 `error.*`
+raise sites with messages that name the failing construct — every platform error
+opens with `<` and is not a document.
+
+The XML payload carries leading whitespace on purpose: the reading is chosen by
+the first non-blank character, and the scan past it is small enough to look
+redundant. It is what a mutation to the C11 rung's scan is caught by.
+
+The first guard tests `_event.data` before indexing it, which is not defensive style: a
 backend that drops the payload leaves the variable nil, and the run would then
 report an evaluation error rather than the missing payload.
 

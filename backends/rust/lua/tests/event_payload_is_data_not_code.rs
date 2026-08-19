@@ -226,3 +226,30 @@ fn an_xml_payload_is_still_read_into_a_dom() {
         "the payload reached the datamodel as text instead of a document"
     );
 }
+
+/// The rung above is conditioned on the content BEING XML, and the clause
+/// spells out what happens when it is not: "if the Processor can interpret the
+/// content as a valid XML document, it MUST create the corresponding DOM
+/// structure... Otherwise, the Processor MUST treat the content as a
+/// space-normalized string literal". A leading `<` is a guess about which
+/// reading applies, not the reading itself, and a guess that turns out wrong
+/// has to fall through rather than answer nil.
+///
+/// This is not a corner: every `error.*` message this engine raises names the
+/// SCXML construct that failed, so every one of them opens with `<`. The
+/// repository filled that field in at 192 sites and the documents receiving it
+/// read nil, on this backend and on two others.
+#[test]
+fn text_that_merely_opens_like_xml_is_still_read() {
+    let engine = LuaEngine::new();
+    engine.create_session("s");
+    deliver(&engine, "s", "<assign>  to\n\tdetail failed");
+
+    assert_eq!(
+        read(&engine, "s", "_event.data"),
+        ScriptValue::String("<assign> to detail failed".to_string()),
+        "`<assign>  to\\n\\tdetail failed` is not a valid XML document, so \
+         §scxml-B-2-8-1's final sentence applies and the reading is the \
+         space-normalized string. Answering nil drops the payload entirely"
+    );
+}

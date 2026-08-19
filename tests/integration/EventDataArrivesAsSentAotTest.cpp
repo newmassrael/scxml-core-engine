@@ -100,8 +100,40 @@ TEST(EventDataArrivesAsSentAotTest, AHostsJsonPayloadIsAddressableAndItsTextStay
         << "the host sent the text `2 + 3` and it arrived as 5 — the payload was run rather than "
            "read. active: "
         << describe(sm);
-    EXPECT_TRUE(isActive(sm, SM::State::Settled))
+    EXPECT_TRUE(isActive(sm, SM::State::Documented))
         << "the arithmetic-shaped payload neither matched nor mismatched. active: " << describe(sm);
+
+    // §scxml-B-2-8-1's XML rung, reached through the EVENT path. The `<data>`
+    // path is `xml_data_is_a_dom_tree`'s and the two are lowered on separate
+    // code in every backend.
+    sm.processEvent(SM::Event::Doc,
+                    // Leading whitespace on purpose: the reading is chosen by
+                    // the first NON-blank character, and a pretty-printed
+                    // document is the ordinary shape of one.
+                    SCE::Core::EventMetadata("doc", "\n  "
+                                                    R"(<books xmlns=""><book title="t1"/></books>)"));
+
+    EXPECT_FALSE(isActive(sm, SM::State::Flattened))
+        << "the host sent a well-formed XML document and "
+           "`_event.data.documentElement.nodeName === 'books'` did not hold, so the payload did "
+           "not become the DOM structure the clause requires. active: "
+        << describe(sm);
+
+    // The sentence that closes the clause. Every `error.*` message this
+    // repository raises names the SCXML construct that failed, so every one of
+    // them has exactly this shape: it opens like a document and is not one.
+    // Until 2026-08-19 this engine built a DOM out of the fragment that
+    // happened to parse, because `XMLDocument::isValid` asked whether the tree
+    // was non-empty rather than whether the parse succeeded.
+    sm.processEvent(SM::Event::Broken, SCE::Core::EventMetadata("broken", "<assign>  to  detail failed"));
+
+    EXPECT_FALSE(isActive(sm, SM::State::Swallowed))
+        << "the host sent `<assign>  to  detail failed`, which opens with `<` and is not a valid "
+           "XML document, so §scxml-B-2-8-1's closing MUST applies and the reading is the "
+           "space-normalized string. active: "
+        << describe(sm);
+    EXPECT_TRUE(isActive(sm, SM::State::Settled))
+        << "the malformed-XML payload neither matched nor mismatched. active: " << describe(sm);
 }
 
 }  // namespace SCE::Tests

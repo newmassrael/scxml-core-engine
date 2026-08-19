@@ -1650,6 +1650,14 @@ pub struct SCXMLModel {
     /// through their own pipelines). Gates `lua_dom_register_metatable`
     /// emission in scriptengine.jinja2 and the XML branches in the
     /// var.content / send.content / event-promotion sites.
+    ///
+    /// Also true for every machine that carries a script engine, regardless of
+    /// what its own text says: §scxml-B-2-8-1 decides an arriving
+    /// `_event.data`'s reading from the PAYLOAD at run time, and a host may
+    /// hand any scripted machine an XML document. The build-time scans above
+    /// cannot see that, so before 2026-08-19 a machine whose text never
+    /// mentioned `<` shipped without the helper and read an XML payload as a
+    /// space-normalized string while its six siblings built a DOM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_dom_helper: Option<bool>,
 

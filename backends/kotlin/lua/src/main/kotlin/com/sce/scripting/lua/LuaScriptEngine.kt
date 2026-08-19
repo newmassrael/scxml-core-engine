@@ -601,8 +601,12 @@ class LuaScriptEngine : ScxmlScriptEngine {
     }
 
     /**
-     * W3C SCXML B.2: Parse raw data value as XML DOM, Lua expression, JSON, or space-normalized string.
-     * C++ parity: sce/src/scripting/LuaEngine.cpp:1231-1261
+     * §scxml-B-2-8-1: parse a raw data value as an XML DOM, as JSON, or as a
+     * space-normalized string — those three readings and no fourth.
+     *
+     * C++ parity: `SCE::LuaEngine::setCurrentEvent`, which lost the same
+     * fourth rung on the same day.
+     *
      * Returns true if a value was pushed onto the Lua stack, false otherwise.
      */
     private fun parseDataValueInternal(L: Long, data: String): Boolean {
@@ -612,15 +616,32 @@ class LuaScriptEngine : ScxmlScriptEngine {
             if (pushDOMObject(L, data)) return true
         }
 
-        // Step 2: Try as Lua expression (for structured data like Lua tables)
-        // C++ pattern: "return " + eventData via luaL_dostring
-        val luaExprStatus = LuaNative.loadAndCall(L, "return $data", 1)
-        if (luaExprStatus == 0) {
-            return true
-        }
-        LuaNative.pop(L, 1)  // pop error
-
-        // Step 3: JSON.parse via atomic chunk — cleanup guaranteed inside chunk
+        // Step 2: JSON.parse via atomic chunk — cleanup guaranteed inside chunk
+        //
+        // There used to be a rung above this one — `loadAndCall("return " +
+        // data)`, running the payload as this engine's own source language
+        // before anything looked at it. §scxml-B-2-8-1 gives the payload three
+        // readings and no fourth: XML becomes a DOM, JSON becomes the value,
+        // anything else becomes a space-normalized string. The 2026-08-17 round
+        // removed the rung from the four engines that had a test lane and left
+        // it in the two that did not: this one and the C++ Lua engine.
+        // Measured 2026-08-19, it still decided all three of the following
+        // here:
+        //
+        //   * `2 + 3` from a host arrived as the number 5, and as the string
+        //     "2 + 3" on this backend's OWN Rhino and QuickJS engines, which
+        //     read the clause. One payload, two answers, from three engines
+        //     behind one backend — and a generated machine takes its engine as
+        //     a constructor argument, so which answer a document gets was the
+        //     embedder's choice rather than the clause's.
+        //   * a payload that is a call RAN, in the session's own globals.
+        //     `_event.data` is the one field a document takes from outside
+        //     itself.
+        //   * the payload was read in whatever language the receiver happened
+        //     to be built from.
+        //
+        // The sender ships JSON (§scxml-B-2-9), so the two rungs the clause
+        // names are the two that are here.
         LuaNative.pushString(L, data)
         LuaNative.setGlobal(L, "__sce_tmp")
         val jsonStatus = LuaNative.loadAndCall(L,
@@ -634,7 +655,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.pop(L, 1)
         }
 
-        // Step 4: Space-normalized string (W3C SCXML B.2, test 562)
+        // Step 3: Space-normalized string (W3C SCXML B.2, test 562)
         LuaNative.pushString(L, normalizeWhitespace(data))
         return true
     }

@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: dc158df534067da964bd1c6f80973e1679ee7c64e201d638b706cd25b18535cd
-// template-hash: e1ef1a80ec6f1d98421ed2b76701aed66a2f64164d943082fb9a22d750e546a9
+// source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
+// template-hash: 838268d159240243bd92388b55a2f36721fd0c63de0466e2e1843e598c9093c9
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+// SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
 
 package com.sce.integration.event_data_arrives_as_sent
 
@@ -16,12 +16,16 @@ import com.sce.runtime.*
 // --- States (W3C SCXML 3.2) ---
 
 sealed interface EventDataArrivesAsSentState : State {
+    data object Documented : EventDataArrivesAsSentState
     data object Evaluated : EventDataArrivesAsSentState
+    data object Flattened : EventDataArrivesAsSentState
     data object Garbled : EventDataArrivesAsSentState
     data object Heard : EventDataArrivesAsSentState
     data object Mangled : EventDataArrivesAsSentState
+    data object Opening : EventDataArrivesAsSentState
     data object Quoted : EventDataArrivesAsSentState
     data object Settled : EventDataArrivesAsSentState
+    data object Swallowed : EventDataArrivesAsSentState
     data object Waiting : EventDataArrivesAsSentState
 }
 
@@ -29,6 +33,8 @@ sealed interface EventDataArrivesAsSentState : State {
 
 sealed interface EventDataArrivesAsSentEvent : Event {
     data object Arith : EventDataArrivesAsSentEvent
+    data object Broken : EventDataArrivesAsSentEvent
+    data object Doc : EventDataArrivesAsSentEvent
     sealed interface Error : EventDataArrivesAsSentEvent {
         data object Execution : Error
     }
@@ -58,24 +64,32 @@ class EventDataArrivesAsSentStateMachine(
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EventDataArrivesAsSentState? = when (stateId) {
+        "documented" -> EventDataArrivesAsSentState.Documented
         "evaluated" -> EventDataArrivesAsSentState.Evaluated
+        "flattened" -> EventDataArrivesAsSentState.Flattened
         "garbled" -> EventDataArrivesAsSentState.Garbled
         "heard" -> EventDataArrivesAsSentState.Heard
         "mangled" -> EventDataArrivesAsSentState.Mangled
+        "opening" -> EventDataArrivesAsSentState.Opening
         "quoted" -> EventDataArrivesAsSentState.Quoted
         "settled" -> EventDataArrivesAsSentState.Settled
+        "swallowed" -> EventDataArrivesAsSentState.Swallowed
         "waiting" -> EventDataArrivesAsSentState.Waiting
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: EventDataArrivesAsSentState): String = when (state) {
+        is EventDataArrivesAsSentState.Documented -> "documented"
         is EventDataArrivesAsSentState.Evaluated -> "evaluated"
+        is EventDataArrivesAsSentState.Flattened -> "flattened"
         is EventDataArrivesAsSentState.Garbled -> "garbled"
         is EventDataArrivesAsSentState.Heard -> "heard"
         is EventDataArrivesAsSentState.Mangled -> "mangled"
+        is EventDataArrivesAsSentState.Opening -> "opening"
         is EventDataArrivesAsSentState.Quoted -> "quoted"
         is EventDataArrivesAsSentState.Settled -> "settled"
+        is EventDataArrivesAsSentState.Swallowed -> "swallowed"
         is EventDataArrivesAsSentState.Waiting -> "waiting"
     }
 
@@ -87,18 +101,24 @@ class EventDataArrivesAsSentStateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: EventDataArrivesAsSentState): Int = when (state) {
-        is EventDataArrivesAsSentState.Evaluated -> 6
-        is EventDataArrivesAsSentState.Garbled -> 5
+        is EventDataArrivesAsSentState.Documented -> 3
+        is EventDataArrivesAsSentState.Evaluated -> 8
+        is EventDataArrivesAsSentState.Flattened -> 9
+        is EventDataArrivesAsSentState.Garbled -> 7
         is EventDataArrivesAsSentState.Heard -> 1
-        is EventDataArrivesAsSentState.Mangled -> 4
+        is EventDataArrivesAsSentState.Mangled -> 6
+        is EventDataArrivesAsSentState.Opening -> 4
         is EventDataArrivesAsSentState.Quoted -> 2
-        is EventDataArrivesAsSentState.Settled -> 3
+        is EventDataArrivesAsSentState.Settled -> 5
+        is EventDataArrivesAsSentState.Swallowed -> 10
         is EventDataArrivesAsSentState.Waiting -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): EventDataArrivesAsSentEvent? = when (name) {
         "arith" -> EventDataArrivesAsSentEvent.Arith
+        "broken" -> EventDataArrivesAsSentEvent.Broken
+        "doc" -> EventDataArrivesAsSentEvent.Doc
         "error.execution" -> EventDataArrivesAsSentEvent.Error.Execution
         "note" -> EventDataArrivesAsSentEvent.Note
         "payload" -> EventDataArrivesAsSentEvent.Payload
@@ -108,6 +128,8 @@ class EventDataArrivesAsSentStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: EventDataArrivesAsSentEvent): String? = when (event) {
         is EventDataArrivesAsSentEvent.Arith -> "arith"
+        is EventDataArrivesAsSentEvent.Broken -> "broken"
+        is EventDataArrivesAsSentEvent.Doc -> "doc"
         is EventDataArrivesAsSentEvent.Error.Execution -> "error.execution"
         is EventDataArrivesAsSentEvent.Note -> "note"
         is EventDataArrivesAsSentEvent.Payload -> "payload"
@@ -265,7 +287,9 @@ class EventDataArrivesAsSentStateMachine(
         // W3C SCXML 5.10: Set _event before guard evaluation
         setCurrentEventInScriptEngine(event)
         return when (state) {
+        is EventDataArrivesAsSentState.Documented -> processDocumented(event)
         is EventDataArrivesAsSentState.Heard -> processHeard(event)
+        is EventDataArrivesAsSentState.Opening -> processOpening(event)
         is EventDataArrivesAsSentState.Quoted -> processQuoted(event)
         is EventDataArrivesAsSentState.Waiting -> processWaiting(event)
         else -> TransitionResult.Ignored
@@ -274,6 +298,16 @@ class EventDataArrivesAsSentStateMachine(
 
 
     // --- Per-State Event Handlers ---
+
+    private fun processDocumented(
+        event: EventDataArrivesAsSentEvent
+    ): TransitionResult<EventDataArrivesAsSentState> = when {
+        event is EventDataArrivesAsSentEvent.Doc && safeEvaluateGuard("_event.data && _event.data.documentElement && _event.data.documentElement.nodeName === 'books'") -> TransitionResult.External(EventDataArrivesAsSentState.Opening, EventDataArrivesAsSentState.Documented)
+
+        event is EventDataArrivesAsSentEvent.Doc -> TransitionResult.External(EventDataArrivesAsSentState.Flattened, EventDataArrivesAsSentState.Documented)
+
+        else -> TransitionResult.Ignored
+    }
 
     private fun processHeard(
         event: EventDataArrivesAsSentEvent
@@ -285,10 +319,20 @@ class EventDataArrivesAsSentStateMachine(
         else -> TransitionResult.Ignored
     }
 
+    private fun processOpening(
+        event: EventDataArrivesAsSentEvent
+    ): TransitionResult<EventDataArrivesAsSentState> = when {
+        event is EventDataArrivesAsSentEvent.Broken && safeEvaluateGuard("_event.data === '<assign> to detail failed'") -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Opening)
+
+        event is EventDataArrivesAsSentEvent.Broken -> TransitionResult.External(EventDataArrivesAsSentState.Swallowed, EventDataArrivesAsSentState.Opening)
+
+        else -> TransitionResult.Ignored
+    }
+
     private fun processQuoted(
         event: EventDataArrivesAsSentEvent
     ): TransitionResult<EventDataArrivesAsSentState> = when {
-        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard("_event.data === '2 + 3'") -> TransitionResult.External(EventDataArrivesAsSentState.Settled, EventDataArrivesAsSentState.Quoted)
+        event is EventDataArrivesAsSentEvent.Arith && safeEvaluateGuard("_event.data === '2 + 3'") -> TransitionResult.External(EventDataArrivesAsSentState.Documented, EventDataArrivesAsSentState.Quoted)
 
         event is EventDataArrivesAsSentEvent.Arith -> TransitionResult.External(EventDataArrivesAsSentState.Evaluated, EventDataArrivesAsSentState.Quoted)
 
@@ -308,49 +352,73 @@ class EventDataArrivesAsSentStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun onEntry(state: EventDataArrivesAsSentState, pathChild: EventDataArrivesAsSentState?) {
         when (state) {
+            is EventDataArrivesAsSentState.Documented -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:100 :: documented :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("documented")) return
+            }
             is EventDataArrivesAsSentState.Evaluated -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:74 :: evaluated :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:122 :: evaluated :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("evaluated")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
+            is EventDataArrivesAsSentState.Flattened -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:123 :: flattened :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("flattened")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
             is EventDataArrivesAsSentState.Garbled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: garbled :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:121 :: garbled :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("garbled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EventDataArrivesAsSentState.Heard -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:61 :: heard :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:83 :: heard :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("heard")) return
             }
             is EventDataArrivesAsSentState.Mangled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:72 :: mangled :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:120 :: mangled :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("mangled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
+            is EventDataArrivesAsSentState.Opening -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:114 :: opening :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("opening")) return
+            }
             is EventDataArrivesAsSentState.Quoted -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:66 :: quoted :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:88 :: quoted :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("quoted")) return
             }
             is EventDataArrivesAsSentState.Settled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:71 :: settled :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:119 :: settled :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("settled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
+            is EventDataArrivesAsSentState.Swallowed -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:124 :: swallowed :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("swallowed")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
             is EventDataArrivesAsSentState.Waiting -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:54 :: waiting :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:76 :: waiting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
             }
@@ -358,35 +426,51 @@ class EventDataArrivesAsSentStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun onExit(state: EventDataArrivesAsSentState) {
         when (state) {
+            is EventDataArrivesAsSentState.Documented -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:100 :: documented :: _state_body
+                activeStateIds.remove("documented")
+            }
             is EventDataArrivesAsSentState.Evaluated -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:74 :: evaluated :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:122 :: evaluated :: _state_body
                 activeStateIds.remove("evaluated")
             }
+            is EventDataArrivesAsSentState.Flattened -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:123 :: flattened :: _state_body
+                activeStateIds.remove("flattened")
+            }
             is EventDataArrivesAsSentState.Garbled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: garbled :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:121 :: garbled :: _state_body
                 activeStateIds.remove("garbled")
             }
             is EventDataArrivesAsSentState.Heard -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:61 :: heard :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:83 :: heard :: _state_body
                 activeStateIds.remove("heard")
             }
             is EventDataArrivesAsSentState.Mangled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:72 :: mangled :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:120 :: mangled :: _state_body
                 activeStateIds.remove("mangled")
             }
+            is EventDataArrivesAsSentState.Opening -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:114 :: opening :: _state_body
+                activeStateIds.remove("opening")
+            }
             is EventDataArrivesAsSentState.Quoted -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:66 :: quoted :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:88 :: quoted :: _state_body
                 activeStateIds.remove("quoted")
             }
             is EventDataArrivesAsSentState.Settled -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:71 :: settled :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:119 :: settled :: _state_body
                 activeStateIds.remove("settled")
             }
+            is EventDataArrivesAsSentState.Swallowed -> {
+                // SCE-MAP: event_data_arrives_as_sent.scxml:124 :: swallowed :: _state_body
+                activeStateIds.remove("swallowed")
+            }
             is EventDataArrivesAsSentState.Waiting -> {
-                // SCE-MAP: event_data_arrives_as_sent.scxml:54 :: waiting :: _state_body
+                // SCE-MAP: event_data_arrives_as_sent.scxml:76 :: waiting :: _state_body
                 activeStateIds.remove("waiting")
             }
         }
@@ -394,7 +478,7 @@ class EventDataArrivesAsSentStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     override fun executeTransitionActions(
         source: EventDataArrivesAsSentState,
         event: EventDataArrivesAsSentEvent?

@@ -371,7 +371,11 @@ JSValue DOMBinding::createDOMObject(JSContext *ctx, const std::string &xmlConten
     // Parse XML
     auto document = std::make_shared<XMLDocument>(xmlContent);
     if (!document->isValid()) {
-        SCE_LOG_ERROR("DOMBinding: Failed to parse XML - {}", document->getErrorMessage());
+        // Debug rather than error, and the caller decides what the refusal
+        // means: `parseEventData` abandons this reading for the next one the
+        // clause names, which is the ordinary path for every `error.*` message
+        // the engine raises.
+        SCE_LOG_DEBUG("DOMBinding: content is not a valid XML document - {}", document->getErrorMessage());
         return JS_ThrowSyntaxError(ctx, "Failed to parse XML content");
     }
 

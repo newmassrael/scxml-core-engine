@@ -90,8 +90,42 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 		t.Errorf("the host sent the text `2 + 3` and it arrived as 5 — the payload "+
 			"was run rather than read (active: %v)", afterArith)
 	}
-	if !active(afterArith, EventDataArrivesAsSentStateSettled) {
+	if !active(afterArith, EventDataArrivesAsSentStateDocumented) {
 		t.Errorf("the arithmetic-shaped payload neither matched nor mismatched "+
 			"(active: %v)", afterArith)
+	}
+
+	// §scxml-B-2-8-1's XML rung, reached through the EVENT path. The `<data>`
+	// path is `xml_data_is_a_dom_tree`'s and the two are lowered on separate
+	// code in every backend.
+	// Leading whitespace on purpose: the reading is chosen by the first
+	// NON-blank character, and a pretty-printed document is the ordinary shape
+	// of one. The scan past it is small enough to look redundant.
+	engine.RaiseExternal(EventDataArrivesAsSentEventDoc, "\n  "+`<books xmlns=""><book title="t1"/></books>`, "")
+	engine.Step()
+
+	afterDoc := engine.GetActiveStates()
+	if active(afterDoc, EventDataArrivesAsSentStateFlattened) {
+		t.Errorf("the host sent a well-formed XML document and "+
+			"`_event.data.documentElement.nodeName === 'books'` did not hold, so the "+
+			"payload did not become the DOM structure the clause requires (active: %v)", afterDoc)
+	}
+
+	// The sentence that closes the clause. Every `error.*` message this
+	// repository raises names the SCXML construct that failed, so every one of
+	// them has exactly this shape: it opens like a document and is not one.
+	engine.RaiseExternal(EventDataArrivesAsSentEventBroken, "<assign>  to  detail failed", "")
+	engine.Step()
+
+	afterBroken := engine.GetActiveStates()
+	if active(afterBroken, EventDataArrivesAsSentStateSwallowed) {
+		t.Errorf("the host sent `<assign>  to  detail failed`, which opens with `<` and "+
+			"is not a valid XML document, so §scxml-B-2-8-1's closing MUST applies and "+
+			"the reading is the space-normalized string. This backend answered nil until "+
+			"2026-08-19 (active: %v)", afterBroken)
+	}
+	if !active(afterBroken, EventDataArrivesAsSentStateSettled) {
+		t.Errorf("the malformed-XML payload neither matched nor mismatched "+
+			"(active: %v)", afterBroken)
 	}
 }

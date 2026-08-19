@@ -327,7 +327,7 @@
            cpp's `setVariableAsDOM` lowers to `LuaDOMBinding::pushDOMObject
            + lua_setglobal`, which is what `sce_lua_dom_push_object`
            emits below. */
-        sce_lua_dom_push_object(sm->L, "{{ var.content | escape_c }}");
+        sce_lua_dom_push_object_or_nil(sm->L, "{{ var.content | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         /* W3C SCXML 5.3/B.2: <data id="{{ var.id }}"> inline non-XML
@@ -360,7 +360,7 @@
         {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
         {% if (_src_content | trim) is startingwith('<') %}
         /* W3C SCXML B.2: src= file's first non-WS char is `<` → DOM. */
-        sce_lua_dom_push_object(sm->L, "{{ _src_content | escape_c }}");
+        sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         if (luaL_dostring(sm->L,
@@ -406,7 +406,7 @@
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
         /* W3C SCXML B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline XML content → DOM. */
-        sce_lua_dom_push_object(sm->L, "{{ var.content | escape_c }}");
+        sce_lua_dom_push_object_or_nil(sm->L, "{{ var.content | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         /* W3C SCXML 5.3/B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch above. */
@@ -421,7 +421,7 @@
         /* W3C SCXML 5.2.2 (early): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
         {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
         {% if (_src_content | trim) is startingwith('<') %}
-        sce_lua_dom_push_object(sm->L, "{{ _src_content | escape_c }}");
+        sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         if (luaL_dostring(sm->L,
@@ -504,7 +504,7 @@
     {% elif var.content %}
     {% if (var.content | trim) is startingwith('<') %}
     /* W3C SCXML B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline XML content → DOM. */
-    sce_lua_dom_push_object(sm->L, "{{ var.content | escape_c }}");
+    sce_lua_dom_push_object_or_nil(sm->L, "{{ var.content | escape_c }}");
     lua_setglobal(sm->L, "{{ var.id }}");
     {% else %}
     /* W3C SCXML 5.3/B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch in the early-binding macro above. */
@@ -519,7 +519,7 @@
     /* W3C SCXML 5.2.2 (late): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
     {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
     {% if (_src_content | trim) is startingwith('<') %}
-    sce_lua_dom_push_object(sm->L, "{{ _src_content | escape_c }}");
+    sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
     lua_setglobal(sm->L, "{{ var.id }}");
     {% else %}
     if (luaL_dostring(sm->L,
@@ -775,7 +775,7 @@
        `_pending_donedata` slot, which still produces the correct
        `_event.data` shape because Lua's `_event = {... data=...}`
        construction stores any value type, including DOM userdata. */
-    sce_lua_dom_push_object(sm->L, "{{ content | escape_c }}");
+    sce_lua_dom_push_object_or_nil(sm->L, "{{ content | escape_c }}");
     lua_setglobal(sm->L, "_pending_donedata");
     {% else %}
     /* W3C SCXML B.2: the reading is decided at build time by the same

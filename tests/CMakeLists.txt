@@ -391,6 +391,44 @@ apply_sce_test_policies(dom_read_surface_test)
 add_test(NAME DomReadSurface COMMAND dom_read_surface_test)
 
 # ============================================================================
+# Event data readings (§scxml-B-2-8-1)
+#
+# Separate target from dom_read_surface_test for the same reason that one is
+# separate from ecmascript_semantics_test: it names LuaEngine as well as
+# reading the provider, because no gate configures -DSCE_SCRIPT_ENGINE=lua.
+# That engine kept a reading its four siblings had already lost, for exactly
+# as long as nothing ran it.
+# ============================================================================
+add_executable(event_data_readings_test
+    engine/EventDataReadingsTest.cpp
+)
+
+target_include_directories(event_data_readings_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(event_data_readings_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+# Injected rather than resolved from the working directory, so the test reads
+# the same shared table under ctest, CI and an IDE run.
+target_compile_definitions(event_data_readings_test
+    PRIVATE
+        SCE_EVENT_DATA_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/event_data_readings.json"
+)
+
+apply_sce_test_policies(event_data_readings_test)
+
+add_test(NAME EventDataReadings COMMAND event_data_readings_test)
+
+# ============================================================================
 # 3. StateMachine Tests
 # ============================================================================
 add_executable(state_machine_tests

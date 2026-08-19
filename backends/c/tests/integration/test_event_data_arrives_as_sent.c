@@ -92,12 +92,47 @@ int main(void) {
                         "was run rather than read\n");
         return 1;
     }
-    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SETTLED)) {
+    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_DOCUMENTED)) {
         fprintf(stderr, "FAIL: the arithmetic-shaped payload neither matched nor mismatched — the "
+                        "machine is not in `documented`\n");
+        return 1;
+    }
+
+    /* W3C SCXML B.2.8.1's XML rung, reached through the EVENT path. This
+       backend had no such rung at all: `sce_lua_dom_push_object` was defined,
+       documented and reachable, and its only callers were the `<data>` paths,
+       so an XML payload delivered BY EVENT read as a space-normalized string
+       here and as a DOM on all six siblings. */
+    /* Leading whitespace on purpose: the reading is chosen by the first
+       NON-blank character, and a pretty-printed document is the ordinary shape
+       of one. The scan past it is small enough to look redundant. */
+    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_DOC, "\n  <books xmlns=\"\"><book title=\"t1\"/></books>");
+
+    if (event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_FLATTENED)) {
+        fprintf(stderr, "FAIL: the host sent a well-formed XML document and "
+                        "`_event.data.documentElement.nodeName === 'books'` did not hold, so the "
+                        "payload did not become the DOM structure the clause requires\n");
+        return 1;
+    }
+
+    /* The sentence that closes the clause. Every `error.*` message this
+       repository raises names the SCXML construct that failed, so every one of
+       them has exactly this shape: it opens like a document and is not one. */
+    send_with_payload(&sm, EVENT_DATA_ARRIVES_AS_SENT_EVENT_BROKEN, "<assign>  to  detail failed");
+
+    if (event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SWALLOWED)) {
+        fprintf(stderr, "FAIL: the host sent `<assign>  to  detail failed`, which opens with `<` and "
+                        "is not a valid XML document, so B.2.8.1's closing MUST applies and the "
+                        "reading is the space-normalized string\n");
+        return 1;
+    }
+    if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_SETTLED)) {
+        fprintf(stderr, "FAIL: the malformed-XML payload neither matched nor mismatched — the "
                         "machine is not in `settled`\n");
         return 1;
     }
 
-    printf("PASS: a host payload reached the datamodel as an object, as text, and unevaluated\n");
+    printf("PASS: a host payload reached the datamodel as an object, as text, unevaluated, as a DOM, "
+           "and as the string a malformed document falls back to\n");
     return 0;
 }

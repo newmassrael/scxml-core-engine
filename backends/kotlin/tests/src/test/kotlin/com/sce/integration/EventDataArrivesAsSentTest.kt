@@ -90,9 +90,52 @@ class EventDataArrivesAsSentTest {
                 "than read",
         )
         assertEquals(
-            EventDataArrivesAsSentState.Settled,
+            EventDataArrivesAsSentState.Documented,
             sm.currentState.value,
             "the arithmetic-shaped payload neither matched nor mismatched",
+        )
+
+        // §scxml-B-2-8-1's XML rung, reached through the EVENT path. The
+        // `<data>` path is `xml_data_is_a_dom_tree`'s and the two are lowered
+        // on separate code in every backend.
+        sm.send(
+            EventDataArrivesAsSentEvent.Doc,
+            // Leading whitespace on purpose: the reading is chosen by the
+            // first NON-blank character, and a pretty-printed document is the
+            // ordinary shape of one. The scan past it looks redundant.
+            EventMetadata(data = "\n  " + """<books xmlns=""><book title="t1"/></books>"""),
+        )
+        sm.tick()
+
+        assertNotEquals(
+            EventDataArrivesAsSentState.Flattened,
+            sm.currentState.value,
+            "the host sent a well-formed XML document and " +
+                "`_event.data.documentElement.nodeName === 'books'` did not hold, so the " +
+                "payload did not become the DOM structure the clause requires",
+        )
+
+        // The sentence that closes the clause. Every `error.*` message this
+        // repository raises names the SCXML construct that failed, so every one
+        // of them has exactly this shape: it opens like a document and is not
+        // one.
+        sm.send(
+            EventDataArrivesAsSentEvent.Broken,
+            EventMetadata(data = "<assign>  to  detail failed"),
+        )
+        sm.tick()
+
+        assertNotEquals(
+            EventDataArrivesAsSentState.Swallowed,
+            sm.currentState.value,
+            "the host sent `<assign>  to  detail failed`, which opens with `<` and is not a " +
+                "valid XML document, so §scxml-B-2-8-1's closing MUST applies and the reading " +
+                "is the space-normalized string",
+        )
+        assertEquals(
+            EventDataArrivesAsSentState.Settled,
+            sm.currentState.value,
+            "the malformed-XML payload neither matched nor mismatched",
         )
     }
 }
