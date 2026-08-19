@@ -23,7 +23,7 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
     // W3C SCXML 5.3/B.2: Invalid or read-only location "{{ loc }}"
     ::sce_rust_runtime::sce_log_error!("W3C SCXML 5.3: Invalid assign location '{{ loc }}'");
 {% if 'error.execution' in model.events %}
-    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<assign> has an invalid or read-only location '{{ loc }}'"));
 {% endif %}
 {% else %}
 {% if action.content %}
@@ -45,7 +45,7 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
     if let Err(e) = se.execute_script(&sid, &assign_script) {
         ::sce_rust_runtime::sce_log_error!("Assign failed for '{{ loc }}': {}", e);
 {% if 'error.execution' in model.events %}
-        engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<assign> to '{{ loc }}' failed"));
 {% endif %}
 {% if in_foreach is defined and in_foreach %}
         // W3C SCXML 4.6: Stop current foreach iteration and loop on error

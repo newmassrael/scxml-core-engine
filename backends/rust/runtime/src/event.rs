@@ -209,6 +209,37 @@ impl<E, P: Default> EventWithMetadata<E, P> {
         }
     }
 
+    /// Construct an `error.*` event the processor itself raised.
+    ///
+    /// The single way generated code raises a platform error, so the two things
+    /// such an event owes its reader are filled in one place rather than at each
+    /// site that happens to remember:
+    ///
+    /// * `_event.type` is `"platform"`. [`new`](Self::new) defaults the metadata
+    ///   to [`EventType::External`], which is what every Rust raise site used to
+    ///   pass — the one backend of six that did.
+    /// * `_event.data` carries `message`. The clause closes with "platforms MAY
+    ///   include additional information about the nature of the error in the
+    ///   'data' field", and a document that answers `error.execution` was being
+    ///   handed `undefined` instead of the name of what broke.
+    ///
+    /// `message` describes the failing construct and is a literal formed at
+    /// generation time, not the underlying engine's error text: it must survive
+    /// `--features=no_std`, where there is no allocator to build one and
+    /// [`set_event_data`](Self::set_event_data) stores nothing anyway. The
+    /// dynamic detail stays on the log line beside the call.
+    pub fn platform_error(event: E, message: &str) -> Self {
+        // §scxml-3.12.2: the processor signals its own failures as `error.*`,
+        // and "platforms MAY include additional information about the nature of
+        // the error in the 'data' field". Cited in the body rather than the doc
+        // comment because the ledger's Rust resolver binds a citation to the
+        // symbol enclosing it, and a `///` line encloses nothing.
+        let mut raised = Self::new(event);
+        raised.metadata.event_type = EventType::Platform;
+        raised.set_event_data(message);
+        raised
+    }
+
     /// Set `_event.data` (the JSON-string baseline) from a borrowed string.
     ///
     /// No-op under `--features=no_std`: typed event data rides the `Payload`

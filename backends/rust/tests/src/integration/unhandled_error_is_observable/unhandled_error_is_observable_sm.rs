@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 81122ad2948de905cca893a2deba08718427c23db5002a6afe76af18964ac3b4
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
-// generated-at: 0
+// source-hash: acaad3b5f36dbb13dd7950dc62eaf45598406091abc6d5d773732ce4b31e8fa1
+// template-hash: 5ab4fe5e632f09bc625e90490cc671914b0a9c6800e14611ad33b836843d5e79
+// generated-at: 1787136682
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -240,6 +240,21 @@ impl UnhandledErrorIsObservablePolicy {
         )
     }
 
+    /// §scxml-5.3: what the `detail` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `detail` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn detail(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "detail",
+        )
+    }
+
     /// §scxml-5.3: what the `heards` datamodel variable is holding now.
     ///
     /// The live value, not the authored one: `<assign>` writes into the
@@ -343,6 +358,13 @@ impl UnhandledErrorIsObservablePolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'detail' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "detail", "\"\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         // W3C SCXML 5.2/5.3: Initialize 'heards' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "heards", "0",
@@ -382,8 +404,9 @@ impl UnhandledErrorIsObservablePolicy {
             se, &sid, "pokes", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                "<data id='pokes'> expr failed to evaluate",
             ));
         }
 
@@ -392,8 +415,9 @@ impl UnhandledErrorIsObservablePolicy {
             se, &sid, "booms", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                "<data id='booms'> expr failed to evaluate",
             ));
         }
 
@@ -402,8 +426,20 @@ impl UnhandledErrorIsObservablePolicy {
             se, &sid, "caught", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                "<data id='caught'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'detail' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "detail", "\"\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                UnhandledErrorIsObservableEvent::ErrorExecution,
+                "<data id='detail'> expr failed to evaluate",
             ));
         }
 
@@ -412,8 +448,9 @@ impl UnhandledErrorIsObservablePolicy {
             se, &sid, "heards", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                "<data id='heards'> expr failed to evaluate",
             ));
         }
 
@@ -430,8 +467,9 @@ impl UnhandledErrorIsObservablePolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -814,7 +852,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
             UnhandledErrorIsObservableState::Guarded => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:85 :: guarded :: _transition_0
+                        // SCE-MAP: unhandled_error_is_observable.scxml:86 :: guarded :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -834,8 +872,9 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                                     "Assign failed for 'booms': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'booms' failed",
                                 ));
                             }
                         }
@@ -850,13 +889,14 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!(
                                 "W3C SCXML 5.3: Invalid assign location ''"
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                "<assign> has an invalid or read-only location ''",
                             ));
                         }
                     }
                     1 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _transition_1
+                        // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -876,8 +916,33 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                                     "Assign failed for 'caught': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'caught' failed",
+                                ));
+                            }
+                        }
+
+                        {
+                            // W3C SCXML 5.3: <assign location="detail">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_event.data";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "detail", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'detail': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    UnhandledErrorIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'detail' failed",
                                 ));
                             }
                         }
@@ -888,7 +953,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
             UnhandledErrorIsObservableState::Idle => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:50 :: idle :: _transition_0
+                        // SCE-MAP: unhandled_error_is_observable.scxml:51 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -908,14 +973,15 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                                     "Assign failed for 'pokes': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'pokes' failed",
                                 ));
                             }
                         }
                     }
                     1 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:53 :: idle :: _transition_1
+                        // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         // W3C SCXML 3.8.1: <raise event="unheard">
@@ -934,7 +1000,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         ));
                     }
                     2 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:75 :: idle :: _transition_2
+                        // SCE-MAP: unhandled_error_is_observable.scxml:76 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -954,14 +1020,15 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                                     "Assign failed for 'heards': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'heards' failed",
                                 ));
                             }
                         }
                     }
                     3 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:78 :: idle :: _transition_3
+                        // SCE-MAP: unhandled_error_is_observable.scxml:79 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
 
                         {
@@ -981,8 +1048,9 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                                     "Assign failed for 'booms': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                                    "<assign> to 'booms' failed",
                                 ));
                             }
                         }
@@ -997,8 +1065,9 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!(
                                 "W3C SCXML 5.3: Invalid assign location ''"
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                "<assign> has an invalid or read-only location ''",
                             ));
                         }
                     }

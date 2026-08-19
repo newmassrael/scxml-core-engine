@@ -981,6 +981,16 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "unhandledErrorEvents_",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/event.rs",
+          "symbol": "platform_error",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/event.go",
+          "symbol": "NewPlatformError",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

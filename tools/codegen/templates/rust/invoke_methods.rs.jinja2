@@ -39,8 +39,9 @@
                     if !se.has_variable(&sid, "{{ var_name }}") {
                         ::sce_rust_runtime::sce_log_error!("Namelist validation failed: '{{ var_name }}' not declared in parent");
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                            "<invoke> namelist names '{{ var_name }}', which the parent does not declare"));
 {% endif %}
                         namelist_valid = false;
                     }
@@ -197,8 +198,9 @@
                     Ok(sce_rust_runtime::ScriptValue::Null) | Err(_) => {
                         ::sce_rust_runtime::sce_log_error!("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                            "<invoke> srcexpr '{{ invoke_info.srcexpr }}' failed to evaluate"));
 {% endif %}
                         continue;
                     }
@@ -216,8 +218,9 @@
                     Ok(sce_rust_runtime::ScriptValue::Null) | Ok(sce_rust_runtime::ScriptValue::Int(_)) | Err(_) => {
                         ::sce_rust_runtime::sce_log_error!("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
 {% if 'error.execution' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                            "<invoke> contentexpr '{{ invoke_info.contentexpr }}' failed to evaluate"));
 {% endif %}
                         continue;
                     }
@@ -299,7 +302,7 @@
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> declares a type this processor does not support"));
                 continue;
             }
 {% endfor %}

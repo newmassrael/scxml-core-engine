@@ -41,7 +41,7 @@
 			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
 		} else {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
 {% endif %}
 		}
 {% elif param.location %}
@@ -49,7 +49,7 @@
 			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: paramVal})
 		} else {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> location could not be read"))
 {% endif %}
 		}
 {% endif %}
@@ -60,14 +60,14 @@
 		// W3C SCXML B.2: Check variable existence before evaluation
 		if !se.HasVariable(p.SessionID, "{{ name }}") {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> namelist names '{{ name }}', which is not declared"))
 {% endif %}
 			sendAborted = true
 		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `{{ name }}`); nlErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "{{ name }}", Value: nlVal})
 		} else {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> namelist entry '{{ name }}' failed to evaluate"))
 {% endif %}
 			sendAborted = true
 		}
@@ -132,7 +132,7 @@
 	// W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
 {% if 'error.execution' in model.events %}
 	{
-		errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }})
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support")
 		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
 		engine.Raise(errEvt)
 	}
@@ -144,7 +144,7 @@
 	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
 	{
-		errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }})
+		errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send target='{{ action.target }}'> is not a target this processor can address")
 		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
 		engine.Raise(errEvt)
 	}
@@ -178,13 +178,13 @@
 		if httpTarget == "" {
 {% if 'error.communication' in model.events %}
 			{
-				errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.communication' | to_event_variant }})
+				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
 				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
 				engine.Raise(errEvt)
 			}
 {% elif 'error.execution' in model.events %}
 			{
-				errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }})
+				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> over BasicHTTPEventProcessor has no target to post to")
 				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
 				engine.Raise(errEvt)
 			}
@@ -302,12 +302,12 @@
 			// W3C SCXML 6.2.4: If target is not valid, raise error.communication
 {% if 'error.communication' in model.events %}
 			{
-				errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.communication' | to_event_variant }})
+				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.communication' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
 				engine.Raise(errEvt)
 			}
 {% elif 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> targetexpr evaluated to nothing, so there is no target to reach"))
 {% endif %}
 		} else {
 {% if action.eventexpr and model.needs_script_engine %}

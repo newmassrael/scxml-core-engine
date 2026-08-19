@@ -34,7 +34,7 @@
                 se, &sid, "{{ var.id }}", "{{ var.src }}", base_path) {
                 ::sce_rust_runtime::sce_log_error!("Failed to init '{{ var.id }}' from src in {{ state_id }}: {}", e);
 {% if raise_error and 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}' src='{{ var.src }}'> could not be loaded"));
 {% endif %}
             }
         }
@@ -45,7 +45,7 @@
         if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_expr | escape_rust }}") {
             ::sce_rust_runtime::sce_log_error!("Failed to init function var '{{ var.id }}' in {{ state_id }}: {}", e);
 {% if raise_error and 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> function expression failed"));
 {% endif %}
         }
 {% else %}
@@ -54,7 +54,7 @@
             se, &sid, "{{ var.id }}", "{{ var.expr | to_lua_expr | escape_rust }}") {
             ::sce_rust_runtime::sce_log_error!("{{ state_id }}: {}", e);
 {% if raise_error and 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> expr failed to evaluate"));
 {% endif %}
         }
 {% endif %}
@@ -64,7 +64,7 @@
         if let Err(e) = se.set_variable_as_dom(&sid, "{{ var.id }}", r#"{{ var.content }}"#) {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable '{{ var.id }}' in {{ state_id }}: {}", e);
 {% if raise_error and 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> XML content could not be parsed"));
 {% endif %}
         }
 {% else %}
@@ -75,7 +75,7 @@
             "{{ var.content | normalize_ws | escape_rust }}") {
             ::sce_rust_runtime::sce_log_error!("Failed to init '{{ var.id }}' in {{ state_id }}: {}", e);
 {% if raise_error and 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> content failed to initialise"));
 {% endif %}
         }
 {% endif %}

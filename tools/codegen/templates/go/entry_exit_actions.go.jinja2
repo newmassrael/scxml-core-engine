@@ -98,7 +98,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% if not param_expr %}
 				// W3C SCXML 5.7: Empty location raises error.execution (structural error)
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_go }}'> has an empty location"))
 {% endif %}
 				doneDataOk = false
 {% else %}
@@ -113,7 +113,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 					jsonParts = append(jsonParts, "\"{{ param.name | escape_json_string | escape_go }}\":" + sce.ScriptValueToJSON(val))
 				} else {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
 {% endif %}
 				}
 {% endif %}
@@ -148,7 +148,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 					doneEventData = sce.ScriptValueToJSON(val)
 				} else {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"))
 {% endif %}
 				}
 			}
