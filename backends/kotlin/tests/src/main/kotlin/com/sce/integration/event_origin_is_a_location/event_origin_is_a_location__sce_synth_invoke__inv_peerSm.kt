@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -139,7 +139,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -164,7 +164,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -177,7 +177,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -189,7 +189,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

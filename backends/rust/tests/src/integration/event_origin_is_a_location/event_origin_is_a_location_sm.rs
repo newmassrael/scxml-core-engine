@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -317,8 +317,9 @@ impl EventOriginIsALocationPolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventOriginIsALocationEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -982,9 +983,7 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                                         ) =>
                                     {
                                         // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            EventOriginIsALocationEvent::ErrorCommunication,
-                                        ));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach"));
                                         None
                                     }
                                     Ok(val) => {
@@ -995,10 +994,7 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                                         if trimmed.starts_with("!") {
                                             // W3C SCXML 6.2: Invalid target raises error.execution
                                             {
-                                                let mut err_meta =
-                                                    sce_rust_runtime::EventWithMetadata::new(
-                                                        EventOriginIsALocationEvent::ErrorExecution,
-                                                    );
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationEvent::ErrorExecution, "<send> targetexpr produced a target this processor cannot address");
                                                 err_meta.metadata.send_id = send_id.clone();
                                                 engine.raise(err_meta);
                                             }
@@ -1012,9 +1008,12 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            EventOriginIsALocationEvent::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                EventOriginIsALocationEvent::ErrorExecution,
+                                                "<send> targetexpr failed to evaluate",
+                                            ),
+                                        );
                                         None
                                     }
                                 }

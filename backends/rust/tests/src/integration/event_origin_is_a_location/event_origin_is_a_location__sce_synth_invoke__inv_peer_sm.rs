@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -301,8 +301,9 @@ impl EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -633,7 +634,7 @@ impl StatePolicy for EventOriginIsALocationSceSynthInvokeInvPeerPolicy {
                                         "send param 'myLocation' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EventOriginIsALocationSceSynthInvokeInvPeerEvent::ErrorExecution, "<send> <param name='myLocation'> expr failed to evaluate"));
                                 }
                             }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(

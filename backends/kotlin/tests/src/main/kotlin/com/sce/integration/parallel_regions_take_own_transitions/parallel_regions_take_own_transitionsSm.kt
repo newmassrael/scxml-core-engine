@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 9cf4fd5f626a0b8e891563a233492fcdd47cb02fca615778881ec79fcd0199e5
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -198,14 +198,14 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
             val initResult_n = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "n", initResult_n)
         } catch (e: Exception) {
-            raiseInternal(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution)
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'm' with expr
         try {
             val initResult_m = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "m", initResult_m)
         } catch (e: Exception) {
-            raiseInternal(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution)
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<data id='m'> expr failed to evaluate")
         }
 
 
@@ -235,7 +235,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution)
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -260,7 +260,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution)
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -273,7 +273,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution)
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -285,7 +285,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution)
+            raisePlatformError(ParallelRegionsTakeOwnTransitionsEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

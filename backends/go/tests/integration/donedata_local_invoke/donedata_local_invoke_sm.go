@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -222,7 +222,7 @@ func (p *DonedataLocalInvokePolicy) InitializeDataModel(eng *sce.Engine[Donedata
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "param_ok", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(DonedataLocalInvokeEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(DonedataLocalInvokeEventErrorExecution, "<data id='param_ok'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "param_ok", nil)
 		}
 	}
@@ -252,7 +252,7 @@ func (p *DonedataLocalInvokePolicy) evaluateGuard(guard string, eng *sce.Engine[
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(DonedataLocalInvokeEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(DonedataLocalInvokeEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -919,7 +919,7 @@ func (p *DonedataLocalInvokePolicy) ExecuteTransitionActions(engine *sce.Engine[
 
 	// W3C SCXML 5.3: <assign location="param_ok" expr="true">
 	if err := p.assignVariable(`param_ok`, `true`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(DonedataLocalInvokeEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(DonedataLocalInvokeEventErrorExecution, "<assign> to 'param_ok' failed"))
 	}
 
 		return

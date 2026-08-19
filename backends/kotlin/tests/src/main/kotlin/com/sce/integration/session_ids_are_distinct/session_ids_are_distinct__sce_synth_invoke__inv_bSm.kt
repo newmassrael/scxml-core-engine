@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -129,7 +129,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -154,7 +154,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -167,7 +167,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -179,7 +179,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution)
+            raisePlatformError(SessionIdsAreDistinctSceSynthInvokeInvBEvent.Error.Execution, "<script> failed to execute")
         }
     }
 

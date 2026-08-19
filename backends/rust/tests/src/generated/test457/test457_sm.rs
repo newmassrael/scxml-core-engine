@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -360,8 +360,9 @@ impl Test457Policy {
             se, &sid, "Var1", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test457Event::ErrorExecution,
+                "<data id='Var1'> expr failed to evaluate",
             ));
         }
 
@@ -376,8 +377,9 @@ impl Test457Policy {
             se, &sid, "Var4", "7",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test457Event::ErrorExecution,
+                "<data id='Var4'> expr failed to evaluate",
             ));
         }
 
@@ -389,8 +391,9 @@ impl Test457Policy {
             "{1, 2, 3}",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test457Event::ErrorExecution,
+                "<data id='Var5'> expr failed to evaluate",
             ));
         }
 
@@ -410,8 +413,9 @@ impl Test457Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -778,8 +782,9 @@ impl StatePolicy for Test457Policy {
                                 "Foreach validation failed: '{}' is not a legal variable name",
                                 item_name
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                "<foreach item='Var2'> is not a legal variable name",
                             ));
                         } else {
                             // Evaluate array expression
@@ -838,11 +843,7 @@ impl StatePolicy for Test457Policy {
                                                         "Assign failed for 'Var1': {}",
                                                         e
                                                     );
-                                                    engine.raise(
-                                                        sce_rust_runtime::EventWithMetadata::new(
-                                                            Test457Event::ErrorExecution,
-                                                        ),
-                                                    );
+                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, "<assign> to 'Var1' failed"));
                                                     // W3C SCXML 4.6: Stop current foreach iteration and loop on error
                                                     iteration_success = false;
                                                     break 'foreach_body;
@@ -856,9 +857,12 @@ impl StatePolicy for Test457Policy {
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test457Event::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test457Event::ErrorExecution,
+                                                "an action inside <foreach> failed",
+                                            ),
+                                        );
                                     }
                                 }
                                 Ok(_) => {
@@ -866,18 +870,24 @@ impl StatePolicy for Test457Policy {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'Var4' is not an array"
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test457Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test457Event::ErrorExecution,
+                                            "<foreach array='Var4'> is not an array",
+                                        ),
+                                    );
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: failed to evaluate array 'Var4': {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test457Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test457Event::ErrorExecution,
+                                            "<foreach array='Var4'> failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -910,8 +920,9 @@ impl StatePolicy for Test457Policy {
                                 "Foreach validation failed: '{}' is not a legal variable name",
                                 item_name
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                "<foreach item=''continue''> is not a legal variable name",
                             ));
                         } else {
                             // Evaluate array expression
@@ -970,11 +981,7 @@ impl StatePolicy for Test457Policy {
                                                         "Assign failed for 'Var1': {}",
                                                         e
                                                     );
-                                                    engine.raise(
-                                                        sce_rust_runtime::EventWithMetadata::new(
-                                                            Test457Event::ErrorExecution,
-                                                        ),
-                                                    );
+                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, "<assign> to 'Var1' failed"));
                                                     // W3C SCXML 4.6: Stop current foreach iteration and loop on error
                                                     iteration_success = false;
                                                     break 'foreach_body;
@@ -988,9 +995,12 @@ impl StatePolicy for Test457Policy {
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test457Event::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test457Event::ErrorExecution,
+                                                "an action inside <foreach> failed",
+                                            ),
+                                        );
                                     }
                                 }
                                 Ok(_) => {
@@ -998,18 +1008,24 @@ impl StatePolicy for Test457Policy {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'Var5' is not an array"
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test457Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test457Event::ErrorExecution,
+                                            "<foreach array='Var5'> is not an array",
+                                        ),
+                                    );
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: failed to evaluate array 'Var5': {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test457Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test457Event::ErrorExecution,
+                                            "<foreach array='Var5'> failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -1038,8 +1054,9 @@ impl StatePolicy for Test457Policy {
                         let assign_script = format!("{} = {}", "Var6", expr);
                         if let Err(e) = se.execute_script(&sid, &assign_script) {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var6': {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                "<assign> to 'Var6' failed",
                             ));
                             // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
                             break 'action_block;
@@ -1064,8 +1081,9 @@ impl StatePolicy for Test457Policy {
                                 "Foreach validation failed: '{}' is not a legal variable name",
                                 item_name
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                "<foreach item='Var2'> is not a legal variable name",
                             ));
                         } else {
                             // Evaluate array expression
@@ -1111,11 +1129,7 @@ impl StatePolicy for Test457Policy {
                                                         "Assign failed for 'Var6': {}",
                                                         e
                                                     );
-                                                    engine.raise(
-                                                        sce_rust_runtime::EventWithMetadata::new(
-                                                            Test457Event::ErrorExecution,
-                                                        ),
-                                                    );
+                                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, "<assign> to 'Var6' failed"));
                                                     // W3C SCXML 4.6: Stop current foreach iteration and loop on error
                                                     iteration_success = false;
                                                     break 'foreach_body;
@@ -1129,9 +1143,12 @@ impl StatePolicy for Test457Policy {
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test457Event::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test457Event::ErrorExecution,
+                                                "an action inside <foreach> failed",
+                                            ),
+                                        );
                                     }
                                 }
                                 Ok(_) => {
@@ -1139,18 +1156,24 @@ impl StatePolicy for Test457Policy {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'Var5' is not an array"
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test457Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test457Event::ErrorExecution,
+                                            "<foreach array='Var5'> is not an array",
+                                        ),
+                                    );
                                 }
                                 Err(e) => {
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: failed to evaluate array 'Var5': {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test457Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test457Event::ErrorExecution,
+                                            "<foreach array='Var5'> failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                         }

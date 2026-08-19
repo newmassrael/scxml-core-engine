@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -176,7 +176,7 @@ class EventOriginIsALocationStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -201,7 +201,7 @@ class EventOriginIsALocationStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -214,7 +214,7 @@ class EventOriginIsALocationStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -226,7 +226,7 @@ class EventOriginIsALocationStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(EventOriginIsALocationEvent.Error.Execution)
+            raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -412,17 +412,17 @@ class EventOriginIsALocationStateMachine(
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
-                        raiseInternal(EventOriginIsALocationEvent.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
+                        raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_0")
                         return@resolveTarget
                     }
                     // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
                     if (target.isEmpty() || target == "undefined") {
-                        raiseInternal(EventOriginIsALocationEvent.Error.Communication, EventMetadata.platform())
+                        raisePlatformError(EventOriginIsALocationEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
                         return@resolveTarget
                     }
                     _resolvedTarget = target
                 } catch (_: Exception) {
-                    raiseInternal(EventOriginIsALocationEvent.Error.Execution, EventMetadata.platform())
+                    raisePlatformError(EventOriginIsALocationEvent.Error.Execution, "<send> targetexpr failed to evaluate")
                 }
             }
             _resolvedTarget?.let { _rt ->

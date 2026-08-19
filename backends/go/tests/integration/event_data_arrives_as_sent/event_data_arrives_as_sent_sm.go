@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: dc158df534067da964bd1c6f80973e1679ee7c64e201d638b706cd25b18535cd
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -225,7 +225,7 @@ func (p *EventDataArrivesAsSentPolicy) evaluateGuard(guard string, eng *sce.Engi
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(EventDataArrivesAsSentEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(EventDataArrivesAsSentEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)

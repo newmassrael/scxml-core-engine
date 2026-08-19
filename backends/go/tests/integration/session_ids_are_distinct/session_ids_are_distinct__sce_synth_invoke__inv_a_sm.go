@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -201,7 +201,7 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvAPolicy) evaluateGuard(guard stri
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctSceSynthInvokeInvAEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctSceSynthInvokeInvAEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -504,7 +504,7 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvAPolicy) ExecuteEntryActions(stat
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_sessionid`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "sid", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctSceSynthInvokeInvAEventErrorExecution))
+			engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctSceSynthInvokeInvAEventErrorExecution, "<send> <param name='sid'> expr failed to evaluate"))
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr

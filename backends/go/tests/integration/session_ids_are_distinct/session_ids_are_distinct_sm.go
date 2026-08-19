@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -237,7 +237,7 @@ func (p *SessionIdsAreDistinctPolicy) InitializeDataModel(eng *sce.Engine[Sessio
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "firstSid", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<data id='firstSid'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "firstSid", nil)
 		}
 	}
@@ -247,7 +247,7 @@ func (p *SessionIdsAreDistinctPolicy) InitializeDataModel(eng *sce.Engine[Sessio
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "readBackProbe", result)
 		} else {
-			eng.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctEventErrorExecution))
+			eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<data id='readBackProbe'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "readBackProbe", nil)
 		}
 	}
@@ -277,7 +277,7 @@ func (p *SessionIdsAreDistinctPolicy) evaluateGuard(guard string, eng *sce.Engin
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -934,7 +934,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteTransitionActions(engine *sce.Engin
 
 	// W3C SCXML 5.3: <assign location="firstSid" expr="_event.data.sid">
 	if err := p.assignVariable(`firstSid`, `_event.data.sid`); err != nil {
-		engine.Raise(sce.NewPlatformEvent(SessionIdsAreDistinctEventErrorExecution))
+		engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<assign> to 'firstSid' failed"))
 	}
 
 		return

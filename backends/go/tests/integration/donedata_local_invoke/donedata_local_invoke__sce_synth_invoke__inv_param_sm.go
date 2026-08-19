@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 
@@ -198,7 +198,7 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) evaluateGuard(guard st
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformEvent(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution))
+		eng.Raise(sce.NewPlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution, "a <transition> cond failed to evaluate"))
 		return false
 	}
 	return sce.ScriptToBool(result)
@@ -498,7 +498,7 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(st
 					// `<send>`'s params take.
 					jsonParts = append(jsonParts, "\"result\":" + sce.ScriptValueToJSON(val))
 				} else {
-					engine.Raise(sce.NewPlatformEvent(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution))
+					engine.Raise(sce.NewPlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution, "<donedata> <param name='result'> failed to evaluate"))
 				}
 				if doneDataOk {
 					doneEventData = "{" + strings.Join(jsonParts, ",") + "}"

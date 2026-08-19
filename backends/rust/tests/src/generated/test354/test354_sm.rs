@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -314,8 +314,9 @@ impl Test354Policy {
             se, &sid, "Var1", "1",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test354Event::ErrorExecution,
+                "<data id='Var1'> expr failed to evaluate",
             ));
         }
 
@@ -338,8 +339,9 @@ impl Test354Policy {
             Ok(val) => val.to_bool(),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test354Event::ErrorExecution,
+                    "a <transition> cond failed to evaluate",
                 ));
                 false
             }
@@ -695,9 +697,12 @@ impl StatePolicy for Test354Policy {
                                         "send param 'param1' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                        Test354Event::ErrorExecution,
-                                    ));
+                                    engine.raise(
+                                        sce_rust_runtime::EventWithMetadata::platform_error(
+                                            Test354Event::ErrorExecution,
+                                            "<send> <param name='param1'> expr failed to evaluate",
+                                        ),
+                                    );
                                 }
                             }
                             // W3C SCXML C.1: namelist variables become top-level keys in the data table
@@ -706,8 +711,9 @@ impl StatePolicy for Test354Policy {
                                 ::sce_rust_runtime::sce_log_error!(
                                     "send namelist 'Var1': variable not declared"
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test354Event::ErrorExecution,
+                                    "<send> namelist names 'Var1', which is not declared",
                                 ));
                                 _send_aborted = true;
                             } else {
@@ -723,9 +729,12 @@ impl StatePolicy for Test354Policy {
                                             "send namelist 'Var1' eval failed: {}",
                                             e
                                         );
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                                            Test354Event::ErrorExecution,
-                                        ));
+                                        engine.raise(
+                                            sce_rust_runtime::EventWithMetadata::platform_error(
+                                                Test354Event::ErrorExecution,
+                                                "<send> namelist entry 'Var1' failed to evaluate",
+                                            ),
+                                        );
                                         _send_aborted = true;
                                     }
                                 }
@@ -911,8 +920,9 @@ impl StatePolicy for Test354Policy {
                                     "Assign failed for 'Var2': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test354Event::ErrorExecution,
+                                    "<assign> to 'Var2' failed",
                                 ));
                             }
                         }
@@ -934,8 +944,9 @@ impl StatePolicy for Test354Policy {
                                     "Assign failed for 'Var3': {}",
                                     e
                                 );
-                                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test354Event::ErrorExecution,
+                                    "<assign> to 'Var3' failed",
                                 ));
                             }
                         }
