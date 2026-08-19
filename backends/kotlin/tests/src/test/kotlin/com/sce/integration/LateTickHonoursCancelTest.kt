@@ -64,8 +64,11 @@ class LateTickHonoursCancelTest {
             "the machine should be waiting on its two delayed sends"
         )
 
+        val armedFor = System.currentTimeMillis()
         Thread.sleep(pastBothDeadlines)
+        val sleptFor = System.currentTimeMillis() - armedFor
         sm.tick()
+        val tickTook = System.currentTimeMillis() - armedFor - sleptFor
 
         assertNotEquals(
             LateTickHonoursCancelState.CancelLost,
@@ -75,7 +78,14 @@ class LateTickHonoursCancelTest {
                 "scheduler drain queued them together and the cancel found nothing " +
                 "left to drop. W3C SCXML 6.3 cancels a send that has not been " +
                 "dispatched — dispatch is one entry per macrostep, not one " +
-                "queue-flush per tick."
+                "queue-flush per tick. " +
+                // This engine reads a real clock, and this case failed once inside
+                // the 27-gate push while passing on an idle host. The two numbers
+                // separate the two explanations: a slept-for far above 400 ms means
+                // the host was descheduled before the tick, while a tick that took
+                // long enough to cross a deadline of its own means the dispatch
+                // loop is what let the second entry become due mid-macrostep.
+                "[slept ${sleptFor}ms, tick took ${tickTook}ms]"
         )
 
         // The verdict is itself scheduler-driven, so a channel whose tick loop
@@ -95,26 +105,56 @@ class LateTickHonoursCancelTest {
 
     @Test
     fun aPunctualHostReachesTheSameVerdict() {
+        // A 10 ms tick loop USUALLY wakes between the two deadlines, which is the
+        // interleaving this case was written for — but nothing makes it do so on
+        // a loaded host, where the first tick can land past both. That is the
+        // sibling case above, and the two must reach the same verdict: the name
+        // of this test is the contract, not the schedule it hoped for.
+        //
+        // Measured 2026-08-19: pinning `Pass` alone let a late first tick report
+        // `CancelLost` as "the punctual host failed", which is a false red about
+        // a real defect the other case already owns. Asserting the invariant on
+        // every wake-up is both stronger and timing-free.
         val sm = started()
         val deadline = System.currentTimeMillis() + 2000L
         while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
             sm.tick()
+            assertNotEquals(
+                LateTickHonoursCancelState.CancelLost,
+                sm.currentState.value,
+                "whatever this loop's tick happened to straddle, `settle` must never " +
+                    "be delivered after `active`'s <cancel sendid=\"s1\"> ran. W3C SCXML " +
+                    "6.3 cancels a send that has not been dispatched, and dispatch is " +
+                    "one entry per macrostep"
+            )
             Thread.sleep(10L)
         }
         assertEquals(
             LateTickHonoursCancelState.Pass,
             sm.currentState.value,
-            "a 10 ms tick loop, which wakes between the 100 ms and 200 ms deadlines, " +
-                "must reach `pass`"
+            "a host that keeps ticking must reach `pass`, whichever side of the two " +
+                "deadlines its wake-ups fell on"
         )
         sm.cleanup()
     }
 
     @Test
     fun theEngineSaysWhenItIsNextDue() {
+        // This engine reads a real clock, so the question "is anything due yet"
+        // is only answerable relative to how long the run itself took. Arming
+        // happens somewhere inside `started()`, so `elapsed` below is an UPPER
+        // bound on the time that has passed since the nearer send was armed.
+        //
+        // Measured 2026-08-19: asserting `due > 0` outright is a race with the
+        // machine this suite runs on. It held on an idle host and failed inside
+        // the 27-gate push, where `started()` — SCXML parse plus a script-engine
+        // session — can itself outlast the 100 ms deadline. That is a false red:
+        // the engine answered correctly about a send that really was due.
+        val before = System.currentTimeMillis()
         val sm = started()
-
         val due = sm.timeUntilNextScheduledMs()
+        val elapsed = System.currentTimeMillis() - before
+
         assertTrue(
             due != null && due <= 100L,
             "the nearer of the two armed sends is 100 ms out; the engine answered " +
@@ -122,10 +162,13 @@ class LateTickHonoursCancelTest {
         )
         // The lower bound is the half that catches an answer of "due now", which
         // reads as a working query and costs the caller a spin that never sleeps.
+        // Stated against the clock this run actually observed: the send was armed
+        // no earlier than `before`, so at least `100 - elapsed` ms of it remain.
         assertTrue(
-            due != null && due > 0L,
-            "the nearer send is 100 ms out and nothing is due yet, but the engine " +
-                "answered $due. A host sleeping on that answer does not sleep at all"
+            due != null && due >= 100L - elapsed,
+            "the nearer send was armed at most $elapsed ms ago, so at least " +
+                "${100L - elapsed} ms of its 100 ms delay are left, but the engine " +
+                "answered $due. A host sleeping on that answer does not sleep long enough"
         )
 
         // Drive by the engine's own answer: every wait lands on a fire time, so
