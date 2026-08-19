@@ -767,7 +767,12 @@ std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &session
     }
 
     lua_State *L = it->second->L;
-    LuaDOMBinding::pushDOMObject(L, xmlContent);
+    // A caller that already decided the content is a document, so a refusal
+    // leaves the variable unbound exactly as before.
+    if (LuaDOMBinding::pushDOMObject(L, xmlContent) == 0) {
+        SCE_LOG_ERROR("LuaEngine: <data> content is not a valid XML document, leaving '{}' unbound", name);
+        lua_pushnil(L);
+    }
     lua_setglobal(L, name.c_str());
 
     std::promise<ScriptResult> p;
@@ -998,35 +1003,56 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
     lua_pushstring(L, invokeId.c_str());
     lua_setfield(L, -2, "invokeid");
 
-    // §scxml-B-2: Parse event data as XML DOM, JSON/Lua table, or string
+    // §scxml-B-2-8-1: parse event data as an XML DOM, as JSON, or as a
+    // space-normalized string — those three readings and no fourth.
     if (!eventData.empty()) {
-        // Check if XML content
+        // Whether the content OPENS like a document. It is a guess about which
+        // reading applies, not the reading itself: the clause conditions the
+        // DOM rung on the content being one — "if the Processor can interpret
+        // the content as a valid XML document, it MUST create the corresponding
+        // DOM structure" — and closes with "Otherwise, the Processor MUST treat
+        // the content as a space-normalized string literal". So a guess that
+        // turns out wrong falls through to the rungs below rather than
+        // answering nil, which is what this engine did until the repository
+        // started sending `error.*` messages that name the failing construct:
+        // `<assign> to detail failed` opens with `<` and is not a document.
         size_t firstNonWS = eventData.find_first_not_of(" \t\r\n");
-        bool isXML = firstNonWS != std::string::npos && eventData[firstNonWS] == '<';
+        bool opensLikeXML = firstNonWS != std::string::npos && eventData[firstNonWS] == '<';
 
-        if (isXML) {
-            // Parse as DOM object (§scxml-B-2)
-            LuaDOMBinding::pushDOMObject(L, eventData);
+        if (opensLikeXML && LuaDOMBinding::pushDOMObject(L, eventData) == 1) {
             lua_setfield(L, -2, "data");
         } else {
-            // Try to evaluate as Lua expression (for structured data like Lua tables)
-            std::string loadExpr = "return " + eventData;
-            if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
+            // §scxml-B-2: JSON becomes the corresponding value.
+            //
+            // There used to be a rung above this one — `luaL_dostring("return "
+            // + eventData)`, running the payload as this engine's own source
+            // language before anything looked at it. The 2026-08-17 round
+            // removed it from the four engines that had a test lane and left it
+            // in the two that did not: this one and the Kotlin Lua engine.
+            // Measured 2026-08-19, it still decided all three of the following
+            // here:
+            //
+            //   * `2 + 3` from a host arrived as the number 5, and as the
+            //     string "2 + 3" on this backend's OWN QuickJS engine, which
+            //     read the clause. One payload, two answers, from two engines
+            //     behind one backend.
+            //   * a payload that is a call RAN, in the session's own globals.
+            //     `_event.data` is the one field a document takes from outside
+            //     itself.
+            //   * the payload was read in whatever language the receiver
+            //     happened to be built from.
+            //
+            // The sender ships JSON (§scxml-B-2-9), so the two rungs the clause
+            // names are the two that are here.
+            auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
+            if (parsed.has_value()) {
+                pushScriptValue(L, parsed.value());
                 lua_setfield(L, -2, "data");
             } else {
-                lua_pop(L, 1);  // Pop error
-                // §scxml-B-2: Try JSON parsing for structured event data
-                // JSON syntax ({"key":"value"}) is not valid Lua, requires explicit conversion
-                auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
-                if (parsed.has_value()) {
-                    pushScriptValue(L, parsed.value());
-                    lua_setfield(L, -2, "data");
-                } else {
-                    // §scxml-B-2 (test 562): Space-normalize plain text content
-                    std::string normalized = normalizeWhitespace(eventData);
-                    lua_pushstring(L, normalized.c_str());
-                    lua_setfield(L, -2, "data");
-                }
+                // §scxml-B-2 (test 562): Space-normalize plain text content
+                std::string normalized = normalizeWhitespace(eventData);
+                lua_pushstring(L, normalized.c_str());
+                lua_setfield(L, -2, "data");
             }
         }
     } else {

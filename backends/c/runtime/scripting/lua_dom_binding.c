@@ -183,8 +183,15 @@ int sce_lua_dom_push_object(lua_State *L, const char *xml_content) {
     sce_xml_doc_t *doc = sce_xml_parse(xml_content ? xml_content : "");
     if (!doc || !sce_xml_doc_is_valid(doc)) {
         sce_xml_doc_free(doc);
-        lua_pushnil(L);
-        return 1;
+        /* Nothing pushed, so the caller decides what a refusal means. It used
+           to push nil and report 1, which could only serve one of the two
+           callers: a `<data>` element wants the variable left unbound, and an
+           arriving `_event.data` has a reading below this one — §scxml-B-2-8-1
+           conditions the DOM reading on the content being a valid document and
+           closes with "Otherwise, the Processor MUST treat the content as a
+           space-normalized string literal". The cpp sibling
+           `LuaDOMBinding::pushDOMObject` reports the same way. */
+        return 0;
     }
 
     sce_lua_dom_doc_ud_t *ud = (sce_lua_dom_doc_ud_t *)lua_newuserdata(L, sizeof(*ud));
@@ -194,6 +201,12 @@ int sce_lua_dom_push_object(lua_State *L, const char *xml_content) {
     luaL_getmetatable(L, SCE_LUA_DOM_DOCUMENT_MT);
     lua_setmetatable(L, -2);
     return 1;
+}
+
+void sce_lua_dom_push_object_or_nil(lua_State *L, const char *xml_content) {
+    if (sce_lua_dom_push_object(L, xml_content) == 0) {
+        lua_pushnil(L);
+    }
 }
 
 // ─── Method callbacks ───────────────────────────────────────────────

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: dc158df534067da964bd1c6f80973e1679ee7c64e201d638b706cd25b18535cd
-// template-hash: e1ef1a80ec6f1d98421ed2b76701aed66a2f64164d943082fb9a22d750e546a9
+// source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
+// template-hash: 838268d159240243bd92388b55a2f36721fd0c63de0466e2e1843e598c9093c9
 // generated-at: 0
 
 
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+// SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
 
 package event_data_arrives_as_sent
 
@@ -48,29 +48,41 @@ var (
 type EventDataArrivesAsSentState int
 
 const (
-	EventDataArrivesAsSentStateEvaluated EventDataArrivesAsSentState = 0
-	EventDataArrivesAsSentStateGarbled EventDataArrivesAsSentState = 1
-	EventDataArrivesAsSentStateHeard EventDataArrivesAsSentState = 2
-	EventDataArrivesAsSentStateMangled EventDataArrivesAsSentState = 3
-	EventDataArrivesAsSentStateQuoted EventDataArrivesAsSentState = 4
-	EventDataArrivesAsSentStateSettled EventDataArrivesAsSentState = 5
-	EventDataArrivesAsSentStateWaiting EventDataArrivesAsSentState = 6
+	EventDataArrivesAsSentStateDocumented EventDataArrivesAsSentState = 0
+	EventDataArrivesAsSentStateEvaluated EventDataArrivesAsSentState = 1
+	EventDataArrivesAsSentStateFlattened EventDataArrivesAsSentState = 2
+	EventDataArrivesAsSentStateGarbled EventDataArrivesAsSentState = 3
+	EventDataArrivesAsSentStateHeard EventDataArrivesAsSentState = 4
+	EventDataArrivesAsSentStateMangled EventDataArrivesAsSentState = 5
+	EventDataArrivesAsSentStateOpening EventDataArrivesAsSentState = 6
+	EventDataArrivesAsSentStateQuoted EventDataArrivesAsSentState = 7
+	EventDataArrivesAsSentStateSettled EventDataArrivesAsSentState = 8
+	EventDataArrivesAsSentStateSwallowed EventDataArrivesAsSentState = 9
+	EventDataArrivesAsSentStateWaiting EventDataArrivesAsSentState = 10
 )
 
 func (s EventDataArrivesAsSentState) String() string {
 	switch s {
+	case EventDataArrivesAsSentStateDocumented:
+		return "documented"
 	case EventDataArrivesAsSentStateEvaluated:
 		return "evaluated"
+	case EventDataArrivesAsSentStateFlattened:
+		return "flattened"
 	case EventDataArrivesAsSentStateGarbled:
 		return "garbled"
 	case EventDataArrivesAsSentStateHeard:
 		return "heard"
 	case EventDataArrivesAsSentStateMangled:
 		return "mangled"
+	case EventDataArrivesAsSentStateOpening:
+		return "opening"
 	case EventDataArrivesAsSentStateQuoted:
 		return "quoted"
 	case EventDataArrivesAsSentStateSettled:
 		return "settled"
+	case EventDataArrivesAsSentStateSwallowed:
+		return "swallowed"
 	case EventDataArrivesAsSentStateWaiting:
 		return "waiting"
 	}
@@ -85,17 +97,23 @@ type EventDataArrivesAsSentEvent int
 
 const (
 	EventDataArrivesAsSentEventArith EventDataArrivesAsSentEvent = 0
-	EventDataArrivesAsSentEventErrorExecution EventDataArrivesAsSentEvent = 1
-	EventDataArrivesAsSentEventNote EventDataArrivesAsSentEvent = 2
-	EventDataArrivesAsSentEventPayload EventDataArrivesAsSentEvent = 3
+	EventDataArrivesAsSentEventBroken EventDataArrivesAsSentEvent = 1
+	EventDataArrivesAsSentEventDoc EventDataArrivesAsSentEvent = 2
+	EventDataArrivesAsSentEventErrorExecution EventDataArrivesAsSentEvent = 3
+	EventDataArrivesAsSentEventNote EventDataArrivesAsSentEvent = 4
+	EventDataArrivesAsSentEventPayload EventDataArrivesAsSentEvent = 5
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	EventDataArrivesAsSentEventNull EventDataArrivesAsSentEvent = 4
+	EventDataArrivesAsSentEventNull EventDataArrivesAsSentEvent = 6
 )
 
 func (e EventDataArrivesAsSentEvent) String() string {
 	switch e {
 	case EventDataArrivesAsSentEventArith:
 		return "arith"
+	case EventDataArrivesAsSentEventBroken:
+		return "broken"
+	case EventDataArrivesAsSentEventDoc:
+		return "doc"
 	case EventDataArrivesAsSentEventErrorExecution:
 		return "error.execution"
 	case EventDataArrivesAsSentEventNote:
@@ -318,11 +336,15 @@ func (p *EventDataArrivesAsSentPolicy) IsFinalState(state EventDataArrivesAsSent
 	switch state {
 	case EventDataArrivesAsSentStateEvaluated:
 		return true
+	case EventDataArrivesAsSentStateFlattened:
+		return true
 	case EventDataArrivesAsSentStateGarbled:
 		return true
 	case EventDataArrivesAsSentStateMangled:
 		return true
 	case EventDataArrivesAsSentStateSettled:
+		return true
+	case EventDataArrivesAsSentStateSwallowed:
 		return true
 	}
 	return false
@@ -363,18 +385,26 @@ func (p *EventDataArrivesAsSentPolicy) IsDescendantOf(desc, anc EventDataArrives
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
 func (p *EventDataArrivesAsSentPolicy) GetDocumentOrder(state EventDataArrivesAsSentState) int {
 	switch state {
+	case EventDataArrivesAsSentStateDocumented:
+		return 3
 	case EventDataArrivesAsSentStateEvaluated:
-		return 6
+		return 8
+	case EventDataArrivesAsSentStateFlattened:
+		return 9
 	case EventDataArrivesAsSentStateGarbled:
-		return 5
+		return 7
 	case EventDataArrivesAsSentStateHeard:
 		return 1
 	case EventDataArrivesAsSentStateMangled:
+		return 6
+	case EventDataArrivesAsSentStateOpening:
 		return 4
 	case EventDataArrivesAsSentStateQuoted:
 		return 2
 	case EventDataArrivesAsSentStateSettled:
-		return 3
+		return 5
+	case EventDataArrivesAsSentStateSwallowed:
+		return 10
 	case EventDataArrivesAsSentStateWaiting:
 		return 0
 	}
@@ -391,6 +421,10 @@ func (p *EventDataArrivesAsSentPolicy) GetEventFromName(name string) (EventDataA
 	switch name {
 	case "arith":
 		return EventDataArrivesAsSentEventArith, true
+	case "broken":
+		return EventDataArrivesAsSentEventBroken, true
+	case "doc":
+		return EventDataArrivesAsSentEventDoc, true
 	case "error.execution":
 		return EventDataArrivesAsSentEventErrorExecution, true
 	case "note":
@@ -526,7 +560,7 @@ func (p *EventDataArrivesAsSentPolicy) ClearEventMetadata() {
 
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
-//line event_data_arrives_as_sent.scxml:51
+//line event_data_arrives_as_sent.scxml:73
 func (p *EventDataArrivesAsSentPolicy) ExecuteEntryActions(state EventDataArrivesAsSentState, engine *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent], pathChild *EventDataArrivesAsSentState) {
 	// Only a `<parallel>` machine descends into defaults here, so a machine
 	// without one has nothing to tell an ancestor entry from a target entry.
@@ -539,7 +573,7 @@ func (p *EventDataArrivesAsSentPolicy) ExecuteEntryActions(state EventDataArrive
 }
 
 // ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
-//line event_data_arrives_as_sent.scxml:51
+//line event_data_arrives_as_sent.scxml:73
 func (p *EventDataArrivesAsSentPolicy) ExecuteExitActions(state EventDataArrivesAsSentState, engine *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent], preTransitionActive []EventDataArrivesAsSentState) {
 	p.ensureScriptEngine()
 	switch state {
@@ -550,7 +584,7 @@ func (p *EventDataArrivesAsSentPolicy) ExecuteExitActions(state EventDataArrives
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
-//line event_data_arrives_as_sent.scxml:51
+//line event_data_arrives_as_sent.scxml:73
 func (p *EventDataArrivesAsSentPolicy) ProcessTransition(currentState *EventDataArrivesAsSentState, event EventDataArrivesAsSentEvent, engine *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent]) bool {
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
 	if event != EventDataArrivesAsSentEventNull {
@@ -568,9 +602,28 @@ func (p *EventDataArrivesAsSentPolicy) ProcessTransition(currentState *EventData
 
 
 // tryTransitionInState checks transitions for a single state.
-//line event_data_arrives_as_sent.scxml:51
+//line event_data_arrives_as_sent.scxml:73
 func (p *EventDataArrivesAsSentPolicy) tryTransitionInState(checkState EventDataArrivesAsSentState, event EventDataArrivesAsSentEvent, currentState *EventDataArrivesAsSentState, engine *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent]) bool {
 	switch checkState {
+	case EventDataArrivesAsSentStateDocumented:
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == EventDataArrivesAsSentEventDoc {
+			if p.evaluateGuard(`((_scxml_truthy(_event.data) and _scxml_truthy(_event.data.documentElement)) and (_event.data.documentElement.nodeName == "books"))`, engine) {
+			*currentState = EventDataArrivesAsSentStateOpening
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = EventDataArrivesAsSentStateDocumented
+			return true
+			}
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == EventDataArrivesAsSentEventDoc {
+			*currentState = EventDataArrivesAsSentStateFlattened
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = EventDataArrivesAsSentStateDocumented
+			return true
+		}
 	case EventDataArrivesAsSentStateHeard:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventDataArrivesAsSentEventNote {
@@ -590,11 +643,30 @@ func (p *EventDataArrivesAsSentPolicy) tryTransitionInState(checkState EventData
 			p.lastTransitionSourceState = EventDataArrivesAsSentStateHeard
 			return true
 		}
+	case EventDataArrivesAsSentStateOpening:
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == EventDataArrivesAsSentEventBroken {
+			if p.evaluateGuard(`(_event.data == "<assign> to detail failed")`, engine) {
+			*currentState = EventDataArrivesAsSentStateSettled
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = EventDataArrivesAsSentStateOpening
+			return true
+			}
+		}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == EventDataArrivesAsSentEventBroken {
+			*currentState = EventDataArrivesAsSentStateSwallowed
+			p.lastTransitionIsInternal = false
+			p.lastTransitionIsTargetless = false
+			p.lastTransitionSourceState = EventDataArrivesAsSentStateOpening
+			return true
+		}
 	case EventDataArrivesAsSentStateQuoted:
 		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventDataArrivesAsSentEventArith {
 			if p.evaluateGuard(`(_event.data == "2 + 3")`, engine) {
-			*currentState = EventDataArrivesAsSentStateSettled
+			*currentState = EventDataArrivesAsSentStateDocumented
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
 			p.lastTransitionSourceState = EventDataArrivesAsSentStateQuoted
@@ -633,6 +705,6 @@ func (p *EventDataArrivesAsSentPolicy) tryTransitionInState(checkState EventData
 }
 
 // ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line event_data_arrives_as_sent.scxml:51
+//line event_data_arrives_as_sent.scxml:73
 func (p *EventDataArrivesAsSentPolicy) ExecuteTransitionActions(engine *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent]) {
 }

@@ -90,8 +90,50 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
          rather than read (active: {after_arith:?})"
     );
     assert!(
-        after_arith.contains(&State::Settled),
+        after_arith.contains(&State::Documented),
         "the arithmetic-shaped payload neither matched nor mismatched \
          (active: {after_arith:?})"
+    );
+
+    // §scxml-B-2-8-1's XML rung, reached through the EVENT path. The `<data>`
+    // path is `xml_data_is_a_dom_tree`'s and the two are lowered on separate
+    // code in every backend.
+    engine.raise_external(
+        Event::Doc,
+        // Leading whitespace on purpose: the reading is chosen by the first
+        // NON-blank character, and a pretty-printed document is the ordinary
+        // shape of one. The scan past it is small enough to look redundant.
+        "\n  <books xmlns=\"\"><book title=\"t1\"/></books>",
+        "",
+    );
+    engine.step();
+
+    let after_doc = engine.get_active_states();
+    assert!(
+        !after_doc.contains(&State::Flattened),
+        "the host sent a well-formed XML document and \
+         `_event.data.documentElement.nodeName === 'books'` did not hold, so the \
+         payload did not become the DOM structure the clause requires \
+         (active: {after_doc:?})"
+    );
+
+    // The sentence that closes the clause. Every `error.*` message this
+    // repository raises names the SCXML construct that failed, so every one of
+    // them has exactly this shape: it opens like a document and is not one.
+    engine.raise_external(Event::Broken, "<assign>  to  detail failed", "");
+    engine.step();
+
+    let after_broken = engine.get_active_states();
+    assert!(
+        !after_broken.contains(&State::Swallowed),
+        "the host sent `<assign>  to  detail failed`, which opens with `<` and is \
+         not a valid XML document, so §scxml-B-2-8-1's closing MUST applies and the \
+         reading is the space-normalized string. This backend answered nil until \
+         2026-08-19 (active: {after_broken:?})"
+    );
+    assert!(
+        after_broken.contains(&State::Settled),
+        "the malformed-XML payload neither matched nor mismatched \
+         (active: {after_broken:?})"
     );
 }

@@ -155,3 +155,45 @@ fn the_binding_answers_dom_level_1_core() {
         failures.join("\n")
     );
 }
+
+/// A `<data>` element whose content does not parse still DECLARES its variable.
+///
+/// The two callers of the parser want opposite things from a refusal — an
+/// arriving `_event.data` falls through to the readings §scxml-B-2-8-1 names
+/// below the DOM one, while this path leaves the variable unbound — and the
+/// parser reports rather than deciding, so that each can. What this pins is the
+/// part neither caller may drop: the name is declared either way.
+///
+/// Not a style point. An undeclared name does not read as nil here, it raises
+/// `ReferenceError` (the C++ parity behaviour a few lines from
+/// `evaluate_expression`), and §scxml-5.9.1 makes a cond that raises FALSE — so
+/// a document whose `<data src=>` pointed at a malformed file would take the
+/// other branch of every guard that mentions it, silently, instead of reading a
+/// nil. Measured 2026-08-19: nothing in this crate noticed the difference, and
+/// a mutation that returned early here survived every test in the repository.
+///
+/// ⚠ What this does NOT pin is the VALUE. This binding leaves it nil and the
+/// Python binding leaves the space-normalized string
+/// (`test_a_document_that_does_not_parse_falls_to_the_string_reading`), which
+/// is a live cross-backend disagreement on the `<data>` path — reachable only
+/// through `<data src=>`, since inline content was read by the SCXML parser
+/// before it got here. It is registered as its own debt rather than settled
+/// here, because settling it means choosing one answer for seven backends.
+#[test]
+fn a_data_element_that_does_not_parse_still_declares_its_variable() {
+    let engine = LuaEngine::new();
+    engine.create_session("unparseable");
+    engine
+        .set_variable_as_dom("unparseable", "var1", "<books><unclosed></books>")
+        .expect("binding reports success even when the content is not a document");
+
+    let answered = engine
+        .evaluate_expression("unparseable", "var1")
+        .expect("`var1` was declared, so reading it is not a ReferenceError");
+    assert!(
+        !matches!(answered, ScriptValue::String(ref text) if text.is_empty()),
+        "an empty string would mean the name resolved to nothing readable"
+    );
+
+    engine.destroy_session("unparseable");
+}

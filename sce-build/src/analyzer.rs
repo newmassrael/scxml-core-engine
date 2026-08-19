@@ -483,6 +483,20 @@ fn apply_script_engine_implications(model: &mut SCXMLModel) {
     model.needs_event_origintype = true;
     model.needs_event_invokeid = true;
     model.needs_external_flag = true;
+    // §scxml-B-2-8-1: which reading an arriving `_event.data` gets is decided
+    // by the PAYLOAD, at run time, and a host may hand any scripted machine an
+    // XML document. The other flips of `needs_dom_helper` are build-time facts
+    // about the document — an XML `<data>` body, an XML `<send><content>`
+    // literal — and none of them can see that, so a machine whose own text
+    // never mentions `<` shipped without the DOM helper and answered a
+    // space-normalized string where its six siblings answered a DOM.
+    //
+    // Sits with `needs_event_data` above rather than beside the inline scan
+    // below, because it is the same claim: this machine can be handed event
+    // data, so it owes that data every reading the clause names. The cost is
+    // paid only by machines that already carry a script engine, which is the
+    // only kind that can read the field at all.
+    model.needs_dom_helper = Some(true);
     model.events.insert("error.execution".to_string());
     model.needs_event_type_helper = Some(true);
     model.needs_assign_helper = Some(true);

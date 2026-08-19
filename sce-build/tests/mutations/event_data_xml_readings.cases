@@ -1,0 +1,117 @@
+# Mutation cases for §scxml-B-2-8-1 — the XML rung, and the sentence that
+# closes the clause when the content is not a document.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/event_data_xml_readings.cases`.
+#
+# The clause conditions the DOM reading on the content BEING one — "if the
+# Processor can interpret the content as a valid XML document, it MUST create
+# the corresponding DOM structure" — and then closes: "Otherwise, the Processor
+# MUST treat the content as a space-normalized string literal". A leading `<`
+# is a GUESS about which reading applies, not the reading itself.
+#
+# Measured 2026-08-19, nine script engines gave four different answers to that
+# guess going wrong, and no fixture in the repository sent such a payload. It
+# stopped being hypothetical the round before this one, which filled
+# `_event.data` in at 192 `error.*` raise sites with messages that name the
+# failing construct: `<assign> to detail failed` opens with `<` and is not a
+# document, so every platform error took the wrong reading.
+#
+# The C++ and C11 halves of the same axis live in
+# `event_data_xml_readings_ctest.cases` — those two backends are reached
+# through a build the cargo harness does not drive.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-lua --test event_data_readings -p sce-rust-lua --test event_payload_is_data_not_code -p sce-rust-lua --test dom_read_surface -p sce-rust-tests --test event_data_arrives_as_sent
+mutation_targets backends/rust/lua/src/lib.rs
+mutation_oracles backends/rust/lua/tests/event_data_readings.rs backends/rust/lua/tests/event_payload_is_data_not_code.rs backends/rust/lua/tests/dom_read_surface.rs backends/rust/tests/tests/event_data_arrives_as_sent.rs
+
+# ── The fall-through itself ────────────────────────────────────────
+#
+# The engine goes back to answering nil for anything that opens with `<` and
+# is not a document. This is the defect exactly as it stood, and it is what
+# the shared table's three fall-through cases and the fixture's `swallowed`
+# final are both aimed at.
+
+mutation_case "a failed parse ends the reading instead of falling through" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """            if let Some(dom_value) = dom_value {
+                event_table.set("data", dom_value).map_err(map_lua_err)?;
+            } else {""",
+     """            if event_data.trim_start().starts_with('<') {
+                event_table
+                    .set("data", dom_value.unwrap_or(mlua::Value::Nil))
+                    .map_err(map_lua_err)?;
+            } else {""")
+PY
+
+# ── The refusal signal ─────────────────────────────────────────────
+#
+# One layer down: the parser reports a refusal so the caller can act on it.
+# Answering `Some(Nil)` instead makes the fall-through above unreachable while
+# leaving every line of it in place — the shape the C++ sibling was in, where
+# `isValid()` asked whether the tree was non-empty rather than whether the
+# parse succeeded.
+
+mutation_case "an invalid document is reported as a successful parse" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """    let doc = Arc::new(XmlDoc::parse(xml_content));
+    if !doc.is_valid() {
+        return Ok(None);
+    }""",
+     """    let doc = Arc::new(XmlDoc::parse(xml_content));
+    if !doc.is_valid() {
+        return Ok(Some(LuaValue::Nil));
+    }""")
+PY
+
+# ── The rung that must NOT be abandoned ────────────────────────────
+#
+# The other direction, so "fall through" cannot be satisfied by never building
+# a DOM at all. A backend that answered the space-normalized string for every
+# payload would pass every fall-through case above and fail the fixture's
+# `flattened` final and the table's two DOM cases. C11 was in exactly that
+# state — its `_event.data` had no XML rung — while three siblings were in the
+# state the first case restores.
+
+mutation_case "the xml rung is skipped and everything becomes a string" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """            let dom_value = if event_data.trim_start().starts_with('<') {
+                push_xml_as_userdata(&session.lua, event_data).map_err(map_lua_err)?
+            } else {
+                None
+            };""",
+     """            let dom_value: Option<LuaValue> = None;""")
+PY
+
+# ── The guess ──────────────────────────────────────────────────────
+#
+# Leading whitespace must not stop a document being one. The scan past it is
+# small enough to look redundant and is the difference between a pretty-printed
+# payload arriving as a DOM and arriving as text.
+
+mutation_case "leading whitespace hides the document" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """            let dom_value = if event_data.trim_start().starts_with('<') {""",
+     """            let dom_value = if event_data.starts_with('<') {""")
+PY
+
+# ── The `<data>` caller, which wants the opposite ──────────────────
+#
+# `set_variable_as_dom` is handed content the SCXML parser already read, so a
+# refusal there leaves the variable unbound rather than falling through. The
+# reporting signature is what lets the two callers differ; collapsing this one
+# onto the event path's behaviour would change a surface this axis did not
+# measure, and `dom_read_surface` is the oracle that notices.
+
+mutation_case "the data path stops binding its variable on a refusal" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """        let value = push_xml_as_userdata(&session.lua, xml_content)
+            .map_err(map_lua_err)?
+            .unwrap_or(LuaValue::Nil);""",
+     """        let Some(value) = push_xml_as_userdata(&session.lua, xml_content).map_err(map_lua_err)?
+        else {
+            return Ok(());
+        };""")
+PY

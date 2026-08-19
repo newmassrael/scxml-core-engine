@@ -30,9 +30,21 @@ void sce_lua_dom_register_metatable(struct lua_State *L);
 
 // cpp LuaDOMBinding::pushDOMObject — parse `xml_content`, push the
 // resulting DOM document userdata onto the stack, and return 1.  On
-// parse failure, push nil and return 1 (one value pushed in both cases,
-// matching the cpp signature).
+// parse failure, push NOTHING and return 0, so the caller decides what a
+// refusal means: a `<data>` element leaves its variable unbound, while an
+// arriving `_event.data` falls through to the readings §scxml-B-2-8-1
+// names below this one.  Matches the cpp signature.
 int sce_lua_dom_push_object(struct lua_State *L, const char *xml_content);
+
+// The same parse for a caller that has ALREADY decided the content is a
+// document — `<data>`, `<data src=>` and `<content>`, all read by the SCXML
+// parser before codegen emitted the call.  Always leaves exactly one value on
+// the stack, nil when the parse refused, so `lua_setglobal` after it is
+// balanced.  Separate from the reporting form above because the two callers
+// want opposite things from a refusal, and one signature could only give them
+// one: an arriving `_event.data` must fall through to the readings
+// §scxml-B-2-8-1 names below the DOM one.
+void sce_lua_dom_push_object_or_nil(struct lua_State *L, const char *xml_content);
 
 #ifdef __cplusplus
 }  // extern "C"

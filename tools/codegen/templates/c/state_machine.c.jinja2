@@ -3752,6 +3752,30 @@ SCE_SM_FN static void set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
        and W3C 4.9's `<log>` seam is where such a thing is said out loud
        rather than swallowed. */
     if (evt->data[0] != '\0') {
+        /* §scxml-B-2-8-1's first rung, which this backend did not have: "if
+           the Processor can interpret the content as a valid XML document, it
+           MUST create the corresponding DOM structure". `sce_lua_dom_push_object`
+           was defined, documented and reachable, and its only callers were the
+           `<data>` paths — so a document that received an XML payload BY EVENT
+           read a space-normalized string here and a DOM on all six siblings.
+           Measured 2026-08-19; the same round found three siblings answering
+           nil where this one already fell through, so the two halves of the
+           clause were each missing from a different set of backends.
+
+           The reporting form is what makes the fall-through possible: it
+           pushes nothing when the content is not a document, and the readings
+           below run exactly as before. */
+        const char *_scan = evt->data;
+        while (*_scan == ' ' || *_scan == '\t' || *_scan == '\r' || *_scan == '\n') {
+            _scan++;
+        }
+        if (*_scan == '<' && sce_lua_dom_push_object(L, evt->data) == 1) {
+            lua_getglobal(L, "_event");
+            lua_pushvalue(L, -2);
+            lua_setfield(L, -2, "data");
+            lua_pop(L, 2);
+            return;
+        }
         lua_pushstring(L, evt->data);
         lua_setglobal(L, "_sce_raw_event_data");
         if (luaL_dostring(L,

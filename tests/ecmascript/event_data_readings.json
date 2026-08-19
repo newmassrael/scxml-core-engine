@@ -1,0 +1,136 @@
+{
+  "about": [
+    "Which READING an arriving payload gets — the question §scxml-B-2-8-1",
+    "answers and that every SCE script engine answers for itself.",
+    "",
+    "The clause names four readings and orders them: key-value pairs become",
+    "named properties; otherwise JSON becomes the corresponding object;",
+    "otherwise, \"if the Processor can interpret the content as a valid XML",
+    "document, it MUST create the corresponding DOM structure\"; and then the",
+    "sentence that closes it — \"Otherwise, the Processor MUST treat the content",
+    "as a space-normalized string literal\".",
+    "",
+    "That final sentence is the one this table exists for. A leading `<` is a",
+    "GUESS about which reading applies, not the reading itself, and six of the",
+    "eight engines treated the guess as the answer. Measured 2026-08-19, for a",
+    "payload that opens with `<` and is not a well-formed document:",
+    "",
+    "  C++ QuickJS      `undefined`, plus an ERROR log line",
+    "  C++ Lua          nil",
+    "  Rust Lua         nil",
+    "  Go Lua           nil",
+    "  Python Lua       the space-normalized string",
+    "  Kotlin QuickJS   the space-normalized string",
+    "  Kotlin Lua       the space-normalized string",
+    "  C11 Lua          the space-normalized string, and never a DOM at all",
+    "",
+    "Four answers to one clause, from one repository. It went unnoticed because",
+    "nothing sent such a payload: the W3C IRP suite's XML payloads are all",
+    "well-formed, and `xml_data_is_a_dom_tree` covers `<data>` rather than the",
+    "event path. Then the repository filled `_event.data` in at 192 raise sites",
+    "with messages that name the failing construct — `<assign> to detail",
+    "failed` — so every platform error opens with `<`, and three backends",
+    "delivered nil.",
+    "",
+    "The 2026-08-17 round removed a fifth reading, `load(\"return \" .. payload)`,",
+    "which ran the payload as the receiver's own source language. It was removed",
+    "from the engines that had a lane and left in the two that did not: the C++",
+    "Lua engine and the Kotlin Lua engine still answered 5 for a payload of",
+    "`2 + 3`. `an expression is text` below is that case, and it is decisive in",
+    "both languages at once — `2 + 3` evaluates to 5 in Lua and in ECMAScript",
+    "alike, so one payload asks every engine the same question.",
+    "",
+    "Two spellings per case, for the same reason `dom_read_surface.json` beside",
+    "this file carries two: `source` is the author's ECMAScript, which the",
+    "engines that run ECMAScript evaluate as written, and `lua` is that",
+    "expression after the frontend has lowered it, which is all the Rust, Go,",
+    "Python and Kotlin-Lua bindings ever see. A per-backend copy of a table",
+    "drifts toward the backend that reads it; one table cannot."
+  ],
+  "cases": [
+    {
+      "group": "the XML reading — conditioned on the content BEING XML",
+      "note": "The rung that works. Kept beside the failing one so a repair cannot satisfy the clause by abandoning the DOM: an engine that answered the normalized string for both would pass the case below and fail this one.",
+      "payload": "<books xmlns=\"\" count=\"2\">\n  <book title=\"t1\">first</book>\n  <book title=\"t2\"/>\n</books>",
+      "source": "_event.data.documentElement.nodeName",
+      "lua": "_event.data.documentElement.nodeName",
+      "expect": { "string": "books" },
+      "clause": "§scxml-B-2-8-1 — a valid XML document becomes the corresponding DOM structure"
+    },
+    {
+      "note": "Leading whitespace does not stop it being a document, so the guess has to look past it. Every engine already skips whitespace before testing for `<`; pinned so a repair that rewrites the guess keeps that.",
+      "payload": "  \n\t<books xmlns=\"\"><book title=\"t1\"/></books>",
+      "source": "_event.data.documentElement.nodeName",
+      "lua": "_event.data.documentElement.nodeName",
+      "expect": { "string": "books" },
+      "clause": "§scxml-B-2-8-1 — a valid XML document becomes the corresponding DOM structure"
+    },
+    {
+      "group": "the fall-through — the clause's last sentence",
+      "note": "The payload every platform error in this repository carries. It opens with `<` because it names the SCXML construct that failed, and it is not a document. Three engines answered nil or undefined here, which drops the message the raise site was written to send.",
+      "payload": "<assign>  to\n\tdetail failed",
+      "source": "_event.data",
+      "lua": "_event.data",
+      "expect": { "string": "<assign> to detail failed" },
+      "clause": "§scxml-B-2-8-1 — otherwise the Processor MUST treat the content as a space-normalized string literal"
+    },
+    {
+      "note": "A document that is well-formed up to the point it is truncated. The parse gets further before failing, so an engine that only checks the first tag rather than the whole parse answers differently here than above.",
+      "payload": "<books><book title=\"t1\">first</book>",
+      "source": "_event.data",
+      "lua": "_event.data",
+      "expect": { "string": "<books><book title=\"t1\">first</book>" },
+      "clause": "§scxml-B-2-8-1 — otherwise the Processor MUST treat the content as a space-normalized string literal"
+    },
+    {
+      "note": "A lone `<` — the guess's shortest possible input, and the one a naive fall-through built on \"strip the tags\" turns into the empty string.",
+      "payload": "<",
+      "source": "_event.data",
+      "lua": "_event.data",
+      "expect": { "string": "<" },
+      "clause": "§scxml-B-2-8-1 — otherwise the Processor MUST treat the content as a space-normalized string literal"
+    },
+    {
+      "group": "the JSON reading — the rung <send> writes to",
+      "note": "§scxml-B-2-9 serializes data leaving the data model to JSON, so this is the wire every backend's sender now uses. A regression here empties `_event.data` for every document, which is why it is asked beside the repair rather than left to the sender's own tests.",
+      "payload": "{\"milestone\":\"refined\",\"turns\":2}",
+      "source": "_event.data.turns",
+      "lua": "_event.data.turns",
+      "expect": { "number": 2 },
+      "clause": "§scxml-B-2-8-1 — JSON content becomes the corresponding object"
+    },
+    {
+      "note": "The same payload read for its string member, so a decoder that produced numbers and dropped strings cannot pass on the case above alone.",
+      "payload": "{\"milestone\":\"refined\",\"turns\":2}",
+      "source": "_event.data.milestone",
+      "lua": "_event.data.milestone",
+      "expect": { "string": "refined" },
+      "clause": "§scxml-B-2-8-1 — JSON content becomes the corresponding object"
+    },
+    {
+      "group": "the string reading — text is text",
+      "note": "Space normalization is a READING, not a passthrough: pinned so \"the payload was not evaluated\" cannot be satisfied by handing the bytes over untouched.",
+      "payload": "hold   the\n\tline",
+      "source": "_event.data",
+      "lua": "_event.data",
+      "expect": { "string": "hold the line" },
+      "clause": "§scxml-B-2-8-1 — otherwise the Processor MUST treat the content as a space-normalized string literal"
+    },
+    {
+      "note": "An expression is text. Decisive in both languages at once — `2 + 3` evaluates to 5 in Lua and in ECMAScript alike — so this one payload asks every engine whether it reads the field or runs it. The C++ Lua and Kotlin Lua engines answered 5 until 2026-08-19; their four siblings had the same rung removed on 2026-08-17.",
+      "payload": "2 + 3",
+      "source": "_event.data",
+      "lua": "_event.data",
+      "expect": { "string": "2 + 3" },
+      "clause": "§scxml-B-2-8-1 — otherwise the Processor MUST treat the content as a space-normalized string literal"
+    },
+    {
+      "note": "A payload that is a CALL in Lua. For the four Lua engines it asks the sharper half of the case above — reading it gives back its own text, running it gives back `x` and, on the way, sets `breached` in the session's own globals. For the ECMAScript engines it is simply text that is neither JSON nor XML, so it pins the same clause there for a different reason. The side effect itself is asked per engine, where the language is known.",
+      "payload": "(function() breached = true return 'x' end)()",
+      "source": "_event.data",
+      "lua": "_event.data",
+      "expect": { "string": "(function() breached = true return 'x' end)()" },
+      "clause": "§scxml-B-2-8-1 — otherwise the Processor MUST treat the content as a space-normalized string literal"
+    }
+  ]
+}
