@@ -1161,3 +1161,156 @@ fn the_staged_stage_scope_is_not_bounded_by_path_or_extension() {
     let good = run_staged_gate(dir.path());
     assert_the_gate_accepted(&good, "the staged gate rejected a real citation");
 }
+
+/// A gate that builds must be able to say why the build failed.
+///
+/// `cmake --build … >/dev/null` is the shape this catches. Ninja prints the
+/// compiler's own output on STDOUT, so that redirection makes a build failure
+/// undiagnosable: the gate log then holds the gate's one-line verdict and
+/// nothing else. Measured 2026-08-19 on the build machine, a GCC internal
+/// compiler error inside a mesh translation unit took three separate probes to
+/// name, because `cpp-suite` reported "main tree build" and the error itself
+/// had gone to /dev/null.
+///
+/// The rule is not "never redirect" — a passing gate's log should stay short.
+/// It is that the redirection belongs in `sce_gate_build`, which captures the
+/// output and emits its tail when, and only when, the build fails.
+#[test]
+fn no_gate_discards_the_output_of_a_build_it_runs() {
+    let root = repo_root();
+    let mut through_helper = 0usize;
+    let mut offenders: Vec<String> = Vec::new();
+
+    let mut files: Vec<PathBuf> = std::fs::read_dir(root.join("scripts/gates"))
+        .expect("read scripts/gates")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("sh"))
+        .collect();
+    files.push(root.join("scripts/prepare_ctest_tree.sh"));
+    files.sort();
+
+    for path in &files {
+        let Ok(body) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let is_lib = path.file_name().and_then(|n| n.to_str()) == Some("lib.sh");
+        for (lineno, line) in body.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#') {
+                continue;
+            }
+            if trimmed.starts_with("sce_gate_build ") {
+                through_helper += 1;
+            }
+            // The helper's own definition is the one place the raw command
+            // belongs; it is what every other site calls.
+            if is_lib || !trimmed.contains("cmake --build") {
+                continue;
+            }
+            if line.contains("/dev/null") {
+                offenders.push(format!(
+                    "{}:{}: {}",
+                    path.strip_prefix(&root).unwrap_or(path).display(),
+                    lineno + 1,
+                    trimmed
+                ));
+            }
+        }
+    }
+
+    // The lower bound is the half a scan like this usually forgets: a walk that
+    // stops finding build sites reads exactly like a clean tree. Six sites
+    // called the helper when it was introduced; the floor sits below that so an
+    // intentional removal does not fail here, while a scan that finds almost
+    // nothing does.
+    assert!(
+        through_helper >= 4,
+        "only {through_helper} gate build site(s) call sce_gate_build — the scan is \
+         reading the wrong tree, or the helper was removed. Either way the check \
+         below would prove nothing"
+    );
+    assert!(
+        offenders.is_empty(),
+        "a gate discards the output of a build it runs ({} site(s)):\n  {}\n\n\
+         Ninja prints compiler errors on stdout, so a failure at one of these \
+         leaves the gate log with nothing but the gate's own verdict. Call \
+         `sce_gate_build <dir> [args...]` instead: it stays quiet on success and \
+         emits the tail of the build's output when the build fails.",
+        offenders.len(),
+        offenders.join("\n  ")
+    );
+}
+
+/// The helper's contract, exercised rather than described: a failing build's
+/// output reaches the caller's stream.
+///
+/// A stub `cmake` stands in for the real one, because the property under test
+/// is what `sce_gate_build` does with the output, not what any particular
+/// compiler prints. The stub writes its marker to STDOUT — the stream the old
+/// `>/dev/null` sites threw away — so a regression to that shape fails here
+/// rather than the next time a build breaks on a build machine.
+#[test]
+fn a_failing_build_reaches_the_gate_log_through_the_helper() {
+    let root = repo_root();
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    // The stub speaks ninja's shape: a `FAILED:` edge, the compiler's message
+    // under it, and then a run of unrelated lines, because ninja keeps its
+    // other edges going after one fails. The trailing noise is the point — a
+    // helper that showed the tail would report the noise and drop the cause,
+    // which is what the first version of this helper did.
+    let stub = dir.path().join("cmake");
+    let mut body = String::from(
+        "#!/usr/bin/env bash\n\
+         echo 'FAILED: some/object.o'\n\
+         echo 'error: NEEDLE_FROM_THE_COMPILER'\n",
+    );
+    for i in 0..120 {
+        body.push_str(&format!(
+            "echo '[{i}/994] Generating something unrelated'\n"
+        ));
+    }
+    body.push_str("exit 1\n");
+    std::fs::write(&stub, body).expect("write stub cmake");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod stub cmake");
+    }
+
+    // `lib.sh` turns on `set -e`, and the slug it prints is one it assigns
+    // itself — so the status is taken in a `||` list (which `set -e` does not
+    // act on) and the slug is set after the source rather than before it.
+    let script = format!(
+        "source '{}/scripts/gates/lib.sh'\n\
+         SCE_GATE_SLUG=probe\n\
+         PATH='{}':$PATH\n\
+         sce_gate_build somewhere --target whatever || echo \"HELPER_RC=$?\"\n",
+        root.display(),
+        dir.path().display()
+    );
+
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(&root)
+        .output()
+        .expect("run the helper under a stub cmake");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stdout.contains("HELPER_RC=1"),
+        "the helper must report the build's failure to its caller; it said:\n{stdout}\n{stderr}"
+    );
+    assert!(
+        stderr.contains("NEEDLE_FROM_THE_COMPILER"),
+        "the failing build's own output did not reach the caller's stream. That is \
+         what this helper exists for — the compiler's message goes to stdout, and a \
+         gate that sends it to /dev/null reports a failure it cannot explain.\n\
+         stderr was:\n{stderr}\nstdout was:\n{stdout}"
+    );
+}

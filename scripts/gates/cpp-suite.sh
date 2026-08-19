@@ -47,7 +47,7 @@ sce_prune_ctest_temporaries "$BUILD_DIR"
 # added would be registered, skipped by the build, and then reported by ctest
 # as a missing executable rather than as an untested one.
 sce_gate_step "building the main tree"
-cmake --build "$BUILD_DIR" --parallel "$(nproc)" >/dev/null \
+sce_gate_build "$BUILD_DIR" \
     || sce_gate_fail "main tree build"
 
 # The debug-info layout is a property of the binaries, not of CMakeLists.txt,
@@ -134,7 +134,7 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # `--no-tests=error` covers the zero case even if the floor above is ever
 # loosened; the count comparison below covers a partial run.
 ctest --test-dir "$BUILD_DIR" -LE c11 \
-      --output-on-failure --no-tests=error -j "$(nproc)" 2>&1 | tee "$LOG/ctest.log"
+      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" 2>&1 | tee "$LOG/ctest.log"
 ctest_status="${PIPESTATUS[0]}"
 (( ctest_status == 0 )) || sce_gate_fail "C++ ctest suite failed"
 

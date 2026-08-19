@@ -46,5 +46,5 @@ sce_main_build_dir
 # that proves nothing rather than as the build failure it is. That attribution
 # is what a first build in the open buys.
 sce_gate_step "building $SCE_MAIN_BUILD_DIR"
-cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(nproc)" \
+cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(sce_build_jobs)" \
     || sce_gate_fail "the main tree does not build; the rounds below it would have nothing to judge"

@@ -49,7 +49,7 @@ if sce_gate_requires_tool emcmake emsdk; then
     emcmake cmake -S . -B build_wasm -DCMAKE_BUILD_TYPE=Release \
         ${GENERATOR+"${GENERATOR[@]}"} -Wno-dev >/dev/null \
         || sce_gate_fail "visualizer emcmake configure"
-    cmake --build build_wasm --target visualizer -j "$(nproc)" >/dev/null \
+    sce_gate_build build_wasm --target visualizer \
         || sce_gate_fail "visualizer WASM build"
 
     sce_gate_step "building the DOOM example (emscripten)"
