@@ -101,4 +101,31 @@ inline bool matchesEventDescriptor(const std::string &eventName, const std::stri
     return false;
 }
 
+/**
+ * @brief §scxml-3.12.2: whether an event name is one the processor itself raised
+ *
+ * The clause reserves the whole `error.` prefix for them: it defines
+ * `error.execution` and `error.communication`, lets a platform add a suffix to
+ * either, and reserves `error.platform` with or without a suffix on top of that.
+ * The prefix is therefore the test — an enumeration would be wrong the first
+ * time the set is extended, which the same paragraph says may happen.
+ *
+ * Shared between Interpreter and AOT, like `matchesEventDescriptor` above.
+ * Used by the internal-queue drain to tell an error nobody answered from an
+ * author's own unmatched `<raise>`. The two are indistinguishable in the queue
+ * and are not the same event to a host: the author wrote one and can read its
+ * fate in the document, while the other was written by the engine to report
+ * that the document did not do what it said.
+ *
+ * @param eventName The actual event name (e.g., "error.execution", "foo")
+ * @return true when the processor is the sender of this event
+ */
+inline bool isErrorEvent(const std::string &eventName) {
+    // §scxml-3.12.2: the processor "MUST signal any errors that occur by
+    // raising SCXML events whose names begin with 'error.'". Cited in the body
+    // rather than the doc block because the ledger's C++ resolver binds a
+    // citation to the symbol enclosing it.
+    return eventName.rfind("error.", 0) == 0;
+}
+
 }  // namespace SCE::Core::EventMatchingHelper

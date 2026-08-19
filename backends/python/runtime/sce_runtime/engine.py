@@ -32,7 +32,7 @@ import uuid
 from collections import deque
 from typing import Any, Callable, Dict, Generic, List, Optional, Set, TypeVar
 
-from .event import EventMetadata, EventWithMetadata
+from .event import EventMetadata, EventWithMetadata, is_error_event
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
@@ -107,6 +107,11 @@ class Engine(Generic[S, E]):
         # `discarded_external_events`.
         self._discarded_external_events: int = 0
         self._last_discarded_event: Optional[E] = None
+        # §scxml-3.12.2 — `error.*` events this engine raised that no
+        # transition matched, and the most recent of them. See
+        # `unhandled_error_events`.
+        self._unhandled_error_events: int = 0
+        self._last_unhandled_error: Optional[E] = None
         # §scxml-3.7 — set of `<parallel>` states for which a
         # `done.state.<id>` event has already been raised this run, so a
         # second region reaching `<final>` does not re-fire it.
@@ -309,6 +314,51 @@ class Engine(Generic[S, E]):
         actually has.
         """
         return self._last_discarded_event
+
+    def unhandled_error_events(self) -> int:
+        """W3C SCXML 3.12.2 — how many `error.*` events this engine raised
+        that no transition in any active state answered.
+
+        The clause requires the processor to signal its own failures as
+        `error.*` events on the internal queue, and says in the same breath
+        that "they are ignored if no transition is found that matches them".
+        Being ignored is the clause. Being unable to say it happened is not,
+        and the difference matters to exactly one party: the host, which did
+        not write the document, cannot see the failure anywhere in the
+        configuration, and is the only one positioned to do something about
+        it. A supervisor driving a machine whose `<assign>` silently fails
+        every round reads `is_running() == True` and a plausible state
+        forever.
+
+        This is the sibling of `discarded_external_events`, and the two are
+        deliberately separate counts rather than one. That one stops at the
+        external queue because an author's unmatched `<raise>` has both ends
+        inside the document; an error event's sender is the engine, so the
+        same reasoning does not reach it. An author's `<raise>` that matches
+        nothing is still not counted here.
+
+        An error the document *did* answer is not counted either — the
+        document dealt with it, and its handling is visible in the
+        configuration the host can already read. What this counts is only the
+        silent case.
+
+        The C++ Interpreter has answered this all along, through
+        `getLastStateMachineError()` and the message it raises
+        `error.execution` with; this is the generated engines' side of it.
+        """
+        return self._unhandled_error_events
+
+    def last_unhandled_error(self) -> Optional[E]:
+        """The most recent `error.*` event `unhandled_error_events` counted,
+        or `None` while that count is zero.
+
+        Which error it was narrows a silent failure from "something in this
+        machine is broken" to a class: `error.execution` is the document's own
+        executable content failing, `error.communication` is a `<send>` or
+        `<invoke>` that could not reach its target — two different repairs,
+        and a count alone separates neither.
+        """
+        return self._last_unhandled_error
 
     def active_configuration(self) -> Set[S]:
         """W3C SCXML 3.3 — every active state (atomic + ancestors)."""
@@ -644,7 +694,24 @@ class Engine(Generic[S, E]):
                 return
             if not self._internal_queue:
                 return
-            self._dispatch(self._internal_queue.popleft())
+            # §scxml-3.12.2 — the processor raises `error.*` into this queue
+            # and the clause says they "are ignored if no transition is found
+            # that matches them". Ignoring them is the clause; staying silent
+            # about it is not. `discarded_external_events` deliberately stops
+            # at the external queue because an unmatched `<raise>` has both
+            # ends inside the document — but the sender of an error event is
+            # this engine, so that reasoning does not reach it. The host never
+            # wrote the document, cannot see the failure in the configuration,
+            # and is the only party able to act on it.
+            #
+            # The dispatch runs first and unconditionally: it is what processes
+            # every internal event, and folding it into the condition below
+            # would skip it for everything that is not an error.
+            evt = self._internal_queue.popleft()
+            selected = self._dispatch(evt)
+            if not selected and is_error_event(self._policy.get_event_name(evt.event)):
+                self._unhandled_error_events += 1
+                self._last_unhandled_error = evt.event
 
     def _process_next_external_event(self) -> None:
         """Take exactly one event off the external queue, run the preliminary

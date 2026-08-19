@@ -445,6 +445,12 @@ pub struct Engine<P: StatePolicy> {
     /// The most recent event this engine discarded — see
     /// [`last_discarded_event`](Self::last_discarded_event).
     pub(crate) last_discarded_event: Option<P::Event>,
+    /// `error.*` events this engine raised that no transition matched — see
+    /// [`unhandled_error_events`](Self::unhandled_error_events).
+    pub(crate) unhandled_error_events: u32,
+    /// The most recent `error.*` event that went unhandled — see
+    /// [`last_unhandled_error`](Self::last_unhandled_error).
+    pub(crate) last_unhandled_error: Option<P::Event>,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -484,6 +490,8 @@ impl<P: StatePolicy> Engine<P> {
             unattended_scheduler_steps: 0,
             discarded_external_events: 0,
             last_discarded_event: None,
+            unhandled_error_events: 0,
+            last_unhandled_error: None,
             donedata_at_final: SceString::new(),
         }
     }
@@ -869,6 +877,56 @@ impl<P: StatePolicy> Engine<P> {
     /// so reading it costs nothing on the no_std profile.
     pub fn last_discarded_event(&self) -> Option<P::Event> {
         self.last_discarded_event
+    }
+
+    /// How many `error.*` events this engine raised that no transition in any
+    /// active state answered.
+    ///
+    /// The clause requires the processor to signal its own failures as
+    /// `error.*` events on the internal queue, and says in the same breath that
+    /// "they are ignored if no transition is found that matches them". Being
+    /// ignored is the clause. Being unable to say it happened is not, and the
+    /// difference matters to exactly one party: the host, which did not write
+    /// the document, cannot see the failure anywhere in the configuration, and
+    /// is the only one positioned to do something about it. A supervisor
+    /// driving a machine whose `<assign>` silently fails every round reads
+    /// `is_running() == true` and a plausible state forever.
+    ///
+    /// This is the sibling of
+    /// [`discarded_external_events`](Self::discarded_external_events), and the
+    /// two are deliberately separate counts rather than one. That one stops at
+    /// the external queue because an author's unmatched `<raise>` has both ends
+    /// inside the document; an error event's sender is the engine, so the same
+    /// reasoning does not reach it. An author's `<raise>` that matches nothing
+    /// is still not counted here.
+    ///
+    /// An error the document *did* answer is not counted either — the document
+    /// dealt with it, and its handling is visible in the configuration the host
+    /// can already read. What this counts is only the silent case.
+    ///
+    /// The C++ Interpreter has answered this all along, through
+    /// `getLastStateMachineError()` and the `error.execution` message it raises
+    /// with the failure text; this is the generated engines' side of it.
+    pub fn unhandled_error_events(&self) -> u32 {
+        // §scxml-3.12.2 is the clause: error events go on the internal queue
+        // and are ignored when nothing matches them. Cited in the body because
+        // the ledger's Rust resolver binds a citation to the symbol enclosing
+        // it, and a `///` line encloses nothing.
+        self.unhandled_error_events
+    }
+
+    /// The most recent `error.*` event
+    /// [`unhandled_error_events`](Self::unhandled_error_events) counted, or
+    /// `None` while that count is zero.
+    ///
+    /// Which error it was narrows a silent failure from "something in this
+    /// machine is broken" to a class: `error.execution` is the document's own
+    /// executable content failing, `error.communication` is a `<send>` or
+    /// `<invoke>` that could not reach its target — two different repairs, and
+    /// a count alone does not separate them. Copy, so reading it costs nothing
+    /// on the no_std profile.
+    pub fn last_unhandled_error(&self) -> Option<P::Event> {
+        self.last_unhandled_error
     }
 
     /// Current active (leaf) state.
@@ -1410,7 +1468,32 @@ impl<P: StatePolicy> Engine<P> {
             // that rode with this event so `_event.data.<field>` guards read it
             // natively. No-op for schemaless policies (`Payload = ()`).
             self.policy.populate_event_payload(&event_with_meta.payload);
-            self.execute_transition(event_with_meta.event);
+            // §scxml-3.12.2: the processor raises `error.*` into this queue and
+            // the clause says they "are ignored if no transition is found that
+            // matches them". Ignoring them is the clause; staying silent about
+            // it is not. `discarded_external_events` deliberately stops at the
+            // external queue because an unmatched `<raise>` has both ends
+            // inside the document — but the sender of an error event is this
+            // engine, so that reasoning does not reach it. The host never wrote
+            // the document, cannot see the failure in the configuration, and is
+            // the only party able to act on it.
+            //
+            // The selection runs first and unconditionally: it is what
+            // processes every internal event, and making it the right-hand
+            // side of an `&&` would skip it for everything that is not an
+            // error.
+            let outcome = self.execute_transition(event_with_meta.event);
+            if outcome == EventOutcome::Discarded
+                && crate::helpers::event_matching::is_error_event(P::get_event_name(
+                    event_with_meta.event,
+                ))
+            {
+                self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);
+                self.last_unhandled_error = Some(event_with_meta.event);
+                sce_log_debug!(
+                    "Engine::process_internal_queue: error event matched no transition; unhandled"
+                );
+            }
             self.policy.clear_event_metadata();
         }
     }

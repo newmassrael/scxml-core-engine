@@ -1,0 +1,158 @@
+# Mutation cases for §scxml-3.12.2 — an `error.*` event the processor raised
+# that no transition answered, and the host that is driving the machine can
+# find out.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/unhandled_error_is_observable.cases`.
+#
+# The clause requires the processor to signal its own failures as `error.*` on
+# the INTERNAL queue and says in the same breath that they "are ignored if no
+# transition is found that matches them". Being ignored is the clause; being
+# unable to say it happened is not — and the party that cannot see it is the
+# host, which never wrote the document and cannot read the failure anywhere in
+# the configuration.
+#
+# The trap these cases exist for is the third one below. The sibling axis
+# (`discarded_event_is_observable`) drew its boundary at the external queue on
+# the stated ground that an unmatched internal event has both ends inside the
+# document. That is right for an author's `<raise>` and wrong for an error
+# event, whose sender is the engine — so a count that drops the name test
+# counts the author's own `<raise event="unheard"/>` as an engine failure, and
+# one that keeps only the name test but not the outcome counts a HANDLED error.
+# The fixture routes one event name (`boom`) to both outcomes by state so
+# neither can be faked.
+#
+# The C++ engine and the C11 template halves of the same axis live in
+# `unhandled_error_is_observable_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test unhandled_error_is_observable
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_targets backends/rust/runtime/src/helpers/event_matching.rs
+mutation_oracles backends/rust/tests/tests/unhandled_error_is_observable.rs
+
+# ── The count itself ───────────────────────────────────────────────
+#
+# The engine goes back to knowing and not saying. Every driver's first
+# assertion is this one.
+#
+# The increment is what this removes, rather than the whole `if`. A mutation
+# that deletes the condition leaves `outcome` unread, and `warnings = deny`
+# turns that into a tree that does not compile — which the harness can only
+# report as INCONCLUSIVE, so the case would witness nothing. Measured here:
+# both of the first two drafts died that way.
+
+mutation_case "the internal drain drops the outcome again" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);""",
+     """                self.unhandled_error_events = self.unhandled_error_events.saturating_add(0);""")
+PY
+
+# ── Counting an error the document DID answer ──────────────────────
+#
+# Widening the outcome test to accept both arms leaves the name test, which is
+# true for the `guarded` run as well — so the document's own error handling is
+# reported as a silent failure. `an_error_the_document_handled_is_not_counted`
+# is the assertion that separates the two, and it is the reason `boom` appears
+# in two states.
+
+mutation_case "every error is counted, answered or not" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if outcome == EventOutcome::Discarded
+                && crate::helpers::event_matching::is_error_event(P::get_event_name(
+                    event_with_meta.event,
+                ))
+            {""",
+     """            if matches!(
+                outcome,
+                EventOutcome::Discarded | EventOutcome::Taken { .. }
+            ) && crate::helpers::event_matching::is_error_event(P::get_event_name(
+                event_with_meta.event,
+            )) {""")
+PY
+
+# ── Counting the author's own unmatched raise ──────────────────────
+#
+# The boundary this axis is really about. Dropping the name test counts every
+# unmatched internal event, which is exactly the thing the sibling axis
+# deliberately does not count — `whisper` raises `unheard`, nothing answers it,
+# and both ends of that are in the document.
+
+mutation_case "any unmatched internal event counts as an engine error" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if outcome == EventOutcome::Discarded
+                && crate::helpers::event_matching::is_error_event(P::get_event_name(
+                    event_with_meta.event,
+                ))
+            {""",
+     """            if outcome == EventOutcome::Discarded {""")
+PY
+
+# ── The classifier ─────────────────────────────────────────────────
+#
+# §scxml-3.12.2 reserves the whole `error.` prefix. A classifier that answers
+# for nothing silences the axis; one that answers for everything turns it into
+# the case above, one layer deeper than the call site.
+
+mutation_case "no name is an error name" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_matching.rs",
+     """    event_name.starts_with("error.")
+}""",
+     """    event_name.starts_with("no.name.starts.with.this.")
+}""")
+PY
+
+mutation_case "every name is an error name" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_matching.rs",
+     """    event_name.starts_with("error.")
+}""",
+     """    event_name.starts_with("")
+}""")
+PY
+
+# The prefix is a prefix, not a substring: an event the author named
+# `retry.error.execution` is the document's, not the engine's.
+
+mutation_case "the error prefix is matched anywhere in the name" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_matching.rs",
+     """    event_name.starts_with("error.")
+}""",
+     """    event_name.contains("error.")
+}""")
+PY
+
+# ── Naming the error ───────────────────────────────────────────────
+#
+# The count says something failed; a host repairing it needs the class —
+# `error.execution` and `error.communication` are two different repairs.
+# Leaving it at `None` still counts correctly.
+
+mutation_case "the unhandled error is counted but never named" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.last_unhandled_error = Some(event_with_meta.event);""",
+     """                self.last_unhandled_error = None;""")
+PY
+
+# ── The selection this drain exists to run ─────────────────────────
+#
+# The count is a byproduct of the drain, not its job. Folding the selection
+# into the condition — which is what the first draft of this code did — skips
+# `execute_transition` for every event that is not an error, so nothing in the
+# document runs. The fixture's `<assign>` counters are what notice.
+
+mutation_case "the selection becomes the right-hand side of the error test" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            let outcome = self.execute_transition(event_with_meta.event);
+            if outcome == EventOutcome::Discarded""",
+     """            let outcome = if crate::helpers::event_matching::is_error_event(P::get_event_name(
+                event_with_meta.event,
+            )) {
+                self.execute_transition(event_with_meta.event)
+            } else {
+                EventOutcome::Taken {
+                    configuration_changed: false,
+                }
+            };
+            if outcome == EventOutcome::Discarded""")
+PY

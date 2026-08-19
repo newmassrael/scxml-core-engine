@@ -3910,6 +3910,33 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
             count = remove_conflicting_transitions(enabled, count);
             handle_microstep(sm, enabled, count);
         }
+{% set error_events = model.events | select('startingwith', 'error.') | list %}
+{% if error_events %}
+        /* W3C SCXML 3.12.2: the processor raises `error.*` into this queue and
+           the clause says they "are ignored if no transition is found that
+           matches them". Ignoring them is the clause; staying silent about it
+           is not. `_discarded_external_events` deliberately stops at the
+           external queue because an unmatched `<raise>` has both ends inside
+           the document -- but the sender of an error event is this engine, so
+           that reasoning does not reach it. The host never wrote the document,
+           cannot see the failure in the configuration, and is the only party
+           able to act on it.
+
+           The membership test is the generated enum comparison rather than a
+           string prefix: this backend has no event-name table to consult at
+           run time, and the set of `error.*` names in THIS document is known
+           at generation time. The other five backends ask the same question of
+           a name they already carry. */
+        else if (
+{% for event_name in error_events | sort %}
+            evt.event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ " ||" if not loop.last }}
+{% endfor %}
+        ) {
+            sm->unhandled_error_events++;
+            sm->last_unhandled_error = evt.event;
+            sm->has_unhandled_error = true;
+        }
+{% endif %}
 
         /* W3C App.D.2: re-evaluate eventless transitions before the next
            dequeue so cond expressions reading the current `_event`
@@ -4418,6 +4445,25 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ c
         return false;
     }
     *out = sm->last_discarded_event;
+    return true;
+}
+
+/* W3C SCXML 3.12.2: `error.*` events this engine raised that no transition
+   answered. The internal-queue sibling of the count above, and separate from
+   it: that one stops at the external queue because an author's unmatched
+   `<raise>` has both ends inside the document, and the sender of an error
+   event is this engine, so the same reasoning does not reach it. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_unhandled_error_events(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->unhandled_error_events;
+}
+
+/* W3C SCXML 5.10.1: which error event the count above last recorded. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_unhandled_error(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_unhandled_error) {
+        return false;
+    }
+    *out = sm->last_unhandled_error;
     return true;
 }
 {% for var in model.readable_variables %}

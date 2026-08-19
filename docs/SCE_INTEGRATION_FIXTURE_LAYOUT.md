@@ -387,6 +387,38 @@ It owns only what the host learns about an event it injected: no delayed
 `<send>`, no `<invoke>`, no `<parallel>`. `late_tick_honours_cancel` owns
 scheduler dispatch order.
 
+`unhandled_error_is_observable` covers W3C SCXML 3.12.2: the processor MUST
+signal its own failures by raising `error.*` events into the **internal** queue,
+and the same paragraph says they "are ignored if no transition is found that
+matches them". Being ignored is the clause; being unable to say it happened is
+what this fixture is about. It is the sibling of the entry above and exists
+because that one drew its boundary at the external queue, on the stated ground
+that an unmatched internal event is the document's own business with both ends
+inside the document. That reasoning is exactly right for an author's `<raise>`
+and exactly wrong for an error event, whose sender is the **engine**: the host
+never wrote the document, cannot see the failure anywhere in the configuration,
+and is the only party positioned to act on it.
+
+Four outcomes leave the configuration on the same state — `poke` (handled, no
+error), `whisper` (the author's own `<raise event="unheard"/>`, unmatched and
+deliberately **not** counted), `boom` in `idle` (error, unmatched, counted) and
+`boom` in `guarded` (the same failure, answered by the document, not counted).
+`boom` is one event name routed to two outcomes by state, so a count cannot be
+keyed off the event or the action, only off what the configuration did with the
+error. The failure itself is `<assign location="">` — W3C 5.3's invalid location,
+which every backend rejects at generation time rather than through its script
+engine, so the error is raised identically in all seven channels.
+
+C11 answers the membership question differently on purpose: it has no
+event-name table to consult at run time, so its generated code compares against
+the `error.*` enum members the document declares, while the other five ask the
+same question of a name they already carry. The Interpreter channel asserts the
+parity claim from the other side — its raise sites pass the failure text and
+run whether or not the document declares a handler.
+
+It owns only what a host learns about an error its machine raised and dropped:
+no delayed `<send>`, no `<invoke>`, no `<parallel>`.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the

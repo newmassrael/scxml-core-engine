@@ -672,6 +672,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
+    # internal queue, and the clause says they are ignored when nothing matches
+    # them. Ignoring them is the clause; being unable to say it happened is not.
+    # The sibling above stops at the external queue because an author's unmatched
+    # <raise> has both ends inside the document; an error event's sender is the
+    # engine, so that reasoning does not reach it. This backend answers the
+    # membership question with a generated enum comparison — it has no
+    # event-name table to consult at run time.
+    sce_generate_static_integration_c_test(unhandled_error_is_observable "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_unhandled_error_is_observable
+        integration/test_unhandled_error_is_observable.c
+        ${INTEGRATION_C_TEST_unhandled_error_is_observable_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_unhandled_error_is_observable PRIVATE
+        sce_c_runtime sce_c_runtime_posix lua54
+    )
+    target_include_directories(sce_c_integration_unhandled_error_is_observable PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_unhandled_error_is_observable PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_unhandled_error_is_observable
+        COMMAND sce_c_integration_unhandled_error_is_observable
+    )
+    set_tests_properties(c11_integration_unhandled_error_is_observable PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.7: a <final> nested inside a compound state completes that
     # state, not the session — Appendix D enterStates ends the session only when
     # the final's parent is the <scxml> element. The fixture rests in the nested

@@ -70,3 +70,26 @@ pub fn matches_event_descriptor(event_name: &str, descriptor: &str) -> bool {
 
     false
 }
+
+/// Whether `event_name` names an error the processor itself raised, as opposed
+/// to an event the document asked for.
+///
+/// The clause reserves the whole `error.` prefix for them: it defines
+/// `error.execution` and `error.communication`, lets a platform add a suffix
+/// to either, and reserves `error.platform` with or without a suffix on top of
+/// that. The prefix is therefore the test — an enumeration would be wrong the
+/// first time the set is extended, which the same paragraph says may happen.
+///
+/// Used by the engine's internal-queue drain to tell an error nobody answered
+/// from an author's own unmatched `<raise>`. The two are indistinguishable in
+/// the queue and are not the same event to a host: the author wrote one and
+/// can read its fate in the document, while the other was written by the
+/// engine to report that the document did not do what it said.
+pub fn is_error_event(event_name: &str) -> bool {
+    // §scxml-3.12.2: the processor "MUST signal any errors that occur by
+    // raising SCXML events whose names begin with 'error.'", and reserves the
+    // `error.platform` family on top of the two it defines. Cited in the body
+    // rather than the doc comment because the ledger's Rust resolver binds a
+    // citation to the symbol enclosing it, and a `///` line encloses nothing.
+    event_name.starts_with("error.")
+}

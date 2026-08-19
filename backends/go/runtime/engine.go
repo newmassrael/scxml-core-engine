@@ -73,6 +73,16 @@ type Engine[S comparable, E comparable] struct {
 	lastDiscardedEvent E
 	hasDiscarded       bool
 
+	// unhandledErrorEvents counts error.* events this engine raised that no
+	// transition matched (§scxml-3.12.2) — see UnhandledErrorEvents.
+	unhandledErrorEvents uint32
+
+	// lastUnhandledError is the most recent error event counted above;
+	// hasUnhandledError says whether there is one, because the zero value of E
+	// is a real event.
+	lastUnhandledError E
+	hasUnhandledError  bool
+
 	// donedataAtFinal is the §scxml-5.5 + 6.3.1 stashed donedata payload
 	// for a top-level <final>. Entry actions stash it here; an invoking
 	// parent reads it back via DonedataAtFinal() to lift onto
@@ -482,6 +492,47 @@ func (e *Engine[S, E]) LastDiscardedEvent() (E, bool) {
 	return e.lastDiscardedEvent, e.hasDiscarded
 }
 
+// UnhandledErrorEvents reports how many error.* events this engine raised that
+// no transition in any active state answered.
+//
+// §scxml-3.12.2 requires the processor to signal its own failures as error.*
+// events on the internal queue, and says in the same breath that "they are
+// ignored if no transition is found that matches them". Being ignored is the
+// clause. Being unable to say it happened is not, and the difference matters to
+// exactly one party: the host, which did not write the document, cannot see the
+// failure anywhere in the configuration, and is the only one positioned to do
+// something about it. A supervisor driving a machine whose <assign> silently
+// fails every round reads IsRunning() == true and a plausible state forever.
+//
+// This is the sibling of DiscardedExternalEvents, and the two are deliberately
+// separate counts rather than one. That one stops at the external queue because
+// an author's unmatched <raise> has both ends inside the document; an error
+// event's sender is the engine, so the same reasoning does not reach it. An
+// author's <raise> that matches nothing is still not counted here.
+//
+// An error the document did answer is not counted either — the document dealt
+// with it, and its handling is visible in the configuration the host can
+// already read. What this counts is only the silent case.
+//
+// The C++ Interpreter has answered this all along, through
+// getLastStateMachineError() and the message it raises error.execution with;
+// this is the generated engines' side of it.
+func (e *Engine[S, E]) UnhandledErrorEvents() uint32 {
+	return e.unhandledErrorEvents
+}
+
+// LastUnhandledError reports the most recent error event UnhandledErrorEvents
+// counted. The bool is false while that count is zero — the zero value of E is
+// a real event, so it cannot stand in for "none".
+//
+// Which error it was narrows a silent failure from "something in this machine is
+// broken" to a class: error.execution is the document's own executable content
+// failing, error.communication is a <send> or <invoke> that could not reach its
+// target — two different repairs, and a count alone separates neither.
+func (e *Engine[S, E]) LastUnhandledError() (E, bool) {
+	return e.lastUnhandledError, e.hasUnhandledError
+}
+
 // ================================================================
 // Callbacks
 // ================================================================
@@ -649,7 +700,25 @@ func (e *Engine[S, E]) processInternalQueue() {
 		}
 		// §scxml-5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
-		e.executeTransition(eventWithMeta.Event)
+		// §scxml-3.12.2: the processor raises error.* into this queue and the
+		// clause says they "are ignored if no transition is found that matches
+		// them". Ignoring them is the clause; staying silent about it is not.
+		// DiscardedExternalEvents deliberately stops at the external queue
+		// because an unmatched <raise> has both ends inside the document — but
+		// the sender of an error event is this engine, so that reasoning does
+		// not reach it. The host never wrote the document, cannot see the
+		// failure in the configuration, and is the only party able to act on it.
+		//
+		// The selection runs first and unconditionally: it is what processes
+		// every internal event, and folding it into the condition below would
+		// skip it for everything that is not an error.
+		outcome := e.executeTransition(eventWithMeta.Event)
+		if !outcome.selected && IsErrorEvent(e.policy.GetEventName(eventWithMeta.Event)) {
+			e.unhandledErrorEvents++
+			e.lastUnhandledError = eventWithMeta.Event
+			e.hasUnhandledError = true
+			log.Printf("[sce] Engine::processInternalQueue: error event matched no transition; unhandled")
+		}
 		e.policy.ClearEventMetadata()
 	}
 }

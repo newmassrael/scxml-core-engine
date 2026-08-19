@@ -697,6 +697,8 @@ add_executable(integration_tests
     integration/InvokePrecedesDequeueMidrunAotTest.cpp
     integration/DiscardedEventIsObservableTest.cpp
     integration/DiscardedEventIsObservableAotTest.cpp
+    integration/UnhandledErrorIsObservableTest.cpp
+    integration/UnhandledErrorIsObservableAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
@@ -1079,6 +1081,15 @@ sce_generate_static_integration_test(invoke_precedes_dequeue_midrun ${STATIC_INT
 # not derivable from any other accessor — the Interpreter has reported it all
 # along and the generated engines were silent.
 sce_generate_static_integration_test(discarded_event_is_observable ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
+# internal queue, and the clause says they are ignored when nothing matches
+# them. Ignoring them is the clause; being unable to say it happened is not —
+# and the party that cannot see it is the host, which never wrote the document.
+# The sibling above stops at the external queue because an author's unmatched
+# `<raise>` has both ends inside the document; an error event's sender is the
+# engine, so that reasoning does not reach it.
+sce_generate_static_integration_test(unhandled_error_is_observable ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
 # dispatched, and a host that ticks after two fire times have passed must still
