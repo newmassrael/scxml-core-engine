@@ -314,10 +314,9 @@
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<data id='{{ var.id }}'> expr failed to evaluate");
         }
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
@@ -400,10 +399,9 @@
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<data id='{{ var.id }}'> expr failed to evaluate");
         }
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
@@ -460,10 +458,9 @@
         if (luaL_dostring(sm->L,
             "{{ script.content | to_lua_script | escape_c }}") != 0) {
             lua_pop(sm->L, 1);
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "a top-level <script> failed to execute");
         }
         {% endfor %}
         {% endif %}
@@ -500,10 +497,9 @@
     if (luaL_dostring(sm->L,
         "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<data id='{{ var.id }}'> expr failed to evaluate");
     }
     {% elif var.content %}
     {% if (var.content | trim) is startingwith('<') %}
@@ -566,10 +562,9 @@
     if (luaL_dostring(sm->L,
         "{{ loc | to_lua_location | escape_c }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<assign> to '{{ loc | escape_c }}' failed");
     }
 {% endmacro %}
 
@@ -619,10 +614,9 @@
         lua_pop(sm->L, 1);
     } else {
         lua_pop(sm->L, 1);
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "a <transition> cond failed to evaluate");
     }
 {% endmacro %}
 
@@ -706,10 +700,9 @@
             _i + 1{% if index %}, _i{% endif %});
         if (luaL_dostring(sm->L, _sce_buf) != 0) {
             lua_pop(sm->L, 1);
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-            memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "a runtime-built expression failed to evaluate");
             break;
         }
     }
@@ -741,10 +734,9 @@
         "_pending_donedata = ({{ lua | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<donedata> failed to evaluate");
     }
 {% endmacro %}
 
@@ -837,10 +829,9 @@
           "_pending_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ({{ chosen_expr | to_lua_expr | escape_c }}) "
         "end") != 0) {
         lua_pop(sm->L, 1);
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<donedata> <param> failed to evaluate");
     }
 {% endmacro %}
 
@@ -870,10 +861,9 @@
         "end") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-        memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            "<donedata> failed to evaluate");
         return;
     }
 {% endmacro %}

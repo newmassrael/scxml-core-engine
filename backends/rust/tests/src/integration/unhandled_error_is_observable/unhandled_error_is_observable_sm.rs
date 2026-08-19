@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: acaad3b5f36dbb13dd7950dc62eaf45598406091abc6d5d773732ce4b31e8fa1
-// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
-// generated-at: 0
+// source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
+// template-hash: e1ef1a80ec6f1d98421ed2b76701aed66a2f64164d943082fb9a22d750e546a9
+// generated-at: 1787142491
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -360,7 +360,7 @@ impl UnhandledErrorIsObservablePolicy {
 
         // W3C SCXML 5.2/5.3: Initialize 'detail' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "detail", "\"\"",
+            se, &sid, "detail", "\"none\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -434,7 +434,7 @@ impl UnhandledErrorIsObservablePolicy {
 
         // W3C SCXML 5.2/5.3: Initialize 'detail' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "detail", "\"\"",
+            se, &sid, "detail", "\"none\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
@@ -852,7 +852,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
             UnhandledErrorIsObservableState::Guarded => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:86 :: guarded :: _transition_0
+                        // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -896,7 +896,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_1
+                        // SCE-MAP: unhandled_error_is_observable.scxml:94 :: guarded :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -929,7 +929,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let expr = "_event.data";
+                            let expr = "_event.name";
                             // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
                             // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
                             // through evaluate_expression + set_variable would round-trip through ScriptValue
@@ -953,7 +953,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
             UnhandledErrorIsObservableState::Idle => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:51 :: idle :: _transition_0
+                        // SCE-MAP: unhandled_error_is_observable.scxml:55 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -981,7 +981,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _transition_1
+                        // SCE-MAP: unhandled_error_is_observable.scxml:58 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         // W3C SCXML 3.8.1: <raise event="unheard">
@@ -1000,7 +1000,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         ));
                     }
                     2 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:76 :: idle :: _transition_2
+                        // SCE-MAP: unhandled_error_is_observable.scxml:80 :: idle :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -1028,7 +1028,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: unhandled_error_is_observable.scxml:79 :: idle :: _transition_3
+                        // SCE-MAP: unhandled_error_is_observable.scxml:83 :: idle :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
 
                         {

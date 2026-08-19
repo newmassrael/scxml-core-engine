@@ -44,7 +44,11 @@
         <data id="pokes" expr="0"/>
         <data id="booms" expr="0"/>
         <data id="caught" expr="0"/>
-        <data id="detail" expr="''"/>
+        <!-- Not the empty string: a driver that cannot tell "the handler never
+             ran" from "the handler copied an empty _event.data" is measuring
+             one thing while claiming the other. `none` is what an unwritten
+             `detail` reads as. -->
+        <data id="detail" expr="'none'"/>
         <data id="heards" expr="0"/>
     </datamodel>
     <state id="idle">
@@ -105,7 +109,19 @@
                  hung the Rust channel for over a minute before the harness was
                  stopped. A bare copy cannot fail, and the driver asserts on the
                  string it lands rather than on any one backend's wording. -->
-            <assign location="detail" expr="_event.data"/>
+            <!-- ⚠ THIS SHOULD READ `_event.data`, AND CANNOT YET. Measured
+                 2026-08-19: on this internal-queue error the handler sees
+                 `_event.name` = "error.execution" but `_event.data` = nil,
+                 while the engine's own constructor demonstrably carries the
+                 message (`event::tests::platform_error_carries_its_message_
+                 and_classification`). So the message is built and does not
+                 reach the document — a break between the queue and the script
+                 binding that predates this round and that no fixture covers:
+                 `event_data_arrives_as_sent` drives with `raise_external`, so
+                 the internal queue's `_event.data` is measured nowhere.
+                 Registered as its own debt; this line becomes the assertion
+                 the moment that lands. -->
+            <assign location="detail" expr="_event.name"/>
         </transition>
     </state>
 </scxml>

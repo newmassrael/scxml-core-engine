@@ -259,3 +259,36 @@ impl<E, P: Default> EventWithMetadata<E, P> {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(not(feature = "no_std"))]
+mod tests {
+    use super::*;
+
+    /// The constructor every generated backend routes its `error.*` raises
+    /// through must actually carry what it was handed.
+    ///
+    /// Written while chasing an `_event.data` that arrived nil in the seven
+    /// channel fixture, to cut the chain at its first link rather than keep
+    /// guessing further down it.
+    #[test]
+    fn platform_error_carries_its_message_and_classification() {
+        let raised: EventWithMetadata<u8, ()> =
+            EventWithMetadata::platform_error(7, "<assign> to 'x' failed");
+
+        assert_eq!(raised.event, 7);
+        assert_eq!(
+            raised.metadata.data.as_str(),
+            "<assign> to 'x' failed",
+            "the message is what a document answering error.execution reads out \
+             of `_event.data`; an empty string tells it only THAT something failed"
+        );
+        assert_eq!(
+            raised.metadata.event_type,
+            EventType::Platform,
+            "an event the processor raised is `platform` per W3C SCXML 5.10.1; \
+             `new()` defaults to External, which is what every Rust raise site \
+             passed before this constructor existed"
+        );
+    }
+}

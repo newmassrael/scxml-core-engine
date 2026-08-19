@@ -127,12 +127,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) }}) {
             /* W3C SCXML 6.4.1: unsupported `type` — place error.execution on
                the internal queue and start nothing. */
-            {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
-            }
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke> declares a type this processor does not support");
             continue;
         }
         {% endfor %}
@@ -158,12 +155,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             /* W3C SCXML 6.4 (test554): namelist references undeclared
                parent var `{{ _ns_name }}` — abort spawn and raise
                error.execution per cpp `InvokeExecutor`. */
-            {
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
-            }
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke> namelist names '{{ _ns_name }}', which the parent does not declare");
             continue;
             {% endif %}
             {% endfor %}
@@ -331,10 +325,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             if (luaL_dostring(sm->L,
                 "return ({{ invoke_info.srcexpr | to_lua_expr | escape_c }})") != 0) {
                 lua_pop(sm->L, 1);
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> srcexpr failed to evaluate");
                 continue;
             }
             lua_pop(sm->L, 1);
@@ -343,10 +336,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             if (luaL_dostring(sm->L,
                 "return ({{ invoke_info.contentexpr | to_lua_expr | escape_c }})") != 0) {
                 lua_pop(sm->L, 1);
-                {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
-                memset(&_err_evt, 0, sizeof(_err_evt));
-                _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-                {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> contentexpr failed to evaluate");
                 continue;
             }
             lua_pop(sm->L, 1);
