@@ -429,6 +429,37 @@ pub fn compute_ancestors_with_transitions(
     (event_map, null_map)
 }
 
+/// Whether `processEvent`'s `when (state)` still needs an `else` arm.
+///
+/// The template emits one branch per state that has event transitions of its
+/// own or inherits an ancestor's, and skips `<parallel>` states entirely. The
+/// `else` covers exactly what that leaves out. When it leaves nothing out the
+/// `when` is exhaustive over the sealed state hierarchy, and Kotlin rejects a
+/// redundant `else` under `-Werror` — which is how a document with no `<final>`
+/// and a transition on every state failed to compile.
+///
+/// Takes the same `(model, ancestor_chains)` pair and the event map that
+/// [`compute_ancestors_with_transitions`] returns, so the two answers cannot
+/// drift: the predicate below is the negation of the template's branch
+/// conditions, read off the same inputs the template reads.
+pub fn process_event_needs_else(
+    model: &SCXMLModel,
+    ancestors_with_event_transitions: &BTreeMap<String, Vec<String>>,
+) -> bool {
+    model.states.iter().any(|(state_id, state)| {
+        if state.is_parallel {
+            // The template's `{% if not state.is_parallel %}` skips it, so the
+            // `else` is the only arm that answers for this state.
+            return true;
+        }
+        let has_own_event_transition = state.transitions.iter().any(|t| !t.event.is_empty());
+        let inherits_one = ancestors_with_event_transitions
+            .get(state_id)
+            .is_some_and(|ancestors| !ancestors.is_empty());
+        !has_own_event_transition && !inherits_one
+    })
+}
+
 /// §scxml-3.13: Compute effective transitions (self + ancestors).
 ///
 /// For each state, collects its own transitions followed by all ancestor transitions.
@@ -460,6 +491,38 @@ pub fn compute_effective_transitions(
     }
 
     effective_transitions
+}
+
+/// Whether `executeTransitionActions`' `when (source)` still needs an `else` arm.
+///
+/// The twin of [`process_event_needs_else`], for the other `when` over the
+/// sealed state hierarchy in the same file. That template emits a branch for
+/// every state with at least one effective transition carrying actions, so the
+/// `else` covers the states with none. A document where every state has one
+/// leaves the `when` exhaustive, and Kotlin rejects a redundant `else` under
+/// `-Werror`.
+///
+/// Reads `effective_transitions` — the same map the template iterates — so the
+/// predicate cannot drift from the branch condition it is the negation of.
+pub fn transition_actions_needs_else(
+    effective_transitions: &BTreeMap<String, serde_json::Value>,
+) -> bool {
+    effective_transitions.values().any(|transitions| {
+        !transitions
+            .as_array()
+            .is_some_and(|list| list.iter().any(transition_has_actions))
+    })
+}
+
+/// Whether one serialized transition carries executable content.
+///
+/// Mirrors the template's `{% if trans.actions %}`, which is Jinja truthiness:
+/// a missing key and an empty list both read as false.
+fn transition_has_actions(transition: &serde_json::Value) -> bool {
+    transition
+        .get("actions")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|actions| !actions.is_empty())
 }
 
 /// §scxml-3.7.1: Generate Kotlin expression for parallel state completion check.
