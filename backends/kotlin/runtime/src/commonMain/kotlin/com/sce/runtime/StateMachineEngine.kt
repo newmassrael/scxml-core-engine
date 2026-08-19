@@ -120,6 +120,26 @@ data class EventMetadata(
  */
 private const val MAX_ERROR_CASCADE_DEPTH = 100
 
+/**
+ * How many microsteps one macrostep may take on eventless transitions alone
+ * before this engine stops taking them — see
+ * [StateMachineEngine.truncatedMacrosteps].
+ *
+ * The specification defines a macrostep as a chain of microsteps ending in a
+ * configuration where nothing is enabled by NULL, and its
+ * Principles and Constraints say in as many words that such a chain
+ * need not exist: "A microstep always terminates. A macrostep may not. A
+ * macrostep that does not terminate may be said to consist of an infinitely
+ * long sequence of microsteps. This is currently allowed."
+ *
+ * So the ceiling is not conformance — it is this engine declining a document
+ * the specification permits, which is exactly why the decline has to be
+ * visible. The number matches [MAX_ERROR_CASCADE_DEPTH]: both bound a chain
+ * the document cannot end on its own, and a host that has to reason about one
+ * should not have to learn a second number for the other.
+ */
+private const val MAX_EVENTLESS_MICROSTEPS = 100
+
 abstract class StateMachineEngine<S : State, E : Event>(
     protected val scriptEngine: ScxmlScriptEngine? = null
 ) {
@@ -416,6 +436,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var errorCascadeDepth: Int = 0
     private var errorCascadeEventCount: Int = 0
     private var lastErrorCascade: E? = null
+
+    /**
+     * Macrosteps stopped at [MAX_EVENTLESS_MICROSTEPS] with an
+     * eventless transition still enabled, the state the drain was in when that
+     * last happened, and whether the macrostep now in progress is already one
+     * of them. See [truncatedMacrosteps].
+     *
+     * The flag exists because the drain is reached more than once per
+     * macrostep; without it each caller would get a fresh budget and each
+     * refusal would be counted separately. It is cleared where the algorithm
+     * starts a macrostep, which is the external dequeue.
+     */
+    private var truncatedMacrostepCount: Int = 0
+    private var lastTruncatedMacrostep: S? = null
+    private var macrostepTruncated: Boolean = false
 
     /**
      * §scxml-3.7: Mark that a top-level final state has been entered.
@@ -1011,6 +1046,43 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun lastErrorCascadeEvent(): E? = lastErrorCascade
 
     /**
+     * How many macrosteps this engine stopped short because their
+     * eventless chain was still going after [MAX_EVENTLESS_MICROSTEPS]
+     * microsteps.
+     *
+     * The clause says a macrostep ends in a configuration where nothing is
+     * enabled by NULL, and the specification's Principles and Constraints
+     * add that a macrostep *may not terminate* and that this "is
+     * currently allowed". A document with a cyclic eventless transition is
+     * therefore not malformed; it is a document whose macrostep is infinite,
+     * and an engine that runs it to the letter never returns.
+     *
+     * This engine does not run it to the letter, and until 2026-08-20 it was
+     * the quietest of the seven about it: the ceiling in
+     * [drainEventlessAndInternal] cut the macrostep and no log line, no
+     * counter and no return value said so. Bounded and silent is the same
+     * signal as unbounded to the host reading it — [currentState] answers with
+     * a state the document names and the call returned. The configuration
+     * behind that answer is not the stable one the clause promises.
+     *
+     * A document whose eventless chain is a hundred microsteps long and then
+     * settles counts zero: the ceiling is on microsteps *taken*, and the
+     * macrostep is only counted here when a transition was still enabled after
+     * them. Long chains are ordinary; endless ones are not.
+     */
+    fun truncatedMacrosteps(): Int = truncatedMacrostepCount
+
+    /**
+     * The state this engine was in when it last stopped a macrostep that way,
+     * or `null` while [truncatedMacrosteps] is zero.
+     *
+     * Which state it was is the whole repair: an eventless cycle is a closed
+     * walk through the state graph, and this names one state on it. The count
+     * alone says a document somewhere cannot settle; this says where to look.
+     */
+    fun lastTruncatedMacrostepState(): S? = lastTruncatedMacrostep
+
+    /**
      * Destroy script engine session and release resources (sync mode cleanup).
      * Call after test assertions. Does not reset state — [currentState] remains readable.
      */
@@ -1138,6 +1210,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun processNextExternalEvent() {
         val queued = externalEventQueue.removeFirst()
+        // Taking an event off the external queue is
+        // where a macrostep begins, so it is where the previous one's ceiling
+        // stops applying. A machine left inside an eventless cycle gets a full
+        // budget for each event it is given, and each refusal is counted
+        // separately — which is what tells a host that spins once from one
+        // that spins on everything.
+        macrostepTruncated = false
         currentEventMetadata = queued.metadata
         populateTypedPayload(queued.metadata)
         executeFinalizeForChildEvent(queued.event)
@@ -1873,11 +1952,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * different parallel regions execute simultaneously.
      */
     private fun drainEventlessAndInternal() {
-        var iterations = 0
-        val maxIterations = 100  // C++ checkEventlessTransitions safety limit
-        while (!isInFinalState && iterations++ < maxIterations) {
+        if (macrostepTruncated) {
+            // This macrostep was already stopped at the ceiling. Re-entering
+            // the drain would hand the same chain a second budget, which is
+            // the runaway the ceiling exists to refuse.
+            return
+        }
+        // Microsteps taken, not loop turns: the turn that finds nothing
+        // enabled is how a macrostep ends, and counting it would spend the
+        // budget on the proof that no budget was needed. The internal-event
+        // branch keeps a budget of its own — an internal `<raise>` chain that
+        // cannot end is a different document from an eventless cycle, and
+        // sharing one counter made a hundred microsteps mean whichever of the
+        // two arrived first.
+        var eventlessTaken = 0
+        var internalIterations = 0
+        while (!isInFinalState) {
             // W3C SCXML Appendix D: Eventless transitions take priority
-            var foundEventless = false
 
             // W3C SCXML Appendix D: Unified eventless processing (C++ pattern)
             val leaves = activeLeafStatesInDocumentOrder()
@@ -1888,21 +1979,34 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     enabledTransitions.add(state to nullResult)
                 }
             }
-            if (enabledTransitions.size > 1) {
-                applySimultaneousTransitions(enabledTransitions)
-                foundEventless = true
-            } else if (enabledTransitions.size == 1) {
-                val (source, result) = enabledTransitions[0]
-                applyTransitionFrom(source, result, null)
-                foundEventless = true
-            }
-            if (foundEventless) {
+            if (enabledTransitions.isNotEmpty()) {
+                if (eventlessTaken == MAX_EVENTLESS_MICROSTEPS) {
+                    // The chain is still going one microstep past the budget,
+                    // so this is the case the specification calls a macrostep
+                    // that cannot end. Refuse the microstep rather than take it,
+                    // and publish the refusal: the configuration left behind
+                    // is not a stable one and only this counter says so.
+                    truncatedMacrostepCount++
+                    lastTruncatedMacrostep = enabledTransitions[0].first
+                    macrostepTruncated = true
+                    break
+                }
+                if (enabledTransitions.size > 1) {
+                    applySimultaneousTransitions(enabledTransitions)
+                } else {
+                    val (source, result) = enabledTransitions[0]
+                    applyTransitionFrom(source, result, null)
+                }
+                eventlessTaken++
                 flushPendingFinalState()
                 continue
             }
 
             // §scxml-3.12.1: Internal events next
             if (internalEventQueue.isNotEmpty()) {
+                if (internalIterations++ >= MAX_EVENTLESS_MICROSTEPS) {
+                    break
+                }
                 val queued = internalEventQueue.removeFirst()
                 currentEventMetadata = queued.metadata
                 populateTypedPayload(queued.metadata)

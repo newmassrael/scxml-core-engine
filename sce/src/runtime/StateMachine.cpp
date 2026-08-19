@@ -348,15 +348,15 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
     // §scxml-3.13: Repeat eventless transitions until stable configuration reached
     // This is critical for parallel states where entering a parallel state may enable
     // new eventless transitions in its regions (e.g., test 448)
+    // §scxml-3.13: the budget lives on `checkEventlessTransitions` itself (see
+    // `eventlessMicrostepsTaken_`), so this loop ends either at a stable
+    // configuration or at the ceiling — and in the second case
+    // `truncatedMacrosteps` says which.
+    macrostepTruncated_ = false;
+    eventlessMicrostepsTaken_ = 0;
     int eventlessIterations = 0;
-    const int MAX_EVENTLESS_ITERATIONS = 1000;
     while (checkEventlessTransitions()) {
-        if (++eventlessIterations > MAX_EVENTLESS_ITERATIONS) {
-            SCE_LOG_ERROR(
-                "StateMachine: checkEventlessTransitions exceeded max iterations ({}) - possible infinite loop",
-                MAX_EVENTLESS_ITERATIONS);
-            break;
-        }
+        ++eventlessIterations;
         SCE_LOG_DEBUG("StateMachine: Eventless transition executed (iteration {})", eventlessIterations);
     }
     SCE_LOG_DEBUG("StateMachine: Reached stable configuration after {} eventless iterations", eventlessIterations);
@@ -593,6 +593,15 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     ProcessingEventGuard eventGuard(isProcessingEvent_);
     if (topLevelEvent && eventRaiser_) {
         eventRaiser_->resetErrorCascadeDepth();
+    }
+    // The same boundary bounds the eventless chain: the algorithm
+    // starts a macrostep at the external dequeue, and for this engine the
+    // host's call is that dequeue — so a machine left inside an eventless
+    // cycle gets a full budget for each event it is given, and each refusal is
+    // counted separately.
+    if (topLevelEvent) {
+        macrostepTruncated_ = false;
+        eventlessMicrostepsTaken_ = 0;
     }
 
     // §scxml-5.10: Protect _event during nested event processing with RAII guard (Test 230)
@@ -1755,22 +1764,16 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             if (eventRaiser_) {
                 SCE_LOG_DEBUG("W3C SCXML: Starting macrostep loop after transition");
 
-                // W3C SCXML: Safety guard against infinite loops in malformed SCXML
-                // Typical SCXML should complete in far fewer iterations
-                const int MAX_MACROSTEP_ITERATIONS = 1000;
+                // The chain the clause describes may
+                // have no end, and this is where this engine declines to walk
+                // one forever. The refusal is recorded, not merely logged —
+                // see `Statistics::truncatedMacrosteps`.
                 int iterations = 0;
 
                 while (true) {
-                    if (++iterations > MAX_MACROSTEP_ITERATIONS) {
-                        SCE_LOG_ERROR(
-                            "W3C SCXML: Macrostep limit exceeded ({} iterations) - possible infinite loop in SCXML",
-                            MAX_MACROSTEP_ITERATIONS);
-                        SCE_LOG_ERROR("W3C SCXML: Check for circular eventless transitions in your SCXML document");
-                        break;  // Safety exit
-                    }
-
                     // W3C SCXML: Check for eventless transitions on all active states
                     bool eventlessTransitionExecuted = checkEventlessTransitions();
+                    ++iterations;
 
                     if (eventlessTransitionExecuted) {
                         SCE_LOG_DEBUG("W3C SCXML: Eventless transition executed, continuing macrostep");
@@ -2149,6 +2152,12 @@ StateMachine::Statistics StateMachine::getStatistics() const {
         stats.errorCascadeEvents = eventRaiser_->getErrorCascadeEvents();
         stats.lastErrorCascadeEvent = eventRaiser_->getLastErrorCascadeEvent();
     }
+    // The eventless chain is this class's own loop, so unlike the
+    // error chain above there is no raiser to ask — the count lives here and
+    // is the only reading that separates a machine resting in a stable
+    // configuration from one this engine stopped walking.
+    stats.truncatedMacrosteps = truncatedMacrosteps_;
+    stats.lastTruncatedMacrostepState = lastTruncatedMacrostepState_;
     return stats;
 }
 
@@ -2643,7 +2652,30 @@ bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_
     return true;
 }
 
+void StateMachine::recordTruncatedMacrostep() {
+    // The chain was still going one microstep past the budget,
+    // which is the case the specification's Principles and Constraints call a
+    // macrostep that does not terminate. Publish the refusal: the
+    // configuration left behind is not the stable one the clause promises, and
+    // every other reading a host has — the current state, `isRunning()`, the
+    // call returning — says the opposite.
+    ++truncatedMacrosteps_;
+    lastTruncatedMacrostepState_ = getCurrentState();
+    macrostepTruncated_ = true;
+    SCE_LOG_ERROR("W3C SCXML: macrostep still going after {} microsteps in state '{}'; stopped taking them",
+                  MAX_EVENTLESS_MICROSTEPS, lastTruncatedMacrostepState_);
+    SCE_LOG_ERROR("W3C SCXML: Check for circular eventless transitions in your SCXML document");
+}
+
 bool StateMachine::checkEventlessTransitions() {
+    if (macrostepTruncated_) {
+        // This macrostep was already stopped at the ceiling. Re-entering the
+        // drain would hand the same chain a second budget, which is the
+        // runaway the ceiling exists to refuse. Reported as "nothing was
+        // enabled", which is what every caller here does with a stable
+        // configuration.
+        return false;
+    }
     // Track recursion depth for visualizer transition tracking
     ++eventlessRecursionDepth_;
 
@@ -2735,6 +2767,27 @@ bool StateMachine::checkEventlessTransitions() {
         }
         return false;
     }
+
+    // §scxml-3.13: a transition is enabled and is about to be taken, which is
+    // the only place this engine can refuse one without also skipping the
+    // selection that decides whether the macrostep is over at all.
+    //
+    // The budget is a member rather than a loop counter because this engine's
+    // chain is RECURSIVE: executing a microstep re-enters `executeTransition`,
+    // whose macrostep loop calls back into here, so every nesting level used
+    // to start a fresh budget and none of them ever reached a ceiling. Measured
+    // 2026-08-20 on the fixture's cyclic document: seventy-four thousand
+    // microsteps deep, then a segfault — the stack ran out before any local
+    // counter did.
+    if (eventlessMicrostepsTaken_ >= MAX_EVENTLESS_MICROSTEPS) {
+        recordTruncatedMacrostep();
+        --eventlessRecursionDepth_;
+        if (eventlessRecursionDepth_ == 0) {
+            lastTransitionDepth_ = 0;
+        }
+        return false;
+    }
+    ++eventlessMicrostepsTaken_;
 
     // §scxml-3.13: If not in parallel state, execute the already-selected transition
     // IMPORTANT: We already evaluated the condition, so we must not re-evaluate it

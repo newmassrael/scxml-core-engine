@@ -4012,6 +4012,13 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
     uint8_t count;
 
     if (event_queue_pop(&sm->external_queue, &evt)) {
+        /* W3C SCXML Appendix D: taking an event off the external queue is
+           where a macrostep begins, so it is where the previous one's ceiling
+           stops applying. A machine left inside an eventless cycle gets a full
+           budget for each event it is given, and each refusal is counted
+           separately — which is what tells a host that spins once from one
+           that spins on everything. */
+        sm->macrostep_truncated = false;
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
         /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
@@ -4143,26 +4150,58 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
     return false;
 }
 
-/* W3C SCXML 6.2 (Appendix D, eventless microstep loop):
-   Repeat eventless transitions until the configuration stops changing or
-   a top-level final state is reached. The 100-iteration ceiling mirrors
-   the C++ guard against pathological cycles (`MAX_ITERATIONS`). Each
-   iteration's enabled list is built fresh, conflict-resolved, then
-   executed atomically — same shape as cpp's per-microstep collection. */
+/* W3C SCXML 3.13 (Appendix D, eventless microstep loop):
+   Repeat eventless transitions until the configuration stops changing or a
+   top-level final state is reached. Each iteration's enabled list is built
+   fresh, conflict-resolved, then executed atomically — same shape as cpp's
+   per-microstep collection.
+
+   §scxml-3.13 says the chain ends in a configuration where nothing is enabled
+   by NULL, and the specification's Principles and Constraints say that chain
+   need not exist ("A macrostep may not [terminate] ... This is currently
+   allowed"). SCE_MAX_EVENTLESS_MICROSTEPS is where this engine declines that,
+   and `_truncated_macrosteps` is how the host learns it did: the ceiling is on
+   microsteps TAKEN, and the refusal is recorded only when a transition was
+   still enabled after them, so a document whose chain ends exactly at the
+   ceiling passes through untouched. */
 SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
-    int iter = 0;
-    while (iter < 100) {
+    uint32_t taken = 0u;
+    if (sm->macrostep_truncated) {
+        /* This macrostep was already stopped at the ceiling. Re-entering the
+           drain would hand the same chain a second budget, which is the
+           runaway the ceiling exists to refuse. */
+        return;
+    }
+    while (true) {
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
             return;
         }
         if (!process_transition(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE, enabled, &count)) {
+            /* Nothing is enabled by NULL — the macrostep reached the stable
+               configuration the clause describes, and nothing was refused
+               however long the chain was. */
+            return;
+        }
+        if (taken == SCE_MAX_EVENTLESS_MICROSTEPS) {
+            /* The chain is still going one microstep past the budget. Refuse
+               it rather than take it, and publish the refusal: the
+               configuration left behind is not a stable one and only this
+               counter says so. */
+            sm->truncated_macrosteps++;
+            /* The source of the transition that was refused. This profile
+               keeps its configuration in a bitmap rather than a scalar, and
+               the source is the more useful answer anyway: it is a state on
+               the cycle that could not settle. */
+            sm->last_truncated_macrostep_state = enabled[0].source;
+            sm->has_truncated_macrostep = true;
+            sm->macrostep_truncated = true;
             return;
         }
         count = remove_conflicting_transitions(enabled, count);
         handle_microstep(sm, enabled, count);
-        iter++;
+        taken++;
     }
 }
 
@@ -4532,6 +4571,25 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_error_cascade_event(const 
         return false;
     }
     *out = sm->last_error_cascade_event;
+    return true;
+}
+
+/* W3C SCXML 3.13: macrosteps stopped at SCE_MAX_EVENTLESS_MICROSTEPS with an
+   eventless transition still enabled. The clause promises a stable
+   configuration at the end of a macrostep; when this count moves, the
+   configuration the host is reading is not one. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_truncated_macrosteps(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->truncated_macrosteps;
+}
+
+/* W3C SCXML 3.13: which state the drain was in when the count above last
+   moved — one state on the eventless cycle that could not settle. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_truncated_macrostep_state(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_state_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_truncated_macrostep) {
+        return false;
+    }
+    *out = sm->last_truncated_macrostep_state;
     return true;
 }
 {% for var in model.readable_variables %}
