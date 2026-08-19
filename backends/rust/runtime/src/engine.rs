@@ -86,6 +86,24 @@ use crate::{sce_log_debug, sce_log_error, SceString};
 // `Engine<P>` resolves `now` via the `sched_now` / `sched_now_plus` helpers
 // below.
 
+/// How many links an `error.*` chain may have before the engine stops feeding
+/// it — see [`Engine::error_cascade_events`].
+///
+/// §scxml-3.12.2 says what to do with an error event nothing matches. It does
+/// not say what to do when something *does* match it and that handler fails
+/// too: the failure raises the same error, the same transition answers it, and
+/// the machine has no way out. Nothing in the specification bounds that, so
+/// the number is this engine's to choose, and it is chosen to match
+/// `check_eventless_transitions`' ceiling — the sibling case of a document
+/// that cannot finish a macrostep, decided the same way for the same reason.
+///
+/// A hundred links is far past any repair strategy a document plausibly
+/// spells (a handler that tries a fallback, then a second one, is three) and
+/// far short of a number a host would wait through: measured 2026-08-19, the
+/// Python engine ran 37,000 links a second on a two-line document, so an
+/// unattended supervisor did not hang — it burned a core until it was killed.
+pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100;
+
 /// Comparable timestamp used by the scheduler: `u64` millisecond ticks read
 /// from `<P::Hal as Hal>::now_ticks_ms()` under both std and no_std.
 ///
@@ -451,6 +469,25 @@ pub struct Engine<P: StatePolicy> {
     /// The most recent `error.*` event that went unhandled — see
     /// [`last_unhandled_error`](Self::last_unhandled_error).
     pub(crate) last_unhandled_error: Option<P::Event>,
+    /// Whether the drain is currently executing a transition selected by an
+    /// `error.*` event — the state in which a newly raised error is a *link in
+    /// a chain* rather than a first failure.
+    ///
+    /// This is the whole discriminator behind
+    /// [`error_cascade_events`](Self::error_cascade_events): a document that
+    /// answers five hundred separate failures cleanly never sets it twice in a
+    /// row, and one whose error handler fails sets it on every link.
+    pub(crate) handling_error_event: bool,
+    /// How many links the current error chain has, reset the moment the drain
+    /// does anything else — see [`error_cascade_events`](Self::error_cascade_events).
+    pub(crate) error_cascade_depth: u32,
+    /// `error.*` events refused because the chain that raised them had reached
+    /// [`MAX_ERROR_CASCADE_DEPTH`] — see
+    /// [`error_cascade_events`](Self::error_cascade_events).
+    pub(crate) error_cascade_events: u32,
+    /// The most recent `error.*` event refused that way — see
+    /// [`last_error_cascade_event`](Self::last_error_cascade_event).
+    pub(crate) last_error_cascade_event: Option<P::Event>,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -492,6 +529,10 @@ impl<P: StatePolicy> Engine<P> {
             last_discarded_event: None,
             unhandled_error_events: 0,
             last_unhandled_error: None,
+            handling_error_event: false,
+            error_cascade_depth: 0,
+            error_cascade_events: 0,
+            last_error_cascade_event: None,
             donedata_at_final: SceString::new(),
         }
     }
@@ -929,6 +970,47 @@ impl<P: StatePolicy> Engine<P> {
         self.last_unhandled_error
     }
 
+    /// How many `error.*` events this engine refused to queue because the
+    /// error handler that raised them had been failing for
+    /// [`MAX_ERROR_CASCADE_DEPTH`] links running.
+    ///
+    /// The clause says an unmatched error event is ignored, and
+    /// [`unhandled_error_events`](Self::unhandled_error_events) is that case.
+    /// This is its opposite and its worse half: the document *does* match the
+    /// error, and the handler fails the same way every time. The failure
+    /// raises `error.execution`, the same transition answers it, and the drain
+    /// never empties. Nothing in §scxml-3.12.2 covers it — the clause bounds
+    /// what happens to an error nobody wants, not an error everybody wants and
+    /// nobody can handle.
+    ///
+    /// Left to run, that is not a hang: it is a core at 100% forever. Measured
+    /// 2026-08-19 on a two-line document, the Python engine turned 37,000
+    /// links a second while its configuration never moved and
+    /// `is_running()` stayed `true` — the exact reading an unattended
+    /// supervisor takes as healthy. So the engine stops feeding the chain and
+    /// says how often it had to, which is the one fact that separates "this
+    /// machine is idle" from "this machine's error handling is broken".
+    ///
+    /// A document that fails five hundred times cleanly counts zero here: the
+    /// chain is measured from *handler to handler*, not from failure to
+    /// failure, and any other internal event resets it. Nothing is discarded
+    /// that a working document would have processed.
+    pub fn error_cascade_events(&self) -> u32 {
+        self.error_cascade_events
+    }
+
+    /// The most recent `error.*` event
+    /// [`error_cascade_events`](Self::error_cascade_events) refused, or `None`
+    /// while that count is zero.
+    ///
+    /// Which error it was names the repair: `error.execution` is a handler
+    /// whose own executable content fails, `error.communication` a handler
+    /// that answers an unreachable target by talking to it again. Copy, so
+    /// reading it costs nothing on the no_std profile.
+    pub fn last_error_cascade_event(&self) -> Option<P::Event> {
+        self.last_error_cascade_event
+    }
+
     /// Current active (leaf) state.
     pub fn get_current_state(&self) -> P::State {
         self.current_state
@@ -1028,7 +1110,34 @@ impl<P: StatePolicy> Engine<P> {
     /// §scxml-C-1: Raise an internal event (high priority).
     ///
     /// Matches C++ `raise(EventWithMetadata)`.
+    ///
+    /// An `error.*` event raised while an error handler is running is refused
+    /// once the chain reaches [`MAX_ERROR_CASCADE_DEPTH`] — see
+    /// [`error_cascade_events`](Self::error_cascade_events) for why the engine
+    /// is the one that has to stop it. Only the engine's own error events are
+    /// refused: an author's `<raise>` inside an error handler is the document
+    /// doing its job and rides the queue like any other.
     pub fn raise(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
+        // §scxml-3.12.2 names the error events this refuses; the clause itself
+        // is silent on a handler that fails, which is why the ceiling is a
+        // choice this engine documents rather than a rule it implements.
+        if self.handling_error_event
+            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+        {
+            self.error_cascade_depth = self.error_cascade_depth.saturating_add(1);
+            if self.error_cascade_depth >= MAX_ERROR_CASCADE_DEPTH {
+                self.error_cascade_events = self.error_cascade_events.saturating_add(1);
+                self.last_error_cascade_event = Some(event.event);
+                if self.error_cascade_events == 1 {
+                    sce_log_error!(
+                        "Engine::raise: an error handler has raised an error {} times over; \
+                         refusing to feed the chain — the document's error handling is failing",
+                        MAX_ERROR_CASCADE_DEPTH
+                    );
+                }
+                return;
+            }
+        }
         self.internal_queue.raise(event);
     }
 
@@ -1482,12 +1591,26 @@ impl<P: StatePolicy> Engine<P> {
             // processes every internal event, and making it the right-hand
             // side of an `&&` would skip it for everything that is not an
             // error.
+            // An error raised from here on is raised *by an error handler*,
+            // which is the one situation the engine cannot leave to the
+            // document: the handler that failed is the same one that will
+            // answer the failure. The flag is what `raise` reads to tell that
+            // apart from a first failure, and it is cleared before anything
+            // else can run so a chain cannot be attributed to the wrong event.
+            let is_error = crate::helpers::event_matching::is_error_event(P::get_event_name(
+                event_with_meta.event,
+            ));
+            if !is_error {
+                // The drain did something else, so whatever chain was building
+                // is over. Counting links across an unrelated internal event
+                // would report a document that merely fails often as one that
+                // cannot stop failing.
+                self.error_cascade_depth = 0;
+            }
+            self.handling_error_event = is_error;
             let outcome = self.execute_transition(event_with_meta.event);
-            if outcome == EventOutcome::Discarded
-                && crate::helpers::event_matching::is_error_event(P::get_event_name(
-                    event_with_meta.event,
-                ))
-            {
+            self.handling_error_event = false;
+            if outcome == EventOutcome::Discarded && is_error {
                 self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);
                 self.last_unhandled_error = Some(event_with_meta.event);
                 sce_log_debug!(
@@ -1496,6 +1619,10 @@ impl<P: StatePolicy> Engine<P> {
             }
             self.policy.clear_event_metadata();
         }
+        // The queue emptied, so the chain — refused or merely finished — is
+        // over. A machine whose next macrostep starts a new one starts it from
+        // zero, and the count of what was refused stays where the host reads it.
+        self.error_cascade_depth = 0;
     }
 
     /// §scxml-D-mainEventLoop: take exactly one event off the external queue,

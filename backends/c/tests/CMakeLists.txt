@@ -714,6 +714,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.12.2 from the other side: the clause bounds what happens to an
+    # error nobody answers, and says nothing about one a handler DOES answer
+    # with the same failure every time. The failure raises the error, the same
+    # transition answers it, and the drain never empties — measured 2026-08-19
+    # at 37,000 links a second with the configuration unmoved, which is what an
+    # unattended supervisor reads as a healthy idle machine.
+    sce_generate_static_integration_c_test(error_cascade_is_bounded "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_error_cascade_is_bounded
+        integration/test_error_cascade_is_bounded.c
+        ${INTEGRATION_C_TEST_error_cascade_is_bounded_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_error_cascade_is_bounded PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_error_cascade_is_bounded PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_error_cascade_is_bounded PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_error_cascade_is_bounded
+        COMMAND sce_c_integration_error_cascade_is_bounded
+    )
+    set_tests_properties(c11_integration_error_cascade_is_bounded PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 3.7: a <final> nested inside a compound state completes that
     # state, not the session — Appendix D enterStates ends the session only when
     # the final's parent is the <scxml> element. The fixture rests in the nested

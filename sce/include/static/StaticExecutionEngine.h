@@ -214,6 +214,25 @@ public:
     using Event = typename StatePolicy::Event;
 
     /**
+     * @brief How many links an `error.*` chain may have before the engine
+     *        stops feeding it — see `errorCascadeEvents()`
+     *
+     * §scxml-3.12.2 says what to do with an error event nothing matches. It
+     * does not say what to do when something *does* match it and that handler
+     * fails too: the failure raises the same error, the same transition
+     * answers it, and the machine has no way out. Nothing in the specification
+     * bounds that, so the number is this engine's to choose, and it matches
+     * the ceiling `EventProcessingAlgorithms::checkEventlessTransitions` uses
+     * for the sibling case of a macrostep that cannot finish — decided the
+     * same way for the same reason.
+     *
+     * A hundred links is far past any repair strategy a document plausibly
+     * spells (a handler that tries a fallback, then a second one, is three)
+     * and far short of a number a host would wait through.
+     */
+    static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = 100;
+
+    /**
      * @brief Event with metadata for §scxml-5.10 compliance
      *
      * Wraps Event enum with metadata (origin, sendid, data, type) to support
@@ -663,6 +682,15 @@ private:
     uint32_t unhandledErrorEvents_ = 0;
     Event lastUnhandledError_{};
     bool hasUnhandledError_ = false;
+    // §scxml-3.12.2: the drain is executing a transition an `error.*` event
+    // selected, which is the state in which a newly raised error is a link in
+    // a chain rather than a first failure; how long that chain is; and what
+    // the engine refused because of it. See `errorCascadeEvents()`.
+    bool handlingErrorEvent_ = false;
+    uint32_t errorCascadeDepth_ = 0;
+    uint32_t errorCascadeEvents_ = 0;
+    Event lastErrorCascadeEvent_{};
+    bool hasErrorCascadeEvent_ = false;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
@@ -710,9 +738,33 @@ public:
      * Places event on the internal queue with FIFO ordering.
      * Internal events have higher priority than external events.
      *
+     * An `error.*` event raised while an error handler is running is refused
+     * once the chain reaches `MAX_ERROR_CASCADE_DEPTH` — see
+     * `errorCascadeEvents()` for why the engine is the one that has to stop
+     * it. Only the engine's own error events are refused: an author's
+     * `<raise>` inside an error handler is the document doing its job and
+     * rides the queue like any other.
+     *
      * @param metadata Complete event metadata including all §scxml-5.10.1 fields
      */
     void raise(EventWithMetadata metadata) {
+        // §scxml-3.12.2 names the error events this refuses; the clause itself
+        // is silent on a handler that fails, which is why the ceiling is a
+        // choice this engine documents rather than a rule it implements.
+        if (handlingErrorEvent_ && SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(metadata.event))) {
+            ++errorCascadeDepth_;
+            if (errorCascadeDepth_ >= MAX_ERROR_CASCADE_DEPTH) {
+                ++errorCascadeEvents_;
+                lastErrorCascadeEvent_ = metadata.event;
+                hasErrorCascadeEvent_ = true;
+                if (errorCascadeEvents_ == 1) {
+                    SCE_LOG_ERROR("AOT: an error handler has raised an error {} times over; refusing to feed the "
+                                  "chain - the document's error handling is failing",
+                                  MAX_ERROR_CASCADE_DEPTH);
+                }
+                return;
+            }
+        }
         // §scxml-3.13: Enqueue event with metadata
         internalQueue_.raise(std::move(metadata));
     }
@@ -1035,6 +1087,50 @@ public:
     }
 
     /**
+     * @brief `error.*` events refused because an error handler kept raising them
+     *
+     * §scxml-3.12.2 says an unmatched error event is ignored, and
+     * `unhandledErrorEvents()` is that case. This is its opposite and its worse
+     * half: the document *does* match the error, and the handler fails the same
+     * way every time. The failure raises `error.execution`, the same transition
+     * answers it, and the drain never empties. Nothing in the clause covers it —
+     * it bounds what happens to an error nobody wants, not an error everybody
+     * wants and nobody can handle.
+     *
+     * Left to run, that is not a hang: it is a core at 100% forever. Measured
+     * 2026-08-19 on a two-line document, the Python engine turned 37,000 links a
+     * second while its configuration never moved and `isRunning()` stayed true —
+     * the exact reading an unattended supervisor takes as healthy. So the engine
+     * stops feeding the chain after `MAX_ERROR_CASCADE_DEPTH` links and says how
+     * often it had to.
+     *
+     * A document that fails five hundred times cleanly counts zero here: the
+     * chain is measured from *handler to handler*, not from failure to failure,
+     * and any other internal event resets it. Nothing is discarded that a
+     * working document would have processed.
+     */
+    uint32_t errorCascadeEvents() const {
+        return errorCascadeEvents_;
+    }
+
+    /**
+     * @brief The most recent `error.*` event `errorCascadeEvents()` refused
+     *
+     * `std::nullopt` while that count is zero — the generated `Event` enum's
+     * zero value is a real event and cannot stand in for "none".
+     *
+     * Which error it was names the repair: `error.execution` is a handler whose
+     * own executable content fails, `error.communication` one that answers an
+     * unreachable target by talking to it again.
+     */
+    std::optional<Event> lastErrorCascadeEvent() const {
+        if (!hasErrorCascadeEvent_) {
+            return std::nullopt;
+        }
+        return lastErrorCascadeEvent_;
+    }
+
+    /**
      * @brief Run state machine until completion or timeout (§scxml-6.2)
      *
      * Convenience API for running state machines with delayed send operations.
@@ -1279,10 +1375,31 @@ protected:
                 // processes every internal event, and folding it into the
                 // condition below would skip it for everything that is not an
                 // error.
+                // An error raised from here on is raised *by an error
+                // handler*, which is the one situation the engine cannot leave
+                // to the document: the handler that failed is the same one
+                // that will answer the failure. The flag is what `raise()`
+                // reads to tell that apart from a first failure, and it is
+                // cleared before anything else can run so a chain cannot be
+                // attributed to the wrong event.
+                const bool isError = SCE::Core::EventMatchingHelper::isErrorEvent(policy_.getEventName(event));
+                if (!isError) {
+                    // The drain did something else, so whatever chain was
+                    // building is over. Counting links across an unrelated
+                    // internal event would report a document that merely fails
+                    // often as one that cannot stop failing.
+                    errorCascadeDepth_ = 0;
+                }
+                handlingErrorEvent_ = isError;
                 const EventOutcome outcome = executeTransition(event);
+                handlingErrorEvent_ = false;
                 recordInternalEventOutcome(event, outcome);
                 return true;  // Continue processing
             });
+        // The queue emptied, so the chain — refused or merely finished — is
+        // over. A machine whose next macrostep starts a new one starts it from
+        // zero, and the count of what was refused stays where the host reads it.
+        errorCascadeDepth_ = 0;
     }
 
     /**

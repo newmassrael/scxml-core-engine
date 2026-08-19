@@ -59,17 +59,12 @@ PY
 
 mutation_case "every error is counted, answered or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if outcome == EventOutcome::Discarded
-                && crate::helpers::event_matching::is_error_event(P::get_event_name(
-                    event_with_meta.event,
-                ))
-            {""",
+     """            if outcome == EventOutcome::Discarded && is_error {""",
      """            if matches!(
                 outcome,
                 EventOutcome::Discarded | EventOutcome::Taken { .. }
-            ) && crate::helpers::event_matching::is_error_event(P::get_event_name(
-                event_with_meta.event,
-            )) {""")
+            ) && is_error
+            {""")
 PY
 
 # ── Counting the author's own unmatched raise ──────────────────────
@@ -81,11 +76,7 @@ PY
 
 mutation_case "any unmatched internal event counts as an engine error" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if outcome == EventOutcome::Discarded
-                && crate::helpers::event_matching::is_error_event(P::get_event_name(
-                    event_with_meta.event,
-                ))
-            {""",
+     """            if outcome == EventOutcome::Discarded && is_error {""",
      """            if outcome == EventOutcome::Discarded {""")
 PY
 
@@ -177,15 +168,13 @@ PY
 mutation_case "the selection becomes the right-hand side of the error test" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """            let outcome = self.execute_transition(event_with_meta.event);
-            if outcome == EventOutcome::Discarded""",
-     """            let outcome = if crate::helpers::event_matching::is_error_event(P::get_event_name(
-                event_with_meta.event,
-            )) {
+            self.handling_error_event = false;""",
+     """            let outcome = if is_error {
                 self.execute_transition(event_with_meta.event)
             } else {
                 EventOutcome::Taken {
                     configuration_changed: false,
                 }
             };
-            if outcome == EventOutcome::Discarded""")
+            self.handling_error_event = false;""")
 PY

@@ -737,6 +737,8 @@ add_executable(integration_tests
     integration/DiscardedEventIsObservableAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
     integration/UnhandledErrorIsObservableAotTest.cpp
+    integration/ErrorCascadeIsBoundedTest.cpp
+    integration/ErrorCascadeIsBoundedAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
@@ -1128,6 +1130,14 @@ sce_generate_static_integration_test(discarded_event_is_observable ${STATIC_INTE
 # `<raise>` has both ends inside the document; an error event's sender is the
 # engine, so that reasoning does not reach it.
 sce_generate_static_integration_test(unhandled_error_is_observable ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.12.2 again, from the other side: the clause bounds what happens
+# to an error nobody answers, and says nothing about one that IS answered by a
+# handler failing the same way every time. The failure raises the error, the
+# same transition answers it, and the drain never empties — measured
+# 2026-08-19 at 37,000 links a second with the configuration unmoved, which an
+# unattended supervisor reads as a healthy idle machine.
+sce_generate_static_integration_test(error_cascade_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
 # dispatched, and a host that ticks after two fire times have passed must still
