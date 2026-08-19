@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "17f0bfe448",
+  "embed_version": "c69577d89a",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 246,
+  "symbol_count": 247,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -444,6 +444,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::EntryExitHelper<T>"
+    },
+    {
+      "header": "core/EventMatchingHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::EventMatchingHelper::isErrorEvent",
+      "signature": "bool SCE::Core::EventMatchingHelper::isErrorEvent(const std::string &)"
     },
     {
       "header": "core/EventMatchingHelper.h",
