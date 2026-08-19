@@ -117,6 +117,103 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.1",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_next_external_event",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "processNextExternalEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "eventOutcome",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processNextExternalEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processMicrostep",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processOneEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "discardedExternalEventCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_next_external_event",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_dispatch",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "recordEventOutcome",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventImpl",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "EventOutcome",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "discardedExternalEvents_",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "DiscardedExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "discardedExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "discardedExternalEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "discarded_external_events",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational",
       "normative_excerpt": {
         "excerpt": {
@@ -14004,6 +14101,60 @@
       "target_kind": "section",
       "target_id": "scxml-4.6",
       "reason": "the string-rewriting transformer is deleted; the ECMAScript frontend under sce-build/src/ecmascript/ carries the citation now"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
     }
   ],
   "frames": {},

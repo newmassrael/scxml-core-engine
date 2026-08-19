@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.1.2: "If no transition matches in any state, the event is
+     discarded." Discarding is correct; being unable to SAY that it happened is
+     not. A host that feeds a machine external events - which is every host that
+     supervises one - cannot tell these three outcomes apart through any
+     pre-existing accessor, because all three leave the configuration alone:
+
+       poke    self transition      handled, state unchanged
+       nudge   targetless internal  handled, state unchanged, no exit/entry at all
+       settle  no matching          DISCARDED - the host's event went nowhere
+
+     The C++ Interpreter already answers: `StateMachine::processEvent` returns a
+     `TransitionResult` whose `success` is false for the third case. The six AOT
+     backends compute the same fact at the same point of Appendix D's
+     `mainEventLoop` and drop it on the floor, so moving a document from the
+     Interpreter to a generated engine LOSES a signal the host was reading.
+
+     `nudge` is in the document because the engines' own "did anything happen"
+     bool is not that fact: a targetless internal transition runs its actions and
+     still reports false (rust `execute_transition`, go `executeTransition`, cpp
+     `processEventImpl`'s `stateChanged`). A counter keyed off that bool would
+     call a handled event discarded. The datamodel counters are what make
+     "handled" observable at all - without them a passing run cannot be told
+     apart from a run where nothing fired.
+
+     Deliberately single-axis: no delayed `<send>`, no `<invoke>`, no
+     `<parallel>`. `late_tick_honours_cancel` owns scheduler dispatch order;
+     this one owns only what the host learns about an event it injected.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="discarded_event_is_observable">
+    <datamodel>
+        <data id="pokes" expr="0"/>
+        <data id="nudges" expr="0"/>
+    </datamodel>
+    <state id="idle">
+        <transition event="poke" target="idle">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="nudge">
+            <assign location="nudges" expr="nudges + 1"/>
+        </transition>
+        <transition event="go" target="busy"/>
+    </state>
+    <state id="busy">
+        <transition event="settle" target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>
