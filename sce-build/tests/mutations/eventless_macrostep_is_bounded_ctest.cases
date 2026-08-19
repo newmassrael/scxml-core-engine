@@ -1,0 +1,218 @@
+# Mutation cases for the eventless-macrostep ceiling on the three backends a
+# cargo round cannot see — the C++ AOT engine header, the C++ Interpreter, and
+# the C11 template.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/eventless_macrostep_is_bounded_ctest.cases`.
+#
+# Same axis as `eventless_macrostep_is_bounded.cases`: §scxml-3.13 says a
+# macrostep ends where nothing is enabled by NULL, and the specification's
+# Principles and Constraints say that end need not exist ("A macrostep may not
+# [terminate] ... This is currently allowed"). These three engines each got the
+# case wrong in a different way, which is why they are worth their own round:
+#
+#   - the AOT engine called `stop()` at its ceiling, so a document that merely
+#     paused elsewhere came back DEAD here — and its loop counted turns rather
+#     than microsteps taken, so a chain that settled at the ceiling was stopped
+#     too;
+#   - the Interpreter's chain is RECURSIVE (executing a microstep re-enters the
+#     macrostep loop), so a per-loop counter is per nesting level and never
+#     reaches any ceiling: measured 2026-08-20, seventy-four thousand
+#     microsteps deep and then a segfault. Its budget has to be a member.
+#   - the C11 template had a bare `while (iter < 100)` and said nothing at all.
+#
+# The C11 target is the TEMPLATE rather than a generated file, for the reason
+# `c11_datamodel_reader.cases` gives: this backend commits no generated tree, so
+# the template is what the built binaries carry.
+#
+# Every ctest entry carries a TIMEOUT, so a mutant that never ends comes back as
+# an ordinary red rather than a hung round.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_eventless_macrostep_is_bounded)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/src/runtime/StateMachine.cpp tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/EventlessMacrostepIsBoundedAotTest.cpp tests/integration/EventlessMacrostepIsBoundedTest.cpp backends/c/tests/integration/test_eventless_macrostep_is_bounded.c
+
+# ── C++ AOT: the refusal itself ────────────────────────────────────
+#
+# The engine keeps walking the chain, which is the case the specification
+# allows and no host can act on. Left alone it does not return, so the ctest
+# entry's own TIMEOUT is the witness.
+#
+# The ceiling is disabled at its condition rather than by deleting the `break`,
+# and the difference is not cosmetic: measured 2026-08-20, dropping the `break`
+# is an EQUIVALENT mutation here and it SURVIVED a full round. The refusal
+# restores `currentState_` before it breaks, so an engine that fell through
+# would find `oldState == currentState_` on the next line and leave through the
+# "transition taken but state didn't change" exit instead — same behaviour, no
+# test can see it. A mutant has to remove the decision, not one of its two
+# exits.
+
+mutation_case "the cpp engine takes the microstep past the ceiling anyway" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                if (taken == MAX_EVENTLESS_MICROSTEPS) {""",
+     """                if (false) {""")
+PY
+
+# ── C++ AOT: stopping the machine over it ──────────────────────────
+#
+# The shipped behaviour this axis replaced, and the sharpest of the three
+# disagreements: the same document that pauses on five engines came back dead
+# on this one. `AMacrostepThatCannotEndIsStopped` reads `isRunning()` for it.
+
+mutation_case "the cpp engine stops the machine at the ceiling" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                    macrostepTruncated_ = true;
+                    SCE_LOG_ERROR(""",
+     """                    macrostepTruncated_ = true;
+                    stop();
+                    SCE_LOG_ERROR(""")
+PY
+
+# ── C++ AOT: the off-by-one ────────────────────────────────────────
+#
+# Halving the budget is the same defect a `while (i++ < MAX)` / `if (i >= MAX)`
+# pair produced: an ordinary chain that ends on its own is reported as a
+# runaway. `AChainThatEndsAtTheCeilingIsNotRefused` is the only assertion that
+# can see it, and it is why the fixture's bounded chain is exactly the
+# ceiling's length.
+
+mutation_case "the cpp ceiling fires before the chain is over" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                ++taken;
+                // §scxml-3.4: For parallel states, use actual transition source state""",
+     """                taken += 2;
+                // §scxml-3.4: For parallel states, use actual transition source state""")
+PY
+
+# ── C++ AOT: putting the selected microstep back ───────────────────
+#
+# `processTransition` writes `currentState_` as it selects, so refusing without
+# restoring leaves the machine one microstep past where it stopped — and the
+# state the count names is then not the state it stopped in.
+
+mutation_case "the cpp engine keeps the microstep it refused" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+                        currentState_ = oldState;
+                    }
+                    ++truncatedMacrosteps_;""",
+     """                    ++truncatedMacrosteps_;""")
+PY
+
+# ── C++ AOT: the count ─────────────────────────────────────────────
+#
+# The chain is still cut, so nothing hangs and every configuration assertion
+# still passes — the machine simply stops saying the configuration it hands
+# back is not a stable one.
+
+mutation_case "the cpp refusal is silent" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                    ++truncatedMacrosteps_;
+                    lastTruncatedMacrostepState_ = currentState_;""",
+     """                    lastTruncatedMacrostepState_ = currentState_;""")
+PY
+
+# ── Interpreter: the refusal itself ────────────────────────────────
+#
+# This engine recurses, so removing the refusal does not merely spin: the stack
+# runs out. The ctest TIMEOUT is what turns that into a verdict.
+
+mutation_case "the interpreter takes the microstep past the ceiling anyway" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    if (eventlessMicrostepsTaken_ >= MAX_EVENTLESS_MICROSTEPS) {
+        recordTruncatedMacrostep();""",
+     """    if (false) {
+        recordTruncatedMacrostep();""")
+PY
+
+# ── Interpreter: the budget is per macrostep, not per machine ──────
+#
+# A counter that is never reset makes the ceiling a property of the machine's
+# whole life: the second macrostep is refused before it runs, so a host polling
+# the count sees it stop moving and reads the machine as recovered.
+# `ASecondTruncatedMacrostepCountsAgain` reads `spins == 200` for it.
+
+mutation_case "the interpreter budget outlives the macrostep that spent it" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        macrostepTruncated_ = false;
+        eventlessMicrostepsTaken_ = 0;
+    }""",
+     """    }""")
+PY
+
+# ── Interpreter: the count ─────────────────────────────────────────
+#
+# `getStatistics()` is where a host already looks; this is the mutation that
+# leaves the drain bounded and the statistics silent, which is exactly what
+# shipped.
+
+mutation_case "the interpreter refusal is silent" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    ++truncatedMacrosteps_;
+    lastTruncatedMacrostepState_ = getCurrentState();""",
+     """    lastTruncatedMacrostepState_ = getCurrentState();""")
+PY
+
+# ── Interpreter: naming where it stopped ───────────────────────────
+
+mutation_case "the interpreter counts the refusal but never names the state" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    lastTruncatedMacrostepState_ = getCurrentState();""",
+     """    lastTruncatedMacrostepState_.clear();""")
+PY
+
+# ── C11: the refusal itself ────────────────────────────────────────
+
+mutation_case "the c11 machine takes the microstep past the ceiling anyway" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->macrostep_truncated = true;
+            return;
+        }""",
+     """            sm->macrostep_truncated = true;
+        }""")
+PY
+
+# ── C11: the budget is per macrostep, not per caller ───────────────
+#
+# The drain is reached twice for one external event, so without the flag each
+# caller gets a fresh budget and the machine walks twice as far. `spins == 50`
+# is what holds it.
+
+mutation_case "each c11 caller of the drain gets its own budget" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm->macrostep_truncated) {
+        /* This macrostep was already stopped at the ceiling. Re-entering the
+           drain would hand the same chain a second budget, which is the
+           runaway the ceiling exists to refuse. */
+        return;
+    }""",
+     """    /* MUTANT: every caller starts the budget again. */""")
+PY
+
+# ── C11: the count ─────────────────────────────────────────────────
+
+mutation_case "the c11 refusal is silent" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            sm->truncated_macrosteps++;""",
+     """            (void)0;""")
+PY
+
+# ── C11: the lower bound on the accessor ───────────────────────────
+#
+# The state enum's zero value is a real state, so an accessor that always
+# answers reads exactly like a working one. The driver checks the untouched
+# case before anything has been refused.
+
+mutation_case "the c11 machine always names a state it stopped in" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm == NULL || out == NULL || !sm->has_truncated_macrostep) {
+        return false;
+    }
+    *out = sm->last_truncated_macrostep_state;""",
+     """    if (sm == NULL || out == NULL) {
+        return false;
+    }
+    *out = sm->last_truncated_macrostep_state;""")
+PY

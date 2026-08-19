@@ -65,6 +65,24 @@ BASIC_HTTP_EVENT_PROCESSOR_URI = io_processors.BASIC_HTTP_EVENT_PROCESSOR_URI
 # configuration never moved and `is_running()` stayed true.
 MAX_ERROR_CASCADE_DEPTH = 100
 
+# How many microsteps one macrostep may take on eventless transitions alone
+# before this engine stops taking them — see `Engine.truncated_macrosteps`.
+#
+# The specification defines a macrostep as a chain of microsteps ending in a
+# configuration where nothing is enabled by NULL, and its
+# Principles and Constraints say in as many words that such a chain
+# need not exist: "A microstep always terminates. A macrostep may not. A
+# macrostep that does not terminate may be said to consist of an infinitely
+# long sequence of microsteps. This is currently allowed."
+#
+# So the ceiling is not conformance — it is this engine declining a document
+# the specification permits, which is exactly why the decline has to be
+# visible. Until 2026-08-20 this engine was the only one of the seven that had
+# no ceiling here at all: measured that day, `initialize()` on a two-state
+# cyclic document did not return, which is the conformant reading and also the
+# one no host can act on.
+MAX_EVENTLESS_MICROSTEPS = 100
+
 
 class Engine(Generic[S, E]):
     """Generic SCXML engine bound to a concrete StatePolicy.
@@ -135,6 +153,17 @@ class Engine(Generic[S, E]):
         self._error_cascade_depth: int = 0
         self._error_cascade_events: int = 0
         self._last_error_cascade_event: Optional[E] = None
+        # Macrosteps stopped at `MAX_EVENTLESS_MICROSTEPS` with
+        # an eventless transition still enabled, and the state the drain was in
+        # when that last happened. See `truncated_macrosteps`.
+        self._truncated_macrosteps: int = 0
+        self._last_truncated_macrostep_state: Optional[S] = None
+        # Whether the macrostep now in progress has already been stopped that
+        # way. The drain is reached more than once per macrostep, so without
+        # this the ceiling is not a ceiling: each caller would get a fresh
+        # budget and each refusal would be counted separately. Cleared where
+        # the algorithm starts a macrostep, which is the external dequeue.
+        self._macrostep_truncated: bool = False
         # §scxml-3.7 — set of `<parallel>` states for which a
         # `done.state.<id>` event has already been raised this run, so a
         # second region reaching `<final>` does not re-fire it.
@@ -417,6 +446,44 @@ class Engine(Generic[S, E]):
         answers an unreachable target by talking to it again.
         """
         return self._last_error_cascade_event
+
+    def truncated_macrosteps(self) -> int:
+        """How many macrosteps this engine stopped short because their
+        eventless chain was still going after `MAX_EVENTLESS_MICROSTEPS`
+        microsteps.
+
+        §scxml-3.13 says a macrostep ends in a configuration where nothing is
+        enabled by NULL, and the specification's Principles and Constraints
+        (§scxml-D) add that a macrostep *may not terminate* and that this "is
+        currently allowed". A document with a cyclic eventless transition is
+        therefore not malformed; it is a document whose macrostep is infinite,
+        and an engine that runs it to the letter never returns.
+
+        This engine used to do exactly that, and it is the reason the ceiling
+        exists: measured 2026-08-20, `initialize()` on a two-state cyclic
+        document did not return at all, while the other six engines stopped
+        the chain and said nothing about it. Neither answer is one a host can
+        act on, which is what this count is for — every other reading says the
+        machine is fine: `current_state` answers, `is_running` is `True`, and
+        the call returned. The configuration behind those answers is not the
+        stable one §scxml-3.13 promises.
+
+        A document whose eventless chain is a hundred microsteps long and then
+        settles counts zero: the ceiling is on microsteps *taken*, and the
+        macrostep is only counted here when a transition was still enabled
+        after them. Long chains are ordinary; endless ones are not.
+        """
+        return self._truncated_macrosteps
+
+    def last_truncated_macrostep_state(self) -> Optional[S]:
+        """The state this engine was in when it last stopped a macrostep that
+        way, or `None` while `truncated_macrosteps` is zero.
+
+        Which state it was is the whole repair: an eventless cycle is a closed
+        walk through the state graph, and this names one state on it. The count
+        alone says a document somewhere cannot settle; this says where to look.
+        """
+        return self._last_truncated_macrostep_state
 
     def active_configuration(self) -> Set[S]:
         """W3C SCXML 3.3 — every active state (atomic + ancestors)."""
@@ -828,6 +895,12 @@ class Engine(Generic[S, E]):
         # §scxml-D-mainEventLoop — one external event per iteration of the
         # outer loop, taken after the macrostep has completed.
         evt = self._external_queue.popleft()
+        # Taking an event off the external queue is where a macrostep begins,
+        # so it is where the previous one's ceiling stops applying. A machine
+        # left inside an eventless cycle gets a full budget for each event it
+        # is given, and each refusal is counted separately — which is what
+        # tells a host that spins once from one that spins on everything.
+        self._macrostep_truncated = False
         # §scxml-6.5 — `<finalize>` runs before transition selection for
         # events originating from invoked children, so the finalize body can
         # write child-derived values back into the parent datamodel that
@@ -851,13 +924,43 @@ class Engine(Generic[S, E]):
             self._last_discarded_event = evt.event
 
     def _drain_eventless(self) -> None:
-        """W3C SCXML 3.13: fire all enabled eventless transitions until none remain."""
+        """W3C SCXML 3.13: fire all enabled eventless transitions until none
+        remain, or until `MAX_EVENTLESS_MICROSTEPS` of them have been taken and
+        the chain is still going — see `truncated_macrosteps` for why the
+        ceiling is reported rather than merely applied."""
+        if self._macrostep_truncated:
+            # This macrostep was already stopped at the ceiling. Re-entering
+            # the drain would hand the same chain a second budget, which is the
+            # runaway the ceiling exists to refuse.
+            return
         null_evt = self._policy.null_event()
+        # Microsteps taken, not loop turns: the turn that finds nothing enabled
+        # is how a macrostep ends, and counting it would spend the budget on
+        # the proof that no budget was needed.
+        taken = 0
         while self._is_running and not self._reached_final:
             transitions = self._select_transitions(null_evt)
             if not transitions:
+                # Nothing is enabled by NULL — the macrostep
+                # reached the stable configuration the clause describes, and
+                # nothing was refused however long the chain was.
+                return
+            if taken == MAX_EVENTLESS_MICROSTEPS:
+                # The chain is still going one microstep past the budget, so
+                # this is the case the specification calls a macrostep that
+                # cannot end. Refuse the microstep rather than take it, and
+                # publish the refusal: the configuration left behind is not a
+                # stable one and only this counter says so.
+                # No log line: this runtime has no logging surface at all, and
+                # the sibling engines' message is a convenience over the
+                # counter, not the signal. `truncated_macrosteps` is the
+                # signal, and it is readable here exactly as it is there.
+                self._truncated_macrosteps += 1
+                self._last_truncated_macrostep_state = self.current_state
+                self._macrostep_truncated = True
                 return
             self._take_transitions(transitions)
+            taken += 1
 
     def _dispatch(self, evt: EventWithMetadata[E]) -> bool:
         # §scxml-5.10 — bind `_event` into the datamodel before the
