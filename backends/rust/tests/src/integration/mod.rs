@@ -46,4 +46,5 @@ pub mod parallel_regions_take_own_transitions;
 pub mod parallel_self_transition_keeps_its_leaf;
 pub mod send_param_payload;
 pub mod session_ids_are_distinct;
+pub mod unhandled_error_is_observable;
 pub mod xml_data_is_a_dom_tree;

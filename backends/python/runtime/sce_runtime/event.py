@@ -50,3 +50,26 @@ class EventWithMetadata(Generic[E]):
     @property
     def name(self) -> Any:
         return self.event
+
+
+def is_error_event(event_name: str) -> bool:
+    """W3C SCXML 3.12.2 — whether `event_name` names an error the processor
+    itself raised, as opposed to an event the document asked for.
+
+    The clause reserves the whole `error.` prefix for them: it defines
+    `error.execution` and `error.communication`, lets a platform add a suffix
+    to either, and reserves `error.platform` with or without a suffix on top of
+    that. The prefix is therefore the test — an enumeration would be wrong the
+    first time the set is extended, which the same paragraph says may happen.
+
+    Used by the engine's internal-queue drain to tell an error nobody answered
+    from an author's own unmatched `<raise>`. The two are indistinguishable in
+    the queue and are not the same event to a host: the author wrote one and can
+    read its fate in the document, while the other was written by the engine to
+    report that the document did not do what it said.
+    """
+    # §scxml-3.12.2: the processor "MUST signal any errors that occur by
+    # raising SCXML events whose names begin with 'error.'". Cited as a `#`
+    # comment rather than in the docstring above because the ledger's
+    # comment-only reader does not see docstrings.
+    return event_name.startswith("error.")

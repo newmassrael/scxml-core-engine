@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.12.2: the processor MUST signal errors by raising events named
+     `error.*` into the INTERNAL queue, and "they are ignored if no transition
+     is found that matches them". Ignoring them is the clause. Being unable to
+     say that it happened is not part of the clause.
+
+     `discarded_event_is_observable` owns the same question for the EXTERNAL
+     queue and deliberately stopped at its edge, reasoning that an unmatched
+     internal event "is the document's own business, and both ends of it are in
+     the document". That reasoning is exactly true for an author's `<raise>`
+     and exactly false for `error.execution`: the sender is the ENGINE. The
+     host never wrote the document, cannot see the failure in the
+     configuration, and is the only party in a position to act on it.
+
+     Outcomes this document separates, none of which any pre-existing accessor
+     tells apart - all of them leave the configuration on the same state:
+
+       poke     handled, no error            control: proves a run fired at all
+       whisper  raises three internal events, each pinning one edge:
+                  `unheard`               unmatched author raise - NOT counted
+                  `retry.error.execution` unmatched, `error.` not a PREFIX - NOT counted
+                  `heard`                 MATCHED - the drain still selects transitions
+       boom     in `idle`   -> error, unmatched   COUNTED - the silent failure
+       boom     in `guarded`-> error, HANDLED     not counted - the document dealt with it
+
+     `boom` is one event name deliberately routed to two outcomes by state, so
+     the count cannot be keyed off the event or the action - only off what the
+     configuration did with the error the engine raised.
+
+     `<assign location="">` is W3C 5.3's invalid location, which every backend
+     rejects at generation time rather than through its script engine (test331
+     uses the same construct), so the error is raised identically in all seven
+     channels without depending on any engine's expression semantics.
+
+     Deliberately single-axis: no delayed <send>, no <invoke>, no <parallel>.
+     `late_tick_honours_cancel` owns scheduler dispatch order,
+     `discarded_event_is_observable` owns the external queue; this one owns
+     only what a host learns about an error its machine raised and dropped.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="unhandled_error_is_observable">
+    <datamodel>
+        <data id="pokes" expr="0"/>
+        <data id="booms" expr="0"/>
+        <data id="caught" expr="0"/>
+        <data id="heards" expr="0"/>
+    </datamodel>
+    <state id="idle">
+        <transition event="poke" target="idle">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="whisper" target="idle">
+            <!-- Three internal events in document order, and each is here to
+                 pin one edge of the count.
+
+                 `unheard` matches nothing: an author's own discarded raise,
+                 which is NOT an engine error and must not be counted.
+
+                 `retry.error.execution` matches nothing either, and its name
+                 contains `error.` without starting with it. W3C 3.12.2
+                 reserves the PREFIX for the processor, so this name is the
+                 author's — a membership test written as a substring search
+                 would claim it.
+
+                 `heard` DOES match, below. The count is a byproduct of the
+                 internal drain, never its job: an implementation that makes
+                 transition selection conditional on the event being an error
+                 stops running the document for everything else, and this is
+                 the transition that notices. -->
+            <raise event="unheard"/>
+            <raise event="retry.error.execution"/>
+            <raise event="heard"/>
+        </transition>
+        <transition event="heard">
+            <assign location="heards" expr="heards + 1"/>
+        </transition>
+        <transition event="boom" target="idle">
+            <assign location="booms" expr="booms + 1"/>
+            <assign location="" expr="1"/>
+        </transition>
+        <transition event="go" target="guarded"/>
+    </state>
+    <state id="guarded">
+        <transition event="boom" target="guarded">
+            <assign location="booms" expr="booms + 1"/>
+            <assign location="" expr="1"/>
+        </transition>
+        <transition event="error.execution" target="guarded">
+            <assign location="caught" expr="caught + 1"/>
+        </transition>
+    </state>
+</scxml>

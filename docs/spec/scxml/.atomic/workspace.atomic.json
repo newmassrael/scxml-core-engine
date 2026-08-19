@@ -886,6 +886,101 @@
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::raiseEvent",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/event_matching.go",
+          "symbol": "IsErrorEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Event.kt",
+          "symbol": "isErrorEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_matching.rs",
+          "symbol": "is_error_event",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EventMatchingHelper.h",
+          "symbol": "isErrorEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/event.py",
+          "symbol": "is_error_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "UnhandledErrorEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "processInternalQueue",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "drainEventlessAndInternal",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "unhandledErrorEventCount",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "unhandledErrorEvents",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_internal_queue",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "process_internal_queue",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "unhandled_error_events",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processInternalQueue",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "recordInternalEventOutcome",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "unhandledErrorEvents",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "unhandledErrorEvents_",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

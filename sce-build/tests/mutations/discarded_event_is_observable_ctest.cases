@@ -28,11 +28,13 @@ mutation_oracles tests/integration/DiscardedEventIsObservableAotTest.cpp tests/i
 
 mutation_case "the cpp engine records nothing for an unmatched event" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        if (outcome.selected) {
+     """    void recordEventOutcome(Event event, const EventOutcome &outcome) {
+        if (outcome.selected) {
             return;
         }
         ++discardedExternalEvents_;""",
-     """        if (outcome.selected) {
+     """    void recordEventOutcome(Event event, const EventOutcome &outcome) {
+        if (outcome.selected) {
             return;
         }
         if (false) ++discardedExternalEvents_;""")
@@ -46,10 +48,12 @@ PY
 
 mutation_case "the cpp count is keyed off whether the configuration changed" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        if (outcome.selected) {
+     """    void recordEventOutcome(Event event, const EventOutcome &outcome) {
+        if (outcome.selected) {
             return;
         }""",
-     """        if (outcome.configurationChanged) {
+     """    void recordEventOutcome(Event event, const EventOutcome &outcome) {
+        if (outcome.configurationChanged) {
             return;
         }""")
 PY
