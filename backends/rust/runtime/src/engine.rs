@@ -971,8 +971,9 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// How many `error.*` events this engine refused to queue because the
-    /// error handler that raised them had been failing for
-    /// [`MAX_ERROR_CASCADE_DEPTH`] links running.
+    /// error handler that raised them had been failing for a hundred links
+    /// running (`MAX_ERROR_CASCADE_DEPTH`, internal — the number is the
+    /// engine's to choose and the count is what a host reads).
     ///
     /// The clause says an unmatched error event is ignored, and
     /// [`unhandled_error_events`](Self::unhandled_error_events) is that case.
@@ -1112,7 +1113,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `raise(EventWithMetadata)`.
     ///
     /// An `error.*` event raised while an error handler is running is refused
-    /// once the chain reaches [`MAX_ERROR_CASCADE_DEPTH`] — see
+    /// once the chain reaches `MAX_ERROR_CASCADE_DEPTH` — see
     /// [`error_cascade_events`](Self::error_cascade_events) for why the engine
     /// is the one that has to stop it. Only the engine's own error events are
     /// refused: an author's `<raise>` inside an error handler is the document
@@ -1600,13 +1601,14 @@ impl<P: StatePolicy> Engine<P> {
             let is_error = crate::helpers::event_matching::is_error_event(P::get_event_name(
                 event_with_meta.event,
             ));
-            if !is_error {
-                // The drain did something else, so whatever chain was building
-                // is over. Counting links across an unrelated internal event
-                // would report a document that merely fails often as one that
-                // cannot stop failing.
-                self.error_cascade_depth = 0;
-            }
+            // The chain is not ended by the drain doing something else. An
+            // earlier draft reset the depth on every non-error event, which
+            // reads as the careful choice and is the opposite: a handler that
+            // raises its own event before failing — a document that logs, then
+            // fails, which is most of them — leaves the queue alternating
+            // `tick, error, tick, error…`, and each `tick` put the ceiling
+            // back out of reach. The count needs no such guard, because it
+            // only ever rises while an error handler is running.
             self.handling_error_event = is_error;
             let outcome = self.execute_transition(event_with_meta.event);
             self.handling_error_event = false;

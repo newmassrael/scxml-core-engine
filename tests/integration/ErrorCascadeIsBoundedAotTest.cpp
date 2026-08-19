@@ -67,6 +67,10 @@ TEST(ErrorCascadeIsBoundedAotTest, AHandlerThatCannotHandleItsErrorIsStopped) {
     EXPECT_EQ(sm->getPolicy().runs().value_or(-1), MAX_LINKS)
         << "`runaway`'s handler must run exactly as many times as the engine allows links in a chain — fewer "
            "means the document was cut off early, more means the ceiling moved";
+    EXPECT_EQ(sm->getPolicy().ticks().value_or(-1), MAX_LINKS)
+        << "every link's handler also raises the author's own `tick`, and every one of them must be delivered. An "
+           "engine that counted those as links would refuse at half the depth; one that let them end the chain "
+           "would never refuse at all — and a handler that logs before it fails is an ordinary document";
     EXPECT_EQ(sm->errorCascadeEvents(), 1u)
         << "the handler's <assign> failed again on the last allowed link, and the error it raised is the one the "
            "engine refused to queue. Without that count the host sees a machine that is running, in a plausible "

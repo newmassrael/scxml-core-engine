@@ -77,6 +77,13 @@ func TestAHandlerThatCannotHandleItsErrorIsStopped(t *testing.T) {
 			"links in a chain: fewer means the document was cut off early, more means "+
 			"the ceiling moved; want %d got %d", maxLinks, got)
 	}
+	if got := counter(t, policy, "ticks"); got != maxLinks {
+		t.Fatalf("every link's handler also raises the author's own tick, and every one of "+
+			"them must be delivered. An engine that counted those as links would refuse at "+
+			"half the depth; one that let them end the chain would never refuse at all — and "+
+			"a handler that logs before it fails is an ordinary document; want %d got %d",
+			maxLinks, got)
+	}
 	if got := engine.ErrorCascadeEvents(); got != 1 {
 		t.Fatalf("the handler's <assign> failed again on the last allowed link, and the "+
 			"error it raised is the one the engine refused to queue. Without that count "+

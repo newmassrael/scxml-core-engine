@@ -72,6 +72,14 @@ class ErrorCascadeIsBoundedTest {
                 "ceiling moved"
         )
         assertEquals(
+            maxLinks,
+            sm.ticks(),
+            "every link's handler also raises the author's own `tick`, and every one of them " +
+                "must be delivered. An engine that counted those as links would refuse at half " +
+                "the depth; one that let them end the chain would never refuse at all — and a " +
+                "handler that logs before it fails is an ordinary document"
+        )
+        assertEquals(
             1,
             sm.errorCascadeEvents(),
             "the handler's <assign> failed again on the last allowed link, and the error it " +

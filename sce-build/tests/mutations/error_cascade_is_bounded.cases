@@ -64,8 +64,11 @@ PY
 mutation_case "any error is a link, handler or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        if self.handling_error_event
-            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))""",
-     """        if crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))""")
+            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+        {
+            self.error_cascade_depth""",
+     """        if crate::helpers::event_matching::is_error_event(P::get_event_name(event.event)) {
+            self.error_cascade_depth""")
 PY
 
 # ── The reset ──────────────────────────────────────────────────────
@@ -83,15 +86,34 @@ edit("backends/rust/runtime/src/engine.rs",
         // zero, and the count of what was refused stays where the host reads it.
         self.error_cascade_depth = 0;""",
      """        // MUTANT: the depth outlives the drain that built it.""")
+PY
+
+# ── The chain the document's own raises must not end ───────────────
+#
+# The opposite error, and the one two SURVIVED mutations found: an engine that
+# ends the chain on any non-error event, or counts every raise as a link, is
+# invisible to a handler whose only raise is its own failure. The fixture's
+# handler raises the author's `tick` on every link for exactly this pair —
+# counting it refuses at half the depth (`runs == 50`), and letting it end the
+# chain never refuses at all (the round times out).
+
+mutation_case "the author's own raise counts as a chain link" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
+     """        if self.handling_error_event
+            && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
+        {""",
+     """        if self.handling_error_event {""")
+PY
+
+mutation_case "an unrelated internal event ends the chain again" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.handling_error_event = is_error;
+            let outcome = self.execute_transition(event_with_meta.event);""",
      """            if !is_error {
-                // The drain did something else, so whatever chain was building
-                // is over. Counting links across an unrelated internal event
-                // would report a document that merely fails often as one that
-                // cannot stop failing.
                 self.error_cascade_depth = 0;
-            }""",
-     """            // MUTANT: an unrelated internal event no longer ends the chain.""")
+            }
+            self.handling_error_event = is_error;
+            let outcome = self.execute_transition(event_with_meta.event);""")
 PY
 
 # ── The count ──────────────────────────────────────────────────────
@@ -132,16 +154,18 @@ edit("backends/rust/runtime/src/engine.rs",
      """pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100_000;""")
 PY
 
-# ── The flag's lifetime ────────────────────────────────────────────
+# ── The flag's lifetime, and why there is no case for it ───────────
 #
-# Leaving the flag set after the dispatch makes every later raise look like a
-# link — including the errors raised by `<onentry>` on the way into a state,
-# which are first failures. The visible effect is the `settle` chain being
-# attributed to whatever ran before it.
-
-mutation_case "the handler flag outlives the dispatch" <<'PY'
-edit("backends/rust/runtime/src/engine.rs",
-     """            let outcome = self.execute_transition(event_with_meta.event);
-            self.handling_error_event = false;""",
-     """            let outcome = self.execute_transition(event_with_meta.event);""")
-PY
+# "The handler flag outlives the dispatch" was a case here and is not, and the
+# line is worth keeping because the reason changed under it. It was CAUGHT
+# while the chain's last dispatch was an error: the flag stayed true, the next
+# state's `<onentry>` failure was counted as a link, and `runs` came back 199.
+# Once the fixture's handler gained the author's `tick` — which the queue
+# orders AFTER each error — the drain's last dispatch became a non-error one,
+# so the stale value is `false` and nothing downstream can tell.
+#
+# The clear is still right: every drain iteration sets the flag from its own
+# event, so what it protects is a raise from OUTSIDE the drain, and leaving a
+# true there would attribute a first failure to a chain that ended. But this
+# repository's rule is that a mutation with no witness is not evidence, and a
+# case kept for the tally reads as coverage that is not there.

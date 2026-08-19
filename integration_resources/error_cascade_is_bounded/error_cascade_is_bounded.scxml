@@ -54,6 +54,14 @@
              — every outcome here leaves the configuration where it was. -->
         <data id="repairs" expr="0"/>
         <data id="runs" expr="0"/>
+        <!-- The runaway handler's OTHER work: an author's own `<raise>`, sent
+             on every link. Two mutations survived without it, both of the same
+             shape — an engine that counts every raise as a link, and one that
+             lets any non-error event end the chain, are both invisible to a
+             handler whose only raise is the failure itself. A handler that
+             logs and then fails is an ordinary document, and it is the one
+             that tells those engines apart. -->
+        <data id="ticks" expr="0"/>
     </datamodel>
 
     <state id="idle">
@@ -98,7 +106,19 @@
         </onentry>
         <transition event="error.execution">
             <assign location="runs" expr="runs + 1"/>
+            <!-- Before the failure, because W3C 4.1 stops the block at it. The
+                 raise is the author's own event, so it must NOT be a link in
+                 the chain and must NOT end one: the queue alternates
+                 `tick, error, tick, error…` and the ceiling still has to
+                 arrive. An engine that counts it refuses at half the links; an
+                 engine that lets it reset the chain never refuses at all, and
+                 that second one is a document that logs before it fails —
+                 which is most of them. -->
+            <raise event="tick"/>
             <assign location="" expr="1"/>
+        </transition>
+        <transition event="tick">
+            <assign location="ticks" expr="ticks + 1"/>
         </transition>
         <transition event="poke">
             <assign location="pokes" expr="pokes + 1"/>

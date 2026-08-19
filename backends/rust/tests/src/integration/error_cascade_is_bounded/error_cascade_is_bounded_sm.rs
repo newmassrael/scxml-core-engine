@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ff0b5c086300231a7d39e506e4ad1c27066a2d50ea7fbc3d805ddccedf780d62
-// template-hash: 10c5bb56d60f6d5bc4121611a1230324eaf61d1a5524b71d52c6010f279d5ffd
+// source-hash: 4731a6ba40787ab928e39e6fce63f290cd233b0d7081f439713483c0324e40fe
+// template-hash: 08524b6e9f06ec235417da53ac7c80c6bfd4ac29c2f21bcfec9a9e720a464526
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -101,6 +101,7 @@ pub enum ErrorCascadeIsBoundedEvent {
     Reset,
     Settle,
     Spin,
+    Tick,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -240,6 +241,21 @@ impl ErrorCascadeIsBoundedPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `ticks` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `ticks` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn ticks(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "ticks",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -327,6 +343,13 @@ impl ErrorCascadeIsBoundedPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'ticks' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ticks", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         self.script_engine_initialized = true;
     }
 
@@ -383,6 +406,17 @@ impl ErrorCascadeIsBoundedPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 ErrorCascadeIsBoundedEvent::ErrorExecution,
                 "<data id='runs'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'ticks' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "ticks", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                ErrorCascadeIsBoundedEvent::ErrorExecution,
+                "<data id='ticks'> expr failed to evaluate",
             ));
         }
 
@@ -578,6 +612,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
             ErrorCascadeIsBoundedEvent::Reset => "reset",
             ErrorCascadeIsBoundedEvent::Settle => "settle",
             ErrorCascadeIsBoundedEvent::Spin => "spin",
+            ErrorCascadeIsBoundedEvent::Tick => "tick",
             ErrorCascadeIsBoundedEvent::Null => "",
         }
     }
@@ -590,6 +625,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
             "reset" => Some(ErrorCascadeIsBoundedEvent::Reset),
             "settle" => Some(ErrorCascadeIsBoundedEvent::Settle),
             "spin" => Some(ErrorCascadeIsBoundedEvent::Spin),
+            "tick" => Some(ErrorCascadeIsBoundedEvent::Tick),
             _ => None,
         }
     }
@@ -702,7 +738,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
         let _ = path_child;
         match state {
             ErrorCascadeIsBoundedState::Runaway => {
-                // SCE-MAP: error_cascade_is_bounded.scxml:95 :: runaway :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -724,7 +760,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                 }
             }
             ErrorCascadeIsBoundedState::Settling => {
-                // SCE-MAP: error_cascade_is_bounded.scxml:77 :: settling :: _state_body
+                // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -829,7 +865,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
             ErrorCascadeIsBoundedState::Idle => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: error_cascade_is_bounded.scxml:60 :: idle :: _transition_0
+                        // SCE-MAP: error_cascade_is_bounded.scxml:68 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -857,7 +893,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: error_cascade_is_bounded.scxml:66 :: idle :: _transition_1
+                        // SCE-MAP: error_cascade_is_bounded.scxml:74 :: idle :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -882,7 +918,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
             ErrorCascadeIsBoundedState::Runaway => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: error_cascade_is_bounded.scxml:99 :: runaway :: _transition_0
+                        // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -909,6 +945,11 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             }
                         }
 
+                        // W3C SCXML 3.8.1: <raise event="tick">
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            ErrorCascadeIsBoundedEvent::Tick,
+                        ));
+
                         {
                             // W3C SCXML 5.3: <assign location="">
                             self.ensure_script_engine();
@@ -926,8 +967,36 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _transition_1
+                        // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="ticks">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(ticks, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "ticks", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'ticks': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                    "<assign> to 'ticks' failed",
+                                ));
+                            }
+                        }
+                    }
+                    2 => {
+                        // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
+                        // W3C SCXML 3.13: Transition 2 actions
 
                         {
                             // W3C SCXML 5.3: <assign location="pokes">
@@ -959,7 +1028,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
             ErrorCascadeIsBoundedState::Settling => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: error_cascade_is_bounded.scxml:81 :: settling :: _transition_0
+                        // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1003,7 +1072,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _transition_1
+                        // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1133,7 +1202,7 @@ impl ErrorCascadeIsBoundedPolicy {
                     return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
-                if event == ErrorCascadeIsBoundedEvent::Poke {
+                if event == ErrorCascadeIsBoundedEvent::Tick {
                     // W3C SCXML 3.4: Track transition metadata
                     self.last_transition_source_state = check_state;
                     self.last_transition_index = 1;
@@ -1146,10 +1215,23 @@ impl ErrorCascadeIsBoundedPolicy {
                     return true;
                 }
                 // W3C SCXML 5.9.3: Direct enum comparison
-                if event == ErrorCascadeIsBoundedEvent::Reset {
+                if event == ErrorCascadeIsBoundedEvent::Poke {
                     // W3C SCXML 3.4: Track transition metadata
                     self.last_transition_source_state = check_state;
                     self.last_transition_index = 2;
+                    self.has_transition_actions = true;
+                    self.last_transition_is_internal = true;
+                    self.last_transition_is_targetless = true;
+
+                    // W3C SCXML 5.9.2: Targetless internal transition
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == ErrorCascadeIsBoundedEvent::Reset {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_index = 3;
                     self.has_transition_actions = false;
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
