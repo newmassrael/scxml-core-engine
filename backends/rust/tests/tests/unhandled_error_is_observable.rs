@@ -136,6 +136,29 @@ fn an_error_the_document_handled_is_not_counted() {
         None,
         "nothing went unhandled, so there is no last one to name"
     );
+
+    // The handler ran with a live `_event` binding, which is the precondition
+    // for the assertion this fixture is being shaped toward.
+    //
+    // ⚠ It reads `_event.name`, not `_event.data`, and that is a finding rather
+    // than a choice. §scxml-3.12.2 lets the `data` field carry what broke, the
+    // engine's constructor demonstrably puts the message there
+    // (`event::tests::platform_error_carries_its_message_and_classification`),
+    // and the document still receives nil — measured on this exact run. The
+    // break is between the internal queue and the script binding, it predates
+    // this round, and no fixture covers it: `event_data_arrives_as_sent` drives
+    // with `raise_external`, so the internal queue's `_event.data` is measured
+    // nowhere in this repository. Registered as its own debt; when it lands,
+    // this reads `_event.data` and asserts the construct's name.
+    let detail = engine
+        .policy()
+        .detail()
+        .expect("the fixture declares `detail` in its datamodel");
+    assert_eq!(
+        detail, "error.execution",
+        "`guarded`'s handler ran with no live `_event` binding at all, so the \
+         document could not have read anything the engine attached to the error"
+    );
 }
 
 /// The boundary the count is drawn at: an author's own unmatched `<raise>` is

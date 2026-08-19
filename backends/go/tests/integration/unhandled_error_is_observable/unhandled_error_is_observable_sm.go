@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: acaad3b5f36dbb13dd7950dc62eaf45598406091abc6d5d773732ce4b31e8fa1
-// template-hash: 4f2b434780e7a991ebe126dd36ff0910394a16c1d457df070cad4b12ffad89c8
-// generated-at: 0
+// source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
+// template-hash: e1ef1a80ec6f1d98421ed2b76701aed66a2f64164d943082fb9a22d750e546a9
+// generated-at: 1787142491
 
 
 // SPDX-License-Identifier: MIT
@@ -289,9 +289,9 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 			_ = engine.SetVariable(sessionID, "caught", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize detail from expr="''"
+	// W3C SCXML 5.2/5.3: Initialize detail from expr="'none'"
 	{
-		result, err := engine.EvaluateExpression(sessionID, `""`)
+		result, err := engine.EvaluateExpression(sessionID, `"none"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "detail", result)
 		} else {
@@ -756,7 +756,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == UnhandledErrorIsObservableStateGuarded && idx == 0 {
-		//line unhandled_error_is_observable.scxml:86
+		//line unhandled_error_is_observable.scxml:90
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
@@ -770,7 +770,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 		return
 	}
 	if source == UnhandledErrorIsObservableStateGuarded && idx == 1 {
-		//line unhandled_error_is_observable.scxml:90
+		//line unhandled_error_is_observable.scxml:94
 
 	// W3C SCXML 5.3: <assign location="caught" expr="caught + 1">
 	if err := p.assignVariable(`caught`, `_scxml_add(caught, 1)`); err != nil {
@@ -778,15 +778,15 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 	}
 
 
-	// W3C SCXML 5.3: <assign location="detail" expr="_event.data">
-	if err := p.assignVariable(`detail`, `_event.data`); err != nil {
+	// W3C SCXML 5.3: <assign location="detail" expr="_event.name">
+	if err := p.assignVariable(`detail`, `_event.name`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'detail' failed"))
 	}
 
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 0 {
-		//line unhandled_error_is_observable.scxml:51
+		//line unhandled_error_is_observable.scxml:55
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -796,7 +796,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 1 {
-		//line unhandled_error_is_observable.scxml:54
+		//line unhandled_error_is_observable.scxml:58
 
 	engine.Raise(sce.NewEventWithMetadata(UnhandledErrorIsObservableEventUnheard))
 
@@ -809,7 +809,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 2 {
-		//line unhandled_error_is_observable.scxml:76
+		//line unhandled_error_is_observable.scxml:80
 
 	// W3C SCXML 5.3: <assign location="heards" expr="heards + 1">
 	if err := p.assignVariable(`heards`, `_scxml_add(heards, 1)`); err != nil {
@@ -819,7 +819,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 		return
 	}
 	if source == UnhandledErrorIsObservableStateIdle && idx == 3 {
-		//line unhandled_error_is_observable.scxml:79
+		//line unhandled_error_is_observable.scxml:83
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {

@@ -134,6 +134,39 @@ edit("backends/rust/runtime/src/engine.rs",
      """                self.last_unhandled_error = None;""")
 PY
 
+# ── What the error SAYS ────────────────────────────────────────────
+#
+# §scxml-3.12.2 closes with "platforms MAY include additional information
+# about the nature of the error in the 'data' field". A MAY is precisely why
+# this drifted rather than failing: the C++ Interpreter carried the failing
+# construct at every site it had, the C++ AOT backend at 8 sites of 37, and
+# the other five backends at 0 of 168 — three answers to one question inside
+# one repository, and nothing that could notice.
+#
+# `detail` in the fixture is what a document that ANSWERS the error reads,
+# which is the party the clause is written for.
+
+# ⚠ NO CASE FOR THE MESSAGE ITSELF YET, AND THE ABSENCE IS THE FINDING.
+# `platform_error` demonstrably puts the message in `_event.data` — the unit
+# test in `event.rs` holds that — and the DOCUMENT still receives nil on an
+# internal-queue error, while `_event.name` on the same event arrives fine.
+# The break is between the queue and the script binding, it predates this
+# round, and no fixture covers it (`event_data_arrives_as_sent` drives with
+# `raise_external`, so only the external queue is measured). Registry E6.
+# Until that lands, a case here would report INCONCLUSIVE for a reason that
+# has nothing to do with the contract it claims to guard.
+
+# ⚠ NO CASE FOR `event_type` YET, AND THE ABSENCE IS THE FINDING. The same
+# constructor also fixes the metadata's classification — `new()` defaults to
+# External and every Rust raise site passed that, the one backend of six that
+# labelled its OWN errors as the document's. It cannot be defended here:
+# generated code recomputes the script-visible `_event.type` from the event
+# NAME and overwrites whatever the metadata said, so flipping the field back
+# to External changes nothing any test can read. One fact, two producers, the
+# later one always winning. Closing that is its own round (registry E4); a
+# case added before then would SURVIVE for a reason that has nothing to do
+# with the contract it claims to guard.
+
 # ── The selection this drain exists to run ─────────────────────────
 #
 # The count is a byproduct of the drain, not its job. Folding the selection
