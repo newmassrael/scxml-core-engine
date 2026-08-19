@@ -38,14 +38,14 @@
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
 {% for var_name in action.namelist.split() %}
                 if (!{{ http_engine }}.hasVariable({{ http_sid }}, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist names '{{ var_name }}', which is not declared")
                     return@run
                 }
                 try {
                     val v = {{ http_engine }}.getVariable({{ http_sid }}, "{{ var_name }}")
                     httpParams["{{ var_name }}"] = listOf(v?.toString() ?: "")
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
                     return@run
                 }
 {% endfor %}
@@ -57,7 +57,7 @@
                     val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ action.contentexpr | escape_kotlin }}")
                     httpContent = v?.toString() ?: ""
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate")
                     return@run
                 }
 {% else %}
@@ -70,7 +70,7 @@
                     val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ action.delayexpr | escape_kotlin }}")
                     delayStr = v?.toString() ?: "0s"
                 } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> delayexpr failed to evaluate")
                     return@run
                 }
                 val delayMs = parseDelay(delayStr)

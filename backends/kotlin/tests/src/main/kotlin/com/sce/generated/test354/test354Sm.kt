@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -148,7 +148,7 @@ class Test354StateMachine(
             val initResult_Var1 = engine.evaluateExpr(sid, "1")
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
-            raiseInternal(Test354Event.Error.Execution)
+            raisePlatformError(Test354Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.2: Runtime variable 'Var2' (late binding, undefined)
         try {
@@ -186,7 +186,7 @@ class Test354StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test354Event.Error.Execution)
+            raisePlatformError(Test354Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -211,7 +211,7 @@ class Test354StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test354Event.Error.Execution)
+            raisePlatformError(Test354Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -224,7 +224,7 @@ class Test354StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test354Event.Error.Execution)
+            raisePlatformError(Test354Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -236,7 +236,7 @@ class Test354StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test354Event.Error.Execution)
+            raisePlatformError(Test354Event.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -381,11 +381,11 @@ class Test354StateMachine(
                 try { putParam(paramsE, "param1", engineE.evaluateExpr(sidE, "2")) } catch (_: Exception) { putParam(paramsE, "param1", "") }
                 // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
                 if (!engineE.hasVariable(sidE, "Var1")) {
-                    raiseInternal(Test354Event.Error.Execution)
+                    raisePlatformError(Test354Event.Error.Execution, "<send> namelist names 'Var1', which is not declared")
                     return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
                 }
                 try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {
-                    raiseInternal(Test354Event.Error.Execution)
+                    raisePlatformError(Test354Event.Error.Execution, "<send> namelist entry 'Var1' failed to evaluate")
                     return@run
                 }
                 val eventDataE = buildJsonFromParams(paramsE)

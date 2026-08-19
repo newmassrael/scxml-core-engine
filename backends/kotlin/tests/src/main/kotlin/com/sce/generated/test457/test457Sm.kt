@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -172,7 +172,7 @@ class Test457StateMachine(
             val initResult_Var1 = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
         // W3C SCXML 5.2: Runtime variable 'Var2' (late binding, undefined)
         try {
@@ -189,14 +189,14 @@ class Test457StateMachine(
             val initResult_Var4 = engine.evaluateExpr(sid, "7")
             engine.setVariable(sid, "Var4", initResult_Var4)
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "<data id='Var4'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'Var5' with expr
         try {
             val initResult_Var5 = engine.evaluateExpr(sid, "[1,2,3]")
             engine.setVariable(sid, "Var5", initResult_Var5)
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "<data id='Var5'> expr failed to evaluate")
         }
         // W3C SCXML 5.2: Runtime variable 'Var6' (late binding, undefined)
         try {
@@ -229,7 +229,7 @@ class Test457StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -254,7 +254,7 @@ class Test457StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -267,7 +267,7 @@ class Test457StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -279,7 +279,7 @@ class Test457StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test457Event.Error.Execution)
+            raisePlatformError(Test457Event.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -434,7 +434,7 @@ class Test457StateMachine(
             engine.assign(sid, "Var1", "Var1 + 1")
                     }
                 } catch (e: Exception) {
-                    raiseInternal(Test457Event.Error.Execution)
+                    raisePlatformError(Test457Event.Error.Execution, "<foreach array='Var4'> failed to iterate")
                 }
             }
 
@@ -457,7 +457,7 @@ class Test457StateMachine(
             engine.assign(sid, "Var1", "Var1 + 1")
                     }
                 } catch (e: Exception) {
-                    raiseInternal(Test457Event.Error.Execution)
+                    raisePlatformError(Test457Event.Error.Execution, "<foreach array='Var5'> failed to iterate")
                 }
             }
 
@@ -488,7 +488,7 @@ class Test457StateMachine(
             engine.assign(sid, "Var6", "Var6 + Var2")
                     }
                 } catch (e: Exception) {
-                    raiseInternal(Test457Event.Error.Execution)
+                    raisePlatformError(Test457Event.Error.Execution, "<foreach array='Var5'> failed to iterate")
                 }
             }
             }
