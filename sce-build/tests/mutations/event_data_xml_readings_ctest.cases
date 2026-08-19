@@ -1,0 +1,163 @@
+# Mutation cases for the C++ and C11 halves of §scxml-B-2-8-1's XML rung.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/event_data_xml_readings_ctest.cases`.
+#
+# The sibling file beside this one covers the Rust binding and is declared with
+# the cargo runner; the two runners are per casefile, which is why the axis has
+# two. What is only reachable here is the pair of things these two trees own:
+# the C++ `XMLDocument` validity test that both C++ engines consult, and the
+# C11 event-data rung, whose generated code is built by CMake rather than by
+# cargo.
+#
+# Every case restores a defect that was live on 2026-08-19 and produced no
+# build error, no warning and no failing test:
+#
+#   * `XMLDocument::isValid()` asked whether the tree was NON-EMPTY rather than
+#     whether the parse succeeded, so `<assign>  to detail failed` came back
+#     "valid" while the parse result beside it said `Start-end tags mismatch`.
+#     Both C++ engines then handed the document a DOM built out of whatever
+#     fragment happened to parse — which is worse than nil, because it reads
+#     like a document;
+#   * the C++ QuickJS engine reported the refusal to its caller, which stored
+#     `undefined` and logged an ERROR for a payload the clause calls perfectly
+#     ordinary — and left the exception pending on the context;
+#   * the C++ Lua engine ran the payload as Lua source before any reading was
+#     attempted, the rung its four siblings lost on 2026-08-17 and it kept
+#     because no gate configures `-DSCE_SCRIPT_ENGINE=lua`;
+#   * the C11 backend had no XML rung on the event path at all —
+#     `sce_lua_dom_push_object` was defined, documented and reachable, and its
+#     only callers were the `<data>` paths.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(EventDataReadings|IntegrationTests|c11_integration_event_data_arrives_as_sent)$'
+mutation_targets sce/include/scripting/XMLDOMWrapper.h sce/src/scripting/JSEngineImpl.cpp
+mutation_targets sce/src/scripting/LuaEngine.cpp
+mutation_runtime_targets tools/codegen/templates/c/state_machine.c.jinja2
+# The suites each case reds, measured: `EventDataReadings` +
+# `EventDataReadingsOnLuaEngine` are the two suites in the ctest test of that
+# name, `EventDataArrivesAsSentTest` + `EventDataArrivesAsSentAotTest` are the
+# C++ Interpreter and AOT channels inside `IntegrationTests`, and the C11
+# channel is its own ctest.
+mutation_oracles tests/engine/EventDataReadingsTest.cpp tests/integration/EventDataArrivesAsSentTest.cpp
+mutation_oracles tests/integration/EventDataArrivesAsSentAotTest.cpp
+mutation_oracles backends/c/tests/integration/test_event_data_arrives_as_sent.c
+
+# ── The validity test both C++ engines consult ─────────────────────
+#
+# The defect exactly as it stood. `!doc_.empty()` is a different question from
+# "did this parse", and pugixml leaves whatever it managed to read in the tree.
+
+mutation_case "validity asks whether the tree is non-empty again" <<'PY'
+edit("sce/include/scripting/XMLDOMWrapper.h",
+     """    bool isValid() const {
+        return parsed_ && !doc_.empty();
+    }""",
+     """    bool isValid() const {
+        return !doc_.empty();
+    }""")
+PY
+
+# ── The QuickJS fall-through ───────────────────────────────────────
+#
+# The reading is ABANDONED here rather than failing, so the refusal must not
+# reach the caller. Returning it stores `undefined` on `_event.data` and logs
+# an ERROR for the ordinary case.
+
+# ⚠ The mutation is the ORIGINAL code, restored verbatim. An earlier draft
+# wrote `return dom; if (false) {` to keep the anchor short, and `-Werror`
+# refused the unreachable branch — a tree that does not compile has no witness,
+# so the case reported INCONCLUSIVE and guarded nothing. Anything a mutation
+# leaves behind has to still be a program.
+# ⚠ The mutation replaces the CLEARING line, not the branch. An earlier draft
+# wrote `return dom; if (false) {` to keep the anchor short, and `-Werror`
+# refused the unreachable branch — a tree that does not compile has no witness,
+# so the case reported INCONCLUSIVE and guarded nothing. Anything a mutation
+# leaves behind has to still be a program. Returning `dom` here is the defect
+# exactly: the refusal reaches the caller, which stores `undefined` and logs an
+# ERROR, and the pending exception is left on the context for whatever the
+# session evaluates next.
+mutation_case "the quickjs engine reports the refusal to its caller" <<'PY'
+edit("sce/src/scripting/JSEngineImpl.cpp",
+     """        JS_FreeValue(ctx, JS_GetException(ctx));
+    }""",
+     """        return dom;
+    }""")
+PY
+
+# ── The C++ Lua fall-through ───────────────────────────────────────
+
+mutation_case "the cpp lua engine keeps the DOM rung once it has guessed" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """        if (opensLikeXML && LuaDOMBinding::pushDOMObject(L, eventData) == 1) {
+            lua_setfield(L, -2, "data");
+        } else {""",
+     """        if (opensLikeXML) {
+            if (LuaDOMBinding::pushDOMObject(L, eventData) == 0) {
+                lua_pushnil(L);
+            }
+            lua_setfield(L, -2, "data");
+        } else {""")
+PY
+
+# ── The rung the C++ Lua engine got back ───────────────────────────
+#
+# `2 + 3` arriving as 5, and a payload that is a call running in the session's
+# own globals. `EventDataReadingsOnLuaEngine` is the suite that notices; before
+# 2026-08-19 nothing did, because nothing ran that engine.
+
+# ⚠ The rung is restored WITHOUT an early return. An earlier draft returned
+# `p.get_future()` from inside the branch, and `p` is declared at the end of
+# the function — the tree did not compile, so the case reported INCONCLUSIVE
+# and guarded nothing.
+mutation_case "the cpp lua engine evaluates the payload as Lua again" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     """            auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
+            if (parsed.has_value()) {
+                pushScriptValue(L, parsed.value());
+                lua_setfield(L, -2, "data");
+            } else {""",
+     """            std::string loadExpr = "return " + eventData;
+            if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
+                lua_setfield(L, -2, "data");
+                lua_setglobal(L, "_event");
+                std::promise<ScriptResult> pMutated;
+                pMutated.set_value(ScriptResult::createSuccess(true));
+                return pMutated.get_future();
+            }
+            lua_pop(L, 1);
+            auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
+            if (parsed.has_value()) {
+                pushScriptValue(L, parsed.value());
+                lua_setfield(L, -2, "data");
+            } else {""")
+PY
+
+# ── The C11 rung ───────────────────────────────────────────────────
+#
+# The backend goes back to having no XML reading on the event path, so an XML
+# payload arrives as a space-normalized string while its six siblings build a
+# DOM. This is a template edit: the case is only witnessed if the generated
+# tree is rebuilt, which is why this file runs under the ctest runner.
+
+mutation_case "the c11 event path loses its xml rung" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        if (*_scan == '<' && sce_lua_dom_push_object(L, evt->data) == 1) {""",
+     """        if (0 && *_scan == '<' && sce_lua_dom_push_object(L, evt->data) == 1) {""")
+PY
+
+# ── The C11 guess ──────────────────────────────────────────────────
+#
+# The same scan past leading whitespace the Rust sibling pins, on the backend
+# that had to grow one: a pretty-printed payload is still a document.
+
+mutation_case "the c11 rung stops looking past leading whitespace" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        const char *_scan = evt->data;
+        while (*_scan == ' ' || *_scan == '\\t' || *_scan == '\\r' || *_scan == '\\n') {
+            _scan++;
+        }""",
+     """        const char *_scan = evt->data;""")
+PY

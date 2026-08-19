@@ -112,9 +112,15 @@ void LuaDOMBinding::registerMetatable(lua_State *L) {
 int LuaDOMBinding::pushDOMObject(lua_State *L, const std::string &xmlContent) {
     auto document = std::make_shared<XMLDocument>(xmlContent);
     if (!document->isValid()) {
-        SCE_LOG_ERROR("LuaDOMBinding: Failed to parse XML - {}", document->getErrorMessage());
-        lua_pushnil(L);
-        return 1;
+        // Nothing pushed, and no log line: the caller decides whether a
+        // refusal is an error. `setVariableAsDOM` is handed content the SCXML
+        // parser already read, so a refusal there is this engine's invariant
+        // breaking; an arriving `_event.data` that merely opens with `<` has a
+        // reading below this one (§scxml-B-2-8-1) and is perfectly ordinary.
+        // Pushing nil served neither — it answered for the caller — and it is
+        // what the header has documented as `0 if error` all along.
+        SCE_LOG_DEBUG("LuaDOMBinding: content is not a valid XML document - {}", document->getErrorMessage());
+        return 0;
     }
 
     // Create userdata

@@ -344,13 +344,32 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
     // §scxml-B-2-8-1: _event.data carries what the event supplied — key-value pairs
     // become named properties, JSON becomes the corresponding object, valid XML becomes
     // a DOM, and anything else becomes a space-normalized string.
-    // Skip leading whitespace for XML detection
+    // Whether the content OPENS like a document, skipping leading whitespace.
+    // It is a guess about which reading applies, not the reading itself: the
+    // clause conditions the DOM rung on the content being one — "if the
+    // Processor can interpret the content as a valid XML document, it MUST
+    // create the corresponding DOM structure" — and closes with "Otherwise,
+    // the Processor MUST treat the content as a space-normalized string
+    // literal". So a guess that turns out wrong falls through to the readings
+    // below rather than ending here.
     size_t firstNonWhitespace = dataStr.find_first_not_of(" \t\r\n");
-    bool isXML = firstNonWhitespace != std::string::npos && dataStr[firstNonWhitespace] == '<';
+    bool opensLikeXML = firstNonWhitespace != std::string::npos && dataStr[firstNonWhitespace] == '<';
 
-    if (isXML) {
-        // Create DOM object for XML content
-        return SCE::DOMBinding::createDOMObject(ctx, dataStr);
+    if (opensLikeXML) {
+        ::JSValue dom = SCE::DOMBinding::createDOMObject(ctx, dataStr);
+        if (!JS_IsException(dom)) {
+            return dom;
+        }
+        // `createDOMObject` refuses with `JS_ThrowSyntaxError`, which leaves a
+        // pending exception on the context. Clearing it here is not tidying:
+        // this reading is being ABANDONED rather than failing, and a pending
+        // exception left behind surfaces as an unrelated failure at whatever
+        // the session evaluates next. It used to be reported to the caller
+        // instead, which stored `_event.data` as `undefined` and logged an
+        // ERROR for a payload the clause calls perfectly ordinary — every
+        // `error.*` message this repository raises names the SCXML construct
+        // that failed, so every one of them opens with `<`.
+        JS_FreeValue(ctx, JS_GetException(ctx));
     }
 
     // Try to parse as JSON

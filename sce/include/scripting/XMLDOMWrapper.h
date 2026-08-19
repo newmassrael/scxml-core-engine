@@ -102,8 +102,23 @@ public:
     std::vector<std::shared_ptr<XMLElement>> getElementsByTagName(const std::string &tagName);
     std::shared_ptr<XMLElement> getDocumentElement();
 
+    /// Whether the content parsed AS A DOCUMENT.
+    ///
+    /// It used to be `!doc_.empty()`, which is a different question: pugixml
+    /// leaves whatever it managed to read in the tree, so `<assign>  to detail
+    /// failed` came back non-empty and answered true here while the parse
+    /// result beside it said `Start-end tags mismatch`. The status was recorded
+    /// in `errorMessage_` and then never consulted.
+    ///
+    /// §scxml-B-2-8-1 hangs a MUST on exactly this distinction — "if the
+    /// Processor can interpret the content as a valid XML document, it MUST
+    /// create the corresponding DOM structure... Otherwise, the Processor MUST
+    /// treat the content as a space-normalized string literal" — so a lenient
+    /// answer here does not merely mislead, it selects the wrong reading and
+    /// hands the document a DOM built out of the fragment that happened to
+    /// parse. Measured 2026-08-19: both C++ engines did.
     bool isValid() const {
-        return !doc_.empty();
+        return parsed_ && !doc_.empty();
     }
 
     std::string getErrorMessage() const {
@@ -112,6 +127,8 @@ public:
 
 private:
     pugi::xml_document doc_;
+    /// The parse status, kept rather than only described. See `isValid`.
+    bool parsed_ = false;
     std::string errorMessage_;
 };
 

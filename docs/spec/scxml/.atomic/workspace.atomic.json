@@ -10694,6 +10694,51 @@
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "_coerce_event_data_to_lua",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setCurrentEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaDOMBinding.cpp",
+          "symbol": "LuaDOMBinding::pushDOMObject",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/XMLDOMWrapper.cpp",
+          "symbol": "XMLDocument::XMLDocument",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/scripting/lua_dom_binding.c",
+          "symbol": "sce_lua_dom_push_object",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "symbol": "apply_script_engine_implications",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/scripting/XMLDOMWrapper.h",
+          "symbol": "isValid",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/lua_dom_binding.h",
+          "symbol": "sce_lua_dom_push_object",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/lua_dom_binding.h",
+          "symbol": "sce_lua_dom_push_object_or_nil",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10741,6 +10786,11 @@
         {
           "file": "sce-build/src/filters.rs",
           "symbol": "register_event_wire_filters",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setCurrentEvent",
           "kind": "references"
         }
       ],
@@ -14265,6 +14315,18 @@
       "target_kind": "section",
       "target_id": "scxml-3.1.2",
       "reason": "the sentence cited is the informational prose of Compound States; the normative selection algorithm these functions implement is section 3.13 and Appendix D, which they cite and bind separately"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2-8-1",
+      "reason": "the header resolver reports the bare member name; the store recorded the qualified one"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2-8-1",
+      "reason": "a Rust field doc binds to the enclosing struct, which is what the resolver reports"
     }
   ],
   "frames": {},

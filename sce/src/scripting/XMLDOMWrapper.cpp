@@ -170,11 +170,19 @@ std::vector<std::shared_ptr<XMLElement>> XMLElement::getElementsByTagName(const 
 XMLDocument::XMLDocument(const std::string &xmlContent) {
     // §scxml-B-2: Parse XML string into DOM structure
     pugi::xml_parse_result parseResult = doc_.load_string(xmlContent.c_str());
+    parsed_ = static_cast<bool>(parseResult);
 
-    if (!parseResult) {
+    if (!parsed_) {
         errorMessage_ = "Failed to parse XML content: ";
         errorMessage_ += parseResult.description();
-        SCE_LOG_ERROR("XMLDocument: {}", errorMessage_);
+        // Debug rather than error: whether a refusal is a failure is the
+        // caller's question. `<data>` content was read by the SCXML parser
+        // before it reached here, so a refusal there is an invariant breaking
+        // and that caller says so; an arriving `_event.data` that merely opens
+        // with `<` has a reading below this one (§scxml-B-2-8-1) and is
+        // perfectly ordinary. Logging it as an error here reported the ordinary
+        // case as a fault on every platform-error event the engine raises.
+        SCE_LOG_DEBUG("XMLDocument: {}", errorMessage_);
     }
 }
 

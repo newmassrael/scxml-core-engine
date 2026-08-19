@@ -262,7 +262,11 @@ fn script_value_to_lua(lua: &Lua, val: &ScriptValue) -> LuaResult<LuaValue> {
             }
             Ok(LuaValue::Table(table))
         }
-        ScriptValue::Dom(xml) => push_xml_as_userdata(lua, xml.as_str()),
+        // A `ScriptValue::Dom` is a caller that already decided the content is
+        // a document, so a refusal leaves the value nil exactly as before.
+        ScriptValue::Dom(xml) => {
+            Ok(push_xml_as_userdata(lua, xml.as_str())?.unwrap_or(LuaValue::Nil))
+        }
     }
 }
 
@@ -380,22 +384,30 @@ fn json_value_to_lua(lua: &Lua, value: &serde_json::Value) -> LuaResult<LuaValue
     }
 }
 
-/// Parse `xml_content` into a full DOM tree and push the resulting
-/// document as Lua userdata.  Returns `LuaValue::Nil` on parse failure
-/// so callers (W3C SCXML B.2 paths) get the spec's "leave variable
-/// undefined on parse error" semantic for free.  Mirrors cpp
-/// `LuaDOMBinding::pushDOMObject` (sce/src/scripting/LuaDOMBinding.cpp:74).
-fn push_xml_as_userdata(lua: &Lua, xml_content: &str) -> LuaResult<LuaValue> {
+/// Parse `xml_content` into a full DOM tree and push the resulting document as
+/// Lua userdata, or answer `None` if the content is not a valid XML document.
+///
+/// `None` rather than `LuaValue::Nil`, because the two callers want opposite
+/// things from a refusal and the old signature could only give them one. The
+/// `<data>` paths want the variable left unbound — the content there was
+/// parsed by the SCXML parser before it reached this crate, so a refusal is
+/// this engine's own invariant breaking. The `_event.data` path must fall
+/// through instead: §scxml-B-2-8-1 conditions the DOM reading on the content
+/// BEING a document and closes with "Otherwise, the Processor MUST treat the
+/// content as a space-normalized string literal", so a payload that merely
+/// opens with `<` has a reading below this one and answering nil drops it.
+/// Mirrors cpp `LuaDOMBinding::pushDOMObject` (sce/src/scripting/LuaDOMBinding.cpp:74).
+fn push_xml_as_userdata(lua: &Lua, xml_content: &str) -> LuaResult<Option<LuaValue>> {
     let doc = Arc::new(XmlDoc::parse(xml_content));
     if !doc.is_valid() {
-        return Ok(LuaValue::Nil);
+        return Ok(None);
     }
     let xref = match XmlRef::document(doc) {
         Some(r) => r,
-        None => return Ok(LuaValue::Nil),
+        None => return Ok(None),
     };
     let ud = lua.create_userdata(xref)?;
-    Ok(LuaValue::UserData(ud))
+    Ok(Some(LuaValue::UserData(ud)))
 }
 
 fn map_lua_err(e: mlua::Error) -> ScriptError {
@@ -514,7 +526,9 @@ impl IScriptEngine for LuaEngine {
         // userdata.  Parse failure yields nil — same observable as cpp
         // `LuaDOMBinding::pushDOMObject` on `XMLDocument::isValid()` =
         // false, which leaves the var unbound rather than raising.
-        let value = push_xml_as_userdata(&session.lua, xml_content).map_err(map_lua_err)?;
+        let value = push_xml_as_userdata(&session.lua, xml_content)
+            .map_err(map_lua_err)?
+            .unwrap_or(LuaValue::Nil);
         session
             .lua
             .globals()
@@ -607,10 +621,28 @@ impl IScriptEngine for LuaEngine {
 
         // Parse event_data as Lua value if non-empty
         if !event_data.is_empty() {
-            // W3C SCXML B.2: XML data → DOM object (test 561)
-            if event_data.trim_start().starts_with('<') {
-                let dom_value =
-                    push_xml_as_userdata(&session.lua, event_data).map_err(map_lua_err)?;
+            // W3C SCXML B.2: XML data → DOM object (test 561).
+            //
+            // The leading `<` is a GUESS about which reading applies, not the
+            // reading itself. §scxml-B-2-8-1 conditions this rung on the
+            // content being one — "if the Processor can interpret the content
+            // as a valid XML document, it MUST create the corresponding DOM
+            // structure" — and closes with "Otherwise, the Processor MUST
+            // treat the content as a space-normalized string literal". So a
+            // guess that turns out wrong falls through to the rungs below.
+            //
+            // It used to end here with nil, which is the shape that is easy to
+            // write and hard to notice: nothing sends a malformed document on
+            // purpose. Then the repository filled `_event.data` in at 192
+            // `error.*` raise sites with messages that name the failing
+            // construct — `<assign> to detail failed` — and every one of them
+            // opens with `<`. Three of the eight engines delivered nil.
+            let dom_value = if event_data.trim_start().starts_with('<') {
+                push_xml_as_userdata(&session.lua, event_data).map_err(map_lua_err)?
+            } else {
+                None
+            };
+            if let Some(dom_value) = dom_value {
                 event_table.set("data", dom_value).map_err(map_lua_err)?;
             } else {
                 // §scxml-B-2-8-1 gives `_event.data` three readings and no

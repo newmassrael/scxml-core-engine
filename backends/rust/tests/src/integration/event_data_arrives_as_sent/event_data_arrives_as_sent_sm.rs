@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: dc158df534067da964bd1c6f80973e1679ee7c64e201d638b706cd25b18535cd
-// template-hash: e1ef1a80ec6f1d98421ed2b76701aed66a2f64164d943082fb9a22d750e546a9
+// source-hash: 8e0f0b7b552dfbb89b9083db177a216e77a3534d3f6112690f84145daf0386d4
+// template-hash: 838268d159240243bd92388b55a2f36721fd0c63de0466e2e1843e598c9093c9
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine"]
-// SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+#![doc = "SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine"]
+// SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -82,12 +82,16 @@ use sce_rust_runtime::{Engine, StatePolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EventDataArrivesAsSentState {
+    Documented,
     Evaluated,
+    Flattened,
     Garbled,
     Heard,
     Mangled,
+    Opening,
     Quoted,
     Settled,
+    Swallowed,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Waiting,
@@ -100,6 +104,8 @@ pub enum EventDataArrivesAsSentState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventDataArrivesAsSentEvent {
     Arith,
+    Broken,
+    Doc,
     ErrorExecution,
     Note,
     Payload,
@@ -125,6 +131,8 @@ impl EventDataArrivesAsSentEvent {
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [EventDataArrivesAsSentEvent] = &[
         EventDataArrivesAsSentEvent::Arith,
+        EventDataArrivesAsSentEvent::Broken,
+        EventDataArrivesAsSentEvent::Doc,
         EventDataArrivesAsSentEvent::Note,
         EventDataArrivesAsSentEvent::Payload,
     ];
@@ -432,9 +440,11 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     fn is_final_state(state: Self::State) -> bool {
         match state {
             EventDataArrivesAsSentState::Evaluated => true,
+            EventDataArrivesAsSentState::Flattened => true,
             EventDataArrivesAsSentState::Garbled => true,
             EventDataArrivesAsSentState::Mangled => true,
             EventDataArrivesAsSentState::Settled => true,
+            EventDataArrivesAsSentState::Swallowed => true,
             _ => false,
         }
     }
@@ -468,12 +478,16 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-            EventDataArrivesAsSentState::Evaluated => 6,
-            EventDataArrivesAsSentState::Garbled => 5,
+            EventDataArrivesAsSentState::Documented => 3,
+            EventDataArrivesAsSentState::Evaluated => 8,
+            EventDataArrivesAsSentState::Flattened => 9,
+            EventDataArrivesAsSentState::Garbled => 7,
             EventDataArrivesAsSentState::Heard => 1,
-            EventDataArrivesAsSentState::Mangled => 4,
+            EventDataArrivesAsSentState::Mangled => 6,
+            EventDataArrivesAsSentState::Opening => 4,
             EventDataArrivesAsSentState::Quoted => 2,
-            EventDataArrivesAsSentState::Settled => 3,
+            EventDataArrivesAsSentState::Settled => 5,
+            EventDataArrivesAsSentState::Swallowed => 10,
             EventDataArrivesAsSentState::Waiting => 0,
         }
     }
@@ -481,6 +495,8 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             EventDataArrivesAsSentEvent::Arith => "arith",
+            EventDataArrivesAsSentEvent::Broken => "broken",
+            EventDataArrivesAsSentEvent::Doc => "doc",
             EventDataArrivesAsSentEvent::ErrorExecution => "error.execution",
             EventDataArrivesAsSentEvent::Note => "note",
             EventDataArrivesAsSentEvent::Payload => "payload",
@@ -491,6 +507,8 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "arith" => Some(EventDataArrivesAsSentEvent::Arith),
+            "broken" => Some(EventDataArrivesAsSentEvent::Broken),
+            "doc" => Some(EventDataArrivesAsSentEvent::Doc),
             "error.execution" => Some(EventDataArrivesAsSentEvent::ErrorExecution),
             "note" => Some(EventDataArrivesAsSentEvent::Note),
             "payload" => Some(EventDataArrivesAsSentEvent::Payload),
@@ -500,12 +518,16 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
 
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
+            EventDataArrivesAsSentState::Documented => "documented",
             EventDataArrivesAsSentState::Evaluated => "evaluated",
+            EventDataArrivesAsSentState::Flattened => "flattened",
             EventDataArrivesAsSentState::Garbled => "garbled",
             EventDataArrivesAsSentState::Heard => "heard",
             EventDataArrivesAsSentState::Mangled => "mangled",
+            EventDataArrivesAsSentState::Opening => "opening",
             EventDataArrivesAsSentState::Quoted => "quoted",
             EventDataArrivesAsSentState::Settled => "settled",
+            EventDataArrivesAsSentState::Swallowed => "swallowed",
             EventDataArrivesAsSentState::Waiting => "waiting",
         }
     }
@@ -596,8 +618,8 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine"]
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine"]
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -611,8 +633,8 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine"]
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine"]
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -622,8 +644,8 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine"]
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine"]
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -678,8 +700,8 @@ impl StatePolicy for EventDataArrivesAsSentPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine"]
-    // SCE-MAP: event_data_arrives_as_sent.scxml:51 :: _machine
+    #[doc = "SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine"]
+    // SCE-MAP: event_data_arrives_as_sent.scxml:73 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -706,7 +728,37 @@ impl EventDataArrivesAsSentPolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> bool {
         match check_state {
+            EventDataArrivesAsSentState::Documented => {
+                // W3C SCXML 3.12: Event-triggered transitions (document order)
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == EventDataArrivesAsSentEvent::Doc {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("((_scxml_truthy(_event.data) and _scxml_truthy(_event.data.documentElement)) and (_event.data.documentElement.nodeName == \"books\"))", engine) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
+
+                            *current_state = EventDataArrivesAsSentState::Opening;
+                            *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == EventDataArrivesAsSentEvent::Doc {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = EventDataArrivesAsSentState::Flattened;
+                    *transition_taken = true;
+                    return true;
+                }
+                false
+            }
             EventDataArrivesAsSentState::Evaluated => false,
+            EventDataArrivesAsSentState::Flattened => false,
             EventDataArrivesAsSentState::Garbled => false,
             EventDataArrivesAsSentState::Heard => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
@@ -738,6 +790,38 @@ impl EventDataArrivesAsSentPolicy {
                 false
             }
             EventDataArrivesAsSentState::Mangled => false,
+            EventDataArrivesAsSentState::Opening => {
+                // W3C SCXML 3.12: Event-triggered transitions (document order)
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == EventDataArrivesAsSentEvent::Broken {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard(
+                        "(_event.data == \"<assign> to detail failed\")",
+                        engine,
+                    ) {
+                        // W3C SCXML 3.4: Track transition metadata
+                        self.last_transition_source_state = check_state;
+                        self.last_transition_is_internal = false;
+                        self.last_transition_is_targetless = false;
+
+                        *current_state = EventDataArrivesAsSentState::Settled;
+                        *transition_taken = true;
+                        return true;
+                    }
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == EventDataArrivesAsSentEvent::Broken {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = EventDataArrivesAsSentState::Swallowed;
+                    *transition_taken = true;
+                    return true;
+                }
+                false
+            }
             EventDataArrivesAsSentState::Quoted => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
@@ -749,7 +833,7 @@ impl EventDataArrivesAsSentPolicy {
                         self.last_transition_is_internal = false;
                         self.last_transition_is_targetless = false;
 
-                        *current_state = EventDataArrivesAsSentState::Settled;
+                        *current_state = EventDataArrivesAsSentState::Documented;
                         *transition_taken = true;
                         return true;
                     }
@@ -768,6 +852,7 @@ impl EventDataArrivesAsSentPolicy {
                 false
             }
             EventDataArrivesAsSentState::Settled => false,
+            EventDataArrivesAsSentState::Swallowed => false,
             EventDataArrivesAsSentState::Waiting => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison

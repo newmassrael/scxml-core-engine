@@ -81,7 +81,41 @@ def test_event_data_arrives_as_sent_aot() -> None:
         "the host sent the text `2 + 3` and it arrived as 5 — the payload was run "
         f"rather than read (active: {after_arith})"
     )
-    assert _State.SETTLED in after_arith, (
+    assert _State.DOCUMENTED in after_arith, (
         "the arithmetic-shaped payload neither matched nor mismatched "
         f"(active: {after_arith})"
+    )
+
+    # §scxml-B-2-8-1's XML rung, reached through the EVENT path. The `<data>`
+    # path is `xml_data_is_a_dom_tree`'s and the two are lowered on separate
+    # code in every backend.
+    engine.send_event(
+        _Event.DOC,
+        # Leading whitespace on purpose: the reading is chosen by the first
+        # NON-blank character, and a pretty-printed document is the ordinary
+        # shape of one. The scan past it is small enough to look redundant.
+        EventMetadata(data='\n  <books xmlns=""><book title="t1"/></books>'),
+    )
+
+    after_doc = engine.active_configuration()
+    assert _State.FLATTENED not in after_doc, (
+        "the host sent a well-formed XML document and "
+        "`_event.data.documentElement.nodeName === 'books'` did not hold, so the "
+        f"payload did not become the DOM structure the clause requires (active: {after_doc})"
+    )
+
+    # The sentence that closes the clause. Every `error.*` message this
+    # repository raises names the SCXML construct that failed, so every one of
+    # them has exactly this shape: it opens like a document and is not one.
+    engine.send_event(_Event.BROKEN, EventMetadata(data="<assign>  to  detail failed"))
+
+    after_broken = engine.active_configuration()
+    assert _State.SWALLOWED not in after_broken, (
+        "the host sent `<assign>  to  detail failed`, which opens with `<` and is not "
+        "a valid XML document, so §scxml-B-2-8-1's closing MUST applies and the "
+        f"reading is the space-normalized string (active: {after_broken})"
+    )
+    assert _State.SETTLED in after_broken, (
+        "the malformed-XML payload neither matched nor mismatched "
+        f"(active: {after_broken})"
     )
