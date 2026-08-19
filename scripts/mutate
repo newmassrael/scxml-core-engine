@@ -601,13 +601,42 @@ for path in sorted(seen):
 # leave the tree half-rebuilt and the next case measuring a mixture. This is
 # the same reasoning `scripts/gates/cpp-suite.sh` states for not naming
 # targets.
+# How many parallel jobs this harness may ask the machine for.
+#
+# ⚠ A DUPLICATE OF `sce_build_jobs` IN `scripts/gates/lib.sh`, and duplicated
+# ON PURPOSE: this file is executed directly as well as from the two mutation
+# gates, and sourcing that library would drag its side effects (a `cd` to the
+# repository root, `set -euo pipefail`, a gate slug) into a harness that does
+# not want them. Four lines is the size at which a second spelling stays
+# obviously the same rule; keep it that way or move both behind one file.
+#
+# WHY NOT `$(nproc)`: a mutation round is a rebuild PER CASE, and this
+# workstation runs sixteen concurrent sessions and six repositories at once.
+# Measured 2026-08-19, an uncapped workspace build here drove 600MB/s of reads
+# through the build cache with forty processes blocked on disk and CPU idle at
+# 43%; earlier the same day another pushed 13GB into swap and took the box to
+# load 29 while 82% of its CPU sat idle. On an unloaded machine this returns
+# very nearly `nproc`, so the change costs nothing when nothing else is here.
+mutation_build_jobs() {
+    if [ -n "${SCE_BUILD_JOBS:-}" ]; then
+        printf '%s' "$SCE_BUILD_JOBS"
+        return 0
+    fi
+    local cores queued jobs
+    cores="$(nproc)"
+    queued="$(awk '{printf "%d", ($1 == int($1)) ? $1 : int($1) + 1}' /proc/loadavg)"
+    jobs=$(( cores - queued ))
+    if [ "$jobs" -lt 1 ]; then jobs=1; fi
+    printf '%s' "$jobs"
+}
+
 mutation_ctest_build_and_hash() {
-    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(nproc)" >/dev/null 2>&1 || return 1
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(mutation_build_jobs)" >/dev/null 2>&1 || return 1
     mutation_hash_artifacts
 }
 
 mutation_ctest_build_verbose() {
-    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(nproc)" 2>&1 | tail -40 || true
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(mutation_build_jobs)" 2>&1 | tail -40 || true
 }
 
 # One ctest run over the declared selector; "<tests_run> <failed>" read from
@@ -634,7 +663,7 @@ mutation_ctest_run() {
     # over a binary holding hundreds of assertions could be attributed no
     # further than the binary's name. Measured — the first C++ round under
     # this harness reported `red: IntegrationTests` and nothing finer.
-    ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(nproc)" \
+    ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(mutation_build_jobs)" \
         --output-on-failure --output-junit "$report" >"$console" 2>&1 || true
     mutation_failures_from_gtest < "$console" > "$MUTATION_FAILING"
     if [[ ! -f "$report" ]]; then

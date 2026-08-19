@@ -37,7 +37,7 @@ cmake -B "$BUILD_DIR" \
       -DBUILD_EXAMPLES=OFF \
       -G Ninja -Wno-dev >/dev/null \
     || sce_gate_fail "python bindings configure"
-cmake --build "$BUILD_DIR" --target _sce --parallel "$(nproc)" >/dev/null \
+sce_gate_build "$BUILD_DIR" --target _sce \
     || sce_gate_fail "python bindings build"
 # The build's postcondition, asserted rather than assumed. `--target _sce`
 # exits 0 while producing nothing findable if the module lands somewhere the

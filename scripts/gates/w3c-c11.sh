@@ -31,7 +31,7 @@ sce_prune_ctest_temporaries "$BUILD_DIR"
 # it rather than the default target skips the C++ engine, mesh, forge and the
 # examples, none of which this backend links.
 sce_gate_step "building sce_c11_tests"
-cmake --build "$BUILD_DIR" --target sce_c11_tests --parallel "$(nproc)" >/dev/null \
+sce_gate_build "$BUILD_DIR" --target sce_c11_tests \
     || sce_gate_fail "sce_c11_tests build"
 
 registered="$(ctest --test-dir "$BUILD_DIR" -N -L c11 | grep -cE '^ *Test +#')"
@@ -46,7 +46,7 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # `--no-tests=error` covers the zero case even if the floor above is ever
 # loosened; the count comparison below covers a partial run.
 ctest --test-dir "$BUILD_DIR" -L c11 \
-      --output-on-failure --no-tests=error -j "$(nproc)" 2>&1 | tee "$LOG/ctest.log"
+      --output-on-failure --no-tests=error -j "$(sce_build_jobs)" 2>&1 | tee "$LOG/ctest.log"
 ctest_status="${PIPESTATUS[0]}"
 (( ctest_status == 0 )) || sce_gate_fail "c11 ctest suite failed"
 
