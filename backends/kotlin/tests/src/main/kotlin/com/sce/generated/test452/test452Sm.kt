@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -130,7 +130,7 @@ class Test452StateMachine(
             val initResult_foo = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "foo", initResult_foo)
         } catch (e: Exception) {
-            raiseInternal(Test452Event.Error.Execution)
+            raisePlatformError(Test452Event.Error.Execution, "<data id='foo'> expr failed to evaluate")
         }
 
 
@@ -138,7 +138,7 @@ class Test452StateMachine(
         try {
             engine.executeScript(sid, "function testobject() {\n    this.bar = 0;}")
         } catch (e: Exception) {
-            raiseInternal(Test452Event.Error.Execution)
+            raisePlatformError(Test452Event.Error.Execution, "a top-level <script> failed to execute")
         }
 
 
@@ -164,7 +164,7 @@ class Test452StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test452Event.Error.Execution)
+            raisePlatformError(Test452Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -189,7 +189,7 @@ class Test452StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test452Event.Error.Execution)
+            raisePlatformError(Test452Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -202,7 +202,7 @@ class Test452StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test452Event.Error.Execution)
+            raisePlatformError(Test452Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -214,7 +214,7 @@ class Test452StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test452Event.Error.Execution)
+            raisePlatformError(Test452Event.Error.Execution, "<script> failed to execute")
         }
     }
 

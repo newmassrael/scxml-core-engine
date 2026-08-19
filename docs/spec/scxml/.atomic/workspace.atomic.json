@@ -991,6 +991,11 @@
           "file": "backends/go/runtime/event.go",
           "symbol": "NewPlatformError",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "raisePlatformError",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

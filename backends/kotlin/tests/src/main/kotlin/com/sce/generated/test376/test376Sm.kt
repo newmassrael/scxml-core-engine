@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -130,7 +130,7 @@ class Test376StateMachine(
             val initResult_Var1 = engine.evaluateExpr(sid, "1")
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
-            raiseInternal(Test376Event.Error.Execution)
+            raisePlatformError(Test376Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
         }
 
 
@@ -158,7 +158,7 @@ class Test376StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test376Event.Error.Execution)
+            raisePlatformError(Test376Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -183,7 +183,7 @@ class Test376StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test376Event.Error.Execution)
+            raisePlatformError(Test376Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -196,7 +196,7 @@ class Test376StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test376Event.Error.Execution)
+            raisePlatformError(Test376Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -208,7 +208,7 @@ class Test376StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test376Event.Error.Execution)
+            raisePlatformError(Test376Event.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -318,7 +318,7 @@ class Test376StateMachine(
 
 
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
-            raiseInternal(Test376Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
+            raisePlatformError(Test376Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
             return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
                 }
                 // W3C SCXML 3.8: Onentry block 2/2

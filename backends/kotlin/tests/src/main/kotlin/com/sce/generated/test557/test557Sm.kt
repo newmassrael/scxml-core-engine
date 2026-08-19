@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -117,7 +117,7 @@ class Test557StateMachine(
             val initResult_var1 = engine.parseDataValue(sid, "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>")
             engine.setVariable(sid, "var1", initResult_var1)
         } catch (e: Exception) {
-            raiseInternal(Test557Event.Error.Execution)
+            raisePlatformError(Test557Event.Error.Execution, "<data id='var1'> content failed to initialise")
         }
         // W3C SCXML 5.2.2: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
         try {
@@ -127,7 +127,7 @@ class Test557StateMachine(
                 engine.setVariable(sid, "var2", srcValue_var2)
             }
         } catch (e: Exception) {
-            raiseInternal(Test557Event.Error.Execution)
+            raisePlatformError(Test557Event.Error.Execution, "<data id='var2' src='file:test557.txt'> could not be loaded")
         }
 
 
@@ -155,7 +155,7 @@ class Test557StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test557Event.Error.Execution)
+            raisePlatformError(Test557Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -180,7 +180,7 @@ class Test557StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test557Event.Error.Execution)
+            raisePlatformError(Test557Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -193,7 +193,7 @@ class Test557StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test557Event.Error.Execution)
+            raisePlatformError(Test557Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -205,7 +205,7 @@ class Test557StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test557Event.Error.Execution)
+            raisePlatformError(Test557Event.Error.Execution, "<script> failed to execute")
         }
     }
 

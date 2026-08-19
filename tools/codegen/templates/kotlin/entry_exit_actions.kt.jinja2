@@ -62,14 +62,14 @@
                         val v = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
                         engine.setVariable(sid, "{{ dm_var.id }}", v)
                     } catch (e: Exception) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> expr failed to evaluate")
                     }
 {% elif dm_var.content %}
                     try {
                         val v = engine.parseDataValue(sid, "{{ dm_var.content | escape_kotlin }}")
                         engine.setVariable(sid, "{{ dm_var.id }}", v)
                     } catch (e: Exception) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ dm_var.id }}'> content failed to initialise")
                     }
 {% else %}
                     engine.setVariable(sid, "{{ dm_var.id }}", null)
@@ -112,7 +112,7 @@
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
                     deferInvoke(state, generatedInvokeId) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> declares a type this processor does not support")
                     }
                 }
 {% elif inv.is_hybrid is defined and inv.is_hybrid %}
@@ -139,7 +139,7 @@
                             startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: Expression evaluation or child creation failed (C++ parity)
-                            raiseInternal({{ machine_name }}Event.Error.Execution)
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> could not evaluate its source or start a child")
                         }
                     }
                 }
@@ -177,7 +177,7 @@
 {% for var_name in inv.namelist.split() %}
                     // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
                     if (!engineInv.hasVariable(sidInv, "{{ var_name }}")) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist names '{{ var_name }}', which the parent does not declare")
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
                     invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
@@ -237,7 +237,7 @@
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
-                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
                     }
 {% elif state.donedata.content.kind == "literal" %}
                     // W3C SCXML 5.5: inline text is the content value (literal path alongside params).
@@ -253,7 +253,7 @@
                         doneParams["{{ param.name | escape_kotlin }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
-                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> failed to evaluate")
                     }
 {% elif param.location is not none %}
 {% if param.location %}
@@ -262,11 +262,11 @@
                         doneParams["{{ param.name | escape_kotlin }}"] = locVal
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
-                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> location could not be read")
                     }
 {% else %}
                     // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<donedata> <param name='{{ param.name | escape_kotlin }}'> has an empty location")
                     doneParamStructuralError = true
 {% endif %}
 {% endif %}

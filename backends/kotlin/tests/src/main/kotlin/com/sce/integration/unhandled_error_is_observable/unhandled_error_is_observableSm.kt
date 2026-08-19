@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 81122ad2948de905cca893a2deba08718427c23db5002a6afe76af18964ac3b4
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
-// generated-at: 0
+// source-hash: acaad3b5f36dbb13dd7950dc62eaf45598406091abc6d5d773732ce4b31e8fa1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
+// generated-at: 1787138791
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml
@@ -81,6 +81,18 @@ class UnhandledErrorIsObservableStateMachine(
      */
     fun caught(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "caught")
+
+    /**
+     * §scxml-5.3: what the `detail` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `detail` was assigned a value of another type, or the engine refused.
+     */
+    fun detail(): String? =
+        com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "detail")
 
     /**
      * §scxml-5.3: what the `heards` datamodel variable is holding now.
@@ -184,28 +196,35 @@ class UnhandledErrorIsObservableStateMachine(
             val initResult_pokes = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "pokes", initResult_pokes)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'booms' with expr
         try {
             val initResult_booms = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "booms", initResult_booms)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='booms'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'caught' with expr
         try {
             val initResult_caught = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "caught", initResult_caught)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='caught'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'detail' with expr
+        try {
+            val initResult_detail = engine.evaluateExpr(sid, "''")
+            engine.setVariable(sid, "detail", initResult_detail)
+        } catch (e: Exception) {
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='detail'> expr failed to evaluate")
         }
         // W3C SCXML 5.3: Initialize variable 'heards' with expr
         try {
             val initResult_heards = engine.evaluateExpr(sid, "0")
             engine.setVariable(sid, "heards", initResult_heards)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='heards'> expr failed to evaluate")
         }
 
 
@@ -233,7 +252,7 @@ class UnhandledErrorIsObservableStateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -258,7 +277,7 @@ class UnhandledErrorIsObservableStateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -271,7 +290,7 @@ class UnhandledErrorIsObservableStateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> failed")
         }
     }
 
@@ -283,7 +302,7 @@ class UnhandledErrorIsObservableStateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -380,12 +399,12 @@ class UnhandledErrorIsObservableStateMachine(
     override fun onEntry(state: UnhandledErrorIsObservableState, pathChild: UnhandledErrorIsObservableState?) {
         when (state) {
             is UnhandledErrorIsObservableState.Guarded -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:84 :: guarded :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:85 :: guarded :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("guarded")) return
             }
             is UnhandledErrorIsObservableState.Idle -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:49 :: idle :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:50 :: idle :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("idle")) return
             }
@@ -397,11 +416,11 @@ class UnhandledErrorIsObservableStateMachine(
     override fun onExit(state: UnhandledErrorIsObservableState) {
         when (state) {
             is UnhandledErrorIsObservableState.Guarded -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:84 :: guarded :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:85 :: guarded :: _state_body
                 activeStateIds.remove("guarded")
             }
             is UnhandledErrorIsObservableState.Idle -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:49 :: idle :: _state_body
+                // SCE-MAP: unhandled_error_is_observable.scxml:50 :: idle :: _state_body
                 activeStateIds.remove("idle")
             }
         }
@@ -417,32 +436,35 @@ class UnhandledErrorIsObservableStateMachine(
         when (source) {
         is UnhandledErrorIsObservableState.Guarded -> when {
             event is UnhandledErrorIsObservableEvent.Boom -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:85 :: guarded :: _transition_0
+                // SCE-MAP: unhandled_error_is_observable.scxml:86 :: guarded :: _transition_0
 
 
             executeAssign("booms", "booms + 1")
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution, EventMetadata.platform())
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
             event is UnhandledErrorIsObservableEvent.Error.Execution -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:89 :: guarded :: _transition_1
+                // SCE-MAP: unhandled_error_is_observable.scxml:90 :: guarded :: _transition_1
 
 
             executeAssign("caught", "caught + 1")
+
+
+            executeAssign("detail", "_event.data")
             }
             else -> {}
         }
         is UnhandledErrorIsObservableState.Idle -> when {
             event is UnhandledErrorIsObservableEvent.Poke -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:50 :: idle :: _transition_0
+                // SCE-MAP: unhandled_error_is_observable.scxml:51 :: idle :: _transition_0
 
 
             executeAssign("pokes", "pokes + 1")
             }
             event is UnhandledErrorIsObservableEvent.Whisper -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:53 :: idle :: _transition_1
+                // SCE-MAP: unhandled_error_is_observable.scxml:54 :: idle :: _transition_1
 
             raiseInternal(UnhandledErrorIsObservableEvent.Unheard)
 
@@ -451,20 +473,20 @@ class UnhandledErrorIsObservableStateMachine(
             raiseInternal(UnhandledErrorIsObservableEvent.Heard)
             }
             event is UnhandledErrorIsObservableEvent.Heard -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:75 :: idle :: _transition_2
+                // SCE-MAP: unhandled_error_is_observable.scxml:76 :: idle :: _transition_2
 
 
             executeAssign("heards", "heards + 1")
             }
             event is UnhandledErrorIsObservableEvent.Boom -> {
-                // SCE-MAP: unhandled_error_is_observable.scxml:78 :: idle :: _transition_3
+                // SCE-MAP: unhandled_error_is_observable.scxml:79 :: idle :: _transition_3
 
 
             executeAssign("booms", "booms + 1")
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
-            raiseInternal(UnhandledErrorIsObservableEvent.Error.Execution, EventMetadata.platform())
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
             else -> {}
         }

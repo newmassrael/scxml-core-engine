@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -143,7 +143,7 @@ class Test509StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test509Event.Error.Execution)
+            raisePlatformError(Test509Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -168,7 +168,7 @@ class Test509StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test509Event.Error.Execution)
+            raisePlatformError(Test509Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -181,7 +181,7 @@ class Test509StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test509Event.Error.Execution)
+            raisePlatformError(Test509Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -193,7 +193,7 @@ class Test509StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test509Event.Error.Execution)
+            raisePlatformError(Test509Event.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -306,23 +306,23 @@ class Test509StateMachine(
                     val target = v?.toString() ?: ""
                     // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                     if (target.startsWith("!")) {
-                        raiseInternal(Test509Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_1"))
+                        raisePlatformError(Test509Event.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
                         return@resolveTarget
                     }
                     // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
                     if (target.isEmpty() || target == "undefined") {
-                        raiseInternal(Test509Event.Error.Communication, EventMetadata.platform())
+                        raisePlatformError(Test509Event.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
                         return@resolveTarget
                     }
                     _resolvedTarget = target
                 } catch (_: Exception) {
-                    raiseInternal(Test509Event.Error.Execution, EventMetadata.platform())
+                    raisePlatformError(Test509Event.Error.Execution, "<send> targetexpr failed to evaluate")
                 }
             }
             _resolvedTarget?.let { _rt ->
             // W3C SCXML C.2: Validate dynamic target is HTTP URL
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raiseInternal(Test509Event.Error.Communication, EventMetadata.platform())
+                raisePlatformError(Test509Event.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL")
             } else {
 
             performHttpSend(_rt, "test", "", emptyMap(), "__send_1")

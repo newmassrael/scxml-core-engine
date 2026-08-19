@@ -94,7 +94,10 @@
 {% if not _pexpr %}
             # W3C SCXML 5.7: `<param>` with empty expr/location is a
             # structural error — raise error.execution and skip stash.
-            self._raise_error_execution(engine)
+            self._raise_error_execution(
+                engine,
+                "<donedata> <param name='{{ param.name }}'> has an empty location",
+            )
             _done_data_ok = False
 {% else %}
             try:
@@ -106,7 +109,10 @@
                     ).to_json_literal()
                 )
             except _ScriptError:
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine,
+                    "<donedata> <param name='{{ param.name }}'> failed to evaluate",
+                )
 {% endif %}
 {% endfor %}
             if _done_data_ok:
@@ -127,7 +133,9 @@
                 ).to_json_literal()
             except _ScriptError:
                 _done_data_ok = False
-                self._raise_error_execution(engine)
+                self._raise_error_execution(
+                    engine, "<donedata> <content expr> failed to evaluate"
+                )
 {% elif state.donedata.content.kind == "literal" %}
             # W3C SCXML 5.5: `<content>` literal text is used as the
             # raw `_event.data` value. Serialised via

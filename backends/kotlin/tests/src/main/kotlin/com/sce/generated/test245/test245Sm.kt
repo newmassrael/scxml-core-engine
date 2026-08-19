@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -146,7 +146,7 @@ class Test245StateMachine(
             val initResult_Var2 = engine.evaluateExpr(sid, "3")
             engine.setVariable(sid, "Var2", initResult_Var2)
         } catch (e: Exception) {
-            raiseInternal(Test245Event.Error.Execution)
+            raisePlatformError(Test245Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
         }
 
 
@@ -174,7 +174,7 @@ class Test245StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test245Event.Error.Execution)
+            raisePlatformError(Test245Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -199,7 +199,7 @@ class Test245StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test245Event.Error.Execution)
+            raisePlatformError(Test245Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -212,7 +212,7 @@ class Test245StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test245Event.Error.Execution)
+            raisePlatformError(Test245Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -224,7 +224,7 @@ class Test245StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test245Event.Error.Execution)
+            raisePlatformError(Test245Event.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -335,7 +335,7 @@ class Test245StateMachine(
                     val invokeParams = mutableMapOf<String, Any?>()
                     // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
                     if (!engineInv.hasVariable(sidInv, "Var2")) {
-                        raiseInternal(Test245Event.Error.Execution)
+                        raisePlatformError(Test245Event.Error.Execution, "<invoke> namelist names 'Var2', which the parent does not declare")
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
                     invokeParams["Var2"] = engineInv.getVariable(sidInv, "Var2")

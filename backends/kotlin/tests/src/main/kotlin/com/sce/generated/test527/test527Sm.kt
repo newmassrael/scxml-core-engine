@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 60da764009afb96185d876c542254f2e8363dba627394829757a2a8f121eddd1
+// template-hash: c3d3c786d57e6f0d2e70df752f71053c74de38fc852a95fee401721ac660429e
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -161,7 +161,7 @@ class Test527StateMachine(
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raiseInternal(Test527Event.Error.Execution)
+            raisePlatformError(Test527Event.Error.Execution, "a <transition> cond failed to evaluate")
             false
         }
     }
@@ -186,7 +186,7 @@ class Test527StateMachine(
         return try {
             engine.evaluateExpr(sid, "JSON.stringify((" + source + "))")?.toString() ?: ""
         } catch (e: Exception) {
-            raiseInternal(Test527Event.Error.Execution)
+            raisePlatformError(Test527Event.Error.Execution, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -199,7 +199,7 @@ class Test527StateMachine(
         try {
             engine.assign(sid, location, expr)
         } catch (e: Exception) {
-            raiseInternal(Test527Event.Error.Execution)
+            raisePlatformError(Test527Event.Error.Execution, "<assign> failed")
         }
     }
 
@@ -211,7 +211,7 @@ class Test527StateMachine(
         try {
             engine.executeScript(sid, script)
         } catch (e: Exception) {
-            raiseInternal(Test527Event.Error.Execution)
+            raisePlatformError(Test527Event.Error.Execution, "<script> failed to execute")
         }
     }
 
@@ -358,7 +358,7 @@ class Test527StateMachine(
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
-                        raiseInternal(Test527Event.Error.Execution, EventMetadata.platform())
+                        raisePlatformError(Test527Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
                     }
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test527Event.Done.State.S0, EventMetadata.platform(doneEventData))

@@ -1147,6 +1147,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
         internalEventQueue.addLast(QueuedEvent(event, metadata))
     }
 
+    /**
+     * Raise an `error.*` event this engine itself produced, carrying what failed.
+     *
+     * The single way generated code raises a platform error, so the two things
+     * such an event owes its reader are filled in one place rather than at each
+     * site that happens to remember:
+     *
+     *  * `_event.type` is `"platform"`. The one-argument [raiseInternal] above
+     *    defaults to `EventMetadata.internal()`, and most generated error sites
+     *    called it — so an event the PROCESSOR raised was labelled as one the
+     *    document asked for.
+     *  * `_event.data` carries [message]. A document that answers
+     *    `error.execution` was handed an empty string, so it could see THAT
+     *    something failed and never WHAT.
+     *
+     * [sendId] is for the `<send>` failures the spec requires it on (test 332);
+     * it stays blank everywhere else.
+     *
+     * [message] names the failing construct and is a literal formed at
+     * generation time, never the script engine's own error text — the dynamic
+     * detail belongs on the log line beside the call.
+     */
+    protected fun raisePlatformError(event: E, message: String, sendId: String = "") {
+        // §scxml-3.12.2: the processor signals its own failures as `error.*`,
+        // and "platforms MAY include additional information about the nature of
+        // the error in the 'data' field". Cited in the body so the ledger binds
+        // it to this symbol.
+        internalEventQueue.addLast(
+            QueuedEvent(event, EventMetadata(data = message, type = "platform", sendId = sendId))
+        )
+    }
+
     // --- Delayed Send Support ---
 
     /** Active delayed send jobs, keyed by sendid for cancellation. */
