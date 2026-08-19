@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.13 defines a macrostep as a chain of microsteps ending in a
+     configuration where nothing is enabled by NULL. Appendix D's Principles
+     and Constraints then say, in as many words, that the chain need not
+     exist:
+
+       "A microstep always terminates. A macrostep may not. A macrostep that
+        does not terminate may be said to consist of an infinitely long
+        sequence of microsteps. This is currently allowed."
+
+     So a document with a cyclic eventless transition is not malformed. It is
+     a document whose macrostep is infinite, and an engine that runs it to the
+     letter never returns. Measured 2026-08-20 on a two-state document, the
+     seven engines in this repository answered it three different ways: the
+     Python engine did not return at all, the C++ AOT engine STOPPED the
+     machine, and the other five stopped the chain and carried on. Whatever a
+     host reads afterwards, none of them said which had happened.
+
+     Outcomes this document separates:
+
+       poke      one ordinary transition        control: proves a run fired
+       bounded   a chain that STOPS by itself   a hundred microsteps, then its
+                                                guard closes: the count stays 0
+       spin      a chain that cannot stop       the engine stops taking the
+                                                chain and says so
+
+     `bounded` is the half that makes the count mean something, and it is
+     deliberately a HUNDRED microsteps rather than three: the ceiling is on
+     microsteps taken, so a chain that ends exactly at the ceiling is the case
+     an off-by-one gets wrong, and two engines did — a `while (i++ < MAX)`
+     loop followed by `if (i >= MAX)` treats a chain of ninety-nine as a
+     runaway. In the AOT engine that verdict called `stop()`, so a document
+     that settles on its own was reported dead by an engine that had already
+     finished running it correctly.
+
+     `<assign>` is the only witness available: every outcome here leaves the
+     machine in a state the configuration alone cannot tell apart from the
+     others, and the `spin` outcome leaves it wherever the hundredth microstep
+     landed rather than anywhere the document names.
+
+     Deliberately single-axis: no <send>, no <invoke>, no <parallel>, and no
+     failing expression — `error_cascade_is_bounded` owns the chain built from
+     errors, and this one owns the chain built from transitions that need no
+     event at all. Nothing here raises anything.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="eventless_macrostep_is_bounded">
+    <datamodel>
+        <!-- Written by the control transition only. A host that reads a
+             counter of zero cannot tell "the run never happened" from "the
+             run happened and did nothing", and every assertion below rests on
+             telling those apart. -->
+        <data id="pokes" expr="0"/>
+        <!-- Laps of the bounded chain. One lap is two microsteps, so the
+             chain this counts to fifty is a hundred microsteps long — exactly
+             the ceiling, which is where the interesting mistakes are. -->
+        <data id="laps" expr="0"/>
+        <!-- Laps of the unbounded chain. Nothing in the document stops it. -->
+        <data id="spins" expr="0"/>
+    </datamodel>
+
+    <state id="idle">
+        <transition event="poke" target="idle">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="bounded" target="bounded_a"/>
+        <transition event="spin" target="spin_a"/>
+    </state>
+
+    <!-- A chain that ends on its own. `laps < 50` closes after fifty laps and
+         the macrostep completes the way §scxml-3.13 describes, with the
+         machine resting in `bounded_a`. An engine must count nothing for it:
+         a long chain is not a runaway, and a document that computes for a
+         hundred microsteps before settling is an ordinary document. -->
+    <state id="bounded_a">
+        <transition cond="laps &lt; 50" target="bounded_b">
+            <assign location="laps" expr="laps + 1"/>
+        </transition>
+        <!-- Targetless on purpose: a self transition would re-run <onentry>,
+             and the driver would be measuring its own probe. -->
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <state id="bounded_b">
+        <transition target="bounded_a"/>
+    </state>
+
+    <!-- A chain that cannot end. Both transitions are unconditional, so the
+         optimal transition set enabled by NULL is never empty and §scxml-3.13
+         never reaches its stable configuration. This is the document Appendix
+         D says is allowed to run forever; the engine is the only party that
+         can decide otherwise, and the count is how it says that it did. -->
+    <state id="spin_a">
+        <transition target="spin_b">
+            <assign location="spins" expr="spins + 1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <!-- The way back out, so a driver can run the chain TWICE. A second
+             macrostep must cost the same as the first: an engine that recorded
+             the refusal once and then treated the machine as known-broken
+             would refuse this one on sight, and the lap counter is what says
+             which happened.
+
+             It is a state-changing transition on purpose. Measured 2026-08-20:
+             the two C++ engines complete a macrostep only after a transition
+             that moves the machine, so a targetless one leaves the eventless
+             chain unvisited — a divergence from the other five that this
+             document must not depend on to make its own point. -->
+        <transition event="reset" target="idle"/>
+    </state>
+
+    <state id="spin_b">
+        <transition target="spin_a"/>
+        <transition event="reset" target="idle"/>
+    </state>
+</scxml>

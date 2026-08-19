@@ -739,6 +739,8 @@ add_executable(integration_tests
     integration/UnhandledErrorIsObservableAotTest.cpp
     integration/ErrorCascadeIsBoundedTest.cpp
     integration/ErrorCascadeIsBoundedAotTest.cpp
+    integration/EventlessMacrostepIsBoundedTest.cpp
+    integration/EventlessMacrostepIsBoundedAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
@@ -1138,6 +1140,16 @@ sce_generate_static_integration_test(unhandled_error_is_observable ${STATIC_INTE
 # 2026-08-19 at 37,000 links a second with the configuration unmoved, which an
 # unattended supervisor reads as a healthy idle machine.
 sce_generate_static_integration_test(error_cascade_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.13: a macrostep is a chain of microsteps ending where nothing is
+# enabled by NULL, and Appendix D's Principles and Constraints say that chain
+# need not exist ("A macrostep may not [terminate] ... This is currently
+# allowed"). The ceiling is this engine declining a document the specification
+# permits, so the decline is published rather than logged — and the fixture's
+# bounded chain is exactly the ceiling's length, which is where the AOT
+# engine's own off-by-one used to call `stop()` on a document that had already
+# settled.
+sce_generate_static_integration_test(eventless_macrostep_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
 # dispatched, and a host that ticks after two fire times have passed must still

@@ -233,6 +233,26 @@ public:
     static constexpr uint32_t MAX_ERROR_CASCADE_DEPTH = 100;
 
     /**
+     * @brief How many microsteps one macrostep may take on eventless
+     *        transitions alone before this engine stops taking them — see
+     *        `truncatedMacrosteps()`
+     *
+     * The specification defines a macrostep as a chain of microsteps ending in
+     * a configuration where nothing is enabled by NULL, and its
+     * Principles and Constraints say in as many words that such a chain need
+     * not exist: *"A microstep always terminates. A macrostep may not. A
+     * macrostep that does not terminate may be said to consist of an
+     * infinitely long sequence of microsteps. This is currently allowed."*
+     *
+     * So the ceiling is not conformance — it is this engine declining a
+     * document the specification permits, which is exactly why the decline has
+     * to be visible. The number matches `MAX_ERROR_CASCADE_DEPTH`: both bound
+     * a chain the document cannot end on its own, and a host that has to
+     * reason about one should not have to learn a second number for the other.
+     */
+    static constexpr uint32_t MAX_EVENTLESS_MICROSTEPS = 100;
+
+    /**
      * @brief Event with metadata for §scxml-5.10 compliance
      *
      * Wraps Event enum with metadata (origin, sendid, data, type) to support
@@ -584,6 +604,14 @@ private:
      * @param event Event to process
      */
     void processEventImpl(Event event) {
+        // A host call is a macrostep boundary, so the previous macrostep's
+        // eventless ceiling stops applying here — see `truncatedMacrosteps()`.
+        // Recorded in this entry point as well as at the external dequeue
+        // because this one does not go through that queue: it hands the event
+        // straight to `executeTransition`, so a machine left inside an
+        // eventless cycle would otherwise never get another budget from a host
+        // that drives it this way.
+        macrostepTruncated_ = false;
         const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(); });
         // §scxml-3.1.2: this entry point takes an event straight from the host,
         // so it is the same fact `processNextExternalEvent` records — unlike
@@ -691,6 +719,17 @@ private:
     uint32_t errorCascadeEvents_ = 0;
     Event lastErrorCascadeEvent_{};
     bool hasErrorCascadeEvent_ = false;
+    // Macrosteps stopped at `MAX_EVENTLESS_MICROSTEPS` with an
+    // eventless transition still enabled, and the state the drain was in when
+    // that last happened. `hasTruncatedMacrostep_` is separate because the
+    // zero value of the generated `State` enum is a real state.
+    // `macrostepTruncated_` exists because the drain is reached more than once
+    // per macrostep, and without it each caller would get a fresh budget; it
+    // is cleared where the algorithm starts a macrostep, the external dequeue.
+    uint32_t truncatedMacrosteps_ = 0;
+    State lastTruncatedMacrostepState_{};
+    bool hasTruncatedMacrostep_ = false;
+    bool macrostepTruncated_ = false;
     std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
@@ -1131,6 +1170,56 @@ public:
     }
 
     /**
+     * @brief Macrosteps stopped short because their eventless chain was still
+     *        going after `MAX_EVENTLESS_MICROSTEPS` microsteps
+     *
+     * The specification says a macrostep ends in a configuration where nothing
+     * is enabled by NULL, and its Principles and Constraints add
+     * that a macrostep *may not terminate* and that this "is currently
+     * allowed". A document with a cyclic eventless transition is therefore not
+     * malformed; it is a document whose macrostep is infinite, and an engine
+     * that runs it to the letter never returns.
+     *
+     * This engine does not run it to the letter. It stops, and this count is
+     * how a host learns that it did — because every other reading says the
+     * opposite: `getCurrentState()` answers, `isRunning()` is true, and the
+     * call returned at once. The configuration behind those answers is *not*
+     * the stable one the clause promises; it is wherever the hundredth
+     * microstep happened to land, and the document has more to do that this
+     * engine will not do.
+     *
+     * Until 2026-08-20 this engine answered the case a third way again: the
+     * ceiling called `stop()`, so the same document that merely paused
+     * elsewhere came back dead here — and its off-by-one meant a chain of
+     * ninety-nine microsteps that settled on its own was stopped too. The
+     * ceiling is now on microsteps *taken* and is only counted when a
+     * transition was still enabled after them, so a document whose chain ends
+     * at the ceiling passes through untouched.
+     */
+    uint32_t truncatedMacrosteps() const {
+        return truncatedMacrosteps_;
+    }
+
+    /**
+     * @brief The state this engine was in when it last stopped a macrostep
+     *        that way
+     *
+     * `std::nullopt` while `truncatedMacrosteps()` is zero — the generated
+     * `State` enum's zero value is a real state and cannot stand in for
+     * "none".
+     *
+     * Which state it was is the whole repair: an eventless cycle is a closed
+     * walk through the state graph, and this names one state on it. The count
+     * alone says a document somewhere cannot settle; this says where to look.
+     */
+    std::optional<State> lastTruncatedMacrostepState() const {
+        if (!hasTruncatedMacrostep_) {
+            return std::nullopt;
+        }
+        return lastTruncatedMacrostepState_;
+    }
+
+    /**
      * @brief Run state machine until completion or timeout (§scxml-6.2)
      *
      * Convenience API for running state machines with delayed send operations.
@@ -1419,6 +1508,13 @@ protected:
             return false;
         }
         const EventWithMetadata eventWithMeta = externalQueue_.pop();
+        // §scxml-D-mainEventLoop: taking an event off the external queue is
+        // where a macrostep begins, so it is where the previous one's ceiling
+        // stops applying. A machine left inside an eventless cycle gets a full
+        // budget for each event it is given, and each refusal is counted
+        // separately — which is what tells a host that spins once from one
+        // that spins on everything.
+        macrostepTruncated_ = false;
         {
             Event event = eventWithMeta.event;
             currentEventInvokeId_ = eventWithMeta.invokeId;
@@ -1490,21 +1586,63 @@ protected:
      */
     void checkEventlessTransitions() {
         SCE_LOG_DEBUG("AOT checkEventlessTransitions: Starting");
-        static const int MAX_ITERATIONS = 100;  // Safety limit
-        int iterations = 0;
+        if (macrostepTruncated_) {
+            // This macrostep was already stopped at the ceiling. Re-entering
+            // the drain would hand the same chain a second budget, which is
+            // the runaway the ceiling exists to refuse.
+            return;
+        }
+        // Microsteps taken, not loop turns: the turn that finds nothing
+        // enabled is how a macrostep ends, and counting it would spend the
+        // budget on the proof that no budget was needed. Counting turns is
+        // what made a chain of ninety-nine microsteps that settled on its own
+        // read as a runaway here, and the verdict called `stop()`.
+        uint32_t taken = 0;
 
         // §scxml-3.13: Use shared algorithm (Single Source of Truth)
         // Note: Eventless transitions can raise new internal events, use internal queue
         SCE::Core::AOTEventQueue<EventWithMetadata> adapter(internalQueue_);
 
-        while (iterations++ < MAX_ITERATIONS) {
+        while (true) {
             State oldState = currentState_;
             std::vector<State> preTransitionStates = getActiveStates();  // §scxml-3.11: Capture before transition
-            SCE_LOG_DEBUG("AOT checkEventlessTransitions: Iteration {}, currentState={}", iterations,
+            SCE_LOG_DEBUG("AOT checkEventlessTransitions: Microstep {}, currentState={}", taken,
                           static_cast<int>(currentState_));
 
             // Call processTransition with default event for eventless transitions
             if (policy_.processTransition(currentState_, Event(), *this)) {
+                if (taken == MAX_EVENTLESS_MICROSTEPS) {
+                    // The chain is still going one microstep past the budget,
+                    // so this is the case the specification's Principles and
+                    // Constraints call a macrostep that does not terminate.
+                    // Refuse the microstep rather than take it, and publish
+                    // the refusal: the configuration left behind is not a
+                    // stable one and only this counter says so. The machine
+                    // keeps running — the specification allows the document, so
+                    // declining to run it forever is a fact to report, not
+                    // grounds to kill a session whose other states still work.
+                    //
+                    // `processTransition` only selects for a non-parallel
+                    // machine — the exit / body / entry chain is
+                    // `handleHierarchicalTransition`'s below — so putting
+                    // `currentState_` back is what makes the refusal exact.
+                    // A parallel policy runs `executeMicrostep` inside the
+                    // call instead, so there the microstep is already taken
+                    // and the ceiling holds one microstep later; the count
+                    // means the same thing either way.
+                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+                        currentState_ = oldState;
+                    }
+                    ++truncatedMacrosteps_;
+                    lastTruncatedMacrostepState_ = currentState_;
+                    hasTruncatedMacrostep_ = true;
+                    macrostepTruncated_ = true;
+                    SCE_LOG_ERROR(
+                        "StaticExecutionEngine: macrostep still going after {} microsteps; stopped taking them",
+                        MAX_EVENTLESS_MICROSTEPS);
+                    break;
+                }
+                ++taken;
                 // §scxml-3.4: For parallel states, use actual transition source state
                 State actualSourceState = policy_.lastTransitionSourceState_;
                 SCE_LOG_DEBUG("AOT checkEventlessTransitions: Transition taken from {} to {} (actual source: {})",
@@ -1536,15 +1674,6 @@ protected:
                 // Internal events will be processed by caller (runMainEventLoop or step)
                 break;
             }
-        }
-
-        if (iterations >= MAX_ITERATIONS) {
-            // Eventless transition loop detected
-            SCE_LOG_ERROR(
-                "StaticExecutionEngine: Eventless transition loop detected after {} iterations - stopping state "
-                "machine",
-                MAX_ITERATIONS);
-            stop();
         }
 
         // §scxml-3.13: Check if we reached a top-level final state after eventless transitions

@@ -96,6 +96,22 @@
 #define SCE_MAX_ERROR_CASCADE_DEPTH 100u
 #endif
 
+// How many microsteps one macrostep may take on eventless
+// transitions alone before the engine stops taking them. The clause defines a
+// macrostep as a chain of microsteps ending in a configuration where nothing
+// is enabled by NULL; the specification's Principles and Constraints then say
+// in as many words that such a chain need not exist ("A microstep always
+// terminates. A macrostep may not. ... This is currently allowed"). So the
+// ceiling is not conformance — it is this engine declining a document the
+// specification permits, which is why the decline is published rather than
+// merely applied (`_truncated_macrosteps`). The number matches
+// SCE_MAX_ERROR_CASCADE_DEPTH: both bound a chain the document cannot end on
+// its own, and a host that has to reason about one should not have to learn a
+// second number for the other.
+#ifndef SCE_MAX_EVENTLESS_MICROSTEPS
+#define SCE_MAX_EVENTLESS_MICROSTEPS 100u
+#endif
+
 // Static helpers (state hierarchy queries, history filters, …) are
 // emitted unconditionally so generated code stays compilable as fixtures
 // climb the W3C category ladder. The flat / datamodel-less subset used

@@ -392,6 +392,19 @@ public:
         uint32_t errorCascadeEvents = 0;
         /// The most recent event that count refused, empty while it is zero.
         std::string lastErrorCascadeEvent;
+        /// Macrosteps this engine stopped short because their
+        /// eventless chain was still going after `MAX_EVENTLESS_MICROSTEPS`
+        /// microsteps. The clause promises a stable configuration at the end
+        /// of a macrostep, and the specification's Principles and Constraints
+        /// add that such an end need not exist ("A macrostep may not
+        /// [terminate] ... This is currently allowed"). When this count moves,
+        /// the configuration `currentState` reports is not a stable one — and
+        /// nothing else in this struct says so.
+        uint32_t truncatedMacrosteps = 0;
+        /// The state the drain was in when that last happened, empty while the
+        /// count is zero. One state on the eventless cycle that could not
+        /// settle, which is where an author looks first.
+        std::string lastTruncatedMacrostepState;
     };
 
     Statistics getStatistics() const;
@@ -679,6 +692,33 @@ private:
     size_t eventlessRecursionDepth_ = 0;  // Track recursion depth for eventless transitions
     size_t lastTransitionDepth_ = 0;      // Track depth where lastTransition was set
 
+    /// How many microsteps one macrostep may take on eventless
+    /// transitions alone before this engine stops taking them. The clause
+    /// defines a macrostep as a chain ending where nothing is enabled by NULL,
+    /// and the specification's Principles and Constraints say that chain need
+    /// not exist ("A macrostep may not [terminate] ... This is currently
+    /// allowed"), so the ceiling is this engine declining a document the
+    /// specification permits — which is why `Statistics::truncatedMacrosteps`
+    /// publishes the decline instead of a log line carrying it alone. The
+    /// number matches the AOT engine's `MAX_EVENTLESS_MICROSTEPS` and
+    /// `EventRaiserImpl::MAX_ERROR_CASCADE_DEPTH`: one number for every chain
+    /// a document cannot end on its own.
+    static constexpr int MAX_EVENTLESS_MICROSTEPS = 100;
+
+    /// Macrosteps stopped at that ceiling with an eventless
+    /// transition still enabled, and the state the drain was in when it last
+    /// happened. `macrostepTruncated_` exists because the drain is reached
+    /// from more than one place per macrostep; it is cleared where the
+    /// algorithm starts a macrostep, which for this engine is the host's call.
+    uint32_t truncatedMacrosteps_ = 0;
+    std::string lastTruncatedMacrostepState_;
+    bool macrostepTruncated_ = false;
+    /// Microsteps this macrostep has taken on eventless transitions. A member
+    /// rather than a loop counter because this engine's chain is recursive —
+    /// executing one microstep re-enters the macrostep loop, so a local
+    /// counter is per nesting level and never reaches any ceiling.
+    uint32_t eventlessMicrostepsTaken_ = 0;
+
     // SCXML model
     std::shared_ptr<SCXMLModel> model_;
 
@@ -801,6 +841,12 @@ private:
      * @return true if an eventless transition was executed, false otherwise
      */
     bool checkEventlessTransitions();
+
+    /// Record that a macrostep was stopped at
+    /// `MAX_EVENTLESS_MICROSTEPS` with its eventless chain still going. Shared
+    /// by the two bounded loops (`start()`'s and the one inside a transition's
+    /// macrostep) so both report the same fact the same way.
+    void recordTruncatedMacrostep();
 
     /**
      * @brief Execute a single transition directly without re-evaluating its condition
