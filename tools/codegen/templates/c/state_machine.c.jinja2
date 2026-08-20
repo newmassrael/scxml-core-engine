@@ -1212,7 +1212,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             memset(&_send_evt, 0, sizeof(_send_evt));
             _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
-{% elif (not in_foreach) and action.event and action.send_type and action.send_type != 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' and action.send_type != 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
+{% elif (not in_foreach) and action.event and action.send_type_unsupported and not action.eventexpr and not action.target and not action.targetexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and not action.typeexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test199): unsupported send_type literal raises
                error.execution and stops the surrounding entry/exit/transition
                body. cpp `actions/send.jinja2:16-25` uses a runtime call to
@@ -1221,10 +1221,13 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                SCXMLEventProcessor, nor BasicHTTPEventProcessor; the false-fall
                raises Error_execution and returns from the enclosing executor.
                C11 lowers the decision to codegen time (inline-only
-               lock-in) — the literal is known here, so the check collapses
-               to "type is set, not the SCXMLEventProcessor URI, not the
-               BasicHTTPEventProcessor URI" and emits the raise + return
-               directly. The BasicHTTP branch with target/targetexpr is
+               lock-in) — the literal is known before this template runs,
+               so `action.send_type_unsupported` already carries the
+               verdict and this arm only emits the raise + return. The set
+               itself is spelled once, in
+               `host_processor_analyzer::is_supported_send_type`; it used
+               to be spelled again in each of five templates, this one
+               included. The BasicHTTP branch with target/targetexpr is
                served by the lifted arm below (RFC §2.1 dim coverage:
                idlocation / typeexpr / targetexpr / contentexpr in
                addition to the existing namelist + dynamic-params lifts);

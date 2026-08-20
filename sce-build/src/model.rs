@@ -212,6 +212,28 @@ pub struct Action {
 
     pub typeexpr: String,
 
+    /// `true` when [`Self::send_type`] is a literal naming an Event I/O
+    /// Processor this build has no delivery path for, so the emitted
+    /// code raises `error.execution` at this site instead of sending
+    /// (§scxml-6.2).
+    ///
+    /// Decided once, by
+    /// [`crate::host_processor_analyzer::is_supported_send_type`], and
+    /// read by every backend's send template. The templates used to
+    /// re-derive it from a literal list of accepted URIs spelled inline
+    /// — five copies of one set, which is five chances for a backend to
+    /// disagree with the others about the same document. It is also the
+    /// point a host-supplied processor has to flip, and a decision
+    /// spelled five times has no such point.
+    ///
+    /// Says nothing about `typeexpr`. A runtime-resolved type has no
+    /// build-time value, and each backend already decides for itself how
+    /// a literal `type` beside a `typeexpr` is treated; this flag
+    /// replaces the duplicated accepted-set literal without moving that
+    /// boundary.
+    #[serde(default)]
+    pub send_type_unsupported: bool,
+
     pub label: String,
     // if/elseif/else
     pub cond: String,
@@ -1484,6 +1506,21 @@ pub struct SCXMLModel {
     /// gates on a pure-static lowering can name what cost it.
     #[serde(skip)]
     pub script_engine_causes: Vec<crate::script_engine_analyzer::NeedsScriptEngineCause>,
+    /// Every `<send>` / `<invoke>` site naming a processor type this
+    /// build has no lowering path for.
+    ///
+    /// Sibling of [`Self::script_engine_causes`] and stored for the same
+    /// reason: the traversal happens once, at parse, so the report and
+    /// the emitted code describe the same model. The generated code
+    /// refuses these sites at runtime whether or not anyone reads this
+    /// list — what the list adds is that the refusal becomes knowable
+    /// before the state is entered.
+    ///
+    /// Projected onto the `sce-codegen` stdout manifest as
+    /// `host_processor_causes`, beside the `needs_host_processor`
+    /// boolean it explains.
+    #[serde(skip)]
+    pub host_processor_causes: Vec<crate::host_processor_analyzer::HostProcessorCause>,
     /// Whether the document contains any `<cancel>` action (§scxml-6.3).
     ///
     /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free

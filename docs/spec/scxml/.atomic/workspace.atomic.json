@@ -7722,6 +7722,14 @@
           "file": "sce-build/src/filters.rs",
           "symbol": "static_params_json",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/manifest.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7868,6 +7876,10 @@
         },
         {
           "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
           "kind": "references"
         }
       ],
@@ -9248,6 +9260,14 @@
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
           "symbol": "StatePolicy",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/manifest.rs",
           "kind": "references"
         }
       ],
@@ -11295,6 +11315,10 @@
           "file": "backends/python/runtime/sce_runtime/io_processors.py",
           "symbol": "session_id_from_scxml_location",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -11786,6 +11810,10 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
           "kind": "references"
         }
       ],
