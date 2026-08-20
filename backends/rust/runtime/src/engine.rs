@@ -55,6 +55,7 @@ use core::time::Duration;
 #[cfg(not(feature = "no_std"))]
 use std::time::Instant;
 
+use crate::clock::SceClock;
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
@@ -486,6 +487,11 @@ pub struct Engine<P: StatePolicy> {
     /// for cancel-free machines (no_std ring shrinks by the per-entry
     /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
     pub(crate) scheduler: PullScheduler<P::Event, P::ScheduledSendId>,
+    /// Where this engine reads "now" from — see [`SceClock`].
+    pub(crate) clock: SceClock,
+    /// The reading [`clock`](Self::clock) gave when the current turn began, or
+    /// `None` between turns. See [`begin_turn`](Self::begin_turn).
+    pub(crate) turn_now: Option<SchedTimePoint>,
     /// Whether [`tick`](Self::tick) has ever run on this engine.
     ///
     /// A machine whose policy sets
@@ -593,6 +599,8 @@ impl<P: StatePolicy> Engine<P> {
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
+            clock: SceClock::Hal,
+            turn_now: None,
             tick_has_run: false,
             unattended_scheduler_steps: 0,
             discarded_external_events: 0,
@@ -615,23 +623,89 @@ impl<P: StatePolicy> Engine<P> {
     // Scheduler clock readers (per-build cfg-branched, HAL-routed under no_std)
     // ════════════════════════════════════════
 
-    /// Resolve the current scheduler time point for "now".
+    /// Take a fresh reading from [`clock`](Self::clock), whatever turn the
+    /// engine is in.
     ///
-    /// Routes through `<P::Hal as Hal>::now_ticks_ms()` on both build profiles
-    /// so the [`Hal`] trait is the single host-clock surface. The textbook DI
-    /// split keeps [`PullScheduler`] clock-source-agnostic and unit-testable
-    /// with a synthetic-clock `Hal` impl on host as well as embedded.
+    /// Only [`begin_turn`](Self::begin_turn) and the between-turn branch of
+    /// [`sched_now`](Self::sched_now) call this — everything else asks
+    /// `sched_now`, so that the turn latch is the default and a live reading
+    /// is the exception that has to be spelled.
+    #[inline]
+    fn clock_read(&self) -> SchedTimePoint {
+        match self.clock {
+            SceClock::Hal => <P::Hal as Hal>::now_ticks_ms(),
+            SceClock::Manual(now) => now,
+            SceClock::Source(read) => read(),
+        }
+    }
+
+    /// §scxml-3.13: what time it is, for everything this turn arms or judges.
+    ///
+    /// The clause executes a microstep's executable content as one unit and a
+    /// macrostep as a chain of those, so "now" is a property of the turn the
+    /// engine is in rather than of the statement asking for it. Between turns
+    /// there is no turn for it to be a property of, and the host's queries
+    /// ([`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms),
+    /// [`now_ms`](Self::now_ms)) read the clock live.
     #[inline]
     fn sched_now(&self) -> SchedTimePoint {
-        <P::Hal as Hal>::now_ticks_ms()
+        match self.turn_now {
+            Some(latched) => latched,
+            None => self.clock_read(),
+        }
+    }
+
+    /// Open a turn: take the single [`clock`](Self::clock) reading that
+    /// everything inside it uses.
+    ///
+    /// Returns whether this call is the one that opened it, which
+    /// [`end_turn`](Self::end_turn) needs so a nested entry point
+    /// ([`process_event`](Self::process_event) delegating to
+    /// [`step`](Self::step), [`tick`](Self::tick) doing the same) does not
+    /// close the outer turn early.
+    ///
+    /// §scxml-6.2.2 makes a delay the wait the DOCUMENT asks for — "how long
+    /// the processor should wait before dispatching the message". Time the
+    /// host spent descheduled between two statements of one microstep is not
+    /// part of any delay the document wrote, so it must not reach the
+    /// deadline. Reading the clock per statement instead was two defects at
+    /// once, both measured on this backend:
+    ///
+    /// - Two `<send delay>`s executed by one `<onentry>` took a reading each,
+    ///   so a host descheduled between them by more than the gap between their
+    ///   delays got the later send's deadline first — and the engine then
+    ///   dispatched them in that order, so the document's `<cancel>` arrived
+    ///   after the event it named. Which of two events the author ordered
+    ///   arrives first became a fact about the host's scheduler.
+    /// - The dispatch loop in [`tick`](Self::tick) re-read it on every pass, so
+    ///   a tick slow enough to cross the next deadline dispatched that entry
+    ///   too, then the one after it — the engine chasing deadlines its own
+    ///   slowness created, in a loop the host cannot get between.
+    ///
+    /// Neither is reachable from a clock that is read once per turn.
+    #[inline]
+    fn begin_turn(&mut self) -> bool {
+        if self.turn_now.is_some() {
+            return false;
+        }
+        self.turn_now = Some(self.clock_read());
+        true
+    }
+
+    /// Close a turn opened by [`begin_turn`](Self::begin_turn).
+    #[inline]
+    fn end_turn(&mut self, opened: bool) {
+        if opened {
+            self.turn_now = None;
+        }
     }
 
     /// Resolve `now + delay` for scheduling.
     ///
-    /// Reads `<P::Hal>::now_ticks_ms()` and adds `delay.as_millis() as u64`
-    /// via `saturating_add`, clamping a pathologically large delay to
-    /// `u64::MAX` rather than wrapping (`u64::MAX` ms ≈ 584 million years, so
-    /// the clamp is operationally indistinguishable from "infinity").
+    /// Adds `delay.as_millis() as u64` to [`sched_now`](Self::sched_now) via
+    /// `saturating_add`, clamping a pathologically large delay to `u64::MAX`
+    /// rather than wrapping (`u64::MAX` ms ≈ 584 million years, so the clamp is
+    /// operationally indistinguishable from "infinity").
     ///
     /// Resolution is milliseconds on both profiles — the W3C SCXML `<send
     /// delay>` grammar is integer ms/s/min/h, so sub-ms truncation does not
@@ -640,7 +714,7 @@ impl<P: StatePolicy> Engine<P> {
     #[inline]
     fn sched_now_plus(&self, delay: Duration) -> SchedTimePoint {
         let delay_ms = delay.as_millis() as u64;
-        <P::Hal as Hal>::now_ticks_ms().saturating_add(delay_ms)
+        self.sched_now().saturating_add(delay_ms)
     }
 
     // ════════════════════════════════════════
@@ -784,6 +858,16 @@ impl<P: StatePolicy> Engine<P> {
     /// Matches C++ `StaticExecutionEngine::initialize()`. §scxml-5.3
     /// guarantees datamodel initialization happens before any state entry.
     pub fn initialize(&mut self) {
+        // §scxml-3.13: entering the initial configuration is one turn, and the
+        // `<onentry>` handlers it runs arm their `<send delay>`s against one
+        // instant — see `begin_turn` for what reading the clock per `<send>`
+        // did to two of them.
+        let opened = self.begin_turn();
+        self.initialize_in_turn();
+        self.end_turn(opened);
+    }
+
+    fn initialize_in_turn(&mut self) {
         self.is_running = true;
 
         // §scxml-5.3: Initialize datamodel before any state entry
@@ -854,6 +938,16 @@ impl<P: StatePolicy> Engine<P> {
     /// the actions after it (§scxml-4.2), so a `<send>` written below a
     /// failing one never runs, and no amount of `tick` recovers it.
     pub fn step(&mut self) {
+        // §scxml-3.13: one host call, one reading. The macrostep below can
+        // enter a state whose `<onentry>` arms several `<send delay>`s, and
+        // they are one instant's worth of executable content however long the
+        // host takes to run them — see `begin_turn`.
+        let opened = self.begin_turn();
+        self.step_in_turn();
+        self.end_turn(opened);
+    }
+
+    fn step_in_turn(&mut self) {
         // A machine with delayed sends hands `step` a queue it cannot reach:
         // `run_main_event_loop` never consults the scheduler, so the event is
         // neither delivered nor refused. Say it once — the host is driving with
@@ -892,6 +986,17 @@ impl<P: StatePolicy> Engine<P> {
     /// than defaulting either way. See [`step`](Self::step) for where the
     /// answer is published.
     pub fn tick(&mut self) {
+        // §scxml-3.13: one turn, one reading. Everything below judges due
+        // against the instant this tick began, and everything the macrosteps
+        // below arm is measured from it — so a tick dispatches what was due
+        // when the host called it, and cannot be extended by how long it takes
+        // to run (see `begin_turn`).
+        let opened = self.begin_turn();
+        self.tick_in_turn();
+        self.end_turn(opened);
+    }
+
+    fn tick_in_turn(&mut self) {
         // Recorded before the running check: a host that calls `tick` owns a
         // clock whatever the engine's lifecycle says, and the count exists to
         // find hosts that never call it at all.
@@ -911,9 +1016,12 @@ impl<P: StatePolicy> Engine<P> {
         }
 
         // §scxml-6.2: dispatch the ready scheduled events, earliest deadline
-        // first and one macrostep apart. Read the clock once per iteration via
-        // the cfg-branched helper — keeps `PullScheduler` clock-source-agnostic
-        // (textbook DI split).
+        // first and one macrostep apart. "Due" is judged against the instant
+        // this tick began, not against a clock re-read on every pass — a tick
+        // that chased its own slowness would dispatch entries the host had not
+        // yet reached, in a loop the host cannot get between (see
+        // `begin_turn`). `PullScheduler` stays clock-source-agnostic either
+        // way: it is handed the reading rather than taking one.
         //
         // One at a time, not all at once. `<cancel>` drops an event that has
         // not been dispatched yet, and a host that woke late holds several past
@@ -940,7 +1048,7 @@ impl<P: StatePolicy> Engine<P> {
             self.raise_external(popped, "", "");
 
             // The macrostep this event drives may `<cancel>` a later one, so
-            // the next deadline is re-read after it rather than before.
+            // the queue is re-consulted after it rather than before.
             self.run_main_event_loop();
             if !self.is_running || self.is_in_final_state() {
                 break;
@@ -1522,6 +1630,87 @@ impl<P: StatePolicy> Engine<P> {
     pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
         let next = self.scheduler.next_ready_at()?;
         Some(next.saturating_sub(self.sched_now()))
+    }
+
+    // ════════════════════════════════════════
+    // Clock (§scxml-6.2.2)
+    // ════════════════════════════════════════
+
+    /// Where this engine reads "now" from — see [`SceClock`].
+    pub fn clock(&self) -> SceClock {
+        self.clock
+    }
+
+    /// Install the [`SceClock`] this engine measures its `<send delay>`
+    /// deadlines against.
+    ///
+    /// Must be called before [`initialize`](Self::initialize): the entry
+    /// configuration's `<onentry>` can arm delayed sends, and swapping the
+    /// clock under deadlines already computed from another one would leave the
+    /// queue holding two incomparable time bases. That is a programming error
+    /// rather than a recoverable condition, so it panics — the same fail-loud
+    /// convention [`NoOpHal`](crate::NoOpHal) uses for a HAL that was never
+    /// wired.
+    ///
+    /// # Panics
+    ///
+    /// If the engine has already been initialized.
+    pub fn set_clock(&mut self, clock: SceClock) {
+        assert!(
+            !self.is_running,
+            "Engine::set_clock must be called before initialize(): this engine has \
+             already armed its entry configuration against the previous clock, and \
+             deadlines from two clocks do not compare"
+        );
+        self.clock = clock;
+    }
+
+    /// Move this engine's clock forward by `ms` and run whatever that made due
+    /// (§scxml-6.2).
+    ///
+    /// The host-owned twin of [`tick`](Self::tick): `tick` asks a clock that
+    /// moves on its own what time it is, this one *sets* what time it is and
+    /// then ticks. A machine driven exclusively through here has no dependency
+    /// on the load of the machine it runs on — the same sequence of calls
+    /// produces the same configuration every time, which is what a simulation,
+    /// a replay and a deterministic test each need.
+    ///
+    /// # Panics
+    ///
+    /// If [`clock`](Self::clock) is not [`SceClock::Manual`]. That is not a
+    /// no-op but a programming error: the caller believes it owns time and it
+    /// does not, so the events it is waiting for would arrive on a schedule it
+    /// did not choose. Refusing loudly is the same call the Kotlin and Python
+    /// channels make on the same contract.
+    pub fn advance_time_ms(&mut self, ms: u64) {
+        let SceClock::Manual(now) = self.clock else {
+            panic!(
+                "Engine::advance_time_ms needs SceClock::Manual; this engine has a \
+                 clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \
+                 before initialize(), or drive this machine with tick() and \
+                 time_until_next_scheduled_ms()"
+            );
+        };
+        self.clock = SceClock::Manual(now.saturating_add(ms));
+        self.tick();
+    }
+
+    /// This engine's current reading of [`clock`](Self::clock), in
+    /// milliseconds since that clock's origin.
+    ///
+    /// The absolute counterpart of
+    /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)'s
+    /// relative answer. A host owning time through [`SceClock::Manual`] uses it
+    /// to say where in the run it is; a host on the wall clock uses it to
+    /// correlate an engine's deadlines with its own log.
+    ///
+    /// Inside a turn this is the turn's latched instant, which is what the
+    /// engine itself is judging against; between turns it is a live reading.
+    /// A clock that went backwards between two readings would un-due an entry
+    /// the scheduler had already judged ready, so an [`SceClock::Source`] must
+    /// be non-decreasing.
+    pub fn now_ms(&self) -> u64 {
+        self.sched_now()
     }
 
     // ════════════════════════════════════════

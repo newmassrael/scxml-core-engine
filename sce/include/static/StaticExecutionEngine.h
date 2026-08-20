@@ -22,6 +22,7 @@
 #include "common/ForwardedEvent.h"
 #include "common/IOProcessorHelper.h"
 #include "common/SCXMLConstants.h"
+#include "common/SceClock.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/AOTEventQueue.h"
@@ -637,6 +638,11 @@ private:
      * @param event Event to process
      */
     void processEventImpl(Event event) {
+        // §scxml-3.13: a host call is one turn as well as one macrostep
+        // boundary, so the `<onentry>` this event's transition runs arms its
+        // `<send delay>`s against a single instant — see `beginTurn()`.
+        TurnGuard turn(*this);
+
         // A host call is a macrostep boundary, so the previous macrostep's
         // ceiling stops applying here — see `truncatedMacrosteps()`. Recorded
         // in this entry point as well as at the external dequeue because this
@@ -794,6 +800,92 @@ private:
         onParallelRegionRemoteSend_;
     std::string currentEventInvokeId_;     // SCE Mesh §mesh-9.5: invokeId of event being processed
     SCE::PullScheduler<Event> scheduler_;  // §scxml-6.2: Delayed event scheduler
+
+    /// §scxml-6.2.2: where this engine reads "now" from — see `ISceClock`.
+    std::shared_ptr<SCE::ISceClock> clock_ = std::make_shared<SCE::MonotonicClock>();
+
+    /// The reading `clock_` gave when the current turn began, empty between
+    /// turns. See `beginTurn()`.
+    std::optional<uint64_t> turnNowMs_;
+
+    /**
+     * @brief §scxml-3.13: what time it is, for everything this turn arms or judges
+     *
+     * The clause executes a microstep's executable content as one unit and a
+     * macrostep as a chain of those, so "now" is a property of the turn the
+     * engine is in rather than of the statement asking for it. Between turns
+     * there is no turn for it to be a property of, and the host's queries
+     * (`timeUntilNextScheduled()`, `nowMs()`) read the clock live.
+     */
+    uint64_t schedNowMs() const {
+        return turnNowMs_.has_value() ? *turnNowMs_ : clock_->elapsedMs();
+    }
+
+    /**
+     * @brief Open a turn: take the single clock reading everything inside uses
+     *
+     * Returns whether this call is the one that opened it, which `endTurn()`
+     * needs so a nested entry point (`tick()` delegating to `step()`,
+     * `processEvent()` doing the same) does not close the outer turn early.
+     *
+     * §scxml-6.2.2 makes a delay the wait the DOCUMENT asks for — "how long the
+     * processor should wait before dispatching the message". Time the host
+     * spent descheduled between two statements of one microstep is not part of
+     * any delay the document wrote, so it must not reach the deadline. Reading
+     * the clock per statement instead was two defects at once, both measured on
+     * the sibling backends this engine shares its scheduler shape with:
+     *
+     * - Two `<send delay>`s executed by one `<onentry>` took a reading each, so
+     *   a host descheduled between them by more than the gap between their
+     *   delays got the later send's deadline first — and the engine then
+     *   dispatched them in that order, so the document's `<cancel>` arrived
+     *   after the event it named. Which of two events the author ordered
+     *   arrives first became a fact about the host's scheduler.
+     * - The dispatch loop in `tick()` re-read it on every pass, so a tick slow
+     *   enough to cross the next deadline dispatched that entry too, then the
+     *   one after it — the engine chasing deadlines its own slowness created,
+     *   in a loop the host cannot get between.
+     *
+     * Neither is reachable from a clock that is read once per turn.
+     */
+    bool beginTurn() {
+        if (turnNowMs_.has_value()) {
+            return false;
+        }
+        turnNowMs_ = clock_->elapsedMs();
+        return true;
+    }
+
+    /// Close a turn opened by `beginTurn()`.
+    void endTurn(bool opened) {
+        if (opened) {
+            turnNowMs_.reset();
+        }
+    }
+
+    /**
+     * @brief RAII pairing of `beginTurn()` / `endTurn()`
+     *
+     * A guard rather than two bare calls because every entry point below has
+     * early returns, and one that skipped `endTurn()` would leave the engine
+     * frozen at the instant that call began — every later deadline computed
+     * from a clock that had stopped.
+     */
+    class TurnGuard {
+    public:
+        explicit TurnGuard(StaticExecutionEngine &engine) : engine_(engine), opened_(engine.beginTurn()) {}
+
+        ~TurnGuard() {
+            engine_.endTurn(opened_);
+        }
+
+        TurnGuard(const TurnGuard &) = delete;
+        TurnGuard &operator=(const TurnGuard &) = delete;
+
+    private:
+        StaticExecutionEngine &engine_;
+        bool opened_;
+    };
 
     // §scxml-5.5 + 6.4.3: donedata payload stashed at top-level <final> entry.
     // Consumed by:
@@ -1003,7 +1095,8 @@ public:
      */
     std::string scheduleEvent(Event event, std::chrono::milliseconds delay, const std::string &sendId = "",
                               const std::string &eventData = "") {
-        return scheduler_.scheduleEvent(event, delay, sendId, eventData);
+        uint64_t fireTimeMs = schedNowMs() + static_cast<uint64_t>(delay.count());
+        return scheduler_.scheduleEventAt(event, fireTimeMs, sendId, eventData);
     }
 
     /**
@@ -1022,7 +1115,7 @@ public:
      * @return true if events are ready to fire
      */
     bool hasReadyEvents() const {
-        return scheduler_.hasReadyEvents();
+        return scheduler_.hasReadyEvents(schedNowMs());
     }
 
     /**
@@ -1049,11 +1142,85 @@ public:
         if (!next.has_value()) {
             return std::nullopt;
         }
-        auto now = std::chrono::steady_clock::now();
+        uint64_t now = schedNowMs();
         if (*next <= now) {
             return std::chrono::milliseconds::zero();
         }
-        return std::chrono::duration_cast<std::chrono::milliseconds>(*next - now);
+        return std::chrono::milliseconds(static_cast<int64_t>(*next - now));
+    }
+
+    // ════════════════════════════════════════
+    // Clock (§scxml-6.2.2)
+    // ════════════════════════════════════════
+
+    /**
+     * @brief Where this engine reads "now" from — see `ISceClock`
+     *
+     * Never null: an engine that was never given one reads a `MonotonicClock`.
+     */
+    const std::shared_ptr<SCE::ISceClock> &clock() const {
+        return clock_;
+    }
+
+    /**
+     * @brief Install the `ISceClock` this engine measures its deadlines against
+     *
+     * Must be called before `initialize()`: the entry configuration's
+     * `<onentry>` can arm delayed sends, and swapping the clock under deadlines
+     * already computed from another one would leave the queue holding two
+     * incomparable time bases. That is a programming error rather than a
+     * recoverable condition, so it throws.
+     */
+    void setClock(std::shared_ptr<SCE::ISceClock> clock) {
+        if (!clock) {
+            throw std::invalid_argument(
+                "StaticExecutionEngine::setClock requires a clock; pass a MonotonicClock for the default");
+        }
+        if (isRunning_) {
+            throw std::logic_error("StaticExecutionEngine::setClock must be called before initialize(): this "
+                                   "machine has already armed its entry configuration against the previous "
+                                   "clock, and deadlines from two clocks do not compare");
+        }
+        clock_ = std::move(clock);
+    }
+
+    /**
+     * @brief Move this engine's clock forward by `ms` and run what that made due
+     *
+     * The host-owned twin of `tick()`: `tick()` asks a clock that moves on its
+     * own what time it is, this one *sets* what time it is and then ticks. A
+     * machine driven exclusively through here has no dependency on the load of
+     * the machine it runs on — the same sequence of calls produces the same
+     * configuration every time, which is what a simulation, a replay and a
+     * deterministic test each need.
+     *
+     * Throws unless a `ManualClock` is installed, because that is the only kind
+     * of clock a host can move. Calling it against the monotonic default is a
+     * programming error, not a no-op: the caller believes it owns time and it
+     * does not, so the events it is waiting for would arrive on a schedule it
+     * did not choose.
+     */
+    void advanceTimeMs(uint64_t ms) {
+        auto manual = std::dynamic_pointer_cast<SCE::ManualClock>(clock_);
+        if (!manual) {
+            throw std::logic_error("StaticExecutionEngine::advanceTimeMs needs a ManualClock; this machine's "
+                                   "time is not the host's to move. Call setClock(std::make_shared<ManualClock>()) "
+                                   "before initialize(), or drive it with tick() and timeUntilNextScheduled()");
+        }
+        manual->advance(ms);
+        tick();
+    }
+
+    /**
+     * @brief This engine's current reading of its clock, in milliseconds
+     *
+     * The absolute counterpart of `timeUntilNextScheduled()`'s relative answer.
+     * A host owning time through a `ManualClock` uses it to say where in the
+     * run it is; a host on the wall clock uses it to correlate the engine's
+     * deadlines with its own log.
+     */
+    uint64_t nowMs() const {
+        return schedNowMs();
     }
 
     /**
@@ -1859,6 +2026,12 @@ public:
      * 4. Check for eventless transitions
      */
     void initialize() {
+        // §scxml-3.13: entering the initial configuration is one turn, and the
+        // `<onentry>` handlers it runs arm their `<send delay>`s against one
+        // instant — see `beginTurn()` for what reading the clock per `<send>`
+        // did to two of them.
+        TurnGuard turn(*this);
+
         isRunning_ = true;
 
         // §scxml-5.3: Initialize datamodel before any state entry
@@ -1917,6 +2090,12 @@ public:
      * This method processes all pending events in both internal and external queues.
      */
     void step() {
+        // §scxml-3.13: one host call, one reading. The macrostep below can
+        // enter a state whose `<onentry>` arms several `<send delay>`s, and
+        // they are one instant's worth of executable content however long the
+        // host takes to run them — see `beginTurn()`.
+        TurnGuard turn(*this);
+
         // A machine with delayed sends hands `step()` a queue it cannot reach:
         // `runMainEventLoop()` never consults the scheduler, so the event is
         // neither delivered nor refused. Say it once — the host is driving with
@@ -2158,9 +2337,10 @@ public:
      * a time for that reason.
      */
     void pumpScheduledEvents() {
+        TurnGuard turn(*this);
         std::string eventData;
         Event event;
-        while (scheduler_.popReadyEvent(event, eventData)) {
+        while (scheduler_.popReadyEvent(schedNowMs(), event, eventData)) {
             raiseExternal(event, eventData);
         }
     }
@@ -2177,6 +2357,13 @@ public:
      * then processes event queues and checks for eventless transitions.
      */
     void tick() {
+        // §scxml-3.13: one turn, one reading. Everything below judges due
+        // against the instant this tick began, and everything the macrosteps
+        // below arm is measured from it — so a tick dispatches what was due
+        // when the host called it, and cannot be extended by how long it takes
+        // to run (see `beginTurn()`).
+        TurnGuard turn(*this);
+
         // Recorded before the running check: a host that calls `tick()` owns a
         // clock whatever the engine's lifecycle says, and the count exists to
         // find hosts that never call it at all.
@@ -2211,13 +2398,18 @@ public:
         // `<send delay>`, cancel it when the short signal arrives first —
         // delivers the event it was told to cancel. Measured 2026-08-19 on the
         // Rust, Go and Python backends alike; C++ shares the shape.
+        //
+        // "Due" is judged against the instant this tick began, not against a
+        // clock re-read on every pass: a tick that chased its own slowness
+        // would dispatch entries the host had not yet reached, in a loop the
+        // host cannot get between (see `beginTurn()`).
         {
             std::string eventData;
             Event event;
-            while (scheduler_.popReadyEvent(event, eventData)) {
+            while (scheduler_.popReadyEvent(schedNowMs(), event, eventData)) {
                 raiseExternal(event, eventData);
                 // The macrostep this event drives may `<cancel>` a later one,
-                // so the next deadline is re-read after it rather than before.
+                // so the queue is re-consulted after it rather than before.
                 runMainEventLoop();
                 if (!isRunning_ || isInFinalState()) {
                     break;

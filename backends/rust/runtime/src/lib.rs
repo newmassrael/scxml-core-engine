@@ -461,6 +461,7 @@ pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], mut f: F)
     stable_sort_by(buf, |a, b| f(a).cmp(&f(b)));
 }
 
+pub mod clock;
 pub mod engine;
 pub mod event;
 pub mod hal;
@@ -507,6 +508,7 @@ pub mod scripting;
 
 // Public re-exports — the primary API surface
 
+pub use clock::SceClock;
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};

@@ -27,10 +27,15 @@
 #include "late_tick_honours_cancel_sm.h"
 #include "scripting/ScriptEngineProvider.h"
 
+#include "common/SceClock.h"
+
+#include <algorithm>
 #include <chrono>
 #include <gtest/gtest.h>
 #include <memory>
+#include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace SCE::Tests {
 namespace {
@@ -133,6 +138,220 @@ TEST(LateTickHonoursCancelAotTest, TheEngineSaysWhenItIsNextDue) {
 
     EXPECT_FALSE(sm->timeUntilNextScheduled().has_value())
         << "nothing is scheduled once the machine is finished, so no wake-up is owed";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §scxml-6.2.2 — the clock the deadlines are measured from
+//
+// Everything above drives the machine on the wall clock, which is what a
+// production host does and what the push runs. It is also why this document
+// reached a push before it reached a test: the two `<send delay>`s in
+// `waiting` were armed against two separate readings, so a host descheduled
+// between them by more than the 100 ms separating their delays got the later
+// send's deadline first. The cases below take the clock away from the machine
+// the suite runs on and hand it to the test, so the verdict is about the
+// engine.
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+/// A clock that jumps forward on every reading.
+///
+/// This is what a descheduled host looks like from inside the engine: two
+/// readings taken for what the document calls one instant come back different.
+/// A real one does it unpredictably and only under load, which is why the
+/// defect it exposes reached a push before it reached a test; this one does it
+/// on every reading, so the cases below are a verdict about the engine rather
+/// than about the machine the suite runs on.
+class SteppingClock : public ::SCE::ISceClock {
+public:
+    explicit SteppingClock(uint64_t stepMs) : stepMs_(stepMs) {}
+
+    uint64_t elapsedMs() const override {
+        ++readings_;
+        nowMs_ += stepMs_;
+        return nowMs_;
+    }
+
+    int readings() const {
+        return readings_;
+    }
+
+private:
+    uint64_t stepMs_;
+    mutable uint64_t nowMs_ = 0;
+    mutable int readings_ = 0;
+};
+
+std::unique_ptr<SM> startedOn(const std::shared_ptr<::SCE::ISceClock> &clock) {
+    auto sm = std::make_unique<SM>();
+    if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
+        sm->setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                  [](::SCE::IScriptEngine *) {}));
+    }
+    sm->setClock(clock);
+    sm->initialize();
+    return sm;
+}
+
+}  // namespace
+
+/// The axis of this round: a host descheduled between the fixture's two
+/// `<send delay>`s must not change which of them fires first.
+///
+/// Swept rather than pinned to one value. The threshold is arithmetic — the
+/// stall has to reach the 100 ms separating the two delays before the later
+/// deadline can overtake the earlier one — and a case pinned at one stall would
+/// pass for a fix that moved the threshold instead of removing it. Measured on
+/// the pre-latch engine: 1, 50 and 99 pass, and 100 is the first failure.
+TEST(LateTickHonoursCancelAotTest, AHostDescheduledBetweenTwoSendsKeepsTheirOrder) {
+    for (uint64_t stallMs : {1U, 50U, 99U, 100U, 101U, 150U, 1000U}) {
+        auto sm = startedOn(std::make_shared<SteppingClock>(stallMs));
+
+        ASSERT_NE(sm->getCurrentState(), SM::State::CancelLost)
+            << "a host stalled " << stallMs
+            << " ms between the two `<send delay>`s of one `<onentry>` reordered them: "
+               "`settle` (200 ms) came due before `poke` (100 ms) because each send took "
+               "its own reading. §scxml-6.2.2 makes a delay the wait the DOCUMENT asks "
+               "for, and the time the host spent descheduled is not part of it";
+
+        // One tick is one reading, so time moves `stallMs` per tick and the
+        // smallest stall in the sweep needs a few hundred of them to cross the
+        // document's 200 ms of deadlines.
+        for (int i = 0; i < 4096 && !sm->isInFinalState(); ++i) {
+            sm->tick();
+        }
+        ASSERT_EQ(sm->getCurrentState(), SM::State::Pass)
+            << "with a " << stallMs
+            << " ms stall per clock reading the machine did not reach `pass`; the "
+               "document's `<cancel sendid=\"s1\">` must still drop `settle`";
+    }
+}
+
+/// A tick dispatches what was due when the host called it — not what its own
+/// slowness made due while it ran.
+///
+/// Counted rather than inferred: the stall here (150 ms) is larger than every
+/// delay in the document, so an engine re-reading per pass would run the whole
+/// machine inside one tick.
+TEST(LateTickHonoursCancelAotTest, ATickReadsTheClockOnceHoweverMuchItDoes) {
+    auto clock = std::make_shared<SteppingClock>(150);
+    auto sm = startedOn(clock);
+    ASSERT_EQ(clock->readings(), 1) << "initialize() is one turn and must take one reading; it took "
+                                    << clock->readings();
+
+    sm->tick();
+    EXPECT_EQ(clock->readings(), 2) << "tick() is one turn and must take one reading; the run has taken "
+                                    << clock->readings()
+                                    << " in total. A tick that re-reads the clock while it works extends its "
+                                       "own window and dispatches entries the host has not yet reached";
+}
+
+/// The host-owned clock: the same generated machine, driven by
+/// `advanceTimeMs`, reaches its verdict on the test's schedule.
+///
+/// This is the contract the Python channel has had all along (`advance_time` /
+/// `now_ms`). A machine driven this way has no dependency on the load of the
+/// build machine at all — and unlike `GameLoopTimer`, which gives a host
+/// logical time in a queue of its own, it reaches the `<send delay>`s the
+/// DOCUMENT wrote, because those are armed through the engine's own scheduler.
+TEST(LateTickHonoursCancelAotTest, AManualClockDrivesTheMachineToTheSameVerdict) {
+    auto sm = startedOn(std::make_shared<::SCE::ManualClock>(0));
+    ASSERT_EQ(sm->getCurrentState(), SM::State::Waiting)
+        << "nothing is due at t=0, so the machine waits on its two delayed sends";
+
+    // Past both deadlines in one move — the late wake-up the fixture is about.
+    sm->advanceTimeMs(400);
+    EXPECT_NE(sm->getCurrentState(), SM::State::CancelLost)
+        << "a single 400 ms advance stepped over both deadlines; `poke` must still be "
+           "dispatched first so `active`'s `<cancel sendid=\"s1\">` can drop `settle`";
+
+    sm->advanceTimeMs(100);
+    EXPECT_EQ(sm->getCurrentState(), SM::State::Pass)
+        << "`finish` is armed for 100 ms after `active` is entered, so the machine "
+           "should be done";
+    EXPECT_EQ(sm->nowMs(), 500u) << "the host moved this clock 400 + 100 ms and nothing else may move it";
+}
+
+/// Determinism is the point, so it is asserted as such: the same call sequence
+/// twice, and the intermediate states compared rather than only the verdict.
+///
+/// The wall-clock cases above cannot make this assertion — they would be
+/// re-measuring the load on the build machine, which is exactly the dependency
+/// this seam removes.
+TEST(LateTickHonoursCancelAotTest, AManualClockRunRepeatsExactly) {
+    auto trace = []() {
+        auto sm = startedOn(std::make_shared<::SCE::ManualClock>(0));
+        std::vector<typename SM::State> seen{sm->getCurrentState()};
+        for (int i = 0; i < 6; ++i) {
+            sm->advanceTimeMs(100);
+            seen.push_back(sm->getCurrentState());
+        }
+        return seen;
+    };
+
+    const auto first = trace();
+    const auto second = trace();
+    ASSERT_EQ(first, second) << "two identical sequences of advanceTimeMs produced different traces; a "
+                                "host-owned clock that is not reproducible is not host-owned";
+    EXPECT_NE(std::find(first.begin(), first.end(), SM::State::Pass), first.end()) << "the trace never reached `pass`";
+    EXPECT_EQ(std::find(first.begin(), first.end(), SM::State::CancelLost), first.end())
+        << "the trace reached `cancelLost`";
+}
+
+/// One generated artifact, two kinds of host: the same class runs on the wall
+/// clock and on host-owned time and lands in the same configuration.
+TEST(LateTickHonoursCancelAotTest, OneGeneratedMachineServesBothKindsOfHost) {
+    auto wall = started();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!wall->isInFinalState() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        wall->tick();
+    }
+
+    auto hostOwned = startedOn(std::make_shared<::SCE::ManualClock>(0));
+    for (int i = 0; i < 8 && !hostOwned->isInFinalState(); ++i) {
+        hostOwned->advanceTimeMs(100);
+    }
+
+    EXPECT_EQ(wall->getCurrentState(), hostOwned->getCurrentState())
+        << "the same generated machine reached different configurations on the wall "
+           "clock and on a host-owned clock";
+    EXPECT_EQ(hostOwned->getCurrentState(), SM::State::Pass) << "both hosts should reach `pass`";
+}
+
+/// `advanceTimeMs` on a clock the host does not own is a programming error, not
+/// a no-op: the caller believes it owns time and it does not, so the events it
+/// is waiting for would arrive on a schedule it did not choose.
+TEST(LateTickHonoursCancelAotTest, AdvanceTimeMsRefusesAClockTheHostDoesNotOwn) {
+    auto sm = started();
+    EXPECT_THROW(sm->advanceTimeMs(100), std::logic_error)
+        << "advanceTimeMs on the monotonic default returned quietly; a host that "
+           "believes it owns time and does not must be told";
+}
+
+/// The clock is installed before the machine arms anything against it. Swapping
+/// it afterwards would leave the scheduler holding deadlines computed from two
+/// incomparable time bases — `waiting`'s `<onentry>` has already armed both
+/// sends by the time `initialize()` returns.
+TEST(LateTickHonoursCancelAotTest, TheClockCannotBeSwappedAfterTheMachineArmedItsDeadlines) {
+    auto sm = started();
+    EXPECT_THROW(sm->setClock(std::make_shared<::SCE::ManualClock>(0)), std::logic_error)
+        << "setClock after initialize() was accepted; the queue would then hold "
+           "deadlines from two clocks that do not compare";
+}
+
+/// A host on the wall clock still gets an absolute reading, so it can correlate
+/// the engine's deadlines with its own log.
+TEST(LateTickHonoursCancelAotTest, NowMsAnswersOnEveryKindOfClock) {
+    auto wall = started();
+    const uint64_t a = wall->nowMs();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_GE(wall->nowMs(), a) << "the wall clock went backwards between two readings";
+
+    auto manual = startedOn(std::make_shared<::SCE::ManualClock>(7));
+    EXPECT_EQ(manual->nowMs(), 7u) << "a manual clock reads exactly what the host set, and initialize() must "
+                                      "not have moved it";
 }
 
 }  // namespace SCE::Tests

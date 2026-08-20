@@ -343,9 +343,14 @@
         // ARCHITECTURE.md Zero Duplication: Uses SendSchedulingHelper (Single Source of Truth)
         // SCE_MESH.md §9.6: Gated on needs_parent_template — remote invoke workers
         // emit `<send target="#_parent">` through performMeshSend (no parentSendScheduler_).
+        //
+        // §scxml-6.2.2: due is judged against the engine's clock, the same one
+        // the deadline was armed from — a queue that read its own would answer
+        // a different question on a host that owns time.
         {
             typename ParentStateMachine::Event readyEvent;
-            while (parentSendScheduler_.popReadyEvent(readyEvent)) {
+            std::string readyEventData;
+            while (parentSendScheduler_.popReadyEvent(engine.nowMs(), readyEvent, readyEventData)) {
                 AOT_DEBUG("Delivering delayed send to parent");
                 parent_->raiseExternal(readyEvent);
             }
