@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d65905bc3c6e24a33dd9b7fd50b629650d9728247901fb700182448b8698a851
+// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -359,7 +359,7 @@ class Test518StateMachine(
                 }
                 try {
                     val v = engineH.getVariable(sidH, "Var1")
-                    httpParams["Var1"] = listOf(v?.toString() ?: "")
+                    httpParams["Var1"] = listOf(valueToWireString(v))
                 } catch (_: Exception) {
                     raisePlatformError(Test518Event.Error.Execution, "<send> namelist entry 'Var1' failed to evaluate")
                     return@run

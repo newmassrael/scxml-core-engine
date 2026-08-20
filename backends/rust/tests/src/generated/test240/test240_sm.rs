@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d65905bc3c6e24a33dd9b7fd50b629650d9728247901fb700182448b8698a851
+// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -506,7 +506,10 @@ impl Test240Policy {
                     let child_vars: &[&str] = &["Var1"];
                     if child_vars.contains(&"Var1") {
                         if let Ok(val) = se.evaluate_expression(&sid, "Var1") {
-                            child_policy.set_param_in_script_engine("Var1", &val.to_lua_literal());
+                            // The child seeds this by evaluating source, so the
+                            // spelling is the engine's — not the value's.
+                            child_policy
+                                .set_param_in_script_engine("Var1", &se.to_script_literal(&val));
                         }
                     }
                 }
@@ -613,7 +616,8 @@ impl Test240Policy {
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     if let Ok(val) = se.evaluate_expression(&sid, "1") {
-                        child_policy.set_param_in_script_engine("Var1", &val.to_lua_literal());
+                        child_policy
+                            .set_param_in_script_engine("Var1", &se.to_script_literal(&val));
                     }
                 }
 
