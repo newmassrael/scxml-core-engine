@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: d65905bc3c6e24a33dd9b7fd50b629650d9728247901fb700182448b8698a851
+// template-hash: 63129ea5a60cce4407210a3c2e3ff224327767ebf6618c3f4ed41b0a49b7454d
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -616,9 +616,9 @@ impl StatePolicy for Test201Policy {
                                     None
                                 }
                                 Ok(val) => {
-                                    let s = val.to_lua_literal();
-                                    let trimmed =
-                                        s.trim_matches(|c: char| c == '\'' || c == '"').to_string();
+                                    // §scxml-C-1: a target expression's value is read as text —
+                                    // the same reading C++ `resultToString` gives it.
+                                    let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     if trimmed.starts_with("!") {
                                         // W3C SCXML 6.2: Invalid target raises error.execution
                                         {
