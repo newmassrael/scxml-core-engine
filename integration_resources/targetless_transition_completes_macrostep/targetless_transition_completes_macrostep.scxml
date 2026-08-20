@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML Appendix D spells the main event loop as two nested loops. The
+     outer one dequeues an external event and takes the microstep it selects;
+     the inner one then runs to a stable configuration:
+
+       while running and not macrostepDone:
+           enabledTransitions = selectEventlessTransitions()
+           if enabledTransitions.isEmpty():
+               if internalQueue.isEmpty(): macrostepDone = true
+               else: ... selectTransitions(internalQueue.dequeue())
+           if not enabledTransitions.isEmpty(): microstep(...)
+
+     Nothing in that loop asks whether the microstep it just took MOVED the
+     machine. It cannot: W3C SCXML 3.13 defines a transition whose `target` is
+     absent as one that exits and enters no states and runs its executable
+     content in place — a microstep all the same. What that content assigns can
+     enable a transition that needs no event, and what it raises lands on the
+     internal queue; both are the inner loop's business on its next lap.
+
+     Measured 2026-08-20 while building `eventless_macrostep_is_bounded`, the
+     two C++ engines end the macrostep at a targetless transition and hand the
+     machine back to the host in a configuration the clause says is not stable:
+     the eventless chain the transition enabled is never walked. The other five
+     engines walk it. A document that works on one backend therefore stops
+     halfway on another, with no error, no log line, and a `getCurrentState()`
+     that answers a state the document was supposed to have left.
+
+     Outcomes this document separates:
+
+       quiet    a targetless transition that enables nothing
+                control: proves the transition RAN, so a chain counter of zero
+                below means "the chain did not run" and not "no event arrived"
+
+       arm      a targetless transition that enables an eventless transition
+                the chain must run to `settled`, and the LAST link of that
+                chain is itself targetless — a microstep the engine has to take
+                without moving the machine, and then stop taking
+
+       ping     a targetless transition that raises an internal event
+                the raise must be answered inside the same macrostep, before
+                the host is given control back
+
+     `arm` and `ping` are the same defect seen from the two sides the inner
+     loop has: `selectEventlessTransitions()` and the internal queue. An engine
+     can fail one and pass the other, so they are counted separately.
+
+     Deliberately single-axis: no <send>, no <invoke>, no <parallel>, no delay,
+     and nothing that can fail. `eventless_macrostep_is_bounded` owns how long
+     a chain may run; this document owns whether the chain is entered at all.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="targetless_transition_completes_macrostep">
+    <datamodel>
+        <!-- Written only by the control transition. A host that reads a chain
+             counter of zero cannot tell "the macrostep stopped early" from
+             "the event never arrived", and every assertion here rests on
+             telling those apart. -->
+        <data id="quiet" expr="0"/>
+        <!-- Set by the `arm` transition, read by the eventless transition it
+             is supposed to enable. Its value is also the proof that the
+             targetless transition's content ran at all. -->
+        <data id="armed" expr="0"/>
+        <!-- Laps of the eventless chain `arm` enables. One: the chain's guard
+             closes behind it. -->
+        <data id="chained" expr="0"/>
+        <!-- The chain's last link, which is targetless itself. Counted apart
+             from `chained` because an engine that walks the chain only while
+             the machine keeps moving stops exactly here. -->
+        <data id="polished" expr="0"/>
+        <!-- Raised by `ping`, answered by `pong`, both targetless. -->
+        <data id="answered" expr="0"/>
+        <!-- Entries of `recycled`, counted by its own <onentry>. A self
+             transition ends where it started like a targetless one does, and
+             is the other half of what a loop testing "did the configuration
+             change" gets wrong — but it is NOT targetless, and the clause
+             gives it an exit and an entry. This counter is the difference. -->
+        <data id="entries" expr="0"/>
+    </datamodel>
+
+    <state id="idle">
+        <!-- The eventless transition `arm` enables. It is first in document
+             order on purpose: it must stay unselected until `armed` is set,
+             and an engine that evaluates it eagerly reports that here rather
+             than in whichever later transition it shadowed. -->
+        <transition cond="armed == 1" target="settled">
+            <assign location="chained" expr="chained + 1"/>
+        </transition>
+
+        <!-- Control. Targetless and enables nothing: the machine must stay in
+             `idle`, the chain counters must stay zero, and `quiet` must go up
+             — which is what separates a stopped macrostep from a lost event. -->
+        <transition event="quiet">
+            <assign location="quiet" expr="quiet + 1"/>
+        </transition>
+
+        <!-- Targetless, and its content makes the transition above selectable.
+             W3C SCXML Appendix D returns to `selectEventlessTransitions()`
+             after every microstep, so the chain belongs to THIS macrostep. -->
+        <transition event="arm">
+            <assign location="armed" expr="1"/>
+        </transition>
+
+        <!-- Targetless, and its content puts an event on the internal queue.
+             Appendix D drains that queue in the same inner loop, so `pong` is
+             answered before the host sees the machine again. -->
+        <transition event="ping">
+            <raise event="pong"/>
+        </transition>
+
+        <transition event="pong">
+            <assign location="answered" expr="answered + 1"/>
+        </transition>
+
+        <!-- The way into the self-transition outcome below. -->
+        <transition event="recycle" target="recycled"/>
+    </state>
+
+    <!-- Reached by the eventless transition, and holding one more link of the
+         same chain. That link is targetless, so an engine which resumes the
+         chain only after a transition that MOVED the machine takes the first
+         link and stops before this one — `chained == 1, polished == 0` is that
+         engine's signature, and it is a different failure from never entering
+         the chain at all (`chained == 0`). -->
+    <state id="settled">
+        <transition cond="polished == 0">
+            <assign location="polished" expr="polished + 1"/>
+        </transition>
+    </state>
+
+    <!-- The other kind of microstep that ends where it began. W3C SCXML 3.13
+         gives a transition whose target IS its source an exit and an entry —
+         unlike a targetless one, which gets neither — so `<onentry>` runs
+         again and this state is entered twice for one `recycle`.
+
+         It belongs in this document because the mistake is the same mistake: a
+         macrostep loop that continues only while the configuration keeps
+         changing drops this transition and the targetless one together, for
+         the same reason and in the same line of code. The C++ AOT engine did:
+         it selected the transition, ran none of its content, performed neither
+         the exit nor the entry, and left the chain.
+
+         The guard is what makes the chain finite. An UNCONDITIONAL eventless
+         self transition is a macrostep that cannot end, which is
+         `eventless_macrostep_is_bounded`'s subject, not this one's — so this
+         one closes after the second entry and the machine rests here. -->
+    <state id="recycled">
+        <onentry>
+            <assign location="entries" expr="entries + 1"/>
+        </onentry>
+        <transition cond="entries &lt; 2" target="recycled"/>
+    </state>
+</scxml>

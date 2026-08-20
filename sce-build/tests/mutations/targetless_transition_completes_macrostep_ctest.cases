@@ -1,0 +1,146 @@
+# Mutation cases for "a transition with no target ends a microstep, not the
+# macrostep" on the two engines a cargo round cannot see — the C++ AOT engine
+# header and the C++ Interpreter.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/targetless_transition_completes_macrostep_ctest.cases`.
+#
+# Same axis as `targetless_transition_completes_macrostep.cases`, which holds
+# the Kotlin code generator's half. W3C SCXML Appendix D's main event loop
+# returns to `selectEventlessTransitions()` after every microstep and drains
+# the internal queue in the same inner loop, without asking whether the
+# microstep moved the machine — §scxml-3.13 defines a transition with no
+# `target` as one that exits and enters nothing and runs its content in place.
+#
+# Measured 2026-08-20, these two got it wrong in two different places, which is
+# why they are worth their own round:
+#
+#   - both ended the macrostep at the transition itself, so a chain its content
+#     enabled was never walked, and on the AOT engine the caller's queue drain
+#     was skipped too, so a `<raise>` from a targetless transition stayed
+#     queued past the host call;
+#   - the AOT engine also dropped a targetless transition SELECTED BY THE
+#     DRAIN: its loop continued only while the configuration kept changing, so
+#     it took the transition, ran none of its content, and left.
+#
+# The C11, Go, Python and Rust engines answered the fixture correctly on first
+# measurement. Their channels assert it; only the Rust one is mutated, in
+# `targetless_transition_completes_macrostep_rust.cases`.
+#
+# Every ctest entry carries a TIMEOUT, so a mutant that never ends comes back
+# as an ordinary red rather than a hung round.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_targetless_transition_completes_macrostep)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/integration/TargetlessTransitionCompletesMacrostepAotTest.cpp tests/integration/TargetlessTransitionCompletesMacrostepTest.cpp
+
+# ── C++ AOT: the chain the transition opened ───────────────────────
+#
+# The shipped early return. The transition's content runs, and whatever it
+# enabled is left for nobody: the host is handed a configuration §scxml-3.13
+# calls unstable, with `getCurrentState()` naming a state the document was
+# supposed to have left.
+
+mutation_case "the aot engine returns from a targetless transition without walking the chain" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """            postTransition();
+            checkEventlessTransitions();
+            // The transition itself moved nothing; the chain it opened may""",
+     """            // The transition itself moved nothing; the chain it opened may""")
+PY
+
+# ── C++ AOT: the queue the transition filled ───────────────────────
+#
+# The other side of the same inner loop, and the reason the two are separate
+# cases: `postTransition` is the caller's drain and `checkEventlessTransitions`
+# is the eventless half, so an engine can lose one and keep the other. On the
+# direct `processEvent` path this one is the whole of the internal queue, and
+# without it a `<raise>` from a targetless transition is answered on some later
+# host call, or never.
+
+mutation_case "the aot engine skips the queue drain after a targetless transition" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """            postTransition();
+            checkEventlessTransitions();""",
+     """            checkEventlessTransitions();""")
+PY
+
+# ── C++ AOT: the targetless link inside the chain ──────────────────
+#
+# The drain selected the transition and then dropped it, because the loop
+# continued only on a changed configuration. The content never ran, so the
+# chain ended one microstep early with the machine resting where that link
+# began — `chained == 1, polished == 0` in the fixture's terms.
+#
+# The mutation removes the RUN, not the arm: an arm removed entirely falls into
+# the self-transition branch below it, which runs the actions too, and the
+# round would be measuring nothing.
+
+mutation_case "the aot drain selects a targetless microstep and runs none of it" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                    // is the same decision `executeTransition` makes for the
+                    // event-driven case, read off the same policy flag.
+                    policy_.executeTransitionActions(*this);
+                } else {""",
+     """                    // is the same decision `executeTransition` makes for the
+                    // event-driven case, read off the same policy flag.
+                } else {""")
+PY
+
+# ── C++ AOT: the self transition that still has work ───────────────
+#
+# A self transition with a target ends where it started too, and the same
+# "configuration did not change" test used to drop its exit and entry on the
+# floor. The fixture's `recycle` outcome is what holds it: an eventless self
+# transition, guarded so the chain is finite, whose `<onentry>` counts the
+# entries. A mutant that drops the exit and entry leaves `entries == 1`.
+#
+# That outcome exists because this case SURVIVED without it — the first draft
+# of this file said in as many words that the fixture could not separate the
+# two, which is a case with no witness rather than a case. Writing the witness
+# was the repair.
+
+mutation_case "the aot drain drops the exit and entry of an eventless self transition" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+                        handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
+                                                     [this] { policy_.executeTransitionActions(*this); });
+                    }
+                }
+            } else {
+                // §scxml-3.13: No eventless transition available - stable configuration reached""",
+     """                }
+            } else {
+                // §scxml-3.13: No eventless transition available - stable configuration reached""")
+PY
+
+# ── C++ Interpreter: the chain the transition opened ───────────────
+#
+# The same defect in the other engine, in the other place: this one's macrostep
+# loop lives in the branch of `executeTransition` that has entered a target
+# state, so the targetless branch returned before reaching it.
+
+mutation_case "the interpreter returns from a targetless transition without walking the chain" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """                    if (eventRaiser_) {
+                        while (checkEventlessTransitions()) {
+                        }
+                    }
+
+                    TransitionResult result;""",
+     """                    TransitionResult result;""")
+PY
+
+# A case that used to be here is deliberately absent: replacing the `while`
+# around `checkEventlessTransitions()` with a single call. It SURVIVED a full
+# round, and the reason is a property of this engine rather than a hole in the
+# fixture — `checkEventlessTransitions` walks the chain ITSELF, re-entering
+# through state entry, which is the recursion the eventless ceiling had to be
+# moved onto a member to bound. So one call and a loop are the same behaviour
+# and no test can separate them: an equivalent mutation. The loop stays because
+# it is the shape of its sibling in the state-changing branch of the same
+# function, and because it is what stays correct if that recursion is ever
+# unwound; it is not a second decision, so it gets no case.

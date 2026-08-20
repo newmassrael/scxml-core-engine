@@ -1363,6 +1363,8 @@ fn render_kotlin(
         kotlin::compute_ancestors_with_transitions(model, &ancestor_chains);
     let process_event_needs_else =
         kotlin::process_event_needs_else(model, &ancestors_with_event_transitions);
+    let process_null_event_needs_else =
+        kotlin::process_null_event_needs_else(model, &ancestors_with_null_transitions);
     let transition_actions_needs_else =
         kotlin::transition_actions_needs_else(&effective_transitions);
     let deep_initial_entries = kotlin::compute_deep_initial_entries(model);
@@ -1418,6 +1420,7 @@ fn render_kotlin(
         ancestors_with_event_transitions => minijinja::Value::from_serialize(&ancestors_with_event_transitions),
         ancestors_with_null_transitions => minijinja::Value::from_serialize(&ancestors_with_null_transitions),
         process_event_needs_else => process_event_needs_else,
+        process_null_event_needs_else => process_null_event_needs_else,
         transition_actions_needs_else => transition_actions_needs_else,
         inline_kind_code => &inline_kind_code,
         event_payload_active => payload.active,

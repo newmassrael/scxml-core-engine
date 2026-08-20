@@ -409,10 +409,14 @@ pub fn compute_ancestors_with_transitions(
         for anc_id in chain {
             if let Some(anc_state) = model.states.get(anc_id) {
                 let has_event = anc_state.transitions.iter().any(|t| !t.event.is_empty());
-                let has_null = anc_state
-                    .transitions
-                    .iter()
-                    .any(|t| t.event.is_empty() && !t.target.is_empty());
+                // A transition with no `event` is eventless whether or not it
+                // names a target: §scxml-3.13 gives a targetless transition
+                // no exit or entry, and the executable content it runs in place
+                // is exactly what a chain of them is for. Requiring a target
+                // here dropped those transitions out of `processNullEvent`
+                // entirely, so the generated machine could not take a microstep
+                // the document spells.
+                let has_null = anc_state.transitions.iter().any(|t| t.event.is_empty());
                 if has_event {
                     event_ancs.push(anc_id.clone());
                 }
@@ -457,6 +461,36 @@ pub fn process_event_needs_else(
             .get(state_id)
             .is_some_and(|ancestors| !ancestors.is_empty());
         !has_own_event_transition && !inherits_one
+    })
+}
+
+/// Whether `processNullEvent`'s `when (state)` still needs an `else` arm.
+///
+/// The third `when` over the sealed state hierarchy in the same file, and the
+/// twin of [`process_event_needs_else`] for the eventless side. The template
+/// emits one branch per non-`<parallel>` state that has an eventless transition
+/// of its own or inherits an ancestor's; the `else` covers what that leaves
+/// out, and Kotlin rejects it under `-Werror` once it leaves nothing out.
+///
+/// This became reachable when targetless eventless transitions started being
+/// emitted: before, a document could not give every state an eventless
+/// transition without also giving each one a target, which the `<final>` states
+/// such documents end in do not have.
+pub fn process_null_event_needs_else(
+    model: &SCXMLModel,
+    ancestors_with_null_transitions: &BTreeMap<String, Vec<String>>,
+) -> bool {
+    model.states.iter().any(|(state_id, state)| {
+        if state.is_parallel {
+            // The template's `{% if not state.is_parallel %}` skips it, so the
+            // `else` is the only arm that answers for this state.
+            return true;
+        }
+        let has_own_null_transition = state.transitions.iter().any(|t| t.event.is_empty());
+        let inherits_one = ancestors_with_null_transitions
+            .get(state_id)
+            .is_some_and(|ancestors| !ancestors.is_empty());
+        !has_own_null_transition && !inherits_one
     })
 }
 

@@ -749,6 +749,37 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML Appendix D's inner loop returns to selectEventlessTransitions()
+    # after every microstep and drains the internal queue there, without asking
+    # whether the microstep moved the machine — W3C SCXML 3.13 defines a
+    # transition with no target as one that exits and enters nothing and runs
+    # its content in place. Both C++ engines used to end the macrostep at such a
+    # transition, so the chain its content enabled was never walked.
+    sce_generate_static_integration_c_test(targetless_transition_completes_macrostep "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_targetless_transition_completes_macrostep
+        integration/test_targetless_transition_completes_macrostep.c
+        ${INTEGRATION_C_TEST_targetless_transition_completes_macrostep_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_targetless_transition_completes_macrostep PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_targetless_transition_completes_macrostep PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_targetless_transition_completes_macrostep PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_targetless_transition_completes_macrostep
+        COMMAND sce_c_integration_targetless_transition_completes_macrostep
+    )
+    set_tests_properties(c11_integration_targetless_transition_completes_macrostep PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     sce_generate_static_integration_c_test(error_cascade_is_bounded "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_error_cascade_is_bounded
