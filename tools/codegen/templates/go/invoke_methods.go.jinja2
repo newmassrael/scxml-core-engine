@@ -79,7 +79,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 {% for var_name in invoke_info.namelist | split %}
 				if val, err := se.EvaluateExpression(p.SessionID, "{{ var_name }}"); err == nil {
-					childPolicy.SetParamInScriptEngine("{{ var_name }}", sce.ToLuaLiteral(val))
+					// The child seeds this by evaluating source, so the
+					// spelling is the engine's — not the value's.
+					childPolicy.SetParamInScriptEngine("{{ var_name }}", se.ToScriptLiteral(val))
 				}
 {% endfor %}
 			}
@@ -95,7 +97,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% for param in invoke_info.params %}
 				{# Raw string: no escaping. See entry_exit_actions.go.jinja2. #}
 				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); err == nil {
-					childPolicy.SetParamInScriptEngine("{{ param.name | escape_go }}", sce.ToLuaLiteral(val))
+					childPolicy.SetParamInScriptEngine("{{ param.name | escape_go }}", se.ToScriptLiteral(val))
 				}
 {% endfor %}
 			}

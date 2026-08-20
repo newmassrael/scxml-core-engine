@@ -136,38 +136,58 @@ class ScriptValue:
             return self.dom_val
         return None
 
-    def to_lua_literal(self) -> str:
-        """W3C SCXML 5.5: Render this value as Lua source text. Mirrors
-        Rust `ScriptValue::to_lua_literal` (used by the AOT donedata
-        emit). The output is re-eval'd by `set_current_event` when the
-        parent's `done.state.<id>` / `done.invoke.<id>` event is
-        dispatched, so the round trip must preserve string identity
-        (test294: `<content>'foo'</content>` must surface on
-        `_event.data` as the string `"foo"`, not the global lookup of
-        an identifier `foo`)."""
+    def to_wire_string(self) -> str:
+        """W3C SCXML C.2 — this value as the text a form-encoded param
+        carries.
+
+        The BasicHTTP Event I/O Processor sends each `<param>` as one
+        `name=value` pair, so the value crosses as *text* and the
+        receiving end hands that text to `_event.data`; no script engine
+        reads it at either end. That is why this is neither of its two
+        neighbours: `to_json_literal` would wrap a string in quotes that
+        are not part of it, and an engine literal (this channel's lives
+        inside its own engine, `lua_engine._python_to_lua_literal`)
+        would put the sender's *language* on the wire.
+
+        The rendering is ECMAScript's `String(value)` (§scxml-B-1 makes
+        the data model ECMAScript) with the two amendments C++
+        `ScriptResultUtils::resultToString` already made: absence renders
+        empty rather than as a word (§scxml-C-1), and a structured value
+        renders as JSON, because a receiver that is not a script engine
+        has no other reading of it.
+
+        What this replaced was `str(value.to_python())`, which is
+        Python's spelling and not the document's — `True` for a boolean
+        the other channels spell `true`, `None` for an absence the wire
+        reads as empty, `[1, 2]` with a space JSON does not have.
+        """
         if self.kind is ScriptValueKind.NULL or self.kind is ScriptValueKind.UNDEFINED:
-            return "nil"
+            return ""
         if self.kind is ScriptValueKind.BOOL:
             return "true" if self.bool_val else "false"
         if self.kind is ScriptValueKind.INT:
             return str(self.int_val)
         if self.kind is ScriptValueKind.DOUBLE:
-            return repr(self.double_val)
+            value = self.double_val
+            if value != value:
+                return "NaN"
+            if value == float("inf"):
+                return "Infinity"
+            if value == float("-inf"):
+                return "-Infinity"
+            if value == int(value) and abs(value) < 1e15:
+                # ECMAScript String(5) is "5"; a `.0` tail is Python's
+                # spelling of the number, not the document's.
+                return str(int(value))
+            return repr(value)
         if self.kind is ScriptValueKind.STRING:
-            escaped = self.string_val.replace("\\", "\\\\").replace("'", "\\'")
-            return f"'{escaped}'"
-        if self.kind is ScriptValueKind.ARRAY:
-            return "{" + ", ".join(v.to_lua_literal() for v in self.array_val) + "}"
-        if self.kind is ScriptValueKind.OBJECT:
-            return (
-                "{"
-                + ", ".join(
-                    f'["{k}"] = {v.to_lua_literal()}'
-                    for k, v in self.object_val.items()
-                )
-                + "}"
-            )
-        return "nil"
+            # Already text: quoting it would deliver characters the
+            # document never wrote.
+            return self.string_val
+        if self.kind is ScriptValueKind.DOM:
+            # The receiving end parses XML from document text.
+            return self.dom_val or ""
+        return self.to_json_literal()
 
     def to_json_literal(self) -> str:
         """Render this value for a wire that leaves the ECMAScript data
@@ -179,11 +199,11 @@ class ScriptValue:
         dequeue, often another session, in a mesh another process running
         another backend.
 
-        This is the counterpart of `to_lua_literal`, and the difference
-        is the point. A Lua literal is *source*, so reading it back
-        required the receiver to RUN it — which made `_event.data` mean
-        one thing on a Lua backend and another on a JavaScript one, and
-        made any payload executable at the far end. Ports the C++
+        This is the counterpart of an engine literal, and the difference
+        is the point. A literal is *source*, so reading it back requires
+        the receiver to RUN it — which made `_event.data` mean one thing
+        on a Lua backend and another on a JavaScript one, and made any
+        payload executable at the far end. Ports the C++
         `scriptValueToJson` in `sce/src/common/EventDataHelper.cpp`.
 
         Object keys are sorted so equal content produces equal bytes,

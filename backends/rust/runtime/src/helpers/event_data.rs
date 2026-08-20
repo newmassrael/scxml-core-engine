@@ -90,6 +90,68 @@ pub fn script_value_to_json(value: &ScriptValue) -> String {
     }
 }
 
+/// A single value as the text a form-encoded §scxml-C-2 param carries.
+///
+/// The BasicHTTP Event I/O Processor sends each `<param>` as one `name=value`
+/// pair, so the value crosses as *text* and the receiving end hands that text
+/// to `_event.data` — no script engine reads it at either end. That is why
+/// this is neither of the two serializations beside it: [`script_value_to_json`]
+/// would wrap a string in quotes that are not part of it, and an engine
+/// literal (`IScriptEngine::to_script_literal`) would put the sender's
+/// *language* on the wire, so one value would read `nil` from a Lua-backed
+/// sender and `null` from a JavaScript-backed one.
+///
+/// The rendering is ECMAScript's `String(value)` — §scxml-B-1 makes the data
+/// model ECMAScript, so its `ToString` is what a number or a boolean means as
+/// text — with the two amendments C++ `ScriptResultUtils::resultToString`
+/// already made:
+///
+/// - `null` and `undefined` render empty rather than as the words. §scxml-C-1
+///   reads a value that is not there as the empty string, and a param
+///   carrying the four letters `null` could not be told from one carrying
+///   the word.
+/// - a structured value renders as JSON, because a receiver that is not a
+///   script engine has no other reading of it. This is the one arm that
+///   delegates to [`script_value_to_json`].
+///
+/// Two arms are ECMAScript's rather than that helper's, and the difference is
+/// recorded rather than hidden: a non-finite number spells `NaN` / `Infinity`
+/// here where the C++ helper hands the value to an `ostringstream` and gets
+/// `nan` / `inf`, and a DOM crosses as its document text where the C++ helper
+/// would reach its `JSON.stringify` fallback. Both are the ECMAScript answer
+/// (§scxml-B-1) and neither is reached by any fixture in the corpus, so the
+/// C++ side is a debt to align rather than a divergence to copy.
+pub fn script_value_to_wire_string(value: &ScriptValue) -> String {
+    match value {
+        // §scxml-C-1: a value that is not there is the empty string — on the
+        // wire as in a target expression, the same reading C++ gives both.
+        ScriptValue::Null | ScriptValue::Undefined => String::new(),
+        ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+        ScriptValue::Int(i) => i.to_string(),
+        ScriptValue::Double(f) => {
+            if f.is_nan() {
+                "NaN".to_string()
+            } else if f.is_infinite() {
+                if *f > 0.0 { "Infinity" } else { "-Infinity" }.to_string()
+            } else if f.fract() == 0.0 && f.abs() < 1e15 {
+                // ECMAScript `String(5)` is "5". A `.0` tail is the Rust
+                // spelling of the number, not the document's.
+                format!("{}", *f as i64)
+            } else {
+                format!("{}", f)
+            }
+        }
+        // Already text. Quoting it here would deliver characters the document
+        // never wrote, and the trim that used to undo such quotes ate the
+        // ones the value itself carried.
+        ScriptValue::String(s) => s.clone(),
+        // The receiving end reads XML from document text (§scxml-B-2), so a
+        // DOM crosses as that text rather than as a quoted JSON string.
+        ScriptValue::Dom(xml) => xml.clone(),
+        ScriptValue::Array(_) | ScriptValue::Object(_) => script_value_to_json(value),
+    }
+}
+
 /// A `<send>`'s evaluated params, as the JSON `_event.data` is.
 ///
 /// 1:1 port of C++ `EventDataHelper::buildJsonFromTypedParams`. One

@@ -28,7 +28,9 @@
 {% elif param.expr %}
                 try {
                     val v = {{ http_engine }}.evaluateExpr({{ http_sid }}, "{{ param.expr | escape_kotlin }}")
-                    httpParams["{{ param.name | escape_kotlin }}"] = listOf(v?.toString() ?: "")
+                    // W3C SCXML C.2: the param crosses as text. `toString()` is
+                    // the platform's spelling of the value; this is the document's.
+                    httpParams["{{ param.name | escape_kotlin }}"] = listOf(valueToWireString(v))
                 } catch (_: Exception) {
                     httpParams["{{ param.name | escape_kotlin }}"] = listOf("")
                 }
@@ -43,7 +45,7 @@
                 }
                 try {
                     val v = {{ http_engine }}.getVariable({{ http_sid }}, "{{ var_name }}")
-                    httpParams["{{ var_name }}"] = listOf(v?.toString() ?: "")
+                    httpParams["{{ var_name }}"] = listOf(valueToWireString(v))
                 } catch (_: Exception) {
                     raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> namelist entry '{{ var_name }}' failed to evaluate")
                     return@run

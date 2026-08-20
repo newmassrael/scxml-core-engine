@@ -88,11 +88,27 @@ func ToSlice(value interface{}) ([]interface{}, bool) {
 	return nil, false
 }
 
-// ToLuaLiteral converts a script value to its Lua literal representation.
-// §scxml-5.5: Used by donedata/send to produce event data strings.
-func ToLuaLiteral(value interface{}) string {
+// ToWireString renders a value as the text a form-encoded §scxml-C-2 param
+// carries.
+//
+// The BasicHTTP Event I/O Processor sends each <param> as one name=value pair,
+// so the value crosses as *text* and the receiving end hands that text to
+// _event.data — no script engine reads it at either end. That is why this is
+// neither of the two serialisations beside it: [ScriptValueToJSON] would wrap a
+// string in quotes that are not part of it, and an engine literal
+// (IScriptEngine.ToScriptLiteral) would put the sender's *language* on the
+// wire, so one value read `nil` from this backend and `` from the C++ one.
+//
+// The rendering is ECMAScript's String(value) — §scxml-B-1 makes the data model
+// ECMAScript — with the two amendments C++ ScriptResultUtils::resultToString
+// already made: absence renders empty rather than as a word (§scxml-C-1), and a
+// structured value renders as JSON, because a receiver that is not a script
+// engine has no other reading of it.
+func ToWireString(value interface{}) string {
 	if value == nil {
-		return "nil"
+		// §scxml-C-1: a value that is not there is the empty string, on the
+		// wire as in a target expression.
+		return ""
 	}
 	switch v := value.(type) {
 	case bool:
@@ -105,29 +121,28 @@ func ToLuaLiteral(value interface{}) string {
 	case int64:
 		return fmt.Sprintf("%d", v)
 	case float64:
+		if math.IsNaN(v) {
+			return "NaN"
+		}
+		if math.IsInf(v, 1) {
+			return "Infinity"
+		}
+		if math.IsInf(v, -1) {
+			return "-Infinity"
+		}
 		if v == float64(int64(v)) {
-			return fmt.Sprintf("%.1f", v)
+			// ECMAScript String(5) is "5"; a .0 tail is Go's spelling of the
+			// number, not the document's.
+			return fmt.Sprintf("%d", int64(v))
 		}
 		return fmt.Sprintf("%g", v)
 	case string:
-		escaped := strings.ReplaceAll(v, `\`, `\\`)
-		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-		escaped = strings.ReplaceAll(escaped, "\n", `\n`)
-		escaped = strings.ReplaceAll(escaped, "\r", `\r`)
-		escaped = strings.ReplaceAll(escaped, "\t", `\t`)
-		return fmt.Sprintf(`"%s"`, escaped)
-	case []interface{}:
-		items := make([]string, len(v))
-		for i, item := range v {
-			items[i] = ToLuaLiteral(item)
-		}
-		return "{" + strings.Join(items, ", ") + "}"
-	case map[string]interface{}:
-		items := make([]string, 0, len(v))
-		for k, val := range v {
-			items = append(items, fmt.Sprintf(`["%s"] = %s`, k, ToLuaLiteral(val)))
-		}
-		return "{" + strings.Join(items, ", ") + "}"
+		// Already text. Quoting it here would deliver characters the document
+		// never wrote, and the trim that used to undo such quotes ate the ones
+		// the value itself carried.
+		return v
+	case []interface{}, map[string]interface{}:
+		return ScriptValueToJSON(v)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
@@ -140,11 +155,12 @@ func ToLuaLiteral(value interface{}) string {
 // the data model: the reader is another dequeue, often another session, and in
 // a mesh another process running another backend.
 //
-// This is the counterpart of [ToLuaLiteral], and the difference is the point.
-// A Lua literal is *source*: reading it back needs an interpreter for the
-// language the sender happened to be written in. That made `_event.data` mean
-// one thing on a Lua backend and another on a JavaScript one, and made a
-// payload executable at the receiving end. JSON is read by a parser.
+// This is the counterpart of IScriptEngine.ToScriptLiteral, and the difference
+// is the point. An engine literal is *source*: reading it back needs an
+// interpreter for the language the sender happened to be written in. That made
+// `_event.data` mean one thing on a Lua backend and another on a JavaScript
+// one, and made a payload executable at the receiving end. JSON is read by a
+// parser.
 //
 // 1:1 port of the C++ `scriptValueToJson` static in
 // `sce/src/common/EventDataHelper.cpp`. Object keys are sorted: Go map
@@ -431,6 +447,23 @@ type IScriptEngine interface {
 	// Core execution
 	ExecuteScript(sessionID, script string) error
 	EvaluateExpression(sessionID, expr string) (interface{}, error)
+
+	// ToScriptLiteral renders a value as source this engine can evaluate back
+	// — the inverse of EvaluateExpression.
+	//
+	// §scxml-6.4.1 has the parent evaluate an <invoke>'s <param> and namelist
+	// expressions and hand the values to the child, and the child seeds them
+	// by evaluating source. That round trip is the only reason a literal is
+	// spelled at all, and it is why the spelling belongs to the engine: `nil`
+	// versus `null`, `{1, 2}` versus `[1, 2]` are answers about the engine,
+	// not about the value. This was a free function (ToLuaLiteral) on the
+	// runtime package until 2026-08-21, where a value that had never met an
+	// engine already knew Lua.
+	//
+	// Not to be confused with [ToWireString] or [ScriptValueToJSON]: a value
+	// that leaves the process is read by a parser or a human, never by an
+	// engine.
+	ToScriptLiteral(value interface{}) string
 
 	// Variable management
 	SetVariable(sessionID, name string, value interface{}) error

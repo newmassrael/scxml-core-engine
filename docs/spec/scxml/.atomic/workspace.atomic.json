@@ -6433,11 +6433,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
-          "symbol": "ScriptValue",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/done_data.rs",
           "kind": "references"
         },
@@ -6454,11 +6449,6 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "Engine",
           "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/helpers.go",
-          "symbol": "ToLuaLiteral",
-          "kind": "implements"
         },
         {
           "file": "backends/go/runtime/invoke.go",
@@ -9577,6 +9567,16 @@
           "file": "sce-build/src/generator.rs",
           "symbol": "StatechartCodegenOptions",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "IScriptEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "IScriptEngine",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -10119,6 +10119,16 @@
         {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "forge_golden_entries",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "script_value_to_wire_string",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "ToWireString",
           "kind": "references"
         }
       ],
@@ -10798,6 +10808,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/DatamodelRead.kt",
           "symbol": "readJson",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "script_value_to_wire_string",
           "kind": "references"
         }
       ],
@@ -11640,6 +11655,21 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "perform_host_send",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "script_value_to_wire_string",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "ToWireString",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "valueToWireString",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12139,6 +12169,30 @@
         },
         {
           "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "symbol": "script_value_to_wire_string",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/helpers.go",
+          "symbol": "ToWireString",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "valueToWireString",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
+          "symbol": "IScriptEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/wire_value_test.go",
           "kind": "references"
         }
       ],
@@ -14809,6 +14863,36 @@
       "target_kind": "section",
       "target_id": "scxml-B-2-8-1",
       "reason": "a Rust field doc binds to the enclosing struct, which is what the resolver reports"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "ToLuaLiteral deleted 2026-08-21: Lua source syntax moved behind IScriptEngine.ToScriptLiteral, the neutral runtime package no longer spells any engine's grammar"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "ScriptValue::to_lua_literal deleted 2026-08-21: the donedata literal moved behind IScriptEngine::to_script_literal, so the engine-neutral value type no longer carries a section-5.5 citation"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "resolver attributes an interface method's doc comment to the enclosing interface; rebinding to IScriptEngine"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "resolver attributes a trait method's doc comment to the enclosing trait; rebinding to IScriptEngine"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "resolver attributes a trait method's doc comment to the enclosing trait; rebinding to IScriptEngine"
     }
   ],
   "frames": {},

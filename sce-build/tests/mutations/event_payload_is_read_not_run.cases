@@ -78,8 +78,10 @@ edit("backends/rust/runtime/src/helpers/event_data.rs",
 PY
 
 # The serializer, not the assembler: a value that crosses as its Lua spelling
-# is unreadable to a receiver that parses, and `to_lua_literal` is one
-# character away in the same module.
+# is unreadable to a receiver that parses. Until 2026-08-21 the Lua spelling
+# lived one function away in this same module (`ScriptValue::to_lua_literal`);
+# it is behind `IScriptEngine::to_script_literal` now, and the quote below is
+# what restoring it by hand would look like.
 mutation_case "the wire carries Lua literals for its values again" <<'PY'
 edit("backends/rust/runtime/src/helpers/event_data.rs",
      """        ScriptValue::String(s) => format!("\\"{}\\"", escape_json_string(s)),""",
