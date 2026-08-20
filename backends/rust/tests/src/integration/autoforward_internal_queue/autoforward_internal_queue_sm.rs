@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f6c78d9a40e778435f5ba721a7a12bf6721453dde3c80246e5018de3fc670010
-// template-hash: d6df7c5cb569a8142d0ee296b73fd46e2cbd91d66a31cab131337d70b3fd380b
+// template-hash: d65905bc3c6e24a33dd9b7fd50b629650d9728247901fb700182448b8698a851
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -199,8 +199,14 @@ impl AutoforwardInternalQueuePolicy {
             return;
         }
 
-        // W3C SCXML 6.4: Copy-and-clear to prevent iterator invalidation
-        let invokes_to_execute: Vec<_> = self.pending_invokes.drain(..).collect();
+        // W3C SCXML 6.4: Copy-and-clear to prevent iterator invalidation.
+        // `mem::take` rather than `drain(..).collect()`: the two are the same
+        // move, but the drain allocates a second vector to put the elements
+        // back into. clippy 1.98's `drain_collect` says so, and the gate syncs
+        // the toolchain to CI's stable — so a lint that arrives with a new
+        // release turns every generated machine red at once (50 of them,
+        // 2026-08-21), which is why this belongs in the template.
+        let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
             if pending.invoke_id.contains(".inv_watch") {
