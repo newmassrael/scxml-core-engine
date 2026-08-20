@@ -1558,6 +1558,93 @@ impl<P: StatePolicy> Engine<P> {
             .register(processor_type, Box::new(handler));
     }
 
+    /// §scxml-6.4.1: register `handler` as the invoker for
+    /// `processor_type`, so `<invoke type="processor_type">` starts a
+    /// host-run process instead of raising `error.execution`.
+    ///
+    /// The build must also have been told about the type
+    /// (`sce-codegen --host-invoker <type>`): codegen decides at compile
+    /// time whether a site starts an invocation or refuses, and a
+    /// registration alone cannot change emitted code.
+    ///
+    /// The handler receives both halves of the lifecycle —
+    /// [`crate::host_processor::HostInvokeEvent::Start`] when the state
+    /// is entered and the macrostep has settled, `Cancel` when the state
+    /// exits. One registration rather than two because a host that can
+    /// start an invocation and cannot stop it is not a working invoker.
+    ///
+    /// What SCE does NOT route to a host invoker: parent-to-child
+    /// `<send target="#_invokeid">`, `autoforward`, and `<finalize>`.
+    /// Those are session-to-session mechanics between two SCXML
+    /// documents; a host invoker gets its input from the `Start`
+    /// request's `<param>` / `<content>` and answers by raising events on
+    /// the engine. Stated here because the surrounding §scxml-6.4
+    /// machinery exists for SCXML children and silence would read as a
+    /// promise.
+    #[cfg(not(feature = "no_std"))]
+    pub fn register_invoker<F>(&mut self, processor_type: &str, handler: F)
+    where
+        F: FnMut(
+                crate::host_processor::HostInvokeEvent,
+            ) -> Option<crate::host_processor::HostInvokeResponse>
+            + Send
+            + 'static,
+    {
+        self.host_processors
+            .register_invoker(processor_type, Box::new(handler));
+    }
+
+    /// Whether an invoker is registered for `processor_type`.
+    #[cfg(not(feature = "no_std"))]
+    pub fn has_invoker(&self, processor_type: &str) -> bool {
+        self.host_processors.invoker_is_registered(processor_type)
+    }
+
+    /// §scxml-6.4: start a host-run invocation, and raise
+    /// `done.invoke.<invoke_id>` if the host completed it synchronously.
+    ///
+    /// Returns `false` when no invoker is registered, which the generated
+    /// site turns into `error.execution` — the same event an undeclared
+    /// type produces, because the document asked for a process to be run
+    /// and none was.
+    ///
+    /// Called from the generated invoke site, which is why it is public.
+    #[cfg(not(feature = "no_std"))]
+    pub fn perform_host_invoke(
+        &mut self,
+        request: crate::host_processor::HostInvokeRequest,
+    ) -> bool {
+        let invoke_id = request.invoke_id.clone();
+        let Some(response) = self.host_processors.start_invoke(request) else {
+            return false;
+        };
+        // §scxml-6.4: a completion the host reported now. One it reports
+        // later arrives the same way, by raising the event itself — the
+        // engine does not distinguish the two, and it never synthesises a
+        // completion the host did not report.
+        if let Some(done_data) = response.and_then(|r| r.done_data) {
+            let event_name = crate::invoke::create_done_invoke_event_name(&invoke_id);
+            if let Some(evt) = P::get_event_from_name(&event_name) {
+                let mut meta = EventWithMetadata::new(evt);
+                meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
+                meta.metadata.data = done_data;
+                self.external_queue.raise(meta);
+            }
+        }
+        true
+    }
+
+    /// §scxml-6.4: stop a host-run invocation whose state has exited.
+    ///
+    /// Unconditional from the emitted exit chain; the engine knows
+    /// whether the invocation ever started and stays silent when it did
+    /// not. Returns whether a cancel was delivered.
+    #[cfg(not(feature = "no_std"))]
+    pub fn cancel_host_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
+        self.host_processors
+            .cancel_invoke(processor_type, invoke_id)
+    }
+
     /// Whether a handler is registered for `processor_type`.
     ///
     /// The generated send site asks this to tell a processor that ran

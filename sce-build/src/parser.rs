@@ -3229,6 +3229,16 @@ impl SCXMLParser {
                     unresolved: invoke_unresolved,
                 },
                 invoke_type,
+                // Verbatim, not resolved: nothing this platform implements
+                // is being started, so there is no file to find. A host
+                // that RUNS the type is the one that reads it, and what a
+                // src means is that processor's business (§scxml-6.4.1).
+                src: elem.attribute("src").unwrap_or("").to_string(),
+                // Decided after the parse, by the build's `--host-invoker`
+                // declaration: the parser answers what the DOCUMENT says,
+                // and whether this platform can run the type is not in the
+                // document.
+                host_served: false,
             })));
         }
 

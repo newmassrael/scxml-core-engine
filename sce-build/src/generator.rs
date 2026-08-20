@@ -390,16 +390,26 @@ fn reject_host_processors_in_unsupported_lang(
     model: &SCXMLModel,
     language: &'static str,
 ) -> Result<(), GenerateError> {
-    if model.host_processor_types.is_empty() {
+    // Both declarations, one refusal: they lower into the same runtime
+    // registry, so a backend either has one or has neither. Reporting
+    // them separately would have an author drop one flag and meet the
+    // same refusal again for the other.
+    let declared: Vec<&str> = model
+        .host_processor_types
+        .iter()
+        .chain(model.host_invoker_types.iter())
+        .map(String::as_str)
+        .collect();
+    if declared.is_empty() {
         return Ok(());
     }
     Err(GenerateError::UnsupportedFeature(format!(
-        "--host-processor ({}) has no {} codegen path — a host-served \
-         Event I/O Processor needs a runtime registry to dispatch into, \
-         and that is currently Rust-only. Generate this machine for \
-         `--lang rust`, or drop the declaration and let '{}' keep the \
-         W3C SCXML 6.2 error.execution refusal.",
-        model.host_processor_types.join(", "),
+        "--host-processor / --host-invoker ({}) has no {} codegen path — a \
+         host-served Event I/O Processor or invoker needs a runtime registry \
+         to dispatch into, and that is currently Rust-only. Generate this \
+         machine for `--lang rust`, or drop the declaration and let '{}' keep \
+         the W3C SCXML 6.2 error.execution refusal.",
+        declared.join(", "),
         language,
         model.name
     )))
@@ -758,6 +768,13 @@ pub struct StatechartCodegenOptions {
     /// promise a delivery nothing performs, which is the defect this
     /// option exists to remove rather than relocate.
     pub host_processor_types: Vec<String>,
+    /// `<invoke type="...">` values the calling host can run
+    /// (§scxml-6.4.1 leaves the invokable set to the platform). The
+    /// library equivalent of `sce-codegen --host-invoker`.
+    ///
+    /// Separate from [`Self::host_processor_types`] because they are
+    /// separate contracts; see that field. Empty ⇒ unchanged behaviour.
+    pub host_invoker_types: Vec<String>,
 }
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).

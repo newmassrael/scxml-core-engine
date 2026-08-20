@@ -648,8 +648,23 @@ pub fn compile_scxml(scxml_files: &[&str]) {
 /// the send: from the document's side an act nobody performed is one
 /// fact, and reporting it as success is the failure this exists to
 /// prevent.
-pub fn compile_scxml_with_host_processors(scxml_files: &[&str], host_processor_types: &[String]) {
-    compile_scxml_configured(scxml_files, &[], &[], host_processor_types)
+/// Two lists rather than one because they are two contracts: a host that
+/// can deliver an event is not thereby able to run an invoked process
+/// with a lifecycle, and a single list would make declaring either
+/// silently claim both. Pass an empty slice for the surface this build
+/// does not serve.
+pub fn compile_scxml_with_host_processors(
+    scxml_files: &[&str],
+    host_processor_types: &[String],
+    host_invoker_types: &[String],
+) {
+    compile_scxml_configured(
+        scxml_files,
+        &[],
+        &[],
+        host_processor_types,
+        host_invoker_types,
+    )
 }
 
 pub fn compile_scxml_with_derives(
@@ -657,7 +672,13 @@ pub fn compile_scxml_with_derives(
     state_extra_derives: &[String],
     event_extra_derives: &[String],
 ) {
-    compile_scxml_configured(scxml_files, state_extra_derives, event_extra_derives, &[])
+    compile_scxml_configured(
+        scxml_files,
+        state_extra_derives,
+        event_extra_derives,
+        &[],
+        &[],
+    )
 }
 
 /// The one body behind [`compile_scxml`],
@@ -672,6 +693,7 @@ fn compile_scxml_configured(
     state_extra_derives: &[String],
     event_extra_derives: &[String],
     host_processor_types: &[String],
+    host_invoker_types: &[String],
 ) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set (must be called from build.rs)");
     let template_dir = find_template_dir();
@@ -681,6 +703,7 @@ fn compile_scxml_configured(
         state_extra_derives: state_extra_derives.to_vec(),
         event_extra_derives: event_extra_derives.to_vec(),
         host_processor_types: host_processor_types.to_vec(),
+        host_invoker_types: host_invoker_types.to_vec(),
     };
 
     for scxml_path in scxml_files {
@@ -1024,7 +1047,11 @@ fn compile_scxml_lang_typed_mutated(
     // because this is the entry point that has the caller's options —
     // and applied before `mutate` and before any generator arm, so the
     // model every backend renders from already carries the decision.
-    host_processor_analyzer::declare_host_processors(&mut model, &options.host_processor_types);
+    host_processor_analyzer::declare_host_surfaces(
+        &mut model,
+        &options.host_processor_types,
+        &options.host_invoker_types,
+    );
     mutate(&mut model)?;
     if !model.driver_refs.is_empty() {
         match driver_root {

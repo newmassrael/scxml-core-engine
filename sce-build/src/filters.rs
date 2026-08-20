@@ -785,6 +785,60 @@ fn filter_unsupported(value: Value) -> Result<Value, minijinja::Error> {
     filter_invokes_by_kind(value, "Unsupported")
 }
 
+/// Keep the `Invoke::Unsupported` entries the host did NOT declare — the
+/// ones that still lower to a §scxml-6.4.1 `error.execution` and start
+/// nothing.
+///
+/// Paired with [`filter_host_invoker`], and the pair partitions
+/// [`filter_unsupported`] exactly: every `<invoke>` whose type SCE does
+/// not implement is lowered by one arm or the other, so a declaration
+/// cannot leave a site with no lowering at all.
+///
+/// Deliberately a THIRD filter rather than a narrowing of `unsupported`.
+/// That name gates the surrounding invoke machinery in eight places (the
+/// pending-invoke field, the entry chain, the execute method, the exit
+/// chain) and is read by five other backends. Narrowing it would have
+/// made a declaration silently delete the machinery its own dispatch
+/// needs — measured: the first attempt emitted neither arm, because the
+/// method holding them was guarded by the name that had just stopped
+/// matching.
+fn filter_unsupported_refused(value: Value) -> Result<Value, minijinja::Error> {
+    let all = filter_invokes_by_kind(value, "Unsupported")?;
+    keep_invokes_where(all, |item| !invoke_is_host_served(item))
+}
+
+/// Keep only `Invoke::Unsupported` entries the host has DECLARED it can
+/// run (§scxml-6.4.1 leaves the invokable set to the platform).
+///
+/// A backend with no invoker registry never sees an entry here — the
+/// generator refuses the declaration for it by name before rendering.
+fn filter_host_invoker(value: Value) -> Result<Value, minijinja::Error> {
+    let all = filter_invokes_by_kind(value, "Unsupported")?;
+    keep_invokes_where(all, invoke_is_host_served)
+}
+
+/// Does this `<invoke>` entry carry `host_served: true`?
+fn invoke_is_host_served(item: &Value) -> bool {
+    item.get_attr("host_served")
+        .ok()
+        .and_then(|v| v.is_true().then_some(true))
+        .unwrap_or(false)
+}
+
+/// Filter an already-kind-selected invoke list by a predicate.
+fn keep_invokes_where(
+    value: Value,
+    keep: impl Fn(&Value) -> bool,
+) -> Result<Value, minijinja::Error> {
+    let mut out: Vec<Value> = Vec::new();
+    for item in value.try_iter()? {
+        if keep(&item) {
+            out.push(item.clone());
+        }
+    }
+    Ok(Value::from(out))
+}
+
 /// Register the variant-filtering helpers shared by every backend.
 /// Called from each per-language `register_*_filters` function so the same
 /// filter names are available no matter which template engine is rendering.
@@ -894,6 +948,8 @@ pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("scxml_family", filter_scxml_family);
     env.add_filter("mesh_rpc", filter_mesh_rpc);
     env.add_filter("unsupported", filter_unsupported);
+    env.add_filter("unsupported_refused", filter_unsupported_refused);
+    env.add_filter("host_invoker", filter_host_invoker);
     env.add_filter("to_field_suffix", filter_to_field_suffix);
 }
 

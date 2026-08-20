@@ -296,13 +296,45 @@
             }
 {% endfor %}
 {% endif %}
-{% if state.invokes | unsupported %}
-{% for invoke_info in state.invokes | unsupported %}
+{% if state.invokes | unsupported_refused %}
+{% for invoke_info in state.invokes | unsupported_refused %}
             if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> declares a type this processor does not support"));
+                continue;
+            }
+{% endfor %}
+{% endif %}
+{% if state.invokes | host_invoker %}
+{% for invoke_info in state.invokes | host_invoker %}
+            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                let mut host_invoke_params = std::collections::HashMap::<String, Vec<String>>::new();
+{% for param in invoke_info.params %}
+{% if param.is_static_literal %}
+                host_invoke_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+{% endif %}
+{% endfor %}
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "{{ invoke_info.invoke_type | escape_rust }}".to_string(),
+                    invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
+                    src: "{{ invoke_info.src | default('', true) | escape_rust }}".to_string(),
+                    params: host_invoke_params,
+                    content: "{{ invoke_info.content | default('', true) | escape_rust }}".to_string(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> names an invoker the host declared but never registered"));
+                }
                 continue;
             }
 {% endfor %}
