@@ -1487,6 +1487,15 @@ impl SCXMLParser {
         model.script_engine_causes = crate::script_engine_analyzer::analyze(&model);
         model.needs_script_engine = !model.script_engine_causes.is_empty();
 
+        // Beside the script-engine walk and for the same reason: both
+        // answer "what does the host have to supply?", and both are
+        // settled by the parse rather than re-derived downstream. The
+        // per-`<send>` flag this reads was decided at
+        // `parse_send_action`, where the attribute arrives; the invoke
+        // half reads the `Invoke::Unsupported` classification the same
+        // parse produced.
+        model.host_processor_causes = crate::host_processor_analyzer::analyze(&model);
+
         // Compute needs_nonstatic_method
         model.needs_nonstatic_method = model.needs_script_engine
             || model.has_scxml_invoke()
@@ -2382,6 +2391,20 @@ impl SCXMLParser {
         action.targetexpr = elem.attribute("targetexpr").unwrap_or("").to_string();
         action.send_type = elem.attribute("type").unwrap_or("").to_string();
         action.typeexpr = elem.attribute("typeexpr").unwrap_or("").to_string();
+        // Decided where the attribute arrives, so every backend's send
+        // template reads one answer instead of re-deriving it from its
+        // own copy of the accepted set.
+        //
+        // Deliberately says nothing about `typeexpr`: each backend
+        // already decides for itself how a literal `type` and a
+        // `typeexpr` on one element interact, and this flag replaces the
+        // duplicated *set* without moving that boundary. Whether a
+        // `typeexpr` should override a literal `type` (§scxml-6.2.4
+        // calls it the dynamic alternative) is a separate question from
+        // which literals are accepted, and answering it here would
+        // change emitted code under cover of a refactor.
+        action.send_type_unsupported = !action.send_type.is_empty()
+            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);
         action.delay = elem.attribute("delay").unwrap_or("").to_string();
         action.delayexpr = elem.attribute("delayexpr").unwrap_or("").to_string();
         action.delay_ms = parse_delay_to_ms(&action.delay);

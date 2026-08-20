@@ -725,6 +725,12 @@ struct GenerateReport {
     /// `needs_script_engine` because it answers the same kind of
     /// question about the same set.
     needs_event_scheduler: Option<bool>,
+    /// Whether any document in this run names a `<send>` / `<invoke>`
+    /// type the build has no lowering path for. Accumulated as a union
+    /// beside the two flags above because it answers the same kind of
+    /// question about the same set.
+    needs_host_processor: Option<bool>,
+    host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
     rejected: Option<RejectedDocument>,
     /// Descriptive deploy declarations, present only on a `--deploy`
     /// run. `None` for every deploy-unaware invocation, which is what
@@ -763,6 +769,8 @@ fn build_manifest<'a>(
         needs_script_engine: report.needs_script_engine.unwrap_or(false),
         script_engine_causes: &report.script_engine_causes,
         needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
+        needs_host_processor: report.needs_host_processor.unwrap_or(false),
+        host_processor_causes: &report.host_processor_causes,
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
             name: rd.name.clone(),
@@ -2125,22 +2133,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         }),
         ..GenerateReport::default()
     };
-    let mut needs_script_engine = false;
-    let mut needs_event_scheduler = false;
-    for path in &scxml_path_bufs {
-        let Some(facts) = scxml_host_requirement_facts(&path.to_string_lossy()) else {
-            continue;
-        };
-        needs_script_engine |= facts.needs_script_engine;
-        needs_event_scheduler |= facts.needs_event_scheduler;
-        for cause in facts.script_engine_causes {
-            if !report.script_engine_causes.contains(&cause) {
-                report.script_engine_causes.push(cause);
-            }
-        }
-    }
-    report.needs_script_engine = Some(needs_script_engine);
-    report.needs_event_scheduler = Some(needs_event_scheduler);
+    accumulate_host_requirements(&mut report, &scxml_path_bufs);
 
     for (basename, generated) in &outputs {
         for (file_name, code) in &generated.files {
@@ -2493,6 +2486,12 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
             .map(|c| c.to_wire())
             .collect(),
         needs_event_scheduler: model.needs_event_scheduler_driving(),
+        needs_host_processor: !model.host_processor_causes.is_empty(),
+        host_processor_causes: model
+            .host_processor_causes
+            .iter()
+            .map(|c| c.to_wire())
+            .collect(),
     })
 }
 
@@ -2506,6 +2505,48 @@ struct HostRequirements {
     needs_script_engine: bool,
     script_engine_causes: Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
     needs_event_scheduler: bool,
+    needs_host_processor: bool,
+    host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
+}
+
+/// Fold every document's [`HostRequirements`] into `report`.
+///
+/// `orchestrate` and `check` describe the same thing about the same set
+/// — the manifest's flags are the union over the statechart inputs —
+/// and used to spell that fold twice, once per subcommand. Two copies
+/// of a union is two places a newly reported requirement has to be
+/// added, and the one that is missed reports `false` rather than
+/// failing, which no test sees.
+///
+/// A document that does not parse is skipped rather than reported: the
+/// compile pass that follows reads the same files and is what raises the
+/// parse error, with the diagnostic code and exit status the producer
+/// would give.
+fn accumulate_host_requirements(report: &mut GenerateReport, paths: &[PathBuf]) {
+    let mut needs_script_engine = false;
+    let mut needs_event_scheduler = false;
+    let mut needs_host_processor = false;
+    for path in paths {
+        let Some(facts) = scxml_host_requirement_facts(&path.to_string_lossy()) else {
+            continue;
+        };
+        needs_script_engine |= facts.needs_script_engine;
+        needs_event_scheduler |= facts.needs_event_scheduler;
+        needs_host_processor |= facts.needs_host_processor;
+        for cause in facts.script_engine_causes {
+            if !report.script_engine_causes.contains(&cause) {
+                report.script_engine_causes.push(cause);
+            }
+        }
+        for cause in facts.host_processor_causes {
+            if !report.host_processor_causes.contains(&cause) {
+                report.host_processor_causes.push(cause);
+            }
+        }
+    }
+    report.needs_script_engine = Some(needs_script_engine);
+    report.needs_event_scheduler = Some(needs_event_scheduler);
+    report.needs_host_processor = Some(needs_host_processor);
 }
 
 /// `sce-codegen check` over a document set — every verdict
@@ -2569,22 +2610,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         }),
         ..GenerateReport::default()
     };
-    let mut needs_script_engine = false;
-    let mut needs_event_scheduler = false;
-    for path in &scxml_paths {
-        let Some(facts) = scxml_host_requirement_facts(&path.to_string_lossy()) else {
-            continue;
-        };
-        needs_script_engine |= facts.needs_script_engine;
-        needs_event_scheduler |= facts.needs_event_scheduler;
-        for cause in facts.script_engine_causes {
-            if !report.script_engine_causes.contains(&cause) {
-                report.script_engine_causes.push(cause);
-            }
-        }
-    }
-    report.needs_script_engine = Some(needs_script_engine);
-    report.needs_event_scheduler = Some(needs_event_scheduler);
+    accumulate_host_requirements(&mut report, &scxml_paths);
 
     let options = sce_build::ForgeCompileOptions {
         go_module_prefix,
@@ -2860,6 +2886,12 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
             report.script_engine_causes = model
                 .script_engine_causes
+                .iter()
+                .map(|c| c.to_wire())
+                .collect();
+            report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
+            report.host_processor_causes = model
+                .host_processor_causes
                 .iter()
                 .map(|c| c.to_wire())
                 .collect();
@@ -3803,6 +3835,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // The flag and its explanation cannot disagree.
         report.script_engine_causes = model
             .script_engine_causes
+            .iter()
+            .map(|c| c.to_wire())
+            .collect();
+        // Same projection, same reason, for the sibling question: which
+        // `<send>` / `<invoke>` types this build has no path for.
+        report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
+        report.host_processor_causes = model
+            .host_processor_causes
             .iter()
             .map(|c| c.to_wire())
             .collect();

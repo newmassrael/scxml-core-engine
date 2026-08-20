@@ -78,7 +78,7 @@
 {{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
 {{ indent }}if _inv_target is not None and not _inv_target.is_done():
 {{ indent }}    _inv_target.forward_event({{ action.event | py_string_literal }}, EventMetadata(event_type="external"))
-{% elif action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+{% elif action.send_type_unsupported %}
 {# W3C SCXML 6.2 — `<send type="...">` referencing an Event I/O Processor
    the platform does not support raises `error.execution`. The processor
    set is intentionally narrow (default SCXMLEventProcessor + BasicHTTP);
