@@ -78,20 +78,48 @@ enum ReachedFrom {
 /// already produced through the real `compile_scxml` into `OUT_DIR`, so
 /// the consumer's source can use the documented spelling without this
 /// test paying to compile the generator a second time.
-fn write_probe_crate(crate_dir: &Path, artifacts: &Path, deny_warnings: bool) -> PathBuf {
+fn write_probe_crate(
+    crate_dir: &Path,
+    artifacts: &Path,
+    deny_warnings: bool,
+    pkg: &str,
+) -> PathBuf {
     write_probe_crate_reached_from(
         crate_dir,
         artifacts,
         deny_warnings,
         ReachedFrom::LibraryCode,
+        pkg,
     )
 }
 
+/// `pkg` is the probe crate's package name, and it must differ per caller.
+///
+/// Cargo derives a build script's `OUT_DIR` from the package identity, and
+/// every probe here shares one `CARGO_TARGET_DIR` (see `cargo_build_run`, which
+/// shares it deliberately so the runtime is built once). Two probes named the
+/// same package therefore land in ONE `OUT_DIR` — and each probe's `build.rs`
+/// copies its own `_sm.include.rs` there, whose `#[path]` names the tempdir
+/// that probe was generated into. Whichever ran last wins, and the other then
+/// compiles against a shim pointing into a tempdir that has already been
+/// dropped:
+///
+/// ```text
+/// Compiling sce_include_route_probe v0.0.0 (/tmp/.tmpqskBGS/probe)
+/// error: couldn't read `/tmp/.tmp6Ete3k/out/ai_loop_sm.rs`: No such file
+///  --> .../build/sce_include_route_probe-9e306a704447e8c2/out/ai_loop_sm.include.rs:3
+/// ```
+///
+/// That is a push rejection measured 2026-08-21, and it is a race: the same
+/// test passes alone and passes most of the time in the file. Naming the
+/// package after the test that owns it separates the `OUT_DIR`s without giving
+/// up the shared target dir.
 fn write_probe_crate_reached_from(
     crate_dir: &Path,
     artifacts: &Path,
     deny_warnings: bool,
     reached_from: ReachedFrom,
+    pkg: &str,
 ) -> PathBuf {
     let src = crate_dir.join("src");
     fs::create_dir_all(&src).expect("create src");
@@ -161,7 +189,7 @@ fn write_probe_crate_reached_from(
         &manifest,
         format!(
             "[package]\n\
-             name = \"sce_include_route_probe\"\n\
+             name = \"{pkg}\"\n\
              version = \"0.0.0\"\n\
              edition = \"2021\"\n\
              publish = false\n\
@@ -255,7 +283,7 @@ fn the_documented_route_compiles_with_no_edit_and_no_blanket_allow() {
 
     // Promise 1 and 2, together: nothing deleted, nothing blanketed.
     let crate_dir = dir.path().join("probe");
-    let manifest = write_probe_crate(&crate_dir, &artifacts, true);
+    let manifest = write_probe_crate(&crate_dir, &artifacts, true, "sce_include_route_probe_lib");
     let built = cargo_build(&manifest);
     assert!(
         built.status.success(),
@@ -368,8 +396,13 @@ fn the_shim_compiles_when_only_a_test_reaches_the_machine() {
     compile_into(&artifacts);
 
     let crate_dir = dir.path().join("probe");
-    let manifest =
-        write_probe_crate_reached_from(&crate_dir, &artifacts, true, ReachedFrom::TestsOnly);
+    let manifest = write_probe_crate_reached_from(
+        &crate_dir,
+        &artifacts,
+        true,
+        ReachedFrom::TestsOnly,
+        "sce_include_route_probe_tests_only",
+    );
     let built = cargo_build(&manifest);
     assert!(
         built.status.success(),
