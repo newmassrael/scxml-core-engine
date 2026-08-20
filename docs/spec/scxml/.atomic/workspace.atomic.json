@@ -1945,6 +1945,21 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setEventRaiser",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "engineElapsedMs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "initialize",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "tick",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7817,6 +7832,11 @@
         {
           "file": "sce-build/src/generator.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "advanceTimeMs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7876,6 +7896,21 @@
           "file": "sce/src/parsing/ActionParser.cpp",
           "symbol": "SCE::ActionParser::parseActionNode",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SceClock.kt",
+          "symbol": "SceClock",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "clock",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "beginTurn",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9212,6 +9247,16 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "perform_host_invoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/SceClock.kt",
+          "symbol": "ManualClock",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "advanceTimeMs",
           "kind": "references"
         }
       ],

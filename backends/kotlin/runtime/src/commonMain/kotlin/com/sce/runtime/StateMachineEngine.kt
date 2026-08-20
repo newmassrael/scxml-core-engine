@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlin.time.TimeSource
 
 // Process-wide counter for scriptSessionId allocation. Using hashCode() here
 // would collide across instances (32-bit identity hash has no uniqueness
@@ -387,8 +386,89 @@ abstract class StateMachineEngine<S : State, E : Event>(
     // --- Sync Execution (C++ AOT StaticExecutionEngine pattern) ---
 
     private var syncMode = false
-    private val engineCreationMark = TimeSource.Monotonic.markNow()
-    private fun engineElapsedMs(): Long = engineCreationMark.elapsedNow().inWholeMilliseconds
+
+    /**
+     * The [SceClock] this engine judges `<send delay>` deadlines against —
+     * §scxml-6.2.2's "how long the processor should wait before dispatching".
+     *
+     * Defaults to [MonotonicClock], which is the wall clock and what a
+     * production host wants. Install a [ManualClock] instead to own time
+     * outright — a simulation, a replay, a discrete-event scheduler and a
+     * deterministic test all need the engine to advance only when they say so
+     * — and then drive the machine with [advanceTimeMs].
+     *
+     * Must be installed before [initialize]: the entry configuration's
+     * `<onentry>` can arm delayed sends, and swapping the clock under deadlines
+     * already computed from another one would leave the queue holding two
+     * incomparable time bases.
+     */
+    var clock: SceClock = MonotonicClock()
+        set(value) {
+            check(!syncMode) {
+                "the clock must be installed before initialize(): this engine has " +
+                    "already armed its entry configuration against the previous one, " +
+                    "and deadlines from two clocks do not compare"
+            }
+            field = value
+        }
+
+    /**
+     * The reading [clock] gave when the current turn began, or `null` between
+     * turns. See [beginTurn].
+     */
+    private var turnNowMs: Long? = null
+
+    /**
+     * §scxml-3.13: what time it is, for everything this turn arms or judges.
+     *
+     * The clause executes a microstep's executable content as one unit, and a
+     * macrostep as a chain of those, so "now" is a property of the turn the
+     * engine is in rather than of the statement asking. Between turns there is
+     * no turn to be a property of, and the host's queries
+     * ([timeUntilNextScheduledMs], [nowMs]) read the clock live.
+     */
+    private fun engineElapsedMs(): Long = turnNowMs ?: clock.elapsedMs()
+
+    /**
+     * Open a turn: take the single [clock] reading everything inside it uses.
+     *
+     * Returns whether this call is the one that opened it, which [endTurn]
+     * needs so a nested entry point does not close the outer turn early.
+     *
+     * §scxml-6.2.2 makes a delay the wait the DOCUMENT asks for — "how long
+     * the processor should wait before dispatching the message". Time the host
+     * spent descheduled between two statements of one microstep is not part of
+     * any delay the document wrote, so it must not reach the deadline.
+     *
+     * Reading the clock per statement instead was two defects at once, both
+     * measured on this backend 2026-08-20:
+     *
+     * - Two `<send delay>`s executed by one `<onentry>` took a reading each,
+     *   so a host descheduled between them by more than the gap between their
+     *   delays got the later send's deadline first — and the engine then
+     *   dispatched, and the document's `<cancel>` arrived after the event it
+     *   named. Which of two events the author ordered arrives first became a
+     *   fact about the host's scheduler.
+     * - The dispatch loop in [tick] re-read it on every pass, so a tick slow
+     *   enough to cross the next deadline dispatched that entry too, then the
+     *   one after it — the engine chasing deadlines its own slowness created,
+     *   in a loop the host cannot get between.
+     *
+     * Neither is reachable from a clock that is read once per turn. The
+     * virtual-clock backends never had either, which is why no fixture found
+     * them: a clock that only moves when the host moves it cannot move between
+     * two readings taken inside one turn.
+     */
+    private fun beginTurn(): Boolean {
+        if (turnNowMs != null) return false
+        turnNowMs = clock.elapsedMs()
+        return true
+    }
+
+    /** Close a turn opened by [beginTurn]. */
+    private fun endTurn(opened: Boolean) {
+        if (opened) turnNowMs = null
+    }
 
     private data class ScheduledSendEntry(
         val fireTimeMs: Long,
@@ -887,17 +967,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun initialize() {
         syncMode = true
-        enterInitialConfiguration()
-        _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-            ?: resolveLeafState(_currentState.value)
-        flushPendingFinalState()
+        // §scxml-3.13: entering the initial configuration is one turn, and the
+        // `<onentry>` handlers it runs arm their `<send delay>`s against one
+        // instant — see [beginTurn] for what reading the clock per `<send>`
+        // did to two of them.
+        val opened = beginTurn()
+        try {
+            enterInitialConfiguration()
+            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
+                ?: resolveLeafState(_currentState.value)
+            flushPendingFinalState()
 
-        // W3C SCXML Appendix D: hand over to the outer loop. The macrostep
-        // completes on eventless transitions and internal events, then the
-        // invokes for the states just entered run, and only then is anything
-        // taken off the external queue — so an autoforward child is live for
-        // every event onentry queued on the way in.
-        runMainEventLoop()
+            // W3C SCXML Appendix D: hand over to the outer loop. The macrostep
+            // completes on eventless transitions and internal events, then the
+            // invokes for the states just entered run, and only then is anything
+            // taken off the external queue — so an autoforward child is live for
+            // every event onentry queued on the way in.
+            runMainEventLoop()
+        } finally {
+            endTurn(opened)
+        }
     }
 
     /**
@@ -906,28 +995,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun tick() {
         if (isInFinalState) return
-        // §scxml-6.2: dispatch the due sends one macrostep apart rather than
-        // queueing them together. `<cancel>` drops a send that has not been
-        // delivered yet, and a host that ticked late holds several past their
-        // fire times: queueing them all first makes every later one
-        // undroppable before the earlier one's transitions have run. That is
-        // how a settle timer — arm a long `<send delay>`, cancel it when the
-        // short signal arrives first — delivers the event it was told to
-        // cancel (measured 2026-08-19 on the Rust, Go and Python backends,
-        // whose scheduler this one mirrors).
-        while (promoteNextDueSend()) {
-            runMainEventLoop()
-            if (isInFinalState) {
-                cleanupCompletedInvokes()
-                return
+        // §scxml-3.13: one turn, one reading. Everything below judges due
+        // against the instant this tick began, and everything the macrosteps
+        // below arm is measured from it — so a tick dispatches what was due
+        // when the host called it, and cannot be extended by how long it
+        // takes to run (see [beginTurn]).
+        val opened = beginTurn()
+        try {
+            // §scxml-6.2: dispatch the due sends one macrostep apart rather than
+            // queueing them together. `<cancel>` drops a send that has not been
+            // delivered yet, and a host that ticked late holds several past their
+            // fire times: queueing them all first makes every later one
+            // undroppable before the earlier one's transitions have run. That is
+            // how a settle timer — arm a long `<send delay>`, cancel it when the
+            // short signal arrives first — delivers the event it was told to
+            // cancel (measured 2026-08-19 on the Rust, Go and Python backends,
+            // whose scheduler this one mirrors).
+            while (promoteNextDueSend()) {
+                runMainEventLoop()
+                if (isInFinalState) {
+                    cleanupCompletedInvokes()
+                    return
+                }
             }
+            pollScheduledHttpSends()
+            tickChildren()
+            // §scxml-6.4's invokes are part of the main event loop and run
+            // there, ahead of the external dequeue rather than after it.
+            runMainEventLoop()
+            cleanupCompletedInvokes()
+        } finally {
+            endTurn(opened)
         }
-        pollScheduledHttpSends()
-        tickChildren()
-        // §scxml-6.4's invokes are part of the main event loop and run
-        // there, ahead of the external dequeue rather than after it.
-        runMainEventLoop()
-        cleanupCompletedInvokes()
     }
 
     /**
@@ -957,6 +1056,50 @@ abstract class StateMachineEngine<S : State, E : Event>(
             } ?: return null
         return maxOf(0L, next - engineElapsedMs())
     }
+
+    /**
+     * Move this engine's clock forward by [ms] and run whatever that made due
+     * (§scxml-6.2).
+     *
+     * The host-owned twin of [tick]: `tick` asks a clock that moves on its own
+     * what time it is, this one *sets* what time it is and then ticks. A
+     * machine driven exclusively through here has no dependency on the load of
+     * the machine it runs on — the same sequence of calls produces the same
+     * configuration every time.
+     *
+     * Requires a [ManualClock] in [clock], because that is the only kind of
+     * clock a host can move. Calling it against the default [MonotonicClock]
+     * is a programming error, not a no-op: it means the caller believes it owns
+     * time and it does not, and the events it is waiting for will arrive on a
+     * schedule it did not choose.
+     *
+     * An invoked child shares its parent's clock instance, so one call moves
+     * parent and child together and both read the same absolute time
+     * (§scxml-6.4).
+     */
+    fun advanceTimeMs(ms: Long) {
+        require(ms >= 0L) { "advanceTimeMs requires a non-negative delta: $ms" }
+        val manual = clock as? ManualClock
+            ?: error(
+                "advanceTimeMs needs a ManualClock in `clock`; this engine has a " +
+                    "${clock::class.simpleName}, whose time the host does not own. " +
+                    "Install a ManualClock before initialize(), or drive this machine " +
+                    "with tick() and timeUntilNextScheduledMs()"
+            )
+        manual.advance(ms)
+        tick()
+    }
+
+    /**
+     * This engine's current reading of [clock], in milliseconds since the
+     * clock's origin.
+     *
+     * The absolute counterpart of [timeUntilNextScheduledMs]'s relative answer.
+     * A host owning time through [ManualClock] uses it to say where in the run
+     * it is; a host on the wall clock uses it to correlate an engine's
+     * deadlines with its own log.
+     */
+    fun nowMs(): Long = engineElapsedMs()
 
     /**
      * §scxml-3.1.2: how many events this engine took off the external queue
@@ -1659,6 +1802,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
             } else null
 
+            // §scxml-6.4: the child's delayed sends are measured against the
+            // same clock as ours. A child that read its own would start its
+            // origin at construction time, so `<send delay="100ms">` on either
+            // side of the boundary would mean two different absolute instants —
+            // and on a host-owned clock the child would not move at all,
+            // because the host advances the engine it holds, not the ones that
+            // engine invoked.
+            child.clock = clock
             child.initialize()
             activeInvokes[invokeId] = InvokeEntry(child, Job(), autoforward, finalizeScript, onComplete)
 
