@@ -1773,16 +1773,15 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             if (eventRaiser_) {
                 SCE_LOG_DEBUG("W3C SCXML: Starting macrostep loop after transition");
 
-                // The chain the clause describes may
-                // have no end, and this is where this engine declines to walk
-                // one forever. The refusal is recorded, not merely logged —
-                // see `Statistics::truncatedMacrosteps`.
-                int iterations = 0;
+                // The chain the clause describes may have no end. The budget
+                // lives on `checkEventlessTransitions` itself, and is a member
+                // rather than a loop counter because the chain is recursive, so
+                // this loop ends either at a stable configuration or at the
+                // ceiling — and `truncatedMacrosteps` says which.
 
                 while (true) {
                     // W3C SCXML: Check for eventless transitions on all active states
                     bool eventlessTransitionExecuted = checkEventlessTransitions();
-                    ++iterations;
 
                     if (eventlessTransitionExecuted) {
                         SCE_LOG_DEBUG("W3C SCXML: Eventless transition executed, continuing macrostep");
