@@ -659,6 +659,7 @@ bool EventRaiserImpl::processNextQueuedEvent() {
     // One `<send>` inside a targetless transition was enough to reprocess a
     // single event hundreds of times while the event it raised never ran.
     QueuedEvent eventToProcess{"", "", EventPriority::EXTERNAL};
+    bool isInternal = false;
 
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
@@ -671,18 +672,38 @@ bool EventRaiserImpl::processNextQueuedEvent() {
         // §scxml-3.13: an internal event is a microstep of the macrostep now
         // in progress, and this one may have none left. Asked before the pop,
         // so the refusal leaves the event queued. See `MicrostepBudget`.
-        if (synchronousQueue_.top().priority == EventPriority::INTERNAL) {
-            // Copied out and re-read below: the gate runs without this lock,
-            // because the machine that owns the budget may reach back in.
-            eventToProcess = synchronousQueue_.top();
-        } else {
+        isInternal = synchronousQueue_.top().priority == EventPriority::INTERNAL;
+
+        // Copied out and re-read below for the internal case: the budget gate
+        // runs without this lock, because the machine that owns the budget may
+        // reach back in.
+        eventToProcess = synchronousQueue_.top();
+        if (!isInternal) {
             // W3C SCXML compliance: Get highest priority event (INTERNAL before EXTERNAL)
-            eventToProcess = synchronousQueue_.top();
             synchronousQueue_.pop();
             SCE_LOG_DEBUG("EventRaiserImpl: Dequeued EXTERNAL event '{}' - {} events left in queue",
                           eventToProcess.eventName, synchronousQueue_.size());
-            return executeEventCallback(eventToProcess);
         }
+    }
+
+    // Dispatch happens with the queue lock RELEASED, on both paths.
+    //
+    // The callback runs the state machine, and a transition it selects can
+    // reach straight back into this object: exiting a state cancels that
+    // state's `<invoke>`, and cancelling an invoke calls
+    // `cancelEventsForSession`, which takes this same mutex. `std::mutex` is
+    // not recursive, so dispatching while holding it deadlocked the calling
+    // thread against itself — every thread parked in `futex_wait`, no
+    // progress, no diagnostic. Measured on
+    // `DonedataLocalInvokeTest.ParentObservesDonedataOnDoneInvoke`, whose
+    // `done.invoke.inv_param` arrives as an EXTERNAL event and whose
+    // transition exits the state that owns the invoke.
+    //
+    // The internal path below already dispatched outside the lock; this is the
+    // external one saying the same thing rather than a second arrangement of
+    // it.
+    if (!isInternal) {
+        return executeEventCallback(eventToProcess);
     }
 
     if (!mayTakeMicrostep()) {
