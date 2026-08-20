@@ -470,6 +470,36 @@ driver measuring its own probe instead of the engine.
 It owns only the error a handler answers with the same failure forever: no
 delayed `<send>`, no `<invoke>`, no `<parallel>`.
 
+`eventless_macrostep_is_bounded` asks the same question of a chain built from
+transitions that need no event at all. W3C SCXML 3.13 defines a macrostep as a
+chain of microsteps ending in a configuration where nothing is enabled by NULL,
+and Appendix D's Principles and Constraints then say that end need not exist:
+*"A microstep always terminates. A macrostep may not. ... This is currently
+allowed."* A document with a cyclic eventless transition is therefore
+conformant, and an engine that runs it to the letter never returns — so a
+ceiling is the engine declining a document the specification permits, which is
+why the decline is published rather than logged.
+
+Measured 2026-08-20, the seven engines answered it three ways: the Python
+engine had no ceiling and did not return from `initialize()`; the C++ AOT
+engine called `stop()`, so the same document came back dead there and merely
+paused elsewhere; the other five stopped the chain and said nothing a program
+could read. `truncated_macrosteps` and `last_truncated_macrostep_state` are the
+seven-channel surface that separates a machine resting in a stable
+configuration from one this engine stopped walking.
+
+Four outcomes, and the second is what makes the count mean something — `poke`
+(one ordinary transition), `bounded` (a chain that stops by itself after
+exactly a hundred microsteps, which is where an off-by-one lands: two engines
+reported it as a runaway), `spin` (a chain that cannot stop) and `reset` (the
+way back out, so a driver can run the chain twice). `reset` is a
+state-changing transition on purpose: the two C++ engines complete a macrostep
+only after a transition that moves the machine, so a targetless one would leave
+the eventless chain unvisited on those two channels alone.
+
+It owns only the macrostep that cannot end: no `<send>`, no `<invoke>`, no
+`<parallel>`, and no failing expression.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the
