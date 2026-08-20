@@ -805,6 +805,30 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `StaticExecutionEngine::step()`. Used by parent SMs to
     /// explicitly drive children after sending them events (§scxml-6.4).
+    ///
+    /// # Which of `step` and [`tick`](Self::tick) to call
+    ///
+    /// Do not guess, and do not read it off the document: the generator
+    /// decided while compiling and says so in two places, both derived
+    /// from the same answer.
+    ///
+    /// - `StatePolicy::NEEDS_EVENT_SCHEDULER` on the generated policy —
+    ///   `false` means this method is enough, `true` means [`tick`](Self::tick).
+    /// - `needs_event_scheduler` on the `sce-codegen` stdout manifest,
+    ///   for a build system deciding without compiling the machine first.
+    ///
+    /// Both queues are drained here, delayed sends are not: `step` never
+    /// consults the scheduler and never ticks an invoked child. A machine
+    /// that needs either and is driven by `step` alone loses those events
+    /// — so this method logs an error the first time it is called on one,
+    /// rather than letting the loss be silent.
+    ///
+    /// An *undelayed* `<send>`, whatever its target, is an ordinary
+    /// external event and arrives here. Written out because the reverse
+    /// was reported in 2026-08 by a consumer whose real problem was an
+    /// aborted `<onentry>` block: an error in executable content abandons
+    /// the actions after it (§scxml-4.2), so a `<send>` written below a
+    /// failing one never runs, and no amount of `tick` recovers it.
     pub fn step(&mut self) {
         // A machine with delayed sends hands `step` a queue it cannot reach:
         // `run_main_event_loop` never consults the scheduler, so the event is
@@ -835,6 +859,14 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `StaticExecutionEngine::tick()`. Called periodically by
     /// callers that have delayed `<send>` operations.
+    ///
+    /// A superset of [`step`](Self::step): it drains the delayed-send
+    /// scheduler and ticks invoked child sessions, then runs the same
+    /// macrostep. Calling it on a machine that needs neither is correct
+    /// and merely does two lookups that find nothing — which is why the
+    /// generated `NEEDS_EVENT_SCHEDULER` constant is worth reading rather
+    /// than defaulting either way. See [`step`](Self::step) for where the
+    /// answer is published.
     pub fn tick(&mut self) {
         // Recorded before the running check: a host that calls `tick` owns a
         // clock whatever the engine's lifecycle says, and the count exists to

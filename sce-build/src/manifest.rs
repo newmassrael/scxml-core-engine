@@ -21,6 +21,29 @@ use crate::script_engine_analyzer::ScriptEngineCauseRecord;
 /// (`SCE_ERROR_CONTRACT.md` §8). Additive field growth does not bump it.
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 
+/// The language a machine's expressions are actually evaluated in.
+///
+/// A document declares `datamodel="ecmascript"`, and a consumer
+/// reasonably reads that attribute as the answer. It is not. SCE ships no
+/// ECMAScript engine: `sce-build/src/ecmascript/` parses the expression
+/// at generation time and emits **Lua**, which the injected
+/// `IScriptEngine` evaluates (`docs/SCE_ACCEPTED_SUBSET.md` §B.2, "What
+/// `ecmascript` currently means").
+///
+/// Reported on the manifest because that gap cost a downstream consumer a
+/// round in 2026-08: their guards were ECMAScript source, they worked, and
+/// nothing on any surface said which language would run them — so the
+/// consumer had to probe an expression before daring to write it. The
+/// prose has said this for a while; what was missing was a place a
+/// program reads.
+///
+/// Not per-backend: the lowering happens in `sce-build`, before any
+/// backend renders, so every language's generated machine evaluates the
+/// same Lua. Which Lua differs (`docs/SCE_ACCEPTED_SUBSET.md` records the
+/// go-lua standard-library divergence), and that is a separate question
+/// from which language the source was translated into.
+pub const SCRIPT_ENGINE_LANGUAGE: &str = "lua";
+
 /// Stability status of the manifest wire surface.
 ///
 /// Pinned to the `x-sce-schema-status` header of
@@ -172,6 +195,18 @@ pub struct Manifest<'a> {
     /// Omitted (not `[]`) on a pure-static machine.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub script_engine_causes: &'a [ScriptEngineCauseRecord],
+    /// Which language the engine this machine needs must evaluate —
+    /// [`SCRIPT_ENGINE_LANGUAGE`]. Present exactly when
+    /// [`Self::needs_script_engine`] is true; there is no engine to
+    /// describe otherwise.
+    ///
+    /// `needs_script_engine` says a host must supply an engine. This says
+    /// what kind. A consumer reading only the flag, and the document's
+    /// `datamodel="ecmascript"`, would supply the wrong one — see
+    /// [`SCRIPT_ENGINE_LANGUAGE`] for why that reading is wrong and what
+    /// it cost.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script_engine_language: Option<&'static str>,
     /// Which driving entry point the emitted machine requires of its
     /// host: `true` means `Engine::tick()`, `false` means `step()` is
     /// enough.
@@ -425,6 +460,7 @@ mod tests {
             }],
             needs_script_engine: false,
             script_engine_causes: &[],
+            script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
@@ -448,6 +484,7 @@ mod tests {
             }],
             needs_script_engine: false,
             script_engine_causes: &[],
+            script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
@@ -474,6 +511,7 @@ mod tests {
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
+            script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
@@ -524,6 +562,7 @@ mod tests {
             }],
             needs_script_engine: false,
             script_engine_causes: &[],
+            script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: true,
             host_processor_causes: &causes,
@@ -547,6 +586,66 @@ mod tests {
         assert!(line.contains("\"needs_host_processor\":true"), "{line}");
     }
 
+    /// The one question `needs_script_engine` does not answer: a host
+    /// told it must supply an engine still has to know what kind, and
+    /// `datamodel="ecmascript"` is the wrong place to read it.
+    #[test]
+    fn a_machine_needing_an_engine_names_the_language_it_evaluates() {
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            artifacts: Vec::new(),
+            needs_script_engine: true,
+            script_engine_causes: &[],
+            script_engine_language: Some(SCRIPT_ENGINE_LANGUAGE),
+            needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
+            host_processor_types: &[],
+            host_invoker_types: &[],
+            rejected: None,
+            deploy: None,
+            languages: None,
+        };
+        let line = m.to_line();
+        assert_valid(&line);
+        assert!(
+            line.contains("\"script_engine_language\":\"lua\""),
+            "{line}"
+        );
+        // Not ECMAScript, however the document spells its datamodel. The
+        // assertion is on the value and not merely on the key's presence,
+        // because a key naming the wrong language is worse than no key.
+        assert_ne!(SCRIPT_ENGINE_LANGUAGE, "ecmascript");
+    }
+
+    /// A pure-static machine has no engine to describe, so naming one
+    /// would be an answer to a question that was not asked.
+    #[test]
+    fn a_pure_static_machine_names_no_engine_language() {
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            artifacts: Vec::new(),
+            needs_script_engine: false,
+            script_engine_causes: &[],
+            script_engine_language: None,
+            needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
+            host_processor_types: &[],
+            host_invoker_types: &[],
+            rejected: None,
+            deploy: None,
+            languages: None,
+        };
+        let line = m.to_line();
+        assert_valid(&line);
+        assert!(!line.contains("script_engine_language"), "{line}");
+    }
+
     /// The flag is required, in the same family and for the same reason
     /// as its two siblings: a consumer gating on "this build has a path
     /// for every type the document names" must be able to tell `false`
@@ -560,6 +659,7 @@ mod tests {
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
+            script_engine_language: None,
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
@@ -590,6 +690,7 @@ mod tests {
             artifacts: Vec::new(),
             needs_script_engine: false,
             script_engine_causes: &[],
+            script_engine_language: None,
             needs_event_scheduler: false,
             // A declared type is served, so it is NOT a cause — the two
             // fields are the two halves of one answer and a record that
