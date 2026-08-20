@@ -3698,6 +3698,11 @@
           "file": "sce/src/actions/RaiseAction.cpp",
           "symbol": "RaiseAction::execute",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "step",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
