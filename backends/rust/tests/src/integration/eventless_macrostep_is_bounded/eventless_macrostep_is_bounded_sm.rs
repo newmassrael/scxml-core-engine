@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: db542f426fb8de2d0c1ec86e09f39eb0aa25ac64b30a3201346cedc77cf702e9
-// template-hash: 90ac0b7250dd34a7e14136bc481cc93d6f1302dcf207c461738cfaee4b475c98
+// source-hash: 448efc1945f51a00d346a070a50c9e40a8fdb0d3297033414fa43984fe293f6e
+// template-hash: f12fb4f06830f621596e812b2a7ac67af9c6e2f2d7dcc6b30ecafd508e9d2327
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine"]
-// SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+#![doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine"]
+// SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -692,8 +692,8 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine"]
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine"]
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -707,8 +707,8 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine"]
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine"]
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -718,8 +718,8 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine"]
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine"]
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -774,8 +774,8 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine"]
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    #[doc = "SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine"]
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;
@@ -786,7 +786,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
             EventlessMacrostepIsBoundedState::BoundedA => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:77 :: bounded_a :: _transition_0
+                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:85 :: bounded_a :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -814,7 +814,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:82 :: bounded_a :: _transition_1
+                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -847,7 +847,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
             EventlessMacrostepIsBoundedState::Idle => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:64 :: idle :: _transition_0
+                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:72 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -880,7 +880,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
             EventlessMacrostepIsBoundedState::SpinA => {
                 match self.last_transition_index {
                     0 => {
-                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:97 :: spin_a :: _transition_0
+                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:105 :: spin_a :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -908,7 +908,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:100 :: spin_a :: _transition_1
+                        // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -983,7 +983,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 }
                 // W3C SCXML 3.13: Eventless transitions
                 if event == EventlessMacrostepIsBoundedEvent::Null {
-                    if self.safe_evaluate_guard("(laps < 50)", engine) {
+                    if self.safe_evaluate_guard("(laps < 500)", engine) {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
                         self.last_transition_index = 0;

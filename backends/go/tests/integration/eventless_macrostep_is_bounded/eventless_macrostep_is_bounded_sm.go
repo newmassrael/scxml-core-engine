@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: db542f426fb8de2d0c1ec86e09f39eb0aa25ac64b30a3201346cedc77cf702e9
-// template-hash: 90ac0b7250dd34a7e14136bc481cc93d6f1302dcf207c461738cfaee4b475c98
+// source-hash: 448efc1945f51a00d346a070a50c9e40a8fdb0d3297033414fa43984fe293f6e
+// template-hash: f12fb4f06830f621596e812b2a7ac67af9c6e2f2d7dcc6b30ecafd508e9d2327
 // generated-at: 0
 
 
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+// SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
 
 package eventless_macrostep_is_bounded
 
@@ -582,7 +582,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ClearEventMetadata() {
 
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
-//line eventless_macrostep_is_bounded.scxml:46
+//line eventless_macrostep_is_bounded.scxml:53
 func (p *EventlessMacrostepIsBoundedPolicy) ExecuteEntryActions(state EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], pathChild *EventlessMacrostepIsBoundedState) {
 	// Only a `<parallel>` machine descends into defaults here, so a machine
 	// without one has nothing to tell an ancestor entry from a target entry.
@@ -595,7 +595,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteEntryActions(state EventlessM
 }
 
 // ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
-//line eventless_macrostep_is_bounded.scxml:46
+//line eventless_macrostep_is_bounded.scxml:53
 func (p *EventlessMacrostepIsBoundedPolicy) ExecuteExitActions(state EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], preTransitionActive []EventlessMacrostepIsBoundedState) {
 	p.ensureScriptEngine()
 	switch state {
@@ -606,7 +606,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteExitActions(state EventlessMa
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
-//line eventless_macrostep_is_bounded.scxml:46
+//line eventless_macrostep_is_bounded.scxml:53
 func (p *EventlessMacrostepIsBoundedPolicy) ProcessTransition(currentState *EventlessMacrostepIsBoundedState, event EventlessMacrostepIsBoundedEvent, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) bool {
 	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
 	if event != EventlessMacrostepIsBoundedEventNull {
@@ -624,13 +624,13 @@ func (p *EventlessMacrostepIsBoundedPolicy) ProcessTransition(currentState *Even
 
 
 // tryTransitionInState checks transitions for a single state.
-//line eventless_macrostep_is_bounded.scxml:46
+//line eventless_macrostep_is_bounded.scxml:53
 func (p *EventlessMacrostepIsBoundedPolicy) tryTransitionInState(checkState EventlessMacrostepIsBoundedState, event EventlessMacrostepIsBoundedEvent, currentState *EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) bool {
 	switch checkState {
 	case EventlessMacrostepIsBoundedStateBoundedA:
 		// Eventless transition 0
 		if event == EventlessMacrostepIsBoundedEventNull {
-			if p.evaluateGuard(`(laps < 50)`, engine) {
+			if p.evaluateGuard(`(laps < 500)`, engine) {
 			*currentState = EventlessMacrostepIsBoundedStateBoundedB
 			p.lastTransitionIsInternal = false
 			p.lastTransitionIsTargetless = false
@@ -747,7 +747,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) tryTransitionInState(checkState Even
 }
 
 // ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line eventless_macrostep_is_bounded.scxml:46
+//line eventless_macrostep_is_bounded.scxml:53
 func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {
 	p.ensureScriptEngine()
 	if !p.hasTransitionActions {
@@ -756,7 +756,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce
 	source := p.lastTransitionSourceState
 	idx := p.lastTransitionIndex
 	if source == EventlessMacrostepIsBoundedStateBoundedA && idx == 0 {
-		//line eventless_macrostep_is_bounded.scxml:77
+		//line eventless_macrostep_is_bounded.scxml:85
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
@@ -766,7 +766,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce
 		return
 	}
 	if source == EventlessMacrostepIsBoundedStateBoundedA && idx == 1 {
-		//line eventless_macrostep_is_bounded.scxml:82
+		//line eventless_macrostep_is_bounded.scxml:90
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -776,7 +776,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce
 		return
 	}
 	if source == EventlessMacrostepIsBoundedStateIdle && idx == 0 {
-		//line eventless_macrostep_is_bounded.scxml:64
+		//line eventless_macrostep_is_bounded.scxml:72
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
@@ -786,7 +786,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce
 		return
 	}
 	if source == EventlessMacrostepIsBoundedStateSpinA && idx == 0 {
-		//line eventless_macrostep_is_bounded.scxml:97
+		//line eventless_macrostep_is_bounded.scxml:105
 
 	// W3C SCXML 5.3: <assign location="spins" expr="spins + 1">
 	if err := p.assignVariable(`spins`, `_scxml_add(spins, 1)`); err != nil {
@@ -796,7 +796,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce
 		return
 	}
 	if source == EventlessMacrostepIsBoundedStateSpinA && idx == 1 {
-		//line eventless_macrostep_is_bounded.scxml:100
+		//line eventless_macrostep_is_bounded.scxml:108
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
