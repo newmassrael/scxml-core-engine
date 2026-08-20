@@ -55,6 +55,21 @@ fn repo_root() -> PathBuf {
 const FIXTURE: &str = "examples/ai_loop/ai_loop.scxml";
 const STEM: &str = "ai_loop";
 
+/// Who in the consumer crate names the machine.
+///
+/// The distinction is not cosmetic: a `pub use` inside a private module is
+/// unreachable from outside the crate, so whether `unused_imports` fires on
+/// the shim's re-export depends entirely on this. A consumer whose library
+/// only *hosts* the machine and drives it from tests — which is the shape a
+/// plugin crate has — is the one that found the gap.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReachedFrom {
+    /// The library names an item through the re-export.
+    LibraryCode,
+    /// Only a `#[cfg(test)]` module does.
+    TestsOnly,
+}
+
 /// Write the probe crate and return its manifest path.
 ///
 /// One dependency, on purpose — the same discipline
@@ -64,6 +79,20 @@ const STEM: &str = "ai_loop";
 /// the consumer's source can use the documented spelling without this
 /// test paying to compile the generator a second time.
 fn write_probe_crate(crate_dir: &Path, artifacts: &Path, deny_warnings: bool) -> PathBuf {
+    write_probe_crate_reached_from(
+        crate_dir,
+        artifacts,
+        deny_warnings,
+        ReachedFrom::LibraryCode,
+    )
+}
+
+fn write_probe_crate_reached_from(
+    crate_dir: &Path,
+    artifacts: &Path,
+    deny_warnings: bool,
+    reached_from: ReachedFrom,
+) -> PathBuf {
     let src = crate_dir.join("src");
     fs::create_dir_all(&src).expect("create src");
 
@@ -87,11 +116,9 @@ fn write_probe_crate(crate_dir: &Path, artifacts: &Path, deny_warnings: bool) ->
     // Exactly the spelling `compile_scxml`'s documentation gives, and no
     // blanket allow anywhere: whatever suppresses the generated code's
     // lints has to have arrived from SCE.
-    fs::write(
-        src.join("lib.rs"),
-        format!(
-            "{deny}\n\
-             pub mod machine {{\n\
+    let body = match reached_from {
+        ReachedFrom::LibraryCode => format!(
+            "pub mod machine {{\n\
              \x20   include!(concat!(env!(\"OUT_DIR\"), \"/{STEM}_sm.include.rs\"));\n\
              }}\n\
              \n\
@@ -99,7 +126,27 @@ fn write_probe_crate(crate_dir: &Path, artifacts: &Path, deny_warnings: bool) ->
              /// asserted to place the machine where the consumer looks.\n\
              pub fn policy_name() -> &'static str {{\n\
              \x20   std::any::type_name::<machine::AiLoopPolicy>()\n\
-             }}\n",
+             }}\n"
+        ),
+        ReachedFrom::TestsOnly => format!(
+            "mod machine {{\n\
+             \x20   include!(concat!(env!(\"OUT_DIR\"), \"/{STEM}_sm.include.rs\"));\n\
+             }}\n\
+             \n\
+             #[cfg(test)]\n\
+             mod tests {{\n\
+             \x20   #[test]\n\
+             \x20   fn the_machine_is_reachable_from_a_test() {{\n\
+             \x20       let _ = std::any::type_name::<crate::machine::AiLoopPolicy>();\n\
+             \x20   }}\n\
+             }}\n"
+        ),
+    };
+
+    fs::write(
+        src.join("lib.rs"),
+        format!(
+            "{deny}\n{body}",
             deny = if deny_warnings {
                 "#![deny(warnings)]"
             } else {
@@ -296,5 +343,54 @@ fn the_route_preserves_the_provenance_marker_a_strip_would_delete() {
     assert!(
         !shim.lines().any(|l| l.trim_start().starts_with("//!")),
         "the shim carries an inner doc comment:\n{shim}"
+    );
+}
+
+/// The shim's own two lines carry a budget too.
+///
+/// The machine's twelve allows are audited and reach the consumer intact —
+/// that is what the route above is for. The shim SCE writes beside it had
+/// none, and it is generated code the consumer may not edit either. Measured
+/// 2026-08-20 by a downstream plugin crate: a library that only *hosts* the
+/// machine and drives it from tests leaves the re-export unreachable from
+/// outside, `unused_imports` fires on `pub use {stem}_sm::*;`, and under the
+/// consumer's own `deny(warnings)` that is a hard error on a line they did not
+/// write and cannot fix.
+///
+/// One named allow rather than a blanket, for the reason the machine's twelve
+/// are named: a blanket on two lines would also swallow a real warning in
+/// them.
+#[test]
+fn the_shim_compiles_when_only_a_test_reaches_the_machine() {
+    let dir = tempdir().expect("tempdir");
+    let artifacts = dir.path().join("out");
+    fs::create_dir_all(&artifacts).expect("create out dir");
+    compile_into(&artifacts);
+
+    let crate_dir = dir.path().join("probe");
+    let manifest =
+        write_probe_crate_reached_from(&crate_dir, &artifacts, true, ReachedFrom::TestsOnly);
+    let built = cargo_build(&manifest);
+    assert!(
+        built.status.success(),
+        "a consumer that reaches the machine only from its tests must still \
+         compile under #![deny(warnings)]: the shim is SCE's line, so the \
+         allow that keeps it quiet has to be SCE's too\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+
+    // And the allow is exactly one, named. A blanket here would pass the
+    // assertion above while giving up the thing the route exists to keep.
+    let shim =
+        fs::read_to_string(artifacts.join(format!("{STEM}_sm.include.rs"))).expect("read shim");
+    assert!(
+        shim.contains("#[allow(unused_imports)]"),
+        "the shim compiles clean for some other reason than the named \
+         allow, so nothing pins it:\n{shim}"
+    );
+    assert!(
+        !shim.contains("allow(warnings"),
+        "the shim reaches for a blanket, which is the consumer-side habit \
+         this whole route replaced:\n{shim}"
     );
 }
