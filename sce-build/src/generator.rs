@@ -374,6 +374,37 @@ fn reject_native_actions_in_unsupported_lang(
     )))
 }
 
+// §scxml-6.2.5: a host-declared Event I/O Processor lowers to a
+// dispatch into a runtime registry, and only the Rust runtime has one
+// today. The other backends parse and analyse the declaration happily —
+// it rides on the model, which is language-agnostic — but have no
+// `register_event_processor` for the emitted call to reach.
+//
+// Refusing here rather than emitting is the whole point of this round.
+// The defect being repaid is a build that accepts a `<send type>` it
+// cannot service and lets the failure surface hours later at run time;
+// honouring a declaration on a backend with no registry would rebuild
+// that defect one layer up, with the build now actively promising the
+// send would be delivered.
+fn reject_host_processors_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    if model.host_processor_types.is_empty() {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "--host-processor ({}) has no {} codegen path — a host-served \
+         Event I/O Processor needs a runtime registry to dispatch into, \
+         and that is currently Rust-only. Generate this machine for \
+         `--lang rust`, or drop the declaration and let '{}' keep the \
+         W3C SCXML 6.2 error.execution refusal.",
+        model.host_processor_types.join(", "),
+        language,
+        model.name
+    )))
+}
+
 /// The native-code prefixes a `cond` may carry, paired with the one
 /// backend that lowers each.
 ///
@@ -711,6 +742,22 @@ pub struct StatechartCodegenOptions {
     /// As above, for the generated `{machine}Event` enum
     /// ([`crate::rust_derive_policy::RustDeriveCategory::StatechartEvent`]).
     pub event_extra_derives: Vec<String>,
+    /// Event I/O Processor `type` values the calling host serves
+    /// (§scxml-6.2.5 makes the identifier extensible). The library
+    /// equivalent of `sce-codegen --host-processor`.
+    ///
+    /// A `<send>` naming one of these lowers to a dispatch into
+    /// [`Engine::register_event_processor`]'s registry instead of the
+    /// §scxml-6.2 `error.execution` refusal. Empty ⇒ unchanged
+    /// behaviour, which is why the default reproduces every existing
+    /// caller byte-for-byte.
+    ///
+    /// Rust-only, and refused by name for the other backends
+    /// (`reject_host_processors_in_unsupported_lang`): a declaration
+    /// honoured on a backend with no registry would have the build
+    /// promise a delivery nothing performs, which is the defect this
+    /// option exists to remove rather than relocate.
+    pub host_processor_types: Vec<String>,
 }
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
@@ -1010,6 +1057,7 @@ fn render_cpp(
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     reject_native_actions_in_unsupported_lang(model, "C++")?;
+    reject_host_processors_in_unsupported_lang(model, "C++")?;
     reject_native_conditions_in_unsupported_lang(model, "C++")?;
     reject_native_scripts_in_unsupported_lang(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
@@ -1155,6 +1203,7 @@ fn render_c11(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
+    reject_host_processors_in_unsupported_lang(model, "C11")?;
     reject_native_conditions_in_unsupported_lang(model, "C11")?;
     reject_native_scripts_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
@@ -1267,6 +1316,7 @@ pub fn generate_kotlin(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
+    reject_host_processors_in_unsupported_lang(model, "Kotlin")?;
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
@@ -1286,6 +1336,7 @@ pub fn generate_kotlin_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
     reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
+    reject_host_processors_in_unsupported_lang(model, "Kotlin")?;
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
     reject_native_scripts_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
@@ -1441,6 +1492,7 @@ fn render_kotlin(
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
+    reject_host_processors_in_unsupported_lang(model, "Go")?;
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
@@ -1456,6 +1508,7 @@ pub fn generate_go_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
     reject_native_actions_in_unsupported_lang(model, "Go")?;
+    reject_host_processors_in_unsupported_lang(model, "Go")?;
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
@@ -1480,6 +1533,7 @@ pub fn generate_go_with_templates(
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
+    reject_host_processors_in_unsupported_lang(model, "Python")?;
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
@@ -1496,6 +1550,7 @@ pub fn generate_python_with_templates(
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
     reject_native_actions_in_unsupported_lang(model, "Python")?;
+    reject_host_processors_in_unsupported_lang(model, "Python")?;
     reject_native_conditions_in_unsupported_lang(model, "Python")?;
     reject_native_scripts_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;

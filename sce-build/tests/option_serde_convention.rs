@@ -64,6 +64,14 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // convention every other SCE wire record follows) is correct here. The
     // analyzer's own cause types are build-time state, not template input.
     "script_engine_analyzer.rs",
+    // `HostProcessorCauseRecord` — the stdout manifest's
+    // `host_processor_causes` wire shape, sibling of the one above and
+    // exempt for the same reason: it is serialised straight to JSON for
+    // the CLI manifest and never fed into a minijinja template, so
+    // omitting an absent `location` is the wire convention rather than a
+    // template hazard. What codegen templates DO read from this module is
+    // the per-`<send>` verdict on `Action`, which is a plain `bool`.
+    "host_processor_analyzer.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {

@@ -453,6 +453,15 @@ pub struct Engine<P: StatePolicy> {
     ///
     /// Carries the same `+ Send` bound as `completion_callback` so the engine
     /// stays host-movable; see that field for the rationale.
+    /// §scxml-6.2.5: handlers for the Event I/O Processor types this
+    /// host serves, keyed by the `type` string a `<send>` names.
+    ///
+    /// Gated to `!no_std` for the reason `on_http_send` is: the registry
+    /// is a heap-allocated map of boxed closures. Codegen never emits a
+    /// host-processor dispatch under `--no-std` — a declared type is
+    /// refused at build time there.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) host_processors: crate::host_processor::HostProcessorRegistry,
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
@@ -556,6 +565,8 @@ impl<P: StatePolicy> Engine<P> {
             is_running: false,
             #[cfg(not(feature = "no_std"))]
             completion_callback: None,
+            #[cfg(not(feature = "no_std"))]
+            host_processors: Default::default(),
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
@@ -1516,6 +1527,79 @@ impl<P: StatePolicy> Engine<P> {
                 }
             }
         }
+    }
+
+    /// §scxml-6.2.5: register `handler` as the Event I/O Processor for
+    /// `processor_type`, so `<send type="processor_type">` reaches the
+    /// host instead of raising `error.execution`.
+    ///
+    /// The build must also have been told about the type
+    /// (`sce-codegen --host-processor <type>`, or
+    /// `host_processor_types` on the `build.rs` facade): codegen decides
+    /// at compile time whether a site is a dispatch or a refusal, and a
+    /// registration alone cannot change emitted code. Registering a type
+    /// the build did not declare is inert — which is why the build
+    /// reports the declaration on its manifest, so the mismatch is
+    /// visible rather than silent.
+    ///
+    /// Replaces any handler already registered for the type; see
+    /// `HostProcessorRegistry::register` for why replacing beats
+    /// refusing.
+    #[cfg(not(feature = "no_std"))]
+    pub fn register_event_processor<F>(&mut self, processor_type: &str, handler: F)
+    where
+        F: FnMut(
+                crate::host_processor::HostSendRequest,
+            ) -> Option<crate::host_processor::HostSendResponse>
+            + Send
+            + 'static,
+    {
+        self.host_processors
+            .register(processor_type, Box::new(handler));
+    }
+
+    /// Whether a handler is registered for `processor_type`.
+    ///
+    /// The generated send site asks this to tell a processor that ran
+    /// and had nothing to reply from one that was never registered.
+    /// Both return `None` from
+    /// [`perform_host_send`](Self::perform_host_send), and only the
+    /// second is an error.
+    #[cfg(not(feature = "no_std"))]
+    pub fn has_event_processor(&self, processor_type: &str) -> bool {
+        self.host_processors.is_registered(processor_type)
+    }
+
+    /// §scxml-6.2: dispatch a `<send>` addressed to a host-served
+    /// processor, and raise the handler's reply if it gave one.
+    ///
+    /// With no handler registered the send raises `error.execution`,
+    /// the same outcome an undeclared type produces. That is the point:
+    /// the document asked for an act, and from its side "no processor
+    /// implements this type" and "the processor was never wired up" are
+    /// one fact. Reporting them differently would make a wiring mistake
+    /// look like a document error, or worse, look like success.
+    ///
+    /// Called from the generated send site, which is why it is public.
+    #[cfg(not(feature = "no_std"))]
+    pub fn perform_host_send(
+        &mut self,
+        request: crate::host_processor::HostSendRequest,
+    ) -> Option<crate::host_processor::HostSendResponse> {
+        let processor_type = request.processor_type.clone();
+        let handler = self.host_processors.handler_for(&processor_type)?;
+        let response = handler(request);
+        if let Some(resp) = response.as_ref() {
+            if let Some(evt) = P::get_event_from_name(&resp.event_name) {
+                let mut meta = EventWithMetadata::new(evt);
+                // §scxml-C-1: a reply from outside the machine arrives on
+                // the external queue, like any event the host raises.
+                meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
+                meta.metadata.data = resp.event_data.clone();
+                self.external_queue.raise(meta);
+            }
+        }
+        response
     }
 
     // ════════════════════════════════════════
