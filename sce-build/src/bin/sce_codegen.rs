@@ -775,6 +775,14 @@ fn build_manifest<'a>(
             .collect(),
         needs_script_engine: report.needs_script_engine.unwrap_or(false),
         script_engine_causes: &report.script_engine_causes,
+        // Derived from the flag rather than carried beside it: a record
+        // naming a language for a machine that needs no engine, or
+        // needing one and naming none, would be two answers to one
+        // question.
+        script_engine_language: report
+            .needs_script_engine
+            .unwrap_or(false)
+            .then_some(sce_build::manifest::SCRIPT_ENGINE_LANGUAGE),
         needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
         needs_host_processor: report.needs_host_processor.unwrap_or(false),
         host_processor_causes: &report.host_processor_causes,
