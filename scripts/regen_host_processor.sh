@@ -46,10 +46,18 @@ GENERATED_DIR="backends/rust/tests/src/integration/host_processor"
 # cannot drift into two.
 HOST_PROCESSOR="x-sce-host"
 
+# The invoke-side fixture. A separate document because the two surfaces are
+# separate contracts — delivering an event is not the same capability as
+# running an invoked process — and a single fixture would make one gate
+# stand for both. Declared with the invoker flag, not the processor one.
+INVOKER_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml"
+HOST_INVOKER="x-sce-host"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
+"$CODEGEN" generate "$INVOKER_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -59,11 +67,15 @@ MODRS="$GENERATED_DIR/mod.rs"
 {
     echo "// GENERATED -- DO NOT EDIT (scripts/regen_host_processor.sh)"
     echo ""
+    echo "mod statechart_host_invoker_sm;"
     echo "mod statechart_host_processor_sm;"
+    echo "pub use statechart_host_invoker_sm::*;"
     echo "pub use statechart_host_processor_sm::*;"
 } > "$MODRS"
 
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $GENERATED_DIR/ from"
+echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"

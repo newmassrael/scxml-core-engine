@@ -99,7 +99,7 @@
 {% endfor %}
                 }
 {% endif %}
-{% if state.invokes | unsupported %}
+{% if state.invokes | unsupported_refused %}
                 // W3C SCXML 6.4.1: `type` names no processor this platform
                 // implements. The whole observable is one error.execution at
                 // invoke time, so the entry chain only defers — the raise
@@ -108,7 +108,28 @@
                 // macrostep settles) and lets `cancel_invokes_for_state` drop
                 // the entry when the state exits first, which is the correct
                 // W3C outcome: an invoke that never ran raises nothing.
-{% for invoke_info in state.invokes | unsupported %}
+{% for invoke_info in state.invokes | unsupported_refused %}
+                {
+                    let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
+                        "{{ state_id }}", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                        },
+                    );
+                }
+{% endfor %}
+{% endif %}
+{% if state.invokes | host_invoker %}
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+{% for invoke_info in state.invokes | host_invoker %}
                 {
                     let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
                         "{{ state_id }}", self as *const _ as usize);
@@ -434,7 +455,11 @@
         }
 {% endfor %}
 {% endif %}
-{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid %}
+{# A host-run invocation ends with the state that started it, so its exit
+   chain has to exist. The two kinds above are SCXML child sessions; before
+   this a document whose only `<invoke>` was host-served emitted no exit
+   `match` at all, and the host was never told to stop. #}
+{% set has_invoke_exits = model.invokes | scxml or model.invokes | hybrid or model.invokes | host_invoker %}
 {% if has_invoke_exits %}
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
@@ -448,6 +473,16 @@
                     &mut self.pending_invokes,
                     {{ machine_name }}State::{{ state_id | to_state_variant }},
                 );
+{% for invoke_info in state.invokes | host_invoker %}
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke(
+                    "{{ invoke_info.invoke_type | escape_rust }}",
+                    "{{ invoke_info.invoke_id }}",
+                );
+{% endfor %}
 {% for invoke_info in state.invokes | scxml %}
                 // W3C SCXML 6.4: Cleanup running static child '{{ invoke_info.invoke_id }}'
                 if self.child_{{ invoke_info.field_suffix }}.is_some() {

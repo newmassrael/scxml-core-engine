@@ -735,6 +735,9 @@ struct GenerateReport {
     /// a consumer can check the build's half of the contract against the
     /// registrations its host makes.
     host_processor_types: Vec<String>,
+    /// The `--host-invoker` declarations, echoed for the same reason as
+    /// the line above: the build's half of a two-place contract.
+    host_invoker_types: Vec<String>,
     rejected: Option<RejectedDocument>,
     /// Descriptive deploy declarations, present only on a `--deploy`
     /// run. `None` for every deploy-unaware invocation, which is what
@@ -776,6 +779,7 @@ fn build_manifest<'a>(
         needs_host_processor: report.needs_host_processor.unwrap_or(false),
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
+        host_invoker_types: &report.host_invoker_types,
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
             name: rd.name.clone(),
@@ -1016,6 +1020,25 @@ struct GenerateArgs {
     /// service.
     #[arg(long = "host-processor", value_name = "TYPE")]
     host_processor: Vec<String>,
+    /// Declare an `<invoke type="...">` this build's host can run
+    /// (§scxml-6.4.1 leaves the invokable set to the platform). Repeatable.
+    ///
+    /// Separate from `--host-processor` because they are separate
+    /// contracts: delivering an event is not the same capability as
+    /// running a process with a lifecycle, and one flag would make
+    /// declaring either silently claim both.
+    ///
+    /// Without it, `<invoke type="x">` for an `x` SCE does not implement
+    /// raises `error.execution` and starts nothing. With it, the site
+    /// starts the invocation the host registers under that name through
+    /// `Engine::register_invoker`, is cancelled when its state exits, and
+    /// completes when the host raises `done.invoke.<id>`.
+    ///
+    /// Not routed to a host invoker: parent-to-child
+    /// `<send target="#_invokeid">`, `autoforward`, and `<finalize>`.
+    /// Those are mechanics between two SCXML sessions.
+    #[arg(long = "host-invoker", value_name = "TYPE")]
+    host_invoker: Vec<String>,
     /// Override the directory used for the §synth-6.2.6 `source-hash`
     /// computation. Defaults to the SCXML file's parent
     /// directory (the typical `resources/<num>/` test layout
@@ -2992,6 +3015,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         const_fold_budget,
         no_std,
         host_processor,
+        host_invoker,
         input_root,
         emit_ast,
         kotlin_package_prefix,
@@ -3298,7 +3322,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // §scxml-6.2.5: apply the host's declaration before any backend
     // renders, so what the emitted code does, what the analyzer reports
     // and what the manifest publishes are one decision.
-    sce_build::host_processor_analyzer::declare_host_processors(&mut model, &host_processor);
+    sce_build::host_processor_analyzer::declare_host_surfaces(
+        &mut model,
+        &host_processor,
+        &host_invoker,
+    );
 
     // AST export — emit the analyzed model BEFORE any deploy-time
     // mutations (resolve_source_path, inject_server_model_mutations,
@@ -3880,6 +3908,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         report
             .host_processor_types
             .clone_from(&model.host_processor_types);
+        report
+            .host_invoker_types
+            .clone_from(&model.host_invoker_types);
 
         // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
         // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.

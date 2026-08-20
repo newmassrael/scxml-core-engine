@@ -66,6 +66,12 @@
       "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     },
+    "host_invoker_types": {
+      "description": "<invoke type=\"...\"> values this build was told the host can run (--host-invoker). Omitted when none were declared. A separate field from host_processor_types because they are separate contracts: delivering an event is not the same capability as running an invoked process with a lifecycle (start, cancel, done.invoke), so a consumer checking its registrations has two lists to check. Not routed to a host invoker: parent-to-child <send target=\"#_invokeid\">, autoforward, and <finalize> — those are mechanics between two SCXML sessions.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "rejected": {
       "description": "Present only when the input triggered a W3C-spec rejection and stub files were written in place of generated code. Absence means clean generation.",
       "$ref": "#/definitions/rejected"

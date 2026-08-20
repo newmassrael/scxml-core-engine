@@ -240,10 +240,42 @@ pub fn needs_host_processor(model: &SCXMLModel) -> bool {
 /// standard processors is a no-op rather than an error: it names
 /// something already true.
 pub fn declare_host_processors(model: &mut SCXMLModel, types: &[String]) {
-    model.host_processor_types = types.to_vec();
-    if types.is_empty() {
+    declare_host_surfaces(model, types, &[])
+}
+
+/// [`declare_host_processors`] together with the `<invoke>` half.
+///
+/// The two are separate lists because they are separate contracts. A host
+/// that can deliver an event is not thereby able to run an invoked
+/// process with a lifecycle — start, cancel, and a `done.invoke` when it
+/// finishes — and a single list would make declaring one silently claim
+/// the other. §scxml-6.4.1 leaves the invokable set to the platform in
+/// the same words §scxml-6.2.5 uses for `<send>`, and SCE keeps the two
+/// answers separable for the same reason the specification states them
+/// separately.
+pub fn declare_host_surfaces(
+    model: &mut SCXMLModel,
+    send_types: &[String],
+    invoke_types: &[String],
+) {
+    model.host_processor_types = send_types.to_vec();
+    model.host_invoker_types = invoke_types.to_vec();
+    if !invoke_types.is_empty() {
+        for state in model.states.values_mut() {
+            for invoke in &mut state.invokes {
+                if let Invoke::Unsupported(info) = invoke {
+                    if invoke_types.iter().any(|t| t == &info.invoke_type) {
+                        info.host_served = true;
+                    }
+                }
+            }
+        }
+        model.refresh_invokes_view();
+    }
+    if send_types.is_empty() && invoke_types.is_empty() {
         return;
     }
+    let types = send_types;
     for state in model.states.values_mut() {
         for trans in &mut state.transitions {
             for action in &mut trans.actions {
@@ -364,6 +396,11 @@ fn collect_invoke_causes(state_id: &str, invoke: &Invoke, out: &mut Vec<HostProc
     let Invoke::Unsupported(info) = invoke else {
         return;
     };
+    // A declared invoker means the host runs this one, so there is no
+    // longer a site with no path — which is what this list reports.
+    if info.host_served {
+        return;
+    }
     out.push(HostProcessorCause::new(
         HostProcessorCauseKind::InvokeType {
             state_id: state_id.to_string(),

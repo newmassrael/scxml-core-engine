@@ -191,6 +191,104 @@ fn declaring_a_standard_processor_is_a_no_op() {
     assert_eq!(m["needs_host_processor"], true, "{m}");
 }
 
+fn invoker_fixture() -> PathBuf {
+    repo_root().join("sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml")
+}
+
+/// The invoke half of the same claim: undeclared, the build names the site;
+/// declared, it stops naming it and emits a start instead.
+#[test]
+fn the_invoke_half_is_reported_and_then_claimed() {
+    let undeclared = out_dir("invoke-undeclared");
+    let r = run(&[
+        "generate",
+        invoker_fixture().to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        undeclared.to_str().unwrap(),
+    ]);
+    assert_eq!(r.exit, Some(0), "generation must succeed: {}", r.stderr);
+    let m = manifest(&r);
+    assert_eq!(m["needs_host_processor"], true, "{m}");
+    let causes = m["host_processor_causes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no host_processor_causes: {m}"));
+    assert_eq!(causes.len(), 1, "{causes:?}");
+    assert_eq!(causes[0]["kind"], "invoke-type");
+    assert_eq!(causes[0]["invoke"], "probe");
+
+    let declared = out_dir("invoke-declared");
+    let r = run(&[
+        "generate",
+        invoker_fixture().to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        declared.to_str().unwrap(),
+        "--host-invoker",
+        "x-sce-host",
+    ]);
+    assert_eq!(r.exit, Some(0), "generation must succeed: {}", r.stderr);
+    let m = manifest(&r);
+    assert_eq!(m["needs_host_processor"], false, "{m}");
+    assert!(m.get("host_processor_causes").is_none(), "{m}");
+    assert_eq!(
+        m["host_invoker_types"],
+        serde_json::json!(["x-sce-host"]),
+        "the build did not echo its own invoker declaration: {m}"
+    );
+
+    let emitted = std::fs::read_to_string(declared.join("statechart_host_invoker_sm.rs"))
+        .expect("the generator wrote the machine");
+    assert!(
+        emitted.contains("perform_host_invoke"),
+        "no start was emitted for a declared invoker",
+    );
+    // The teardown half. A machine that starts a host invocation and never
+    // cancels it leaves the host running work nobody will stop, and no
+    // configuration assertion can see that.
+    assert!(
+        emitted.contains("cancel_host_invoke"),
+        "no cancel was emitted for a declared invoker",
+    );
+    assert!(
+        !emitted.contains("<invoke> declares a type this processor does not support"),
+        "a declared invoker still emitted the unsupported-type refusal",
+    );
+}
+
+/// The two declarations are separate contracts, and the flags must not
+/// leak into each other: declaring a send processor cannot claim an
+/// `<invoke>` of the same name, or the build would promise a lifecycle
+/// nothing implements.
+#[test]
+fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
+    let out = out_dir("invoke-crossed");
+    let r = run(&[
+        "generate",
+        invoker_fixture().to_str().unwrap(),
+        "-l",
+        "rust",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-processor",
+        "x-sce-host",
+    ]);
+    assert_eq!(r.exit, Some(0), "generation must succeed: {}", r.stderr);
+    let m = manifest(&r);
+    assert_eq!(
+        m["needs_host_processor"], true,
+        "a send declaration claimed an <invoke>: {m}"
+    );
+    let emitted = std::fs::read_to_string(out.join("statechart_host_invoker_sm.rs"))
+        .expect("the generator wrote the machine");
+    assert!(
+        !emitted.contains("perform_host_invoke"),
+        "a send declaration emitted an invoke start",
+    );
+}
+
 /// Every backend without a host-processor registry refuses the
 /// declaration, by name.
 ///

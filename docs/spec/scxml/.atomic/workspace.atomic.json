@@ -9129,6 +9129,15 @@
           "file": "backends/python/runtime/sce_runtime/policy.py",
           "symbol": "StatePolicy",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "perform_host_invoke",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -9312,6 +9321,19 @@
         },
         {
           "file": "sce-build/src/manifest.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "StatechartCodegenOptions",
           "kind": "references"
         }
       ],
