@@ -23,7 +23,7 @@
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-tests --test host_processor
+mutation_tests -p sce-rust-tests --test host_processor --test host_invoker
 mutation_targets backends/rust/runtime/src/engine.rs \
     backends/rust/runtime/src/host_processor.rs
 
@@ -129,4 +129,74 @@ edit("backends/rust/runtime/src/engine.rs",
         let mut request = request;
         request.send_id.clear();
         let response = handler(request);""")
+PY
+
+# ── The invoke lifecycle ────────────────────────────────────────────
+#
+# An invoke is not a send: it starts, and it must be stoppable. A host
+# told to begin work and never told to stop is the failure no
+# configuration assertion can see, so the teardown is mutated as hard as
+# the start.
+
+mutation_case "the invoker is never started" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     """        let handler = self.invokers.get_mut(&request.processor_type)?;
+        let response = handler(HostInvokeEvent::Start(request));""",
+     """        let handler = self.invokers.get_mut(&request.processor_type)?;
+        let _ = handler;
+        let _ = request;
+        let response: Option<HostInvokeResponse> = None;""")
+PY
+
+mutation_case "the invocation is never recorded as started" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        self.started.insert(key);",
+     "        let _ = key;")
+PY
+
+mutation_case "cancel is delivered for an invocation that never started" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     """        if !self.started.remove(&key) {
+            return false;
+        }""",
+     """        self.started.remove(&key);""")
+PY
+
+mutation_case "the invoker is never told to stop" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     """        handler(HostInvokeEvent::Cancel(HostInvokeCancel {
+            processor_type: processor_type.to_string(),
+            invoke_id: invoke_id.to_string(),
+        }));""",
+     """        let _ = handler;""")
+PY
+
+# ── …and the completion it reports ──────────────────────────────────
+#
+# `done.invoke.<id>` is the name the AUTHOR wrote a transition for, so the
+# id the host answers on is the document's — not the per-instance one the
+# defer queue carries.
+
+mutation_case "the completion the host reported is dropped" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        if let Some(done_data) = response.and_then(|r| r.done_data) {",
+     "        if let Some(done_data) = response.and_then(|r| r.done_data).filter(|_| false) {")
+PY
+
+mutation_case "a completion is invented for an invocation still running" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        if let Some(done_data) = response.and_then(|r| r.done_data) {",
+     "        if let Some(done_data) = response.map(|r| r.done_data.unwrap_or_default()) {")
+PY
+
+# ── The two registries stop being two ───────────────────────────────
+#
+# `register_event_processor` and `register_invoker` are separate
+# contracts. One satisfying the other would let a host promise a
+# lifecycle it never implemented.
+
+mutation_case "the invoker registry answers with any invoker it holds" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        let handler = self.invokers.get_mut(&request.processor_type)?;",
+     "        let handler = self.invokers.values_mut().next()?;")
 PY
