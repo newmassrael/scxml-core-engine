@@ -89,6 +89,11 @@ pub mod generator;
 /// apart — which is the failure mode a CMake-side reimplementation of the
 /// hash would carry.
 pub mod generator_witness;
+/// Which `<send>` / `<invoke>` `type` values this build has a lowering
+/// path for, and the sites naming one it does not. Single source of
+/// truth for the accepted set — the per-backend send templates read the
+/// decision rather than each re-spelling the list.
+pub mod host_processor_analyzer;
 pub mod kotlin;
 /// The stdout manifest wire surface — the single JSON line
 /// `sce-codegen` writes on success. Shape, schema-file lockstep, and

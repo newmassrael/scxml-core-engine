@@ -46,7 +46,7 @@
 {% if action.targetexpr and model.needs_script_engine %}
             _resolvedTarget?.let { _rt ->
 {% endif %}
-{% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+{% if action.send_type_unsupported %}
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<send type='{{ action.send_type }}'> names a processor this platform does not support", "{{ action.auto_send_id }}")
 {% if in_run_block is defined and in_run_block %}

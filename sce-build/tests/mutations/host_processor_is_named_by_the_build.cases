@@ -1,0 +1,199 @@
+# Mutation cases for "the build names the processor types it has no path for".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_is_named_by_the_build.cases`.
+#
+# A `<send type="x-host">` / `<invoke type="x-host">` compiles green, passes
+# every test that does not enter that state, and raises `error.execution` hours
+# later at a state the host finally reaches. The decision was already made at
+# build time — five send templates each re-spelled the accepted set to emit the
+# refusal — and then discarded rather than reported.
+#
+# The repair has two halves and each case below removes one of them:
+#
+#   1. the accepted set is spelled ONCE, in `is_supported_send_type`, and every
+#      backend reads the verdict off `Action::send_type_unsupported`;
+#   2. the sites are collected and published on the stdout manifest as
+#      `needs_host_processor` + `host_processor_causes`.
+#
+# The false-positive direction is half the design and is mutated too: a
+# predicate that refuses the default processor would report every `<send>` in
+# the corpus, which is indistinguishable from a useful report.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/host_processor_analyzer.rs sce-build/src/parser.rs
+# The assertions that produce every verdict below live in the two `tests`
+# modules the repair added: the analyzer's own, and the manifest's two
+# wire tests. Named explicitly because a `--lib` selector cannot resolve
+# an oracle from a target name — and because the analyzer file is also a
+# mutation target, so nothing else would notice a case that reds by
+# weakening the test rather than by breaking the code.
+mutation_oracles sce-build/src/host_processor_analyzer.rs sce-build/src/manifest.rs
+
+# ── The accepted set stops being one set ────────────────────────────
+#
+# The defect exactly as it was, in the shape it would come back in: one
+# backend's notion of "supported" drifts away from the others'. Spelling it
+# once is what makes that impossible; a case that widens the set has to red.
+
+mutation_case "the predicate accepts a type no backend can deliver" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    send_type.is_empty() || SUPPORTED_SEND_TYPES.contains(&send_type)",
+     "    SUPPORTED_SEND_TYPES.contains(&send_type) || true")
+PY
+
+mutation_case "the predicate matches a type by prefix instead of equality" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    send_type.is_empty() || SUPPORTED_SEND_TYPES.contains(&send_type)",
+     "    send_type.is_empty() || SUPPORTED_SEND_TYPES.iter().any(|t| t.starts_with(send_type))")
+PY
+
+mutation_case "the set forgets the BasicHTTP processor" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    &[SCXML_EVENT_PROCESSOR_TYPE, BASIC_HTTP_EVENT_PROCESSOR_TYPE];",
+     "    &[SCXML_EVENT_PROCESSOR_TYPE];")
+PY
+
+# ── …or refuses what the specification makes the default ────────────
+#
+# An absent `type` IS the SCXML Event I/O Processor. A predicate that calls the
+# empty string unknown reports every `<send>` ever written, and a report that
+# fires on everything is the same as no report.
+
+mutation_case "the absent type is treated as an unknown processor" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    send_type.is_empty() || SUPPORTED_SEND_TYPES.contains(&send_type)",
+     "    SUPPORTED_SEND_TYPES.contains(&send_type)")
+PY
+
+# ── The verdict stops reaching the templates ────────────────────────
+#
+# The flag is what five templates now read instead of each carrying its own
+# copy of the list. If it is never set, every backend silently starts emitting a
+# real send where the specification requires a refusal.
+
+mutation_case "the parser never marks a send type unsupported" <<'PY'
+edit("sce-build/src/parser.rs",
+     """        action.send_type_unsupported = !action.send_type.is_empty()
+            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);""",
+     "        action.send_type_unsupported = false;")
+PY
+
+mutation_case "the parser marks every send unsupported" <<'PY'
+edit("sce-build/src/parser.rs",
+     """        action.send_type_unsupported = !action.send_type.is_empty()
+            && !crate::host_processor_analyzer::is_supported_send_type(&action.send_type);""",
+     "        action.send_type_unsupported = true;")
+PY
+
+# ── The sites stop being collected ──────────────────────────────────
+
+mutation_case "the walk reports no send site" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    if action.send_type_unsupported {",
+     "    if false {")
+PY
+
+# Mutated inside the collector rather than at its call site: dropping the
+# call leaves `collect_invoke_causes` uncalled, which this workspace's
+# deny-warnings build rejects — the tree stops compiling and the round
+# reports INCONCLUSIVE instead of a verdict. Measured, not guessed.
+# An unsupported invoke always carries a non-empty `type` (an empty one is
+# not classified `Unsupported`), so this guard drops every real site.
+mutation_case "the walk reports no invoke site" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """    let Invoke::Unsupported(info) = invoke else {
+        return;
+    };""",
+     """    let Invoke::Unsupported(info) = invoke else {
+        return;
+    };
+    if !info.invoke_type.is_empty() {
+        return;
+    }""")
+PY
+
+# ── …or stop being collected only where they are nested ─────────────
+#
+# `<send>` inside `<if>` / `<foreach>` refuses exactly as a top-level one does.
+# A walk that skips the containers gives one document two answers depending on
+# where the author put the element — the worst kind of report, because it is
+# right often enough to be trusted.
+
+mutation_case "the walk does not descend into executable content" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """    for nested in action
+        .actions
+        .iter()
+        .chain(action.then_actions.iter())
+        .chain(action.else_actions.iter())
+        .chain(action.elseif_branches.iter().flat_map(|b| b.actions.iter()))
+    {
+        collect_action_causes(state_id, nested, out);
+    }""",
+     "")
+PY
+
+# ── The record stops naming what was refused ────────────────────────
+#
+# A cause that says only "a send in state s" sends the reader back to grep. The
+# URI is the field a repair acts on.
+
+mutation_case "the wire record drops the refused URI" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """            } => HostProcessorCauseRecord {
+                kind: "send-type",
+                processor_type: processor_type.clone(),""",
+     """            } => HostProcessorCauseRecord {
+                kind: "send-type",
+                processor_type: processor_type.chars().take(0).collect(),""")
+PY
+
+mutation_case "the two wire kinds collapse into one token" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """                kind: "invoke-type",
+                processor_type: processor_type.clone(),
+                state: Some(state_id.clone()),
+                invoke: Some(invoke_id.clone()),""",
+     """                kind: "send-type",
+                processor_type: processor_type.clone(),
+                state: Some(state_id.clone()),
+                invoke: Some(invoke_id.clone()),""")
+PY
+
+# ── The report stops running down the document ──────────────────────
+#
+# `model.states` is keyed by state id, so with the sort removed the list is
+# alphabetical by state and a reader following it jumps around the file.
+
+mutation_case "the causes are left in state-id order" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """    causes.sort_by_key(|c| {
+        let (line, col) = c
+            .location
+            .as_ref()
+            .map(|l| (l.line.unwrap_or(0), l.col.unwrap_or(0)))
+            .unwrap_or((u32::MAX, u32::MAX));
+        (line, col)
+    });""",
+     "")
+PY
+
+# ── The two engines stop answering one question ─────────────────────
+#
+# The build decides the set here; the C++ Interpreter decides it again in
+# `SendHelper::isSupportedSendType`. They may be two implementations. They may
+# not be two answers, and only the cross-check reads them against each other.
+
+mutation_case "the build accepts a processor the C++ runtime does not name" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    &[SCXML_EVENT_PROCESSOR_TYPE, BASIC_HTTP_EVENT_PROCESSOR_TYPE];",
+     """    &[
+        SCXML_EVENT_PROCESSOR_TYPE,
+        BASIC_HTTP_EVENT_PROCESSOR_TYPE,
+        "http://www.w3.org/TR/scxml/#SpragHostEventProcessor",
+    ];""")
+PY

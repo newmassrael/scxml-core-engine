@@ -255,7 +255,7 @@
     if let Some(ref _rt) = _resolved_target {
 {% endif %}
 
-{% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+{% if action.send_type_unsupported %}
     // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
 {% if 'error.execution' in model.events %}
     {

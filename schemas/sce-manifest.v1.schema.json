@@ -11,7 +11,8 @@
     "generator",
     "artifacts",
     "needs_script_engine",
-    "needs_event_scheduler"
+    "needs_event_scheduler",
+    "needs_host_processor"
   ],
   "additionalProperties": false,
   "properties": {
@@ -48,6 +49,16 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/definitions/scriptEngineCause" }
+    },
+    "needs_host_processor": {
+      "description": "Whether any <send> or <invoke> in this run names an Event I/O Processor or invoker type this build has no lowering path for. Third member of the family needs_script_engine and needs_event_scheduler belong to — all three answer what the host has to supply, and the generator settles all three while compiling. true does not mean the document is wrong: W3C SCXML 6.2 and 6.4.1 define the unsupported-type case, so the site raises error.execution and a build relying on that refusal is a legitimate reading. What the flag reports is that the refusal will happen, at a state the host may not enter for hours, with nothing before this record to say so. Only a literal `type` is judged; a `typeexpr` has no build-time value and is checked by the generated code at runtime. Always present, so false is an answer rather than an absent field.",
+      "type": "boolean"
+    },
+    "host_processor_causes": {
+      "description": "Why needs_host_processor is true — one record per site naming a type this build has no path for. Present exactly when the flag is true; omitted (not []) otherwise. Non-fatal: generation succeeded, and the emitted code refuses these sites at runtime exactly as the specification requires.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/hostProcessorCause" }
     },
     "rejected": {
       "description": "Present only when the input triggered a W3C-spec rejection and stub files were written in place of generated code. Absence means clean generation.",
@@ -99,6 +110,31 @@
         },
         "invoke": {
           "description": "<invoke id=\"…\">, for the invoke-anchored causes.",
+          "type": "string"
+        },
+        "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "hostProcessorCause": {
+      "type": "object",
+      "required": ["kind", "processor_type"],
+      "properties": {
+        "kind": {
+          "description": "Stable kebab-case discriminator for the element that named the type: \"send-type\" or \"invoke-type\". Deliberately not an enum: consumers dispatch on this and MUST tolerate values added by later revisions.",
+          "type": "string",
+          "minLength": 1
+        },
+        "processor_type": {
+          "description": "The type attribute verbatim, so the record names the URI that was refused rather than only the element that carried it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "description": "Owning state.",
+          "type": "string"
+        },
+        "invoke": {
+          "description": "<invoke id=\"…\">, for the invoke-anchored cause.",
           "type": "string"
         },
         "location": { "$ref": "#/definitions/location" }

@@ -13,6 +13,7 @@
 
 use serde::Serialize;
 
+use crate::host_processor_analyzer::HostProcessorCauseRecord;
 use crate::script_engine_analyzer::ScriptEngineCauseRecord;
 
 /// Manifest schema version. Bumped only on a breaking shape change,
@@ -189,6 +190,30 @@ pub struct Manifest<'a> {
     /// consumer reads `false` as an answer rather than as a field it
     /// has to guess the absence of.
     pub needs_event_scheduler: bool,
+    /// Whether any `<send>` / `<invoke>` in this run names an Event I/O
+    /// Processor or invoker type the build has no lowering path for.
+    ///
+    /// Third member of the family [`Self::needs_script_engine`] and
+    /// [`Self::needs_event_scheduler`] belong to — all three answer
+    /// "what does the host have to supply?", and the generator settles
+    /// all three while compiling.
+    ///
+    /// `true` does not mean the document is wrong. §scxml-6.2 and
+    /// §scxml-6.4.1 define what happens to an unsupported type — the
+    /// site raises `error.execution` — so a document naming one is valid
+    /// SCXML with defined meaning, and a build deliberately relying on
+    /// that refusal is a legitimate reading. What the field reports is
+    /// that the refusal will happen, at a state the host may not enter
+    /// for hours, with nothing before this line to say so.
+    ///
+    /// Always present, so a consumer reads `false` as an answer rather
+    /// than as a field it has to guess the absence of.
+    pub needs_host_processor: bool,
+    /// Which sites made [`Self::needs_host_processor`] true. Omitted
+    /// (not `[]`) when there are none, matching
+    /// [`Self::script_engine_causes`].
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub host_processor_causes: &'a [HostProcessorCauseRecord],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<RejectedInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -379,6 +404,8 @@ mod tests {
             needs_script_engine: false,
             script_engine_causes: &[],
             needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -398,6 +425,8 @@ mod tests {
             needs_script_engine: false,
             script_engine_causes: &[],
             needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
             rejected: Some(RejectedInfo {
                 spec: "W3C SCXML 5.8",
                 name: "untestable_doc".to_string(),
@@ -420,6 +449,8 @@ mod tests {
             needs_script_engine: false,
             script_engine_causes: &[],
             needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
             rejected: None,
             deploy: None,
             languages: Some(vec![
@@ -428,6 +459,89 @@ mod tests {
             ]),
         };
         assert_valid(&m.to_line());
+    }
+
+    /// The populated form, which the empty cases above do not reach:
+    /// `host_processor_causes` is skipped when empty, so every test
+    /// above validates a record in which the array never appears. This
+    /// is the one that puts a record on the wire.
+    #[test]
+    fn host_processor_causes_validate_against_schema() {
+        let causes = vec![
+            HostProcessorCauseRecord {
+                kind: "send-type",
+                processor_type: "x-sprag-host".to_string(),
+                state: Some("sending".to_string()),
+                invoke: None,
+                location: Some(crate::forge::error::SourceLocation {
+                    file: "probe.scxml".to_string(),
+                    line: Some(13),
+                    col: Some(7),
+                }),
+            },
+            HostProcessorCauseRecord {
+                kind: "invoke-type",
+                processor_type: "x-sprag-host".to_string(),
+                state: Some("invoking".to_string()),
+                invoke: Some("_invoke_0".to_string()),
+                location: None,
+            },
+        ];
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            artifacts: vec![ArtifactEntry {
+                path: "out/probe_sm.rs".to_string(),
+            }],
+            needs_script_engine: false,
+            script_engine_causes: &[],
+            needs_event_scheduler: false,
+            needs_host_processor: true,
+            host_processor_causes: &causes,
+            rejected: None,
+            deploy: None,
+            languages: None,
+        };
+        let line = m.to_line();
+        assert_valid(&line);
+        // The record must reach the wire, not merely be schema-legal in
+        // principle: an accidental `skip_serializing` would leave the
+        // flag true with nothing explaining it, and `assert_valid` alone
+        // would still pass.
+        assert!(line.contains("\"host_processor_causes\""), "{line}");
+        assert!(
+            line.contains("\"processor_type\":\"x-sprag-host\""),
+            "{line}"
+        );
+        assert!(line.contains("\"needs_host_processor\":true"), "{line}");
+    }
+
+    /// The flag is required, in the same family and for the same reason
+    /// as its two siblings: a consumer gating on "this build has a path
+    /// for every type the document names" must be able to tell `false`
+    /// from a generator that does not report the question at all.
+    #[test]
+    fn schema_requires_the_host_processor_flag() {
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            artifacts: Vec::new(),
+            needs_script_engine: false,
+            script_engine_causes: &[],
+            needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
+            rejected: None,
+            deploy: None,
+            languages: None,
+        };
+        let line = m.to_line();
+        assert_valid(&line);
+        let stripped = line.replace(",\"needs_host_processor\":false", "");
+        assert_ne!(stripped, line, "the field was not on the wire to remove");
+        assert_invalid(&stripped, "needs_host_processor is required");
     }
 
     /// A malformed record must be rejected, otherwise the positive
