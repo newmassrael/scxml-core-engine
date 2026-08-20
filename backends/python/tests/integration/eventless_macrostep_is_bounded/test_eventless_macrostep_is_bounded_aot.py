@@ -41,7 +41,7 @@ _Event = _sm.EventlessMacrostepIsBoundedEvent
 # The ceiling the engine applies, spelled here rather than read back from it. A
 # test that asked the engine for its own limit would agree with any limit,
 # including one an edit moved by three orders of magnitude.
-MAX_MICROSTEPS = 100
+MAX_MICROSTEPS = 1000
 
 # One lap of either chain is two microsteps (`_a` to `_b`, then back), and only
 # the `_a` edge counts, so a chain run to the ceiling records half.
@@ -83,7 +83,7 @@ def test_a_macrostep_that_cannot_end_is_stopped() -> None:
         "the document was cut off early, more means the ceiling moved"
     )
     assert engine.truncated_macrosteps() == 1, (
-        "the hundred-and-first microstep was enabled and was not taken. "
+        "the microstep past the budget was enabled and was not taken. "
         "Without this count the host sees a machine that is running, in a "
         "state the document names, having returned at once — and no way to "
         "learn that the configuration it is reading is not a stable one"
@@ -114,8 +114,8 @@ def test_a_chain_that_ends_at_the_ceiling_is_not_refused() -> None:
     engine.send_event(_Event.BOUNDED)
 
     assert _counter(engine, se, "laps") == LAPS_AT_CEILING, (
-        "the guard `laps < 50` closes after fifty laps, so the chain is a "
-        "hundred microsteps long and then stops by itself"
+        "the guard `laps < 500` closes after five hundred laps, so the chain "
+        "is a thousand microsteps long and then stops by itself"
     )
     assert engine.truncated_macrosteps() == 0, (
         "nothing was refused: the macrostep reached the stable configuration "

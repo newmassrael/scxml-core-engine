@@ -105,9 +105,17 @@ type Engine[S comparable, E comparable] struct {
 	hasErrorCascadeEvent  bool
 
 	// truncatedMacrosteps counts macrosteps this engine stopped at
-	// maxEventlessMicrosteps with an eventless transition still enabled — see
+	// maxMacrostepMicrosteps with the chain still going — see
 	// TruncatedMacrosteps.
 	truncatedMacrosteps uint32
+
+	// macrostepMicrostepsTaken counts microsteps taken by the macrostep now in
+	// progress, against maxMacrostepMicrosteps. A field rather than a local,
+	// for the reason Appendix D's loop is one loop: the eventless branch and
+	// the internal-event branch take turns inside a single macrostep, so a
+	// counter that lives in either one alone is reset by the other and bounds
+	// nothing.
+	macrostepMicrostepsTaken int
 
 	// lastTruncatedMacrostepState is the state the drain was in when it last
 	// stopped that way; hasTruncatedMacrostep says whether there is one,
@@ -655,15 +663,19 @@ func (e *Engine[S, E]) LastErrorCascadeEvent() (E, bool) {
 }
 
 // TruncatedMacrosteps reports how many macrosteps this engine stopped short
-// because their eventless chain was still going after maxEventlessMicrosteps
-// microsteps.
+// because their chain was still going after maxMacrostepMicrosteps microsteps.
 //
 // The specification says a macrostep ends in a configuration where nothing is
-// enabled by NULL, and its Principles and Constraints
-// add that a macrostep may not terminate and that this "is
+// enabled by NULL and no internal event is left, and its Principles and
+// Constraints add that a macrostep may not terminate and that this "is
 // currently allowed". A document with a cyclic eventless transition is
-// therefore not malformed; it is a document whose macrostep is infinite, and
-// an engine that runs it to the letter never returns.
+// therefore not malformed, and neither is one whose <raise> answers itself;
+// both are documents whose macrostep is infinite, and an engine that runs
+// either to the letter never returns.
+//
+// Both are counted here, because they are the same fact to a host: the
+// macrostep it just drove did not reach a stable configuration. Which chain it
+// was is what LastTruncatedMacrostepState points at.
 //
 // This engine does not run it to the letter. It stops, and this count is how a
 // host learns that it did — because every other reading says the opposite:
@@ -672,10 +684,11 @@ func (e *Engine[S, E]) LastErrorCascadeEvent() (E, bool) {
 // the clause promises; it is wherever the hundredth microstep happened to
 // land, and the document has more to do that this engine will not do.
 //
-// A document whose eventless chain is a hundred microsteps long and then
-// settles counts zero: the ceiling is on microsteps taken, and the macrostep
-// is only counted here when a transition was still enabled after them. Long
-// chains are ordinary; endless ones are not.
+// A document whose chain is a hundred microsteps long and then settles counts
+// zero: the ceiling is on microsteps taken, and the macrostep is only counted
+// here when the loop still had work after them — a transition enabled by NULL,
+// or an event left on the internal queue. Long chains are ordinary; endless
+// ones are not.
 func (e *Engine[S, E]) TruncatedMacrosteps() uint32 {
 	return e.truncatedMacrosteps
 }
@@ -685,9 +698,11 @@ func (e *Engine[S, E]) TruncatedMacrosteps() uint32 {
 // TruncatedMacrosteps is zero — the zero value of S is a real state, so it
 // cannot stand in for "none".
 //
-// Which state it was is the whole repair: an eventless cycle is a closed walk
-// through the state graph, and this names one state on it. The count alone
-// says a document somewhere cannot settle; this says where to look.
+// Which state it was is the whole repair: an endless chain is a closed walk
+// through the state graph, and this names one state on it — the source of the
+// transition that was refused, or the state the drain was standing in when it
+// stopped taking internal events. The count alone says a document somewhere
+// cannot settle; this says where to look.
 func (e *Engine[S, E]) LastTruncatedMacrostepState() (S, bool) {
 	return e.lastTruncatedMacrostepState, e.hasTruncatedMacrostep
 }
@@ -814,6 +829,13 @@ func (e *Engine[S, E]) runMainEventLoop() {
 				break
 			}
 			e.processInternalQueue()
+			if e.macrostepTruncated {
+				// Either branch may have spent the last of the budget. Without
+				// this the loop turns forever on a chain that is no longer
+				// being drained: the queue stays non-empty precisely because
+				// the drain refused it.
+				break
+			}
 		}
 
 		if !e.isRunning || e.isInFinalState() {
@@ -828,7 +850,15 @@ func (e *Engine[S, E]) runMainEventLoop() {
 		// W3C SCXML Appendix D: invoking may have raised internal error events
 		// (and a child that completed synchronously may already have raised
 		// done.invoke); handle them before touching the external queue.
-		if e.internalQueue.HasEvents() {
+		//
+		// Not when this macrostep was already stopped at the ceiling: the queue
+		// is non-empty because the drain refused it, so looping back is a spin
+		// that takes no microstep, logs nothing, and never ends. Falling
+		// through to the external dequeue instead is what keeps a machine
+		// inside an endless chain reachable at all — the event that rescues it
+		// is on that queue, and the clause's priority would otherwise hold it
+		// behind a chain that never ends.
+		if !e.macrostepTruncated && e.internalQueue.HasEvents() {
 			continue
 		}
 
@@ -840,11 +870,33 @@ func (e *Engine[S, E]) runMainEventLoop() {
 
 // processInternalQueue drains the internal queue (§scxml-C-1, high priority).
 //
+// Bounded by the same macrostep budget the eventless branch spends, and for the
+// same reason: a <raise> answered by a transition that raises again is a
+// macrostep that never ends, exactly as a cyclic eventless transition is. Until
+// 2026-08-20 this branch had no ceiling in any of the seven engines here, so
+// that document did not return at all.
+//
 // Matches Rust Engine::process_internal_queue.
 func (e *Engine[S, E]) processInternalQueue() {
+	if e.macrostepTruncated {
+		// The eventless branch of this same macrostep already ran out of
+		// budget. Draining now would hand the chain a second one.
+		return
+	}
 	log.Printf("[sce] Engine::processInternalQueue: starting internal queue drain")
 
-	for {
+	for e.internalQueue.HasEvents() {
+		if e.macrostepMicrostepsTaken == maxMacrostepMicrosteps {
+			// Work is still queued one microstep past the budget, so this is
+			// the case the specification calls a macrostep that cannot end.
+			// Refuse the microstep rather than take it: the event stays on the
+			// queue, which is where the next macrostep will find it, and the
+			// count says the configuration a host reads now is not a stable one.
+			e.recordTruncatedMacrostep(e.currentState)
+			log.Printf("[sce] Engine::processInternalQueue: macrostep still going after %d microsteps; stopped",
+				maxMacrostepMicrosteps)
+			return
+		}
 		eventWithMeta, ok := e.internalQueue.Pop()
 		if !ok {
 			break
@@ -889,6 +941,13 @@ func (e *Engine[S, E]) processInternalQueue() {
 		e.handlingErrorEvent = isError
 		outcome := e.executeTransition(eventWithMeta.Event)
 		e.handlingErrorEvent = false
+		if outcome.selected {
+			// Appendix D: the loop turn that selects nothing takes no
+			// microstep, so it spends no budget. Only a turn that answered the
+			// event moved the machine, and only those are what a ceiling on
+			// microsteps can be counted in.
+			e.macrostepMicrostepsTaken++
+		}
 		if !outcome.selected && isError {
 			e.unhandledErrorEvents++
 			e.lastUnhandledError = eventWithMeta.Event
@@ -919,11 +978,18 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 	}
 	// Taking an event off the external queue is where
 	// a macrostep begins, so it is where the previous one's ceiling stops
-	// applying. A machine left inside an eventless cycle gets a full budget
+	// applying. A machine left inside an endless chain gets a full budget
 	// for each event it is given, and each refusal is counted separately —
 	// which is what tells a host that spins once from one that spins on
 	// everything.
+	//
+	// Here and not at the entry to the loop above, which reads like the more
+	// general boundary and is not one: a machine whose chain was refused would
+	// spend a whole budget re-walking it before it ever looked at the event the
+	// host sent to get it out. The refused events stay queued either way — this
+	// is where the budget that drains them comes back.
 	e.macrostepTruncated = false
+	e.macrostepMicrostepsTaken = 0
 	{
 		// §scxml-6.5: Execute finalize before parent's own transition matching
 		if e.policy.HasFinalize() {
@@ -973,31 +1039,62 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 	return true
 }
 
-// maxEventlessMicrosteps is how many microsteps one macrostep may take on
-// eventless transitions alone before this engine stops taking them — see
-// TruncatedMacrosteps.
+// recordTruncatedMacrostep publishes a macrostep this engine stopped short,
+// from whichever branch of Appendix D's inner loop ran out of budget.
+//
+// One function, two callers, for the reason the budget is one number: a host
+// reads a macrostep that did not reach a stable configuration, and the branch
+// it died in is a detail of the document, not of the contract. Two copies of
+// this would be two chances for one of them to stop setting the flag that keeps
+// the same chain from being handed a second budget.
+func (e *Engine[S, E]) recordTruncatedMacrostep(state S) {
+	e.truncatedMacrosteps++
+	e.lastTruncatedMacrostepState = state
+	e.hasTruncatedMacrostep = true
+	e.macrostepTruncated = true
+}
+
+// maxMacrostepMicrosteps is how many microsteps one macrostep may take before
+// this engine stops taking them — see TruncatedMacrosteps.
 //
 // The specification defines a macrostep as a chain of microsteps ending in a
-// configuration where nothing is enabled by NULL, and its
-// Principles and Constraints say in as many words that such a chain
-// need not exist: "A microstep always terminates. A macrostep may not. A
+// configuration where nothing is enabled by NULL and the internal queue is
+// empty, and its Principles and Constraints say in as many words that such a
+// chain need not exist: "A microstep always terminates. A macrostep may not. A
 // macrostep that does not terminate may be said to consist of an infinitely
 // long sequence of microsteps. This is currently allowed."
 //
 // So the ceiling is not conformance — it is this engine declining a document
 // the specification permits, which is exactly why the decline has to be
-// visible. The number matches maxErrorCascadeDepth: both bound a chain the
-// document cannot end on its own, and a host that has to reason about one
-// should not have to learn a second number for the other.
-const maxEventlessMicrosteps = 100
+// visible.
+//
+// One budget for the whole inner loop, not one per branch. Appendix D's loop
+// takes a microstep on an eventless transition or on an internal event, and a
+// document alternating the two is one chain, not two: budgeting the branches
+// separately leaves that chain unbounded, which is what a per-call counter on
+// the eventless branch alone did here until 2026-08-20.
+//
+// Ten times maxErrorCascadeDepth, and deliberately not equal to it. This is the
+// backstop; the cascade ceiling is a diagnostic that names the error a handler
+// keeps failing on, and a backstop that fires first makes that diagnostic
+// unreachable. Measured 2026-08-20: with both at a hundred, a handler that
+// raises one event of its own per link — two microsteps a link, which is what a
+// document that logs before it fails looks like — was cut at fifty links by
+// this ceiling and ErrorCascadeEvents never moved. The factor of ten is the
+// headroom that keeps the specific report reachable for a handler raising up to
+// eight events a link; a busier one is cut here instead, which is coarser but
+// still reported.
+const maxMacrostepMicrosteps = 1000
 
 // checkEventlessTransitions checks and executes eventless transitions until
 // stable (§scxml-3.13).
 //
-// Bounded at maxEventlessMicrosteps microsteps and, when the chain is still
+// Bounded at maxMacrostepMicrosteps microsteps and, when the chain is still
 // going at that point, reported through TruncatedMacrosteps — the ceiling is a
 // departure from a document the specification allows, so it is not a silent
-// one. Ported from Rust Engine::check_eventless_transitions.
+// one. The budget is the macrostep's, not this call's: see
+// maxMacrostepMicrosteps. Ported from Rust
+// Engine::check_eventless_transitions.
 func (e *Engine[S, E]) checkEventlessTransitions() {
 	if e.macrostepTruncated {
 		// This macrostep was already stopped at the ceiling. Re-entering the
@@ -1008,8 +1105,8 @@ func (e *Engine[S, E]) checkEventlessTransitions() {
 	nullEvent := e.policy.NullEvent()
 	// Microsteps taken, not loop turns: the turn that finds nothing enabled is
 	// how a macrostep ends, and counting it would spend the budget on the
-	// proof that no budget was needed.
-	taken := 0
+	// proof that no budget was needed. The count lives on the engine because
+	// the macrostep does — see macrostepMicrostepsTaken.
 
 	for {
 		oldState := e.currentState
@@ -1024,21 +1121,18 @@ func (e *Engine[S, E]) checkEventlessTransitions() {
 			break
 		}
 
-		if taken == maxEventlessMicrosteps {
+		if e.macrostepMicrostepsTaken == maxMacrostepMicrosteps {
 			// The chain is still going one microstep past the budget, so this
 			// is the case the specification calls a macrostep that cannot end.
 			// Refuse the microstep rather than take it, and publish the
 			// refusal: the configuration left behind is not a stable one and
 			// only this counter says so.
-			e.truncatedMacrosteps++
-			e.lastTruncatedMacrostepState = oldState
-			e.hasTruncatedMacrostep = true
-			e.macrostepTruncated = true
+			e.recordTruncatedMacrostep(oldState)
 			log.Printf("[sce] Engine::checkEventlessTransitions: macrostep still going after %d microsteps; stopped",
-				maxEventlessMicrosteps)
+				maxMacrostepMicrosteps)
 			break
 		}
-		taken++
+		e.macrostepMicrostepsTaken++
 
 		e.currentState = newState
 		needsHierarchical := (oldState != newState) || !e.policy.LastTransitionIsTargetless()

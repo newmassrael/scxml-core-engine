@@ -19,24 +19,31 @@
      Outcomes this document separates:
 
        poke      one ordinary transition        control: proves a run fired
-       bounded   a chain that STOPS by itself   a hundred microsteps, then its
+       bounded   a chain that STOPS by itself   a thousand microsteps, then its
                                                 guard closes: the count stays 0
        spin      a chain that cannot stop       the engine stops taking the
                                                 chain and says so
 
      `bounded` is the half that makes the count mean something, and it is
-     deliberately a HUNDRED microsteps rather than three: the ceiling is on
-     microsteps taken, so a chain that ends exactly at the ceiling is the case
-     an off-by-one gets wrong, and two engines did — a `while (i++ < MAX)`
-     loop followed by `if (i >= MAX)` treats a chain of ninety-nine as a
-     runaway. In the AOT engine that verdict called `stop()`, so a document
-     that settles on its own was reported dead by an engine that had already
-     finished running it correctly.
+     deliberately EXACTLY the ceiling — a thousand microsteps — rather than
+     three: the ceiling is on microsteps taken, so a chain that ends exactly at
+     it is the case an off-by-one gets wrong, and two engines did — a
+     `while (i++ < MAX)` loop followed by `if (i >= MAX)` treats a chain one
+     short as a runaway. In the AOT engine that verdict called `stop()`, so a
+     document that settles on its own was reported dead by an engine that had
+     already finished running it correctly.
+
+     The ceiling was a hundred when this fixture landed and is a thousand now.
+     It moved because it is a BACKSTOP and it was sitting on top of a sharper
+     ceiling: `error_cascade_is_bounded`'s hundred-link chain costs two
+     microsteps a link, so an equal number here cut that document at fifty
+     links and its `error_cascade_events` never moved. A general ceiling has to
+     be loose enough for the specific ones to be reachable.
 
      `<assign>` is the only witness available: every outcome here leaves the
      machine in a state the configuration alone cannot tell apart from the
-     others, and the `spin` outcome leaves it wherever the hundredth microstep
-     landed rather than anywhere the document names.
+     others, and the `spin` outcome leaves it wherever the last allowed
+     microstep landed rather than anywhere the document names.
 
      Deliberately single-axis: no <send>, no <invoke>, no <parallel>, and no
      failing expression — `error_cascade_is_bounded` owns the chain built from
@@ -53,8 +60,9 @@
              telling those apart. -->
         <data id="pokes" expr="0"/>
         <!-- Laps of the bounded chain. One lap is two microsteps, so the
-             chain this counts to fifty is a hundred microsteps long — exactly
-             the ceiling, which is where the interesting mistakes are. -->
+             chain this counts to five hundred is a thousand microsteps long —
+             exactly the ceiling, which is where the interesting mistakes
+             are. -->
         <data id="laps" expr="0"/>
         <!-- Laps of the unbounded chain. Nothing in the document stops it. -->
         <data id="spins" expr="0"/>
@@ -68,13 +76,13 @@
         <transition event="spin" target="spin_a"/>
     </state>
 
-    <!-- A chain that ends on its own. `laps < 50` closes after fifty laps and
-         the macrostep completes the way §scxml-3.13 describes, with the
-         machine resting in `bounded_a`. An engine must count nothing for it:
-         a long chain is not a runaway, and a document that computes for a
-         hundred microsteps before settling is an ordinary document. -->
+    <!-- A chain that ends on its own. `laps < 500` closes after five hundred
+         laps and the macrostep completes the way §scxml-3.13 describes, with
+         the machine resting in `bounded_a`. An engine must count nothing for
+         it: a long chain is not a runaway, and a document that computes for a
+         thousand microsteps before settling is an ordinary document. -->
     <state id="bounded_a">
-        <transition cond="laps &lt; 50" target="bounded_b">
+        <transition cond="laps &lt; 500" target="bounded_b">
             <assign location="laps" expr="laps + 1"/>
         </transition>
         <!-- Targetless on purpose: a self transition would re-run <onentry>,

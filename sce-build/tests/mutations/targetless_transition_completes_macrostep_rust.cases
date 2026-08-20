@@ -57,15 +57,11 @@ edit("backends/rust/runtime/src/engine.rs",
                 self.check_eventless_transitions();
                 if !self.internal_queue.has_events() {
                     break;
-                }
-                self.process_internal_queue();
-            }""",
+                }""",
      """            loop {
                 if !self.internal_queue.has_events() {
                     break;
-                }
-                self.process_internal_queue();
-            }""")
+                }""")
 PY
 
 # The other half: the eventless side runs and the queue is left alone, so a
@@ -78,16 +74,12 @@ edit("backends/rust/runtime/src/engine.rs",
                 self.check_eventless_transitions();
                 if !self.internal_queue.has_events() {
                     break;
-                }
-                self.process_internal_queue();
-            }""",
+                }""",
      """            loop {
                 self.check_eventless_transitions();
                 if self.internal_queue.has_events() {
                     break;
-                }
-                self.process_internal_queue();
-            }""")
+                }""")
 PY
 
 # ── The transition that moves nothing still runs ───────────────────

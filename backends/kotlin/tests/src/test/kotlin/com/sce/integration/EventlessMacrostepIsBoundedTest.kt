@@ -43,7 +43,7 @@ class EventlessMacrostepIsBoundedTest {
     /** The ceiling the engine applies, spelled here rather than read back from
      * it. A test that asked the engine for its own limit would agree with any
      * limit, including one an edit moved by three orders of magnitude. */
-    private val maxMicrosteps = 100L
+    private val maxMicrosteps = 1000L
 
     /** One lap of either chain is two microsteps (`_a` to `_b`, then back) and
      * only the `_a` edge counts, so a chain run to the ceiling records half. */
@@ -80,7 +80,7 @@ class EventlessMacrostepIsBoundedTest {
         assertEquals(
             1,
             sm.truncatedMacrosteps(),
-            "the hundred-and-first microstep was enabled and was not taken. Without this count " +
+            "the microstep past the budget was enabled and was not taken. Without this count " +
                 "the host sees a machine in a state the document names, having returned at once, " +
                 "with no way to learn that the configuration it is reading is not a stable one"
         )
@@ -108,8 +108,8 @@ class EventlessMacrostepIsBoundedTest {
         assertEquals(
             lapsAtCeiling,
             sm.laps(),
-            "the guard `laps < 50` closes after fifty laps, so the chain is a hundred microsteps " +
-                "long and then stops by itself"
+            "the guard `laps < 500` closes after five hundred laps, so the chain is a thousand " +
+                "microsteps long and then stops by itself"
         )
         assertEquals(
             0,

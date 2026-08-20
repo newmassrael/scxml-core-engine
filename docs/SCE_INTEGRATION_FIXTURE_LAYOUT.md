@@ -490,7 +490,7 @@ configuration from one this engine stopped walking.
 
 Four outcomes, and the second is what makes the count mean something — `poke`
 (one ordinary transition), `bounded` (a chain that stops by itself after
-exactly a hundred microsteps, which is where an off-by-one lands: two engines
+exactly the ceiling's length, which is where an off-by-one lands: two engines
 reported it as a runaway), `spin` (a chain that cannot stop) and `reset` (the
 way back out, so a driver can run the chain twice). `reset` is a
 state-changing transition on purpose: the two C++ engines complete a macrostep
@@ -499,6 +499,46 @@ the eventless chain unvisited on those two channels alone.
 
 It owns only the macrostep that cannot end: no `<send>`, no `<invoke>`, no
 `<parallel>`, and no failing expression.
+
+`internal_chain_is_bounded` owns the other branch of that same inner loop. W3C
+SCXML 3.13 ends a macrostep where nothing is enabled by NULL **and the internal
+queue is empty**, so a `<raise>` answered by a transition that raises again
+never reaches either condition — it is the same allowance Appendix D grants the
+eventless cycle, reached by different code in every engine here. Measured
+2026-08-20, six of the seven did not return from it at all (the eventless
+ceiling budgeted the branch that was not running) and the Kotlin engine stopped
+at a hundred internal iterations and said nothing.
+
+Five outcomes: `poke` (the control), `bounded` (a chain exactly the ceiling's
+length that ends on its own — the count must stay zero), `spin` (a chain that
+cannot end), `resume` (a chain half again as long as the ceiling, which the
+first macrostep refuses and the second finishes — the only outcome that can
+tell a refusal that *left* the queue from one that swallowed it) and
+`alternate` (one `<raise>` and one eventless transition, turn and turn about).
+
+`alternate` is why the budget is one number. Neither branch reaches the ceiling
+on its own there, so an engine that budgets them separately runs the document
+forever with both counters half spent — which is what the Kotlin engine
+shipped. `alts == 500`, half of the shared thousand, is the arithmetic that
+holds it.
+
+Every chain in this fixture is built from targetless transitions inside one
+state, and each outcome has its own machine. That is not economy: the state a
+truncation names has to be one all seven channels can agree on, and the C11
+profile keeps its configuration in a bitmap with no current-state scalar to
+report, so it names the source of the transition the drain last took. On a
+chain that never leaves one state those readings are the same state.
+
+**The ceiling moved from a hundred to a thousand when this fixture landed**, in
+both bounded-chain fixtures and all seven engines. The general ceiling is a
+backstop and it was sitting on top of a sharper one: `error_cascade_is_bounded`
+allows a hundred links and a handler that logs before it fails costs two
+microsteps a link, so an equal number here cut that document at fifty links and
+its `error_cascade_events` never moved. A general ceiling has to be loose
+enough for the specific ones to stay reachable.
+
+It owns only the macrostep an internal chain cannot end: no `<send>`, no
+`<invoke>`, no `<parallel>`, and no failing expression.
 
 `targetless_transition_completes_macrostep` owns the other half of that
 sentence — whether the chain is entered at all. W3C SCXML Appendix D's main

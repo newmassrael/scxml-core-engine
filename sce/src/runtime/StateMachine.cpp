@@ -348,12 +348,12 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
     // §scxml-3.13: Repeat eventless transitions until stable configuration reached
     // This is critical for parallel states where entering a parallel state may enable
     // new eventless transitions in its regions (e.g., test 448)
-    // §scxml-3.13: the budget lives on `checkEventlessTransitions` itself (see
-    // `eventlessMicrostepsTaken_`), so this loop ends either at a stable
+    // §scxml-3.13: the budget lives on the machine (see
+    // `macrostepMicrostepsTaken_`), so this loop ends either at a stable
     // configuration or at the ceiling — and in the second case
     // `truncatedMacrosteps` says which.
     macrostepTruncated_ = false;
-    eventlessMicrostepsTaken_ = 0;
+    macrostepMicrostepsTaken_ = 0;
     int eventlessIterations = 0;
     while (checkEventlessTransitions()) {
         ++eventlessIterations;
@@ -393,6 +393,15 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
 
             // Check for eventless transitions after processing events
             checkEventlessTransitions();
+
+            if (macrostepTruncated_) {
+                // The macrostep this entry built ran out of budget, and the
+                // events it could not take are still queued — which is exactly
+                // why `hasEvents()` above stays true. Without this the loop
+                // turns a thousand times taking nothing, and reports it as an
+                // iteration limit rather than as the chain it is.
+                break;
+            }
         }
 
         if (iterations > 0) {
@@ -594,14 +603,16 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     if (topLevelEvent && eventRaiser_) {
         eventRaiser_->resetErrorCascadeDepth();
     }
-    // The same boundary bounds the eventless chain: the algorithm
+    // The same boundary bounds the macrostep's own chain: the algorithm
     // starts a macrostep at the external dequeue, and for this engine the
-    // host's call is that dequeue — so a machine left inside an eventless
-    // cycle gets a full budget for each event it is given, and each refusal is
-    // counted separately.
+    // host's call is that dequeue — so a machine left inside an endless
+    // chain gets a full budget for each event it is given, and each refusal is
+    // counted separately. It is also the only way a chain refused for leaving
+    // events queued ever gets drained: the events are still there, and this is
+    // where the budget that drains them comes back.
     if (topLevelEvent) {
         macrostepTruncated_ = false;
-        eventlessMicrostepsTaken_ = 0;
+        macrostepMicrostepsTaken_ = 0;
     }
 
     // §scxml-5.10: Protect _event during nested event processing with RAII guard (Test 230)
@@ -790,12 +801,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
-                    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                        SCE_LOG_DEBUG(
-                            "W3C SCXML 3.3: Processing queued internal event after parallel external transition");
-                        return true;
-                    });
+                    drainInternalEvents("Processing queued internal event after parallel external transition");
                 }
 
                 // §scxml-6.4: Execute pending invokes after macrostep completes
@@ -1170,11 +1176,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
-                    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                        SCE_LOG_DEBUG("W3C SCXML 3.4: Processing done.state event after parallel completion");
-                        return true;
-                    });
+                    drainInternalEvents("Processing done.state event after parallel completion");
                 }
             }
 
@@ -1269,11 +1271,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
-                    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-                        SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event after successful transition");
-                        return true;
-                    });
+                    drainInternalEvents("Processing queued internal event after successful transition");
                 }
 
                 // §scxml-6.4: Execute pending invokes after macrostep completes
@@ -1306,11 +1304,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // Interactive mode: Skip auto-processing to allow manual step-by-step execution
     if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
         // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-        SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
-        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
-            SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event");
-            return true;
-        });
+        drainInternalEvents("Processing queued internal event");
     }
 
     // §scxml-6.4: Execute pending invokes after macrostep completes
@@ -2678,8 +2672,50 @@ void StateMachine::recordTruncatedMacrostep() {
     lastTruncatedMacrostepState_ = getCurrentState();
     macrostepTruncated_ = true;
     SCE_LOG_ERROR("W3C SCXML: macrostep still going after {} microsteps in state '{}'; stopped taking them",
-                  MAX_EVENTLESS_MICROSTEPS, lastTruncatedMacrostepState_);
-    SCE_LOG_ERROR("W3C SCXML: Check for circular eventless transitions in your SCXML document");
+                  MAX_MACROSTEP_MICROSTEPS, lastTruncatedMacrostepState_);
+    SCE_LOG_ERROR("W3C SCXML: Check for a circular eventless transition or a <raise> that answers itself");
+}
+
+bool StateMachine::mayTakeMicrostep() {
+    if (macrostepTruncated_) {
+        // Already refused this macrostep; the same chain does not get a second
+        // budget for asking again.
+        return false;
+    }
+    if (macrostepMicrostepsTaken_ < static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
+        return true;
+    }
+    // Work is still queued one microstep past the budget, which is the case
+    // the specification calls a macrostep that does not terminate. The raiser
+    // leaves the event where it is; this publishes the refusal.
+    recordTruncatedMacrostep();
+    return false;
+}
+
+MicrostepBudget StateMachine::makeMicrostepBudget() {
+    MicrostepBudget budget;
+    budget.mayTake = [this]() { return mayTakeMicrostep(); };
+    budget.spend = [this]() { ++macrostepMicrostepsTaken_; };
+    return budget;
+}
+
+void StateMachine::drainInternalEvents(const char *reason) {
+    if (!eventRaiser_) {
+        return;
+    }
+    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
+    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
+    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
+        adapter,
+        [reason](bool) {
+            SCE_LOG_DEBUG("W3C SCXML 3.13: {}", reason);
+            return true;
+        },
+        // The gate is asked here as well as inside the raiser, and it has to
+        // be: the raiser answers a refusal by leaving the event queued, so
+        // `hasEvents()` stays true and a loop that only watched the dispatch
+        // result would turn forever on a queue nobody is draining.
+        [this]() { return mayTakeMicrostep(); });
 }
 
 bool StateMachine::checkEventlessTransitions() {
@@ -2794,7 +2830,7 @@ bool StateMachine::checkEventlessTransitions() {
     // 2026-08-20 on the fixture's cyclic document: seventy-four thousand
     // microsteps deep, then a segfault — the stack ran out before any local
     // counter did.
-    if (eventlessMicrostepsTaken_ >= MAX_EVENTLESS_MICROSTEPS) {
+    if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
         recordTruncatedMacrostep();
         --eventlessRecursionDepth_;
         if (eventlessRecursionDepth_ == 0) {
@@ -2802,7 +2838,7 @@ bool StateMachine::checkEventlessTransitions() {
         }
         return false;
     }
-    ++eventlessMicrostepsTaken_;
+    ++macrostepMicrostepsTaken_;
 
     // §scxml-3.13: If not in parallel state, execute the already-selected transition
     // IMPORTANT: We already evaluated the condition, so we must not re-evaluate it
@@ -4105,6 +4141,12 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
                     return false;
                 }
             });
+            // §scxml-3.13: the same wiring, for the other half of the
+            // macrostep. The raiser owns the internal queue, so it is where a
+            // dispatch can be declined without consuming the event; the
+            // ceiling is this machine's because the eventless branch spends
+            // the same budget. See `MicrostepBudget`.
+            eventRaiserImpl->setMicrostepBudget(makeMicrostepBudget());
             SCE_LOG_DEBUG(
                 "StateMachine: EventRaiser callback set to processEvent - session: {}, EventRaiser instance: {}",
                 sessionId_, (void *)eventRaiserImpl.get());

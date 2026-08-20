@@ -41,7 +41,7 @@ using SM = SCE::Generated::eventless_macrostep_is_bounded::eventless_macrostep_i
 /// A test that asked the engine for its own limit would agree with any limit,
 /// including one an edit moved by three orders of magnitude — and the number is
 /// exactly what this fixture exists to pin.
-constexpr int64_t MAX_MICROSTEPS = 100;
+constexpr int64_t MAX_MICROSTEPS = 1000;
 
 /// One lap of either chain is two microsteps (`_a` to `_b`, then back) and only
 /// the `_a` edge counts, so a chain run to the ceiling records half.
@@ -71,7 +71,7 @@ TEST(EventlessMacrostepIsBoundedAotTest, AMacrostepThatCannotEndIsStopped) {
         << "the chain must run exactly as far as the engine allows — fewer means the document was cut off early, "
            "more means the ceiling moved";
     EXPECT_EQ(sm->truncatedMacrosteps(), 1u)
-        << "the hundred-and-first microstep was enabled and was not taken. Without this count the host sees a "
+        << "the microstep past the budget was enabled and was not taken. Without this count the host sees a "
            "machine that is running, in a state the document names, having returned at once — and no way to learn "
            "that the configuration it is reading is not a stable one";
     ASSERT_TRUE(sm->lastTruncatedMacrostepState().has_value())
@@ -96,8 +96,8 @@ TEST(EventlessMacrostepIsBoundedAotTest, AChainThatEndsAtTheCeilingIsNotRefused)
     sm->processEvent(SM::Event::Bounded);
 
     EXPECT_EQ(sm->getPolicy().laps().value_or(-1), LAPS_AT_CEILING)
-        << "the guard `laps < 50` closes after fifty laps, so the chain is a hundred microsteps long and then "
-           "stops by itself";
+        << "the guard `laps < 500` closes after five hundred laps, so the chain is a thousand microsteps long and "
+           "then stops by itself";
     EXPECT_EQ(sm->truncatedMacrosteps(), 0u)
         << "nothing was refused: the macrostep reached the stable configuration §scxml-3.13 describes, using every "
            "microstep it was allowed. A long chain is not a runaway";

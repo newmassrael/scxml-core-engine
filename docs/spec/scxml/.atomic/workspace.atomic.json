@@ -1875,6 +1875,76 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
           "symbol": "TransitionResult",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "MicrostepBudget",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "setMicrostepBudget",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "setMicrostepBudget",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "microstepBudget_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "mayTakeMicrostep",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "spendMicrostep",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::mayTakeMicrostep",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processQueuedEvents",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processNextQueuedEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processNextInternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "mayTakeMicrostep",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "makeMicrostepBudget",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::drainInternalEvents",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::setEventRaiser",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

@@ -780,6 +780,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 3.13 from the other branch of the same inner loop: a macrostep
+    # ends where nothing is enabled by NULL AND the internal queue is empty, and
+    # a <raise> answered by a transition that raises again never reaches either.
+    # The ceiling used to bound only the eventless half, so this document did
+    # not return at all.
+    sce_generate_static_integration_c_test(internal_chain_is_bounded "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_internal_chain_is_bounded
+        integration/test_internal_chain_is_bounded.c
+        ${INTEGRATION_C_TEST_internal_chain_is_bounded_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_internal_chain_is_bounded PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_internal_chain_is_bounded PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_internal_chain_is_bounded PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_internal_chain_is_bounded
+        COMMAND sce_c_integration_internal_chain_is_bounded
+    )
+    set_tests_properties(c11_integration_internal_chain_is_bounded PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     sce_generate_static_integration_c_test(error_cascade_is_bounded "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_error_cascade_is_bounded

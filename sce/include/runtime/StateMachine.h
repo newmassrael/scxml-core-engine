@@ -392,13 +392,14 @@ public:
         uint32_t errorCascadeEvents = 0;
         /// The most recent event that count refused, empty while it is zero.
         std::string lastErrorCascadeEvent;
-        /// Macrosteps this engine stopped short because their
-        /// eventless chain was still going after `MAX_EVENTLESS_MICROSTEPS`
-        /// microsteps. The clause promises a stable configuration at the end
-        /// of a macrostep, and the specification's Principles and Constraints
-        /// add that such an end need not exist ("A macrostep may not
-        /// [terminate] ... This is currently allowed"). When this count moves,
-        /// the configuration `currentState` reports is not a stable one — and
+        /// Macrosteps this engine stopped short because their chain was still
+        /// going after `MAX_MACROSTEP_MICROSTEPS` microsteps — an eventless
+        /// transition still enabled, or an event still on the internal queue.
+        /// The clause promises a stable configuration at the end of a
+        /// macrostep, and the specification's Principles and Constraints add
+        /// that such an end need not exist ("A macrostep may not [terminate]
+        /// ... This is currently allowed"). When this count moves, the
+        /// configuration `currentState` reports is not a stable one — and
         /// nothing else in this struct says so.
         uint32_t truncatedMacrosteps = 0;
         /// The state the drain was in when that last happened, empty while the
@@ -692,32 +693,45 @@ private:
     size_t eventlessRecursionDepth_ = 0;  // Track recursion depth for eventless transitions
     size_t lastTransitionDepth_ = 0;      // Track depth where lastTransition was set
 
-    /// How many microsteps one macrostep may take on eventless
-    /// transitions alone before this engine stops taking them. The clause
-    /// defines a macrostep as a chain ending where nothing is enabled by NULL,
-    /// and the specification's Principles and Constraints say that chain need
-    /// not exist ("A macrostep may not [terminate] ... This is currently
+    /// How many microsteps one macrostep may take before this engine stops
+    /// taking them. The clause defines a macrostep as a chain ending where
+    /// nothing is enabled by NULL and no internal event is left, and the
+    /// specification's Principles and Constraints say that chain need not
+    /// exist ("A macrostep may not [terminate] ... This is currently
     /// allowed"), so the ceiling is this engine declining a document the
     /// specification permits — which is why `Statistics::truncatedMacrosteps`
-    /// publishes the decline instead of a log line carrying it alone. The
-    /// number matches the AOT engine's `MAX_EVENTLESS_MICROSTEPS` and
-    /// `EventRaiserImpl::MAX_ERROR_CASCADE_DEPTH`: one number for every chain
-    /// a document cannot end on its own.
-    static constexpr int MAX_EVENTLESS_MICROSTEPS = 100;
+    /// publishes the decline instead of a log line carrying it alone. It is
+    /// the AOT engine's `MAX_MACROSTEP_MICROSTEPS`, the same number for the
+    /// same reason.
+    ///
+    /// One budget for the whole inner loop, not one per branch: a document
+    /// that alternates an eventless transition with a `<raise>` is one chain,
+    /// and budgeting the branches separately leaves it unbounded.
+    ///
+    /// Ten times the error-cascade depth, and deliberately not equal to it.
+    /// This is the backstop; the cascade ceiling is a diagnostic that names
+    /// the error a handler keeps failing on, and a backstop that fires first
+    /// makes that diagnostic unreachable — measured 2026-08-20, with both at a
+    /// hundred a handler that raises one event of its own per link was cut at
+    /// fifty links here and the cascade count never moved.
+    static constexpr int MAX_MACROSTEP_MICROSTEPS = 1000;
 
-    /// Macrosteps stopped at that ceiling with an eventless
-    /// transition still enabled, and the state the drain was in when it last
-    /// happened. `macrostepTruncated_` exists because the drain is reached
-    /// from more than one place per macrostep; it is cleared where the
-    /// algorithm starts a macrostep, which for this engine is the host's call.
+    /// Macrosteps stopped at that ceiling with the chain still going, and the
+    /// state the drain was in when it last happened. `macrostepTruncated_`
+    /// exists because the drain is reached from more than one place per
+    /// macrostep; it is cleared where the algorithm starts a macrostep, which
+    /// for this engine is the host's call.
     uint32_t truncatedMacrosteps_ = 0;
     std::string lastTruncatedMacrostepState_;
     bool macrostepTruncated_ = false;
-    /// Microsteps this macrostep has taken on eventless transitions. A member
-    /// rather than a loop counter because this engine's chain is recursive —
-    /// executing one microstep re-enters the macrostep loop, so a local
-    /// counter is per nesting level and never reaches any ceiling.
-    uint32_t eventlessMicrostepsTaken_ = 0;
+    /// Microsteps this macrostep has taken, on eventless transitions and on
+    /// internal events alike. A member rather than a loop counter because this
+    /// engine's chain is recursive — executing one microstep re-enters the
+    /// macrostep loop, so a local counter is per nesting level and never
+    /// reaches any ceiling — and because the two branches share it: the
+    /// internal half is spent through the `MicrostepBudget` this machine lends
+    /// its raiser, which owns the queue those microsteps come off.
+    uint32_t macrostepMicrostepsTaken_ = 0;
 
     // SCXML model
     std::shared_ptr<SCXMLModel> model_;
@@ -842,11 +856,35 @@ private:
      */
     bool checkEventlessTransitions();
 
-    /// Record that a macrostep was stopped at
-    /// `MAX_EVENTLESS_MICROSTEPS` with its eventless chain still going. Shared
-    /// by the two bounded loops (`start()`'s and the one inside a transition's
-    /// macrostep) so both report the same fact the same way.
+    /// Record that a macrostep was stopped at `MAX_MACROSTEP_MICROSTEPS` with
+    /// its chain still going. Shared by every bounded loop — `start()`'s, the
+    /// one inside a transition's macrostep, and the budget this machine lends
+    /// its event raiser — so all of them report the same fact the same way.
     void recordTruncatedMacrostep();
+
+    /// §scxml-3.13: may the macrostep now in progress take another microstep?
+    ///
+    /// Publishes the refusal on the way out, because the parties that ask —
+    /// the internal-queue drains and the raiser holding the queue — are not
+    /// the ones that own the ceiling.
+    bool mayTakeMicrostep();
+
+    /// W3C SCXML Appendix D (mainEventLoop): drain the internal queue, bounded
+    /// by the macrostep budget.
+    ///
+    /// One function for every site that completes a macrostep, so all of them
+    /// bound the chain the same way; `reason` is the log line that used to be
+    /// the only difference between them.
+    void drainInternalEvents(const char *reason);
+
+    /// §scxml-3.13: the `MicrostepBudget` this machine lends its raiser.
+    ///
+    /// The raiser owns the internal queue, so it is the only party that can
+    /// decline a dispatch without consuming the event; the budget is here
+    /// because the eventless branch spends the same one. Wired where the event
+    /// callback is, and for the same reason: both are how the raiser reaches
+    /// back into this machine.
+    MicrostepBudget makeMicrostepBudget();
 
     /**
      * @brief Execute a single transition directly without re-evaluating its condition
