@@ -297,36 +297,47 @@ fn a_send_declaration_does_not_claim_the_invoke_of_the_same_name() {
 /// asked.
 #[test]
 fn a_backend_without_a_registry_refuses_the_declaration() {
+    // BOTH flags, because they are two lists feeding one check. Sweeping
+    // only `--host-processor` left the invoke half untested: a mutation
+    // that dropped `host_invoker_types` from the check reddened nothing,
+    // so a build declaring only an invoker would have compiled on a
+    // backend that cannot service it.
     for lang in ["cpp", "c11", "kotlin", "go", "python"] {
-        let out = out_dir(&format!("refuse-{lang}"));
-        let r = run(&[
-            "generate",
-            fixture().to_str().unwrap(),
-            "-l",
-            lang,
-            "-o",
-            out.to_str().unwrap(),
-            "--host-processor",
-            "x-sce-host",
-            "--error-format=json",
-        ]);
-        assert_ne!(
-            r.exit,
-            Some(0),
-            "{lang} accepted a declaration it cannot service",
-        );
-        assert!(
-            r.stderr.contains("generate/unsupported-feature"),
-            "{lang} refused with the wrong diagnostic: {}",
-            r.stderr,
-        );
-        // The message must name the backend AND the type, or an author
-        // reading it cannot tell which of several declarations to drop.
-        assert!(
-            r.stderr.contains("x-sce-host"),
-            "{lang}'s refusal does not name the declared type: {}",
-            r.stderr,
-        );
+        for (flag, doc) in [
+            ("--host-processor", fixture()),
+            ("--host-invoker", invoker_fixture()),
+        ] {
+            let tag = flag.trim_start_matches("--");
+            let out = out_dir(&format!("refuse-{lang}-{tag}"));
+            let r = run(&[
+                "generate",
+                doc.to_str().unwrap(),
+                "-l",
+                lang,
+                "-o",
+                out.to_str().unwrap(),
+                flag,
+                "x-sce-host",
+                "--error-format=json",
+            ]);
+            assert_ne!(
+                r.exit,
+                Some(0),
+                "{lang} accepted a {flag} declaration it cannot service",
+            );
+            assert!(
+                r.stderr.contains("generate/unsupported-feature"),
+                "{lang} refused {flag} with the wrong diagnostic: {}",
+                r.stderr,
+            );
+            // The message must name the backend AND the type, or an author
+            // reading it cannot tell which of several declarations to drop.
+            assert!(
+                r.stderr.contains("x-sce-host"),
+                "{lang}'s {flag} refusal does not name the declared type: {}",
+                r.stderr,
+            );
+        }
     }
 }
 
