@@ -34,7 +34,7 @@
 // The ceiling the engine applies, spelled here rather than read back from it.
 // A test that asked the engine for its own limit would agree with any limit,
 // including one an edit moved by three orders of magnitude.
-#define MAX_MICROSTEPS 100
+#define MAX_MICROSTEPS 1000
 
 // One lap of either chain is two microsteps (_a to _b, then back) and only the
 // _a edge counts, so a chain run to the ceiling records half.
@@ -87,8 +87,8 @@ int main(void) {
         }
 
         if (eventless_macrostep_is_bounded_truncated_macrosteps(&sm) != 1u) {
-            fprintf(stderr, "eventless_macrostep_is_bounded: FAIL - the hundred-and-first "
-                            "microstep was enabled and was not taken. Without that count the host "
+            fprintf(stderr, "eventless_macrostep_is_bounded: FAIL - the microstep past the budget "
+                            "was enabled and was not taken. Without that count the host "
                             "sees a machine that is running, in a state the document names, "
                             "having returned at once, with no way to learn that the configuration "
                             "it is reading is not a stable one.\n");
@@ -126,9 +126,9 @@ int main(void) {
         (void)eventless_macrostep_is_bounded_laps(&sm, &laps);
         if (laps != LAPS_AT_CEILING) {
             fprintf(stderr,
-                    "eventless_macrostep_is_bounded: FAIL - the guard `laps < 50` closes after "
-                    "fifty laps, so the chain is a hundred microsteps long and then stops by "
-                    "itself (want %d, got %lld).\n",
+                    "eventless_macrostep_is_bounded: FAIL - the guard `laps < 500` closes after "
+                    "five hundred laps, so the chain is a thousand microsteps long and then stops "
+                    "by itself (want %d, got %lld).\n",
                     LAPS_AT_CEILING, (long long)laps);
             rc = 1;
         }

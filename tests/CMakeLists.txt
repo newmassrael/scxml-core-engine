@@ -741,6 +741,8 @@ add_executable(integration_tests
     integration/ErrorCascadeIsBoundedAotTest.cpp
     integration/EventlessMacrostepIsBoundedTest.cpp
     integration/EventlessMacrostepIsBoundedAotTest.cpp
+    integration/InternalChainIsBoundedTest.cpp
+    integration/InternalChainIsBoundedAotTest.cpp
     integration/TargetlessTransitionCompletesMacrostepTest.cpp
     integration/TargetlessTransitionCompletesMacrostepAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
@@ -1152,6 +1154,13 @@ sce_generate_static_integration_test(error_cascade_is_bounded ${STATIC_INTEGRATI
 # engine's own off-by-one used to call `stop()` on a document that had already
 # settled.
 sce_generate_static_integration_test(eventless_macrostep_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 3.13 from the other branch of the same inner loop: a macrostep ends
+# where nothing is enabled by NULL AND the internal queue is empty, so a
+# `<raise>` answered by a transition that raises again never reaches either
+# condition. The eventless ceiling did nothing for that document — the queue
+# drain had no budget at all — and neither C++ engine returned from it.
+sce_generate_static_integration_test(internal_chain_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML Appendix D's inner loop returns to `selectEventlessTransitions()`
 # after every microstep and drains the internal queue there, without asking

@@ -53,4 +53,15 @@
 {%- endif -%}
 // GENERATED -- DO NOT EDIT (sce-codegen)
 {{ head }}mod {{ module_stem }}_sm;
+{# The machine carries an audited suppression budget and these two lines
+   carried none, which is the one thing a consumer still had to write for
+   itself. Reproduced 2026-08-20 on a consumer whose library reaches the
+   machine only from its tests: the re-export is then unreachable from outside
+   the crate and `unused_imports` fires HERE, on a line SCE emits, while the
+   machine's own head stays silent. Under the consumer's `deny(warnings)` that
+   is a hard error in generated code the consumer may not edit.
+
+   One allow, named, for the same reason the machine's twelve are named — a
+   blanket would also swallow a real warning in the two lines below. #}
+#[allow(unused_imports)]
 pub use {{ module_stem }}_sm::*;

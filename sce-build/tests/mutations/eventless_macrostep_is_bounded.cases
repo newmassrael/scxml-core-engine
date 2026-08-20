@@ -39,12 +39,12 @@ mutation_case "the macrostep past the ceiling is taken anyway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """                sce_log_error!(
                     "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
-                    MAX_EVENTLESS_MICROSTEPS
+                    MAX_MACROSTEP_MICROSTEPS
                 );
                 break;""",
      """                sce_log_error!(
                     "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
-                    MAX_EVENTLESS_MICROSTEPS
+                    MAX_MACROSTEP_MICROSTEPS
                 );""")
 PY
 
@@ -55,8 +55,8 @@ PY
 # ceiling is reported as a runaway. That is not hypothetical: both C++ engines
 # shipped this off-by-one, and in the AOT one the verdict called `stop()`.
 # `a_chain_that_ends_at_the_ceiling_is_not_refused` is the assertion that
-# separates them, and it is why the fixture's bounded chain is a hundred
-# microsteps long rather than three.
+# separates them, and it is why the fixture's bounded chain is exactly the
+# ceiling's length rather than three.
 
 mutation_case "a chain that settles at the ceiling is called a runaway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
@@ -68,14 +68,14 @@ edit("backends/rust/runtime/src/engine.rs",
                 break;
             }
 
-            if taken == MAX_EVENTLESS_MICROSTEPS {""",
+            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {""",
      """            let took_transition = self.process_transition_dispatch(&mut new_state, null_event);
-            if taken == MAX_EVENTLESS_MICROSTEPS {""")
+            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {""")
 edit("backends/rust/runtime/src/engine.rs",
-     """            taken += 1;
+     """            self.macrostep_microsteps_taken += 1;
 
             self.current_state = new_state;""",
-     """            taken += 1;
+     """            self.macrostep_microsteps_taken += 1;
             if !took_transition {
                 break;
             }
@@ -89,7 +89,7 @@ PY
 # `execute_transition` and once from §scxml-D-mainEventLoop's own loop. Without
 # the flag each caller gets a fresh budget, so the machine takes twice the
 # microsteps it was allowed and reports two refusals for one macrostep. This is
-# the defect the first run of the Rust channel found, and `spins == 50` with
+# the defect the first run of the Rust channel found, and `spins == 500` with
 # `truncated_macrosteps() == 1` is the pair that holds it.
 
 mutation_case "each caller of the drain gets its own budget" <<'PY'
@@ -109,12 +109,13 @@ PY
 # of the machine's whole life. The second macrostep is refused before it runs,
 # so a host polling the count sees it stop moving and reads the machine as
 # recovered. `a_second_truncated_macrostep_counts_again` reads
-# `spins == 100`, which is the only assertion that can tell "bounded twice"
+# `spins == 1000`, which is the only assertion that can tell "bounded twice"
 # from "bounded once, then inert".
 
 mutation_case "the ceiling outlives the macrostep that hit it" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """        self.macrostep_truncated = false;
+        self.macrostep_microsteps_taken = 0;
         {
             // §scxml-6.5: Execute finalize before parent's own transition matching""",
      """        {
@@ -130,19 +131,24 @@ PY
 
 mutation_case "the refusal is silent" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);""",
-     """                self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(0);""")
+     """        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);""",
+     """        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(0);""")
 PY
 
 # ── Naming where it stopped ────────────────────────────────────────
 #
 # A count says a document somewhere cannot settle; the state says which walk.
-# Leaving it `None` is invisible to every assertion except the one that asks.
+# Naming the wrong end of the refused transition is invisible to every
+# assertion except the one that asks: the fixture's cycle alternates two
+# states, so the source and the target it would have entered are different
+# names for the same refusal, and only one of them is where an author looks.
+# (Dropping the name entirely is the sibling mutant in
+# `internal_chain_is_bounded.cases`, which owns the shared recorder.)
 
-mutation_case "the engine counts the refusal but never names the state" <<'PY'
+mutation_case "the engine names the state the refused microstep would have entered" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.last_truncated_macrostep_state = Some(old_state);""",
-     """                self.last_truncated_macrostep_state = None;""")
+     """                self.record_truncated_macrostep(old_state);""",
+     """                self.record_truncated_macrostep(new_state);""")
 PY
 
 # ── The lower bound on the accessor ────────────────────────────────

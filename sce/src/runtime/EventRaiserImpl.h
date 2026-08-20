@@ -246,6 +246,15 @@ public:
      */
     void resetErrorCascadeDepth() override;
 
+    /**
+     * @brief §scxml-3.13: take the macrostep budget this raiser's internal dispatches spend
+     *
+     * See `IEventRaiser::setMicrostepBudget`. This raiser owns the queue, so it
+     * is the only party that can decline a dispatch without consuming the
+     * event — the refusal leaves it queued for the next macrostep.
+     */
+    void setMicrostepBudget(MicrostepBudget budget) override;
+
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
     bool raiseEvent(const std::string &eventName, const std::string &eventData,
@@ -468,6 +477,26 @@ public:
     std::atomic<uint32_t> errorCascadeEvents_{0};
     std::string lastErrorCascadeEvent_;
     mutable std::mutex lastErrorCascadeEventMutex_;
+
+    // §scxml-3.13: the state machine's macrostep budget, lent to this raiser
+    // because the queue is here. Empty until the machine wires its callback,
+    // and a raiser without one dispatches exactly as it always did. See
+    // `MicrostepBudget`.
+    MicrostepBudget microstepBudget_;
+    mutable std::mutex microstepBudgetMutex_;
+
+    /**
+     * @brief §scxml-3.13: may this macrostep dispatch another internal event?
+     *
+     * Yes when no budget was lent — the ceiling belongs to the machine, and a
+     * raiser standing on its own has no macrostep to bound.
+     */
+    bool mayTakeMicrostep();
+
+    /**
+     * @brief §scxml-3.13: report that a dispatch selected a transition, so the budget shrinks
+     */
+    void spendMicrostep();
 
     /**
      * @brief Marks one dispatch as "an error handler is running" for the raise

@@ -1,0 +1,137 @@
+# Mutation cases for §scxml-3.13 read against the other half of the case the
+# specification explicitly allows — a macrostep whose `<raise>` chain never
+# ends.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/internal_chain_is_bounded.cases`.
+#
+# `eventless_macrostep_is_bounded` owns the chain built from transitions that
+# need no event; this one owns the chain built from internal events. Both are
+# the same clause: a macrostep ends where nothing is enabled by NULL AND the
+# internal queue is empty, and Appendix D says that end need not exist. Until
+# 2026-08-20 the ceiling covered only the eventless branch, so the `<raise>`
+# document did not return on any of the seven engines.
+#
+# Two traps these cases exist for. The first is a ceiling that swallows the
+# events it refuses: the fixture's `resume` chain outlives one macrostep and
+# must finish in the next, which only holds if the refusal left the queue
+# alone. The second is a per-branch budget: the `alternate` chain takes every
+# other microstep on each branch, so two counters of a thousand each never fire
+# and `alts == 500` is what says the budget is one.
+#
+# The C++ halves and the C11 template live in
+# `internal_chain_is_bounded_ctest.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test internal_chain_is_bounded
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/internal_chain_is_bounded.rs
+
+# ── The refusal itself ─────────────────────────────────────────────
+#
+# The drain keeps taking internal events. This is the shipped behaviour the
+# axis replaced — with no budget on this branch the call does not come back,
+# and the harness's artefact timeout is what turns "the round hung" into a
+# verdict.
+
+mutation_case "the internal drain has no ceiling at all" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+                // Work is still queued one microstep past the budget, so this""",
+     """            if false {
+                // Work is still queued one microstep past the budget, so this""")
+PY
+
+# ── The refusal leaves the queue alone ─────────────────────────────
+#
+# Popping before asking consumes the event the drain then declines to run. The
+# chain is still bounded and every count still moves, so only
+# `a_refused_chain_is_left_queued_for_the_next_macrostep` can see it: the
+# `resume` chain stops a link short of its end and never finishes, because the
+# link that would have continued it was thrown away.
+
+mutation_case "the drain swallows the event it refused" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """                self.record_truncated_macrostep(self.current_state);
+                sce_log_error!(""",
+     """                let _swallowed = self.internal_queue.pop();
+                self.record_truncated_macrostep(self.current_state);
+                sce_log_error!(""")
+PY
+
+# ── One budget, not one per branch ─────────────────────────────────
+#
+# The internal branch keeps a counter of its own, which is what the Kotlin
+# engine shipped. Nothing hangs and the `spin` outcome still reports exactly
+# one refusal — the chain that gets through is the one that alternates, because
+# each branch keeps finding its own counter unspent. `alts` is the only reading
+# that separates them: five hundred when the budget is shared, a thousand when
+# it is not.
+
+mutation_case "the internal branch budgets itself" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """    pub(crate) fn process_internal_queue(&mut self) {
+        if self.macrostep_truncated {""",
+     """    pub(crate) fn process_internal_queue(&mut self) {
+        // MUTANT: a budget of this drain's own, reset on every entry.
+        self.macrostep_microsteps_taken = 0;
+        if self.macrostep_truncated {""")
+PY
+
+# ── The microstep that was answered is the one that is counted ─────
+#
+# Counting a dispatch that selected nothing spends the budget on events the
+# macrostep did not act on. The `bounded` chain ends exactly at the ceiling, so
+# any over-count reports a document that settles on its own as a runaway.
+
+mutation_case "an unanswered internal event still spends the budget" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if outcome != EventOutcome::Discarded {""",
+     """            if true {""")
+PY
+
+# ── The report ─────────────────────────────────────────────────────
+#
+# The chain is still cut, so nothing hangs and every configuration assertion
+# still passes — the machine simply stops saying that the configuration it
+# hands back is not a stable one. This is the shape the Kotlin engine shipped
+# on this branch: bounded and silent, which is the same signal as unbounded to
+# the host reading it.
+
+mutation_case "the internal refusal is silent" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """    pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {
+        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);""",
+     """    pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {""")
+PY
+
+# ── Naming where it stopped ────────────────────────────────────────
+#
+# The count alone says a document somewhere cannot settle. Naming a state on
+# the chain is what an author acts on, and the fixture's chains never leave one
+# state so the name is unambiguous in all seven channels.
+
+mutation_case "the internal refusal counts but never names the state" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.last_truncated_macrostep_state = Some(state);""",
+     """        self.last_truncated_macrostep_state = None;""")
+PY
+
+# ── The macrostep boundary ─────────────────────────────────────────
+#
+# A budget that is never given back makes the ceiling a property of the
+# machine's whole life: the events the first macrostep refused stay queued
+# forever, because every later macrostep finds the budget already spent.
+# `a_refused_chain_is_left_queued_for_the_next_macrostep` reads the chain's
+# end for it — the second macrostep has to be able to finish what the first
+# would not.
+
+mutation_case "the spent budget outlives the macrostep that spent it" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.macrostep_truncated = false;
+        self.macrostep_microsteps_taken = 0;
+        {
+            // §scxml-6.5: Execute finalize before parent's own transition matching""",
+     """        {""")
+PY
