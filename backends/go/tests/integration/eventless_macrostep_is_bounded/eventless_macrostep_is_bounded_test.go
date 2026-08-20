@@ -38,7 +38,7 @@ import (
 // read back from it. A test that asked the engine for its own limit would
 // agree with any limit, including one an edit moved by three orders of
 // magnitude.
-const maxMicrosteps int64 = 100
+const maxMicrosteps int64 = 1000
 
 // lapsAtCeiling: one lap of either chain is two microsteps (_a to _b, then
 // back) and only the _a edge counts, so a chain run to the ceiling records
@@ -85,7 +85,7 @@ func TestAMacrostepThatCannotEndIsStopped(t *testing.T) {
 			lapsAtCeiling, got)
 	}
 	if got := engine.TruncatedMacrosteps(); got != 1 {
-		t.Fatalf("the hundred-and-first microstep was enabled and was not taken. Without "+
+		t.Fatalf("the microstep past the budget was enabled and was not taken. Without "+
 			"this count the host sees a machine that is running, in a state the document "+
 			"names, having returned in microseconds — and no way to learn that the "+
 			"configuration it is reading is not a stable one; got %d", got)
@@ -116,8 +116,8 @@ func TestAChainThatEndsAtTheCeilingIsNotRefused(t *testing.T) {
 	engine.ProcessEvent(EventlessMacrostepIsBoundedEventBounded)
 
 	if got := counter(t, policy, "laps"); got != lapsAtCeiling {
-		t.Fatalf("the guard `laps < 50` closes after fifty laps, so the chain is a hundred "+
-			"microsteps long and then stops by itself; want %d got %d", lapsAtCeiling, got)
+		t.Fatalf("the guard `laps < 500` closes after five hundred laps, so the chain is a "+
+			"thousand microsteps long and then stops by itself; want %d got %d", lapsAtCeiling, got)
 	}
 	if got := engine.TruncatedMacrosteps(); got != 0 {
 		t.Fatalf("nothing was refused: the macrostep reached the stable configuration "+

@@ -104,23 +104,37 @@ use crate::{sce_log_debug, sce_log_error, SceString};
 /// unattended supervisor did not hang — it burned a core until it was killed.
 pub(crate) const MAX_ERROR_CASCADE_DEPTH: u32 = 100;
 
-/// How many microsteps one macrostep may take on eventless transitions alone
-/// before this engine stops taking them — see
-/// [`Engine::truncated_macrosteps`].
+/// How many microsteps one macrostep may take before this engine stops taking
+/// them — see [`Engine::truncated_macrosteps`].
 ///
 /// The specification defines a macrostep as a chain of microsteps ending in a
-/// configuration where nothing is enabled by NULL, and its Principles and
-/// Constraints say in as many words that such a chain need not exist:
-/// *"A microstep always terminates. A macrostep may not.
+/// configuration where nothing is enabled by NULL and the internal queue is
+/// empty, and its Principles and Constraints say in as many words that such a
+/// chain need not exist: *"A microstep always terminates. A macrostep may not.
 /// A macrostep that does not terminate may be said to consist of an infinitely
 /// long sequence of microsteps. This is currently allowed."*
 ///
 /// So the ceiling is not conformance — it is this engine declining a document
 /// the specification permits, which is exactly why the decline has to be
-/// visible. The number is chosen to match [`MAX_ERROR_CASCADE_DEPTH`]: both
-/// bound a chain the document cannot end on its own, and a host that has to
-/// reason about one should not have to learn a second number for the other.
-pub(crate) const MAX_EVENTLESS_MICROSTEPS: usize = 100;
+/// visible.
+///
+/// One budget for the whole inner loop, not one per branch. Appendix D's loop
+/// takes a microstep on an eventless transition *or* on an internal event, and
+/// a document alternating the two is one chain, not two: budgeting the
+/// branches separately leaves that chain unbounded, which is what a per-call
+/// counter on the eventless branch alone did here until 2026-08-20.
+///
+/// Ten times [`MAX_ERROR_CASCADE_DEPTH`], and deliberately not equal to it.
+/// This is the backstop; the cascade ceiling is a diagnostic that names the
+/// error a handler keeps failing on, and a backstop that fires first makes
+/// that diagnostic unreachable. Measured 2026-08-20: with both at a hundred,
+/// a handler that raises one event of its own per link — two microsteps a
+/// link, which is what a document that logs before it fails looks like — was
+/// cut at fifty links by this ceiling and `error_cascade_events` never moved.
+/// The factor of ten is the headroom that keeps the specific report reachable
+/// for a handler raising up to eight events a link; a busier one is cut here
+/// instead, which is coarser but still reported.
+pub(crate) const MAX_MACROSTEP_MICROSTEPS: usize = 1000;
 
 /// Comparable timestamp used by the scheduler: `u64` millisecond ticks read
 /// from `<P::Hal as Hal>::now_ticks_ms()` under both std and no_std.
@@ -515,15 +529,24 @@ pub struct Engine<P: StatePolicy> {
     /// The most recent `error.*` event refused that way — see
     /// [`last_error_cascade_event`](Self::last_error_cascade_event).
     pub(crate) last_error_cascade_event: Option<P::Event>,
-    /// Macrosteps this engine stopped at [`MAX_EVENTLESS_MICROSTEPS`] with an
-    /// eventless transition still enabled — see
+    /// Macrosteps this engine stopped at [`MAX_MACROSTEP_MICROSTEPS`] with the
+    /// chain still going — see
     /// [`truncated_macrosteps`](Self::truncated_macrosteps).
     pub(crate) truncated_macrosteps: u32,
     /// The state the drain was in when it last stopped that way — see
     /// [`last_truncated_macrostep_state`](Self::last_truncated_macrostep_state).
     pub(crate) last_truncated_macrostep_state: Option<P::State>,
+    /// Microsteps taken by the macrostep now in progress, against
+    /// [`MAX_MACROSTEP_MICROSTEPS`].
+    ///
+    /// A field rather than a local, for the reason Appendix D's loop is one loop:
+    /// the eventless branch and the internal-event branch take turns inside a
+    /// single macrostep, so a counter that lives in either one alone is reset by
+    /// the other and bounds nothing. Cleared where a macrostep begins, which is
+    /// the external dequeue.
+    pub(crate) macrostep_microsteps_taken: usize,
     /// Whether the macrostep now in progress has already been stopped at
-    /// [`MAX_EVENTLESS_MICROSTEPS`].
+    /// [`MAX_MACROSTEP_MICROSTEPS`].
     ///
     /// The drain is reached twice per macrostep — once from
     /// [`execute_transition`](Self::execute_transition) and once from
@@ -582,6 +605,7 @@ impl<P: StatePolicy> Engine<P> {
             last_error_cascade_event: None,
             truncated_macrosteps: 0,
             last_truncated_macrostep_state: None,
+            macrostep_microsteps_taken: 0,
             macrostep_truncated: false,
             donedata_at_final: SceString::new(),
         }
@@ -1094,17 +1118,23 @@ impl<P: StatePolicy> Engine<P> {
         self.last_error_cascade_event
     }
 
-    /// How many macrosteps this engine stopped short because their eventless
-    /// chain was still going after `MAX_EVENTLESS_MICROSTEPS` microsteps
-    /// (internal — the number is the engine's to choose and the count is what
-    /// a host reads).
+    /// How many macrosteps this engine stopped short because their chain was
+    /// still going after `MAX_MACROSTEP_MICROSTEPS` microsteps (internal — the
+    /// number is the engine's to choose and the count is what a host reads).
     ///
     /// The specification says a macrostep ends in a configuration where
-    /// nothing is enabled by NULL, and its Principles and Constraints add that
-    /// a macrostep *may not terminate* and that this "is currently allowed".
-    /// A document with a cyclic eventless transition is
-    /// therefore not malformed; it is a document whose macrostep is infinite,
-    /// and an engine that runs it to the letter never returns.
+    /// nothing is enabled by NULL and no internal event is left, and its
+    /// Principles and Constraints add that a macrostep *may not terminate* and
+    /// that this "is currently allowed". A document with a cyclic eventless
+    /// transition is therefore not malformed, and neither is one whose
+    /// `<raise>` answers itself; both are documents whose macrostep is
+    /// infinite, and an engine that runs either to the letter never returns.
+    ///
+    /// Both are counted here, because they are the same fact to a host: the
+    /// macrostep it just drove did not reach a stable configuration. Which
+    /// chain it was is what
+    /// [`last_truncated_macrostep_state`](Self::last_truncated_macrostep_state)
+    /// points at.
     ///
     /// This engine does not run it to the letter. It stops, and this count is
     /// how a host learns that it did — because every other reading says the
@@ -1115,10 +1145,11 @@ impl<P: StatePolicy> Engine<P> {
     /// happened to land, and the document has more to do that this engine will
     /// not do.
     ///
-    /// A document whose eventless chain is a hundred microsteps long and then
-    /// settles counts zero: the ceiling is on microsteps *taken*, and the
-    /// macrostep is only counted here when a transition was still enabled
-    /// after them. Long chains are ordinary; endless ones are not.
+    /// A document whose chain is a hundred microsteps long and then settles
+    /// counts zero: the ceiling is on microsteps *taken*, and the macrostep is
+    /// only counted here when the loop still had work after them — a
+    /// transition enabled by NULL, or an event left on the internal queue.
+    /// Long chains are ordinary; endless ones are not.
     pub fn truncated_macrosteps(&self) -> u32 {
         self.truncated_macrosteps
     }
@@ -1127,10 +1158,12 @@ impl<P: StatePolicy> Engine<P> {
     /// or `None` while [`truncated_macrosteps`](Self::truncated_macrosteps) is
     /// zero.
     ///
-    /// Which state it was is the whole repair: an eventless cycle is a closed
-    /// walk through the state graph, and this names one state on it. The
-    /// count alone says a document somewhere cannot settle; this says where to
-    /// look. Copy, so reading it costs nothing on the no_std profile.
+    /// Which state it was is the whole repair: an endless chain is a closed
+    /// walk through the state graph, and this names one state on it — the
+    /// source of the transition that was refused, or the state the drain was
+    /// standing in when it stopped taking internal events. The count alone
+    /// says a document somewhere cannot settle; this says where to look. Copy,
+    /// so reading it costs nothing on the no_std profile.
     pub fn last_truncated_macrostep_state(&self) -> Option<P::State> {
         self.last_truncated_macrostep_state
     }
@@ -1810,6 +1843,13 @@ impl<P: StatePolicy> Engine<P> {
                     break;
                 }
                 self.process_internal_queue();
+                if self.macrostep_truncated {
+                    // Either branch may have spent the last of the budget.
+                    // Without this the loop turns forever on a chain that is
+                    // no longer being drained: the queue stays non-empty
+                    // precisely because the drain refused it.
+                    break;
+                }
             }
 
             if !self.is_running || self.is_in_final_state() {
@@ -1829,7 +1869,17 @@ impl<P: StatePolicy> Engine<P> {
             // events (and a child that completed synchronously may already
             // have raised `done.invoke`); handle them before touching the
             // external queue.
-            if self.internal_queue.has_events() {
+            //
+            //
+            // Not when this macrostep was already stopped at the ceiling: the
+            // queue is non-empty *because* the drain refused it, so looping
+            // back is a spin that takes no microstep, logs nothing, and never
+            // ends. Falling through to the external dequeue instead is what
+            // keeps a machine inside an endless chain reachable at all — the
+            // event that rescues it is on that queue, and the clause's
+            // internal-first priority would otherwise hold it behind a chain
+            // that never ends.
+            if !self.macrostep_truncated && self.internal_queue.has_events() {
                 continue;
             }
 
@@ -1840,10 +1890,38 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// §scxml-C-1: Drain the internal queue (high priority).
+    ///
+    /// Bounded by the same macrostep budget the eventless branch spends, and
+    /// for the same reason: a `<raise>` answered by a transition that raises
+    /// again is a macrostep that never ends, exactly as a cyclic eventless
+    /// transition is. Until 2026-08-20 this branch had no ceiling in any of the
+    /// seven engines here, so that document did not return at all.
     pub(crate) fn process_internal_queue(&mut self) {
+        if self.macrostep_truncated {
+            // The eventless branch of this same macrostep already ran out of
+            // budget. Draining now would hand the chain a second one.
+            return;
+        }
         sce_log_debug!("Engine::process_internal_queue: starting internal queue drain");
 
-        while let Some(event_with_meta) = self.internal_queue.pop() {
+        while self.internal_queue.has_events() {
+            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+                // Work is still queued one microstep past the budget, so this
+                // is the case the specification calls a macrostep that does not
+                // terminate. Refuse the microstep rather than take it: the
+                // event stays on the queue, which is where the next macrostep
+                // will find it, and the count says the configuration a host
+                // reads now is not a stable one.
+                self.record_truncated_macrostep(self.current_state);
+                sce_log_error!(
+                    "Engine::process_internal_queue: macrostep still going after {} microsteps; stopped",
+                    MAX_MACROSTEP_MICROSTEPS
+                );
+                return;
+            }
+            let Some(event_with_meta) = self.internal_queue.pop() else {
+                break;
+            };
             // §scxml-5.4.1: Stop if top-level final state reached. Same
             // predicate as everything else that means "the machine is done" —
             // spelling the parent check out a second time here is what let the
@@ -1895,6 +1973,13 @@ impl<P: StatePolicy> Engine<P> {
             self.handling_error_event = is_error;
             let outcome = self.execute_transition(event_with_meta.event);
             self.handling_error_event = false;
+            if outcome != EventOutcome::Discarded {
+                // Appendix D: the loop turn that selects nothing takes no
+                // microstep, so it spends no budget. Only a turn that answered
+                // the event moved the machine, and only those are what a
+                // ceiling on microsteps can be counted in.
+                self.macrostep_microsteps_taken += 1;
+            }
             if outcome == EventOutcome::Discarded && is_error {
                 self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);
                 self.last_unhandled_error = Some(event_with_meta.event);
@@ -1923,11 +2008,19 @@ impl<P: StatePolicy> Engine<P> {
         };
         // §scxml-D-mainEventLoop: taking an event off the external queue is
         // where a macrostep begins, so it is where the previous one's ceiling
-        // stops applying. A machine left inside an eventless cycle gets a full
+        // stops applying. A machine left inside an endless chain gets a full
         // budget for each event it is given, and each refusal is counted
         // separately — which is what tells a host that spins once from one
         // that spins on everything.
+        //
+        // Here and not at the entry to the loop above, which reads like the
+        // more general boundary and is not one: a machine whose chain was
+        // refused would spend a whole budget re-walking it before it ever
+        // looked at the event the host sent to get it out. The refused events
+        // stay queued either way — this is where the budget that drains them
+        // comes back.
         self.macrostep_truncated = false;
+        self.macrostep_microsteps_taken = 0;
         {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
@@ -1997,13 +2090,29 @@ impl<P: StatePolicy> Engine<P> {
         true
     }
 
+    /// Publish a macrostep this engine stopped short, from whichever branch of
+    /// Appendix D's inner loop ran out of budget.
+    ///
+    /// One function, two callers, for the reason the budget is one number: a
+    /// host reads a macrostep that did not reach a stable configuration, and
+    /// the branch it died in is a detail of the document, not of the contract.
+    /// Two copies of this would be two chances for one of them to stop setting
+    /// the flag that keeps the same chain from being handed a second budget.
+    pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {
+        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
+        self.last_truncated_macrostep_state = Some(state);
+        self.macrostep_truncated = true;
+    }
+
     /// §scxml-3.13: Check and execute eventless transitions until stable.
     ///
-    /// Bounded at [`MAX_EVENTLESS_MICROSTEPS`] microsteps and, when the chain
+    /// Bounded at [`MAX_MACROSTEP_MICROSTEPS`] microsteps and, when the chain
     /// is still going at that point, reported through
     /// [`truncated_macrosteps`](Self::truncated_macrosteps) — the ceiling is a
     /// departure from a document the specification allows, so it is not a
-    /// silent one. Ported from C++ `EventProcessingAlgorithms.h:98-136`.
+    /// silent one. The budget is the macrostep's, not this call's: see
+    /// [`MAX_MACROSTEP_MICROSTEPS`]. Ported from C++
+    /// `EventProcessingAlgorithms.h:98-136`.
     pub(crate) fn check_eventless_transitions(&mut self) {
         if self.macrostep_truncated {
             // This macrostep was already stopped at the ceiling. Re-entering
@@ -2014,8 +2123,9 @@ impl<P: StatePolicy> Engine<P> {
         let null_event = P::null_event();
         // Microsteps taken, not loop turns: the turn that finds nothing
         // enabled is how a macrostep ends, and counting it would spend the
-        // budget on the proof that no budget was needed.
-        let mut taken = 0usize;
+        // budget on the proof that no budget was needed. The count lives on
+        // the engine because the macrostep does — see
+        // [`Engine::macrostep_microsteps_taken`].
 
         loop {
             let old_state = self.current_state;
@@ -2030,22 +2140,20 @@ impl<P: StatePolicy> Engine<P> {
                 break;
             }
 
-            if taken == MAX_EVENTLESS_MICROSTEPS {
+            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
                 // The chain is still going one microstep past the budget, so
                 // this is the case the specification calls a macrostep that
                 // does not terminate. Refuse the microstep rather than take it, and
                 // publish the refusal: the configuration left behind is not a
                 // stable one and only this counter says so.
-                self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
-                self.last_truncated_macrostep_state = Some(old_state);
-                self.macrostep_truncated = true;
+                self.record_truncated_macrostep(old_state);
                 sce_log_error!(
                     "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
-                    MAX_EVENTLESS_MICROSTEPS
+                    MAX_MACROSTEP_MICROSTEPS
                 );
                 break;
             }
-            taken += 1;
+            self.macrostep_microsteps_taken += 1;
 
             self.current_state = new_state;
             let needs_hierarchical =

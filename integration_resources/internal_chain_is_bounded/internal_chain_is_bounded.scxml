@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 3.13 defines a macrostep as a chain of microsteps that ends in a
+     configuration where nothing is enabled by NULL AND the internal event
+     queue is empty. Appendix D's Principles and Constraints then say, in as
+     many words, that the chain need not exist:
+
+       "A microstep always terminates. A macrostep may not. A macrostep that
+        does not terminate may be said to consist of an infinitely long
+        sequence of microsteps. This is currently allowed."
+
+     `eventless_macrostep_is_bounded` owns the half of that sentence built from
+     transitions that need no event at all. This one owns the other half: a
+     `<raise>` answered by a transition that raises again. Both are the same
+     clause and the same allowance; they are different code in every engine
+     here, because Appendix D's inner loop has two branches and only one of
+     them had a ceiling.
+
+     Measured 2026-08-20, before this fixture existed, the seven engines
+     answered a two-state raise chain in two shapes and neither is one a host
+     can act on:
+
+       Rust, Go, Python, C11, C++ Interpreter, C++ AOT
+                 did not return at all. The internal drain had no ceiling in
+                 any of them: `step()` on a document whose transition raises
+                 the event it answers is a core at 100% forever.
+       Kotlin    stopped at a hundred and said nothing — no counter, no log
+                 line, no return value. Bounded and silent is the same signal
+                 as unbounded to the host reading it.
+
+     Outcomes this document separates:
+
+       poke      one ordinary transition       control: proves a run fired
+       bounded   a chain that STOPS by itself  a thousand microsteps, exactly
+                                               the ceiling, then the guard
+                                               stops matching: the count
+                                               stays 0
+       spin      a chain that cannot stop      the engine stops taking the
+                                               chain and says so
+       resume    a chain LONGER than one       the refused links were left on
+                 macrostep but finite          the queue: a second macrostep
+                                               finishes them and counts nothing
+       alternate one raise, one eventless      the case a per-branch budget
+                 transition, forever           lets through: neither branch
+                                               reaches the ceiling on its own
+
+     `alternate` is why the budget is one number rather than two. An engine
+     that gives the eventless branch its own thousand and the internal branch
+     another never refuses this document at all: each branch keeps finding its
+     own counter unspent, because the other branch is what is advancing. One
+     of the seven shipped exactly that pair of counters. The witness is
+     arithmetic — `alts` must be five hundred, half of the shared thousand, and
+     not a thousand.
+
+     `bounded` is the half that makes the count mean something, and its chain
+     is deliberately exactly a thousand microsteps rather than three: the
+     ceiling is on microsteps TAKEN, so a chain that ends at the ceiling is the
+     case an off-by-one gets wrong. The sibling fixture measured two engines
+     doing so, and in one of them the verdict called `stop()`.
+
+     `resume` is the half that says what a refusal DID with the events it would
+     not run. The engine leaves them queued, so the chain continues from where
+     it was cut rather than dying there — the same document finishes on the
+     second macrostep, and nothing is counted for it because that macrostep
+     ended the way the clause says. An engine that dropped the queue would pass
+     every other outcome here and fail this one.
+
+     Every state here is entered and never left, and every chain is built from
+     TARGETLESS transitions. That is not economy: the state a truncation names
+     has to be one all seven engines can agree on. The C11 profile keeps its
+     configuration in a bitmap and has no "current state" scalar to report, so
+     it names the source of the transition the drain last took; the other six
+     name the state the drain was standing in. On a chain that never leaves one
+     state those are the same state, and the contract — "a state on the chain
+     that could not settle" — is testable without asking the backends to agree
+     on something they do not represent.
+
+     There is no way back to `idle`, and each outcome gets its own machine the
+     way the sibling fixtures' do. §scxml-3.13 gives internal events priority
+     over external ones, so a document whose internal queue never empties would
+     hold any rescuing event behind a chain that will not end — the engine
+     reaches the external queue after a refusal precisely so that a machine
+     stopped this way stays reachable at all.
+
+     Deliberately single-axis: no `<send>`, no `<invoke>`, no `<parallel>`, and
+     no failing expression — `error_cascade_is_bounded` owns the chain built
+     from errors, `eventless_macrostep_is_bounded` owns the one built from
+     transitions that need no event, and this one owns the chain built from
+     `<raise>`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="idle"
+       name="internal_chain_is_bounded">
+    <datamodel>
+        <!-- Written by the control transition only. A host that reads a
+             counter of zero cannot tell "the run never happened" from "the
+             run happened and did nothing", and every assertion below rests on
+             telling those apart. -->
+        <data id="pokes" expr="0"/>
+        <!-- Links of the bounded chain. It stops itself at a thousand, which
+             is exactly the ceiling. -->
+        <data id="laps" expr="0"/>
+        <!-- Links of the unbounded chain. Nothing in the document stops it. -->
+        <data id="links" expr="0"/>
+        <!-- Links of the chain that outlasts one macrostep and then ends: half
+             again as long as the ceiling, so it takes two macrosteps and the
+             second one completes. -->
+        <data id="beats" expr="0"/>
+        <!-- Links of the alternating chain, counted on the internal half only:
+             one lap is one raise plus one eventless transition, so a shared
+             budget of a thousand microsteps buys five hundred of them. -->
+        <data id="alts" expr="0"/>
+        <!-- The alternating chain's baton. `1` means the eventless half is
+             enabled; the internal half sets it, the eventless half clears it
+             and raises the next link. -->
+        <data id="pending" expr="0"/>
+    </datamodel>
+
+    <state id="idle">
+        <transition event="poke" target="idle">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+        <transition event="bounded" target="bounded">
+            <raise event="link"/>
+        </transition>
+        <transition event="spin" target="spin">
+            <raise event="link"/>
+        </transition>
+        <transition event="resume" target="resuming">
+            <raise event="beat"/>
+        </transition>
+        <transition event="alternate" target="alt">
+            <raise event="tick"/>
+        </transition>
+    </state>
+
+    <!-- A chain that ends on its own. The first transition raises the next
+         link while `laps < 999`; at nine hundred and ninety-nine the second
+         one answers instead, takes the thousandth microstep and raises
+         nothing, so the queue empties and the macrostep completes the way
+         §scxml-3.13 describes. An engine must count nothing for it: a long
+         chain is not a runaway, and a document that computes for a thousand
+         microsteps before settling is an ordinary document.
+
+         Two transitions rather than an `<if>` so the choice is document-order
+         selection, which every backend resolves the same way. -->
+    <state id="bounded">
+        <transition event="link" cond="laps &lt; 999">
+            <assign location="laps" expr="laps + 1"/>
+            <raise event="link"/>
+        </transition>
+        <transition event="link">
+            <assign location="laps" expr="laps + 1"/>
+        </transition>
+        <!-- Targetless on purpose: a self transition would re-run
+             `<onentry>`, and the driver would be measuring its own probe. -->
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- A chain that cannot end. Every link answers the event by raising it
+         again, so the internal queue is never empty and §scxml-3.13's
+         macrostep never reaches its stable configuration. This is the document
+         Appendix D says is allowed to run forever; the engine is the only
+         party that can decide otherwise, and the count is how it says that it
+         did. -->
+    <state id="spin">
+        <transition event="link">
+            <assign location="links" expr="links + 1"/>
+            <raise event="link"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- A chain half again as long as the ceiling: fifteen hundred links, so
+         the first macrostep takes a thousand of them and is refused, and the
+         second takes the remaining five hundred and ends on its own. What it
+         measures is what the refusal did with the links it would not run — an
+         engine that dropped them ends at a thousand and never finishes, and
+         one that ran them anyway ends the whole chain in the first macrostep.
+         Neither of those can be told from the correct answer by any other
+         outcome here. -->
+    <state id="resuming">
+        <transition event="beat" cond="beats &lt; 1499">
+            <assign location="beats" expr="beats + 1"/>
+            <raise event="beat"/>
+        </transition>
+        <transition event="beat">
+            <assign location="beats" expr="beats + 1"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+
+    <!-- A chain that alternates the two branches of Appendix D's inner loop.
+         The internal half consumes `tick` and hands the baton to the eventless
+         half; the eventless half takes it back and raises the next `tick`.
+         Neither branch ever takes two microsteps in a row, so neither reaches
+         a hundred on its own — and an engine that budgets them separately runs
+         this document forever while both of its ceilings sit half spent. -->
+    <state id="alt">
+        <transition event="tick">
+            <assign location="alts" expr="alts + 1"/>
+            <assign location="pending" expr="1"/>
+        </transition>
+        <transition cond="pending == 1">
+            <assign location="pending" expr="0"/>
+            <raise event="tick"/>
+        </transition>
+        <transition event="poke">
+            <assign location="pokes" expr="pokes + 1"/>
+        </transition>
+    </state>
+</scxml>

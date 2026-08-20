@@ -3916,12 +3916,57 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
 }
 {% endif %}
 
+/* W3C SCXML 3.13: publish a macrostep this engine stopped short, from
+   whichever branch of Appendix D's inner loop ran out of budget.
+
+   One function, two callers, for the reason the budget is one number: a host
+   reads a macrostep that did not reach a stable configuration, and the branch
+   it died in is a detail of the document, not of the contract. Two copies of
+   this would be two chances for one of them to stop setting the flag that
+   keeps the same chain from being handed a second budget. */
+SCE_SM_FN static void record_truncated_macrostep({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                 {{ csym_prefix }}{{ model.name }}_state_t state) {
+    sm->truncated_macrosteps++;
+    sm->last_truncated_macrostep_state = state;
+    sm->has_truncated_macrostep = true;
+    sm->macrostep_truncated = true;
+}
+
+/* W3C SCXML C.1: drain the internal queue (high priority).
+
+   Bounded by the same macrostep budget the eventless branch spends, and for
+   the same reason: a `<raise>` answered by a transition that raises again is a
+   macrostep that never ends, exactly as a cyclic eventless transition is.
+   Until 2026-08-20 this branch had no ceiling in any of the seven engines
+   here, so that document did not return at all. */
 SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
 
-    while (event_queue_pop(&sm->internal_queue, &evt)) {
+    if (sm->macrostep_truncated) {
+        /* The eventless branch of this same macrostep already ran out of
+           budget. Draining now would hand the chain a second one. */
+        return;
+    }
+    while (sm->internal_queue.count != 0u) {
+        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {
+            /* Work is still queued one microstep past the budget. Refuse the
+               microstep rather than take it: the event stays on the queue,
+               which is where the next macrostep will find it, and the count
+               says the configuration a host reads now is not a stable one.
+
+               The source of the transition this drain last took. This profile
+               keeps its configuration in a bitmap rather than a scalar, so
+               there is no "state the drain is standing in" to name; the source
+               is a state on the chain that could not settle, which is the same
+               answer the eventless branch above gives. */
+            record_truncated_macrostep(sm, sm->policy.last_transition_source_state);
+            return;
+        }
+        if (!event_queue_pop(&sm->internal_queue, &evt)) {
+            break;
+        }
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
         /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
@@ -3963,6 +4008,11 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
         if (process_transition(sm, evt.event, enabled, &count)) {
             count = remove_conflicting_transitions(enabled, count);
             handle_microstep(sm, enabled, count);
+            /* W3C SCXML Appendix D: the loop turn that selects nothing takes
+               no microstep, so it spends no budget. Only a turn that answered
+               the event moved the machine, and only those are what a ceiling
+               on microsteps can be counted in. */
+            sm->macrostep_microsteps_taken++;
         }
 {% if error_events %}
         /* W3C SCXML 3.12.2: the processor raises `error.*` into this queue and
@@ -4017,11 +4067,19 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
     if (event_queue_pop(&sm->external_queue, &evt)) {
         /* W3C SCXML Appendix D: taking an event off the external queue is
            where a macrostep begins, so it is where the previous one's ceiling
-           stops applying. A machine left inside an eventless cycle gets a full
+           stops applying. A machine left inside an endless chain gets a full
            budget for each event it is given, and each refusal is counted
            separately — which is what tells a host that spins once from one
-           that spins on everything. */
+           that spins on everything.
+
+           Here and not at the entry to `run_main_event_loop`, which reads like
+           the more general boundary and is not one: a machine whose chain was
+           refused would spend a whole budget re-walking it before it ever
+           looked at the event the host sent to get it out. The refused events
+           stay queued either way — this is where the budget that drains them
+           comes back. */
         sm->macrostep_truncated = false;
+        sm->macrostep_microsteps_taken = 0u;
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
         /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
@@ -4162,15 +4220,17 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
    §scxml-3.13 says the chain ends in a configuration where nothing is enabled
    by NULL, and the specification's Principles and Constraints say that chain
    need not exist ("A macrostep may not [terminate] ... This is currently
-   allowed"). SCE_MAX_EVENTLESS_MICROSTEPS is where this engine declines that,
+   allowed"). SCE_MAX_MACROSTEP_MICROSTEPS is where this engine declines that,
    and `_truncated_macrosteps` is how the host learns it did: the ceiling is on
    microsteps TAKEN, and the refusal is recorded only when a transition was
    still enabled after them, so a document whose chain ends exactly at the
-   ceiling passes through untouched. */
+   ceiling passes through untouched.
+
+   The budget is the macrostep's rather than this call's, and it is spent by
+   the internal-event branch too — see `process_internal_queue`. */
 SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
     uint8_t count;
-    uint32_t taken = 0u;
     if (sm->macrostep_truncated) {
         /* This macrostep was already stopped at the ceiling. Re-entering the
            drain would hand the same chain a second budget, which is the
@@ -4187,24 +4247,22 @@ SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name
                however long the chain was. */
             return;
         }
-        if (taken == SCE_MAX_EVENTLESS_MICROSTEPS) {
+        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {
             /* The chain is still going one microstep past the budget. Refuse
                it rather than take it, and publish the refusal: the
                configuration left behind is not a stable one and only this
-               counter says so. */
-            sm->truncated_macrosteps++;
-            /* The source of the transition that was refused. This profile
+               counter says so.
+
+               The source of the transition that was refused. This profile
                keeps its configuration in a bitmap rather than a scalar, and
                the source is the more useful answer anyway: it is a state on
                the cycle that could not settle. */
-            sm->last_truncated_macrostep_state = enabled[0].source;
-            sm->has_truncated_macrostep = true;
-            sm->macrostep_truncated = true;
+            record_truncated_macrostep(sm, enabled[0].source);
             return;
         }
         count = remove_conflicting_transitions(enabled, count);
         handle_microstep(sm, enabled, count);
-        taken++;
+        sm->macrostep_microsteps_taken++;
     }
 }
 
@@ -4240,6 +4298,13 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
                 break;
             }
             process_internal_queue(sm);
+            if (sm->macrostep_truncated) {
+                /* Either branch may have spent the last of the budget. Without
+                   this the loop turns forever on a chain that is no longer
+                   being drained: the queue stays non-empty precisely because
+                   the drain refused it. */
+                break;
+            }
         }
 
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
@@ -4270,8 +4335,16 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
         {% endif %}
 
         /* W3C SCXML Appendix D: invoking may have raised internal error
-           events; handle them before touching the external queue. */
-        if (sm->internal_queue.count != 0u) {
+           events; handle them before touching the external queue.
+
+           Not when this macrostep was already stopped at the ceiling: the
+           queue is non-empty because the drain refused it, so looping back is
+           a spin that takes no microstep, records nothing, and never ends.
+           Falling through to the external dequeue instead is what keeps a
+           machine inside an endless chain reachable at all -- the event that
+           rescues it is on that queue, and the clause's priority would
+           otherwise hold it behind a chain that never ends. */
+        if (!sm->macrostep_truncated && sm->internal_queue.count != 0u) {
             continue;
         }
 
@@ -4577,10 +4650,11 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_error_cascade_event(const 
     return true;
 }
 
-/* W3C SCXML 3.13: macrosteps stopped at SCE_MAX_EVENTLESS_MICROSTEPS with an
-   eventless transition still enabled. The clause promises a stable
-   configuration at the end of a macrostep; when this count moves, the
-   configuration the host is reading is not one. */
+/* W3C SCXML 3.13: macrosteps stopped at SCE_MAX_MACROSTEP_MICROSTEPS with the
+   chain still going — an eventless transition still enabled, or an event still
+   on the internal queue. The clause promises a stable configuration at the end
+   of a macrostep; when this count moves, the configuration the host is reading
+   is not one. */
 SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_truncated_macrosteps(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? 0u : sm->truncated_macrosteps;
 }

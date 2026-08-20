@@ -90,8 +90,8 @@ TEST_F(EventlessMacrostepIsBoundedTest, AMacrostepThatCannotEndIsStopped) {
 
     sm_->processEvent("spin");
 
-    EXPECT_EQ(counter("spins"), "50")
-        << "the chain must run exactly as far as the engine allows: a hundred microsteps, and the fixture's cycle "
+    EXPECT_EQ(counter("spins"), "500")
+        << "the chain must run exactly as far as the engine allows: a thousand microsteps, and the fixture's cycle "
            "takes two of them a lap — fewer means the document was cut off early, more means the ceiling moved";
     EXPECT_EQ(sm_->getStatistics().truncatedMacrosteps, 1u)
         << "the microstep past the budget was enabled and was not taken. Without this count the host sees a "
@@ -110,9 +110,9 @@ TEST_F(EventlessMacrostepIsBoundedTest, AMacrostepThatCannotEndIsStopped) {
 TEST_F(EventlessMacrostepIsBoundedTest, AChainThatEndsAtTheCeilingIsNotRefused) {
     sm_->processEvent("bounded");
 
-    EXPECT_EQ(counter("laps"), "50")
-        << "the guard `laps < 50` closes after fifty laps, so the chain is a hundred microsteps long and then "
-           "stops by itself";
+    EXPECT_EQ(counter("laps"), "500")
+        << "the guard `laps < 500` closes after five hundred laps, so the chain is a thousand microsteps long and "
+           "then stops by itself";
     EXPECT_EQ(sm_->getStatistics().truncatedMacrosteps, 0u)
         << "nothing was refused: the macrostep reached the stable configuration §scxml-3.13 describes. A long "
            "chain is not a runaway, and a ceiling that could not tell them apart would report every document that "
@@ -142,7 +142,7 @@ TEST_F(EventlessMacrostepIsBoundedTest, ASecondTruncatedMacrostepCountsAgain) {
     EXPECT_EQ(sm_->getStatistics().truncatedMacrosteps, 2u)
         << "the second macrostep hit the same ceiling and must be counted again — a count that saturated at one "
            "would read as a machine that recovered";
-    EXPECT_EQ(counter("spins"), "100")
+    EXPECT_EQ(counter("spins"), "1000")
         << "and it really bought the document a full budget again rather than refusing on sight — the ceiling "
            "bounds a macrostep, it does not condemn a machine";
 }

@@ -1,0 +1,177 @@
+# Mutation cases for §scxml-3.13's internal-event branch on the three engines
+# that ctest drives — C++ Interpreter, C++ AOT, C11.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/internal_chain_is_bounded_ctest.cases`.
+#
+# The Rust half lives in `internal_chain_is_bounded.cases`. This file exists
+# separately for the reason the sibling axis's does: the ctest runner builds a
+# different tree, and mixing the two in one file makes a round rebuild both.
+#
+# The C++ Interpreter's half is the odd one and is why its cases are here at
+# all: the budget belongs to the machine and the queue belongs to the raiser,
+# so the refusal has to happen inside the raiser — the only party that can
+# decline a dispatch without consuming the event. `MicrostepBudget` is that
+# loan, and two of the cases below cut one end of it each.
+#
+# ⚠ A case that edits `sce/include/static/StaticExecutionEngine.h` costs a full
+# C++ rebuild, because every generated machine includes it. Measured
+# 2026-08-20 on the sibling axis: six such cases took forty-five minutes.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_internal_chain_is_bounded)$'
+mutation_targets sce/include/static/StaticExecutionEngine.h sce/src/runtime/StateMachine.cpp sce/src/runtime/EventRaiserImpl.cpp tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles tests/integration/InternalChainIsBoundedTest.cpp tests/integration/InternalChainIsBoundedAotTest.cpp backends/c/tests/integration/test_internal_chain_is_bounded.c
+
+# ── C++ AOT: the refusal itself ────────────────────────────────────
+#
+# The gate the drain asks before every dequeue always says yes, which is what
+# the shared queue helper did before it took a budget at all. Left alone the
+# document does not return, so the ctest entry's own TIMEOUT is the witness.
+
+mutation_case "the cpp aot internal drain has no ceiling" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                if (macrostepMicrostepsTaken_ < MAX_MACROSTEP_MICROSTEPS) {
+                    return true;
+                }""",
+     """                if (true) {
+                    return true;
+                }""")
+PY
+
+# ── C++ AOT: the refusal leaves the queue alone ────────────────────
+#
+# Asking after the pop consumes the event the drain then declines to run. The
+# chain is still bounded and the count still moves, so only
+# `ARefusedChainIsLeftQueuedForTheNextMacrostep` sees it — the `resume` chain
+# stops a link short of its end and never finishes.
+
+mutation_case "the cpp aot refusal swallows the event it declined" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                recordTruncatedMacrostep(currentState_);
+                SCE_LOG_ERROR("StaticExecutionEngine: macrostep still going after {} microsteps; stopped draining """,
+     """                (void)internalQueue_.pop();  // MUTANT: consumed, not left queued
+                recordTruncatedMacrostep(currentState_);
+                SCE_LOG_ERROR("StaticExecutionEngine: macrostep still going after {} microsteps; stopped draining """)
+PY
+
+# ── C++ AOT: one budget, not one per branch ────────────────────────
+#
+# The internal branch gets a counter of its own, which is what the Kotlin
+# engine shipped. Nothing hangs and `spin` still reports one refusal; the
+# chain that gets through is the alternating one, and `alts` is the only
+# reading that separates five hundred from a thousand.
+
+mutation_case "the cpp aot internal branch budgets itself" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        SCE_LOG_DEBUG("AOT processInternalQueue: Starting internal queue processing");""",
+     """        SCE_LOG_DEBUG("AOT processInternalQueue: Starting internal queue processing");
+        macrostepMicrostepsTaken_ = 0;  // MUTANT: a budget of this drain's own""")
+PY
+
+# ── C++ AOT: the microstep that was answered is the one counted ────
+#
+# Counting a dispatch that selected nothing spends the budget on events the
+# macrostep did not act on, and the `bounded` chain ends exactly at the
+# ceiling — so any over-count reports a document that settles as a runaway.
+
+mutation_case "an unanswered internal event still spends the cpp aot budget" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """                if (outcome.selected) {
+                    // Appendix D: the loop turn that selects nothing takes no""",
+     """                if (true) {
+                    // Appendix D: the loop turn that selects nothing takes no""")
+PY
+
+# ── Interpreter: the loan itself ───────────────────────────────────
+#
+# The machine never hands the raiser its budget, so the raiser dispatches
+# forever — and this engine recurses, so the stack runs out rather than
+# spinning. The ctest TIMEOUT is what turns that into a verdict.
+
+mutation_case "the interpreter never lends the raiser its budget" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """            eventRaiserImpl->setMicrostepBudget(makeMicrostepBudget());""",
+     """            // MUTANT: the raiser is never given a budget.""")
+PY
+
+# ── Interpreter: the drain that asks ───────────────────────────────
+#
+# The raiser refuses by leaving the event queued, so `hasEvents()` stays true.
+# A drain that only watched the dispatch result would turn forever on a queue
+# nobody is draining — this is the second gate, and it is not redundant.
+
+mutation_case "the interpreter drain stops asking the budget" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        [this]() { return mayTakeMicrostep(); });""",
+     """        []() { return true; });""")
+PY
+
+# ── Interpreter: the refusal leaves the queue alone ────────────────
+#
+# Popping before the gate consumes the event the raiser then declines to
+# dispatch. `ARefusedChainIsLeftQueuedForTheNextMacrostep` is the only
+# assertion that can see it.
+
+mutation_case "the raiser swallows the internal event it refused" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """        eventToProcess = synchronousQueue_.top();
+
+        SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",""",
+     """        eventToProcess = synchronousQueue_.top();
+        synchronousQueue_.pop();  // MUTANT: consumed before the gate is asked
+
+        SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",""")
+PY
+
+# ── Interpreter: the report ────────────────────────────────────────
+#
+# The chain is still cut and `getStatistics()` still answers — it simply stops
+# saying that the configuration the host is reading is not a stable one.
+
+mutation_case "the interpreter internal refusal is silent" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    // leaves the event where it is; this publishes the refusal.
+    recordTruncatedMacrostep();
+    return false;""",
+     """    // MUTANT: refused, and nothing said so.
+    return false;""")
+PY
+
+# ── C11: the refusal itself ────────────────────────────────────────
+
+mutation_case "the c11 internal drain has no ceiling" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {
+            /* Work is still queued one microstep past the budget. Refuse the""",
+     """        if (false) {
+            /* Work is still queued one microstep past the budget. Refuse the""")
+PY
+
+# ── C11: the microstep that was answered is the one counted ────────
+
+mutation_case "an unanswered internal event still spends the c11 budget" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """            handle_microstep(sm, enabled, count);
+            /* W3C SCXML Appendix D: the loop turn that selects nothing takes
+               no microstep, so it spends no budget. Only a turn that answered
+               the event moved the machine, and only those are what a ceiling
+               on microsteps can be counted in. */
+            sm->macrostep_microsteps_taken++;
+        }""",
+     """            handle_microstep(sm, enabled, count);
+        }
+        sm->macrostep_microsteps_taken++;""")
+PY
+
+# ── C11: one budget, not one per branch ────────────────────────────
+
+mutation_case "the c11 internal branch budgets itself" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    while (sm->internal_queue.count != 0u) {
+        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {""",
+     """    sm->macrostep_microsteps_taken = 0u;  /* MUTANT: a budget of this drain's own */
+    while (sm->internal_queue.count != 0u) {
+        if (sm->macrostep_microsteps_taken == SCE_MAX_MACROSTEP_MICROSTEPS) {""")
+PY

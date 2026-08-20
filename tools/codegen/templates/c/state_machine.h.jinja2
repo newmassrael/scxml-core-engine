@@ -353,17 +353,23 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t error_cascade_events;
     {{ csym_prefix }}{{ model.name }}_event_t last_error_cascade_event;
     bool has_error_cascade_event;
-    /* W3C SCXML 3.13: macrosteps stopped at SCE_MAX_EVENTLESS_MICROSTEPS with
-       an eventless transition still enabled, the state the drain was in when
-       that last happened, and whether the macrostep now in progress is already
-       one of them. `has_truncated_macrostep` is separate because the state
-       enum's zero value is a real state; `macrostep_truncated` exists because
-       the drain is reached more than once per macrostep, and without it each
-       caller would get a fresh budget. See `_truncated_macrosteps` below. */
+    /* W3C SCXML 3.13: macrosteps stopped at SCE_MAX_MACROSTEP_MICROSTEPS with
+       the chain still going, the state the drain was in when that last
+       happened, and whether the macrostep now in progress is already one of
+       them. `has_truncated_macrostep` is separate because the state enum's
+       zero value is a real state; `macrostep_truncated` exists because the
+       drain is reached more than once per macrostep, and without it each
+       caller would get a fresh budget. `macrostep_microsteps_taken` is the
+       budget itself, and it lives here rather than in either drain because
+       Appendix D's inner loop is one loop: the eventless branch and the
+       internal-event branch take turns inside a single macrostep, so a counter
+       local to either bounds only half of it. See `_truncated_macrosteps`
+       below. */
     uint32_t truncated_macrosteps;
     {{ csym_prefix }}{{ model.name }}_state_t last_truncated_macrostep_state;
     bool has_truncated_macrostep;
     bool macrostep_truncated;
+    uint32_t macrostep_microsteps_taken;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
     /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
        session, and the address that reaches it. Issued in `_init` rather
@@ -669,15 +675,19 @@ bool {{ csym_prefix }}{{ model.name }}_last_error_cascade_event(const {{ csym_pr
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML 3.13: how many macrosteps this engine stopped short because their
-   eventless chain was still going after SCE_MAX_EVENTLESS_MICROSTEPS
-   microsteps.
+   chain was still going after SCE_MAX_MACROSTEP_MICROSTEPS microsteps.
 
    The clause says a macrostep ends in a configuration where nothing is enabled
-   by NULL, and the specification's Principles and Constraints add that a
-   macrostep MAY NOT terminate and that this "is currently allowed". A document
-   with a cyclic eventless transition is therefore not malformed; it is a
-   document whose macrostep is infinite, and an engine that runs it to the
-   letter never returns.
+   by NULL and no internal event is left, and the specification's Principles
+   and Constraints add that a macrostep MAY NOT terminate and that this "is
+   currently allowed". A document with a cyclic eventless transition is
+   therefore not malformed, and neither is one whose `<raise>` answers itself;
+   both are documents whose macrostep is infinite, and an engine that runs
+   either to the letter never returns.
+
+   Both are counted here, because they are the same fact to a host: the
+   macrostep it just drove did not reach a stable configuration. Which chain it
+   was is what `_last_truncated_macrostep_state` points at.
 
    This engine does not run it to the letter. It stops, and this count is how a
    host learns that it did — because every other reading says the opposite:
@@ -686,17 +696,20 @@ bool {{ csym_prefix }}{{ model.name }}_last_error_cascade_event(const {{ csym_pr
    one the clause promises; it is wherever the hundredth microstep happened to
    land, and the document has more to do that this engine will not do.
 
-   A document whose eventless chain is a hundred microsteps long and then
-   settles counts zero: the ceiling is on microsteps TAKEN, and the macrostep
-   is only counted here when a transition was still enabled after them. */
+   A document whose chain is a hundred microsteps long and then settles counts
+   zero: the ceiling is on microsteps TAKEN, and the macrostep is only counted
+   here when the loop still had work after them — a transition enabled by NULL,
+   or an event left on the internal queue. */
 uint32_t {{ csym_prefix }}{{ model.name }}_truncated_macrosteps(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* W3C SCXML 3.13: the state this engine was in when it last stopped a
    macrostep that way. Returns false, leaving `*out` untouched, while the count
    above is zero.
 
-   Which state it was is the whole repair: an eventless cycle is a closed walk
-   through the state graph, and this names one state on it. */
+   Which state it was is the whole repair: an endless chain is a closed walk
+   through the state graph, and this names one state on it — the source of the
+   transition that was refused, which for the internal-event branch is the
+   source of the one the drain last took. */
 bool {{ csym_prefix }}{{ model.name }}_last_truncated_macrostep_state(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_state_t *out);
 

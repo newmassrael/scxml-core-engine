@@ -96,20 +96,34 @@
 #define SCE_MAX_ERROR_CASCADE_DEPTH 100u
 #endif
 
-// How many microsteps one macrostep may take on eventless
-// transitions alone before the engine stops taking them. The clause defines a
-// macrostep as a chain of microsteps ending in a configuration where nothing
-// is enabled by NULL; the specification's Principles and Constraints then say
-// in as many words that such a chain need not exist ("A microstep always
-// terminates. A macrostep may not. ... This is currently allowed"). So the
-// ceiling is not conformance — it is this engine declining a document the
-// specification permits, which is why the decline is published rather than
-// merely applied (`_truncated_macrosteps`). The number matches
-// SCE_MAX_ERROR_CASCADE_DEPTH: both bound a chain the document cannot end on
-// its own, and a host that has to reason about one should not have to learn a
-// second number for the other.
-#ifndef SCE_MAX_EVENTLESS_MICROSTEPS
-#define SCE_MAX_EVENTLESS_MICROSTEPS 100u
+// How many microsteps one macrostep may take before the engine stops taking
+// them. The clause defines a macrostep as a chain of microsteps ending in a
+// configuration where nothing is enabled by NULL and the internal queue is
+// empty; the specification's Principles and Constraints then say in as many
+// words that such a chain need not exist ("A microstep always terminates. A
+// macrostep may not. ... This is currently allowed"). So the ceiling is not
+// conformance — it is this engine declining a document the specification
+// permits, which is why the decline is published rather than merely applied
+// (`_truncated_macrosteps`).
+//
+// One budget for the whole inner loop, not one per branch. Appendix D takes a
+// microstep on an eventless transition or on an internal event inside a single
+// loop, and a document alternating the two is one chain: budgeting the
+// branches separately is what let that chain past both ceilings in every
+// engine here until 2026-08-20.
+//
+// Ten times SCE_MAX_ERROR_CASCADE_DEPTH, and deliberately not equal to it.
+// This is the backstop; the cascade ceiling is a diagnostic that names the
+// error a handler keeps failing on, and a backstop that fires first makes that
+// diagnostic unreachable. Measured 2026-08-20: with both at a hundred, a
+// handler that raises one event of its own per link -- two microsteps a link,
+// which is what a document that logs before it fails looks like -- was cut at
+// fifty links by this ceiling and `_error_cascade_events` never moved. The
+// factor of ten is the headroom that keeps the specific report reachable for a
+// handler raising up to eight events a link; a busier one is cut here instead,
+// which is coarser but still reported.
+#ifndef SCE_MAX_MACROSTEP_MICROSTEPS
+#define SCE_MAX_MACROSTEP_MICROSTEPS 1000u
 #endif
 
 // Static helpers (state hierarchy queries, history filters, …) are

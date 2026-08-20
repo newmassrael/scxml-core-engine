@@ -65,23 +65,41 @@ BASIC_HTTP_EVENT_PROCESSOR_URI = io_processors.BASIC_HTTP_EVENT_PROCESSOR_URI
 # configuration never moved and `is_running()` stayed true.
 MAX_ERROR_CASCADE_DEPTH = 100
 
-# How many microsteps one macrostep may take on eventless transitions alone
-# before this engine stops taking them — see `Engine.truncated_macrosteps`.
+# How many microsteps one macrostep may take before this engine stops taking
+# them — see `Engine.truncated_macrosteps`.
 #
 # The specification defines a macrostep as a chain of microsteps ending in a
-# configuration where nothing is enabled by NULL, and its
-# Principles and Constraints say in as many words that such a chain
-# need not exist: "A microstep always terminates. A macrostep may not. A
+# configuration where nothing is enabled by NULL and the internal queue is
+# empty, and its Principles and Constraints say in as many words that such a
+# chain need not exist: "A microstep always terminates. A macrostep may not. A
 # macrostep that does not terminate may be said to consist of an infinitely
 # long sequence of microsteps. This is currently allowed."
 #
 # So the ceiling is not conformance — it is this engine declining a document
 # the specification permits, which is exactly why the decline has to be
 # visible. Until 2026-08-20 this engine was the only one of the seven that had
-# no ceiling here at all: measured that day, `initialize()` on a two-state
-# cyclic document did not return, which is the conformant reading and also the
-# one no host can act on.
-MAX_EVENTLESS_MICROSTEPS = 100
+# no ceiling on the eventless branch at all: measured that day, `initialize()`
+# on a two-state cyclic document did not return, which is the conformant
+# reading and also the one no host can act on.
+#
+# One budget for the whole inner loop, not one per branch. Appendix D's loop
+# takes a microstep on an eventless transition *or* on an internal event, and
+# a document alternating the two is one chain, not two: budgeting the branches
+# separately leaves that chain unbounded, which is what a per-call counter on
+# the eventless branch alone did in all seven engines until 2026-08-20 — the
+# `<raise>` half of the same document did not return either.
+#
+# Ten times `MAX_ERROR_CASCADE_DEPTH`, and deliberately not equal to it. This is
+# the backstop; the cascade ceiling is a diagnostic that names the error a
+# handler keeps failing on, and a backstop that fires first makes that
+# diagnostic unreachable. Measured 2026-08-20: with both at a hundred, a handler
+# that raises one event of its own per link — two microsteps a link, which is
+# what a document that logs before it fails looks like — was cut at fifty links
+# by this ceiling and `error_cascade_events` never moved. The factor of ten is
+# the headroom that keeps the specific report reachable for a handler raising up
+# to eight events a link; a busier one is cut here instead, which is coarser but
+# still reported.
+MAX_MACROSTEP_MICROSTEPS = 1000
 
 
 class Engine(Generic[S, E]):
@@ -153,11 +171,18 @@ class Engine(Generic[S, E]):
         self._error_cascade_depth: int = 0
         self._error_cascade_events: int = 0
         self._last_error_cascade_event: Optional[E] = None
-        # Macrosteps stopped at `MAX_EVENTLESS_MICROSTEPS` with
-        # an eventless transition still enabled, and the state the drain was in
-        # when that last happened. See `truncated_macrosteps`.
+        # Macrosteps stopped at `MAX_MACROSTEP_MICROSTEPS` with the chain still
+        # going, and the state the drain was in when that last happened. See
+        # `truncated_macrosteps`.
         self._truncated_macrosteps: int = 0
         self._last_truncated_macrostep_state: Optional[S] = None
+        # Microsteps taken by the macrostep now in progress, against
+        # `MAX_MACROSTEP_MICROSTEPS`. An attribute rather than a local, for the
+        # reason Appendix D's loop is one loop: the eventless branch and the
+        # internal-event branch take turns inside a single macrostep, so a
+        # counter that lives in either one alone is reset by the other and
+        # bounds nothing.
+        self._macrostep_microsteps_taken: int = 0
         # Whether the macrostep now in progress has already been stopped that
         # way. The drain is reached more than once per macrostep, so without
         # this the ceiling is not a ceiling: each caller would get a fresh
@@ -448,16 +473,20 @@ class Engine(Generic[S, E]):
         return self._last_error_cascade_event
 
     def truncated_macrosteps(self) -> int:
-        """How many macrosteps this engine stopped short because their
-        eventless chain was still going after `MAX_EVENTLESS_MICROSTEPS`
-        microsteps.
+        """How many macrosteps this engine stopped short because their chain
+        was still going after `MAX_MACROSTEP_MICROSTEPS` microsteps.
 
         §scxml-3.13 says a macrostep ends in a configuration where nothing is
-        enabled by NULL, and the specification's Principles and Constraints
-        (§scxml-D) add that a macrostep *may not terminate* and that this "is
-        currently allowed". A document with a cyclic eventless transition is
-        therefore not malformed; it is a document whose macrostep is infinite,
-        and an engine that runs it to the letter never returns.
+        enabled by NULL and no internal event is left, and the specification's
+        Principles and Constraints (§scxml-D) add that a macrostep *may not
+        terminate* and that this "is currently allowed". A document with a
+        cyclic eventless transition is therefore not malformed, and neither is
+        one whose `<raise>` answers itself; both are documents whose macrostep
+        is infinite, and an engine that runs either to the letter never returns.
+
+        Both are counted here, because they are the same fact to a host: the
+        macrostep it just drove did not reach a stable configuration. Which
+        chain it was is what `last_truncated_macrostep_state` points at.
 
         This engine used to do exactly that, and it is the reason the ceiling
         exists: measured 2026-08-20, `initialize()` on a two-state cyclic
@@ -468,10 +497,11 @@ class Engine(Generic[S, E]):
         the call returned. The configuration behind those answers is not the
         stable one §scxml-3.13 promises.
 
-        A document whose eventless chain is a hundred microsteps long and then
-        settles counts zero: the ceiling is on microsteps *taken*, and the
-        macrostep is only counted here when a transition was still enabled
-        after them. Long chains are ordinary; endless ones are not.
+        A document whose chain is a hundred microsteps long and then settles
+        counts zero: the ceiling is on microsteps *taken*, and the macrostep is
+        only counted here when the loop still had work after them — a
+        transition enabled by NULL, or an event left on the internal queue.
+        Long chains are ordinary; endless ones are not.
         """
         return self._truncated_macrosteps
 
@@ -479,9 +509,11 @@ class Engine(Generic[S, E]):
         """The state this engine was in when it last stopped a macrostep that
         way, or `None` while `truncated_macrosteps` is zero.
 
-        Which state it was is the whole repair: an eventless cycle is a closed
-        walk through the state graph, and this names one state on it. The count
-        alone says a document somewhere cannot settle; this says where to look.
+        Which state it was is the whole repair: an endless chain is a closed
+        walk through the state graph, and this names one state on it — the
+        state the eventless drain was refused in, or the one it was standing in
+        when it stopped taking internal events. The count alone says a document
+        somewhere cannot settle; this says where to look.
         """
         return self._last_truncated_macrostep_state
 
@@ -823,7 +855,15 @@ class Engine(Generic[S, E]):
             # events (and a child that completed during its own initialise may
             # already have raised `done.invoke`); handle them before touching
             # the external queue.
-            if self._internal_queue:
+            #
+            # Not when this macrostep was already stopped at the ceiling: the
+            # queue is non-empty because the drain refused it, so looping back
+            # is a spin that takes no microstep, says nothing, and never ends.
+            # Falling through to the external dequeue instead is what keeps a
+            # machine inside an endless chain reachable at all — the event that
+            # rescues it is on that queue, and the clause's internal-first
+            # priority would otherwise hold it behind a chain that never ends.
+            if self._internal_queue and not self._macrostep_truncated:
                 continue
             if not self._external_queue:
                 return
@@ -838,6 +878,21 @@ class Engine(Generic[S, E]):
         while self._is_running and not self._reached_final:
             self._drain_eventless()
             if self._reached_final or not self._is_running:
+                return
+            if self._macrostep_truncated:
+                # The eventless branch of this same macrostep ran out of
+                # budget. Dequeuing now would hand the chain a second one.
+                return
+            if self._internal_queue and (
+                self._macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS
+            ):
+                # Work is still queued one microstep past the budget, so this
+                # is the case the specification calls a macrostep that cannot
+                # end. Refuse the microstep rather than take it: the event
+                # stays on the queue, which is where the next macrostep will
+                # find it, and the count says the configuration a host reads
+                # now is not a stable one.
+                self._record_truncated_macrostep()
                 return
             if not self._internal_queue:
                 # The queue emptied, so the chain — refused or merely finished
@@ -879,6 +934,12 @@ class Engine(Generic[S, E]):
             self._handling_error_event = is_error
             selected = self._dispatch(evt)
             self._handling_error_event = False
+            if selected:
+                # Appendix D: the loop turn that selects nothing takes no
+                # microstep, so it spends no budget. Only a turn that answered
+                # the event moved the machine, and only those are what a
+                # ceiling on microsteps can be counted in.
+                self._macrostep_microsteps_taken += 1
             if not selected and is_error:
                 self._unhandled_error_events += 1
                 self._last_unhandled_error = evt.event
@@ -897,10 +958,18 @@ class Engine(Generic[S, E]):
         evt = self._external_queue.popleft()
         # Taking an event off the external queue is where a macrostep begins,
         # so it is where the previous one's ceiling stops applying. A machine
-        # left inside an eventless cycle gets a full budget for each event it
+        # left inside an endless chain gets a full budget for each event it
         # is given, and each refusal is counted separately — which is what
         # tells a host that spins once from one that spins on everything.
+        #
+        # Here and not at the entry to the loop above, which reads like the
+        # more general boundary and is not one: a machine whose chain was
+        # refused would spend a whole budget re-walking it before it ever
+        # looked at the event the host sent to get it out. The refused events
+        # stay queued either way — this is where the budget that drains them
+        # comes back.
         self._macrostep_truncated = False
+        self._macrostep_microsteps_taken = 0
         # §scxml-6.5 — `<finalize>` runs before transition selection for
         # events originating from invoked children, so the finalize body can
         # write child-derived values back into the parent datamodel that
@@ -923,11 +992,31 @@ class Engine(Generic[S, E]):
             self._discarded_external_events += 1
             self._last_discarded_event = evt.event
 
+    def _record_truncated_macrostep(self) -> None:
+        """Publish a macrostep this engine stopped short, from whichever branch
+        of Appendix D's inner loop ran out of budget.
+
+        One method, two callers, for the reason the budget is one number: a
+        host reads a macrostep that did not reach a stable configuration, and
+        the branch it died in is a detail of the document, not of the contract.
+        Two copies of this would be two chances for one of them to stop setting
+        the flag that keeps the same chain from being handed a second budget.
+
+        No log line: this runtime has no logging surface at all, and the
+        sibling engines' message is a convenience over the counter, not the
+        signal. `truncated_macrosteps` is the signal, and it is readable here
+        exactly as it is there.
+        """
+        self._truncated_macrosteps += 1
+        self._last_truncated_macrostep_state = self.current_state
+        self._macrostep_truncated = True
+
     def _drain_eventless(self) -> None:
         """W3C SCXML 3.13: fire all enabled eventless transitions until none
-        remain, or until `MAX_EVENTLESS_MICROSTEPS` of them have been taken and
-        the chain is still going — see `truncated_macrosteps` for why the
-        ceiling is reported rather than merely applied."""
+        remain, or until the macrostep's `MAX_MACROSTEP_MICROSTEPS` microsteps
+        have been taken and the chain is still going — see
+        `truncated_macrosteps` for why the ceiling is reported rather than
+        merely applied."""
         if self._macrostep_truncated:
             # This macrostep was already stopped at the ceiling. Re-entering
             # the drain would hand the same chain a second budget, which is the
@@ -936,8 +1025,8 @@ class Engine(Generic[S, E]):
         null_evt = self._policy.null_event()
         # Microsteps taken, not loop turns: the turn that finds nothing enabled
         # is how a macrostep ends, and counting it would spend the budget on
-        # the proof that no budget was needed.
-        taken = 0
+        # the proof that no budget was needed. The count lives on the engine
+        # because the macrostep does — see `_macrostep_microsteps_taken`.
         while self._is_running and not self._reached_final:
             transitions = self._select_transitions(null_evt)
             if not transitions:
@@ -945,22 +1034,16 @@ class Engine(Generic[S, E]):
                 # reached the stable configuration the clause describes, and
                 # nothing was refused however long the chain was.
                 return
-            if taken == MAX_EVENTLESS_MICROSTEPS:
+            if self._macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS:
                 # The chain is still going one microstep past the budget, so
                 # this is the case the specification calls a macrostep that
                 # cannot end. Refuse the microstep rather than take it, and
                 # publish the refusal: the configuration left behind is not a
                 # stable one and only this counter says so.
-                # No log line: this runtime has no logging surface at all, and
-                # the sibling engines' message is a convenience over the
-                # counter, not the signal. `truncated_macrosteps` is the
-                # signal, and it is readable here exactly as it is there.
-                self._truncated_macrosteps += 1
-                self._last_truncated_macrostep_state = self.current_state
-                self._macrostep_truncated = True
+                self._record_truncated_macrostep()
                 return
             self._take_transitions(transitions)
-            taken += 1
+            self._macrostep_microsteps_taken += 1
 
     def _dispatch(self, evt: EventWithMetadata[E]) -> bool:
         # §scxml-5.10 — bind `_event` into the datamodel before the

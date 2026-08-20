@@ -455,6 +455,33 @@ void EventRaiserImpl::resetErrorCascadeDepth() {
     errorCascadeDepth_.store(0);
 }
 
+void EventRaiserImpl::setMicrostepBudget(MicrostepBudget budget) {
+    std::lock_guard<std::mutex> lock(microstepBudgetMutex_);
+    microstepBudget_ = std::move(budget);
+}
+
+bool EventRaiserImpl::mayTakeMicrostep() {
+    std::function<bool()> mayTake;
+    {
+        std::lock_guard<std::mutex> lock(microstepBudgetMutex_);
+        mayTake = microstepBudget_.mayTake;
+    }
+    // §scxml-3.13: no budget lent means no macrostep to bound — a raiser used
+    // on its own dispatches exactly as it always did.
+    return !mayTake || mayTake();
+}
+
+void EventRaiserImpl::spendMicrostep() {
+    std::function<void()> spend;
+    {
+        std::lock_guard<std::mutex> lock(microstepBudgetMutex_);
+        spend = microstepBudget_.spend;
+    }
+    if (spend) {
+        spend();
+    }
+}
+
 uint32_t EventRaiserImpl::getErrorCascadeEvents() const {
     // §scxml-3.12.2: the clause covers the error nobody answers; this counts
     // the error answered by a handler that fails the same way every time,
@@ -582,12 +609,31 @@ void EventRaiserImpl::processQueuedEvents() {
     }
 
     // Process events without holding the queue lock
-    for (const auto &event : eventsToProcess) {
+    for (size_t i = 0; i < eventsToProcess.size(); ++i) {
+        const auto &event = eventsToProcess[i];
         SCE_LOG_DEBUG("EventRaiserImpl: Synchronously processing queued event '{}' with {} priority", event.eventName,
                       (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
 
+        // §scxml-3.13: the macrostep may have run out of budget. Put back
+        // everything not yet dispatched — this drain took the whole queue into
+        // a local vector, so "leave it queued" means returning it — and stop.
+        // The next macrostep starts where this one was cut, which is what
+        // makes the ceiling a pause rather than a loss. See `MicrostepBudget`.
+        if (event.priority == EventPriority::INTERNAL && !mayTakeMicrostep()) {
+            std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+            for (size_t j = i; j < eventsToProcess.size(); ++j) {
+                synchronousQueue_.push(eventsToProcess[j]);
+            }
+            SCE_LOG_DEBUG("EventRaiserImpl: microstep budget spent, {} event(s) left queued",
+                          eventsToProcess.size() - i);
+            break;
+        }
+
         // Use common callback execution method
-        executeEventCallback(event);
+        const bool tookTransition = executeEventCallback(event);
+        if (tookTransition && event.priority == EventPriority::INTERNAL) {
+            spendMicrostep();
+        }
     }
 
     SCE_LOG_TRACE("EventRaiserImpl: Finished processing all queued events");
@@ -622,16 +668,43 @@ bool EventRaiserImpl::processNextQueuedEvent() {
             return false;
         }
 
-        // W3C SCXML compliance: Get highest priority event (INTERNAL before EXTERNAL)
+        // §scxml-3.13: an internal event is a microstep of the macrostep now
+        // in progress, and this one may have none left. Asked before the pop,
+        // so the refusal leaves the event queued. See `MicrostepBudget`.
+        if (synchronousQueue_.top().priority == EventPriority::INTERNAL) {
+            // Copied out and re-read below: the gate runs without this lock,
+            // because the machine that owns the budget may reach back in.
+            eventToProcess = synchronousQueue_.top();
+        } else {
+            // W3C SCXML compliance: Get highest priority event (INTERNAL before EXTERNAL)
+            eventToProcess = synchronousQueue_.top();
+            synchronousQueue_.pop();
+            SCE_LOG_DEBUG("EventRaiserImpl: Dequeued EXTERNAL event '{}' - {} events left in queue",
+                          eventToProcess.eventName, synchronousQueue_.size());
+            return executeEventCallback(eventToProcess);
+        }
+    }
+
+    if (!mayTakeMicrostep()) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+        if (synchronousQueue_.empty()) {
+            return false;
+        }
         eventToProcess = synchronousQueue_.top();
         synchronousQueue_.pop();
-
         SCE_LOG_DEBUG(
             "EventRaiserImpl: Dequeued event '{}' with priority {} - {} events left in queue", eventToProcess.eventName,
             (eventToProcess.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), synchronousQueue_.size());
     }
 
-    return executeEventCallback(eventToProcess);
+    const bool tookTransition = executeEventCallback(eventToProcess);
+    if (tookTransition && eventToProcess.priority == EventPriority::INTERNAL) {
+        spendMicrostep();
+    }
+    return tookTransition;
 }
 
 bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
@@ -726,13 +799,33 @@ bool EventRaiserImpl::processNextInternalEvent() {
         }
 
         eventToProcess = synchronousQueue_.top();
-        synchronousQueue_.pop();
 
         SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",
-                      eventToProcess.eventName, synchronousQueue_.size());
+                      eventToProcess.eventName, synchronousQueue_.size() - 1);
     }
 
-    return executeEventCallback(eventToProcess);
+    // §scxml-3.13: asked before the event leaves the queue, so a refusal
+    // leaves it for the next macrostep rather than swallowing it. See
+    // `MicrostepBudget`.
+    if (!mayTakeMicrostep()) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+        // The gate above released the lock, so re-read the head rather than
+        // trusting the copy: a nested dispatch may have drained it meanwhile.
+        if (synchronousQueue_.empty() || synchronousQueue_.top().priority != EventPriority::INTERNAL) {
+            return false;
+        }
+        eventToProcess = synchronousQueue_.top();
+        synchronousQueue_.pop();
+    }
+
+    const bool tookTransition = executeEventCallback(eventToProcess);
+    if (tookTransition) {
+        spendMicrostep();
+    }
+    return tookTransition;
 }
 
 void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,

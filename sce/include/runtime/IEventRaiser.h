@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,6 +12,32 @@ namespace SCE {
 
 // Forward declarations
 struct EventSnapshot;
+
+/**
+ * @brief §scxml-3.13: how a state machine lends its macrostep budget to whoever holds the internal queue
+ *
+ * The clause ends a macrostep at a configuration where nothing is enabled by
+ * NULL and the internal queue is empty, and the specification's Principles and
+ * Constraints allow a document where that never happens — a `<raise>` answered
+ * by a transition that raises again. An engine that runs it to the letter never
+ * returns.
+ *
+ * The engine owns the budget because it also spends it on eventless
+ * transitions, and one macrostep has one. The raiser owns the queue, and is
+ * therefore the only party that can decline a dispatch *without consuming the
+ * event*: refusing here leaves it where the next macrostep will find it, which
+ * is the difference between a chain this engine declined to keep running and
+ * one it silently swallowed.
+ */
+struct MicrostepBudget {
+    /// Asked before every internal dispatch. A `false` is expected to have
+    /// published the refusal already — the raiser cannot, because the ceiling
+    /// is not its to report.
+    std::function<bool()> mayTake;
+    /// Told after a dispatch that actually selected a transition. A dispatch
+    /// that matched nothing took no microstep and spends nothing.
+    std::function<void()> spend;
+};
 
 /**
  * @brief Interface for raising events in the SCXML system
@@ -271,6 +298,17 @@ public:
      * forget.
      */
     virtual void resetErrorCascadeDepth() {}
+
+    /**
+     * @brief §scxml-3.13: hand this raiser the macrostep budget its dispatches spend
+     *
+     * See `MicrostepBudget`. Called once, when the state machine wires its
+     * event callback — the same moment and for the same reason.
+     *
+     * Defaulted to nothing: a raiser whose dispatches cannot form a chain has
+     * no budget to spend.
+     */
+    virtual void setMicrostepBudget(MicrostepBudget /*budget*/) {}
 };
 
 }  // namespace SCE

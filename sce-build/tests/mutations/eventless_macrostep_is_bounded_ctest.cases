@@ -51,7 +51,7 @@ mutation_oracles tests/integration/EventlessMacrostepIsBoundedAotTest.cpp tests/
 
 mutation_case "the cpp engine takes the microstep past the ceiling anyway" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                if (taken == MAX_EVENTLESS_MICROSTEPS) {""",
+     """                if (macrostepMicrostepsTaken_ == MAX_MACROSTEP_MICROSTEPS) {""",
      """                if (false) {""")
 PY
 
@@ -63,9 +63,9 @@ PY
 
 mutation_case "the cpp engine stops the machine at the ceiling" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                    macrostepTruncated_ = true;
+     """                    recordTruncatedMacrostep(currentState_);
                     SCE_LOG_ERROR(""",
-     """                    macrostepTruncated_ = true;
+     """                    recordTruncatedMacrostep(currentState_);
                     stop();
                     SCE_LOG_ERROR(""")
 PY
@@ -80,9 +80,9 @@ PY
 
 mutation_case "the cpp ceiling fires before the chain is over" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                ++taken;
+     """                ++macrostepMicrostepsTaken_;
                 // §scxml-3.4: For parallel states, use actual transition source state""",
-     """                taken += 2;
+     """                macrostepMicrostepsTaken_ += 2;
                 // §scxml-3.4: For parallel states, use actual transition source state""")
 PY
 
@@ -97,8 +97,8 @@ edit("sce/include/static/StaticExecutionEngine.h",
      """                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
                         currentState_ = oldState;
                     }
-                    ++truncatedMacrosteps_;""",
-     """                    ++truncatedMacrosteps_;""")
+                    recordTruncatedMacrostep(currentState_);""",
+     """                    recordTruncatedMacrostep(currentState_);""")
 PY
 
 # ── C++ AOT: the count ─────────────────────────────────────────────
@@ -109,9 +109,9 @@ PY
 
 mutation_case "the cpp refusal is silent" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                    ++truncatedMacrosteps_;
-                    lastTruncatedMacrostepState_ = currentState_;""",
-     """                    lastTruncatedMacrostepState_ = currentState_;""")
+     """    void recordTruncatedMacrostep(State state) {
+        ++truncatedMacrosteps_;""",
+     """    void recordTruncatedMacrostep(State state) {""")
 PY
 
 # ── Interpreter: the refusal itself ────────────────────────────────
@@ -121,7 +121,7 @@ PY
 
 mutation_case "the interpreter takes the microstep past the ceiling anyway" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    if (eventlessMicrostepsTaken_ >= MAX_EVENTLESS_MICROSTEPS) {
+     """    if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
         recordTruncatedMacrostep();""",
      """    if (false) {
         recordTruncatedMacrostep();""")
@@ -132,12 +132,12 @@ PY
 # A counter that is never reset makes the ceiling a property of the machine's
 # whole life: the second macrostep is refused before it runs, so a host polling
 # the count sees it stop moving and reads the machine as recovered.
-# `ASecondTruncatedMacrostepCountsAgain` reads `spins == 200` for it.
+# `ASecondTruncatedMacrostepCountsAgain` reads `spins == 2000` for it.
 
 mutation_case "the interpreter budget outlives the macrostep that spent it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
      """        macrostepTruncated_ = false;
-        eventlessMicrostepsTaken_ = 0;
+        macrostepMicrostepsTaken_ = 0;
     }""",
      """    }""")
 PY
@@ -167,17 +167,17 @@ PY
 
 mutation_case "the c11 machine takes the microstep past the ceiling anyway" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            sm->macrostep_truncated = true;
+     """            record_truncated_macrostep(sm, enabled[0].source);
             return;
         }""",
-     """            sm->macrostep_truncated = true;
+     """            record_truncated_macrostep(sm, enabled[0].source);
         }""")
 PY
 
 # ── C11: the budget is per macrostep, not per caller ───────────────
 #
 # The drain is reached twice for one external event, so without the flag each
-# caller gets a fresh budget and the machine walks twice as far. `spins == 50`
+# caller gets a fresh budget and the machine walks twice as far. `spins == 500`
 # is what holds it.
 
 mutation_case "each c11 caller of the drain gets its own budget" <<'PY'
@@ -195,8 +195,9 @@ PY
 
 mutation_case "the c11 refusal is silent" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            sm->truncated_macrosteps++;""",
-     """            (void)0;""")
+     """    sm->truncated_macrosteps++;
+    sm->last_truncated_macrostep_state = state;""",
+     """    sm->last_truncated_macrostep_state = state;""")
 PY
 
 # ── C11: the lower bound on the accessor ───────────────────────────
