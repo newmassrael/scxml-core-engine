@@ -1987,6 +1987,43 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
+     * §scxml-C-2: a value as the text a form-encoded param carries.
+     *
+     * The BasicHTTP Event I/O Processor sends each `<param>` as one
+     * `name=value` pair, so the value crosses as text and the receiving end
+     * hands that text to `_event.data`; no script engine reads it at either
+     * end. [valueToJson] is the neighbour for a structured payload — it would
+     * wrap a string in quotes that are not part of it — and an engine literal
+     * is the other, which would put the sender's language on the wire.
+     *
+     * What this replaced was a bare `toString()`, which is the *platform's*
+     * spelling: Rhino hands back a Double for every number, so a document
+     * that sent `5` put `5.0` on the wire while the C++ channel sent `5` for
+     * the same document. The rendering here is ECMAScript's `String(value)`,
+     * with absence empty (§scxml-C-1) and a structured value as JSON —
+     * matching C++ `ScriptResultUtils::resultToString` arm for arm.
+     */
+    protected fun valueToWireString(value: Any?): String = when (value) {
+        null -> ""
+        is Boolean -> value.toString()
+        is Number -> {
+            val d = value.toDouble()
+            when {
+                d.isNaN() -> "NaN"
+                d == Double.POSITIVE_INFINITY -> "Infinity"
+                d == Double.NEGATIVE_INFINITY -> "-Infinity"
+                d == d.toLong().toDouble() -> d.toLong().toString()
+                else -> d.toString()
+            }
+        }
+        // Already text: quoting it would deliver characters the document
+        // never wrote.
+        is String -> value
+        is Map<*, *>, is List<*>, is Array<*>, is RepeatedParam -> valueToJson(value)
+        else -> value.toString()
+    }
+
+    /**
      * §scxml-6.4: Resolve event name string to Event object.
      * Override in generated code for cross-SM event routing.
      */

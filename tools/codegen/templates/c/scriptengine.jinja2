@@ -902,6 +902,60 @@
     lua_pop(sm->L, 1);
 {% endmacro %}
 
+{# W3C SCXML C.2: evaluate an expression and render the result as the text a
+   form-encoded `<param>` carries.
+
+   `lua_eval_to_string` above is the wrong renderer for this one surface, and
+   the reason is `tostring`. It is Lua's spelling of a value, and the wire is
+   not Lua's: `tostring(nil)` is the word "nil" where every other channel
+   sends nothing, and `tostring({1,2})` is `table: 0x55f3...` — a POINTER,
+   valid for exactly one process. Measured 2026-08-21, this one field had six
+   answers across six backends. The rendering below is the one C++
+   `ScriptResultUtils::resultToString` gives on every arm the corpus reaches,
+   so a document compiled to C11 puts the same bytes on the wire as the same
+   document compiled anywhere else:
+
+     nil            → ""            (§scxml-C-1: absence is the empty string)
+     boolean        → true / false
+     integral number→ 5             (ECMAScript String(5), not Lua's "5.0")
+     other number   → tostring
+     string         → itself, unquoted
+     table          → JSON, via the shared `json_builtins.lua` encoder this
+                      session already loads — the same encoder the other five
+                      backends use, rather than a sixth spelling here.
+
+   `math.tointeger` rather than `%d`: it answers nil for a float with no exact
+   integer value instead of raising, so the numeric arm needs no range guard. #}
+{% macro lua_eval_to_wire_string(expr, out_buf, out_cap, out_ok) %}
+    {{ out_ok }} = false;
+    {{ out_buf }}[0] = '\0';
+    if (luaL_dostring(sm->L,
+        "local v = ({{ expr | to_lua_expr | escape_c }})\n"
+        "if v == nil then return '' end\n"
+        "local t = type(v)\n"
+        "if t == 'string' then return v end\n"
+        "if t == 'boolean' then return tostring(v) end\n"
+        "if t == 'number' then\n"
+        "  local i = math.tointeger(v)\n"
+        "  if i ~= nil then return tostring(i) end\n"
+        "  return tostring(v)\n"
+        "end\n"
+        "if t == 'table' then return JSON.stringify(v) end\n"
+        "return tostring(v)") == 0) {
+        size_t _wire_len = 0u;
+        const char *_wire_str = lua_tolstring(sm->L, -1, &_wire_len);
+        if (_wire_str != NULL) {
+            if (_wire_len >= (size_t)({{ out_cap }})) {
+                _wire_len = (size_t)({{ out_cap }}) - 1u;
+            }
+            memcpy({{ out_buf }}, _wire_str, _wire_len);
+            {{ out_buf }}[_wire_len] = '\0';
+            {{ out_ok }} = true;
+        }
+    }
+    lua_pop(sm->L, 1);
+{% endmacro %}
+
 {# W3C SCXML 6.2 (test175): evaluate `<send delayexpr="...">` and parse the
    resulting string into milliseconds, mirroring cpp
    `SendSchedulingHelper::parseDelayString`. Grammar (parser.rs:2799):

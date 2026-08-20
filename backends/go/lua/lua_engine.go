@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 
@@ -138,6 +139,74 @@ func (e *LuaEngine) ExecuteScript(sessionID, script string) error {
 		return err
 	}
 	return lua.DoString(sess.l, script)
+}
+
+// ToScriptLiteral renders a value as Lua source — this engine's answer to
+// sce.IScriptEngine.
+//
+// Every spelling here is Lua's and nobody else's: `nil` for absence, a braced
+// list for a sequence, `["k"] = v` for a keyed table. The engine that reads it
+// back does so by loading it as an expression, so the text has to be Lua, and
+// a value that stayed engine-neutral could not have known that.
+func (e *LuaEngine) ToScriptLiteral(value interface{}) string {
+	return luaLiteral(value)
+}
+
+func luaLiteral(value interface{}) string {
+	if value == nil {
+		return "nil"
+	}
+	switch v := value.(type) {
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case float64:
+		if v == float64(int64(v)) {
+			// Lua's numeric grammar tells `5` from `5.0`; the point is what
+			// keeps an integral float a float when the literal is read back.
+			return fmt.Sprintf("%.1f", v)
+		}
+		return fmt.Sprintf("%g", v)
+	case string:
+		return `"` + escapeLuaString(v) + `"`
+	case []interface{}:
+		items := make([]string, len(v))
+		for i, item := range v {
+			items[i] = luaLiteral(item)
+		}
+		return "{" + strings.Join(items, ", ") + "}"
+	case map[string]interface{}:
+		// Keys sorted: Go map iteration order is deliberately randomised, and
+		// a table literal that reordered itself per run would make identical
+		// values compare unequal as text.
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		items := make([]string, 0, len(v))
+		for _, k := range keys {
+			items = append(items, fmt.Sprintf(`["%s"] = %s`, escapeLuaString(k), luaLiteral(v[k])))
+		}
+		return "{" + strings.Join(items, ", ") + "}"
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func escapeLuaString(s string) string {
+	escaped := strings.ReplaceAll(s, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
+	return escaped
 }
 
 func (e *LuaEngine) EvaluateExpression(sessionID, expr string) (interface{}, error) {

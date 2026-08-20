@@ -199,13 +199,14 @@
 			httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
 {% elif param.expr and model.needs_script_engine %}
 			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); httpParamErr == nil {
-				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
-				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], trimmed)
+				// W3C SCXML C.2: the param crosses as text, so the value is
+				// rendered by the neutral helper — an engine literal would put
+				// this sender's language on the wire.
+				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], sce.ToWireString(httpParamVal))
 			}
 {% elif param.location and model.needs_script_engine %}
 			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
-				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
-				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], trimmed)
+				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], sce.ToWireString(httpParamVal))
 			}
 {% endif %}
 {% endfor %}
@@ -213,8 +214,7 @@
 {% if has_namelist %}
 {% for name in action.namelist | split %}
 			if httpNlVal, httpNlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ name }}`); httpNlErr == nil {
-				trimmed := strings.Trim(sce.ToLuaLiteral(httpNlVal), "'\"")
-				httpParams["{{ name }}"] = append(httpParams["{{ name }}"], trimmed)
+				httpParams["{{ name }}"] = append(httpParams["{{ name }}"], sce.ToWireString(httpNlVal))
 			}
 {% endfor %}
 {% endif %}
