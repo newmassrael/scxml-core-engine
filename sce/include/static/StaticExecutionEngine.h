@@ -525,7 +525,23 @@ private:
         if (!needsHierarchicalHandling) {
             // §scxml-3.13: Targetless transition - execute actions without state change
             policy_.executeTransitionActions(*this);
-            return EventOutcome{/*selected=*/true, /*configurationChanged=*/false};
+            // W3C SCXML Appendix D's main event loop returns to
+            // `selectEventlessTransitions()` after EVERY microstep and drains
+            // the internal queue in the same inner loop, without asking whether
+            // the microstep moved the machine. Returning here instead ended the
+            // macrostep at a transition that ran content: whatever that content
+            // enabled was never walked, and whatever it raised stayed on the
+            // queue, so the host was handed a configuration the clause calls
+            // unstable with nothing anywhere saying so. This is the same work
+            // the state-changing path below does, in the same order.
+            postTransition();
+            checkEventlessTransitions();
+            // The transition itself moved nothing; the chain it opened may
+            // have. This asks the machine rather than the transition, so a
+            // chain that reaches a top-level `<final>` still notifies the
+            // parent — see this struct's contract for why the two facts are
+            // spelled apart.
+            return EventOutcome{/*selected=*/true, /*configurationChanged=*/currentState_ != oldState};
         }
 
         // §scxml-3.13: State transition requires hierarchical exit/entry
@@ -1665,9 +1681,26 @@ protected:
 
                     // §scxml-3.13: Internal events are processed AFTER stable configuration is reached
                     // Continue loop to check for more eventless transitions first
+                } else if (policy_.lastTransitionIsTargetless_) {
+                    // §scxml-3.13: a transition with no `target` exits and
+                    // enters nothing and runs its content in place. The
+                    // configuration is unchanged by definition, so a loop that
+                    // continued only on a changed configuration selected this
+                    // transition and then dropped it — the content never ran,
+                    // and the chain ended one microstep early. Running it here
+                    // is the same decision `executeTransition` makes for the
+                    // event-driven case, read off the same policy flag.
+                    policy_.executeTransitionActions(*this);
                 } else {
-                    // Transition taken but state didn't change - stop
-                    break;
+                    // §scxml-3.13: a self transition with a target exits and
+                    // re-enters its state, which is work even though the
+                    // configuration ends where it started. The ceiling above is
+                    // what stops the chain it can open; leaving early instead
+                    // skipped the exit and entry the clause requires.
+                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+                        handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
+                                                     [this] { policy_.executeTransitionActions(*this); });
+                    }
                 }
             } else {
                 // §scxml-3.13: No eventless transition available - stable configuration reached

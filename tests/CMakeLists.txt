@@ -741,6 +741,8 @@ add_executable(integration_tests
     integration/ErrorCascadeIsBoundedAotTest.cpp
     integration/EventlessMacrostepIsBoundedTest.cpp
     integration/EventlessMacrostepIsBoundedAotTest.cpp
+    integration/TargetlessTransitionCompletesMacrostepTest.cpp
+    integration/TargetlessTransitionCompletesMacrostepAotTest.cpp
     integration/InvokeUnsupportedTypeTest.cpp
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
@@ -1150,6 +1152,15 @@ sce_generate_static_integration_test(error_cascade_is_bounded ${STATIC_INTEGRATI
 # engine's own off-by-one used to call `stop()` on a document that had already
 # settled.
 sce_generate_static_integration_test(eventless_macrostep_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML Appendix D's inner loop returns to `selectEventlessTransitions()`
+# after every microstep and drains the internal queue there, without asking
+# whether the microstep moved the machine — W3C SCXML 3.13 defines a transition
+# with no `target` as one that exits and enters nothing and runs its content in
+# place. Both C++ engines used to end the macrostep at such a transition, so the
+# chain its content enabled was never walked and the host was handed a
+# configuration the clause says is not stable.
+sce_generate_static_integration_test(targetless_transition_completes_macrostep ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 6.2 + 6.3: `<cancel>` drops a delayed `<send>` that has not been
 # dispatched, and a host that ticks after two fire times have passed must still
