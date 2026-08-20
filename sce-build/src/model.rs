@@ -564,6 +564,26 @@ pub struct UnsupportedInvokeInfo {
     /// `error.execution` payload so the author sees which URI was refused
     /// rather than a generic failure.
     pub invoke_type: String,
+    /// `<invoke src="...">` verbatim, empty when the document named none.
+    ///
+    /// Inert for a refused invoke — nothing resolves it — but a host that
+    /// RUNS the type needs it: `src` is how §scxml-6.4.1 lets the document
+    /// say *what* to invoke, and dropping it would leave a host invoker
+    /// able to receive the request and not the thing it names.
+    #[serde(default)]
+    pub src: String,
+    /// `true` when the host has declared it serves
+    /// [`Self::invoke_type`] (§scxml-6.4.1 leaves the set of invokable
+    /// types to the platform, exactly as §scxml-6.2.5 does for `<send>`).
+    ///
+    /// The variant stays `Unsupported` rather than becoming a third kind:
+    /// what a declaration changes is not the classification but the
+    /// lowering. Both shapes ride the same deferred-invoke queue and the
+    /// same entry chain; only the execute step differs — a raise for one,
+    /// a dispatch into the host's invoker for the other. Set by
+    /// [`crate::host_processor_analyzer::declare_host_processors`].
+    #[serde(default)]
+    pub host_served: bool,
 }
 
 /// Fields every invoke carries regardless of kind: the W3C identity
@@ -1547,6 +1567,15 @@ pub struct SCXMLModel {
     /// from this list.
     #[serde(default)]
     pub host_processor_types: Vec<String>,
+    /// `<invoke type="...">` values this build's host has declared it can
+    /// run (§scxml-6.4.1 leaves the invokable set to the platform).
+    ///
+    /// A separate list from [`Self::host_processor_types`] because they
+    /// are separate contracts: delivering an event is not the same
+    /// capability as running an invoked process with a lifecycle, and one
+    /// list would make declaring either silently claim both.
+    #[serde(default)]
+    pub host_invoker_types: Vec<String>,
     /// Whether the document contains any `<cancel>` action (§scxml-6.3).
     ///
     /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free

@@ -512,7 +512,10 @@ pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 #[cfg(not(feature = "no_std"))]
-pub use host_processor::{HostSendRequest, HostSendResponse};
+pub use host_processor::{
+    HostInvokeCancel, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
+    HostSendResponse,
+};
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};
 /// The [`log`] facade crate, re-exported so generated code can reach it

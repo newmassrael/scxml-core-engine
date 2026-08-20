@@ -227,6 +227,15 @@ pub struct Manifest<'a> {
     /// that is what declaring it does.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub host_processor_types: &'a [String],
+    /// `<invoke type="...">` values this build was told the host can run
+    /// (`--host-invoker`). Omitted when none were declared.
+    ///
+    /// A separate field from [`Self::host_processor_types`] because they
+    /// are separate contracts — a host that delivers events is not
+    /// thereby able to run an invoked process — and a consumer checking
+    /// its registrations has two lists to check.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub host_invoker_types: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<RejectedInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -420,6 +429,7 @@ mod tests {
             needs_host_processor: false,
             host_processor_causes: &[],
             host_processor_types: &[],
+            host_invoker_types: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -442,6 +452,7 @@ mod tests {
             needs_host_processor: false,
             host_processor_causes: &[],
             host_processor_types: &[],
+            host_invoker_types: &[],
             rejected: Some(RejectedInfo {
                 spec: "W3C SCXML 5.8",
                 name: "untestable_doc".to_string(),
@@ -467,6 +478,7 @@ mod tests {
             needs_host_processor: false,
             host_processor_causes: &[],
             host_processor_types: &[],
+            host_invoker_types: &[],
             rejected: None,
             deploy: None,
             languages: Some(vec![
@@ -516,6 +528,7 @@ mod tests {
             needs_host_processor: true,
             host_processor_causes: &causes,
             host_processor_types: &[],
+            host_invoker_types: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -551,6 +564,7 @@ mod tests {
             needs_host_processor: false,
             host_processor_causes: &[],
             host_processor_types: &[],
+            host_invoker_types: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -584,6 +598,10 @@ mod tests {
             needs_host_processor: false,
             host_processor_causes: &[],
             host_processor_types: &declared,
+            // The invoke half declared beside it, because the two travel
+            // together on a real build and a record carrying only one
+            // would never exercise both fields on the wire at once.
+            host_invoker_types: &declared,
             rejected: None,
             deploy: None,
             languages: None,
@@ -592,6 +610,10 @@ mod tests {
         assert_valid(&line);
         assert!(
             line.contains("\"host_processor_types\":[\"x-sprag-host\"]"),
+            "{line}"
+        );
+        assert!(
+            line.contains("\"host_invoker_types\":[\"x-sprag-host\"]"),
             "{line}"
         );
     }

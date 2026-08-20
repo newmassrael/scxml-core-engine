@@ -1991,6 +1991,14 @@
               },
               "type": "object"
             },
+            "host_invoker_types": {
+              "default": [],
+              "description": "`<invoke type=\"...\">` values this build's host has declared it can run (§scxml-6.4.1 leaves the invokable set to the platform).\n\nA separate list from [`Self::host_processor_types`] because they are separate contracts: delivering an event is not the same capability as running an invoked process with a lifecycle, and one list would make declaring either silently claim both.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "host_processor_types": {
               "default": [],
               "description": "Event I/O Processor `type` values this build's host has declared it serves, beyond the two §scxml-C-1 / §scxml-C-2 names.\n\nA build input rather than a document fact — the same SCXML compiled for a host that serves `x-sprag-host` and for one that does not is two different lowerings, and this is what separates them. Carried on the model rather than in a per-backend options struct so every generator reads the same declaration; templates see the *decision* on each `<send>` ([`Action::send_type_host_served`]) rather than re-deriving it from this list.",
@@ -4151,6 +4159,11 @@
               "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
               "type": "string"
             },
+            "host_served": {
+              "default": false,
+              "description": "`true` when the host has declared it serves [`Self::invoke_type`] (§scxml-6.4.1 leaves the set of invokable types to the platform, exactly as §scxml-6.2.5 does for `<send>`).\n\nThe variant stays `Unsupported` rather than becoming a third kind: what a declaration changes is not the classification but the lowering. Both shapes ride the same deferred-invoke queue and the same entry chain; only the execute step differs — a raise for one, a dispatch into the host's invoker for the other. Set by [`crate::host_processor_analyzer::declare_host_processors`].",
+              "type": "boolean"
+            },
             "idlocation": {
               "type": "string"
             },
@@ -4197,6 +4210,11 @@
                 }
               ],
               "description": "The `<invoke>` element's position, so an invoke-anchored script-engine cause can name the line (SCE_ERROR_CONTRACT.md §10.4)."
+            },
+            "src": {
+              "default": "",
+              "description": "`<invoke src=\"...\">` verbatim, empty when the document named none.\n\nInert for a refused invoke — nothing resolves it — but a host that RUNS the type needs it: `src` is how §scxml-6.4.1 lets the document say *what* to invoke, and dropping it would leave a host invoker able to receive the request and not the thing it names.",
+              "type": "string"
             },
             "state_name": {
               "type": "string"

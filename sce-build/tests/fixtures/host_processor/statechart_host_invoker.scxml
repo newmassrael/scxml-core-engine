@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  W3C SCXML 6.4.1: an `<invoke type="...">` the HOST runs, rather than one
+  of the processors SCE implements.
+
+  An invoke is not a send: it has a lifetime. So the fixture holds four
+  outcomes apart, each with its own counter, because the configuration
+  alone cannot tell them apart:
+
+    started  — the host's invoker was asked to begin, and answered with a
+               completion, which arrived as done.invoke.probe.
+    refused  — error.execution instead, because nobody ran the process.
+    ended    — the state exited, so the host was told to stop. The counter
+               lives on the state AFTER the exit, since an exiting state
+               cannot observe its own teardown.
+    entered  — plain entry ran. The false-positive guard: a change that
+               broke the entry chain while leaving the invoke arm working
+               would otherwise read as a pass.
+
+  The generated machine is compiled with the host-invoker declaration
+  `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
+  comment cannot spell a double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="statechart_host_invoker" initial="invoking">
+
+  <datamodel>
+    <data id="started" expr="0"/>
+    <data id="refused" expr="0"/>
+    <data id="ended" expr="0"/>
+    <data id="entered" expr="0"/>
+  </datamodel>
+
+  <state id="invoking">
+    <onentry>
+      <assign location="entered" expr="entered + 1"/>
+    </onentry>
+
+    <invoke id="probe" type="x-sce-host" src="pane://turn">
+      <param name="within" expr="'2500'"/>
+    </invoke>
+
+    <transition event="done.invoke.probe">
+      <assign location="started" expr="started + 1"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+    <!-- Leaving the state is what cancels the invocation. `leave` is
+         raised by the host so the test decides when the exit happens. -->
+    <transition event="leave" target="done"/>
+  </state>
+
+  <state id="done">
+    <onentry>
+      <assign location="ended" expr="ended + 1"/>
+    </onentry>
+  </state>
+</scxml>
