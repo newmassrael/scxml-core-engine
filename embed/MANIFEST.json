@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "c69577d89a",
+  "embed_version": "5b8a685d84",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 247,
+  "symbol_count": 252,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -303,6 +303,24 @@
       "name": "SCE::NamelistHelper"
     },
     {
+      "header": "common/SceClock.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ISceClock"
+    },
+    {
+      "header": "common/SceClock.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::ManualClock"
+    },
+    {
+      "header": "common/SceClock.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::MonotonicClock"
+    },
+    {
       "header": "common/SendHelper.h",
       "kind": "class",
       "members": [],
@@ -484,6 +502,14 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::EventProcessingAlgorithms"
+    },
+    {
+      "header": "core/EventProcessingAlgorithms.h",
+      "kind": "struct",
+      "members": [
+        "method bool () const operator()"
+      ],
+      "name": "SCE::Core::AlwaysTakeMicrostep"
     },
     {
       "header": "core/EventQueueManager.h",
@@ -1191,6 +1217,19 @@
       "kind": "class",
       "members": [],
       "name": "SCE::IEventRaiser"
+    },
+    {
+      "header": "runtime/IEventRaiser.h",
+      "kind": "struct",
+      "members": [
+        "field std::function<bool ()> mayTake",
+        "field std::function<void ()> spend",
+        "method MicrostepBudget &(MicrostepBudget &&) operator=",
+        "method MicrostepBudget &(const MicrostepBudget &) operator=",
+        "method void (MicrostepBudget &&) MicrostepBudget",
+        "method void (const MicrostepBudget &) MicrostepBudget"
+      ],
+      "name": "SCE::MicrostepBudget"
     },
     {
       "header": "runtime/IExecutionContext.h",
