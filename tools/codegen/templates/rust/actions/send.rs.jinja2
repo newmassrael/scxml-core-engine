@@ -33,9 +33,11 @@
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
                 Ok(val) => {
-                    let s = val.to_lua_literal();
-                    let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
+                    // W3C SCXML C.2: the param crosses as text, so the value is
+                    // rendered by the neutral helper — an engine literal would
+                    // put this sender's language on the wire.
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
                 }
                 Err(_) => {}
             }
@@ -48,9 +50,8 @@
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
             match se.evaluate_expression(&sid, "{{ param.location }}") {
                 Ok(val) => {
-                    let s = val.to_lua_literal();
-                    let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
                 }
                 Err(_) => {}
             }
@@ -270,8 +271,9 @@
                 None
             }
             Ok(val) => {
-                let s = val.to_lua_literal();
-                let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"').to_string();
+                // §scxml-C-1: a target expression's value is read as text —
+                // the same reading C++ `resultToString` gives it.
+                let trimmed = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                 if trimmed.starts_with("!") {
                     // W3C SCXML 6.2: Invalid target raises error.execution
 {% if 'error.execution' in model.events %}
@@ -445,9 +447,8 @@
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         let delay_ms = match se.evaluate_expression(&sid, "{{ action.delayexpr | to_lua_expr | escape_rust }}") {
             Ok(val) => {
-                let s = val.to_lua_literal();
-                let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                sce_rust_runtime::helpers::send::parse_delay_to_ms(trimmed).unwrap_or(0)
+                let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or(0)
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("delayexpr eval failed: {}", e);

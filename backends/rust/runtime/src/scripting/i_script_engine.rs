@@ -58,51 +58,6 @@ impl ScriptValue {
             ScriptValue::Array(_) | ScriptValue::Object(_) | ScriptValue::Dom(_) => true,
         }
     }
-
-    /// §scxml-5.5: Convert to a Lua literal string representation.
-    ///
-    /// Used by donedata evaluation to produce event data strings that the Lua
-    /// script engine can parse back via `return <literal>`. Ports the C++
-    /// `DoneDataHelper::convertScriptValueToJson` but emits Lua syntax instead
-    /// of JSON so the Lua engine's `load("return " .. data)` path works.
-    pub fn to_lua_literal(&self) -> String {
-        match self {
-            ScriptValue::Null | ScriptValue::Undefined => "nil".to_string(),
-            ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-            ScriptValue::Int(i) => i.to_string(),
-            ScriptValue::Double(f) => {
-                if f.fract() == 0.0 && f.is_finite() {
-                    format!("{:.1}", f)
-                } else {
-                    format!("{}", f)
-                }
-            }
-            ScriptValue::String(s) => {
-                let escaped = s
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('\n', "\\n")
-                    .replace('\r', "\\r")
-                    .replace('\t', "\\t");
-                format!("\"{}\"", escaped)
-            }
-            ScriptValue::Array(arr) => {
-                let items: Vec<String> = arr.iter().map(|v| v.to_lua_literal()).collect();
-                format!("{{{}}}", items.join(", "))
-            }
-            ScriptValue::Object(map) => {
-                let items: Vec<String> = map
-                    .iter()
-                    .map(|(k, v)| format!("[\"{}\"] = {}", k, v.to_lua_literal()))
-                    .collect();
-                format!("{{{}}}", items.join(", "))
-            }
-            ScriptValue::Dom(s) => {
-                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-                format!("\"{}\"", escaped)
-            }
-        }
-    }
 }
 
 /// Script engine error. 1:1 port of C++ `ScriptResult::error` field.
@@ -152,7 +107,6 @@ pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>
 /// signature passed to `setStateQueryCallback`.
 pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 
-/// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
 /// Parameter object for the §scxml-5.10 `set_current_event` boundary.
 ///
 /// Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
@@ -178,6 +132,7 @@ pub struct SetCurrentEventArgs<'a> {
     pub invoke_id: &'a str,
 }
 
+/// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
 ///
 /// Implementations (`sce-rust-lua`, future `sce-rust-quickjs`) provide ECMAScript
 /// evaluation for §scxml-B-1 datamodel support. Engine DI Parity RFC
@@ -205,6 +160,32 @@ pub trait IScriptEngine: Send + Sync {
     /// Matches C++ `validateExpression(...) -> future<ScriptResult>`. Returns `true`
     /// if the syntax is valid. Used by the datamodel parser for early error detection.
     fn validate_expression(&self, session_id: &str, expression: &str) -> ScriptResult<bool>;
+
+    /// A value as source this engine can evaluate back — the inverse of
+    /// [`Self::evaluate_expression`].
+    ///
+    /// §scxml-6.4.1 has the parent evaluate an `<invoke>`'s `<param>` and
+    /// namelist expressions and hand the *values* to the child, and the child
+    /// seeds them by evaluating source in its own datamodel. That round trip
+    /// is the only reason a literal is spelled at all, and it is why the
+    /// spelling belongs here: `nil` versus `null`, `{1, 2}` versus `[1, 2]`,
+    /// `{["k"] = v}` versus `{"k": v}` are answers about the engine, not
+    /// about the value. This lived on [`ScriptValue`] as `to_lua_literal`
+    /// until 2026-08-21, where a value that had never met an engine already
+    /// knew Lua — so a second engine inherited a syntax it cannot parse while
+    /// still compiling.
+    ///
+    /// Required, deliberately: a defaulted method would hand the next engine
+    /// the previous engine's grammar silently, which is the defect this
+    /// method exists to make impossible. An implementation must answer in its
+    /// own language.
+    ///
+    /// This is *not* the serialization for a value that leaves the process —
+    /// a payload or an §scxml-C-2 wire param is read by a parser or a human,
+    /// not by an engine, and has its own two helpers
+    /// (`helpers::event_data::script_value_to_json` /
+    /// `script_value_to_wire_string`).
+    fn to_script_literal(&self, value: &ScriptValue) -> String;
 
     // ════════════════════════════════════════
     // Variable Management

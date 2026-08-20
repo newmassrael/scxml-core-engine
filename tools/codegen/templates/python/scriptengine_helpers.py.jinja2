@@ -345,22 +345,22 @@
                 try:
                     value = engine._script_engine.get_variable(
                         self._session_id, var
-                    ).to_python()
+                    )
                 except _ScriptError:
                     continue
-                result.setdefault(var, []).append(
-                    "" if value is None else str(value)
-                )
+                result.setdefault(var, []).append(value.to_wire_string())
         for name, lua_expr in params_specs:
             try:
                 value = engine._script_engine.evaluate_expression(
                     self._session_id, lua_expr
-                ).to_python()
+                )
             except _ScriptError:
                 continue
-            result.setdefault(name, []).append(
-                "" if value is None else str(value)
-            )
+            # `str(value.to_python())` spelled these in Python — `True`
+            # where every other channel writes `true`, `[1, 2]` where the
+            # wire form is `[1,2]`. The rendering is the value's, not the
+            # sender's language's.
+            result.setdefault(name, []).append(value.to_wire_string())
         return result
 
     def _eval_send_payload(

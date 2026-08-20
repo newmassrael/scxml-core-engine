@@ -1450,7 +1450,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                     {
                         char _param_buf[256];
                         bool _param_ok = false;
-                        {{ se.lua_eval_to_string(param.expr, "_param_buf", "256", "_param_ok") }}
+                        {{ se.lua_eval_to_wire_string(param.expr, "_param_buf", "256", "_param_ok") }}
                         if (_param_ok) {
                             (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
                                                             "{{ param.name | escape_c }}", _param_buf);
@@ -1464,16 +1464,19 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                         /* W3C SCXML 5.10 + C.1: namelist variable
                            `{{ var_name }}` evaluated against the active
                            datamodel and appended as a form parameter.
-                           Empty Lua results (undeclared / nil) drop the
-                           pair silently rather than ReferenceError —
+                           An undeclared name reads nil and crosses as the
+                           empty string rather than as a ReferenceError —
                            cpp's `NamelistHelper::evaluateNamelist` raises
                            on missing vars but no W3C C.2 fixture forces
                            that arm; the eval-on-demand path here mirrors
                            how the SCXMLEventProcessor send arm
-                           (state_machine.c.jinja2 line 447) handles it. */
+                           (state_machine.c.jinja2 line 447) handles it.
+                           It used to cross as the four letters `nil`,
+                           which is Lua's word for absence and nobody
+                           else's — see `lua_eval_to_wire_string`. */
                         char _nl_buf[256];
                         bool _nl_ok = false;
-                        {{ se.lua_eval_to_string(var_name, "_nl_buf", "256", "_nl_ok") }}
+                        {{ se.lua_eval_to_wire_string(var_name, "_nl_buf", "256", "_nl_ok") }}
                         if (_nl_ok) {
                             (void)sce_test_http_form_append(_http_body, sizeof(_http_body), &_http_body_len,
                                                             "{{ var_name }}", _nl_buf);

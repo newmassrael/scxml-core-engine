@@ -1,0 +1,79 @@
+# Mutation cases for §scxml-C-2 — a form-encoded param carries the value, not
+# the sender's language.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/wire_value_is_not_engine_source.cases`.
+#
+# A value leaves the ECMAScript data model two ways and only one of them is a
+# language: an `<invoke>` child seeds its datamodel by EVALUATING source, so
+# that text belongs to the engine that will parse it, while an HTTP `<param>`,
+# a `targetexpr` and a `delayexpr` leave the process for a reader that is not
+# an engine at all. Until 2026-08-21 one function answered both — Lua's
+# spelling, on the engine-neutral value type — so the same param read `nil`
+# from the Rust backend and empty from the C++ one, `{1, 2}` here and `[1,2]`
+# there. Measured that day: six backends, six answers, one field.
+#
+# What each case restores, and what it would cost unnoticed:
+#   * absence as a word — a peer receives the four letters `nil` where the
+#     document sent nothing, and cannot tell it from a value.
+#   * a number with Rust's tail — `5.0` where ECMAScript's `String(5)` is `5`,
+#     so a receiver comparing the text against "5" reads false.
+#   * a string re-quoted — the quotes the old path added and then trimmed off,
+#     which ate the quotes a value carried itself.
+#   * the engine's grammar back on the neutral type — a second engine
+#     inheriting Lua's `nil` while still compiling, which is the shape of the
+#     original defect rather than one of its symptoms.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-runtime --test wire_value_is_not_engine_source -p sce-rust-lua --test engine_owns_its_literal
+mutation_targets backends/rust/runtime/src/helpers/event_data.rs backends/rust/lua/src/lib.rs
+mutation_oracles backends/rust/runtime/tests/wire_value_is_not_engine_source.rs backends/rust/lua/tests/engine_owns_its_literal.rs
+
+mutation_case "the wire spells absence with Lua's word again" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_data.rs",
+     """        ScriptValue::Null | ScriptValue::Undefined => String::new(),""",
+     """        ScriptValue::Null | ScriptValue::Undefined => "nil".to_string(),""")
+PY
+
+mutation_case "the wire gives an integral number a decimal tail again" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_data.rs",
+     """            } else if f.fract() == 0.0 && f.abs() < 1e15 {
+                // ECMAScript `String(5)` is "5". A `.0` tail is the Rust
+                // spelling of the number, not the document's.
+                format!("{}", *f as i64)""",
+     """            } else if f.fract() == 0.0 && f.abs() < 1e15 {
+                format!("{:.1}", f)""")
+PY
+
+mutation_case "the wire quotes a string that was already text again" <<'PY'
+edit("backends/rust/runtime/src/helpers/event_data.rs",
+     """        ScriptValue::String(s) => s.clone(),
+        // The receiving end reads XML from document text (§scxml-B-2), so a
+        // DOM crosses as that text rather than as a quoted JSON string.""",
+     """        ScriptValue::String(s) => format!("\\"{}\\"", escape_json_string(s)),
+        // The receiving end reads XML from document text (§scxml-B-2), so a
+        // DOM crosses as that text rather than as a quoted JSON string.""")
+PY
+
+mutation_case "the engine's literal answers in someone else's grammar" <<'PY'
+edit("backends/rust/lua/src/lib.rs",
+     """        ScriptValue::Null | ScriptValue::Undefined => "nil".to_string(),
+        ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+        ScriptValue::Int(i) => i.to_string(),
+        ScriptValue::Double(f) => {
+            if f.fract() == 0.0 && f.is_finite() {""",
+     """        ScriptValue::Null | ScriptValue::Undefined => "null".to_string(),
+        ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+        ScriptValue::Int(i) => i.to_string(),
+        ScriptValue::Double(f) => {
+            if f.fract() == 0.0 && f.is_finite() {""")
+PY
+
+# ⚠ Not a case: dropping the `keys.sort()` in the Lua table literal. The
+# assertion that pins the sorted spelling would fail only on the runs where
+# `HashMap`'s per-process seed happens to hand the keys over in the other
+# order, so the witness would be a coin flip. The sort is held by the
+# deterministic expectation in `a_structured_value_survives_as_a_table`
+# instead, which is a weaker guard honestly labelled rather than a mutation
+# case that reports SURVIVED half the time.
