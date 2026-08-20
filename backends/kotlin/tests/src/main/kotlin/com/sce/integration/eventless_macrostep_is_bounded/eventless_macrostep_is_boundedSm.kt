@@ -1,12 +1,12 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: db542f426fb8de2d0c1ec86e09f39eb0aa25ac64b30a3201346cedc77cf702e9
-// template-hash: 90ac0b7250dd34a7e14136bc481cc93d6f1302dcf207c461738cfaee4b475c98
+// source-hash: 448efc1945f51a00d346a070a50c9e40a8fdb0d3297033414fa43984fe293f6e
+// template-hash: f12fb4f06830f621596e812b2a7ac67af9c6e2f2d7dcc6b30ecafd508e9d2327
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/eventless_macrostep_is_bounded/eventless_macrostep_is_bounded.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+// SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
 
 package com.sce.integration.eventless_macrostep_is_bounded
 
@@ -342,7 +342,7 @@ class EventlessMacrostepIsBoundedStateMachine(
 
     private fun processNullBoundedA(
     ): TransitionResult<EventlessMacrostepIsBoundedState> = when {
-        safeEvaluateGuard("laps < 50") -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedB, EventlessMacrostepIsBoundedState.BoundedA)
+        safeEvaluateGuard("laps < 500") -> TransitionResult.External(EventlessMacrostepIsBoundedState.BoundedB, EventlessMacrostepIsBoundedState.BoundedA)
         else -> TransitionResult.Ignored
     }
 
@@ -407,31 +407,31 @@ class EventlessMacrostepIsBoundedStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun onEntry(state: EventlessMacrostepIsBoundedState, pathChild: EventlessMacrostepIsBoundedState?) {
         when (state) {
             is EventlessMacrostepIsBoundedState.BoundedA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:76 :: bounded_a :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:84 :: bounded_a :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("bounded_a")) return
             }
             is EventlessMacrostepIsBoundedState.BoundedB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:87 :: bounded_b :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:95 :: bounded_b :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("bounded_b")) return
             }
             is EventlessMacrostepIsBoundedState.Idle -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:63 :: idle :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:71 :: idle :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("idle")) return
             }
             is EventlessMacrostepIsBoundedState.SpinA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:96 :: spin_a :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:104 :: spin_a :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("spin_a")) return
             }
             is EventlessMacrostepIsBoundedState.SpinB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:117 :: spin_b :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:125 :: spin_b :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("spin_b")) return
             }
@@ -439,27 +439,27 @@ class EventlessMacrostepIsBoundedStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun onExit(state: EventlessMacrostepIsBoundedState) {
         when (state) {
             is EventlessMacrostepIsBoundedState.BoundedA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:76 :: bounded_a :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:84 :: bounded_a :: _state_body
                 activeStateIds.remove("bounded_a")
             }
             is EventlessMacrostepIsBoundedState.BoundedB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:87 :: bounded_b :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:95 :: bounded_b :: _state_body
                 activeStateIds.remove("bounded_b")
             }
             is EventlessMacrostepIsBoundedState.Idle -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:63 :: idle :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:71 :: idle :: _state_body
                 activeStateIds.remove("idle")
             }
             is EventlessMacrostepIsBoundedState.SpinA -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:96 :: spin_a :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:104 :: spin_a :: _state_body
                 activeStateIds.remove("spin_a")
             }
             is EventlessMacrostepIsBoundedState.SpinB -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:117 :: spin_b :: _state_body
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:125 :: spin_b :: _state_body
                 activeStateIds.remove("spin_b")
             }
         }
@@ -467,7 +467,7 @@ class EventlessMacrostepIsBoundedStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: eventless_macrostep_is_bounded.scxml:46 :: _machine
+    // SCE-MAP: eventless_macrostep_is_bounded.scxml:53 :: _machine
     override fun executeTransitionActions(
         source: EventlessMacrostepIsBoundedState,
         event: EventlessMacrostepIsBoundedEvent?
@@ -475,13 +475,13 @@ class EventlessMacrostepIsBoundedStateMachine(
         when (source) {
         is EventlessMacrostepIsBoundedState.BoundedA -> when {
             event is EventlessMacrostepIsBoundedEvent.Poke -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:82 :: bounded_a :: _transition_1
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:90 :: bounded_a :: _transition_1
 
 
             executeAssign("pokes", "pokes + 1")
             }
-            event == null && safeEvaluateGuard("laps < 50") -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:77 :: bounded_a :: _transition_0
+            event == null && safeEvaluateGuard("laps < 500") -> {
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:85 :: bounded_a :: _transition_0
 
 
             executeAssign("laps", "laps + 1")
@@ -490,7 +490,7 @@ class EventlessMacrostepIsBoundedStateMachine(
         }
         is EventlessMacrostepIsBoundedState.Idle -> when {
             event is EventlessMacrostepIsBoundedEvent.Poke -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:64 :: idle :: _transition_0
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:72 :: idle :: _transition_0
 
 
             executeAssign("pokes", "pokes + 1")
@@ -499,13 +499,13 @@ class EventlessMacrostepIsBoundedStateMachine(
         }
         is EventlessMacrostepIsBoundedState.SpinA -> when {
             event is EventlessMacrostepIsBoundedEvent.Poke -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:100 :: spin_a :: _transition_1
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:108 :: spin_a :: _transition_1
 
 
             executeAssign("pokes", "pokes + 1")
             }
             event == null -> {
-                // SCE-MAP: eventless_macrostep_is_bounded.scxml:97 :: spin_a :: _transition_0
+                // SCE-MAP: eventless_macrostep_is_bounded.scxml:105 :: spin_a :: _transition_0
 
 
             executeAssign("spins", "spins + 1")
