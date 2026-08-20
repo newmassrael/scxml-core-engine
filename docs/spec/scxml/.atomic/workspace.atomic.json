@@ -5360,6 +5360,10 @@
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "set_current_event",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7730,6 +7734,14 @@
         {
           "file": "sce-build/src/manifest.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7881,6 +7893,10 @@
         {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7923,6 +7939,34 @@
           "file": "backends/go/runtime/scheduler.go",
           "symbol": "CancelEvent",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11319,6 +11363,19 @@
         {
           "file": "sce-build/src/host_processor_analyzer.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "perform_host_send",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -11814,6 +11871,10 @@
         },
         {
           "file": "sce-build/src/host_processor_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
           "kind": "references"
         }
       ],

@@ -1,0 +1,189 @@
+# Mutation cases for the BUILD half of a host-served Event I/O Processor.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_declaration.cases`.
+#
+# W3C SCXML 6.2.5 makes the `<send>` `type` an extensible identifier, so the
+# set of processors is open by design — but only the platform can widen it,
+# and SCE had no way for a platform to say so. A consumer could name a
+# processor and be refused; it could not name one and be served.
+#
+# The declaration is one decision applied once, after the parse and before
+# any backend renders. Each case below either stops the decision reaching
+# somewhere it must, or widens it past what was declared. Both directions
+# matter: a declaration that claims nothing is a dead feature, and one that
+# claims everything delivers acts the host never agreed to perform.
+#
+# The refusal cases are the ones that keep this honest. Five backends have no
+# processor registry, and honouring a declaration for them would emit a
+# dispatch nothing can service — the build would then actively promise a
+# delivery that never happens, which is worse than the silence this round
+# removes. So "the refusal stops firing" and "the refusal fires when nothing
+# was declared" are both mutations, in opposite directions.
+#
+# The template is a `mutation_runtime_targets` entry because codegen reads it
+# at generation time; the committed `_sm.rs` trees are NOT the witness here
+# (they are already generated), which is why the oracle regenerates through
+# the CLI and reads the emitted text.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test host_processor_declaration
+mutation_targets sce-build/src/host_processor_analyzer.rs sce-build/src/generator.rs
+# Both entries here are read by the tests at RUN time rather than linked into
+# them, which is how the harness detects that a mutation arrived.
+#
+# The template is the obvious case: codegen opens it while generating.
+# `sce_codegen.rs` is the less obvious one, and it cost this casefile a round
+# to learn — the CLI suite SPAWNS the binary as a subprocess, so mutating it
+# changes `sce-codegen` and leaves every *test* binary byte-identical. Listed
+# as a compiled target it reported INCONCLUSIVE ("the mutation never reached
+# the code under test") while in fact reaching it perfectly well.
+mutation_runtime_targets tools/codegen/templates/rust/actions/send.rs.jinja2 \
+    sce-build/src/bin/sce_codegen.rs
+# The analyzer's own `tests` module and the CLI-level declaration suite. Named
+# explicitly because a `--lib` selector cannot resolve an oracle from a target
+# name, and because the analyzer file is also a mutation target — nothing else
+# would notice a case that reds by weakening a test rather than breaking code.
+mutation_oracles sce-build/src/host_processor_analyzer.rs \
+    sce-build/tests/host_processor_declaration.rs
+
+# ── The declaration stops being applied ─────────────────────────────
+#
+# The feature's off switch. Everything else in this file is a narrower
+# version of this case.
+
+mutation_case "the declaration is recorded but never applied" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """    model.host_processor_types = types.to_vec();
+    if types.is_empty() {
+        return;
+    }""",
+     """    model.host_processor_types = types.to_vec();
+    if !types.is_empty() {
+        return;
+    }""")
+PY
+
+mutation_case "a claimed send is not marked host-served" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """        action.send_type_unsupported = false;
+        action.send_type_host_served = true;""",
+     """        action.send_type_unsupported = false;
+        action.send_type_host_served = false;""")
+PY
+
+# ── …or is applied to more than was declared ────────────────────────
+#
+# The false-positive direction, and the dangerous one: a host that declared
+# one processor would start receiving sends addressed to every other.
+
+mutation_case "the declaration claims every unsupported type" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    if action.send_type_unsupported && types.iter().any(|t| t == &action.send_type) {",
+     "    if action.send_type_unsupported {")
+PY
+
+mutation_case "the declaration matches a type by prefix" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    if action.send_type_unsupported && types.iter().any(|t| t == &action.send_type) {",
+     "    if action.send_type_unsupported && types.iter().any(|t| action.send_type.starts_with(t.as_str())) {")
+PY
+
+# ── …or reaches only the sends that are easy to find ────────────────
+
+mutation_case "the declaration does not reach nested executable content" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     """    for nested in action
+        .actions
+        .iter_mut()
+        .chain(action.then_actions.iter_mut())
+        .chain(action.else_actions.iter_mut())
+    {
+        claim_action(nested, types);
+    }""",
+     "")
+PY
+
+# ── The report and the emitted code stop agreeing ───────────────────
+#
+# The flags and the cause list are two readings of one decision. Leaving the
+# list stale reports a refusal the build just arranged not to emit — the
+# exact disagreement `declare_host_processors` exists to make impossible.
+
+mutation_case "the cause list is left as the parse found it" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "    model.host_processor_causes = analyze(model);",
+     "")
+PY
+
+# ── The build stops echoing its own half of the contract ────────────
+#
+# The declaration is made in the build command and the registration in the
+# host's startup code. Publishing the build's half is what lets a consumer
+# check the pair instead of meeting the mismatch as a runtime error.
+
+mutation_case "the manifest does not report what was declared" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        report.host_processor_types.clone_from(&model.host_processor_types);",
+     "")
+PY
+
+# ── The emitted code stops dispatching ──────────────────────────────
+
+mutation_case "the template emits no host dispatch" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "{% elif action.send_type_host_served %}",
+     "{% elif false %}")
+PY
+
+mutation_case "the template refuses a served type as well as dispatching" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "{% if action.send_type_unsupported %}",
+     "{% if action.send_type_unsupported or action.send_type_host_served %}")
+PY
+
+# ── The backends with no registry stop refusing ─────────────────────
+#
+# This is the case that decides whether the round repaid its defect or moved
+# it. A backend that emits a dispatch it cannot service has a build promising
+# a delivery nothing performs.
+
+mutation_case "a backend without a registry accepts the declaration" <<'PY'
+edit("sce-build/src/generator.rs",
+     """    if model.host_processor_types.is_empty() {
+        return Ok(());
+    }""",
+     """    if !model.host_processor_types.is_empty() {
+        return Ok(());
+    }""")
+PY
+
+# ── …or start refusing documents that declared nothing ─────────────
+#
+# The other side of the same check. A refusal that fires unconditionally
+# would take every existing document on five backends with it, and a gate
+# that only measured the refusal direction would call that a pass.
+
+mutation_case "the refusal fires with nothing declared" <<'PY'
+edit("sce-build/src/generator.rs",
+     """    if model.host_processor_types.is_empty() {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "--host-processor ({}) has no {} codegen path""",
+     """    Err(GenerateError::UnsupportedFeature(format!(
+        "--host-processor ({}) has no {} codegen path""")
+PY
+
+# ── …or refuse without saying what to change ────────────────────────
+#
+# An author reading the refusal has to know WHICH declaration to drop. With
+# several on one command line, a message that names none is a grep.
+
+mutation_case "the refusal does not name the declared type" <<'PY'
+edit("sce-build/src/generator.rs",
+     "        model.host_processor_types.join(\", \"),",
+     "        String::new(),")
+PY

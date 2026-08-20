@@ -462,6 +462,7 @@ fn statechart_caller_injected_extra_derives_appear() {
             "serde::Deserialize".to_string(),
             "my_ui::EventName".to_string(),
         ],
+        host_processor_types: Vec::new(),
     };
     let output = sce_build::compile_scxml_lang_typed_with_section(
         fixture.to_str().unwrap(),

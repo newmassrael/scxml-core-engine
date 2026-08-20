@@ -1,0 +1,132 @@
+# Mutation cases for the RUNTIME half of a host-served Event I/O Processor.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/host_processor_dispatch.cases`.
+#
+# The build half is `host_processor_declaration.cases`; this one studies what
+# happens after a declared `<send>` reaches the engine. Separate casefile
+# because one casefile studies one suite, and these verdicts come from the
+# compiled machine in `sce-rust-tests` rather than from the CLI.
+#
+# The contract has two halves that fail in opposite directions:
+#
+#   * a registered handler must RECEIVE the send, with the payload the author
+#     wrote, and its reply must arrive as an event;
+#   * a declared type with NOTHING registered must raise `error.execution`,
+#     because from the document's side an act nobody performed is one fact
+#     however the wiring failed.
+#
+# A dispatch that silently succeeded into an empty registry would satisfy the
+# first and destroy the second — it is the original defect wearing the new
+# feature's clothes — so the cases below attack both.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test host_processor
+mutation_targets backends/rust/runtime/src/engine.rs \
+    backends/rust/runtime/src/host_processor.rs
+
+# ── The handler stops being reached ─────────────────────────────────
+
+mutation_case "the dispatch never calls the handler" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let handler = self.host_processors.handler_for(&processor_type)?;
+        let response = handler(request);""",
+     """        let _handler = self.host_processors.handler_for(&processor_type)?;
+        let _ = request;
+        let response: Option<crate::host_processor::HostSendResponse> = None;""")
+PY
+
+# Aimed at the name lookup rather than at the `raise` call. Deleting the
+# raise loses the inference that pins `EventWithMetadata`'s payload type
+# parameter, so the tree stops compiling and the round reports INCONCLUSIVE
+# instead of a verdict — measured, not guessed. Looking the reply up under a
+# name the machine does not declare drops it just as completely and keeps
+# the types inferred.
+mutation_case "the reply is looked up under a name the machine never declared" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if let Some(resp) = response.as_ref() {
+            if let Some(evt) = P::get_event_from_name(&resp.event_name) {""",
+     """        if let Some(resp) = response.as_ref() {
+            let _ = &resp.event_name;
+            if let Some(evt) = P::get_event_from_name("") {""")
+PY
+
+# ── …or is reached for the wrong type ───────────────────────────────
+#
+# The registry is keyed. A lookup that answered with any handler would
+# deliver a document's acts to a processor it never named — silently, because
+# the act would appear to have been performed.
+
+# Each of the three key-ignoring cases keeps `processor_type` USED. Dropping
+# it leaves an unused parameter, which this workspace's deny-warnings build
+# rejects — the tree stops compiling and the round reports INCONCLUSIVE
+# instead of a verdict. Measured on all three, not guessed.
+mutation_case "the registry answers with any handler it holds" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        self.handlers.get_mut(processor_type)",
+     """        let _ = processor_type;
+        self.handlers.values_mut().next()""")
+PY
+
+mutation_case "registration files every handler under one key" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        self.handlers.insert(processor_type.to_string(), handler);",
+     """        let _ = processor_type;
+        self.handlers.insert(String::new(), handler);""")
+PY
+
+# ── The unregistered case stops being an error ──────────────────────
+#
+# The half that keeps a wiring mistake visible. Without it the document
+# proceeds as though its act had been carried out.
+
+mutation_case "an unregistered type reports as registered" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        self.handlers.contains_key(processor_type)",
+     "        !processor_type.is_empty()")
+PY
+
+# ── …or the reverse: a silent handler is called an error ────────────
+#
+# `None` from a handler is the ordinary fire-and-forget reply. Reporting it
+# as an unsupported processor would cost every such act a spurious
+# `error.execution`, which is a false positive the document cannot ignore —
+# it is an event with a defined meaning.
+
+mutation_case "a registered handler reports as absent" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        self.handlers.contains_key(processor_type)",
+     """        let _ = processor_type;
+        false""")
+PY
+
+# ── The request loses what the author wrote ─────────────────────────
+#
+# A document that can name an act but not parameterise it has gained very
+# little over the host-side dispatch table it was meant to replace.
+
+mutation_case "the request reaches the handler with no params" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let processor_type = request.processor_type.clone();
+        let handler = self.host_processors.handler_for(&processor_type)?;
+        let response = handler(request);""",
+     """        let processor_type = request.processor_type.clone();
+        let handler = self.host_processors.handler_for(&processor_type)?;
+        let mut request = request;
+        request.params.clear();
+        let response = handler(request);""")
+PY
+
+mutation_case "the request reaches the handler with no send id" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let processor_type = request.processor_type.clone();
+        let handler = self.host_processors.handler_for(&processor_type)?;
+        let response = handler(request);""",
+     """        let processor_type = request.processor_type.clone();
+        let handler = self.host_processors.handler_for(&processor_type)?;
+        let mut request = request;
+        request.send_id.clear();
+        let response = handler(request);""")
+PY

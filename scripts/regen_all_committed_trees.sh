@@ -89,6 +89,16 @@ scripts/regen_event_schema_native_python.sh
 echo "==> Native-action host-trait Rust tree"
 scripts/regen_native_action.sh
 
+# W3C SCXML 6.2.5 host-served Event I/O Processor gate. Rust-only committed
+# tree for the same reason the native-action one is: only the Rust runtime has
+# a processor registry to dispatch into, and the generator refuses the
+# declaration by name for every other backend rather than emitting a dispatch
+# nothing can service. Driven by its own script rather than the
+# `generate-integration` fan-out because the fixture needs a per-stem flag
+# (`--host-processor`) that the fan-out has no way to carry.
+echo "==> Host-processor send Rust tree"
+scripts/regen_host_processor.sh
+
 # The AI supervision loop example. Its input is `examples/ai_loop/ai_loop.scxml`
 # rather than a stem under `integration_resources/`, so the `generate-integration`
 # fan-out above does not reach it — and a committed tree this script does not

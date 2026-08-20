@@ -60,6 +60,12 @@
       "minItems": 1,
       "items": { "$ref": "#/definitions/hostProcessorCause" }
     },
+    "host_processor_types": {
+      "description": "Event I/O Processor types this build was told the host serves (--host-processor). Omitted when none were declared. Reported because the declaration and the runtime registration are two halves made in two different places — the build command and the host's startup code — so publishing the build's half lets a consumer check the pair instead of meeting the mismatch as an error.execution at run time. A declared type is absent from host_processor_causes: that is what declaring it does.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "rejected": {
       "description": "Present only when the input triggered a W3C-spec rejection and stub files were written in place of generated code. Absence means clean generation.",
       "$ref": "#/definitions/rejected"

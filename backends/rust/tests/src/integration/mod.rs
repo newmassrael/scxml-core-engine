@@ -36,6 +36,7 @@ pub mod event_data_arrives_as_sent;
 pub mod event_origin_is_a_location;
 pub mod event_schema_native;
 pub mod eventless_macrostep_is_bounded;
+pub mod host_processor;
 pub mod invoke_precedes_dequeue_midrun;
 pub mod invoke_precedes_external_dequeue;
 pub mod invoke_unsupported_type;
