@@ -41,7 +41,20 @@ wasm-pack build sce-build-wasm \
     || sce_gate_fail "codegen WASM build — the browser generator would ship broken or stale"
 
 # `emcc` reaches PATH through `source emsdk_env.sh`, which the lane does in the
-# same step that calls this gate.
+# same step that calls this gate. A local pre-push run has no such step, so an
+# emsdk that IS installed still read as absent, and the skip's own advice
+# ("install emsdk") sent a developer to install what they already had. Measured
+# 2026-08-21: four pushes shipped a red visualizer lane because the only
+# compiler that rejects them is the one this block runs.
+if ! command -v emcmake >/dev/null 2>&1; then
+    for emsdk_env in "${EMSDK:-}/emsdk_env.sh" "${HOME}/emsdk/emsdk_env.sh"; do
+        [ -f "${emsdk_env}" ] || continue
+        # shellcheck disable=SC1090
+        source "${emsdk_env}" >/dev/null 2>&1 || true
+        break
+    done
+fi
+
 if sce_gate_requires_tool emcmake emsdk; then
     sce_gate_step "building the visualizer (emscripten)"
     GENERATOR=()
