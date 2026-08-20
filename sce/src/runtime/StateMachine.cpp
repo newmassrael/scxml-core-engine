@@ -1406,6 +1406,21 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
                         executeActionNodes(actionNodes, false);
                     }
 
+                    // W3C SCXML Appendix D's main event loop returns to
+                    // `selectEventlessTransitions()` after EVERY microstep,
+                    // without asking whether the microstep moved the machine.
+                    // Returning here instead ended the macrostep at a
+                    // transition that had just run content, so a chain that
+                    // content enabled was never walked and the caller was
+                    // handed a configuration the clause calls unstable. The
+                    // budget lives on `checkEventlessTransitions` itself, so
+                    // this loop ends either at a stable configuration or at the
+                    // ceiling — and `truncatedMacrosteps` says which.
+                    if (eventRaiser_) {
+                        while (checkEventlessTransitions()) {
+                        }
+                    }
+
                     TransitionResult result;
                     result.success = true;
                     result.fromState = fromState;

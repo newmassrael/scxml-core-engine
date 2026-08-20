@@ -500,6 +500,33 @@ the eventless chain unvisited on those two channels alone.
 It owns only the macrostep that cannot end: no `<send>`, no `<invoke>`, no
 `<parallel>`, and no failing expression.
 
+`targetless_transition_completes_macrostep` owns the other half of that
+sentence — whether the chain is entered at all. W3C SCXML Appendix D's main
+event loop returns to `selectEventlessTransitions()` after every microstep and
+drains the internal queue in the same inner loop, without asking whether the
+microstep moved the machine; W3C SCXML 3.13 defines a transition with no
+`target` as one that exits and enters nothing and runs its content in place, so
+that content can enable an eventless transition or raise an internal event and
+both belong to the same macrostep.
+
+Measured 2026-08-20, three of the seven engines ended the macrostep there, in
+three different shapes: the C++ Interpreter never entered the chain, the C++ AOT
+engine never entered it and also stranded the raise, and the Kotlin engine
+entered the chain but stopped at its first targetless link — which its code
+generator had dropped from `processNullEvent` while still emitting the
+transition's actions.
+
+Three outcomes, and the first is what makes the other two mean anything —
+`quiet` (a targetless transition that enables nothing: the control that
+separates a stopped macrostep from a lost event), `arm` (a targetless
+transition that enables an eventless chain whose LAST link is targetless too,
+so `chained == 1, polished == 0` names the engine that walks a chain only while
+the machine keeps moving) and `ping` (a targetless transition whose `<raise>`
+must be answered before the host gets control back).
+
+It owns only whether a targetless transition ends the macrostep: no `<send>`,
+no `<invoke>`, no `<parallel>`, no delay, and nothing that can fail.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the

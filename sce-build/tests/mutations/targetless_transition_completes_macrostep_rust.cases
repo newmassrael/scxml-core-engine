@@ -1,0 +1,106 @@
+# Mutation cases for "a transition with no target ends a microstep, not the
+# macrostep" on the engine that already answered it correctly.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/targetless_transition_completes_macrostep_rust.cases`.
+#
+# The Kotlin generator's half is in
+# `targetless_transition_completes_macrostep.cases` and the two C++ engines are
+# in `targetless_transition_completes_macrostep_ctest.cases`. This file guards
+# the side of the comparison that was right on first measurement.
+#
+# That is worth a round rather than a note. This engine is correct because
+# `run_main_event_loop` implements W3C SCXML Appendix D's two nested loops
+# literally — the inner one runs eventless selection and the internal queue to
+# quiescence, and neither loop asks whether the microstep moved the machine.
+# Nothing in the code says that the second property is load-bearing, so the
+# obvious "optimisation" is exactly the defect the other three engines shipped.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test targetless_transition_completes_macrostep
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/targetless_transition_completes_macrostep.rs
+
+# ── The macrostep ends at the external event ───────────────────────
+#
+# The defect the other three engines shipped, expressed here: take the external
+# event's microstep and hand the machine back. The chain that microstep enabled
+# is never walked, and the fixture reads `chained == 0` with the machine
+# running in the state the document names.
+
+mutation_case "the macrostep ends at the external event that opened it" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            if !self.process_next_external_event() {
+                break;
+            }
+        }
+    }""",
+     """            let _ = self.process_next_external_event();
+            break;
+        }
+    }""")
+PY
+
+# ── The internal queue is not the eventless queue ──────────────────
+#
+# Appendix D's inner loop drains BOTH, alternating: an eventless transition can
+# raise, and what it raises can enable another eventless transition. Draining
+# only the internal queue leaves the chain unwalked; draining only the
+# eventless side leaves the raise queued. This mutation is the first of those,
+# and the fixture's `arm` outcome is what sees it.
+
+mutation_case "the inner loop drains the internal queue and skips eventless selection" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            loop {
+                self.check_eventless_transitions();
+                if !self.internal_queue.has_events() {
+                    break;
+                }
+                self.process_internal_queue();
+            }""",
+     """            loop {
+                if !self.internal_queue.has_events() {
+                    break;
+                }
+                self.process_internal_queue();
+            }""")
+PY
+
+# The other half: the eventless side runs and the queue is left alone, so a
+# `<raise>` from a targetless transition is answered on some later host call
+# or never. `ping` is the outcome that sees it.
+
+mutation_case "the inner loop runs eventless selection and skips the internal queue" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            loop {
+                self.check_eventless_transitions();
+                if !self.internal_queue.has_events() {
+                    break;
+                }
+                self.process_internal_queue();
+            }""",
+     """            loop {
+                self.check_eventless_transitions();
+                if self.internal_queue.has_events() {
+                    break;
+                }
+                self.process_internal_queue();
+            }""")
+PY
+
+# ── The transition that moves nothing still runs ───────────────────
+#
+# The control's half. A targetless transition whose content never runs looks
+# from the configuration exactly like one the engine handled and like an event
+# it discarded, which is why the fixture counts `quiet` at all.
+
+mutation_case "a targetless transition runs none of its content" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if !needs_hierarchical {
+            // §scxml-3.4: targetless transition — execute actions only
+            self.execute_transition_actions_dispatch();""",
+     """        if !needs_hierarchical {
+            // §scxml-3.4: targetless transition — execute actions only""")
+PY

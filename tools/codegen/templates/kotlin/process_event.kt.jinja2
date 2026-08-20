@@ -129,11 +129,17 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
     }
 {% endif %}
 
+{# W3C SCXML 3.13: a transition with no `event` is eventless whether or not it
+   names a target. A targetless one exits and enters nothing and runs its
+   content in place, which is still a microstep, so it belongs in
+   processNullEvent alongside the ones that move the machine. Requiring a target
+   here dropped it from selection entirely while `executeTransitionActions`
+   still carried its content — actions the machine could never reach. #}
 {% set ns_has_eventless = namespace(value=false) %}
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
 {% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
+{% if not trans.event %}
 {% set ns_has_eventless.value = true %}
 {% endif %}
 {% endfor %}
@@ -149,7 +155,7 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {# Check if this state has eventless transitions (self or ancestors) #}
 {% set ns_null_self = namespace(has=false) %}
 {% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
+{% if not trans.event %}
 {% set ns_null_self.has = true %}
 {% endif %}
 {% endfor %}
@@ -187,7 +193,13 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% endif %}
 {% endif %}
 {% endfor %}
+{# Kotlin rejects a redundant `else` on an exhaustive `when` under -Werror, and
+   the arms above cover every non-<parallel> state with an eventless transition
+   of its own or an ancestor's. `process_null_event_needs_else` is the negation
+   of that condition, computed from the same inputs. #}
+{% if process_null_event_needs_else %}
         else -> TransitionResult.Ignored
+{% endif %}
     }
 
     // --- Per-State Null (Eventless) Handlers ---
@@ -195,7 +207,7 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% set state = model.states[state_id] %}
 {% set ns_null = namespace(has=false) %}
 {% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
+{% if not trans.event %}
 {% set ns_null.has = true %}
 {% endif %}
 {% endfor %}
@@ -205,20 +217,28 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
     ): TransitionResult<{{ machine_name }}State> = when {
 {% set ns_rendered_else = namespace(done=false) %}
 {% for trans in state.transitions %}
-{% if not trans.event and trans.target and not ns_rendered_else.done %}
+{% if not trans.event and not ns_rendered_else.done %}
 {# --- Determine target expression (C++ selection-time history resolution) --- #}
 {% if trans.history_target is defined %}
 {# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
 {% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
 {% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
-{% else %}
+{% elif trans.target %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
 {% endif %}
+{# W3C SCXML 3.13: a targetless transition exits and enters nothing and runs
+   its content in place, which is what TransitionResult.Internal means here —
+   the same result the event-driven arms above already produce for one. #}
+{% if trans.target or trans.history_target is defined %}
+{% set result_expr = "TransitionResult.External(" ~ target_expr ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ")" %}
+{% else %}
+{% set result_expr = "TransitionResult.Internal" %}
+{% endif %}
 {% if trans.cond %}
-        {{ render_cond(trans) }} -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
+        {{ render_cond(trans) }} -> {{ result_expr }}
 {% else %}
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
+        else -> {{ result_expr }}
 {% set ns_rendered_else.done = true %}
 {% endif %}
 {% endif %}
