@@ -27,7 +27,7 @@ mutation_case "the cpp tick raises every ready entry before running a macrostep"
 edit("sce/include/static/StaticExecutionEngine.h",
      """                raiseExternal(event, eventData);
                 // The macrostep this event drives may `<cancel>` a later one,
-                // so the next deadline is re-read after it rather than before.
+                // so the queue is re-consulted after it rather than before.
                 runMainEventLoop();
                 if (!isRunning_ || isInFinalState()) {
                     break;
@@ -61,12 +61,13 @@ PY
 mutation_case "the c11 tick promotes every elapsed entry before running a macrostep" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """        /* The macrostep this entry drives may `<cancel>` a later one, so the
-           queue and the clock are both re-read after it rather than before. */
+           queue is re-consulted after it rather than before. The reading is
+           not: `now_ms` is this turn's instant, so a tick cannot chase the
+           deadlines its own slowness created (see `sched_now_ms`). */
         run_main_event_loop(sm);
         if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
             break;
         }
-        now_ms = _sce_clock_now_ms();
     }""",
      """    }""")
 PY
@@ -83,7 +84,7 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    if (sm->scheduled_queue.count == 0u) {
         return -1;
     }
-    uint64_t now_ms = _sce_clock_now_ms();
+    uint64_t now_ms = sched_now_ms(sm);
     uint64_t due = sm->scheduled_queue.buf[0].fire_time_ms;
     if (due <= now_ms) {
         return 0;
@@ -105,4 +106,93 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
         return 0;
     }
     return (int64_t)(due - now_ms);""")
+PY
+
+# ── §scxml-6.2.2: the clock is read once per turn ──────────────────
+#
+# The cases above are about which entry comes out of the queue. These are about
+# what went into it: a deadline is `now + delay`, and if `now` is read afresh
+# for every `<send>` then two sends in one `<onentry>` are measured from two
+# different instants. A host descheduled between them by more than the gap
+# between their delays gets them in the other order.
+
+mutation_case "the cpp engine reads its clock per statement instead of once per turn" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        return turnNowMs_.has_value() ? *turnNowMs_ : clock_->elapsedMs();""",
+     """        return clock_->elapsedMs();""")
+PY
+
+mutation_case "the cpp turn guard never opens a turn" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        if (turnNowMs_.has_value()) {
+            return false;
+        }
+        turnNowMs_ = clock_->elapsedMs();
+        return true;""",
+     """        return false;""")
+PY
+
+# A latch that never releases is the mirror defect: the machine keeps answering
+# the instant its first turn began, so nothing ever comes due again. Written
+# this way rather than as "a nested entry point closes its caller's turn",
+# which the Rust round measured SURVIVED — the only nesting in this call graph
+# is `tick` delegating to `step` as its tail call, so releasing early has
+# nothing after it to observe.
+mutation_case "the cpp turn latch is never released" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """    void endTurn(bool opened) {
+        if (opened) {
+            turnNowMs_.reset();
+        }
+    }""",
+     """    void endTurn(bool opened) {
+        (void)opened;
+    }""")
+PY
+
+mutation_case "the cpp advanceTimeMs moves the clock without running what it made due" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """        manual->advance(ms);
+        tick();""",
+     """        manual->advance(ms);""")
+PY
+
+mutation_case "the c11 machine reads its clock per statement instead of once per turn" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    return sm->in_turn ? sm->turn_now_ms : sce_clock_read(&sm->clock);""",
+     """    return sce_clock_read(&sm->clock);""")
+PY
+
+mutation_case "the c11 turn never opens" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (sm->in_turn) {
+        return false;
+    }
+    sm->turn_now_ms = sce_clock_read(&sm->clock);
+    sm->in_turn = true;
+    return true;""",
+     """    (void)sm;
+    return false;""")
+PY
+
+mutation_case "the c11 turn latch is never released" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (opened) {
+        sm->in_turn = false;
+    }""",
+     """    (void)sm;
+    (void)opened;""")
+PY
+
+mutation_case "the c11 advance_time_ms moves the clock without running what it made due" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    sm->clock.now_ms += ms;
+    {{ csym_prefix }}{{ model.name }}_tick(sm);""",
+     """    sm->clock.now_ms += ms;""")
+PY
+
+mutation_case "the c11 advance_time_ms moves a clock the host does not own" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """    if (!sm->clock.manual) {""",
+     """    if (false) {""")
 PY

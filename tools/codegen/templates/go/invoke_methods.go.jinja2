@@ -116,6 +116,14 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			}
 
 			childEngine := sce.NewEngine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event](&childPolicy)
+			// §scxml-6.4: the child's delayed sends are measured against the
+			// same clock as ours. A child reading its own would start its
+			// origin at construction time, so <send delay="100ms"> on either
+			// side of the boundary would mean two different absolute instants —
+			// and on a host-owned clock the child would not move at all,
+			// because the host advances the engine it holds, not the ones that
+			// engine invoked.
+			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
 			childEngine.Initialize()
 
@@ -211,6 +219,14 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			}
 
 			childEngine := sce.NewEngine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event](&childPolicy)
+			// §scxml-6.4: the child's delayed sends are measured against the
+			// same clock as ours. A child reading its own would start its
+			// origin at construction time, so <send delay="100ms"> on either
+			// side of the boundary would mean two different absolute instants —
+			// and on a host-owned clock the child would not move at all,
+			// because the host advances the engine it holds, not the ones that
+			// engine invoked.
+			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
 			childEngine.Initialize()
 

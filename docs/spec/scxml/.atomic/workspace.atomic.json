@@ -1960,6 +1960,56 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "tick",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "step",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Initialize",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Step",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Tick",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "schedNowMs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "schedNowMs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "step",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "tick",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2519,6 +2569,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "initialize",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize_in_turn",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -5927,6 +5982,11 @@
           "file": "sce/include/common/DataModelReadHelper.h",
           "symbol": "readJson",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize_in_turn",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7837,6 +7897,21 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "advanceTimeMs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "AdvanceTimeMs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/scheduler.go",
+          "symbol": "ScheduleEventAt",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7910,6 +7985,33 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "beginTurn",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/clock.rs",
+          "symbol": "SceClock",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/clock.go",
+          "symbol": "SceClock",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SceClock.h",
+          "symbol": "ISceClock",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/clock.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
           "kind": "references"
         }
       ],
@@ -9258,6 +9360,26 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "advanceTimeMs",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/clock.go",
+          "symbol": "ManualClock",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/SceClock.h",
+          "symbol": "ManualClock",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "tick_in_turn",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

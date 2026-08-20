@@ -289,6 +289,54 @@
    queues and macrostep helpers they belong with. The forward decl keeps
    `-Werror=implicit-function-declaration` quiet without reordering the
    logical sections of the generated source. */
+/* §scxml-3.13: what time it is, for everything this turn arms or judges.
+
+   The clause executes a microstep's executable content as one unit and a
+   macrostep as a chain of those, so "now" is a property of the turn the machine
+   is in rather than of the statement asking for it. Between turns there is no
+   turn for it to be a property of, and the host's queries
+   (`_time_until_next_scheduled_ms`, `_now_ms`) read the clock live.
+
+   §scxml-6.2.2 is why it matters: a delay is the wait the DOCUMENT asks for —
+   "how long the processor should wait before dispatching the message". Time the
+   host spent descheduled between two statements of one microstep is not part of
+   any delay the document wrote, so it must not reach the deadline. Reading the
+   clock per statement instead was two defects at once, both measured on the
+   sibling backends this scheduler mirrors:
+
+     - Two `<send delay>`s executed by one `<onentry>` took a reading each, so a
+       host descheduled between them by more than the gap between their delays
+       got the later send's deadline first — and the machine then dispatched
+       them in that order, so the document's `<cancel>` arrived after the event
+       it named.
+     - The dispatch loop in `_tick` re-read it on every pass, so a tick slow
+       enough to cross the next fire time dispatched that entry too, then the
+       one after it — the machine chasing deadlines its own slowness created. */
+SCE_SM_FN static SCE_C_UNUSED uint64_t sched_now_ms(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return sm->in_turn ? sm->turn_now_ms : sce_clock_read(&sm->clock);
+}
+
+/* Open a turn: take the single clock reading everything inside it uses.
+
+   Returns whether this call is the one that opened it, which `end_turn` needs
+   so a nested entry point (`_tick` delegating to `_step`) does not close the
+   outer turn early. */
+SCE_SM_FN static SCE_C_UNUSED bool begin_turn({{ csym_prefix }}{{ model.name }}_t *sm) {
+    if (sm->in_turn) {
+        return false;
+    }
+    sm->turn_now_ms = sce_clock_read(&sm->clock);
+    sm->in_turn = true;
+    return true;
+}
+
+/* Close a turn opened by `begin_turn`. */
+SCE_SM_FN static SCE_C_UNUSED void end_turn({{ csym_prefix }}{{ model.name }}_t *sm, bool opened) {
+    if (opened) {
+        sm->in_turn = false;
+    }
+}
+
 SCE_SM_FN static SCE_C_UNUSED void scheduled_push({{ csym_prefix }}{{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            {{ csym_prefix }}{{ model.name }}_event_t event,
@@ -528,7 +576,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
             lua_getglobal(sm->L, "_pending_donedata");
             int _payload_ref = luaL_ref(sm->L, LUA_REGISTRYINDEX);
             scheduled_push(sm,
-                           _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
+                           sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
                            {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}",
                            _payload_ref);
@@ -547,7 +595,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                and target/params/namelist combinations land in their own
                arms below. */
             scheduled_push(sm,
-                           _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
+                           sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
                            {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}"
 {%- if model.needs_script_engine %}, LUA_NOREF
@@ -629,7 +677,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                with a `to_parent` discriminator since a second buffer
                would duplicate fire-time ordering. */
             scheduled_push_parent(sm,
-                                  _sce_clock_now_ms() + (uint64_t){{ action.delay_ms }}u,
+                                  sched_now_ms(sm) + (uint64_t){{ action.delay_ms }}u,
                                   "{{ action.event }}",
                                   "{{ action.auto_send_id | escape_c }}");
 {% elif action.event and action.target == '#_parent' and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
@@ -1186,7 +1234,7 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_event_t {{ csym_prefix }}{{ m
                 return;
             }
             scheduled_push(sm,
-                           _sce_clock_now_ms() + _send_delay_ms,
+                           sched_now_ms(sm) + _send_delay_ms,
                            {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }},
                            "{{ action.auto_send_id | escape_c }}"
 {%- if model.needs_script_engine %}, LUA_NOREF
@@ -4355,10 +4403,20 @@ SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *s
 }
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_step({{ csym_prefix }}{{ model.name }}_t *sm) {
+{% if model.needs_event_scheduler %}
+    /* §scxml-3.13: one host call, one reading. The macrostep below can enter a
+       state whose `<onentry>` arms several `<send delay>`s, and they are one
+       instant's worth of executable content however long the host takes to run
+       them — see `begin_turn`. */
+    bool _turn_opened = begin_turn(sm);
+{% endif %}
     run_main_event_loop(sm);
     if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm) && sm->completion_callback != NULL) {
         sm->completion_callback(sm->completion_callback_user_data);
     }
+{% if model.needs_event_scheduler %}
+    end_turn(sm, _turn_opened);
+{% endif %}
 }
 
 {% if model.needs_event_scheduler %}
@@ -4381,6 +4439,12 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         return;
     }
 
+    /* §scxml-3.13: one turn, one reading. Everything below judges due against
+       the instant this tick began, and everything the macrosteps below arm is
+       measured from it — so a tick dispatches what was due when the host called
+       it, and cannot be extended by how long it takes to run. */
+    bool _turn_opened = begin_turn(sm);
+
     /* W3C SCXML 6.2/6.3: dispatch the elapsed entries one macrostep apart
        rather than pumping them together. `<cancel>` drops an entry that has
        not been dispatched yet, and a host that ticked late holds several past
@@ -4390,7 +4454,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
        signal arrives first — delivers the event it was told to cancel
        (measured 2026-08-19 on the rust, go and python backends, whose
        scheduler this one mirrors). */
-    uint64_t now_ms = _sce_clock_now_ms();
+    uint64_t now_ms = sched_now_ms(sm);
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t ready;
     while (scheduled_pop_ready(sm, now_ms, &ready)) {
 {% if model.has_parent_communication %}
@@ -4439,15 +4503,17 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
 
         /* The macrostep this entry drives may `<cancel>` a later one, so the
-           queue and the clock are both re-read after it rather than before. */
+           queue is re-consulted after it rather than before. The reading is
+           not: `now_ms` is this turn's instant, so a tick cannot chase the
+           deadlines its own slowness created (see `sched_now_ms`). */
         run_main_event_loop(sm);
         if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
             break;
         }
-        now_ms = _sce_clock_now_ms();
     }
 
     {{ csym_prefix }}{{ model.name }}_step(sm);
+    end_turn(sm, _turn_opened);
 }
 
 /* W3C SCXML 6.2: how long until this machine next needs `_tick`, in
@@ -4462,12 +4528,38 @@ SCE_SM_FN int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms
     if (sm->scheduled_queue.count == 0u) {
         return -1;
     }
-    uint64_t now_ms = _sce_clock_now_ms();
+    uint64_t now_ms = sched_now_ms(sm);
     uint64_t due = sm->scheduled_queue.buf[0].fire_time_ms;
     if (due <= now_ms) {
         return 0;
     }
     return (int64_t)(due - now_ms);
+}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_advance_time_ms({{ csym_prefix }}{{ model.name }}_t *sm, uint64_t ms) {
+    if (!sm->clock.manual) {
+        /* Not a no-op with a shrug: the caller believes it owns time and does
+           not, so the events it is waiting for would arrive on a schedule it
+           did not choose. The sibling backends throw here; this tier has no
+           exception and must not abort a host process, so it says it once and
+           refuses to move a clock that is not the host's. */
+        static bool _said = false;
+        if (!_said) {
+            _said = true;
+            (void)fprintf(stderr,
+                          "[sce] {{ model.name }}_advance_time_ms: this machine's clock is not "
+                          "sce_clock_manual, so the host does not own its time. Start it with "
+                          "_init_with_clock(sm, sce_clock_manual(0)), or drive it with _tick and "
+                          "_time_until_next_scheduled_ms\n");
+        }
+        return;
+    }
+    sm->clock.now_ms += ms;
+    {{ csym_prefix }}{{ model.name }}_tick(sm);
+}
+
+SCE_SM_FN uint64_t {{ csym_prefix }}{{ model.name }}_now_ms(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return sched_now_ms(sm);
 }
 {% endif %}
 
@@ -4529,9 +4621,22 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 }
 
 {% if not model.has_parent_communication %}
-SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_script_engine %},
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
+                                                       sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}) {
     memset(sm, 0, sizeof(*sm));
+{% if model.needs_event_scheduler %}
+    /* §scxml-6.2.2: the clock is stamped before the entry walk, because that
+       walk's `<onentry>` can already arm `<send delay>`s and a clock installed
+       afterwards would leave the queue holding deadlines from two time bases
+       that do not compare. */
+    sm->clock = clock;
+    /* §scxml-3.13: entering the initial configuration is one turn, and the
+       `<onentry>` handlers it runs arm their `<send delay>`s against one
+       instant — see `sched_now_ms` for what reading the clock per `<send>`
+       did to two of them. */
+    bool _turn_opened = begin_turn(sm);
+{% endif %}
     {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
 {% if model.needs_script_engine %}
     /* W3C SCXML C.2.3: stamp the deployment's inbound BasicHTTP endpoint
@@ -4580,11 +4685,20 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix
        parent's invoke helper, which runs it after stamping parent-routing
        fields and applying `<param>` / `namelist` overrides. */
     run_main_event_loop(sm);
+{% if model.needs_event_scheduler %}
+    end_turn(sm, _turn_opened);
+{% endif %}
 }
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_script_engine %}, NULL{% endif %});
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %});
 }
+{% if model.needs_event_scheduler %}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock) {
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %});
+}
+{% endif %}
 
 SCE_SM_FN const char *{{ csym_prefix }}{{ model.name }}_session_id(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? NULL : sm->session_id;
@@ -4817,7 +4931,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
    runs, and `_init` zeroes the struct so no setter called earlier survives. */
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                       const char *basic_http_access_uri) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm, basic_http_access_uri);
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri);
 }
 {% endif %}
 {% else %}
@@ -4839,6 +4953,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
     sm->parent_dispatch = dispatch;
     sce_copy_bounded_id(sm->invoke_id, invoke_id);
     sm->is_running = true;
+{% if model.needs_event_scheduler %}
+    /* §scxml-3.13: the entry walk below is one turn — its `<onentry>` arms its
+       `<send delay>`s against one instant. The memset above left the default
+       (link-time monotonic) clock; a child does not yet inherit its parent's,
+       which is why a parent on host-owned time still sees this one run on the
+       wall. */
+    bool _turn_opened = begin_turn(sm);
+{% endif %}
     {% if model.needs_script_engine %}
     /* W3C SCXML 5.10: Open Lua engine and seed datamodel before any
        <onentry> body runs (those bodies may reference datamodel vars). */
@@ -4858,6 +4980,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
        eventless transitions against the still-default child datamodel
        (test226/240/241/243/244/245/276 depend on the override-then-step
        order). */
+{% if model.needs_event_scheduler %}
+    end_turn(sm, _turn_opened);
+{% endif %}
 }
 {% endif %}
 

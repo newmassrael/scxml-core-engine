@@ -2774,6 +2774,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/datamodel_read.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize_in_turn",
+          "kind": "implements"
         }
       ]
     },

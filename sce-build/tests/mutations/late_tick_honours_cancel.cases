@@ -36,7 +36,7 @@ mutation_oracles backends/rust/tests/tests/late_tick_honours_cancel.rs backends/
 mutation_case "the tick drains every ready entry before running a macrostep" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """            // The macrostep this event drives may `<cancel>` a later one, so
-            // the next deadline is re-read after it rather than before.
+            // the queue is re-consulted after it rather than before.
             self.run_main_event_loop();
             if !self.is_running || self.is_in_final_state() {
                 break;
@@ -104,4 +104,93 @@ edit("backends/rust/runtime/src/engine.rs",
             };
             std::thread::sleep(wait);""",
      """            std::thread::sleep(poll_interval);""")
+PY
+
+# ── §scxml-6.2.2: the clock is read once per turn ──────────────────
+#
+# The half above is about which entry comes out of the queue. This half is
+# about what went into it: a deadline is `now + delay`, and if `now` is read
+# afresh for every `<send>` then two sends in one `<onentry>` are measured from
+# two different instants. A host descheduled between them by more than the gap
+# between their delays gets them in the other order — which is the same
+# `cancelLost` the dispatch defect produced, arriving from the arming side.
+#
+# The first case is the whole defect in one edit, and it is the shape the other
+# five backends had too.
+
+mutation_case "the engine reads its clock per statement instead of once per turn" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        match self.turn_now {
+            Some(latched) => latched,
+            None => self.clock_read(),
+        }""",
+     """        self.clock_read()""")
+PY
+
+# A turn that never opens is the same defect reached from the other side: the
+# latch is still consulted, it is simply never set.
+mutation_case "the turn is never opened, so every reading is live" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if self.turn_now.is_some() {
+            return false;
+        }
+        self.turn_now = Some(self.clock_read());
+        true""",
+     """        false""")
+PY
+
+# A latch that never releases is the mirror defect: the machine keeps answering
+# the instant its first turn began, so nothing ever comes due again. Written
+# this way rather than as "a nested entry point closes its caller's turn",
+# which was measured SURVIVED 2026-08-21 — the only nesting in this call graph
+# is `tick` delegating to `step` as its tail call, so releasing early has
+# nothing after it to observe. The `opened` bookkeeping is a re-entrancy
+# invariant, and a contract a mutation defends has to be observable at run time.
+mutation_case "the turn latch is never released" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """    fn end_turn(&mut self, opened: bool) {
+        if opened {
+            self.turn_now = None;
+        }
+    }""",
+     """    fn end_turn(&mut self, _opened: bool) {}""")
+PY
+
+# ── The host-owned clock ───────────────────────────────────────────
+
+mutation_case "advance_time_ms moves the clock without running what it made due" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        self.clock = SceClock::Manual(now.saturating_add(ms));
+        self.tick();""",
+     """        self.clock = SceClock::Manual(now.saturating_add(ms));""")
+PY
+
+# Silently doing nothing is the failure mode the panic exists to prevent: the
+# caller believes it owns time, and its events arrive on a schedule it did not
+# choose.
+mutation_case "advance_time_ms accepts a clock the host does not own" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        let SceClock::Manual(now) = self.clock else {
+            panic!(
+                "Engine::advance_time_ms needs SceClock::Manual; this engine has a \\
+                 clock whose time the host does not own. Call set_clock(SceClock::Manual(0)) \\
+                 before initialize(), or drive this machine with tick() and \\
+                 time_until_next_scheduled_ms()"
+            );
+        };""",
+     """        let SceClock::Manual(now) = self.clock else {
+            return;
+        };""")
+PY
+
+mutation_case "the clock may be swapped after the machine armed its deadlines" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        assert!(
+            !self.is_running,
+            "Engine::set_clock must be called before initialize(): this engine has \\
+             already armed its entry configuration against the previous clock, and \\
+             deadlines from two clocks do not compare"
+        );
+        self.clock = clock;""",
+     """        self.clock = clock;""")
 PY
