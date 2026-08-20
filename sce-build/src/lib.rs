@@ -634,10 +634,44 @@ pub fn compile_scxml(scxml_files: &[&str]) {
 /// "set once, centrally" build.rs usage; the consuming crate must have
 /// the named traits / derive-macros in scope. `compile_scxml` is this
 /// with empty extras.
+/// [`compile_scxml`] for a host that serves its own Event I/O
+/// Processors.
+///
+/// §scxml-6.2.5 makes a `<send>` `type` an extensible identifier, so a
+/// platform may define its own — but the platform has to say so, because
+/// codegen decides at compile time whether a site dispatches or refuses.
+/// Naming a type here is that declaration; the host's other half is
+/// `Engine::register_event_processor` at run time.
+///
+/// A `build.rs` that declares nothing is `compile_scxml`, unchanged.
+/// A type declared here and never registered raises `error.execution` at
+/// the send: from the document's side an act nobody performed is one
+/// fact, and reporting it as success is the failure this exists to
+/// prevent.
+pub fn compile_scxml_with_host_processors(scxml_files: &[&str], host_processor_types: &[String]) {
+    compile_scxml_configured(scxml_files, &[], &[], host_processor_types)
+}
+
 pub fn compile_scxml_with_derives(
     scxml_files: &[&str],
     state_extra_derives: &[String],
     event_extra_derives: &[String],
+) {
+    compile_scxml_configured(scxml_files, state_extra_derives, event_extra_derives, &[])
+}
+
+/// The one body behind [`compile_scxml`],
+/// [`compile_scxml_with_derives`] and
+/// [`compile_scxml_with_host_processors`].
+///
+/// Each facade is a named default over the same options, so a knob added
+/// to one is available to the others without a fourth copy of the
+/// write-and-shim loop below.
+fn compile_scxml_configured(
+    scxml_files: &[&str],
+    state_extra_derives: &[String],
+    event_extra_derives: &[String],
+    host_processor_types: &[String],
 ) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set (must be called from build.rs)");
     let template_dir = find_template_dir();
@@ -646,6 +680,7 @@ pub fn compile_scxml_with_derives(
         no_std: false,
         state_extra_derives: state_extra_derives.to_vec(),
         event_extra_derives: event_extra_derives.to_vec(),
+        host_processor_types: host_processor_types.to_vec(),
     };
 
     for scxml_path in scxml_files {
@@ -985,6 +1020,11 @@ fn compile_scxml_lang_typed_mutated(
         mut model,
         preprocessor_deps,
     } = compile_model(scxml_path)?;
+    // §scxml-6.2.5: applied here rather than inside `compile_model`
+    // because this is the entry point that has the caller's options —
+    // and applied before `mutate` and before any generator arm, so the
+    // model every backend renders from already carries the decision.
+    host_processor_analyzer::declare_host_processors(&mut model, &options.host_processor_types);
     mutate(&mut model)?;
     if !model.driver_refs.is_empty() {
         match driver_root {

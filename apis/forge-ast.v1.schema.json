@@ -143,6 +143,11 @@
         "send_type": {
           "type": "string"
         },
+        "send_type_host_served": {
+          "default": false,
+          "description": "`true` when [`Self::send_type`] names a processor the *host* has declared it serves (§scxml-6.2.5 makes the identifier extensible, so the set is open to the platform).\n\nMutually exclusive with [`Self::send_type_unsupported`]: a declaration moves a site from one to the other, and a template branching on both cannot emit a refusal and a dispatch for one `<send>`. Set by [`crate::host_processor_analyzer::declare_host_processors`] after the parse, so every backend renders from one decision.",
+          "type": "boolean"
+        },
         "send_type_unsupported": {
           "default": false,
           "description": "`true` when [`Self::send_type`] is a literal naming an Event I/O Processor this build has no delivery path for, so the emitted code raises `error.execution` at this site instead of sending (§scxml-6.2).\n\nDecided once, by [`crate::host_processor_analyzer::is_supported_send_type`], and read by every backend's send template. The templates used to re-derive it from a literal list of accepted URIs spelled inline — five copies of one set, which is five chances for a backend to disagree with the others about the same document. It is also the point a host-supplied processor has to flip, and a decision spelled five times has no such point.\n\nSays nothing about `typeexpr`. A runtime-resolved type has no build-time value, and each backend already decides for itself how a literal `type` beside a `typeexpr` is treated; this flag replaces the duplicated accepted-set literal without moving that boundary.",
@@ -1985,6 +1990,14 @@
                 "$ref": "#/definitions/HistoryInfo"
               },
               "type": "object"
+            },
+            "host_processor_types": {
+              "default": [],
+              "description": "Event I/O Processor `type` values this build's host has declared it serves, beyond the two §scxml-C-1 / §scxml-C-2 names.\n\nA build input rather than a document fact — the same SCXML compiled for a host that serves `x-sprag-host` and for one that does not is two different lowerings, and this is what separates them. Carried on the model rather than in a per-backend options struct so every generator reads the same declaration; templates see the *decision* on each `<send>` ([`Action::send_type_host_served`]) rather than re-deriving it from this list.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "initial": {
               "type": "string"

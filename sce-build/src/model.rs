@@ -234,6 +234,19 @@ pub struct Action {
     #[serde(default)]
     pub send_type_unsupported: bool,
 
+    /// `true` when [`Self::send_type`] names a processor the *host* has
+    /// declared it serves (§scxml-6.2.5 makes the identifier extensible,
+    /// so the set is open to the platform).
+    ///
+    /// Mutually exclusive with [`Self::send_type_unsupported`]: a
+    /// declaration moves a site from one to the other, and a template
+    /// branching on both cannot emit a refusal and a dispatch for one
+    /// `<send>`. Set by
+    /// [`crate::host_processor_analyzer::declare_host_processors`] after
+    /// the parse, so every backend renders from one decision.
+    #[serde(default)]
+    pub send_type_host_served: bool,
+
     pub label: String,
     // if/elseif/else
     pub cond: String,
@@ -1521,6 +1534,19 @@ pub struct SCXMLModel {
     /// boolean it explains.
     #[serde(skip)]
     pub host_processor_causes: Vec<crate::host_processor_analyzer::HostProcessorCause>,
+    /// Event I/O Processor `type` values this build's host has declared
+    /// it serves, beyond the two §scxml-C-1 / §scxml-C-2 names.
+    ///
+    /// A build input rather than a document fact — the same SCXML
+    /// compiled for a host that serves `x-sprag-host` and for one that
+    /// does not is two different lowerings, and this is what separates
+    /// them. Carried on the model rather than in a per-backend options
+    /// struct so every generator reads the same declaration; templates
+    /// see the *decision* on each `<send>`
+    /// ([`Action::send_type_host_served`]) rather than re-deriving it
+    /// from this list.
+    #[serde(default)]
+    pub host_processor_types: Vec<String>,
     /// Whether the document contains any `<cancel>` action (§scxml-6.3).
     ///
     /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free

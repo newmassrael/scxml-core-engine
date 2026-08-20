@@ -220,6 +220,85 @@ pub fn needs_host_processor(model: &SCXMLModel) -> bool {
     !analyze(model).is_empty()
 }
 
+/// Record that this build's host serves `types`, and re-decide every
+/// site the declaration reaches.
+///
+/// §scxml-6.2.5 makes the `type` an extensible identifier, so the set of
+/// Event I/O Processors is open by design — but only the platform can
+/// widen it, and until this function existed nothing in SCE let a
+/// platform say so. A consumer could name a processor and get
+/// `error.execution`; it could not name one and get delivery.
+///
+/// Called once, after the parse and before any backend renders, so the
+/// three things that must agree cannot drift: what the emitted code
+/// does, what [`analyze`] reports, and what the manifest publishes. A
+/// declaration applied per-backend instead would let one language
+/// deliver a send that another refuses.
+///
+/// A type outside [`SUPPORTED_SEND_TYPES`] and outside `types` is
+/// untouched — still refused, still reported. Declaring one of the two
+/// standard processors is a no-op rather than an error: it names
+/// something already true.
+pub fn declare_host_processors(model: &mut SCXMLModel, types: &[String]) {
+    model.host_processor_types = types.to_vec();
+    if types.is_empty() {
+        return;
+    }
+    for state in model.states.values_mut() {
+        for trans in &mut state.transitions {
+            for action in &mut trans.actions {
+                claim_action(action, types);
+            }
+        }
+        for block in state
+            .on_entry_blocks
+            .iter_mut()
+            .chain(state.on_exit_blocks.iter_mut())
+        {
+            for action in block {
+                claim_action(action, types);
+            }
+        }
+        for action in &mut state.initial_transition_actions {
+            claim_action(action, types);
+        }
+        for action in &mut state.initial_history_default_actions {
+            claim_action(action, types);
+        }
+    }
+    // Re-derived rather than filtered: the causes are the projection of
+    // the flags, and recomputing them from the flags just changed is what
+    // keeps `needs_host_processor` and the emitted code the same answer.
+    model.host_processor_causes = analyze(model);
+}
+
+/// Move one `<send>` from "refused" to "dispatched to the host", if the
+/// declaration names its type.
+///
+/// Mirrors [`collect_action_causes`]'s recursion for the same reason: a
+/// `<send>` nested in `<if>` / `<foreach>` must be claimed by a
+/// declaration exactly as a top-level one is, or the same document
+/// delivers in one position and refuses in the other.
+fn claim_action(action: &mut Action, types: &[String]) {
+    if action.send_type_unsupported && types.iter().any(|t| t == &action.send_type) {
+        action.send_type_unsupported = false;
+        action.send_type_host_served = true;
+    }
+    for nested in action
+        .actions
+        .iter_mut()
+        .chain(action.then_actions.iter_mut())
+        .chain(action.else_actions.iter_mut())
+    {
+        claim_action(nested, types);
+    }
+    for branch in &mut action.elseif_branches {
+        for nested in &mut branch.actions {
+            claim_action(nested, types);
+        }
+    }
+}
+
 fn collect_state_causes(state_id: &str, state: &State, out: &mut Vec<HostProcessorCause>) {
     for trans in &state.transitions {
         for action in &trans.actions {
@@ -477,6 +556,108 @@ mod tests {
         // record name only the element.
         assert_eq!(send.to_wire().processor_type, "x");
         assert_eq!(invoke.to_wire().invoke.as_deref(), Some("i"));
+    }
+
+    /// The declaration is what the whole second half of this feature
+    /// turns on: a `<send>` moves from refused to dispatched, and the
+    /// report stops naming it because there is no longer anything to
+    /// report.
+    #[test]
+    fn a_declaration_moves_a_send_from_refused_to_host_served() {
+        let mut model = parse(&doc(
+            r#"<state id="s"><onentry><send type="x-sprag-host" event="e"/></onentry></state>"#,
+        ));
+        assert!(needs_host_processor(&model));
+
+        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+
+        let action = &model.states["s"].on_entry_blocks[0][0];
+        assert!(!action.send_type_unsupported, "still marked refused");
+        assert!(action.send_type_host_served, "not marked host-served");
+        assert!(
+            model.host_processor_causes.is_empty(),
+            "a served type is still reported: {:?}",
+            model.host_processor_causes,
+        );
+    }
+
+    /// The two flags are the two arms of one template branch. A site
+    /// carrying both would emit a refusal and a dispatch for one
+    /// `<send>`; a site carrying neither is an ordinary send.
+    #[test]
+    fn the_two_send_verdicts_are_mutually_exclusive() {
+        let mut model = parse(&doc(r#"<state id="s"><onentry>
+                 <send event="plain"/>
+                 <send type="x-sprag-host" event="served"/>
+                 <send type="x-other-host" event="refused"/>
+               </onentry></state>"#));
+        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        let verdicts: Vec<(bool, bool)> = model.states["s"].on_entry_blocks[0]
+            .iter()
+            .map(|a| (a.send_type_unsupported, a.send_type_host_served))
+            .collect();
+        assert_eq!(verdicts, vec![(false, false), (false, true), (true, false)]);
+    }
+
+    /// The false-positive direction: a declaration names one type and
+    /// must not claim its neighbours. Without this the feature would
+    /// silently deliver sends the host never agreed to serve.
+    #[test]
+    fn a_declaration_claims_only_the_type_it_names() {
+        let mut model = parse(&doc(
+            r#"<state id="s"><onentry><send type="x-sprag-host-2" event="e"/></onentry></state>"#,
+        ));
+        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        let action = &model.states["s"].on_entry_blocks[0][0];
+        assert!(action.send_type_unsupported, "a neighbour type was claimed");
+        assert!(!action.send_type_host_served);
+        assert_eq!(model.host_processor_causes.len(), 1);
+    }
+
+    /// A declaration reaches a nested `<send>` too, or the same document
+    /// dispatches at the top level and refuses inside an `<if>`.
+    #[test]
+    fn a_declaration_reaches_nested_executable_content() {
+        let mut model = parse(&doc(r#"<state id="s"><onentry>
+                 <if cond="true"><send type="x-sprag-host" event="a"/></if>
+               </onentry></state>"#));
+        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        assert!(
+            model.host_processor_causes.is_empty(),
+            "a nested send was left refused: {:?}",
+            model.host_processor_causes,
+        );
+    }
+
+    /// An `<invoke>` is a separate contract with a separate lifecycle,
+    /// so a send-side declaration must not quietly claim it — the build
+    /// would then promise a child nothing starts.
+    #[test]
+    fn a_send_declaration_does_not_claim_an_invoke() {
+        let mut model = parse(&doc(
+            r#"<state id="s"><invoke id="probe" type="x-sprag-host"/></state>"#,
+        ));
+        declare_host_processors(&mut model, &["x-sprag-host".to_string()]);
+        assert_eq!(
+            model.host_processor_causes.len(),
+            1,
+            "the invoke stopped being reported: {:?}",
+            model.host_processor_causes,
+        );
+    }
+
+    /// Declaring nothing is the overwhelmingly common build, and it must
+    /// leave every verdict exactly where the parse put it.
+    #[test]
+    fn an_empty_declaration_changes_nothing() {
+        let mut model = parse(&doc(
+            r#"<state id="s"><onentry><send type="x-sprag-host" event="e"/></onentry></state>"#,
+        ));
+        let before = analyze(&model);
+        declare_host_processors(&mut model, &[]);
+        assert_eq!(analyze(&model), before);
+        assert!(model.states["s"].on_entry_blocks[0][0].send_type_unsupported);
+        assert!(model.host_processor_types.is_empty());
     }
 
     /// The set is decided here at build time and again by

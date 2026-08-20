@@ -214,6 +214,19 @@ pub struct Manifest<'a> {
     /// [`Self::script_engine_causes`].
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub host_processor_causes: &'a [HostProcessorCauseRecord],
+    /// Event I/O Processor types this build was told the host serves
+    /// (`--host-processor`). Omitted when none were declared.
+    ///
+    /// Reported because the declaration and the registration are two
+    /// halves that must agree and are made in two different places — the
+    /// build command and the host's startup code. Publishing the
+    /// build's half is what lets a consumer check the pair instead of
+    /// discovering the mismatch as an `error.execution` at run time.
+    ///
+    /// A declared type is absent from [`Self::host_processor_causes`]:
+    /// that is what declaring it does.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub host_processor_types: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<RejectedInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -406,6 +419,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
+            host_processor_types: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -427,6 +441,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
+            host_processor_types: &[],
             rejected: Some(RejectedInfo {
                 spec: "W3C SCXML 5.8",
                 name: "untestable_doc".to_string(),
@@ -451,6 +466,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
+            host_processor_types: &[],
             rejected: None,
             deploy: None,
             languages: Some(vec![
@@ -499,6 +515,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: true,
             host_processor_causes: &causes,
+            host_processor_types: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -533,6 +550,7 @@ mod tests {
             needs_event_scheduler: false,
             needs_host_processor: false,
             host_processor_causes: &[],
+            host_processor_types: &[],
             rejected: None,
             deploy: None,
             languages: None,
@@ -542,6 +560,40 @@ mod tests {
         let stripped = line.replace(",\"needs_host_processor\":false", "");
         assert_ne!(stripped, line, "the field was not on the wire to remove");
         assert_invalid(&stripped, "needs_host_processor is required");
+    }
+
+    /// The build's half of the host-processor contract has to be
+    /// readable, or a consumer can only discover a
+    /// declared-but-unregistered type by running the machine into the
+    /// state that sends.
+    #[test]
+    fn declared_host_processors_reach_the_wire() {
+        let declared = vec!["x-sprag-host".to_string()];
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            artifacts: Vec::new(),
+            needs_script_engine: false,
+            script_engine_causes: &[],
+            needs_event_scheduler: false,
+            // A declared type is served, so it is NOT a cause — the two
+            // fields are the two halves of one answer and a record that
+            // showed a type in both would be reporting a refusal the
+            // build just arranged not to emit.
+            needs_host_processor: false,
+            host_processor_causes: &[],
+            host_processor_types: &declared,
+            rejected: None,
+            deploy: None,
+            languages: None,
+        };
+        let line = m.to_line();
+        assert_valid(&line);
+        assert!(
+            line.contains("\"host_processor_types\":[\"x-sprag-host\"]"),
+            "{line}"
+        );
     }
 
     /// A malformed record must be rejected, otherwise the positive

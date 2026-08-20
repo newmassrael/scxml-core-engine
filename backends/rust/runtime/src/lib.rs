@@ -465,6 +465,13 @@ pub mod engine;
 pub mod event;
 pub mod hal;
 pub mod helpers;
+/// §scxml-6.2.5 host-supplied Event I/O Processors — the payload types a
+/// host registers a `<send type="...">` handler for.
+///
+/// Gated out of `no_std` builds for the reason [`http`] is: the registry
+/// is a heap-allocated map of boxed closures.
+#[cfg(not(feature = "no_std"))]
+pub mod host_processor;
 /// §scxml-C-2 BasicHTTPEventProcessor send payload shapes.
 ///
 /// Gated out of `no_std` builds because the module body uses
@@ -504,6 +511,8 @@ pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
+#[cfg(not(feature = "no_std"))]
+pub use host_processor::{HostSendRequest, HostSendResponse};
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};
 /// The [`log`] facade crate, re-exported so generated code can reach it

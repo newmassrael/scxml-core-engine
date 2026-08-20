@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  W3C SCXML 6.2.5: a `<send type="...">` naming an Event I/O Processor the
+  HOST supplies, rather than one of the two the specification names.
+
+  The fixture holds three things apart that the configuration alone cannot
+  tell apart, which is why each has its own counter:
+
+    served   — the host's handler ran and answered; its reply arrived as an
+               event the document was waiting for.
+    refused  — the platform raised error.execution instead, because nothing
+               performed the act.
+    plain    — a `<send>` with no `type` delivered in the same block.
+
+  `plain` is the false-positive guard. Every measurement here is of one
+  branch in one send template, and a change that broke ordinary sends while
+  leaving the host branch working would otherwise read as a pass.
+
+  The generated machine is compiled with the host-processor declaration
+  `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
+  comment cannot spell a double hyphen). Driven with a handler registered
+  it must reach `served`; driven with none it must reach `refused` — the
+  same binary, so the pair measures the registration and not the build.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="statechart_host_processor" initial="dispatching">
+
+  <datamodel>
+    <data id="served" expr="0"/>
+    <data id="refused" expr="0"/>
+    <data id="plain" expr="0"/>
+  </datamodel>
+
+  <state id="dispatching">
+    <onentry>
+      <!-- Ordinary send, first, so the guard below is measured even when
+           the host branch aborts the rest of the block. -->
+      <send event="plain.arrived"/>
+      <!-- The host-served send. `within` is a <param> so the request the
+           handler receives is asserted to carry it, not just to exist. -->
+      <send type="x-sce-host" event="watch.turn">
+        <param name="within" expr="'2500'"/>
+      </send>
+    </onentry>
+
+    <transition event="plain.arrived">
+      <assign location="plain" expr="plain + 1"/>
+    </transition>
+    <transition event="turn.done">
+      <assign location="served" expr="served + 1"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="refused" expr="refused + 1"/>
+    </transition>
+  </state>
+</scxml>

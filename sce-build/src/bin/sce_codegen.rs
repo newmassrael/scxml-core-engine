@@ -731,6 +731,10 @@ struct GenerateReport {
     /// question about the same set.
     needs_host_processor: Option<bool>,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
+    /// The `--host-processor` declarations this run was given, echoed so
+    /// a consumer can check the build's half of the contract against the
+    /// registrations its host makes.
+    host_processor_types: Vec<String>,
     rejected: Option<RejectedDocument>,
     /// Descriptive deploy declarations, present only on a `--deploy`
     /// run. `None` for every deploy-unaware invocation, which is what
@@ -771,6 +775,7 @@ fn build_manifest<'a>(
         needs_event_scheduler: report.needs_event_scheduler.unwrap_or(false),
         needs_host_processor: report.needs_host_processor.unwrap_or(false),
         host_processor_causes: &report.host_processor_causes,
+        host_processor_types: &report.host_processor_types,
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
             name: rd.name.clone(),
@@ -991,6 +996,26 @@ struct GenerateArgs {
     /// sce-portable-emit-probe crate gates both directions.
     #[arg(long)]
     no_std: bool,
+    /// Declare an Event I/O Processor `type` this build's host serves
+    /// (§scxml-6.2.5 makes the identifier extensible). Repeatable.
+    ///
+    /// Without it, `<send type="x">` for an `x` SCE does not implement
+    /// compiles to a runtime `error.execution` and is reported on the
+    /// manifest as a `host_processor_causes` entry. With it, the same
+    /// site compiles to a dispatch into the handler the host registers
+    /// under that name, and the entry disappears — the declaration is
+    /// what turns "nobody performs this" into "the host performs this".
+    ///
+    /// The runtime half is the host's: `Engine::register_event_processor`.
+    /// A type declared here and never registered raises `error.execution`
+    /// at the send, because from the document's side an act nobody
+    /// performed is the same either way.
+    ///
+    /// Only backends with a host-processor runtime accept this; the rest
+    /// refuse the document rather than emit a dispatch they cannot
+    /// service.
+    #[arg(long = "host-processor", value_name = "TYPE")]
+    host_processor: Vec<String>,
     /// Override the directory used for the §synth-6.2.6 `source-hash`
     /// computation. Defaults to the SCXML file's parent
     /// directory (the typical `resources/<num>/` test layout
@@ -2966,6 +2991,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         partition,
         const_fold_budget,
         no_std,
+        host_processor,
         input_root,
         emit_ast,
         kotlin_package_prefix,
@@ -3268,6 +3294,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     }
 
     analyzer::analyze(&mut model, scxml_path);
+
+    // §scxml-6.2.5: apply the host's declaration before any backend
+    // renders, so what the emitted code does, what the analyzer reports
+    // and what the manifest publishes are one decision.
+    sce_build::host_processor_analyzer::declare_host_processors(&mut model, &host_processor);
 
     // AST export — emit the analyzed model BEFORE any deploy-time
     // mutations (resolve_source_path, inject_server_model_mutations,
@@ -3846,6 +3877,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .iter()
             .map(|c| c.to_wire())
             .collect();
+        report
+            .host_processor_types
+            .clone_from(&model.host_processor_types);
 
         // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
         // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.

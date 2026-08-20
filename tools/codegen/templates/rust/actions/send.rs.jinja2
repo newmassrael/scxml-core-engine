@@ -5,9 +5,59 @@
 {# W3C SCXML 6.2: <send> - Event dispatch
    Supports static dispatch, delayexpr, params/namelist data building,
    idlocation storage, internal/external targets, BasicHTTP dispatch,
-   dynamic event/target expressions, and namelist error abort.
+   host-served processor dispatch, dynamic event/target expressions, and
+   namelist error abort.
    Target resolution follows C++ "resolve once, use everywhere" pattern.
 #}
+{# W3C SCXML 6.2: collect <param> values into an already-declared
+   HashMap<String, Vec<String>> named `map`.
+
+   Two processors need the same collection — BasicHTTP (W3C C.2) and a
+   host-served type (W3C 6.2.5) — and they differ only in the variable
+   they fill. Written once so a `<param>` shape handled for one is
+   handled for the other; the earlier spelling existed only in the
+   BasicHTTP arm, so a host processor would have silently received
+   fewer parameter kinds than an HTTP one from the same document.
+
+   A repeated name keeps every value: W3C SCXML 6.2 permits repetition,
+   and `or_default().push(...)` is what makes the map's Vec meaningful. #}
+{% macro collect_params_into(action, model, map) %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+        {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+{% elif param.expr and model.needs_script_engine %}
+        {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
+                Ok(val) => {
+                    let s = val.to_lua_literal();
+                    let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
+                }
+                Err(_) => {}
+            }
+        }
+{% elif param.location and model.needs_script_engine %}
+        {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            match se.evaluate_expression(&sid, "{{ param.location }}") {
+                Ok(val) => {
+                    let s = val.to_lua_literal();
+                    let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
+                }
+                Err(_) => {}
+            }
+        }
+{% endif %}
+{% endfor %}
+{% endmacro %}
 {
 {% if action.id %}
     let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.id }}");
@@ -267,6 +317,41 @@
 {% if in_entry_exit is defined and in_entry_exit %}
     break 'action_block;
 {% endif %}
+{% elif action.send_type_host_served %}
+    // W3C SCXML 6.2.5: "{{ action.send_type }}" is served by the host,
+    // which declared it to this build. Dispatch rather than refuse.
+    {
+{# `mut` only when something fills it: a `<send>` with no `<param>` would
+   otherwise emit an unused-mut warning into the consumer's crate, and a
+   generated file is not a place a host can silence one. #}
+{% if has_params %}
+        let mut host_params = std::collections::HashMap::<String, Vec<String>>::new();
+{{ collect_params_into(action, model, 'host_params') }}
+{% else %}
+        let host_params = std::collections::HashMap::<String, Vec<String>>::new();
+{% endif %}
+        let __sce_served = engine.perform_host_send(sce_rust_runtime::HostSendRequest {
+            processor_type: "{{ action.send_type | escape_rust }}".to_string(),
+            event_name: "{{ action.event | default('', true) }}".to_string(),
+            target: {% if action.targetexpr %}_rt.to_string(){% else %}"{{ action.target | escape_rust }}".to_string(){% endif %},
+            content: "{{ action.content | default('', true) | escape_rust }}".to_string(),
+            params: host_params,
+            send_id: send_id.to_string(),
+        });
+{% if 'error.execution' in model.events %}
+        // W3C SCXML 6.2: a declared type with no handler registered is,
+        // from the document's side, a processor the platform does not
+        // support — the act it asked for was performed by nobody. Same
+        // event, so a wiring mistake cannot read as success.
+        if __sce_served.is_none() && !engine.has_event_processor("{{ action.send_type | escape_rust }}") {
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor the host declared but never registered");
+            {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
+            engine.raise(err_meta);
+        }
+{% else %}
+        let _ = __sce_served;
+{% endif %}
+    }
 {% elif not action.targetexpr and action.target and action.target is startingwith('!') %}
     // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
@@ -337,41 +422,7 @@
 {% endif %}
         let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% if has_params %}
-{% for param in action.params %}
-{% if param.is_static_literal %}
-        http_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
-{% elif param.expr and model.needs_script_engine %}
-        {
-            self.ensure_script_engine();
-            let sid = self.session_id.as_ref().unwrap().clone();
-            let se = self.script_engine.clone();
-            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
-                Ok(val) => {
-                    let s = val.to_lua_literal();
-                    let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                    http_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
-                }
-                Err(_) => {}
-            }
-        }
-{% elif param.location and model.needs_script_engine %}
-        {
-            self.ensure_script_engine();
-            let sid = self.session_id.as_ref().unwrap().clone();
-            let se = self.script_engine.clone();
-            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-            match se.evaluate_expression(&sid, "{{ param.location }}") {
-                Ok(val) => {
-                    let s = val.to_lua_literal();
-                    let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
-                    http_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(trimmed.to_string());
-                }
-                Err(_) => {}
-            }
-        }
-{% endif %}
-{% endfor %}
+{{ collect_params_into(action, model, 'http_params') -}}
 {% endif %}
         engine.perform_http_send(
             {{ http_target_rs }},
