@@ -34,6 +34,13 @@
    backends/c/runtime/include/sce/portability.h. #}
 #include "sce/portability.h"
 
+{% if model.needs_event_scheduler %}
+/* §scxml-6.2.2: `sce_clock_t`, the per-instance seam this machine measures its
+   `<send delay>` deadlines from. The link-time `_sce_clock_now_ms()` it falls
+   back to is declared in the same header. */
+#include "sce/clock.h"
+{% endif %}
+
 {% if model.on_sample_links %}
 /* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
    borrow type + `sce_sub_callback_t` typedef live in the runtime
@@ -326,6 +333,15 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {{ csym_prefix }}{{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
 {% if model.needs_event_scheduler %}
     {{ csym_prefix }}{{ model.name }}_scheduled_queue_t scheduled_queue;  /* W3C 6.2: delayed <send> queue, drained by _tick */
+    /* §scxml-6.2.2: where this machine reads "now" from. Zero-initialised by
+       `_init`'s memset, which is the link-time monotonic default; a host that
+       owns time installs its own through `_init_with_clock`. */
+    sce_clock_t clock;
+    /* §scxml-3.13: the reading `clock` gave when the current turn began, valid
+       only while `in_turn`. See `_set_clock` in the .c for what reading the
+       clock per `<send>` instead did to two of them. */
+    uint64_t turn_now_ms;
+    bool in_turn;
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
     bool is_running;
@@ -591,6 +607,41 @@ void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.name }}_t 
    sleeping on this wakes on the deadline instead of guessing an interval —
    and an interval cannot straddle two fire times it was never told about. */
 int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* §scxml-6.2.2: `_init` variant that installs the clock this machine measures
+   its `<send delay>` deadlines from.
+
+   A variant rather than a setter because `_init` zeroes the struct and then
+   runs the entry walk, whose `<onentry>` can already arm delayed sends: a clock
+   installed afterwards would leave the queue holding deadlines from two time
+   bases that do not compare. `sce_clock_monotonic()` is what plain `_init`
+   installs; `sce_clock_manual(0)` hands time to the host, which then drives the
+   machine with `_advance_time_ms` instead of `_tick`. */
+void {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock);
+
+/* §scxml-6.2: Move this machine's clock forward by `ms` and run whatever that
+   made due.
+
+   The host-owned twin of `_tick`: `_tick` asks a clock that moves on its own
+   what time it is, this one *sets* what time it is and then ticks. A machine
+   driven exclusively through here has no dependency on the load of the machine
+   it runs on — the same sequence of calls produces the same configuration every
+   time.
+
+   A no-op on a machine whose clock is not `sce_clock_manual`, and it says so on
+   stderr once: the caller believes it owns time and does not, so the events it
+   is waiting for would arrive on a schedule it did not choose. (C11 has no
+   exception to throw and this tier does not abort a host process.) */
+void {{ csym_prefix }}{{ model.name }}_advance_time_ms({{ csym_prefix }}{{ model.name }}_t *sm, uint64_t ms);
+
+/* §scxml-6.2.2: this machine's current reading of its clock, in milliseconds
+   since that clock's origin.
+
+   The absolute counterpart of `_time_until_next_scheduled_ms`'s relative
+   answer. A host owning time uses it to say where in the run it is; a host on
+   the wall clock uses it to correlate the machine's deadlines with its own
+   log. */
+uint64_t {{ csym_prefix }}{{ model.name }}_now_ms(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
 
 /* W3C SCXML 3.1.2: how many events this machine took off the external queue

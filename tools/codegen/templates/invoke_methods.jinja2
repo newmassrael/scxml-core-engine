@@ -103,6 +103,16 @@
                         // segment here.
                         child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
+                        // §scxml-6.4: the child's delayed sends are measured
+                        // against the same clock as ours. A child reading its
+                        // own would start its origin at construction time, so
+                        // `<send delay="100ms">` on either side of the boundary
+                        // would mean two different absolute instants — and on a
+                        // host-owned clock the child would not move at all,
+                        // because the host advances the engine it holds, not
+                        // the ones that engine invoked.
+                        child_{{ invoke_info.field_suffix }}_->setClock(engine.clock());
+
                         // W3C SCXML B.1: Forward the build-configured script engine
                         // to the child BEFORE namelist/params evaluation. The
                         // child's setParamInScriptEngine() and downstream
@@ -256,6 +266,16 @@
                         // above for the lift path when a partitioned child
                         // becomes a consumer.
                         child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        // §scxml-6.4: the child's delayed sends are measured
+                        // against the same clock as ours. A child reading its
+                        // own would start its origin at construction time, so
+                        // `<send delay="100ms">` on either side of the boundary
+                        // would mean two different absolute instants — and on a
+                        // host-owned clock the child would not move at all,
+                        // because the host advances the engine it holds, not
+                        // the ones that engine invoked.
+                        child_{{ invoke_info.field_suffix }}_->setClock(engine.clock());
 
                         // W3C SCXML B.1: Forward the build-configured script
                         // engine to the child before initialize() — generated

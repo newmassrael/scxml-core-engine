@@ -18,6 +18,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -101,7 +103,15 @@ public:
  */
 template <typename EventType, typename EventDataType = std::string> class SchedulerQueueCore {
 public:
-    using TimePoint = std::chrono::steady_clock::time_point;
+    /**
+     * @brief Milliseconds on the engine's `ISceClock`
+     *
+     * Not a `steady_clock::time_point`: the queue must not know which clock the
+     * engine reads, or it would be reading one of its own and the host could
+     * not own time. Every method below is handed the reading instead of taking
+     * one.
+     */
+    using TimePoint = uint64_t;
 
     /**
      * @brief Scheduled event entry
@@ -190,40 +200,25 @@ public:
     }
 
     /**
-     * @brief Check if any events are ready
-     */
-    bool hasReadyEvents() const {
-        return !queue_.empty() && queue_.begin()->first.fireTime <= std::chrono::steady_clock::now();
-    }
-
-    /**
-     * @brief Check if any events are ready at specified time
+     * @brief Check if any events are ready at the given reading
      */
     bool hasReadyEvents(TimePoint now) const {
         return !queue_.empty() && queue_.begin()->first.fireTime <= now;
     }
 
     /**
-     * @brief Pop and return the next ready event
-     */
-    bool popReadyEvent(EventType &outEvent, EventDataType &outEventData) {
-        std::string sendId;
-        return popReadyEventImpl(std::chrono::steady_clock::now(), outEvent, outEventData, sendId);
-    }
-
-    /**
-     * @brief Pop and return the next ready event (with sendId output)
-     */
-    bool popReadyEvent(EventType &outEvent, EventDataType &outEventData, std::string &outSendId) {
-        return popReadyEventImpl(std::chrono::steady_clock::now(), outEvent, outEventData, outSendId);
-    }
-
-    /**
-     * @brief Pop at specified time
+     * @brief Pop the next event due at the given reading
      */
     bool popReadyEvent(TimePoint now, EventType &outEvent, EventDataType &outEventData) {
         std::string sendId;
         return popReadyEventImpl(now, outEvent, outEventData, sendId);
+    }
+
+    /**
+     * @brief Pop the next event due at the given reading (with sendId output)
+     */
+    bool popReadyEvent(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId) {
+        return popReadyEventImpl(now, outEvent, outEventData, outSendId);
     }
 
     bool hasPendingEvents() const {
@@ -261,7 +256,7 @@ public:
     }
 
     TimePoint getNextFireTime() const {
-        return queue_.empty() ? TimePoint::max() : queue_.begin()->first.fireTime;
+        return queue_.empty() ? std::numeric_limits<TimePoint>::max() : queue_.begin()->first.fireTime;
     }
 
 private:
@@ -301,23 +296,25 @@ private:
  */
 template <typename EventType> class PullScheduler {
 public:
-    std::string scheduleEvent(EventType event, std::chrono::milliseconds delay, const std::string &sendId = "",
-                              const std::string &eventData = "") {
-        auto fireTime = std::chrono::steady_clock::now() + delay;
-        return core_.schedule(std::move(event), fireTime, sendId, eventData);
+    /**
+     * @brief Queue an event to come due at `fireTimeMs` on the engine's clock
+     *
+     * The deadline is resolved by the caller, which is the only party that
+     * knows which `ISceClock` the engine reads — see `StaticExecutionEngine`'s
+     * `beginTurn()` for why it is the turn's reading rather than this
+     * statement's.
+     */
+    std::string scheduleEventAt(EventType event, uint64_t fireTimeMs, const std::string &sendId = "",
+                                const std::string &eventData = "") {
+        return core_.schedule(std::move(event), fireTimeMs, sendId, eventData);
     }
 
-    bool hasReadyEvents() const {
-        return core_.hasReadyEvents();
+    bool hasReadyEvents(uint64_t nowMs) const {
+        return core_.hasReadyEvents(nowMs);
     }
 
-    bool popReadyEvent(EventType &outEvent, std::string &outEventData) {
-        return core_.popReadyEvent(outEvent, outEventData);
-    }
-
-    bool popReadyEvent(EventType &outEvent) {
-        std::string eventData;
-        return core_.popReadyEvent(outEvent, eventData);
+    bool popReadyEvent(uint64_t nowMs, EventType &outEvent, std::string &outEventData) {
+        return core_.popReadyEvent(nowMs, outEvent, outEventData);
     }
 
     bool hasPendingEvents() const {
@@ -327,7 +324,7 @@ public:
     /**
      * @brief When the earliest still-queued entry comes due (`std::nullopt` if none)
      */
-    std::optional<std::chrono::steady_clock::time_point> nextFireTime() const {
+    std::optional<uint64_t> nextFireTime() const {
         return core_.nextFireTime();
     }
 

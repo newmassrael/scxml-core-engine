@@ -64,6 +64,16 @@ type Engine[S comparable, E comparable] struct {
 	// scheduler is the §scxml-6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
 
+	// clock is where this engine reads "now" from — see SceClock. Nil until
+	// first use, so an engine constructed before a clock is installed still
+	// gets the MonotonicClock default.
+	clock SceClock
+
+	// turnNowMs is the reading clock gave when the current turn began, valid
+	// only while inTurn — see beginTurn.
+	turnNowMs int64
+	inTurn    bool
+
 	// discardedExternalEvents counts events taken off the external queue that
 	// no transition matched (§scxml-3.1.2) — see DiscardedExternalEvents.
 	discardedExternalEvents uint32
@@ -170,6 +180,12 @@ func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, 
 // Matches Rust Engine::initialize. §scxml-5.3 guarantees datamodel
 // initialization happens before any state entry.
 func (e *Engine[S, E]) Initialize() {
+	// §scxml-3.13: entering the initial configuration is one turn, and the
+	// <onentry> handlers it runs arm their <send delay>s against one instant —
+	// see beginTurn for what reading the clock per <send> did to two of them.
+	opened := e.beginTurn()
+	defer e.endTurn(opened)
+
 	e.isRunning = true
 
 	// §scxml-5.3: Initialize datamodel before any state entry
@@ -208,6 +224,13 @@ func (e *Engine[S, E]) Initialize() {
 // Matches Rust Engine::step. Used by parent SMs to explicitly drive children
 // after sending them events (§scxml-6.4).
 func (e *Engine[S, E]) Step() {
+	// §scxml-3.13: one host call, one reading. The macrostep below can enter a
+	// state whose <onentry> arms several <send delay>s, and they are one
+	// instant's worth of executable content however long the host takes to run
+	// them — see beginTurn.
+	opened := e.beginTurn()
+	defer e.endTurn(opened)
+
 	e.runMainEventLoop()
 
 	if e.isInFinalState() && e.completionCallback != nil {
@@ -221,6 +244,13 @@ func (e *Engine[S, E]) Step() {
 // Matches Rust Engine::tick. Called periodically by callers that have delayed
 // <send> operations.
 func (e *Engine[S, E]) Tick() {
+	// §scxml-3.13: one turn, one reading. Everything below judges due against
+	// the instant this tick began, and everything the macrosteps below arm is
+	// measured from it — so a tick dispatches what was due when the host called
+	// it, and cannot be extended by how long it takes to run (see beginTurn).
+	opened := e.beginTurn()
+	defer e.endTurn(opened)
+
 	if !e.isRunning {
 		return
 	}
@@ -242,14 +272,19 @@ func (e *Engine[S, E]) Tick() {
 	// how a settle timer — arm a long <send delay>, cancel it when the short
 	// signal arrives first — delivers the event it was told to cancel.
 	// Measured 2026-08-19 on the Go, Rust and Python backends alike.
+	//
+	// "Due" is judged against the instant this tick began, not against a clock
+	// re-read on every pass: a tick that chased its own slowness would dispatch
+	// entries the host had not yet reached, in a loop the host cannot get
+	// between (see beginTurn).
 	for {
-		event, data, ok := e.scheduler.PopReadyEvent()
+		event, data, ok := e.scheduler.PopReadyEventAt(e.turnNowMs)
 		if !ok {
 			break
 		}
 		e.RaiseExternal(event, data, "")
 		// The macrostep this event drives may <cancel> a later one, so the
-		// next deadline is re-read after it rather than before.
+		// queue is re-consulted after it rather than before.
 		e.runMainEventLoop()
 		if !e.isRunning || e.isInFinalState() {
 			break
@@ -511,8 +546,12 @@ func (e *Engine[S, E]) DonedataAtFinal() string {
 // ================================================================
 
 // ScheduleEvent schedules an event for delayed delivery. Returns the send ID.
+//
+// The deadline is this turn's instant plus the delay — see beginTurn for why
+// the reading is the turn's rather than this statement's.
 func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData string) string {
-	return e.scheduler.ScheduleEvent(event, delay, sendID, eventData)
+	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
+	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData)
 }
 
 // CancelEvent cancels a previously scheduled event by send ID.
@@ -522,7 +561,7 @@ func (e *Engine[S, E]) CancelEvent(sendID string) bool {
 
 // HasReadyEvents returns whether the scheduler has events ready to fire.
 func (e *Engine[S, E]) HasReadyEvents() bool {
-	return e.scheduler.HasReadyEvents()
+	return e.scheduler.HasReadyEventsAt(e.schedNowMs())
 }
 
 // TimeUntilNextScheduled reports how long until this machine next needs Tick.
@@ -540,15 +579,140 @@ func (e *Engine[S, E]) HasReadyEvents() bool {
 // The answer feeds a host loop directly — a time.After in a select, a
 // context deadline, a ticker reset.
 func (e *Engine[S, E]) TimeUntilNextScheduled() (time.Duration, bool) {
-	next, ok := e.scheduler.NextReadyAt()
+	nextMs, ok := e.scheduler.NextReadyAtMs()
 	if !ok {
 		return 0, false
 	}
-	remaining := time.Until(next)
+	remaining := nextMs - e.schedNowMs()
 	if remaining < 0 {
 		return 0, true
 	}
-	return remaining, true
+	return time.Duration(remaining) * time.Millisecond, true
+}
+
+// ================================================================
+// Clock (§scxml-6.2.2)
+// ================================================================
+
+// Clock reports where this engine reads "now" from — see SceClock.
+//
+// Never nil: an engine that was never given one reads a MonotonicClock, which
+// is installed on first use.
+func (e *Engine[S, E]) Clock() SceClock {
+	if e.clock == nil {
+		e.clock = NewMonotonicClock()
+	}
+	return e.clock
+}
+
+// SetClock installs the SceClock this engine measures its <send delay>
+// deadlines against.
+//
+// Must be called before Initialize: the entry configuration's <onentry> can arm
+// delayed sends, and swapping the clock under deadlines already computed from
+// another one would leave the queue holding two incomparable time bases. That
+// is a programming error rather than a recoverable condition, so it panics.
+func (e *Engine[S, E]) SetClock(clock SceClock) {
+	if clock == nil {
+		panic("sce: Engine.SetClock requires a clock; pass NewMonotonicClock() for the default")
+	}
+	if e.isRunning {
+		panic("sce: Engine.SetClock must be called before Initialize(): this engine has " +
+			"already armed its entry configuration against the previous clock, and " +
+			"deadlines from two clocks do not compare")
+	}
+	e.clock = clock
+}
+
+// AdvanceTimeMs moves this engine's clock forward by ms and runs whatever that
+// made due (§scxml-6.2).
+//
+// The host-owned twin of Tick: Tick asks a clock that moves on its own what
+// time it is, this one *sets* what time it is and then ticks. A machine driven
+// exclusively through here has no dependency on the load of the machine it runs
+// on — the same sequence of calls produces the same configuration every time.
+//
+// Panics unless Clock is a *ManualClock, because that is the only kind of clock
+// a host can move. Calling it against the monotonic default is a programming
+// error, not a no-op: it means the caller believes it owns time and it does
+// not, and the events it is waiting for will arrive on a schedule it did not
+// choose.
+func (e *Engine[S, E]) AdvanceTimeMs(ms int64) {
+	manual, ok := e.Clock().(*ManualClock)
+	if !ok {
+		panic("sce: Engine.AdvanceTimeMs needs a *ManualClock in Clock(); this engine's " +
+			"time is not the host's to move. Call SetClock(NewManualClock(0)) before " +
+			"Initialize(), or drive this machine with Tick() and TimeUntilNextScheduled()")
+	}
+	manual.Advance(ms)
+	e.Tick()
+}
+
+// NowMs reports this engine's current reading of Clock, in milliseconds since
+// that clock's origin.
+//
+// The absolute counterpart of TimeUntilNextScheduled's relative answer. A host
+// owning time through a ManualClock uses it to say where in the run it is; a
+// host on the wall clock uses it to correlate an engine's deadlines with its
+// own log.
+func (e *Engine[S, E]) NowMs() int64 {
+	return e.schedNowMs()
+}
+
+// schedNowMs answers §scxml-3.13's question — what time it is, for everything
+// this turn arms or judges.
+//
+// The clause executes a microstep's executable content as one unit and a
+// macrostep as a chain of those, so "now" is a property of the turn the engine
+// is in rather than of the statement asking for it. Between turns there is no
+// turn for it to be a property of, and the host's queries
+// (TimeUntilNextScheduled, NowMs) read the clock live.
+func (e *Engine[S, E]) schedNowMs() int64 {
+	if e.inTurn {
+		return e.turnNowMs
+	}
+	return e.Clock().ElapsedMs()
+}
+
+// beginTurn opens a turn: it takes the single clock reading that everything
+// inside it uses.
+//
+// Returns whether this call is the one that opened it, which endTurn needs so a
+// nested entry point (ProcessEvent delegating to Step, Tick doing the same)
+// does not close the outer turn early.
+//
+// §scxml-6.2.2 makes a delay the wait the DOCUMENT asks for — "how long the
+// processor should wait before dispatching the message". Time the host spent
+// descheduled between two statements of one microstep is not part of any delay
+// the document wrote, so it must not reach the deadline. Reading the clock per
+// statement instead was two defects at once, both measured on this backend:
+//
+//   - Two <send delay>s executed by one <onentry> took a reading each, so a
+//     host descheduled between them by more than the gap between their delays
+//     got the later send's deadline first — and the engine then dispatched them
+//     in that order, so the document's <cancel> arrived after the event it
+//     named. Which of two events the author ordered arrives first became a fact
+//     about the host's scheduler.
+//   - The dispatch loop in Tick re-read it on every pass, so a tick slow enough
+//     to cross the next deadline dispatched that entry too, then the one after
+//     it — the engine chasing deadlines its own slowness created, in a loop the
+//     host cannot get between.
+//
+// Neither is reachable from a clock that is read once per turn.
+func (e *Engine[S, E]) beginTurn() bool {
+	if e.inTurn {
+		return false
+	}
+	e.turnNowMs = e.Clock().ElapsedMs()
+	e.inTurn = true
+	return true
+}
+
+// endTurn closes a turn opened by beginTurn.
+func (e *Engine[S, E]) endTurn(opened bool) {
+	if opened {
+		e.inTurn = false
+	}
 }
 
 // DiscardedExternalEvents reports how many events this engine took off the
