@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: f12fb4f06830f621596e812b2a7ac67af9c6e2f2d7dcc6b30ecafd508e9d2327
+// template-hash: d6df7c5cb569a8142d0ee296b73fd46e2cbd91d66a31cab131337d70b3fd380b
 // generated-at: 0
 
 
@@ -198,6 +198,14 @@ func (p *InvokePrecedesExternalDequeuePolicy) ExecutePendingInvokes(engine *sce.
 			}
 
 			childEngine := sce.NewEngine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent](&childPolicy)
+			// §scxml-6.4: the child's delayed sends are measured against the
+			// same clock as ours. A child reading its own would start its
+			// origin at construction time, so <send delay="100ms"> on either
+			// side of the boundary would mean two different absolute instants —
+			// and on a host-owned clock the child would not move at all,
+			// because the host advances the engine it holds, not the ones that
+			// engine invoked.
+			childEngine.SetClock(engine.Clock())
 			childEngine.SetCompletionCallback(func() {})
 			childEngine.Initialize()
 
