@@ -56,14 +56,24 @@ mutation_oracles sce-build/src/host_processor_analyzer.rs \
 
 mutation_case "the declaration is recorded but never applied" <<'PY'
 edit("sce-build/src/host_processor_analyzer.rs",
-     """    model.host_processor_types = types.to_vec();
-    if types.is_empty() {
+     """    if send_types.is_empty() && invoke_types.is_empty() {
         return;
     }""",
-     """    model.host_processor_types = types.to_vec();
-    if !types.is_empty() {
+     """    if !(send_types.is_empty() && invoke_types.is_empty()) {
         return;
     }""")
+PY
+
+mutation_case "an invoke declaration is recorded but never applied" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "                    if invoke_types.iter().any(|t| t == &info.invoke_type) {",
+     "                    if false && invoke_types.iter().any(|t| t == &info.invoke_type) {")
+PY
+
+mutation_case "an invoke declaration claims every unsupported type" <<'PY'
+edit("sce-build/src/host_processor_analyzer.rs",
+     "                    if invoke_types.iter().any(|t| t == &info.invoke_type) {",
+     "                    if true || invoke_types.iter().any(|t| t == &info.invoke_type) {")
 PY
 
 mutation_case "a claimed send is not marked host-served" <<'PY'
@@ -126,7 +136,9 @@ PY
 
 mutation_case "the manifest does not report what was declared" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "        report.host_processor_types.clone_from(&model.host_processor_types);",
+     """        report
+            .host_processor_types
+            .clone_from(&model.host_processor_types);""",
      "")
 PY
 
@@ -152,12 +164,22 @@ PY
 
 mutation_case "a backend without a registry accepts the declaration" <<'PY'
 edit("sce-build/src/generator.rs",
-     """    if model.host_processor_types.is_empty() {
+     """    if declared.is_empty() {
         return Ok(());
     }""",
-     """    if !model.host_processor_types.is_empty() {
+     """    if !declared.is_empty() {
         return Ok(());
     }""")
+PY
+
+# The invoke half of the same refusal. Declaring only an invoker, on a
+# backend with no registry, must refuse exactly as declaring only a
+# processor does — the two lists feed one check, and a check reading only
+# one of them would let the other through silently.
+mutation_case "the refusal ignores the invoke declaration" <<'PY'
+edit("sce-build/src/generator.rs",
+     "        .chain(model.host_invoker_types.iter())",
+     "        .chain([].iter())")
 PY
 
 # ── …or start refusing documents that declared nothing ─────────────
@@ -168,13 +190,11 @@ PY
 
 mutation_case "the refusal fires with nothing declared" <<'PY'
 edit("sce-build/src/generator.rs",
-     """    if model.host_processor_types.is_empty() {
+     """    if declared.is_empty() {
         return Ok(());
     }
-    Err(GenerateError::UnsupportedFeature(format!(
-        "--host-processor ({}) has no {} codegen path""",
-     """    Err(GenerateError::UnsupportedFeature(format!(
-        "--host-processor ({}) has no {} codegen path""")
+    Err(GenerateError::UnsupportedFeature(format!(""",
+     """    Err(GenerateError::UnsupportedFeature(format!(""")
 PY
 
 # ── …or refuse without saying what to change ────────────────────────
@@ -184,6 +204,6 @@ PY
 
 mutation_case "the refusal does not name the declared type" <<'PY'
 edit("sce-build/src/generator.rs",
-     "        model.host_processor_types.join(\", \"),",
+     "        declared.join(\", \"),",
      "        String::new(),")
 PY
