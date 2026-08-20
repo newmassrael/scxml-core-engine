@@ -651,6 +651,58 @@ mod tests {
         assert_eq!(model.host_processor_causes.len(), 1);
     }
 
+    /// The invoke half of the same false-positive guard.
+    ///
+    /// Added after a mutation SURVIVED: widening the invoke claim to `true`
+    /// — one declared invoker taking over EVERY unsupported `<invoke>` in
+    /// the document — reddened nothing. The two tests that looked like they
+    /// covered it could not: one declares only a send type, so the
+    /// `invoke_types.is_empty()` guard short-circuits before the claim runs,
+    /// and the other names the same type the document names, where "claims
+    /// everything" and "claims exactly this" give identical answers. Only a
+    /// declaration naming a type the document does NOT carry separates them.
+    #[test]
+    fn an_invoker_declaration_claims_only_the_type_it_names() {
+        let mut model = parse(&doc(
+            r#"<state id="s"><invoke id="probe" type="x-sprag-host-2"/></state>"#,
+        ));
+        declare_host_surfaces(&mut model, &[], &["x-sprag-host".to_string()]);
+
+        let Invoke::Unsupported(info) = &model.states["s"].invokes[0] else {
+            panic!("the fixture's <invoke> stopped being classified Unsupported");
+        };
+        assert!(
+            !info.host_served,
+            "a neighbour invoke type was claimed by the declaration",
+        );
+        assert_eq!(
+            model.host_processor_causes.len(),
+            1,
+            "an unclaimed <invoke> stopped being reported: {:?}",
+            model.host_processor_causes,
+        );
+    }
+
+    /// The positive direction of the same walk, so the guard above cannot
+    /// be satisfied by an implementation that claims nothing at all.
+    #[test]
+    fn an_invoker_declaration_claims_the_type_it_does_name() {
+        let mut model = parse(&doc(
+            r#"<state id="s"><invoke id="probe" type="x-sprag-host"/></state>"#,
+        ));
+        declare_host_surfaces(&mut model, &[], &["x-sprag-host".to_string()]);
+
+        let Invoke::Unsupported(info) = &model.states["s"].invokes[0] else {
+            panic!("the fixture's <invoke> stopped being classified Unsupported");
+        };
+        assert!(info.host_served, "the declared invoke type was not claimed");
+        assert!(
+            model.host_processor_causes.is_empty(),
+            "a claimed <invoke> is still reported as having no path: {:?}",
+            model.host_processor_causes,
+        );
+    }
+
     /// A declaration reaches a nested `<send>` too, or the same document
     /// dispatches at the top level and refuses inside an `<if>`.
     #[test]
