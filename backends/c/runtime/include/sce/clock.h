@@ -29,6 +29,11 @@
 #define SCE_CLOCK_H
 
 #include <stdbool.h>
+// `NULL`, for the `read == NULL` default below. Neither <stdbool.h> nor
+// <stdint.h> declares it, and this header opens `extern "C"` for C++
+// consumers — where an undeclared `NULL` is an error rather than a warning
+// (`c11_headers_are_cxx_consumable`).
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
