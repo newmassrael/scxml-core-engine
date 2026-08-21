@@ -100,6 +100,29 @@ integration lane's own server answers a fixed body rather than echoing the
 form, and the Kotlin test tree binds no BasicHTTP harness at all. Both are
 missing harness, not engine behaviour.
 
+`invoke_param_error_starts_the_child` covers the one place two clauses meet
+over a `<param>`. W3C §6.4.2 terminates an `<invoke>` when "the evaluation of
+its arguments produces an error", and the sentence after it — "Otherwise the
+Processor MUST start a new logical instance" — makes the alternative explicit.
+W3C §5.7.1 says a failing `<param>` costs `error.execution` and "MUST ignore
+the name and value", then delegates only the SUCCESSFUL name and value to the
+context: "See 5.5 `<donedata>`, 6.2 `<send>` and 6.4 `<invoke>` for details."
+5.7.1 governs, because it has already said what the failure costs in this
+context by name — reading 6.4.2 over it leaves "ignore the name and value"
+with no invoked session for the name to be absent from. test343 settles the
+same clause from the `<donedata>` side and no IRP document reaches the invoke
+context, which is why every channel answered differently and none was red:
+five were silent (C++ AOT wrote a log line, which is not a queue), and two —
+Kotlin and the C++ Interpreter — cancelled the whole invoke without saying so,
+which a document sees as a stall rather than as an error.
+
+The child reports from a `<transition>` body rather than `<onentry>`, and that
+is a deliberate un-binding of two axes: C11 seeds an invoke's params AFTER
+`_init_with_parent`, which has already run the child's `<onentry>`, so a child
+that reported on entry would measure the seeding ORDER instead of what a
+failed `<param>` costs. That order is its own open debt — the C11 `_init`
+split — and this fixture found its witness while deliberately not carrying it.
+
 The autoforward family is three fixtures on three questions, and each was
 built blind to the other two. `autoforward_done_invoke` pins *which* events
 are forwarded: Appendix D's `mainEventLoop` forwards whatever comes off the

@@ -110,6 +110,21 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("{{ param.name | escape_go }}", val)
+				} else {
+					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+					// queue AND the name and value ignored. Only the silent half was
+					// here, so a document that miscomputed one `<param>` got a child
+					// with a `<data>` nothing explained and no event to act on.
+					//
+					// The clause delegates only the SUCCESSFUL name and value to the
+					// context ("Otherwise the use of the name and value depends on
+					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+					// element" is not what a failing `<param>` costs: the child
+					// still starts, one pair short.
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
+{% endif %}
 				}
 {% endfor %}
 			}

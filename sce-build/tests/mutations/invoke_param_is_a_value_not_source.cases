@@ -53,10 +53,10 @@ mutation_oracles backends/rust/tests/tests/invoke_param_seeds_declared_child_dat
 
 mutation_case "an invoke param is evaluated in the parent and then dropped" <<'PY'
 edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
-     """                        // §scxml-6.4.3: the VALUE of the param element becomes
-                        // the child `<data>`'s initial value.
-                        child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);""",
-     """                        let _ = val;""")
+     """                            // §scxml-6.4.3: the VALUE of the param element becomes
+                            // the child `<data>`'s initial value.
+                            child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);""",
+     """                            let _ = val;""")
 PY
 
 # ── The child is seeded with an absence instead of the value ────────

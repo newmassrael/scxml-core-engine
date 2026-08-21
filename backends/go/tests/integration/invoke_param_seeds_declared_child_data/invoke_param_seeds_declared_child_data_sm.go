@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: 7914245a302af6112e722e36ab0278821b7fbccd84f029fffa6bd9dd419eb713
+// template-hash: 84a841eae761d6fbf94d15cd646ae14f47646822f90559441b47e8f14bddfb19
 // generated-at: 0
 
 
@@ -442,6 +442,19 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("seen", val)
+				} else {
+					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+					// queue AND the name and value ignored. Only the silent half was
+					// here, so a document that miscomputed one `<param>` got a child
+					// with a `<data>` nothing explained and no event to act on.
+					//
+					// The clause delegates only the SUCCESSFUL name and value to the
+					// context ("Otherwise the use of the name and value depends on
+					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+					// element" is not what a failing `<param>` costs: the child
+					// still starts, one pair short.
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> expr failed to evaluate"))
 				}
 			}
 
@@ -598,6 +611,19 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("seen", val)
+				} else {
+					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+					// queue AND the name and value ignored. Only the silent half was
+					// here, so a document that miscomputed one `<param>` got a child
+					// with a `<data>` nothing explained and no event to act on.
+					//
+					// The clause delegates only the SUCCESSFUL name and value to the
+					// context ("Otherwise the use of the name and value depends on
+					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+					// element" is not what a failing `<param>` costs: the child
+					// still starts, one pair short.
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> expr failed to evaluate"))
 				}
 			}
 
@@ -670,6 +696,19 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("seen", val)
+				} else {
+					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+					// queue AND the name and value ignored. Only the silent half was
+					// here, so a document that miscomputed one `<param>` got a child
+					// with a `<data>` nothing explained and no event to act on.
+					//
+					// The clause delegates only the SUCCESSFUL name and value to the
+					// context ("Otherwise the use of the name and value depends on
+					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+					// element" is not what a failing `<param>` costs: the child
+					// still starts, one pair short.
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> expr failed to evaluate"))
 				}
 			}
 
@@ -742,11 +781,37 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("declared", val)
+				} else {
+					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+					// queue AND the name and value ignored. Only the silent half was
+					// here, so a document that miscomputed one `<param>` got a child
+					// with a `<data>` nothing explained and no event to act on.
+					//
+					// The clause delegates only the SUCCESSFUL name and value to the
+					// context ("Otherwise the use of the name and value depends on
+					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+					// element" is not what a failing `<param>` costs: the child
+					// still starts, one pair short.
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='declared'> expr failed to evaluate"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"leaked"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
 					childPolicy.SetParamValueInScriptEngine("nowhere", val)
+				} else {
+					// §scxml-5.7.1: BOTH halves — `error.execution` on the internal
+					// queue AND the name and value ignored. Only the silent half was
+					// here, so a document that miscomputed one `<param>` got a child
+					// with a `<data>` nothing explained and no event to act on.
+					//
+					// The clause delegates only the SUCCESSFUL name and value to the
+					// context ("Otherwise the use of the name and value depends on
+					// the context ... See 5.5 <donedata>, 6.2 <send> and 6.4
+					// <invoke>"), so §scxml-6.4.2's "terminate the processing of the
+					// element" is not what a failing `<param>` costs: the child
+					// still starts, one pair short.
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='nowhere'> expr failed to evaluate"))
 				}
 			}
 

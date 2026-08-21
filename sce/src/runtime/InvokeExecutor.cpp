@@ -484,13 +484,34 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             auto result = future.get();
 
             if (!ScriptResultUtils::isSuccess(result)) {
-                SCE_LOG_ERROR(
-                    "SCXMLInvokeHandler: Failed to evaluate param expression '{}' in parent session: invoke cancelled",
-                    expr);
-                // §scxml-6.4: If evaluation of invoke's arguments produces an error,
-                // the Processor MUST terminate processing of the element
-                scriptEngine_.destroySession(childSessionId);
-                return "";
+                // §scxml-5.7.1: a `<param>` whose 'expr' produces an error costs
+                // `error.execution` on the internal queue AND the name and value —
+                // and nothing more. The clause delegates only the SUCCESSFUL name
+                // and value to the context ("Otherwise the use of the name and
+                // value depends on the context in which the <param> element
+                // occurs. See 5.5 <donedata>, 6.2 <send> and 6.4 <invoke>"), so
+                // §scxml-6.4.2's "terminate the processing of the element" is not
+                // reached by a failing `<param>`: that clause is for the element's
+                // OWN arguments, and reading it here leaves "ignore the name and
+                // value" with no invoked session for the name to be absent from.
+                //
+                // This arm had both halves wrong at once — it destroyed the child
+                // session and raised nothing — so a document that miscomputed one
+                // `<param>` lost the whole invoke and had no event to act on. W3C
+                // test343 settles the same clause from the `<donedata>` side: the
+                // error is raised AND the `done.state` event still arrives.
+                SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate param expression '{}' in parent session: "
+                              "raising error.execution and omitting the pair",
+                              expr);
+                auto paramErrorRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
+                if (paramErrorRaiser) {
+                    paramErrorRaiser->raiseEvent("error.execution",
+                                                 "<invoke> <param name='" + name + "'> expr failed to evaluate");
+                } else {
+                    SCE_LOG_ERROR("SCXMLInvokeHandler: No EventRaiser for session '{}' - error.execution dropped",
+                                  parentSessionId);
+                }
+                continue;
             }
 
             setInvokeDataVariable(childSessionId, name, result.getInternalValue(), "param");

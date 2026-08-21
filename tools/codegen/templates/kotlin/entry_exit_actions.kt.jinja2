@@ -165,11 +165,26 @@
                     val invokeParams = mutableMapOf<String, Any?>()
 {% for param in inv.params %}
 {% if param.expr %}
-                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    // §scxml-5.7.1: a `<param>` whose expr will not evaluate costs
+                    // `error.execution` on the internal queue AND the name and
+                    // value — and nothing else. The clause delegates only the
+                    // SUCCESSFUL name and value to the context ("Otherwise the use
+                    // of the name and value depends on the context in which the
+                    // <param> element occurs. See 5.5 <donedata>, 6.2 <send> and
+                    // 6.4 <invoke>"), so §scxml-6.4.2's "terminate the processing
+                    // of the element" is not reached by a failing `<param>`.
+                    //
+                    // This arm used to `return@run`, cancelling the whole invoke
+                    // and raising nothing — the strictest reading of 6.4.2 with
+                    // 5.7.1's reporting half dropped, so a document lost the child
+                    // AND the event that would have explained why. The comment
+                    // called that "the C++ pattern"; C++ does not cancel. The map
+                    // insert is inside the `try`, so a failure leaves the name
+                    // absent, which is the clause's other half.
                     try {
                         invokeParams["{{ param.name | escape_kotlin }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
                     } catch (_: Exception) {
-                        return@run  // C++ pattern: invoke cancelled on param error
+                        raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
                     }
 {% endif %}
 {% endfor %}
