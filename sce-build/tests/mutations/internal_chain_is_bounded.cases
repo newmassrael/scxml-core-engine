@@ -54,10 +54,10 @@ PY
 mutation_case "the drain swallows the event it refused" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """                self.record_truncated_macrostep(self.current_state);
-                sce_log_error!(""",
+                #[cfg(not(feature = "no_macrostep_diagnostics"))]""",
      """                let _swallowed = self.internal_queue.pop();
                 self.record_truncated_macrostep(self.current_state);
-                sce_log_error!(""")
+                #[cfg(not(feature = "no_macrostep_diagnostics"))]""")
 PY
 
 # ── One budget, not one per branch ─────────────────────────────────
@@ -101,9 +101,9 @@ PY
 
 mutation_case "the internal refusal is silent" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """    pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {
-        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);""",
-     """    pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {""")
+     """            self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
+            self.last_truncated_macrostep_state = Some(state);""",
+     """            self.last_truncated_macrostep_state = Some(state);""")
 PY
 
 # ── Naming where it stopped ────────────────────────────────────────
@@ -112,10 +112,16 @@ PY
 # the chain is what an author acts on, and the fixture's chains never leave one
 # state so the name is unambiguous in all seven channels.
 
+# ⚠ The mutant also consumes `state`. Dropping the only use of a parameter is
+# an `unused_variables` warning, this crate denies warnings, and a mutant that
+# does not compile reports INCONCLUSIVE — a case that says nothing where it
+# used to say CAUGHT. Measured 2026-08-21, when the diagnostics feature gate
+# moved this assignment inside a `#[cfg]` block.
 mutation_case "the internal refusal counts but never names the state" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        self.last_truncated_macrostep_state = Some(state);""",
-     """        self.last_truncated_macrostep_state = None;""")
+     """            self.last_truncated_macrostep_state = Some(state);""",
+     """            self.last_truncated_macrostep_state = None;
+            let _ = state;""")
 PY
 
 # ── The macrostep boundary ─────────────────────────────────────────
