@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5008f21a462556c3f5bc28f70b0c8eb6b288ae4de5066bda7215f55d3830bfd1
-// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
+// source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
+// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
 // generated-at: 0
 
 
@@ -129,8 +129,9 @@ type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy struct {
 	ParentExternalQueue chan sce.ParentEvent
 	InvokeID           string
 	ChildSessionID     string
-	// W3C SCXML 6.4.1: Deferred params from parent invoke (applied after datamodel init)
-	pendingParams      map[string]string
+	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
+	// this machine's datamodel init so they override its `<data>` defaults.
+	pendingParams      map[string]interface{}
 }
 
 // NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy creates a new policy with default values.
@@ -234,15 +235,15 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Initial
 
 
 
-	// W3C SCXML 6.4.1: Apply deferred params from parent invoke (override defaults, skip undeclared)
+	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
+	// `<data>` default this block just seeded, and only for a name the child
+	// declares ("if the names do not match, the Processor MUST NOT add the
+	// value ... to the invoked session's data model"). `HasVariable` is that
+	// filter, and it is this channel's only copy of the rule.
 	if len(p.pendingParams) > 0 {
-		for paramName, paramExpr := range p.pendingParams {
+		for paramName, paramValue := range p.pendingParams {
 			if engine.HasVariable(sessionID, paramName) {
-				if val, err := engine.EvaluateExpression(sessionID, paramExpr); err == nil {
-					_ = engine.SetVariable(sessionID, paramName, val)
-				} else {
-					_ = engine.SetVariable(sessionID, paramName, paramExpr)
-				}
+				_ = engine.SetVariable(sessionID, paramName, paramValue)
 			}
 		}
 		p.pendingParams = nil
@@ -320,13 +321,21 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) getVari
 	return result
 }
 
-// SetParamInScriptEngine stores a parameter for deferred application after datamodel init (W3C SCXML 6.4.1).
-// Params are applied at the end of InitializeDataModel, overriding defaults only for declared vars.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetParamInScriptEngine(name, expr string) {
+// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
+// application after datamodel init (§scxml-6.4.3).
+//
+// Params are applied at the end of InitializeDataModel, overriding the
+// `<data>` default only for names the child declares. The value crosses as a
+// value: this took the parent's value rendered as Lua source and
+// re-evaluated it here until 2026-08-21, which survived every value a test
+// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
+// non-finite number as `+Inf`, which is not a Lua expression, so an
+// `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetParamValueInScriptEngine(name string, value interface{}) {
 	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]string)
+		p.pendingParams = make(map[string]interface{})
 	}
-	p.pendingParams[name] = expr
+	p.pendingParams[name] = value
 }
 
 

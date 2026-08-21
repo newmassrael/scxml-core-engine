@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: b1edd275a200b2f8553040c83495e98b687c11a97259eaf4d60667291dcb916a
-// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
+// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -337,33 +337,28 @@ impl Test201Policy {
         }
     }
 
-    // §scxml-6.4.3: set an invoke param in this (child) session's script
-    // engine before its datamodel initialises.
+    // §scxml-6.4.3: seed a `<data>` this (child) session declares with the
+    // value the INVOKING session produced for an `<invoke>` `<param>` or
+    // namelist location.
     //
-    // The caller renders the parent-evaluated value as an engine literal and
-    // this re-parses it, so the value survives — but it is a round trip
-    // through source that neither the Interpreter, C++ AOT, C11 nor Python
-    // performs: each of those passes the value itself. What remains here is
-    // the last consumer of `IScriptEngine::to_script_literal` on the invoke
-    // path.
-    pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
+    // The value crosses as a value. This used to take the parent's value
+    // rendered as an engine literal and re-evaluate it here, which survived
+    // every value a test had tried and lost the ones no Lua grammar can
+    // spell: `to_script_literal` renders a non-finite number as `inf`, and
+    // `inf` is an undeclared identifier to the engine that reads it back, so
+    // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
+    // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
+    // is the channel that did not.
+    pub fn set_param_value_in_script_engine(
+        &mut self,
+        name: &str,
+        value: sce_rust_runtime::ScriptValue,
+    ) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        match se.evaluate_expression(&sid, expr) {
-            Ok(val) => {
-                let _ = se.set_variable(&sid, name, val);
-            }
-            Err(_) => {
-                // Fallback: set as string literal
-                let _ = se.set_variable(
-                    &sid,
-                    name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
-                );
-            }
-        }
+        let _ = se.set_variable(&sid, name, value);
     }
 }
 

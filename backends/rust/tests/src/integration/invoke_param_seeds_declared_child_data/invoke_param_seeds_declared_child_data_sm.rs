@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5008f21a462556c3f5bc28f70b0c8eb6b288ae4de5066bda7215f55d3830bfd1
-// template-hash: 2531476627eb1f2b85917395efe91d1b55da71c6abf9c48b9fabdfd63b215bfa
+// source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
+// template-hash: 45fa83625e6b8ed5f1d3803a56ad41a23f2d14f770e66b07d9e986dd8b492ac0
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine"]
-// SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine
+#![doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
+// SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -84,10 +84,13 @@ use sce_rust_runtime::{Engine, StatePolicy};
 pub enum InvokeParamSeedsDeclaredChildDataState {
     FailChildEvaluatedTheExpression,
     FailDeclaredParamLost,
+    FailInfiniteParamCollapsed,
+    FailInfiniteParamLost,
     FailNamelistValueLost,
     FailParentOnlyExprLost,
     FailShadowSeedLost,
     FailUnmatchedParamEnteredTheChild,
+    Infinite,
     NamelistPhase,
     Pass,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
@@ -106,6 +109,7 @@ pub enum InvokeParamSeedsDeclaredChildDataEvent {
     CancelInvoke,
     DoneInvoke,
     ErrorExecution,
+    SeedCollapsed,
     SeedLeaked,
     SeedMissing,
     SeedOk,
@@ -131,6 +135,7 @@ impl InvokeParamSeedsDeclaredChildDataEvent {
     /// several machines glob-re-exported into one module never collide
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [InvokeParamSeedsDeclaredChildDataEvent] = &[
+        InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed,
         InvokeParamSeedsDeclaredChildDataEvent::SeedLeaked,
         InvokeParamSeedsDeclaredChildDataEvent::SeedMissing,
         InvokeParamSeedsDeclaredChildDataEvent::SeedOk,
@@ -202,6 +207,9 @@ pub struct InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Static invoke child 'inv_namelist' (invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist)
     child_inv_namelist: Option<Box<sce_rust_runtime::Engine<super::invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist_sm::InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy>>>,
     pending_done_invoke_inv_namelist: bool,
+    // W3C SCXML 6.4: Static invoke child 'inv_infinite' (invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite)
+    child_inv_infinite: Option<Box<sce_rust_runtime::Engine<super::invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite_sm::InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy>>>,
+    pending_done_invoke_inv_infinite: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -283,6 +291,8 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
             pending_done_invoke_inv_unmatched: false,
             child_inv_namelist: None,
             pending_done_invoke_inv_namelist: false,
+            child_inv_infinite: None,
+            pending_done_invoke_inv_infinite: false,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -465,33 +475,28 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
         }
     }
 
-    // §scxml-6.4.3: set an invoke param in this (child) session's script
-    // engine before its datamodel initialises.
+    // §scxml-6.4.3: seed a `<data>` this (child) session declares with the
+    // value the INVOKING session produced for an `<invoke>` `<param>` or
+    // namelist location.
     //
-    // The caller renders the parent-evaluated value as an engine literal and
-    // this re-parses it, so the value survives — but it is a round trip
-    // through source that neither the Interpreter, C++ AOT, C11 nor Python
-    // performs: each of those passes the value itself. What remains here is
-    // the last consumer of `IScriptEngine::to_script_literal` on the invoke
-    // path.
-    pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
+    // The value crosses as a value. This used to take the parent's value
+    // rendered as an engine literal and re-evaluate it here, which survived
+    // every value a test had tried and lost the ones no Lua grammar can
+    // spell: `to_script_literal` renders a non-finite number as `inf`, and
+    // `inf` is an undeclared identifier to the engine that reads it back, so
+    // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
+    // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
+    // is the channel that did not.
+    pub fn set_param_value_in_script_engine(
+        &mut self,
+        name: &str,
+        value: sce_rust_runtime::ScriptValue,
+    ) {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        match se.evaluate_expression(&sid, expr) {
-            Ok(val) => {
-                let _ = se.set_variable(&sid, name, val);
-            }
-            Err(_) => {
-                // Fallback: set as string literal
-                let _ = se.set_variable(
-                    &sid,
-                    name,
-                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
-                );
-            }
-        }
+        let _ = se.set_variable(&sid, name, value);
     }
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
@@ -511,6 +516,114 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
+            if pending.invoke_id.contains(".inv_infinite") {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!(
+                    "{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    pending.invoke_id
+                );
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                let mut child_policy = super::invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite_sm::InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy::new(self.script_engine.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = pending.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                // W3C SCXML C.1: the child adopts the id its parent recorded
+                // for it. The parent mints `parentSession.invokeId` and keys
+                // `active_invokes` on it, so an event from this child reaches
+                // the parent carrying that id as its origin; if the child also
+                // minted an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them.
+                if child_policy.session_id.is_none() {
+                    child_policy.session_id = Some(child_session_id.clone());
+                }
+
+                // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    if let Ok(val) = se.evaluate_expression(&sid, "(1 / 0)") {
+                        // §scxml-6.4.3: the VALUE of the param element becomes
+                        // the child `<data>`'s initial value.
+                        child_policy.set_param_value_in_script_engine("seen", val);
+                    }
+                }
+
+                // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
+                self.active_invokes.insert(
+                    "inv_infinite".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "inv_infinite".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: "".to_string(),
+                    },
+                );
+
+                let mut child_engine = sce_rust_runtime::Engine::new(child_policy);
+                // §scxml-6.4: the child's delayed sends are measured against
+                // the same clock as ours. A child reading its own would start
+                // its origin at construction time, so `<send delay="100ms">`
+                // on either side of the boundary would mean two different
+                // absolute instants — and on a host-owned clock the child
+                // would not move at all, because the host advances the engine
+                // it holds, not the ones that engine invoked.
+                child_engine.set_clock(engine.clock());
+                // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
+                child_engine.set_completion_callback(|| {});
+                child_engine.initialize();
+
+                // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
+                self.child_inv_infinite = Some(Box::new(child_engine));
+
+                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &self
+                        .child_inv_infinite
+                        .as_ref()
+                        .unwrap()
+                        .policy()
+                        .parent_external_queue,
+                    &self.active_invokes,
+                    "inv_infinite",
+                    engine,
+                );
+
+                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
+                if self
+                    .child_inv_infinite
+                    .as_ref()
+                    .map_or(false, |c| c.is_in_final_state())
+                {
+                    self.pending_done_invoke_inv_infinite = true;
+                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+                    // + EventMetadataHelper::createDoneInvokeEvent).
+                    let donedata = self
+                        .child_inv_infinite
+                        .as_ref()
+                        .map(|c| c.donedata_at_final().to_string())
+                        .unwrap_or_default();
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "inv_infinite",
+                        donedata,
+                        engine,
+                    );
+                }
+                continue;
+            }
             if pending.invoke_id.contains(".inv_namelist") {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
@@ -572,10 +685,10 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let child_vars: &[&str] = &["token"];
                     if child_vars.contains(&"token") {
                         if let Ok(val) = se.evaluate_expression(&sid, "token") {
-                            // The child seeds this by evaluating source, so the
-                            // spelling is the engine's — not the value's.
-                            child_policy
-                                .set_param_in_script_engine("token", &se.to_script_literal(&val));
+                            // §scxml-6.4.1: "the value stored at the location
+                            // is the value" — so the value crosses, not a
+                            // rendering of it.
+                            child_policy.set_param_value_in_script_engine("token", val);
                         }
                     }
                 }
@@ -682,8 +795,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     if let Ok(val) = se.evaluate_expression(&sid, "token") {
-                        child_policy
-                            .set_param_in_script_engine("seen", &se.to_script_literal(&val));
+                        // §scxml-6.4.3: the VALUE of the param element becomes
+                        // the child `<data>`'s initial value.
+                        child_policy.set_param_value_in_script_engine("seen", val);
                     }
                 }
 
@@ -789,8 +903,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     if let Ok(val) = se.evaluate_expression(&sid, "only_here") {
-                        child_policy
-                            .set_param_in_script_engine("seen", &se.to_script_literal(&val));
+                        // §scxml-6.4.3: the VALUE of the param element becomes
+                        // the child `<data>`'s initial value.
+                        child_policy.set_param_value_in_script_engine("seen", val);
                     }
                 }
 
@@ -894,8 +1009,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                     if let Ok(val) = se.evaluate_expression(&sid, "\"carried\"") {
-                        child_policy
-                            .set_param_in_script_engine("declared", &se.to_script_literal(&val));
+                        // §scxml-6.4.3: the VALUE of the param element becomes
+                        // the child `<data>`'s initial value.
+                        child_policy.set_param_value_in_script_engine("declared", val);
                     }
                     // §scxml-6.4.3: `nowhere` matches no top-level `<data>` of
                     // the child, so the Processor MUST NOT add it to the invoked
@@ -1124,6 +1240,44 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 self.child_inv_namelist = Some(child);
             }
         }
+        if !self.pending_done_invoke_inv_infinite {
+            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
+            if let Some(mut child) = self.child_inv_infinite.take() {
+                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "inv_infinite",
+                    engine,
+                );
+
+                child.tick();
+
+                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "inv_infinite",
+                    engine,
+                );
+
+                // W3C SCXML 6.4: Check if child reached final state after tick
+                if child.is_in_final_state() && !self.pending_done_invoke_inv_infinite {
+                    self.pending_done_invoke_inv_infinite = true;
+                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+                    // done.invoke.<id>._event.data.
+                    let donedata = child.donedata_at_final().to_string();
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "inv_infinite",
+                        donedata,
+                        engine,
+                    );
+                }
+
+                // Put child back
+                self.child_inv_infinite = Some(child);
+            }
+        }
     }
 
     // W3C SCXML C.1: deliver an event addressed to a child's published
@@ -1188,6 +1342,18 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 .map_or(false, |cs| cs.session_id == child_session_id);
             if addressed {
                 if let Some(ref mut child) = self.child_inv_namelist {
+                    child.raise_external_by_name(event_name, event_data);
+                    return true;
+                }
+            }
+        }
+        {
+            let addressed = self
+                .active_invokes
+                .get("inv_infinite")
+                .map_or(false, |cs| cs.session_id == child_session_id);
+            if addressed {
+                if let Some(ref mut child) = self.child_inv_infinite {
                     child.raise_external_by_name(event_name, event_data);
                     return true;
                 }
@@ -1264,6 +1430,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         match state {
             InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression => true,
             InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost => true,
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed => true,
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost => true,
             InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost => true,
             InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost => true,
             InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost => true,
@@ -1302,14 +1470,17 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-            InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression => 5,
-            InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost => 9,
-            InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost => 10,
-            InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost => 7,
-            InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost => 6,
-            InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild => 8,
+            InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression => 6,
+            InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost => 10,
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed => 13,
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost => 12,
+            InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost => 11,
+            InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost => 8,
+            InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost => 7,
+            InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild => 9,
+            InvokeParamSeedsDeclaredChildDataState::Infinite => 4,
             InvokeParamSeedsDeclaredChildDataState::NamelistPhase => 3,
-            InvokeParamSeedsDeclaredChildDataState::Pass => 4,
+            InvokeParamSeedsDeclaredChildDataState::Pass => 5,
             InvokeParamSeedsDeclaredChildDataState::Shadowed => 0,
             InvokeParamSeedsDeclaredChildDataState::SoleName => 1,
             InvokeParamSeedsDeclaredChildDataState::Unmatched => 2,
@@ -1321,6 +1492,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
             InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke => "cancel.invoke",
             InvokeParamSeedsDeclaredChildDataEvent::DoneInvoke => "done.invoke",
             InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution => "error.execution",
+            InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed => "seed.collapsed",
             InvokeParamSeedsDeclaredChildDataEvent::SeedLeaked => "seed.leaked",
             InvokeParamSeedsDeclaredChildDataEvent::SeedMissing => "seed.missing",
             InvokeParamSeedsDeclaredChildDataEvent::SeedOk => "seed.ok",
@@ -1334,6 +1506,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
             "cancel.invoke" => Some(InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke),
             "done.invoke" => Some(InvokeParamSeedsDeclaredChildDataEvent::DoneInvoke),
             "error.execution" => Some(InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution),
+            "seed.collapsed" => Some(InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed),
             "seed.leaked" => Some(InvokeParamSeedsDeclaredChildDataEvent::SeedLeaked),
             "seed.missing" => Some(InvokeParamSeedsDeclaredChildDataEvent::SeedMissing),
             "seed.ok" => Some(InvokeParamSeedsDeclaredChildDataEvent::SeedOk),
@@ -1350,6 +1523,12 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
             InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost => {
                 "failDeclaredParamLost"
             }
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed => {
+                "failInfiniteParamCollapsed"
+            }
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost => {
+                "failInfiniteParamLost"
+            }
             InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost => {
                 "failNamelistValueLost"
             }
@@ -1360,6 +1539,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
             InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild => {
                 "failUnmatchedParamEnteredTheChild"
             }
+            InvokeParamSeedsDeclaredChildDataState::Infinite => "infinite",
             InvokeParamSeedsDeclaredChildDataState::NamelistPhase => "namelistPhase",
             InvokeParamSeedsDeclaredChildDataState::Pass => "pass",
             InvokeParamSeedsDeclaredChildDataState::Shadowed => "shadowed",
@@ -1454,8 +1634,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine"]
-    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine
+    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1467,8 +1647,23 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         // nothing to tell an ancestor entry from a target entry.
         let _ = path_child;
         match state {
+            InvokeParamSeedsDeclaredChildDataState::Infinite => {
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:235 :: infinite :: _state_body
+                // W3C SCXML 6.4: Defer invoke execution until macrostep end
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.inv_infinite", "infinite", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: InvokeParamSeedsDeclaredChildDataState::Infinite,
+                        },
+                    );
+                }
+            }
             InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:187 :: namelistPhase :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:193 :: namelistPhase :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id = format!(
@@ -1485,7 +1680,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::Shadowed => {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:86 :: shadowed :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:92 :: shadowed :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -1500,7 +1695,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::SoleName => {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:117 :: soleName :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:123 :: soleName :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id =
@@ -1515,7 +1710,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::Unmatched => {
-                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:143 :: unmatched :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:149 :: unmatched :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id = format!(
@@ -1536,8 +1731,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine"]
-    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine
+    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1546,6 +1741,26 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     ) {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
+            InvokeParamSeedsDeclaredChildDataState::Infinite => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    InvokeParamSeedsDeclaredChildDataState::Infinite,
+                );
+                // W3C SCXML 6.4: Cleanup running static child 'inv_infinite'
+                if self.child_inv_infinite.is_some() {
+                    if !self.pending_done_invoke_inv_infinite {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
+                        ));
+                    }
+                    self.child_inv_infinite = None;
+                }
+                self.active_invokes.remove("inv_infinite");
+                self.pending_done_invoke_inv_infinite = false;
+            }
             InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
@@ -1634,8 +1849,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine"]
-    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine
+    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -1690,8 +1905,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine"]
-    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:78 :: _machine
+    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
@@ -1730,11 +1945,13 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
         match check_state {
             InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression => false,
             InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost => false,
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed => false,
+            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost => false,
             InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost => false,
             InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost => false,
             InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost => false,
             InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild => false,
-            InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
+            InvokeParamSeedsDeclaredChildDataState::Infinite => {
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
                 // W3C SCXML 5.9.3: Direct enum comparison
                 if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
@@ -1744,6 +1961,55 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     self.last_transition_is_targetless = false;
 
                     *current_state = InvokeParamSeedsDeclaredChildDataState::Pass;
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost;
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state =
+                        InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed;
+                    *transition_taken = true;
+                    return true;
+                }
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost;
+                    *transition_taken = true;
+                    return true;
+                }
+                false
+            }
+            InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
+                // W3C SCXML 3.12: Event-triggered transitions (document order)
+                // W3C SCXML 5.9.3: Direct enum comparison
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
+                    // W3C SCXML 3.4: Track transition metadata
+                    self.last_transition_source_state = check_state;
+                    self.last_transition_is_internal = false;
+                    self.last_transition_is_targetless = false;
+
+                    *current_state = InvokeParamSeedsDeclaredChildDataState::Infinite;
                     *transition_taken = true;
                     return true;
                 }
