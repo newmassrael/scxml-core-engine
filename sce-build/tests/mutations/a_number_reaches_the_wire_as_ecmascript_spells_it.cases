@@ -1,0 +1,55 @@
+# Mutation cases for §scxml-B-1 — a number's text is ECMAScript's String(value).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_number_reaches_the_wire_as_ecmascript_spells_it.cases`.
+#
+# `ScriptResultUtils::resultToString` is what every outbound C++ surface asks
+# for a value's text: a `targetexpr`, a `delayexpr`, a `<log>` label, and every
+# `<param>` a BasicHTTP send form-encodes (§scxml-C-2). Its numeric arm carried
+# two defects that only a document using those values could ever surface, and
+# no fixture in the corpus does:
+#
+#   * `std::floor(inf) == inf` is TRUE, so an infinity took the integer branch
+#     and reached `static_cast<int64_t>(inf)` — undefined behaviour, observed
+#     as INT64_MIN. A document that sent Infinity put -9223372036854775808 on
+#     the wire, and every finite double at or above 2^63 casts the same way.
+#   * NaN fell through to an ostringstream, which writes C++'s `nan` for a
+#     value the document wrote as `NaN`.
+#
+# The four ported runtimes (Rust, Go, Python, Kotlin) already carried both
+# rules; this is the original catching up with its ports, which is the reverse
+# of the usual direction and worth saying out loud.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R JSEngineTests
+mutation_targets sce/src/scripting/ScriptResultUtils.cpp
+mutation_oracles tests/engine/JSEngineBasicTest.cpp
+
+mutation_case "a non-finite number takes the integer cast again" <<'PY'
+edit("sce/src/scripting/ScriptResultUtils.cpp",
+     """        if (std::isnan(val)) {
+            return "NaN";
+        }
+        if (std::isinf(val)) {
+            return val > 0 ? "Infinity" : "-Infinity";
+        }
+        if (val == std::floor(val) && std::fabs(val) < 1e15) {""",
+     """        if (val == std::floor(val)) {""")
+PY
+
+mutation_case "NaN is spelled the way iostream spells it again" <<'PY'
+edit("sce/src/scripting/ScriptResultUtils.cpp",
+     """        if (std::isnan(val)) {
+            return "NaN";
+        }""",
+     """        if (std::isnan(val)) {
+            return "nan";
+        }""")
+PY
+
+mutation_case "an infinity loses the magnitude guard again" <<'PY'
+edit("sce/src/scripting/ScriptResultUtils.cpp",
+     """        if (val == std::floor(val) && std::fabs(val) < 1e15) {""",
+     """        if (val == std::floor(val)) {""")
+PY

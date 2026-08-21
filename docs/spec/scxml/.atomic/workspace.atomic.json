@@ -10130,6 +10130,11 @@
           "file": "backends/go/runtime/helpers.go",
           "symbol": "ToWireString",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/ScriptResultUtils.cpp",
+          "symbol": "resultToString",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
